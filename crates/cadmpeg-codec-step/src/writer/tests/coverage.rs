@@ -680,10 +680,9 @@ fn drawing_context_does_not_claim_an_unwritten_uncertainty() {
 }
 
 #[test]
-fn omitted_solid_face_keeps_remaining_geometry_as_an_open_surface_model() {
+fn a_face_on_an_unknown_surface_is_written_on_a_bare_surface() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-    use cadmpeg_ir::report::Severity;
     use cadmpeg_ir::topology::BodyKind;
     use std::io::Cursor;
 
@@ -693,39 +692,35 @@ fn omitted_solid_face_keeps_remaining_geometry_as_an_open_surface_model() {
     let codec = StepCodec::default();
     let plan = codec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .expect("missing carrier reduces its face");
-    assert_eq!(
-        plan.report().coverage.disposition(EntityKind::Body),
-        ArenaDisposition::Reported
-    );
-    assert!(plan
+        .expect("an unknown surface writes");
+    assert!(!plan
         .report()
         .losses
         .iter()
-        .any(|loss| loss.severity == Severity::Error
-            && loss.code == crate::loss::StepLossCode::UnknownSurfaceFaceOmitted.kind()));
-    assert!(plan.report().losses.iter().any(|loss| {
-        loss.code == crate::loss::StepLossCode::RegionSolidReducedToSheet.kind()
-            && loss.message.contains(ir.model.bodies[0].id.as_str())
-            && loss.message.contains(ir.model.regions[0].id.as_str())
-    }));
+        .any(|loss| loss.code == crate::loss::StepLossCode::UnknownSurfaceFaceOmitted.kind()));
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).expect("surface model writes");
+    plan.write_to(&mut bytes).expect("solid writes");
     let text = std::str::from_utf8(&bytes).expect("Part 21 text");
-    assert!(text.contains("OPEN_SHELL("));
-    assert!(
-        !text.contains("MANIFOLD_SOLID_BREP("),
-        "an open shell is never declared a solid"
-    );
+    assert!(text.contains("FACE_SURFACE("));
     let decoded = codec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("structurally valid partial output decodes");
+        .expect("the written solid decodes");
     assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Sheet);
-    assert_eq!(decoded.ir().model.faces.len(), ir.model.faces.len() - 1);
-    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("neutral validation")
-        .is_ok());
+    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(decoded.ir().model.faces.len(), ir.model.faces.len());
+    assert_eq!(
+        decoded
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Unknown { .. })
+            ))
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -934,7 +929,17 @@ fn coedge_losing_a_radial_neighbor_is_named() {
         .iter_mut()
         .find(|surface| surface.id == target)
         .unwrap()
-        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            0.4,
+            0.5,
+        )
+        .expect("elliptical cone"),
+    ));
     let report = write_step(
         &ir,
         &mut Vec::new(),

@@ -608,6 +608,62 @@ pub(super) fn decode(
             }
         }
     }
+    // A presentation style no item uses states a colour, and its surface
+    // rendering may state a transparency that the colour alone does not.
+    for (&id, record) in exchange.records() {
+        if style_reachable.contains(&id)
+            || record.simple_name() != Some("PRESENTATION_STYLE_ASSIGNMENT")
+        {
+            continue;
+        }
+        let mut active = BTreeSet::new();
+        let mut cache = ColorCache::default();
+        let mut invalid_surface_sides = BTreeSet::new();
+        let Some(ColorResolution::Candidate(candidate)) = find_color(
+            id,
+            exchange,
+            StyleDomain::Surface,
+            ColorSearchState {
+                active: &mut active,
+                cache: &mut cache,
+                losses: &mut losses,
+                invalid_surface_sides: &mut invalid_surface_sides,
+            },
+            ctx,
+        )?
+        else {
+            continue;
+        };
+        if candidate.color.a() == 1.0 {
+            continue;
+        }
+        ir.model.appearances.push(Appearance {
+            native_ref: None,
+            id: AppearanceId::from(ids::presentation(
+                kind!("appearance"),
+                IdentityKey::from(candidate.id)
+                    .dash(key_word!("alpha"))
+                    .dash(candidate.color.a().to_bits()),
+            )),
+            name: candidate.name,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: Some(candidate.color),
+            textures: Vec::new(),
+            properties: BTreeMap::new(),
+        });
+        typed.insert(id);
+        for &(record, _) in cache.keys() {
+            if !invalid_surface_sides.contains(&record) {
+                typed.insert(record);
+            }
+        }
+        style_reachable.insert(candidate.id);
+    }
     for (&id, record) in exchange.records() {
         let is_predefined = record.partial("DRAUGHTING_PRE_DEFINED_COLOUR").is_some();
         if style_reachable.contains(&id)

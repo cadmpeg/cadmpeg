@@ -35,7 +35,7 @@ fn property(
     let value = match values {
         [Some(AttributeValue::String(value))] => xml::string(name, value),
         [Some(AttributeValue::Boolean(value))] => {
-            xml::scalar(name, "App::PropertyBool", "Bool", u8::from(*value))
+            xml::scalar(name, "App::PropertyBool", "Bool", *value)
         }
         [Some(AttributeValue::Integer(value))] => {
             xml::scalar(name, "App::PropertyInteger", "Integer", value)

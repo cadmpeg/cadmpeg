@@ -253,6 +253,14 @@ pub(crate) fn native_named(
 
 /// Serialize a GUI property's actual typed fields without a source-XML adapter.
 pub(crate) fn native_gui(property: &GuiPropertyRecord) -> Option<String> {
+    native_gui_with(property, &std::collections::HashSet::new())
+}
+
+/// [`native_gui`] for a property whose side entries the writer emits.
+pub(crate) fn native_gui_with(
+    property: &GuiPropertyRecord,
+    available: &std::collections::HashSet<String>,
+) -> Option<String> {
     native_values(
         &PersistedProperty {
             name: &property.name,
@@ -264,7 +272,7 @@ pub(crate) fn native_gui(property: &GuiPropertyRecord) -> Option<String> {
             dynamic: None,
         },
         &std::collections::HashMap::new(),
-        &std::collections::HashSet::new(),
+        available,
     )
 }
 
@@ -561,7 +569,7 @@ impl Object {
     pub(crate) fn set_boolean(&mut self, name: &str, value: bool) {
         self.set_metadata(
             name,
-            scalar(name, "App::PropertyBool", "Bool", u8::from(value)),
+            scalar(name, "App::PropertyBool", "Bool", value),
         );
     }
 
@@ -620,4 +628,48 @@ pub(crate) fn degrees(radians: f64) -> f64 {
         .filter_map(|digits| format!("{direct:.digits$e}").parse::<f64>().ok())
         .find(|candidate| candidate.to_radians() == radians)
         .unwrap_or(direct)
+}
+
+/// The seven numbers of a written or native `PropertyPlacement`.
+pub(crate) fn placement_values(values: &[(&str, &str)]) -> Option<[f64; 7]> {
+    let mut result = [0.0; 7];
+    for (slot, key) in result
+        .iter_mut()
+        .zip(["Px", "Py", "Pz", "Q0", "Q1", "Q2", "Q3"])
+    {
+        *slot = values
+            .iter()
+            .find(|(name, _)| *name == key)?
+            .1
+            .parse()
+            .ok()?;
+    }
+    Some(result)
+}
+
+/// The seven numbers of a written `App::PropertyPlacement` property.
+pub(crate) fn written_placement(xml: &str) -> Option<[f64; 7]> {
+    let document = roxmltree::Document::parse(xml).ok()?;
+    let node = document
+        .descendants()
+        .find(|node| node.has_tag_name("PropertyPlacement"))?;
+    let values = node
+        .attributes()
+        .map(|attribute| (attribute.name(), attribute.value()))
+        .collect::<Vec<_>>();
+    placement_values(&values)
+}
+
+/// The seven numbers of a native `App::PropertyPlacement` record.
+pub(crate) fn native_placement(property: &PropertyRecord) -> Option<[f64; 7]> {
+    let value = property
+        .values()
+        .iter()
+        .find(|value| value.tag == "PropertyPlacement")?;
+    let values = value
+        .attributes
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect::<Vec<_>>();
+    placement_values(&values)
 }

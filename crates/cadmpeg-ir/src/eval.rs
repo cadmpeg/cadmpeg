@@ -4827,11 +4827,17 @@ fn model_curve_parameter_near_point_with_tolerance(
                         return Ok(None);
                     };
                     let source_parameter = source_parameter.get();
-                    let Some(parameter) = FiniteReal::new(if *sense {
+                    // A point within tolerance of a subset end inverts to a
+                    // source parameter on either side of that end; the subset
+                    // parameter is the nearest one in its span.
+                    let unbounded = if *sense {
                         source_parameter - start
                     } else {
                         end - source_parameter
-                    }) else {
+                    };
+                    let Some(parameter) = FiniteReal::new(
+                        span.map_or(unbounded.max(0.0), |span| unbounded.clamp(0.0, span.get())),
+                    ) else {
                         return Ok(None);
                     };
                     let evaluated = finite_or_refusal(model_curve_point_by_id(
@@ -4840,12 +4846,9 @@ fn model_curve_parameter_near_point_with_tolerance(
                         curve_id,
                         parameter.get(),
                     ))?;
-                    return Ok((parameter.get() >= 0.0
-                        && span.map_or(true, |span| parameter <= span)
-                        && evaluated.is_some_and(|evaluated| {
-                            evaluated.distance(point) <= tolerance.get()
-                        }))
-                    .then_some(parameter));
+                    return Ok(evaluated
+                        .is_some_and(|evaluated| evaluated.distance(point) <= tolerance.get())
+                        .then_some(parameter));
                 }
             }
             ProceduralCurveDefinition::Helix(_) => {

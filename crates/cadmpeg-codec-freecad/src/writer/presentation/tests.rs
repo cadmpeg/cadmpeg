@@ -130,7 +130,7 @@ fn independent_body_style_and_bound_color_use_separate_properties() {
     assert_eq!(material.attribute("diffuseColor"), Some("65535"));
     assert_eq!(material.attribute("shininess"), Some("0"));
     assert_eq!(material.attribute("transparency"), Some("0"));
-    assert!(providers["Shape"].properties["Visibility"].contains("value=\"1\""));
+    assert!(providers["Shape"].properties["Visibility"].contains("value=\"true\""));
     assert!(losses.iter().any(|loss| {
         loss.code.local_code() == "appearance.not-transferred"
             && loss
@@ -304,7 +304,7 @@ fn view_fields_win_over_duplicate_native_property_values_and_deletions() {
         &mut losses,
     )
     .expect("neutral views");
-    assert!(providers["Shape"].properties["Visibility"].contains("value=\"1\""));
+    assert!(providers["Shape"].properties["Visibility"].contains("value=\"true\""));
     assert!(!providers["Shape"].properties.contains_key("DeletedSetting"));
     assert!(losses.is_empty());
 }

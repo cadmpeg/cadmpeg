@@ -929,6 +929,77 @@ impl BuildOutcome {
             Self::Partial { built, failures } => (built, Some(failures)),
         }
     }
+
+    /// One shell-based surface model or edge-based wireframe model is one
+    /// body, with a region for each shell or connected edge set: the bodies
+    /// built for its shells become `body`.
+    fn into_one_body(self, body: &BodyId) -> Self {
+        let (built, failures) = self.into_parts();
+        let mut built = built.into_iter();
+        let Some(mut merged) = built.next() else {
+            return match failures {
+                Some(failures) => Self::Partial {
+                    built: Vec::new(),
+                    failures,
+                },
+                None => Self::Built(Vec::new()),
+            };
+        };
+        let mut regions = Vec::new();
+        let mut surfaces = BTreeSet::new();
+        {
+            let model = merged.draft.model_mut();
+            surfaces.extend(model.surfaces.iter().map(|surface| surface.id.clone()));
+            for staged in model.bodies.drain(1..) {
+                regions.extend(staged.regions);
+            }
+        }
+        for part in built {
+            let Built {
+                typed,
+                mut draft,
+                body_id: _,
+                shell_sources,
+                pcurve_admissions,
+            } = part;
+            merged.typed.extend(typed);
+            merged.shell_sources.extend(shell_sources);
+            merged.pcurve_admissions.extend(pcurve_admissions);
+            let part = std::mem::take(draft.model_mut());
+            let model = merged.draft.model_mut();
+            for staged in part.bodies {
+                regions.extend(staged.regions);
+            }
+            model.vertices.extend(part.vertices);
+            model.edges.extend(part.edges);
+            model.coedges.extend(part.coedges);
+            model.loops.extend(part.loops);
+            model.faces.extend(part.faces);
+            model.surfaces.extend(
+                part.surfaces
+                    .into_iter()
+                    .filter(|surface| surfaces.insert(surface.id.clone())),
+            );
+            model.shells.extend(part.shells);
+            model.regions.extend(part.regions);
+        }
+        let model = merged.draft.model_mut();
+        for region in &mut model.regions {
+            region.body = body.clone();
+        }
+        if let Some(staged) = model.bodies.first_mut() {
+            staged.id = body.clone();
+            staged.regions.extend(regions);
+        }
+        merged.body_id = body.clone();
+        match failures {
+            Some(failures) => Self::Partial {
+                built: vec![merged],
+                failures,
+            },
+            None => Self::Built(vec![merged]),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1090,6 +1161,9 @@ fn build_wire(
             Ok(None) => outcome.fail(None)?,
             Err(error) => return Err(error),
         }
+    }
+    if scoped {
+        outcome = outcome.into_one_body(&BodyId::from(ids::data(kind!("body"), id)));
     }
     Ok(outcome)
 }
@@ -2553,6 +2627,9 @@ fn build(
             Err(BuildError::Absent) => outcome.fail(failure)?,
             Err(BuildError::Resource(error)) => return Err(error),
         }
+    }
+    if scoped && root.partial("SHELL_BASED_SURFACE_MODEL").is_some() {
+        outcome = outcome.into_one_body(&BodyId::from(ids::data(kind!("body"), id)));
     }
     Ok(outcome)
 }

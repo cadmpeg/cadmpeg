@@ -218,7 +218,7 @@ fn orphaned_carriers_are_written_as_roots_whatever_role_they_carry() {
 }
 
 #[test]
-fn failed_face_does_not_promote_its_surface_to_a_geometric_set() {
+fn face_bounded_only_by_an_open_ring_is_written_as_its_surface() {
     let ir = edgeless_doc();
     let mut bytes = Vec::new();
     let report = write_step(
@@ -228,10 +228,15 @@ fn failed_face_does_not_promote_its_surface_to_a_geometric_set() {
         &StepWriteOptions::default(),
     )
     .unwrap();
-    assert!(!std::str::from_utf8(&bytes)
-        .unwrap()
-        .contains("GEOMETRIC_SET("));
-    assert!(!report.losses.is_empty());
+    let written = std::str::from_utf8(&bytes).unwrap();
+    assert!(written.contains("GEOMETRIC_SET("));
+    assert!(written.contains("PLANE("));
+    let face = ir.model.faces[0].id.as_str();
+    let ring = ir.model.loops[0].id.as_str();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::RegionFacesRecoveredAsSet.kind() && loss.message.contains(face)
+    }));
+    assert!(report.losses.iter().any(|loss| loss.message.contains(ring)));
 }
 
 fn face_with_unbounded_support() -> CadIr {
@@ -1294,4 +1299,62 @@ fn scalar_attributes_characterize_their_step_geometry_items() {
             generic_target
         );
     }
+}
+
+#[test]
+fn a_nested_compound_the_writer_cannot_construct_keeps_both_carriers() {
+    use cadmpeg_ir::geometry::{
+        CompoundComponent, CompoundCurveConstruction, ProceduralCurve, ProceduralCurveDefinition,
+    };
+    let mut ir = standalone_subset_curve(None);
+    let line: CurveId = "test:model:curve#basis".try_into().unwrap();
+    let compound = |id: &str, construction: &str, component: &CurveId| {
+        let construction_id: cadmpeg_ir::ids::ProceduralCurveId =
+            construction.try_into().unwrap();
+        (
+            Curve {
+                native_ref: None,
+                id: id.try_into().unwrap(),
+                parameter_range: None,
+                source_object: None,
+                geometry: CurveGeometry::Procedural {
+                    construction: construction_id.clone(),
+                    cache: Some(SolvedCurveGeometry::Unknown { record: None }),
+                },
+            },
+            ProceduralCurve::new(
+                construction_id,
+                ProceduralCurveDefinition::Compound(
+                    CompoundCurveConstruction::try_new(
+                        vec![0.0],
+                        vec![CompoundComponent {
+                            parameter: 0.0,
+                            component: component.clone(),
+                        }],
+                        None,
+                    )
+                    .unwrap(),
+                ),
+            ),
+        )
+    };
+    let inner_id: CurveId = "test:model:curve#inner".try_into().unwrap();
+    let (inner, inner_construction) =
+        compound(inner_id.as_str(), "test:model:procedural_curve#inner", &line);
+    let (outer, outer_construction) =
+        compound("test:model:curve#outer", "test:model:procedural_curve#outer", &inner_id);
+    ir.model.curves.extend([inner, outer]);
+    ir.model
+        .procedural_curves
+        .extend([inner_construction, outer_construction]);
+    let mut bytes = Vec::new();
+    write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let written = std::str::from_utf8(&bytes).unwrap();
+    assert_eq!(written.matches(" = CURVE(").count(), 2, "{written}");
 }

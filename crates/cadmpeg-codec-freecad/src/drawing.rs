@@ -179,13 +179,19 @@ pub(crate) fn transfer_neutral(
         } else {
             None
         };
-        let position = if classify(record.kind.as_str()) == DrawingKind::Dimension {
+        let dimension = classify(record.kind.as_str()) == DrawingKind::Dimension;
+        let position = if dimension {
             None
         } else {
             position.map(FiniteVector::from)
         };
         let mut relationships = BTreeMap::new();
         for (role, targets) in &record.relationships {
+            // A dimension's measured references have their home on its
+            // semantic annotation.
+            if dimension && matches!(role.as_str(), "References2D" | "References3D") {
+                continue;
+            }
             let mut selections = Vec::new();
             for link in targets {
                 selections.push(relationship(link)?);
@@ -482,23 +488,26 @@ fn typed_property<'a>(
     Ok(Some(property))
 }
 
+/// View properties the drawing record owns, as dedicated fields or
+/// parameters.
+pub(crate) const DRAWING_PROPERTY_NAMES: &[&str] = &[
+    "X",
+    "Y",
+    "Scale",
+    "ScaleType",
+    "Direction",
+    "Rotation",
+    "Caption",
+    "FormatSpec",
+    "MeasureType",
+    "ProjectionType",
+    "LockPosition",
+];
+
 fn drawing_parameters(
     ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
 ) -> Result<BTreeMap<String, String>, CodecError> {
-    const NAMES: &[&str] = &[
-        "X",
-        "Y",
-        "Scale",
-        "ScaleType",
-        "Direction",
-        "Rotation",
-        "Caption",
-        "FormatSpec",
-        "MeasureType",
-        "ProjectionType",
-        "LockPosition",
-    ];
     const VALIDATED_ONLY_NAMES: &[&str] = &[
         "XDirection",
         "FormatSpecOverTolerance",
@@ -507,7 +516,7 @@ fn drawing_parameters(
         "Perspective",
     ];
     let mut parameters = BTreeMap::new();
-    for name in NAMES {
+    for name in DRAWING_PROPERTY_NAMES {
         let Some(property) = sole_named_property("drawing", properties, name)? else {
             continue;
         };
