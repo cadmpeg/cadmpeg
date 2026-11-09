@@ -132,6 +132,8 @@ fn fixture() -> (FeatureInventory, Feature) {
             form: face_selection::SelectorForm::Direct,
             item: 6,
             surface: Surface::Plane,
+            state: 0,
+            feature_sources: Vec::new(),
         },
     );
     (inventory, feature)
