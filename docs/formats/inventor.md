@@ -69,7 +69,7 @@ list_signature u16 = 0x3000
 list_count u32 >= 1
 ```
 
-Two u32 metadata values and `list_count` u32 entries follow. The entries are followed by `list_count - 1` u32 values whose high 16 bits are zero, a u32 `0xffffffff` marker, and a trailing payload.
+Two u32 metadata values and `list_count` ordered pairs `(source_index:u32, name_value:i32)` follow. The last `name_value` is −1. A trailing payload ends the record. Section 13.11 gives the role of these records as name records.
 
 ## 5. Active part kernel carrier
 
@@ -609,8 +609,6 @@ references u32[5]
 
 The first reference is null or selects type `1f96e5bede4c9ce1cfa35a9bdfda0947`. The work-plane reference selects type `42df52ced011d0d20008ccbc0663dc09`. The five references select types `303e4a7fd211d65e6000b3856c2387b0`, `1f02e78b324548a6bd6d4c90711db6d0`, `b431796169449384e3ad409bdebf7e05`, and `ae38b999d211c35b6000b3856c2387b0` twice, in order. Each non-null reference is qualified. The record ends after the references.
 
-In PmDc segment major versions 25 and 28, type `cf2b17de9c46a894e06459a70546aa94` has a state content header with flags `0x200`. Its `next` reference selects a feature label and its context selects a parameter table. The header is followed by `state:i32 = -1` and a sequence of u32 values.
-
 In PmDc segment major versions 25 and 28, type `c6b25a40954bd1c3e7ca9ca365917af4` has a state content header with a null `next` reference and a context that selects a parameter table. Its body after the header contains:
 
 ```text
@@ -714,13 +712,13 @@ A generated name on that same owning edge identifies the edge in the generating 
 
 A direct selector selects one stored input edge when its source-index and key pair has one matched owning edge revision, or several matched owning edge revisions whose historical geometry agrees at four samples: the start, the end, the interval midpoint, and the unit tangent at that midpoint, with points within the kernel linear tolerance and tangent components within `1e-6`. The samples do not compare the curves between them, so agreement is taken as the same edge and the loss names that assumption. The owner with the lowest record index is the comparison baseline and the selected owner. Matched owners of different geometry, and a matched owner without historical geometry, select nothing. The join does not establish which stored body state each owner belongs to, or whether the owners belong to different states; their record order does not identify one, so the loss `feature.edge-owner-identical-geometry` reports the count of features that select such an edge. This join applies to schema-38, schema-40, schema-42, and schema-44 naming attributes. The matched source-index and key pair selects its stored edge revision. The secondary-name array is empty or lists nonzero source indexes. Each secondary source index differs from the other secondary and generator source indexes, and names a feature or pattern feature of the same PmDc segment. The secondary names do not change the join. The selected edge's stored vertex, point, curve, sense, and parameter records define its historical geometry. The curve is straight, an `ellipse`, or an `intcurve` with an exact cache. Each parameter endpoint evaluated on the signed carrier equals its corresponding stored vertex within the kernel linear tolerance. For a `tvertex` whose last tolerance slot is set, the tolerance is the larger of the kernel linear tolerance and that slot. All items of an explicit edge group select distinct edge revisions.
 
-Type `2c81aa03d211ff2600081fbb32a3dc09` stores a face naming selector. A face item's index-reference values name selector `source_index` values in the same PmDc segment. They are not record ordinals or ASM entity indexes. After the content header the selector stores `state:i32` (0 or 2), `enabled:u8 = 1`, `form:u8 = 5`, a surface-body reference, `topology:u32`, `qualifier:u32 = 0` in every segment major version except 19, 20, and 21, and `naming_form:u32`. The `topology` and `naming_form` words are equal, and each equals the `source_index` of the record that the body reference selects. Two type-8 integer arrays follow. The generator array lists one or more nonzero feature source indexes; its values need not be distinct. The secondary array lists nonzero source indexes. A zero byte, a context reference, `key:u32`, `entity_count:u32`, `entity_count` pairs, and a face-item reference end the selector. `key` is nonzero. Each pair stores a reference equal to the context reference and a nonzero u32 source index. The body, context, and face-item references are qualified. Their target types are `474d8790d011f8d10008cabc0663dc09`, `4220e9ccd111c5710008a7ba32a3dc09`, and `ccb59f50d1114f6b0008a1ba32a3dc09`, respectively. The face-item reference selects the owning face item, which lists the selector's source index. The `source_index` of each selector is unique among the face selectors of its segment.
+Type `2c81aa03d211ff2600081fbb32a3dc09` stores a face naming selector. A face item's index-reference values name selector `source_index` values in the same PmDc segment. They are not record ordinals or ASM entity indexes. After the content header the selector stores `state:i32`, `enabled:u8 = 1`, `form:u8 = 5`, a surface-body reference, `topology:u32`, `qualifier:u32 = 0` in every segment major version except 19, 20, and 21, and `naming_form:u32`. The `topology` and `naming_form` words are equal, and each equals the `source_index` of the record that the body reference selects. Two type-8 integer arrays follow. The generator array lists one or more nonzero feature source indexes; its values need not be distinct. The secondary array lists nonzero source indexes. A zero byte, a context reference, `key:u32`, `entity_count:u32`, `entity_count` pairs, and a face-item reference end the selector. `key` is nonzero. Each pair stores a reference equal to the context reference and a nonzero u32 source index. The body, context, and face-item references are qualified. Their target types are `474d8790d011f8d10008cabc0663dc09`, `4220e9ccd111c5710008a7ba32a3dc09`, and `ccb59f50d1114f6b0008a1ba32a3dc09`, respectively. The face-item reference selects the owning face item, which lists the selector's source index. The `source_index` of each selector is unique among the face selectors of its segment. A feature operand stores `state` 0 or 2. A face of a tolerance feature stores `state` 1 or 2; section 13.11 gives its join.
 
 Type `554d8790d011f8d10008cabc0663dc09` stores a direct face selector. After the content header it has the fields of the direct edge selector in the same order: `state:i32 = -1`, `enabled:u8 = 1`, `form:u8 = 5`, a surface-body reference, `topology:u32`, `qualifier:u32 = 0` in every segment major version except 19, 20, and 21, and `naming_form:u32`. The `topology` and `naming_form` words are equal, and each equals the `source_index` of the record that the body reference selects. Two type-8 integer arrays follow. The generator array lists one to four distinct nonzero feature source indexes. The secondary array lists nonzero source indexes that differ from each other and from the generators. A zero byte, a face-item reference, a context reference, and `key:u32` end the selector. The body, face-item, and context references are qualified, with the target types of the face naming selector. The face-item reference selects the owning face item, which lists the selector's source index. The `source_index` of each face selector, of either type, is unique among the face selectors of its segment. The pair (`source_index`, `key`) of a direct face selector joins attributes, and selects face revisions, by the rules of the face naming selector.
 
 The pair (`selector_source_index`, `key`) of a face selector joins the matching attribute of the same pair whose qualifier is 1. The attribute grammar is the one defined above for the edge selector; its owner is a face record in the ASM entity-revision namespace, in the active body or in the construction-history archive. The generated-name families defined above also attribute faces. In schema-38, schema-40, schema-42, and schema-44 carriers, a face selector selects one face revision when every matched attribute of the pair has qualifier 1, every matched owner is a `face` record or a history snapshot of a face record, and the generator array of the selector shares a feature source index with a generated-name family on each owner; an owner without a generated name satisfies the last condition. A pair with one owner selects that owner. A pair with several owners selects the owner with the lowest entity index when all owners store a surface record with identical fields and the same face sense. A pair with several owners of different surfaces or of an unstored surface, a qualifier other than 1, an owner of another record kind, or an owner whose generated names share no feature source index with the generator array selects nothing. A face item with an empty index-reference list selects no face; a face collection selects the faces of its nonempty items. Two selector operands of one selection that match the same owner select nothing.
 
-The face operands of a Move Face, Shell, Thread, and Thicken feature join through this rule. A Move Face, Shell, or Thread selection is one face collection. The selection list of a Thicken feature names selection wrappers, and each wrapper names one face collection; the operands of all wrappers form one ordered selection. A Thicken feature in the face-offset form of section 13 joins its operands through the same rule. A Shell or Thicken feature, in either form, with an operand that does not join keeps its native selection; only a Move Face feature keeps a partly joined collection. A Thread annotation selects exactly one face. The face is a cone surface. A finite axis ratio is within 1e-9 of one. A cone whose half-angle sine is within 1e-9 of zero is a cylinder; twice its radius, the length of the stored major axis, is within 1e-6 mm of the stated nominal diameter, with archive lengths in centimetres. A cone with a larger half-angle sine has no size check. A Thread face on another surface, or on a cylinder of another radius than the stated diameter, selects nothing. A face naming selector with `state:i32` other than 0 and 2 selects nothing. A state-2 selector joins a matching attribute by the same rule as a state-0 selector. A state-2 selector in a Thicken operand in the non-offset form selects its owner when the pair has exactly one owner, no repeated matching attribute, and the owner carries an `NMx_Brep_Feature_tag` or `NMx_tweak_reblend_tag` attribute whose pair vector holds the `source_index` of that Thicken feature. A state-2 selector in a Move Face, Shell, Thread, or offset-form Thicken operand, or in a chamfer support-face collection, selects nothing.
+The face operands of a Move Face, Shell, Thread, and Thicken feature join through this rule. A Move Face, Shell, or Thread selection is one face collection. The selection list of a Thicken feature names selection wrappers, and each wrapper names one face collection; the operands of all wrappers form one ordered selection. A Thicken feature in the face-offset form of section 13 joins its operands through the same rule. A Shell or Thicken feature, in either form, with an operand that does not join keeps its native selection; only a Move Face feature keeps a partly joined collection. A Thread annotation selects exactly one face. The face is a cone surface. A finite axis ratio is within 1e-9 of one. A cone whose half-angle sine is within 1e-9 of zero is a cylinder; twice its radius, the length of the stored major axis, is within 1e-6 mm of the stated nominal diameter, with archive lengths in centimetres. A cone with a larger half-angle sine has no size check. A Thread face on another surface, or on a cylinder of another radius than the stated diameter, selects nothing. A feature-operand face naming selector with `state:i32` other than 0 and 2 selects nothing. A state-2 selector joins a matching attribute by the same rule as a state-0 selector. A state-2 selector in a Thicken operand in the non-offset form selects its owner when the pair has exactly one owner, no repeated matching attribute, and the owner carries an `NMx_Brep_Feature_tag` or `NMx_tweak_reblend_tag` attribute whose pair vector holds the `source_index` of that Thicken feature. A state-2 selector in a Move Face, Shell, Thread, or offset-form Thicken operand, or in a chamfer support-face collection, selects nothing.
 
 An `ellipse` carrier has five common fields, `center`, a unit `normal`, a `major` axis vector, `ratio`, and either no further value or two optional range endpoints. An optional range endpoint is a false Boolean, or a true Boolean followed by a double. The stored endpoints are the lower and upper bounds of the carrier parameter `u`, and the lower bound does not exceed the upper bound. The `major` vector is orthogonal to `normal` and is not zero. `ratio` is finite and not zero; it is negative for a flipped minor direction. The carrier point at parameter `u` is `center + major * cos(u) + ratio * (normal x major) * sin(u)`. The edge sense negates the stored edge parameters: the carrier parameter is `u = -t` for a reversed edge and `u = t` otherwise. The stored parameter interval increases and spans at most one turn. The carrier parameters `u` of the interval lie within the stored bounds. The midpoint of the interval supplies the interior point. The unit tangent is the sense times the carrier derivative at the midpoint. A closed edge on a reversed ellipse carrier resolves by the same rule; its vertices do not distinguish the parameter direction, which the edge sense fixes. An `intcurve` carrier stores an exact B-spline cache: an `exact_int_cur` construction with a stored fit tolerance of zero, a polynomial (`nubs`) or rational (`nurbs`) cache, and a non-periodic closure. A construction without a stored fit tolerance does not resolve, because its absence does not establish an exact cache. The carrier sense is the Boolean before the construction scope. The carrier point at edge parameter `t` is the cache evaluated at `u = s * t`, where `s` is -1 when exactly one of the carrier sense and the edge sense is reversed and 1 otherwise. The stored parameter interval increases, and `u` at both interval ends lies in the knot domain of the cache. The midpoint of the interval supplies the interior point. The unit tangent is `s` times the cache derivative at `u` of the midpoint. An edge whose two vertices coincide has no vertex proof of its parameter direction and does not resolve. An `intcurve` with another construction, a nonzero fit tolerance, a periodic cache, or no cache does not resolve. A carrier of another family does not resolve.
 
@@ -1341,6 +1339,176 @@ A feature record has the `source_index` of its content header. The state after t
 A body key of a surface-body wrapper is the entity identifier of the kernel-entity link that the wrapper selects through the current-model join of section 13.4. A wrapper without that join has no body key.
 
 A Split with a solid target is bound only when its target body key leaves between the two states. The target wrapper is the slot-7 surface-body wrapper of the Split (section 13.3). The key is the key of a body record live in `state_before` and of no body record live in `state_after`. A Base feature is bound only when the body key of its result wrapper, the slot-1 wrapper of the Base (section 13.4), is the key of a body record live in `state_after` and of none in `state_before`. The two checks refuse a feature whose key does not resolve, whose state before is absent, or whose key does not change as stated. The disappearance or appearance of a body key without a naming tag that lists the source index does not bind a feature. Features of other kinds are bound by the naming tag alone.
+
+### 13.11 Part annotations
+
+A part-model annotation is a PmDc feature label whose owner reference selects an annotation owner. The owner type gives the dimension kind:
+
+| Owner type | Dimension | Value-record measure |
+| --- | --- | --- |
+| `e1c36665d24968ac24cea9b3cc6055cd` | linear (location) | 0 |
+| `4f02d69e384425082ea733b6a1070a20` | angular | 0 |
+| `751ade16744fe94fc498a8a8e89f29dd` | diameter | 1 |
+| `3ceb8cbe02446907d3b548a3bfc87b32` | radius | 2 |
+| `0c0074958f4a8f367f67fe821329cdbd` | hole-note diameter | 1 |
+
+The decoder reads these annotation records in segment major versions 25 and 28. An annotation header is the state content header of section 12 followed by `state:i32 = −1`. The diameter owner has the grammar of section 13: its five references are the layout, the value record, one intent, and two styles. The other dimension owners have the same fields up to the references, and a variable reference list:
+
+```text
+annotation header
+first_reference u32
+work_plane reference       42df52ced011d0d20008ccbc0663dc09
+value u32
+empty type-2 list          version 28
+layout reference
+value_record reference     1f02e78b324548a6bd6d4c90711db6d0
+intents reference[]        b431796169449384e3ad409bdebf7e05
+styles reference[]         ae38b999d211c35b6000b3856c2387b0
+```
+
+The intents and styles fill the rest of the payload, and every intent precedes every style. A hole-note owner stores two further references, a hole definition and a hole feature, before the layout reference. Its value-record reference selects a hole value record of type `1c0ecfdd56421a02b314569215e830b1`, and a retained tail follows its styles.
+
+A value record has the content header of section 12, with stamps. Its body contains:
+
+```text
+prefix u32[3]
+measure u32
+tolerance_form u32
+controls u32[6]
+display u32
+display_controls u32[2]
+upper f64
+lower f64
+tolerance_controls u32[2]
+hole_fit counted UTF-16LE
+shaft_fit counted UTF-16LE
+value block bytes[76]
+nominal_parameter reference   264d8790d011f8d10008cabc0663dc09
+reference_parameter reference 264d8790d011f8d10008cabc0663dc09
+```
+
+A retained tail follows. `measure` equals the measure of the owner type. The nominal value is the model value of the nominal parameter. `upper` and `lower` use the internal units of section 11: centimetres for lengths and radians for angles. `tolerance_form` selects the tolerance:
+
+| Code | Tolerance |
+| --- | --- |
+| 0 | none |
+| 2 | ISO 286 class: the one nonempty fit text, with deviations `lower` and `upper` |
+| 3 | limits: nominal + `lower` and nominal + `upper` |
+| 4 | single limit: the nominal is the maximum |
+| 6 | equal bilateral: ±`abs(upper)` |
+| 7 | deviations `lower` and `upper` |
+
+An uppercase fit text is a hole class and a lowercase fit text is a shaft class; its letters are the fundamental deviation and its digits the grade. `display` 1 marks a basic (theoretical) dimension and 2 a reference (auxiliary) dimension. A limits tolerance whose lower limit exceeds its upper limit transfers without its tolerance.
+
+A hole value record has the value-record grammar with `tolerance_form` 0. Its four hole parameters are the first four consecutive parameter references after the reference parameter. A plain hole note continues with:
+
+```text
+hole flags word_a u32 = 1
+hole flags word_b u32 = 0
+hole flags word_c u32 = 0x01000000
+hole flags word_d u32 = 0
+text counted UTF-16LE
+hole_tolerance_form u32
+controls u32[3]
+upper f64
+lower f64
+```
+
+A text with the field `<HDIA>` displays the hole diameter, whose nominal value is the nominal parameter of the record. `hole_tolerance_form` 0 is the untoleranced form, 3 is equal bilateral ±`abs(upper)`, and 4 is the deviations `lower` and `upper`, in internal centimetres. A thread, counterbore, or countersink note is a hole note of open item DE-15.
+
+A feature control frame owner of type `37e2b7caf54eea9d7f984ba83f1c1ab1` and a datum identifier owner of type `47596f34434bd3ef768f599a02d0efab` start with the annotation header, `first_reference:u32`, a work-plane reference, `value:u32`, and an intent reference, which can be null. The last u32 of a frame owner is an unqualified, non-null reference to its frame row of type `261b9fa9bc4dafc38f0570970a8313ce`. The row has 82 bytes in version 25 and 102 bytes in version 28:
+
+```text
+frame header_value u32
+frame header_id u16
+characteristic u32
+magnitude u32              parameter reference
+zone_modifiers u32[3]
+second_value u32           parameter reference
+third_value u32            parameter reference
+datums u32[3]              datum-feature references, null when absent
+datum_modifiers u8[36]
+frame identifier u8[16]    version 28
+frame_reference u32        version 28, null or a datum reference frame
+```
+
+The magnitude is the model value of its parameter, in internal centimetres. `characteristic` selects the tolerance: 1 straightness, 2 flatness, 3 circularity, 5 surface profile, 7 perpendicularity, 9 position, 10 concentricity, 11 circular runout, 12 symmetry, and 13 total runout. The datums are the primary, secondary, and tertiary datum references in order. A plain row has zero `zone_modifiers`, zero `datum_modifiers`, and second and third values whose parameters have model value 0. The decoder transfers plain rows. A version-28 row with a non-null frame reference names its datums through a datum reference frame of type `1184705be740b0fa1b2fceb7098af87d`; the decoder transfers its tolerance without a datum system.
+
+A datum feature of type `7b023e033049cd9ef91b87a259829c67` has the content header of section 12 with stamps. Its body contains:
+
+```text
+owners type-2 list         one datum identifier owner
+members type-2 list        version 25
+style reference
+definition reference
+label counted UTF-16LE
+members type-2 list        version 28
+```
+
+The record ends after the last field.
+
+In PmDc segment major versions 25 and 28, a tolerance feature of type `cf2b17de9c46a894e06459a70546aa94` has a state content header with flags `0x200`. Its `next` reference is a qualified reference to a feature label, and its context is a qualified reference to a parameter table. Its body contains:
+
+```text
+tolerance state i32 = -1
+members type-2 list        member tolerance features and attachment records
+values u32[2]
+identifier counted UTF-16LE
+face_collection reference  null or f1b2bc24d01121dd0008d0bc0663dc09
+definition reference       null or 7a8f42a5…
+controls u32[2]
+```
+
+A member is a tolerance feature or an attachment record of type `1f96e5bede4c9ce1cfa35a9bdfda0947`. A member tolerance feature lists zero attachment records. A tolerance feature that no tolerance feature lists as a member lists one or more attachment records. A participant that the labels of two tolerance features list is an unresolved owner. A frame or datum owner without a resolved intent takes the faces of the tolerance feature whose label lists the owner as a participant. Those faces are the faces of the face items of its face collection, together with those of its member tolerance features. A face item lists face naming selectors by `source_index` (section 13). An item gives the face that each of its listed selectors selects. An item with a malformed listed selector is an unresolved item.
+
+A relation joins an intent to selection items. A relation has the annotation header, `link:u32 = 0`, the intent reference, and further references. The relation types are `3c31133b474a986bd1ea9ba730c7e57c`, `c4f81a38294bd8ee18e90eb91df9b376`, and `8e92d96f62489db9a2b24da66e312298`. Its further references to records of type `6a71439ed211a50f600084b7b035c3b0` or to work axes (`896cf08ed1113c0460007cb801f31bb0`, section 13) are its selection items, in order. A geometry link of type `9711327c5a4b08dd9a4421b65200c25e` has the annotation header and three references: stored geometry (`a4260cf13b48840aa3af85aaadaff65d`), a work plane, and a selection item. It ends the record. It joins the selection item to the stored geometry that a face selector names.
+
+The face selector `6805ba23324611faf6725ebb87bdfd05` has the grammar of the face naming selector of section 13, with `state` 1 or 2. Its face-item reference names stored geometry, and its context reference names a naming table. The edge selector `022da96cd2117c10600084b7b035c3b0` contains:
+
+```text
+state header
+state i32 = -1
+enabled u8 = 1
+form u8 = 5
+body reference             474d8790d011f8d10008cabc0663dc09
+topology u32
+qualifier u32 = 0
+naming_form u32            equal to topology
+generators type-8 array
+secondary type-8 array
+separator u8 = 0
+item reference             6a71439e… or a work axis
+context reference          naming table
+key u32
+flag u8                    0 or 1
+```
+
+The `topology` and `naming_form` words of this edge selector each equal the `source_index` of the record that the body reference selects.
+
+A naming table of type `4220e9ccd111c5710008a7ba32a3dc09` contains:
+
+```text
+table header_value u32
+table header_id u16
+next u32
+last_identifier u32
+count u32
+entries (identifier u32, record reference)[count]
+```
+
+The identifiers are distinct. A selector key is a table identifier, and its entry selects a name record. A generated name record has the prefix of section 4 with `word_a = 5` and at least one pair. An edge name record has the same prefix with `word_a = 1`. The record type of a generated name gives the attribute families that the name matches and the tail values that the attribute repeats:
+
+| Name record type | Attribute families | Record tail | Attribute tail |
+| --- | --- | --- | --- |
+| `a5c245062846bbe61da9eda12072ce35`, `205fa956d111af49000887ba32a3dc09` | `NMx_Generated_Brep_tag`, `NMx_Sweep_Generated_Brep_tag`, `INV_NMX_GEN_TAG`, `INV_NMX_SWEEPGENERATED_TAG` | u32 0, u32 0, `associative_id:u32`, `role:u32` | `associative_id`, 0, `role` |
+| `7a260eaed211715d60007eb71269f1b0` | `NMx_Hole_Brep_tag`, `INV_NMX_HOLE_TAG` | u32 0, `first:u32`, `role:u16` | `first`, `role` |
+| `98415d8ec341c7a5adc5f990460579a4` | `NMx_blend_tag`, `INV_NMX_BLEND_TAG` | u32 0, `first:u8`, `second:u8`, 3 bytes, `third:u32` | `first`, `second`, `third` |
+
+The attribute tail follows the pair vector of the generated-name attribute of section 13. A face selector with `state` 1 or 2 selects the face of the active body that carries an attribute of a listed family with the same pairs and tail, when exactly one face carries one. The annotation join reads face selectors with `state` 1 or 2.
+
+An edge name record of type `a6e032bfd111464a000888ba32a3dc09` has the prefix of section 4 up to its list, four u32 base values, a u8 flag, a type-2 list, and `control:u32`. The decoder reads the form with an empty list, which ends with a pair count of 2 and two `(context reference, identifier)` pairs. The two identifiers are face names. The edge selector selects the one edge of the active body that bounds both selected faces.
+
+Each selection item of an intent gives one target. An item gives the target that all of its selectors select, when they agree. An unresolved item has a selector without a selected entity, a malformed selector, or two selectors that select different entities.
 
 ## 14. Document kind
 

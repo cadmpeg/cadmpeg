@@ -289,6 +289,17 @@ pub(crate) enum InventorLossCode {
     DrawingNativeOnly,
     /// A drawing record is outside its typed prefix form.
     DrawingRecordMalformed,
+    /// A dimension geometry intent names no unique active-body face or edge.
+    PmiTargetUnresolved,
+    /// A dimension value record stores a tolerance form outside the
+    /// established codes.
+    PmiToleranceUnresolved,
+    /// A dimension owner or value record is outside the established grammar.
+    PmiRecordMalformed,
+    /// A feature control frame is outside the established grammar.
+    PmiFrameNative,
+    /// A feature control frame names datums that do not resolve.
+    PmiDatumSystemUnresolved,
 }
 
 impl InventorLossCode {
@@ -421,6 +432,11 @@ impl InventorLossCode {
         Self::FeatureHistoryStateUnbound,
         Self::DrawingNativeOnly,
         Self::DrawingRecordMalformed,
+        Self::PmiTargetUnresolved,
+        Self::PmiToleranceUnresolved,
+        Self::PmiRecordMalformed,
+        Self::PmiFrameNative,
+        Self::PmiDatumSystemUnresolved,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -575,6 +591,11 @@ impl InventorLossCode {
             Self::FeatureHistoryStateUnbound => "feature.history-state-unbound",
             Self::DrawingNativeOnly => "drawing.native-only",
             Self::DrawingRecordMalformed => "drawing.record-malformed",
+            Self::PmiTargetUnresolved => "pmi.target-unresolved",
+            Self::PmiToleranceUnresolved => "pmi.tolerance-unresolved",
+            Self::PmiRecordMalformed => "pmi.record-malformed",
+            Self::PmiFrameNative => "pmi.frame-native",
+            Self::PmiDatumSystemUnresolved => "pmi.datum-system-unresolved",
         }
     }
 
@@ -590,6 +611,11 @@ impl InventorLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::PmiTargetUnresolved
+            | Self::PmiToleranceUnresolved
+            | Self::PmiRecordMalformed
+            | Self::PmiFrameNative
+            | Self::PmiDatumSystemUnresolved => LossTaxonomy::PmiOmitted,
             Self::GeometryKernelCarrierNotTransferred
             | Self::GeometryProceduralSurfaceNotTransferred => LossTaxonomy::GeometryNotTransferred,
             Self::DrawingNativeOnly | Self::RseSegmentPairUntyped | Self::UfrxSchemaUnsupported => {
@@ -884,6 +910,11 @@ mod tests {
                 "feature.history-state-unbound",
                 "drawing.native-only",
                 "drawing.record-malformed",
+                "pmi.target-unresolved",
+                "pmi.tolerance-unresolved",
+                "pmi.record-malformed",
+                "pmi.frame-native",
+                "pmi.datum-system-unresolved",
             ]
         );
     }

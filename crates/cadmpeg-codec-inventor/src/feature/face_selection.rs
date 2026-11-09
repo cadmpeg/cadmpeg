@@ -55,7 +55,7 @@ const FACE_QUALIFIER: i64 = 1;
 pub(crate) const NAMING_STATE_MODIFIED: i32 = 2;
 
 #[derive(Debug)]
-pub(super) struct FaceSelector {
+pub(crate) struct FaceSelector {
     pub(super) source: u32,
     /// The stored `state` word: 0 or 2 for the naming form, -1 for the
     /// direct form.
@@ -69,6 +69,33 @@ pub(super) struct FaceSelector {
     context: PmDcReference,
     /// The selector has the direct form.
     direct: bool,
+}
+
+impl FaceSelector {
+    pub(crate) const fn source_index(&self) -> u32 {
+        self.source
+    }
+
+    pub(crate) const fn key(&self) -> u32 {
+        self.key
+    }
+
+    /// The `topology` word.
+    pub(crate) const fn topology(&self) -> u32 {
+        self.body_source
+    }
+
+    pub(crate) const fn body(&self) -> PmDcReference {
+        self.body
+    }
+
+    pub(crate) const fn item(&self) -> PmDcReference {
+        self.item
+    }
+
+    pub(crate) const fn context(&self) -> PmDcReference {
+        self.context
+    }
 }
 
 /// The record form of a face selector.
@@ -137,16 +164,28 @@ const MM_PER_ARCHIVE_LENGTH: f64 = 10.0;
 /// Largest difference of the axis ratio of a cone from one.
 const EPS_CONE_RATIO: f64 = 1e-9;
 
-/// Parses a face selector, or `None` for another selector form.
+/// Parses a feature-operand face selector, or `None` for another selector
+/// form.
 pub(super) fn parse(
     ctx: &DecodeContext<'_>,
     payload: View<'_>,
     version: u8,
 ) -> Result<Option<FaceSelector>, CodecError> {
+    parse_with_states(ctx, payload, version, &[0, NAMING_STATE_MODIFIED])
+}
+
+/// Parses a face selector whose state is one of `states`, or `None` for
+/// another selector form.
+pub(crate) fn parse_with_states(
+    ctx: &DecodeContext<'_>,
+    payload: View<'_>,
+    version: u8,
+    states: &[i32],
+) -> Result<Option<FaceSelector>, CodecError> {
     let mut cursor = Cursor::new(payload);
     let header = state_content_header(&mut cursor, version)?;
     let state = cursor.i32("face selector state")?;
-    if !matches!(state, 0 | NAMING_STATE_MODIFIED)
+    if !states.contains(&state)
         || cursor.u8("face selector enabled")? != 1
         || cursor.u8("face selector form")? != 5
     {

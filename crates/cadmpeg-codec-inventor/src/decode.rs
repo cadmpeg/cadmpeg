@@ -648,6 +648,18 @@ fn decode_container<'a>(
     } else {
         UnresolvedDesign::default()
     };
+    if delivered == DecodeDepth::Full {
+        losses.extend(crate::annotation::project(
+            ctx,
+            &crate::annotation::Inputs {
+                rse: &container.rse,
+                labels: &feature_inventory.labels,
+                parameters: &design_inventory.parameters,
+                properties: &feature_inventory.properties,
+            },
+            &mut ir.model,
+        )?);
+    }
     let mut stored_body_losses = Vec::new();
     if !body_keys.is_empty() {
         let projection = crate::feature::base::project(
