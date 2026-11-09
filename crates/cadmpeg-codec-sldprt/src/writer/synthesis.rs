@@ -197,9 +197,7 @@ fn non_unit_sketch_axes(
             .resolved_placement()
             .into_iter()
             .flat_map(|(_, normal, u_axis)| [("normal", normal), ("u_axis", u_axis)])
-            .filter(|(_, vector)| {
-                (vector.get().norm() - 1.0).abs() > EPS_SKETCH_AXIS_UNIT_LENGTH
-            })
+            .filter(|(_, vector)| (vector.get().norm() - 1.0).abs() > EPS_SKETCH_AXIS_UNIT_LENGTH)
             .map(move |(axis, _)| (&sketch.id, axis))
     })
 }
@@ -266,10 +264,7 @@ const APPEARANCE_BINDING_OWNER: &str = "appearance-binding:";
 
 /// Bindings of the finding's appearance whose appearance or target the
 /// document does not hold.
-fn dangling_appearance_bindings(
-    projected: &CadIr,
-    owner: &str,
-) -> Result<Vec<String>, CodecError> {
+fn dangling_appearance_bindings(projected: &CadIr, owner: &str) -> Result<Vec<String>, CodecError> {
     let appearance = &owner[APPEARANCE_BINDING_OWNER.len()..];
     let model = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
     let held = model
@@ -862,7 +857,9 @@ pub(super) fn plan(
             for record in &native.pmi_dimensions {
                 let held = authored.get(&record.guid).is_some_and(|(map, text)| {
                     *map == record.offset
-                        && record.display_text_offset().is_none_or(|offset| offset == *text)
+                        && record
+                            .display_text_offset()
+                            .is_none_or(|offset| offset == *text)
                 });
                 if !held {
                     declared.set_record(
@@ -1308,7 +1305,9 @@ fn null_unresolvable_native_refs(
                     operands.retain(|operand| {
                         let (Some(id), Some(target)) = (
                             operand.get("id").and_then(serde_json::Value::as_str),
-                            operand.get("native_ref").and_then(serde_json::Value::as_str),
+                            operand
+                                .get("native_ref")
+                                .and_then(serde_json::Value::as_str),
                         ) else {
                             return true;
                         };

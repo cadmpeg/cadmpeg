@@ -22,6 +22,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
+use cadmpeg_core::decode::ResourceLimit;
+
 use serde_json::Value;
 
 const REGISTRY_JSON: &str = include_str!("data/variant_registry.json");
@@ -137,6 +139,13 @@ pub enum UnheldClass {
     /// A presentation annotation with no placement, where the format places
     /// the text of every annotation.
     UnplacedPresentation,
+    /// A face tolerance, or a vertex or edge tolerance on a solid body or
+    /// other than the document's linear tolerance, where the format states
+    /// one document resolution and its solid topology states no tolerance.
+    UnstatedTolerance,
+    /// A solid body whose faces use an edge of extent once, where the
+    /// format bounds a solid by closed shells.
+    OpenSolid,
 }
 
 impl UnheldClass {
@@ -144,11 +153,15 @@ impl UnheldClass {
     #[must_use]
     pub fn members(self, document: &Value) -> BTreeSet<String> {
         match self {
-            Self::RangeOffVertices => return edges_with_ranges_off_their_vertices(document),
+            Self::RangeOffVertices => {
+                return evaluated(edges_with_ranges_off_their_vertices(document))
+            }
             Self::PcurveOnSeveralSurfaces => return pcurves_on_several_surfaces(document),
-            Self::PcurveOffItsEdge => return pcurves_off_their_edges(document),
+            Self::PcurveOffItsEdge => return evaluated(pcurves_off_their_edges(document)),
             Self::OpenRing => return open_rings(document),
             Self::CurvelessEdgePcurve => return curveless_edge_pcurves(document),
+            Self::UnstatedTolerance => return unstated_tolerances(document),
+            Self::OpenSolid => return open_solids(document),
             _ => {}
         }
         let mut members = BTreeSet::new();
@@ -178,7 +191,9 @@ impl UnheldClass {
             | Self::PcurveOnSeveralSurfaces
             | Self::PcurveOffItsEdge
             | Self::OpenRing
-            | Self::CurvelessEdgePcurve => record
+            | Self::CurvelessEdgePcurve
+            | Self::UnstatedTolerance
+            | Self::OpenSolid => record
                 .get("id")
                 .and_then(Value::as_str)
                 .is_some_and(|id| self.members(document).contains(id)),
@@ -250,9 +265,95 @@ impl UnheldClass {
     }
 }
 
-fn edges_with_ranges_off_their_vertices(document: &Value) -> BTreeSet<String> {
+/// The members of a class whose query evaluates geometry. The harness
+/// evaluates within the default limits, so a refusal is a harness failure.
+fn evaluated(members: Result<BTreeSet<String>, ResourceLimit>) -> BTreeSet<String> {
+    members.unwrap_or_else(|limit| panic!("a class membership evaluation was refused: {limit}"))
+}
+
+fn unstated_tolerances(document: &Value) -> BTreeSet<String> {
     let Ok(ir) = serde_json::from_value::<cadmpeg_ir::CadIr>(document.clone()) else {
         return BTreeSet::new();
+    };
+    let resolution = ir
+        .tolerances
+        .linear
+        .map(cadmpeg_ir::scalar::PositiveLength::get);
+    let regions = ir
+        .model
+        .bodies
+        .iter()
+        .filter(|body| body.kind == cadmpeg_ir::topology::BodyKind::Solid)
+        .flat_map(|body| body.regions.iter())
+        .collect::<BTreeSet<_>>();
+    let shells = ir
+        .model
+        .shells
+        .iter()
+        .filter(|shell| regions.contains(&shell.region))
+        .map(|shell| &shell.id)
+        .collect::<BTreeSet<_>>();
+    let faces = ir
+        .model
+        .faces
+        .iter()
+        .filter(|face| shells.contains(&face.shell))
+        .map(|face| &face.id)
+        .collect::<BTreeSet<_>>();
+    let loops = ir
+        .model
+        .loops
+        .iter()
+        .filter(|boundary| faces.contains(&boundary.face))
+        .map(|boundary| &boundary.id)
+        .collect::<BTreeSet<_>>();
+    let solid_edges = ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| loops.contains(&coedge.owner_loop))
+        .map(|coedge| &coedge.edge)
+        .collect::<BTreeSet<_>>();
+    let mut solid = BTreeSet::new();
+    for edge in ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| solid_edges.contains(&edge.id))
+    {
+        solid.insert(edge.id.as_str());
+        solid.insert(edge.start.as_str());
+        solid.insert(edge.end.as_str());
+    }
+    let unstated = |id: &str, tolerance: Option<cadmpeg_ir::scalar::PositiveReal>| {
+        tolerance.is_some_and(|tolerance| solid.contains(id) || resolution != Some(tolerance.get()))
+    };
+    let vertices = ir
+        .model
+        .vertices
+        .iter()
+        .filter(|vertex| unstated(vertex.id.as_str(), vertex.tolerance))
+        .map(|vertex| vertex.id.to_string());
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| unstated(edge.id.as_str(), edge.tolerance))
+        .map(|edge| edge.id.to_string());
+    let faces = ir
+        .model
+        .faces
+        .iter()
+        .filter(|face| face.tolerance.is_some())
+        .map(|face| face.id.to_string());
+    vertices.chain(edges).chain(faces).collect()
+}
+
+fn edges_with_ranges_off_their_vertices(
+    document: &Value,
+) -> Result<BTreeSet<String>, ResourceLimit> {
+    let Ok(ir) = serde_json::from_value::<cadmpeg_ir::CadIr>(document.clone()) else {
+        return Ok(BTreeSet::new());
     };
     let index = cadmpeg_ir::index::ModelIndex::build(&ir);
     let tolerance = ir.tolerances.linear_or_default().get();
@@ -263,25 +364,103 @@ fn edges_with_ranges_off_their_vertices(document: &Value) -> BTreeSet<String> {
     };
     let off = |curve: &cadmpeg_ir::ids::CurveId, parameter: f64, vertex| {
         let Some(vertex) = position(vertex) else {
-            return false;
+            return Ok(false);
         };
-        cadmpeg_ir::eval::model_curve_point_by_id(
+        match cadmpeg_ir::eval::model_curve_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &index,
             curve,
             parameter,
-        )
-        .is_ok_and(|point| point.get().distance(vertex) > tolerance)
+        ) {
+            Ok(point) => Ok(point.get().distance(vertex) > tolerance),
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => Err(limit),
+            // A solved carrier with no point at a range end holds that
+            // range outside its domain.
+            Err(_) => Ok(index
+                .curves(curve.as_str(), cadmpeg_ir::index::StandardIndex)
+                .and_then(|curve| curve.geometry.solved())
+                .is_some_and(|geometry| {
+                    !matches!(
+                        geometry,
+                        cadmpeg_ir::geometry::SolvedCurveGeometry::Unknown { .. }
+                    )
+                })),
+        }
     };
-    ir.model
-        .edges
+    let mut members = BTreeSet::new();
+    for edge in &ir.model.edges {
+        let Some((curve, range)) = edge.curve().zip(edge.param_range()) else {
+            continue;
+        };
+        if off(curve, range[0], &edge.start)? || off(curve, range[1], &edge.end)? {
+            members.insert(edge.id.as_str().to_owned());
+        }
+    }
+    Ok(members)
+}
+
+fn open_solids(document: &Value) -> BTreeSet<String> {
+    fn text<'v>(row: &'v Value, key: &str) -> Option<&'v str> {
+        row.get(key).and_then(Value::as_str)
+    }
+    let rows = |arena: &str| {
+        document
+            .get("model")
+            .and_then(|model| model.get(arena))
+            .and_then(Value::as_array)
+            .map_or(&[][..], Vec::as_slice)
+    };
+    let owner = |arena: &str, key: &str| -> BTreeMap<&str, &str> {
+        rows(arena)
+            .iter()
+            .filter_map(|row| Some((text(row, "id")?, text(row, key)?)))
+            .collect()
+    };
+    let region_body = owner("regions", "body");
+    let shell_region = owner("shells", "region");
+    let face_shell = owner("faces", "shell");
+    let loop_face = owner("loops", "face");
+    let degenerate_curves: BTreeSet<&str> = rows("curves")
+        .iter()
+        .filter(|curve| {
+            curve.pointer("/geometry/kind").and_then(Value::as_str) == Some("degenerate")
+        })
+        .filter_map(|curve| text(curve, "id"))
+        .collect();
+    // An edge collapsed to one vertex on no carrier, or on a degenerate one,
+    // closes a loop at a singular point and has no second use.
+    let collapsed: BTreeSet<&str> = rows("edges")
         .iter()
         .filter(|edge| {
-            edge.curve().zip(edge.param_range()).is_some_and(|(curve, range)| {
-                off(curve, range[0], &edge.start) || off(curve, range[1], &edge.end)
-            })
+            text(edge, "start") == text(edge, "end")
+                && edge
+                    .pointer("/carrier/curve")
+                    .and_then(Value::as_str)
+                    .is_none_or(|curve| degenerate_curves.contains(curve))
         })
-        .map(|edge| edge.id.as_str().to_owned())
+        .filter_map(|edge| text(edge, "id"))
+        .collect();
+    let mut uses = BTreeMap::<(&str, &str), usize>::new();
+    for coedge in rows("coedges") {
+        let body = text(coedge, "owner_loop")
+            .and_then(|lp| loop_face.get(lp))
+            .and_then(|face| face_shell.get(face))
+            .and_then(|shell| shell_region.get(shell))
+            .and_then(|region| region_body.get(region));
+        if let (Some(body), Some(edge)) = (body, text(coedge, "edge")) {
+            if !collapsed.contains(edge) {
+                *uses.entry((body, edge)).or_default() += 1;
+            }
+        }
+    }
+    let solids: BTreeSet<&str> = rows("bodies")
+        .iter()
+        .filter(|body| text(body, "kind") == Some("solid"))
+        .filter_map(|body| text(body, "id"))
+        .collect();
+    uses.into_iter()
+        .filter(|((body, _), count)| *count == 1 && solids.contains(body))
+        .map(|((body, _), _)| body.to_owned())
         .collect()
 }
 
@@ -345,9 +524,10 @@ fn open_rings(document: &Value) -> BTreeSet<String> {
     let text = |row: &Value, key: &str| row.get(key).and_then(Value::as_str).map(str::to_owned);
     let mut members = BTreeSet::new();
     for lp in rows("loops") {
-        let Some(boundary) = lp.get("boundary").filter(|boundary| {
-            boundary.get("kind").and_then(Value::as_str) == Some("ring")
-        }) else {
+        let Some(boundary) = lp
+            .get("boundary")
+            .filter(|boundary| boundary.get("kind").and_then(Value::as_str) == Some("ring"))
+        else {
             continue;
         };
         let mut balance = BTreeMap::<String, i64>::new();
@@ -385,13 +565,13 @@ fn open_rings(document: &Value) -> BTreeSet<String> {
     members
 }
 
-fn pcurves_off_their_edges(document: &Value) -> BTreeSet<String> {
+fn pcurves_off_their_edges(document: &Value) -> Result<BTreeSet<String>, ResourceLimit> {
     use cadmpeg_ir::eval::admission::EvaluationAdmission;
     use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::index::StandardIndex;
     let Ok(ir) = serde_json::from_value::<cadmpeg_ir::CadIr>(document.clone()) else {
-        return BTreeSet::new();
+        return Ok(BTreeSet::new());
     };
     let index = cadmpeg_ir::index::ModelIndex::build(&ir);
     let tolerance = ir.tolerances.linear_or_default().get();
@@ -401,12 +581,26 @@ fn pcurves_off_their_edges(document: &Value) -> BTreeSet<String> {
         Some(point.position().get())
     };
     let lifted = |surface: &SurfaceGeometry, pcurve: &PcurveGeometry, parameter: f64| {
-        let uv = cadmpeg_ir::eval::decode::pcurve_uv(EvaluationAdmission::Standard, pcurve, parameter)
-            .ok()?
-            .get();
-        cadmpeg_ir::eval::model_surface_point(EvaluationAdmission::Standard, &ir, surface, uv.u, uv.v)
-            .ok()
-            .map(cadmpeg_ir::features::FinitePoint3::get)
+        let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
+            EvaluationAdmission::Standard,
+            pcurve,
+            parameter,
+        ) {
+            Ok(uv) => uv.get(),
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+            Err(_) => return Ok(None),
+        };
+        match cadmpeg_ir::eval::model_surface_point(
+            EvaluationAdmission::Standard,
+            &ir,
+            surface,
+            uv.u,
+            uv.v,
+        ) {
+            Ok(point) => Ok(Some(point.get())),
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => Err(limit),
+            Err(_) => Ok(None),
+        }
     };
     // The nearest point of a line pcurve to a vertex, found in the surface
     // chart where the analytic surface inverts the vertex.
@@ -465,23 +659,28 @@ fn pcurves_off_their_edges(document: &Value) -> BTreeSet<String> {
                 continue;
             };
             let geometry = &pcurve.geometry;
-            let misses = |vertex: cadmpeg_ir::math::Point3| {
+            let misses = |vertex: cadmpeg_ir::math::Point3| -> Result<bool, ResourceLimit> {
                 let feet = match use_.parameter_range {
                     Some(range) => range.endpoints().to_vec(),
                     None => line_foot(solved, geometry, vertex).into_iter().collect(),
                 };
-                !feet.is_empty()
-                    && feet.into_iter().all(|parameter| {
-                        lifted(&surface.geometry, geometry, parameter)
-                            .is_some_and(|point| point.distance(vertex) > tolerance)
-                    })
+                if feet.is_empty() {
+                    return Ok(false);
+                }
+                for parameter in feet {
+                    match lifted(&surface.geometry, geometry, parameter)? {
+                        Some(point) if point.distance(vertex) > tolerance => {}
+                        _ => return Ok(false),
+                    }
+                }
+                Ok(true)
             };
-            if misses(start) || misses(end) {
+            if misses(start)? || misses(end)? {
                 members.insert(use_.pcurve.as_str().to_owned());
             }
         }
     }
-    members
+    Ok(members)
 }
 
 fn pcurves_on_several_surfaces(document: &Value) -> BTreeSet<String> {
@@ -921,6 +1120,27 @@ pub fn crate_scan(scan_json: &str) -> CrateScan {
 mod tests {
     use super::{ambiguity_sample, json_variants, observe_arenas, observe_paths};
     use serde_json::json;
+
+    #[test]
+    fn an_unstated_tolerance_differs_from_the_document_resolution() {
+        let mut document = serde_json::to_value(cadmpeg_ir::CadIr::empty()).expect("document");
+        document["tolerances"]["linear"] = json!(0.001);
+        document["model"]["points"] = json!([
+            {"id": "test:model:point#a", "position": {"x": 0.0, "y": 0.0, "z": 0.0}},
+            {"id": "test:model:point#b", "position": {"x": 1.0, "y": 0.0, "z": 0.0}},
+            {"id": "test:model:point#c", "position": {"x": 2.0, "y": 0.0, "z": 0.0}}
+        ]);
+        document["model"]["vertices"] = json!([
+            {"id": "test:model:vertex#finer", "point": "test:model:point#a", "tolerance": 1.0e-7},
+            {"id": "test:model:vertex#resolution", "point": "test:model:point#b", "tolerance": 0.001},
+            {"id": "test:model:vertex#none", "point": "test:model:point#c"}
+        ]);
+        let members = super::UnheldClass::UnstatedTolerance.members(&document);
+        assert_eq!(
+            members,
+            std::collections::BTreeSet::from(["test:model:vertex#finer".to_owned()])
+        );
+    }
 
     #[test]
     fn observation_attributes_a_tag_to_its_actual_enum() {

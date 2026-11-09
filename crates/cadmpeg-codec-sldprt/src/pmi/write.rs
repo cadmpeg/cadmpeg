@@ -268,26 +268,26 @@ fn records(
         if ir.scope.model && !supplies_history_dimension(ir, source) {
             continue;
         }
-            if source.item_count.get() != 1 {
-                return Err(CodecError::InvalidInput(format!(
-                    "SLDPRT PMI {} contains untyped additional items",
-                    source.id
-                )));
-            }
-            records.insert(
-                source.guid.clone(),
-                Record {
-                    guid: source.guid.clone(),
-                    cad_text: source.cad_text.clone(),
-                    subtype: source.subtype.clone(),
-                    value: source.value.get(),
-                    precision: source.precision,
-                    basic: source.basic,
-                    inspection: source.inspection,
-                    reference_only: source.reference_only,
-                    text: source.display_text().map(str::to_owned),
-                },
-            );
+        if source.item_count.get() != 1 {
+            return Err(CodecError::InvalidInput(format!(
+                "SLDPRT PMI {} contains untyped additional items",
+                source.id
+            )));
+        }
+        records.insert(
+            source.guid.clone(),
+            Record {
+                guid: source.guid.clone(),
+                cad_text: source.cad_text.clone(),
+                subtype: source.subtype.clone(),
+                value: source.value.get(),
+                precision: source.precision,
+                basic: source.basic,
+                inspection: source.inspection,
+                reference_only: source.reference_only,
+                text: source.display_text().map(str::to_owned),
+            },
+        );
     }
     for annotation in &ir.model.pmi {
         let PmiDefinition::Dimension(dimension) = &annotation.definition else {
