@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Current-model identities of persistent surface-body wrappers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::decode::DecodeContext;
@@ -312,6 +312,9 @@ pub(crate) fn definition(
             }
             | FeatureOperation::SplitBody {
                 targets: selected, ..
+            }
+            | FeatureOperation::TrimBodiesAtPlane {
+                targets: selected, ..
             },
         ) => {
             selection(selected, bodies, None);
@@ -328,6 +331,84 @@ pub(crate) fn matches(
 ) -> bool {
     definition(&mut expected, bodies, tools_group);
     &expected == actual
+}
+
+/// Like [`matches`] for a Combine, whose operands that lack a complete
+/// current-body join are persistent input bodies when each wrapper is a result
+/// member of an earlier feature.
+pub(crate) fn combine_matches(
+    mut expected: FeatureDefinition,
+    actual: &FeatureDefinition,
+    bodies: &HashMap<String, BodyId>,
+    tools_group: Option<&str>,
+    earlier: &HashSet<String>,
+) -> bool {
+    definition(&mut expected, bodies, tools_group);
+    combine_local(&mut expected, earlier, tools_group);
+    &expected == actual
+}
+
+/// Wrapper identities that features before `feature` in history order produce.
+/// Only a feature that history placed has a known suppression state. The set is
+/// empty unless `feature` is placed, and a producer counts only when it is
+/// placed and unsuppressed.
+pub(crate) fn produced_before(
+    features: &[cadmpeg_ir::features::Feature],
+    results: &[cadmpeg_ir::features::FeatureResultTopology],
+    feature: &cadmpeg_ir::features::Feature,
+) -> HashSet<String> {
+    if feature.suppressed.is_none() {
+        return HashSet::new();
+    }
+    let producers = features
+        .iter()
+        .filter(|other| other.ordinal < feature.ordinal && other.suppressed == Some(false))
+        .map(|other| &other.id)
+        .collect::<HashSet<_>>();
+    results
+        .iter()
+        .filter(|result| producers.contains(&result.output_of))
+        .flat_map(cadmpeg_ir::features::FeatureResultTopology::bodies)
+        .map(|wrapper| wrapper.as_str().to_owned())
+        .collect()
+}
+
+/// Retain the persistent wrappers of a Combine selection that has no complete
+/// current-body join. Every wrapper must be a result member of an earlier
+/// feature; otherwise the selection stays native.
+fn combine_local(
+    definition: &mut FeatureDefinition,
+    earlier: &HashSet<String>,
+    tools_group: Option<&str>,
+) {
+    let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) = definition
+    else {
+        return;
+    };
+    let local = |selection: &mut BodySelection, group: Option<&str>| {
+        let (wrappers, native) = match selection {
+            BodySelection::Native(wrapper) => (vec![wrapper.clone()], wrapper.clone()),
+            BodySelection::NativeSet(members) => {
+                let Some(group) = group else { return };
+                (
+                    members.iter().map(|id| id.as_str().to_owned()).collect(),
+                    group.to_owned(),
+                )
+            }
+            _ => return,
+        };
+        if wrappers.iter().all(|wrapper| earlier.contains(wrapper)) {
+            if let Ok(local) = BodySelection::local(wrappers, native) {
+                *selection = local;
+            }
+        }
+    };
+    let (mut target, mut tools) = operands.clone().into_parts();
+    local(&mut target, None);
+    local(&mut tools, tools_group);
+    if let Ok(retained) = CombineOperands::new(target, tools) {
+        *operands = retained;
+    }
 }
 
 pub(crate) fn tools_group(
@@ -387,6 +468,7 @@ pub(crate) fn project(
             .iter()
             .map(|source| (source.id(), source)),
     );
+    let features = model.features.clone();
     for feature in &mut model.features {
         let group = matches!(
             feature.evaluation.definition(),
@@ -401,9 +483,11 @@ pub(crate) fn project(
                 .and_then(|source| tools_group(source, &inventory.properties))
         })
         .flatten();
-        feature
-            .evaluation
-            .edit(|value, _| definition(value, bodies, group.as_deref()));
+        let earlier = produced_before(&features, &model.feature_result_topologies, feature);
+        feature.evaluation.edit(|value, _| {
+            definition(value, bodies, group.as_deref());
+            combine_local(value, &earlier, group.as_deref());
+        });
         if let Some(outputs) = outputs(&feature.id, &model.feature_result_topologies, bodies) {
             feature.evaluation.set_outputs(outputs);
         }
@@ -492,6 +576,9 @@ pub(crate) fn native_losses(
                 FeatureDefinition::Operation(
                     FeatureOperation::MoveBody { bodies, .. }
                     | FeatureOperation::SplitBody {
+                        targets: bodies, ..
+                    }
+                    | FeatureOperation::TrimBodiesAtPlane {
                         targets: bodies, ..
                     },
                 ) => native(bodies),
