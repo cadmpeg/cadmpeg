@@ -4291,7 +4291,6 @@
       "occurrences": [
         {
           "id": "fcstd:model:occurrence#Assembly:container",
-          "name": "fcstd:native:object#Assembly",
           "native_ref": "fcstd:native:object#Assembly",
           "ordinal": 0,
           "parent": {
@@ -4395,7 +4394,6 @@
         },
         {
           "id": "fcstd:model:occurrence#BracketPrototype:container",
-          "name": "fcstd:native:object#BracketPrototype",
           "native_ref": "fcstd:native:object#BracketPrototype",
           "ordinal": 1,
           "parent": {
@@ -4532,7 +4530,6 @@
         },
         {
           "id": "fcstd:model:occurrence#OccurrenceGroup:container",
-          "name": "fcstd:native:object#OccurrenceGroup",
           "native_ref": "fcstd:native:object#OccurrenceGroup",
           "ordinal": 2,
           "parent": {
@@ -5060,7 +5057,6 @@
         },
         {
           "id": "fcstd:model:occurrence#PinPrototype:container",
-          "name": "fcstd:native:object#PinPrototype",
           "native_ref": "fcstd:native:object#PinPrototype",
           "ordinal": 2,
           "parent": {
@@ -5093,7 +5089,6 @@
         },
         {
           "id": "fcstd:model:occurrence#PrototypeGroup:container",
-          "name": "fcstd:native:object#PrototypeGroup",
           "native_ref": "fcstd:native:object#PrototypeGroup",
           "ordinal": 3,
           "parent": {
