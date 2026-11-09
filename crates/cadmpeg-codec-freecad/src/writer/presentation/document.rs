@@ -10,6 +10,9 @@ use cadmpeg_ir::presentation::PresentationStateKind;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
+/// The `GuiDocument.xml` schema the writer authors.
+const GUI_SCHEMA: u32 = 1;
+
 /// One GUI state element, or `None` when its tag is no XML element name.
 fn state(tag: &str, attributes: &BTreeMap<String, String>, content: &str) -> Option<String> {
     if tag.is_empty()
@@ -111,15 +114,35 @@ pub(super) fn write(
         .transpose()?
         .unwrap_or_default();
     let mut states = String::new();
-    let mut schema = 1;
     let mut root = BTreeMap::new();
     if let Some(document) = ir.model.presentation_documents.first() {
-        schema = document.schema_version.unwrap_or(1);
+        // The writer authors the schema-1 GUI vocabulary only.
+        if document
+            .schema_version
+            .is_some_and(|version| version != GUI_SCHEMA)
+        {
+            losses.push(FreecadLossCode::PresentationSchemaNormalized.note(format!(
+                "GUI document {} is stored in GUI schema {GUI_SCHEMA}",
+                document.id
+            )));
+        }
         if let Some(active) = &document.active_view {
             root.insert("activeView".to_owned(), active.clone());
         }
         let mut ordered: Vec<_> = document.states().iter().collect();
         ordered.sort_by_key(|state| state.order);
+        if ordered
+            .iter()
+            .enumerate()
+            .any(|(position, state)| usize::try_from(state.order).ok() != Some(position))
+        {
+            losses.push(
+                FreecadLossCode::PresentationStateOrderNormalized.note(format!(
+                    "GUI document {} states are stored at consecutive positions",
+                    document.id
+                )),
+            );
+        }
         for value in ordered {
             let mut attributes: BTreeMap<_, _> = value
                 .attributes
@@ -197,5 +220,5 @@ pub(super) fn write(
         attributes.push_str(&xml::escaped(value));
         attributes.push('"');
     }
-    Ok((schema, attributes, states))
+    Ok((GUI_SCHEMA, attributes, states))
 }

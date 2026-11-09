@@ -842,6 +842,46 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
         } = traversal;
         let _depth = ctx.enter_nested("transfer FCStd topology nesting")?;
         let shape = self.shape(shape_index)?.clone();
+        // A compound of loose vertices is one shell of free vertices.
+        if shape.kind() == TextShapeKind::Compound
+            && shape.children.len() > 1
+            && shape
+                .children
+                .iter()
+                .all(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Vertex)
+        {
+            let key = self.topology_label(shape_index, transform)?;
+            let region_id =
+                RegionId::mint(crate::native::model_id("region", &self.payload.id, &key))
+                    .map_err(CodecError::malformed)?;
+            let shell_id = ShellId::mint(crate::native::model_id("shell", &self.payload.id, &key))
+                .map_err(CodecError::malformed)?;
+            let mut vertices = Vec::new();
+            for child in &shape.children {
+                vertices.push(self.ensure_vertex(ir, child, transform)?);
+            }
+            self.push_shell(
+                ir,
+                Shell::new(
+                    shell_id.clone(),
+                    region_id.clone(),
+                    Vec::new(),
+                    Vec::new(),
+                    vertices,
+                )
+                .map_err(|message| CodecError::Malformed(message.to_string()))?,
+                shape_index,
+                transform,
+            )?;
+            ir.model.regions.push(Region {
+                native_ref: self.source_ref(shape_index, transform)?,
+                id: region_id.clone(),
+                body: body.clone(),
+                shells: vec![shell_id],
+            });
+            output.push(region_id);
+            return Ok(());
+        }
         if matches!(
             shape.kind(),
             TextShapeKind::Compound | TextShapeKind::CompSolid

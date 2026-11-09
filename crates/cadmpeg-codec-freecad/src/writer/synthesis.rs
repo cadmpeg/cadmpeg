@@ -631,7 +631,7 @@ pub(super) fn write(
         {
             super::drawings::parameters(
                 object,
-                &drawing.object,
+                (&drawing.object, drawing.id.as_str()),
                 &drawing.parameters,
                 &native_properties,
                 (&names, &available),
@@ -660,7 +660,7 @@ pub(super) fn write(
         let object = &mut objects[index];
         super::drawings::parameters(
             object,
-            &annotation.object,
+            (&annotation.object, annotation.id.as_str()),
             &annotation.parameters,
             &native_properties,
             (&names, &available),
@@ -731,7 +731,7 @@ pub(super) fn write(
             }
         }
         if annotation.kind == SemanticAnnotationKind::Dimension {
-            super::drawings::dimension_kind(annotation, object);
+            super::drawings::dimension_kind(annotation, object, &mut losses);
             super::drawings::dimension_references(annotation, object, &names, &mut losses);
             if annotation.text_override.is_some()
                 && object
@@ -874,7 +874,7 @@ pub(super) fn write(
             super::drawings::scalar(object, "X", "App::PropertyDistance", x);
             super::drawings::scalar(object, "Y", "App::PropertyDistance", y);
             if z != 0.0 {
-                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                losses.push(FreecadLossCode::AnnotationPositionPlanar.note(format!(
                     "annotation {} has a page position with a nonzero third coordinate",
                     annotation.id
                 )));
@@ -1367,36 +1367,73 @@ pub(super) fn write(
         &mut losses,
         &native_properties,
     );
-    // The object Label is the feature's native home. Where a definition
-    // and a feature share an object and their labels differ, the feature
-    // name wins and the definition label is a documented loss (#238 §5.5).
-    // A label that already matches keeps its native XML with its status.
-    for feature in &ir.model.features {
-        if let Some(label) = &feature.name {
-            if let Some(object) = names
-                .get(feature.id.as_str())
-                .and_then(|name| objects.iter_mut().find(|object| object.name == *name))
-            {
-                if let Some(definition) = ir
-                    .model
-                    .product_definitions
-                    .iter()
-                    .find(|definition| names.get(definition.id.as_str()) == Some(&object.name))
-                    .filter(|definition| definition.label.as_deref() != Some(label.as_str()))
-                {
-                    losses.push(FreecadLossCode::ProductLabelNotTransferred.note(format!(
-                        "definition {} label differs from the feature label sharing object {}",
-                        definition.id, object.name,
-                    )));
-                }
-                let current = object
-                    .properties
-                    .get("Label")
-                    .and_then(|xml| xml::property_string_value(xml));
-                if current.as_deref() != Some(label.as_str()) {
-                    object.set_text("Label", label);
+    // Features, definitions and sketches sharing an object share its one
+    // Label (#238 §5.5). A value that differs from the stored Label is the
+    // current one; otherwise a sketch name, then a feature name wins, so the
+    // records a sketch owns keep their owner. Every other differing value is
+    // a documented loss. A label that already matches keeps its
+    // native XML with its status.
+    for object in &mut objects {
+        let mut candidates: Vec<(&str, &str, &str)> = Vec::new();
+        for sketch in &ir.model.sketches {
+            if let Some(label) = sketch.name.as_deref() {
+                if names.get(sketch.id.as_str()) == Some(&object.name) {
+                    candidates.push(("sketch", sketch.id.as_str(), label));
                 }
             }
+        }
+        for feature in &ir.model.features {
+            if let Some(label) = feature.name.as_deref() {
+                if names.get(feature.id.as_str()) == Some(&object.name) {
+                    candidates.push(("feature", feature.id.as_str(), label));
+                }
+            }
+        }
+        for definition in &ir.model.product_definitions {
+            if let Some(label) = definition.label.as_deref() {
+                if names.get(definition.id.as_str()) == Some(&object.name) {
+                    candidates.push(("definition", definition.id.as_str(), label));
+                }
+            }
+        }
+        if !candidates.iter().any(|(kind, _, _)| *kind == "feature") {
+            continue;
+        }
+        let stored = native_properties
+            .iter()
+            .find(|property| {
+                property.name == "Label" && names.get(&property.owner) == Some(&object.name)
+            })
+            .and_then(crate::attributes::semantic_text);
+        let Some(&(_, _, label)) = candidates
+            .iter()
+            .find(|(_, _, value)| stored.as_deref().is_some_and(|stored| stored != *value))
+            .or_else(|| candidates.first())
+        else {
+            continue;
+        };
+        for (kind, id, value) in &candidates {
+            if *value == label {
+                continue;
+            }
+            losses.push(if *kind == "definition" {
+                FreecadLossCode::ProductLabelNotTransferred.note(format!(
+                    "definition {id} label differs from the label sharing object {}",
+                    object.name,
+                ))
+            } else {
+                FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "{kind} {id} name is replaced by the label sharing object {}",
+                    object.name,
+                ))
+            });
+        }
+        let current = object
+            .properties
+            .get("Label")
+            .and_then(|xml| xml::property_string_value(xml));
+        if current.as_deref() != Some(label) {
+            object.set_text("Label", label);
         }
     }
     for original in &native_objects {
@@ -1937,16 +1974,53 @@ pub(super) fn write(
         }
     }
     for surface in &ir.model.surfaces {
-        if let Some(construction) = surface.geometry.procedural_construction().filter(|_| {
-            super::geometry::located_surface(ir, surface).is_some_and(|(row, _)| {
-                !["6 ", "7 ", "10 ", "11 "]
-                    .iter()
-                    .any(|prefix| row.starts_with(prefix))
-            })
-        }) {
+        let Some(construction) = surface.geometry.procedural_construction() else {
+            continue;
+        };
+        let Some((row, _)) = super::geometry::located_surface(ir, surface) else {
+            continue;
+        };
+        if !["6 ", "7 ", "10 ", "11 "]
+            .iter()
+            .any(|prefix| row.starts_with(prefix))
+        {
             losses.push(FreecadLossCode::ExportProceduralReduced.note(format!(
                 "surface {} is written through its current solved carrier; construction {} is omitted",
                 surface.id, construction
+            )));
+            continue;
+        }
+        // OCCT stores the construction alone: a retained solved carrier and
+        // extrusion fields beyond the sweep direction have no home.
+        if surface.geometry.solved_cache().is_some_and(|cache| {
+            !matches!(
+                cache,
+                cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { .. }
+            )
+        }) {
+            losses.push(FreecadLossCode::ExportProceduralReduced.note(format!(
+                "surface {} is written through construction {construction}; its solved carrier is omitted",
+                surface.id
+            )));
+        }
+        let extended = ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|record| record.id == *construction)
+            .and_then(|record| serde_json::to_value(record.definition()).ok())
+            .is_some_and(|definition| {
+                definition.get("kind").and_then(serde_json::Value::as_str) == Some("extrusion")
+                    && definition.as_object().is_some_and(|fields| {
+                        fields
+                            .keys()
+                            .any(|key| !matches!(key.as_str(), "kind" | "directrix" | "direction"))
+                    })
+            });
+        if extended {
+            losses.push(FreecadLossCode::ExportProceduralReduced.note(format!(
+                "construction {construction} of surface {} is written as its OCCT sweep; its interval, position and cache are omitted",
+                surface.id
             )));
         }
     }
@@ -2042,21 +2116,13 @@ fn set_edge_distances(bytes: &mut [u8], distances: [f64; 2]) {
     }
 }
 
-/// The seven numbers of a written or native `PropertyPlacement`.
-fn placement_values(values: &[(&str, &str)]) -> Option<[f64; 7]> {
-    let mut result = [0.0; 7];
-    for (slot, key) in result
-        .iter_mut()
-        .zip(["Px", "Py", "Pz", "Q0", "Q1", "Q2", "Q3"])
-    {
-        *slot = values
-            .iter()
-            .find(|(name, _)| *name == key)?
-            .1
-            .parse()
-            .ok()?;
+/// A `Bool` value in either spelling `FreeCAD` reads.
+fn boolean(text: &str) -> Option<bool> {
+    match text {
+        "1" | "true" => Some(true),
+        "0" | "false" => Some(false),
+        _ => None,
     }
-    Some(result)
 }
 
 /// Native lanes a regenerated object leaves unchanged replay verbatim,
@@ -2111,7 +2177,10 @@ fn replay_unchanged_placements(
                             .parse::<f64>()
                             .ok()
                             .zip(native_value.parse::<f64>().ok())
-                            .is_some_and(|(left, right)| left == right))
+                            .is_some_and(|(left, right)| left == right)
+                        || (tag == "Bool"
+                            && boolean(&written_value)
+                                .is_some_and(|left| boolean(native_value) == Some(left))))
             }) {
                 if let Some(value) = xml::native_named(native, names, available) {
                     object.set(&native.name, value);
@@ -2163,7 +2232,7 @@ fn replay_unchanged_placements(
                     .map(|attribute| (attribute.name(), attribute.value()))
                     .collect::<Vec<_>>()
             })
-            .and_then(|values| placement_values(&values))
+            .and_then(|values| xml::placement_values(&values))
         else {
             continue;
         };
@@ -2176,7 +2245,7 @@ fn replay_unchanged_placements(
                 .iter()
                 .find(|value| value.tag == "PropertyPlacement")
                 .and_then(|value| {
-                    placement_values(
+                    xml::placement_values(
                         &value
                             .attributes
                             .iter()

@@ -947,7 +947,7 @@ fn effective_appearance_preserves_independent_body_style() {
     assert!(report
         .losses
         .iter()
-        .any(|loss| loss.code.local_code() == "appearance.not-transferred"));
+        .any(|loss| loss.code.local_code() == "appearance.name-not-transferred"));
     cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &ir, output.ir());
 }
 
