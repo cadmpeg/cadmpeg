@@ -284,6 +284,9 @@ pub(crate) enum F3dLossCode {
     HistoricalOutputBlobHistoryInferred,
     /// A `Fillet` edge is the best-ranked deleted one of several geometric candidates.
     HistoricalFilletEdgeAmbiguous,
+    /// A `Fillet` edge is the one of several shared support edges along the
+    /// blend axis whose span covers the blend's axial extent.
+    HistoricalFilletEdgeCovering,
     /// Historical body bounding geometry could not be computed from point carriers.
     HistoricalBodyBoundsUnresolved,
     /// Historical body center geometry uses incomplete topology or vertex evidence.
@@ -731,6 +734,7 @@ impl F3dLossCode {
         Self::HistoricalEdgeHistoryInferred,
         Self::HistoricalOutputBlobHistoryInferred,
         Self::HistoricalFilletEdgeAmbiguous,
+        Self::HistoricalFilletEdgeCovering,
         Self::HistoricalBodyBoundsUnresolved,
         Self::HistoricalBodyCenterPartial,
         Self::HistoricalSplitPlaneInferred,
@@ -1028,6 +1032,7 @@ impl F3dLossCode {
             Self::HistoricalEdgeHistoryInferred => "history.edge-history-inferred",
             Self::HistoricalOutputBlobHistoryInferred => "history.output-blob-history-inferred",
             Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
+            Self::HistoricalFilletEdgeCovering => "history.fillet-edge-covering",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
             Self::HistoricalBodyCenterPartial => "history.body-center-partial",
             Self::HistoricalSplitPlaneInferred => "history.split-plane-inferred",
@@ -1371,6 +1376,7 @@ impl F3dLossCode {
             | Self::HistoricalOutputBlobHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
+            | Self::HistoricalFilletEdgeCovering
             | Self::HistoricalBodyBoundsUnresolved
             | Self::HistoricalBodyCenterPartial
             | Self::HistoricalSplitPlaneInferred
@@ -1610,6 +1616,7 @@ impl F3dLossCode {
             | Self::HistoricalOutputBlobHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
+            | Self::HistoricalFilletEdgeCovering
             | Self::HistoricalBodyBoundsUnresolved
             | Self::HistoricalBodyCenterPartial
             | Self::HistoricalSplitPlaneInferred
@@ -1944,6 +1951,7 @@ mod tests {
                 "history.edge-history-inferred",
                 "history.output-blob-history-inferred",
                 "history.fillet-edge-ambiguous",
+                "history.fillet-edge-covering",
                 "history.body-bounds-unresolved",
                 "history.body-center-partial",
                 "history.split-plane-inferred",
