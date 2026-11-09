@@ -12,8 +12,6 @@ mod values;
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::CodecError;
-
 use crate::text::grammar::DOCUMENTATION_KEY;
 use crate::text::syntax::{
     AttributeField, AttributeSpec, AttributeValue, Dictionary, DictionaryValue, Layer, ListOp,
@@ -43,8 +41,18 @@ const RELATIONSHIP: u32 = 8;
 const VARIANT: u32 = 10;
 const VARIANT_SET: u32 = 11;
 
-pub(super) fn unsupported(what: &str) -> CodecError {
-    CodecError::NotImplemented(format!("{what} has no USDC 0.8.0 form in this writer"))
+/// What the USDC writer cannot state of a layer.
+#[derive(Debug)]
+pub(crate) struct Unstatable(String);
+
+impl std::fmt::Display for Unstatable {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+pub(super) fn unsupported(what: &str) -> Unstatable {
+    Unstatable(format!("{what} has no USDC 0.8.0 form in this writer"))
 }
 
 /// One node of the path tree.
@@ -79,14 +87,14 @@ type PathItems = (Vec<u32>, Vec<i32>, Vec<i32>);
 /// The fields of one spec, by name.
 type Fields = Vec<(String, u64)>;
 
-fn index(value: usize) -> Result<u32, CodecError> {
+fn index(value: usize) -> Result<u32, Unstatable> {
     u32::try_from(value).map_err(|_| unsupported("a table above 2^32 entries"))
 }
 
 /// The elements of an absolute path, each with whether it names a
 /// property; a variant selection `{set=variant}` is its own element.
-fn elements(path: &str) -> Result<Vec<(String, bool)>, CodecError> {
-    let malformed = || CodecError::malformed(format_args!("the path <{path}> is not absolute"));
+fn elements(path: &str) -> Result<Vec<(String, bool)>, Unstatable> {
+    let malformed = || Unstatable(format!("the path <{path}> is not absolute"));
     let body = path.strip_prefix('/').ok_or_else(malformed)?;
     let (prims, property) = match body.find('.') {
         Some(at) => (&body[..at], Some(&body[at + 1..])),
@@ -222,7 +230,7 @@ impl Crate {
     }
 
     /// The index of absolute path `path`, adding it and its ancestors.
-    pub(super) fn path(&mut self, path: &str) -> Result<u32, CodecError> {
+    pub(super) fn path(&mut self, path: &str) -> Result<u32, Unstatable> {
         if let Some(index) = self.path_index.get(path) {
             return Ok(*index);
         }
@@ -250,7 +258,7 @@ impl Crate {
         index_value(parent)
     }
 
-    fn field_set(&mut self, fields: Fields) -> Result<u32, CodecError> {
+    fn field_set(&mut self, fields: Fields) -> Result<u32, Unstatable> {
         let mut run = Vec::new();
         for (name, value) in fields {
             let name = self.token(&name);
@@ -275,7 +283,7 @@ impl Crate {
         Ok(set)
     }
 
-    fn spec(&mut self, path: &str, fields: Fields, kind: u32) -> Result<(), CodecError> {
+    fn spec(&mut self, path: &str, fields: Fields, kind: u32) -> Result<(), Unstatable> {
         let path = self.path(path)?;
         let set = self.field_set(fields)?;
         self.specs.push((path, set, kind));
@@ -284,7 +292,7 @@ impl Crate {
 
     /// The fields of the metadata `items`, list operations of one key
     /// joined into one field.
-    fn metadata(&mut self, items: &[MetaItem], anchor: &str) -> Result<Fields, CodecError> {
+    fn metadata(&mut self, items: &[MetaItem], anchor: &str) -> Result<Fields, Unstatable> {
         let mut keys: Vec<&str> = Vec::new();
         for item in items {
             if !keys.contains(&item.key.as_str()) {
@@ -304,7 +312,7 @@ impl Crate {
         key: &str,
         group: &[&MetaItem],
         anchor: &str,
-    ) -> Result<Fields, CodecError> {
+    ) -> Result<Fields, Unstatable> {
         let last = &group[group.len() - 1].value;
         let field = |name: &str, value: u64| Ok(vec![(name.to_owned(), value)]);
         match (key, last) {
@@ -455,7 +463,7 @@ impl Crate {
     }
 
     /// A metadata value, typed as the field schema types `key`.
-    fn metadata_value(&mut self, key: &str, value: &Value) -> Result<u64, CodecError> {
+    fn metadata_value(&mut self, key: &str, value: &Value) -> Result<u64, Unstatable> {
         let declared = match key {
             "kind" | "upAxis" | "defaultPrim" | "interpolation" | "colorSpace" | "renderType" => {
                 "token"
@@ -483,7 +491,7 @@ impl Crate {
         self.typed_value(value, declared, false)
     }
 
-    fn layer(&mut self, layer: &Layer) -> Result<(), CodecError> {
+    fn layer(&mut self, layer: &Layer) -> Result<(), Unstatable> {
         let mut fields = self.metadata(&layer.metadata, "/")?;
         let names: Vec<String> = layer.prims.iter().map(|prim| prim.name.clone()).collect();
         if !names.is_empty() {
@@ -498,7 +506,7 @@ impl Crate {
         self.spec("/", fields, PSEUDO_ROOT)
     }
 
-    fn prim(&mut self, prim: &PrimSpec, parent: &str) -> Result<(), CodecError> {
+    fn prim(&mut self, prim: &PrimSpec, parent: &str) -> Result<(), Unstatable> {
         let path = child_path(parent, &prim.name, false);
         let specifier = match prim.specifier {
             Specifier::Def => 0,
@@ -523,7 +531,7 @@ impl Crate {
 
     /// Writes the children, properties, and variant sets of the prim or
     /// variant at `path`, and returns the fields that order them.
-    fn body(&mut self, body: &PrimBody, path: &str) -> Result<Fields, CodecError> {
+    fn body(&mut self, body: &PrimBody, path: &str) -> Result<Fields, Unstatable> {
         let mut fields = Vec::new();
         let children: Vec<String> = body
             .children
@@ -590,7 +598,7 @@ impl Crate {
         Ok(fields)
     }
 
-    fn property(&mut self, statements: &[&PropertySpec], prim: &str) -> Result<(), CodecError> {
+    fn property(&mut self, statements: &[&PropertySpec], prim: &str) -> Result<(), Unstatable> {
         match statements.first() {
             Some(PropertySpec::Attribute(first)) => {
                 let attributes: Vec<&AttributeSpec> = statements
@@ -620,7 +628,7 @@ impl Crate {
         &mut self,
         value: &AttributeValue,
         first: &AttributeSpec,
-    ) -> Result<u64, CodecError> {
+    ) -> Result<u64, Unstatable> {
         match value {
             AttributeValue::Value(value) => self.typed_value(value, &first.type_name, first.array),
             AttributeValue::None => Ok(rep(ty::VALUE_BLOCK, 0, false, false)),
@@ -634,7 +642,7 @@ impl Crate {
         first: &AttributeSpec,
         statements: &[&AttributeSpec],
         prim: &str,
-    ) -> Result<(), CodecError> {
+    ) -> Result<(), Unstatable> {
         let path = format!("{prim}.{}", first.name);
         let declared = if first.array {
             format!("{}[]", first.type_name)
@@ -702,7 +710,7 @@ impl Crate {
         first: &RelationshipSpec,
         statements: &[&RelationshipSpec],
         prim: &str,
-    ) -> Result<(), CodecError> {
+    ) -> Result<(), Unstatable> {
         let path = format!("{prim}.{}", first.name);
         let mut fields = Vec::new();
         if first.custom {
@@ -750,7 +758,7 @@ impl Crate {
 
     /// The path table items in depth-first order, with their jumps (spec
     /// §9.5).
-    fn path_items(&self) -> Result<PathItems, CodecError> {
+    fn path_items(&self) -> Result<PathItems, Unstatable> {
         let mut order = Vec::new();
         let mut stack = vec![0_usize];
         while let Some(node) = stack.pop() {
@@ -791,7 +799,7 @@ impl Crate {
 
     /// The structural sections and the table of contents, after the value
     /// bytes.
-    fn finish(mut self) -> Result<Vec<u8>, CodecError> {
+    fn finish(mut self) -> Result<Vec<u8>, Unstatable> {
         if self.overflowed {
             return Err(unsupported("a token table above 2^32 entries"));
         }
@@ -872,7 +880,7 @@ impl Crate {
     }
 }
 
-fn index_value(value: usize) -> Result<u32, CodecError> {
+fn index_value(value: usize) -> Result<u32, Unstatable> {
     index(value)
 }
 
@@ -904,7 +912,7 @@ fn borrow<'a>(
 }
 
 /// `layer` as a USDC 0.8.0 layer.
-pub(crate) fn write(layer: &Layer) -> Result<Vec<u8>, CodecError> {
+pub(crate) fn write(layer: &Layer) -> Result<Vec<u8>, Unstatable> {
     let mut out = Crate::new();
     out.layer(layer)?;
     out.finish()
