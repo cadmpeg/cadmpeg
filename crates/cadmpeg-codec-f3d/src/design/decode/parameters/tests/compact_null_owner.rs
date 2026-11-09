@@ -89,3 +89,10 @@ fn compact_null_owner_parameter_requires_its_zero_run_trailer_and_tail() {
     frame.push(0);
     assert!(parse_design_parameter_record(&frame).is_none());
 }
+
+#[test]
+fn compact_null_owner_form_requires_class_372() {
+    let mut frame = compact_null_owner_parameter_record("6.35 mm", [0, 0, 0, 1, 0]);
+    frame[4..7].copy_from_slice(b"373");
+    assert!(parse_design_parameter_record(&frame).is_none());
+}

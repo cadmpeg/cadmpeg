@@ -769,14 +769,15 @@ fn parse_legacy_287_design_parameter(
     parsed.transpose()
 }
 
-/// Read a frame of any class tag in the compact prefix with the null owner.
+/// Read a class-372 frame in the compact prefix with the null owner.
 fn parse_compact_null_owner_design_parameter(
     payload: &[u8],
     class_tag: crate::records::references::DesignClassTag,
     record_index: u32,
 ) -> Result<Option<ParsedDesignParameter>, CodecError> {
     let parsed = (|| {
-        if payload.get(null_owner::ZERO_RUN_15..null_owner::SOURCE_ORDINAL) != Some(&[0; 15])
+        if class_tag.as_str() != COMPACT_NULL_OWNER_CLASS_TAG
+            || payload.get(null_owner::ZERO_RUN_15..null_owner::SOURCE_ORDINAL) != Some(&[0; 15])
             || payload.get(null_owner::OWNER_MARKER) != Some(&null_owner::OWNER_MARKER_VALUE)
         {
             return None;
@@ -863,6 +864,9 @@ fn compact_trailer_parameter(
 }
 
 const CLASS_287_EXPRESSION_TRAILER_LEN: usize = 5;
+
+/// Class tag of the compact null-owner parameter form.
+const COMPACT_NULL_OWNER_CLASS_TAG: &str = "372";
 
 /// Design type of a parameter collection, which every parameter tail names.
 const PARAMETER_TAIL_TYPE_GUID: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";

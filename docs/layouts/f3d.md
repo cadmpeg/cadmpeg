@@ -208,7 +208,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 35 B
 
-Offsets are relative to the parameter header through the expression length. The variable expression is followed by the class-287 expression trailer and remainder.
+Offsets are relative to the class-372 parameter header through the expression length. The variable expression is followed by the class-287 expression trailer and remainder.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`

@@ -557,7 +557,7 @@ kind = "byte"
 section = "3.1"
 anchor = "compact null-owner form"
 size = 35
-note = "Offsets are relative to the parameter header through the expression length. The variable expression is followed by the class-287 expression trailer and remainder."
+note = "Offsets are relative to the class-372 parameter header through the expression length. The variable expression is followed by the class-287 expression trailer and remainder."
 
 [[record.field]]
 name = "indexed_header"

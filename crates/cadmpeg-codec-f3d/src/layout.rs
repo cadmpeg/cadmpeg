@@ -245,7 +245,7 @@ pub(crate) mod design_parameter_legacy_287_prefix {
 /// Spec §3.1. Record length 35 B.
 ///
 /// ```text
-/// Offsets are relative to the parameter header through the expression length. The variable expression is followed by the class-287 expression trailer and remainder.
+/// Offsets are relative to the class-372 parameter header through the expression length. The variable expression is followed by the class-287 expression trailer and remainder.
 /// ```
 pub(crate) mod design_parameter_compact_null_owner_prefix {
     /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
