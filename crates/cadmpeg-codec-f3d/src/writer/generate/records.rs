@@ -463,9 +463,16 @@ pub(super) fn encode_design_bulkstream(
             point.companion(),
         )?;
     }
+    let construction: std::collections::BTreeSet<&str> = target
+        .model
+        .sketch_entities
+        .iter()
+        .filter(|entity| entity.construction)
+        .filter_map(|entity| entity.native_ref.as_deref())
+        .collect();
     for curve in &native.sketch_curve_identities {
         primary_records.push(primary_record(output_ctx, curve.record_index, out.len())?);
-        encode_sketch_curve_identity(&mut out, curve)?;
+        encode_sketch_curve_identity(&mut out, curve, construction.contains(curve.id.as_str()))?;
     }
     for text in &native.sketch_texts {
         primary_records.push(primary_record(output_ctx, text.record_index, out.len())?);
@@ -881,9 +888,13 @@ fn encode_sketch_point_companion(
     Ok(())
 }
 
+/// Re-emit one sketch curve. An analytic curve whose neutral entity is
+/// construction geometry carries the construction tail after its owner
+/// reference.
 fn encode_sketch_curve_identity(
     out: &mut Vec<u8>,
     curve: &crate::records::sketch_geometry::SketchCurveIdentity,
+    construction: bool,
 ) -> Result<(), CodecError> {
     let owner_reference = curve.owner_reference.ok_or_else(|| {
         CodecError::malformed(format_args!(
@@ -984,6 +995,17 @@ fn encode_sketch_curve_identity(
         }
     }
     write_reference(&mut record, owner_reference);
+    if construction
+        && matches!(
+            curve.geometry,
+            Some(SketchCurveGeometry::Line { .. } | SketchCurveGeometry::Arc { .. })
+        )
+    {
+        record.extend_from_slice(&[0; 9]);
+        record.extend_from_slice(&1u32.to_le_bytes());
+        record.push(1);
+        write_reference(&mut record, owner_reference);
+    }
     out.extend_from_slice(&record);
     Ok(())
 }

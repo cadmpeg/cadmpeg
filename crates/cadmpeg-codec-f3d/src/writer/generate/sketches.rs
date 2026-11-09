@@ -37,6 +37,48 @@ pub(super) struct SketchStream {
     pub(super) text_entities: Vec<SketchEntityId>,
     pub(super) nurbs_entities: Vec<SketchEntityId>,
     pub(super) constraints: Vec<SketchConstraintId>,
+    /// Point relations whose native kind, operand fields or repeated record
+    /// indices are written as their stored mask and members derive them.
+    pub(super) normalized_constraints: Vec<SketchConstraintId>,
+}
+
+/// Constraint kinds a relation state bit selects, in bit order (spec §3.1
+/// sketch relations).
+const POINT_RELATION_KINDS: [(u64, &str); 14] = [
+    (0x1, "coincident"),
+    (0x2, "collinear"),
+    (0x4, "concentric"),
+    (0x8, "equal_length"),
+    (0x10, "parallel"),
+    (0x20, "perpendicular"),
+    (0x40, "horizontal"),
+    (0x80, "vertical"),
+    (0x100, "tangent"),
+    (0x200, "curvature"),
+    (0x400, "symmetry"),
+    (0x800, "equal"),
+    (0x1000, "midpoint"),
+    (0x2000, "polygon"),
+];
+
+/// The native kind a reader projects from a four-point relation state: the
+/// `+`-joined kinds of its bits. The state carries the parallel or
+/// concentric bit and no bit outside the point-relation kinds.
+fn point_relation_kind(mask: u64) -> Option<String> {
+    let known = POINT_RELATION_KINDS
+        .iter()
+        .fold(0, |known, (bit, _)| known | bit);
+    if mask & !known != 0 || mask & (0x10 | 0x4) == 0 {
+        return None;
+    }
+    Some(
+        POINT_RELATION_KINDS
+            .iter()
+            .filter(|(bit, _)| mask & bit != 0)
+            .map(|(_, name)| *name)
+            .collect::<Vec<_>>()
+            .join("+"),
+    )
 }
 
 pub(super) fn encode(
@@ -61,6 +103,7 @@ pub(super) fn encode(
     let mut constraints = Vec::new();
     let mut sketches = Vec::new();
     let mut renamed_sketches = Vec::new();
+    let mut normalized_constraints = Vec::new();
     let mut entities = Vec::new();
     let mut feature_scopes = Vec::new();
     let mut feature_containers = std::collections::BTreeMap::new();
@@ -104,7 +147,23 @@ pub(super) fn encode(
             .and_then(|name| crate::records::identity::DesignEntityId::try_from(name.clone()).ok())
             .and_then(|id| u32::try_from(id.suffix()).ok())
             .filter(|id| *id != 0 && !containers_used.contains(id));
-        let Some(container) = original_container.or_else(|| allocate(&mut occupied, &mut next))
+        // A legacy container stores its Design entity ID as the sketch name.
+        // A name that is not an entity ID keeps the container its F3D sketch
+        // identity names, and the container's generated entity ID is stored.
+        let identity_container = original_container
+            .is_none()
+            .then(|| {
+                sketch
+                    .id
+                    .as_str()
+                    .rsplit_once('@')
+                    .and_then(|(_, suffix)| suffix.parse::<u32>().ok())
+            })
+            .flatten()
+            .filter(|id| *id != 0 && !containers_used.contains(id) && occupied.insert(*id));
+        let Some(container) = original_container
+            .or(identity_container)
+            .or_else(|| allocate(&mut occupied, &mut next))
         else {
             break;
         };
@@ -172,16 +231,15 @@ pub(super) fn encode(
                 operands,
             } = relation.definition.kind()
             {
-                if !matches!(
-                    (native_kind.as_str(), *mask),
-                    ("parallel", 0x10) | ("concentric", 0x4)
-                ) || !native_properties.is_empty()
-                    || entities.len() != 4
-                    || operands.len() != 4
-                {
+                let Some(kind_name) = point_relation_kind(*mask) else {
+                    continue;
+                };
+                if !native_properties.is_empty() || entities.len() != 4 || operands.len() != 4 {
                     continue;
                 }
+                let mut normalized = native_kind.as_str() != kind_name;
                 let mut requested = reserved_members.clone();
+                let mut chosen = std::collections::BTreeMap::<usize, u32>::new();
                 let mut indices = Vec::new();
                 let mut valid = true;
                 for (ordinal, (entity, operand)) in entities.iter().zip(operands).enumerate() {
@@ -190,35 +248,51 @@ pub(super) fn encode(
                         valid = false;
                         break;
                     };
-                    let Some(index) = operand.object_index.filter(|index| *index != 0) else {
-                        valid = false;
-                        break;
-                    };
-                    let field = if ordinal < 2 { "member" } else { "return" };
                     if !matches!(
                         members[member].geometry.definition(),
                         SketchGeometryDefinition::Point { .. }
-                    ) || operand.native_kind.as_str() != "point"
-                        || operand.native_ref.is_some()
-                        || !operand.field.as_ref().is_some_and(|value| {
-                            value.name.as_str() == field && value.role.is_none()
-                        })
-                        || requested
-                            .get(&member)
-                            .is_some_and(|existing| *existing != index)
-                        || requested
-                            .iter()
-                            .any(|(other, existing)| *other != member && *existing == index)
-                        || (occupied.contains(&index) && requested.get(&member) != Some(&index))
+                    ) || operand.native_ref.is_some()
                     {
                         valid = false;
                         break;
                     }
+                    let field = if ordinal < 2 { "member" } else { "return" };
+                    normalized |= operand.native_kind.as_str() != "point"
+                        || !operand.field.as_ref().is_some_and(|value| {
+                            value.name.as_str() == field && value.role.is_none()
+                        });
+                    // A member's first operand states its record index; a
+                    // later operand of the same member names that record.
+                    let index = if let Some(index) = chosen.get(&member) {
+                        normalized |= operand.object_index != Some(*index);
+                        *index
+                    } else {
+                        let Some(index) = operand.object_index.filter(|index| *index != 0) else {
+                            valid = false;
+                            break;
+                        };
+                        if requested
+                            .get(&member)
+                            .is_some_and(|existing| *existing != index)
+                            || requested
+                                .iter()
+                                .any(|(other, existing)| *other != member && *existing == index)
+                            || (occupied.contains(&index) && requested.get(&member) != Some(&index))
+                        {
+                            valid = false;
+                            break;
+                        }
+                        chosen.insert(member, index);
+                        index
+                    };
                     requested.insert(member, index);
                     indices.push(member);
                 }
                 if !valid {
                     continue;
+                }
+                if normalized {
+                    normalized_constraints.push(relation.id.clone());
                 }
                 for index in requested.values() {
                     occupied.insert(*index);
@@ -750,6 +824,7 @@ pub(super) fn encode(
         point_indices,
         sketches,
         renamed_sketches,
+        normalized_constraints,
         entities,
         text_entities,
         nurbs_entities,

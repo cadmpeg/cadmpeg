@@ -32,6 +32,7 @@ fn sampled_paths(mut paths: Vec<PathBuf>) -> Vec<PathBuf> {
 
 mod conformance;
 mod f3d_harness;
+mod f3d_storage;
 mod freecad_storage;
 mod golden_data;
 mod iges_harness;

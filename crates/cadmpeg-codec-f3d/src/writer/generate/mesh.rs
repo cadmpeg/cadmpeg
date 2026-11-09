@@ -139,6 +139,36 @@ pub(in crate::writer) fn authored_tessellations(
         .collect()
 }
 
+/// Native records of the mesh imports [`select`] does not author: the scope
+/// and mesh-feature graph of each, which no generated stream carries.
+pub(in crate::writer) fn unwritten_native_records(
+    target: &CadIr,
+    native: &F3dNative,
+) -> std::collections::BTreeSet<String> {
+    let authored = authored_tessellations(target, native);
+    let mut dropped = std::collections::BTreeSet::new();
+    for feature in &target.model.features {
+        let FeatureDefinition::Operation(FeatureOperation::MeshImport { tessellations }) =
+            feature.evaluation.definition()
+        else {
+            continue;
+        };
+        if tessellations.iter().all(|id| authored.contains(id)) {
+            continue;
+        }
+        dropped.extend(feature.native_ref.clone());
+        dropped.extend(
+            target
+                .model
+                .tessellations
+                .iter()
+                .filter(|tessellation| tessellations.contains(&tessellation.id))
+                .filter_map(|tessellation| tessellation.native_ref.clone()),
+        );
+    }
+    dropped
+}
+
 /// Whether a container can store the mesh: its corners reach the first and
 /// last vertex, so the implicit first corner is determined (spec §1.1.2).
 fn storable(tessellation: &Tessellation) -> bool {

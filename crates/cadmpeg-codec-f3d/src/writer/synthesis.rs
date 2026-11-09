@@ -15,6 +15,7 @@ mod design;
 mod geometry;
 mod materials;
 mod native;
+mod normalize;
 mod prepare;
 mod streams;
 mod topology;
@@ -36,6 +37,12 @@ pub(super) fn write(
     topology::repair_body_regions(&mut prepared, &mut losses, limits)?;
     topology::omit_ambiguous_points(&mut prepared, &mut losses)?;
     topology::omit_unresolved_coedge_faces(&mut prepared, &mut losses, limits)?;
+    normalize::feature_suppression(&mut prepared, &mut losses);
+    normalize::occurrence_placements(&mut prepared, &mut losses);
+    normalize::feature_parameter_driving(&mut prepared, &mut losses);
+    normalize::sketch_placements(&mut prepared, &mut losses);
+    normalize::asset_media_types(&mut prepared, &mut losses);
+    normalize::mesh_import_vertices(&mut prepared, &mut losses);
     let original = super::primitives::f3d_native(&prepared)?.unwrap_or_default();
     prepare::auxiliary(&mut prepared, &original, &mut losses, limits)?;
     appearance::prepare(&mut prepared, &original, &mut losses);
@@ -43,11 +50,13 @@ pub(super) fn write(
     let mut bytes = Vec::new();
     let mut regenerated_parameters = std::collections::BTreeSet::new();
     let mut written_recipes = std::collections::BTreeSet::new();
+    let mut dropped_records = std::collections::BTreeSet::new();
     let coverage = match super::generate::write_with_limits(&prepared, &mut bytes, limits) {
         Ok(generated) => {
             losses.extend(generated.losses);
             regenerated_parameters = generated.regenerated_parameters;
             written_recipes = generated.written_recipes;
+            dropped_records = generated.dropped_records;
             generated.coverage
         }
         Err(error) if declines(&error) => {
@@ -60,6 +69,7 @@ pub(super) fn write(
                     losses.extend(generated.losses);
                     regenerated_parameters = generated.regenerated_parameters;
                     written_recipes = generated.written_recipes;
+                    dropped_records = generated.dropped_records;
                     generated.coverage
                 }
                 Err(error) if declines(&error) => {
@@ -71,6 +81,7 @@ pub(super) fn write(
                             losses.extend(generated.losses);
                             regenerated_parameters = generated.regenerated_parameters;
                             written_recipes = generated.written_recipes;
+                            dropped_records = generated.dropped_records;
                             generated.coverage
                         }
                         Err(error) if declines(&error) => {
@@ -86,6 +97,7 @@ pub(super) fn write(
                                     losses.extend(generated.losses);
                                     regenerated_parameters = generated.regenerated_parameters;
                                     written_recipes = generated.written_recipes;
+                                    dropped_records = generated.dropped_records;
                                     generated.coverage
                                 }
                                 Err(error) if declines(&error) => {
@@ -102,6 +114,7 @@ pub(super) fn write(
                                             regenerated_parameters =
                                                 generated.regenerated_parameters;
                                             written_recipes = generated.written_recipes;
+                                            dropped_records = generated.dropped_records;
                                             generated.coverage
                                         }
                                         // Terminal §5.0 reduction: even the empty
@@ -142,7 +155,7 @@ pub(super) fn write(
             && crate::brep::creation_timestamp_value(attribute).is_some()
             && matches!(attribute.values.first(), Some(Some(cadmpeg_ir::attributes::AttributeValue::Reference(reference))) if !reference.ends_with(":entity#-1"))
         {
-            losses.push(F3dLossCode::WriterAuxiliaryOmitted.note(format!(
+            losses.push(F3dLossCode::WriterValueNormalized.note(format!(
                 "attribute {}: timestamp successor reference is not representable; wrote the terminal reference",
                 attribute.id
             )));
@@ -178,6 +191,7 @@ pub(super) fn write(
         &invalidated_timestamps,
         &regenerated_parameters,
         &written_recipes,
+        &dropped_records,
     );
     let coverage = prepare::dispositions(target, &prepared, coverage, &attributes, &mut losses);
     if prepared.model.bodies.is_empty() {
