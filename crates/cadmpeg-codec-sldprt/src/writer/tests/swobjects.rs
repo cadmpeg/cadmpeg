@@ -1184,7 +1184,8 @@ fn retained_unit_name_reports_its_byte_capacity() {
         b"moLengthUserUnits_c\xff\xfe\xff\x02I\x00".to_vec(),
     )
     .unwrap_err()
-    .into();
+    .try_into()
+    .expect("an encode failure");
     assert!(
         matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
         field, limit: 255, value: 256

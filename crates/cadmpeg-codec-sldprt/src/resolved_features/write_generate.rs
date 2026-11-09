@@ -996,7 +996,8 @@ mod writer_rule_tests {
     fn generated_feature_name_reports_capacity() {
         let error =
             append_generated_object_name(&mut Vec::new(), &"😀".repeat(32_768), 1).unwrap_err();
-        let error = cadmpeg_ir::codec::write::EncodeError::from(error);
+        let error =
+            cadmpeg_ir::codec::write::EncodeError::try_from(error).expect("an encode failure");
         assert!(matches!(error,
             cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 65_535, value: 65_536 }
                 if field.field == "feature_input.name_length"
@@ -1014,7 +1015,8 @@ mod writer_rule_tests {
             &[],
         )
         .unwrap_err();
-        let error = cadmpeg_ir::codec::write::EncodeError::from(error);
+        let error =
+            cadmpeg_ir::codec::write::EncodeError::try_from(error).expect("an encode failure");
         assert!(matches!(error,
             cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 65_535, value: 65_536 }
                 if field.field == "feature_input.name_length"
@@ -1026,7 +1028,8 @@ mod writer_rule_tests {
         let error =
             append_generated_scalar(&mut Vec::new(), &"A".repeat(65_536), "D1", 1.0, 2, &[])
                 .unwrap_err();
-        let error = cadmpeg_ir::codec::write::EncodeError::from(error);
+        let error =
+            cadmpeg_ir::codec::write::EncodeError::try_from(error).expect("an encode failure");
         assert!(matches!(error,
             cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 65_535, value: 65_536 }
                 if field.field == "feature_input.class_name_length"
@@ -1067,7 +1070,8 @@ mod writer_rule_tests {
         let error: cadmpeg_ir::codec::write::EncodeError =
             super::local_marker_id(u64::from(u16::MAX) + 1)
                 .unwrap_err()
-                .into();
+                .try_into()
+                .expect("an encode failure");
         assert!(
             matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
             field, limit: 65535, value: 65536

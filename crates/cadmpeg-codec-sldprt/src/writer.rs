@@ -337,7 +337,7 @@ pub(super) fn write_semantic_at(
     }
     check_semantic_support(ir)?;
     // The IR stores canonical millimetres; Parasolid stores metres.
-    let length_scale = 0.001;
+    let length_scale = TESSELLATION_LENGTH_SCALE;
     let patched_partition = if let (None, Some((ctx, _)), Some(scan)) =
         (&retained_partition, &source_context, &source_scan)
     {
@@ -3887,6 +3887,9 @@ fn strip_rows<V: Clone>(
     Ok(cadmpeg_ir::tessellation::Strips::new(strips))
 }
 
+/// Metres per document length unit in display-list positions.
+pub(super) const TESSELLATION_LENGTH_SCALE: f64 = 0.001;
+
 fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
     debug_assert!(
         REDUCED_FIELDS[0].storage == cadmpeg_ir::codec::write::ReducedStorage::F32
@@ -5919,8 +5922,10 @@ mod nurbs_write_tests {
     fn generated_node_identity_uses_the_full_pointer_range() {
         let mut next = 0x7fff_ffff;
         assert_eq!(super::take_attr(&mut next).unwrap(), 0x7fff_ffff);
-        let error: cadmpeg_ir::codec::write::EncodeError =
-            super::take_attr(&mut next).unwrap_err().into();
+        let error: cadmpeg_ir::codec::write::EncodeError = super::take_attr(&mut next)
+            .unwrap_err()
+            .try_into()
+            .expect("an encode failure");
         assert!(matches!(error,
             cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
                 field, limit: 0x7fff_ffff, value: 0x8000_0000,
@@ -5944,7 +5949,8 @@ mod nurbs_write_tests {
         let error: cadmpeg_ir::codec::write::EncodeError =
             typed_ref(&mut Vec::new(), 0x8000_0000_u32)
                 .unwrap_err()
-                .into();
+                .try_into()
+                .expect("an encode failure");
         assert!(matches!(error,
             cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
                 field, limit: 0x7fff_ffff, value: 0x8000_0000,
@@ -5957,7 +5963,8 @@ mod nurbs_write_tests {
         let multiplicity_error: cadmpeg_ir::codec::write::EncodeError =
             unique_knots(&vec![0.0; usize::from(u16::MAX) + 1])
                 .expect_err("expected error")
-                .into();
+                .try_into()
+                .expect("an encode failure");
 
         assert!(matches!(
             multiplicity_error,

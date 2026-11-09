@@ -302,7 +302,7 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
 }
 
 #[test]
-fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
+fn semantic_writer_omits_conflicting_shared_sketch_point_edits() {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
@@ -346,28 +346,8 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
         }),
         "{validation:#?}"
     );
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::test_support::plan_inherited_write(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("expected rejection"),
-    };
-    assert!(
-        message.contains("solved loci disagree with their coincidence constraint"),
-        "{message}"
-    );
+    let record = coincidence_id.to_string();
+    crate::test_support::assert_written_naming(decoded.ir(), decoded.source_fidelity(), &record);
 }
 
 #[test]
@@ -884,7 +864,7 @@ fn semantic_writer_preserves_display_list_geometry() {
 }
 
 #[test]
-fn semantic_writer_rejects_tessellation_f32_overflow() {
+fn semantic_writer_omits_tessellation_f32_overflow() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_display_list(&triangle_body())),
@@ -898,28 +878,8 @@ fn semantic_writer_rejects_tessellation_f32_overflow() {
             Ok(())
         })
         .unwrap();
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::test_support::plan_inherited_write(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("overflow must be rejected"),
-    };
-    assert!(
-        message.contains("tessellation position exceeds f32 range"),
-        "{message}"
-    );
+    let record = decoded.ir().model.tessellations[0].id.to_string();
+    crate::test_support::assert_written_naming(decoded.ir(), decoded.source_fidelity(), &record);
 }
 
 #[test]
