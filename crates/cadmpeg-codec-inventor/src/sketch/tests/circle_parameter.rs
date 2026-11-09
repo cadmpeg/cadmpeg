@@ -194,3 +194,21 @@ fn a_truncated_circle_parameter_record_becomes_an_issue() {
     assert!(admitted.constraints.is_empty());
     assert_eq!(admitted.issues.len(), 1);
 }
+
+#[test]
+fn a_circle_parameter_listed_by_a_second_sketch_keeps_the_sketch_open() {
+    let constraint = parameter(&parameter_bytes(0x8000_0020, CIRCLE_ORDINAL + 1));
+    let mut inventory = inventory_with(SKETCH_REFERENCE, constraint);
+    let mut second = PmDcSketchPayload::clone(&inventory.sketches[0]);
+    let (marker, metadata, _) = second.entities.into_parts();
+    second.entities = PmDcReferenceList::new(
+        marker,
+        metadata,
+        vec![PmDcReference::from_packed(PARAMETER_ORDINAL + 1)],
+    )
+    .expect("member list");
+    inventory
+        .sketches
+        .push(located(second, SKETCH_TYPE, SKETCH_ORDINAL + 100));
+    assert!(circle_parameter::admitted_keys(&inventory).is_empty());
+}
