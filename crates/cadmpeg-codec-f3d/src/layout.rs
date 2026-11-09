@@ -158,6 +158,32 @@ pub(crate) mod sketch_geometry_group_prefix {
     pub(crate) const MEMBER_COUNT: usize = 71;
 }
 
+/// Byte offsets for the `sketch_geometry_group_tail` record.
+///
+/// Spec §3.1. Record length 15 B.
+///
+/// ```text
+/// Offsets are relative to the end of the member reference run of a 90 + 11N byte sketch geometry group. The tail ends the frame.
+/// ```
+pub(crate) mod sketch_geometry_group_tail {
+    /// Offset of `zero_run` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 0;
+    /// Offset of `owner_marker` (`u8`). Spec §3.1.
+    pub(crate) const OWNER_MARKER: usize = 4;
+}
+
+/// Byte offsets for the `sketch_geometry_group_short_tail` record.
+///
+/// Spec §3.1. Record length 11 B.
+///
+/// ```text
+/// Offsets are relative to the end of the member reference run of an 86 + 11N byte sketch geometry group. The tail ends the frame.
+/// ```
+pub(crate) mod sketch_geometry_group_short_tail {
+    /// Stated value of `owner_marker` (`u8`). Spec §3.1.
+    pub(crate) const OWNER_MARKER_VALUE: u8 = 1;
+}
+
 /// Byte offsets for the `design_decal_scope_prefix` record.
 ///
 /// Spec §3.1. Record length 44 B.
@@ -9150,30 +9176,4 @@ pub(crate) mod surface_trim_cell_entry {
     pub(crate) const RECORD_REFERENCE: usize = 0;
     /// Offset of `value` (`u64`, little-endian). Spec §3.1.
     pub(crate) const VALUE: usize = 11;
-}
-
-/// Byte offsets for the `sketch_geometry_group_tail` record.
-///
-/// Spec §3.1. Record length 15 B.
-///
-/// ```text
-/// Offsets are relative to the end of the member reference run of a 90 + 11N byte sketch geometry group. The tail ends the frame.
-/// ```
-pub(crate) mod sketch_geometry_group_tail {
-    /// Offset of `zero_run` (`bytes[4]`). Spec §3.1.
-    pub(crate) const ZERO_RUN: usize = 0;
-    /// Offset of `owner_marker` (`u8`). Spec §3.1.
-    pub(crate) const OWNER_MARKER: usize = 4;
-}
-
-/// Byte offsets for the `sketch_geometry_group_short_tail` record.
-///
-/// Spec §3.1. Record length 11 B.
-///
-/// ```text
-/// Offsets are relative to the end of the member reference run of an 86 + 11N byte sketch geometry group. The tail ends the frame.
-/// ```
-pub(crate) mod sketch_geometry_group_short_tail {
-    /// Stated value of `owner_marker` (`u8`). Spec §3.1.
-    pub(crate) const OWNER_MARKER_VALUE: u8 = 1;
 }
