@@ -824,11 +824,11 @@ pub(super) fn encode(
         point_indices,
         sketches,
         renamed_sketches,
-        normalized_constraints,
         entities,
         text_entities,
         nurbs_entities,
         constraints,
+        normalized_constraints,
     }))
 }
 

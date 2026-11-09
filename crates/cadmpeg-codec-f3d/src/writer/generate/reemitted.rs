@@ -12,7 +12,10 @@ use crate::native::F3dNative;
 
 /// Native sketch records of authored sketches whose neutral entity or
 /// constraint the sketch generator does not write: no stream carries them.
-pub(super) fn unwritten_sketch_records(target: &CadIr, sketches: &SketchStream) -> BTreeSet<String> {
+pub(super) fn unwritten_sketch_records(
+    target: &CadIr,
+    sketches: &SketchStream,
+) -> BTreeSet<String> {
     let authored: BTreeSet<_> = sketches.sketches.iter().collect();
     let entities: BTreeSet<_> = sketches.entities.iter().collect();
     let constraints: BTreeSet<_> = sketches.constraints.iter().collect();
@@ -99,8 +102,7 @@ pub(super) fn design1_native(
     }
     let owns = |segment: Option<&str>, index: u64| {
         segment.is_some_and(|segment| {
-            u32::try_from(index)
-                .is_ok_and(|index| owned.contains(&(segment.to_owned(), index)))
+            u32::try_from(index).is_ok_and(|index| owned.contains(&(segment.to_owned(), index)))
         })
     };
     design.design_record_headers.retain(|header| {
