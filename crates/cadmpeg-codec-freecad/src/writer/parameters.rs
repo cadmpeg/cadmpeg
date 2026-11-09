@@ -524,7 +524,7 @@ pub(super) fn write(
                 xml::scalar(property_name, kind, "Integer", value)
             }
             Some(ParameterValue::Boolean(value)) => {
-                xml::scalar(property_name, "App::PropertyBool", "Bool", u8::from(*value))
+                xml::scalar(property_name, "App::PropertyBool", "Bool", *value)
             }
             Some(ParameterValue::String(value)) => xml::string(property_name, value),
             None => {

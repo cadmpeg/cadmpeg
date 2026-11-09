@@ -1973,16 +1973,53 @@ pub(super) fn write(
         }
     }
     for surface in &ir.model.surfaces {
-        if let Some(construction) = surface.geometry.procedural_construction().filter(|_| {
-            super::geometry::located_surface(ir, surface).is_some_and(|(row, _)| {
-                !["6 ", "7 ", "10 ", "11 "]
-                    .iter()
-                    .any(|prefix| row.starts_with(prefix))
-            })
-        }) {
+        let Some(construction) = surface.geometry.procedural_construction() else {
+            continue;
+        };
+        let Some((row, _)) = super::geometry::located_surface(ir, surface) else {
+            continue;
+        };
+        if !["6 ", "7 ", "10 ", "11 "]
+            .iter()
+            .any(|prefix| row.starts_with(prefix))
+        {
             losses.push(FreecadLossCode::ExportProceduralReduced.note(format!(
                 "surface {} is written through its current solved carrier; construction {} is omitted",
                 surface.id, construction
+            )));
+            continue;
+        }
+        // OCCT stores the construction alone: a retained solved carrier and
+        // extrusion fields beyond the sweep direction have no home.
+        if surface.geometry.solved_cache().is_some_and(|cache| {
+            !matches!(
+                cache,
+                cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { .. }
+            )
+        }) {
+            losses.push(FreecadLossCode::ExportProceduralReduced.note(format!(
+                "surface {} is written through construction {construction}; its solved carrier is omitted",
+                surface.id
+            )));
+        }
+        let extended = ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|record| record.id == *construction)
+            .and_then(|record| serde_json::to_value(record.definition()).ok())
+            .is_some_and(|definition| {
+                definition.get("kind").and_then(serde_json::Value::as_str) == Some("extrusion")
+                    && definition.as_object().is_some_and(|fields| {
+                        fields
+                            .keys()
+                            .any(|key| !matches!(key.as_str(), "kind" | "directrix" | "direction"))
+                    })
+            });
+        if extended {
+            losses.push(FreecadLossCode::ExportProceduralReduced.note(format!(
+                "construction {construction} of surface {} is written as its OCCT sweep; its interval, position and cache are omitted",
+                surface.id
             )));
         }
     }
@@ -2085,23 +2122,6 @@ fn boolean(text: &str) -> Option<bool> {
         "0" | "false" => Some(false),
         _ => None,
     }
-}
-
-/// The seven numbers of a written or native `PropertyPlacement`.
-fn placement_values(values: &[(&str, &str)]) -> Option<[f64; 7]> {
-    let mut result = [0.0; 7];
-    for (slot, key) in result
-        .iter_mut()
-        .zip(["Px", "Py", "Pz", "Q0", "Q1", "Q2", "Q3"])
-    {
-        *slot = values
-            .iter()
-            .find(|(name, _)| *name == key)?
-            .1
-            .parse()
-            .ok()?;
-    }
-    Some(result)
 }
 
 /// Native lanes a regenerated object leaves unchanged replay verbatim,
@@ -2211,7 +2231,7 @@ fn replay_unchanged_placements(
                     .map(|attribute| (attribute.name(), attribute.value()))
                     .collect::<Vec<_>>()
             })
-            .and_then(|values| placement_values(&values))
+            .and_then(|values| xml::placement_values(&values))
         else {
             continue;
         };
@@ -2224,7 +2244,7 @@ fn replay_unchanged_placements(
                 .iter()
                 .find(|value| value.tag == "PropertyPlacement")
                 .and_then(|value| {
-                    placement_values(
+                    xml::placement_values(
                         &value
                             .attributes
                             .iter()

@@ -331,26 +331,62 @@ fn binding(record: &Value) -> Value {
     record
 }
 
-/// A dimension property stores only a text its type parses.
+/// The leading decimal number of `text`, as C `strtol` or `strtod` reads it,
+/// or zero.
+fn leading_number(text: &str, fractional: bool) -> String {
+    let bytes = text.as_bytes();
+    let mut end = usize::from(matches!(bytes.first(), Some(b'+' | b'-')));
+    let digits = |from: usize| {
+        bytes[from..]
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count()
+    };
+    let integral = digits(end);
+    end += integral;
+    let mut fraction = 0;
+    if fractional && bytes.get(end) == Some(&b'.') {
+        fraction = digits(end + 1);
+        end += 1 + fraction;
+    }
+    if integral + fraction == 0 {
+        return "0".to_owned();
+    }
+    if fractional && matches!(bytes.get(end), Some(b'e' | b'E')) {
+        let sign = usize::from(matches!(bytes.get(end + 1), Some(b'+' | b'-')));
+        let exponent = digits(end + 1 + sign);
+        if exponent > 0 {
+            end += 1 + sign + exponent;
+        }
+    }
+    text[..end].to_owned()
+}
+
+/// A dimension property stores the value `FreeCAD` restores from the text: a
+/// Bool is true only for `true`, a number is its leading numeric text, and a
+/// list that does not parse is empty.
 fn annotation_parameters(value: &Value) -> Value {
     let mut parameters = value.as_object().cloned().unwrap_or_default();
-    parameters.retain(|key, text| {
-        let Some(text) = text.as_str() else {
-            return true;
+    for (key, text) in &mut parameters {
+        let Some(current) = text.as_str() else {
+            continue;
         };
         let key = key.as_str();
-        if BOOL_PARAMETERS.contains(&key) {
-            matches!(text, "true" | "false")
-        } else if FLOAT_PARAMETERS.contains(&key) {
-            text.parse::<f64>().is_ok()
-        } else if INTEGER_PARAMETERS.contains(&key) {
-            text.parse::<i64>().is_ok()
-        } else if LIST_PARAMETERS.contains(&key) {
-            serde_json::from_str::<Vec<Value>>(text).is_ok()
+        let stored = if BOOL_PARAMETERS.contains(&key) {
+            if current == "true" { "true" } else { "false" }.to_owned()
+        } else if FLOAT_PARAMETERS.contains(&key) && current.parse::<f64>().is_err() {
+            leading_number(current, true)
+        } else if INTEGER_PARAMETERS.contains(&key) && current.parse::<i64>().is_err() {
+            leading_number(current, false)
+        } else if LIST_PARAMETERS.contains(&key)
+            && serde_json::from_str::<Vec<Value>>(current).is_err()
+        {
+            "[]".to_owned()
         } else {
-            true
-        }
-    });
+            continue;
+        };
+        *text = Value::String(stored);
+    }
     Value::Object(parameters)
 }
 

@@ -35,7 +35,7 @@ impl Provider {
             .insert(name.to_owned(), xml::scalar(name, kind, tag, value));
     }
     fn visible(&mut self, value: bool) {
-        self.set("Visibility", "App::PropertyBool", "Bool", u8::from(value));
+        self.set("Visibility", "App::PropertyBool", "Bool", value);
     }
     fn scalar_override(&mut self, name: &str, value: &str) -> bool {
         if let Some(original) = self.native.get(name) {
