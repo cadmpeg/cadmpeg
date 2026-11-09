@@ -134,15 +134,24 @@ fn assert_degraded_plan(
         .expect("a degraded IGES graph is a valid input file");
 }
 
-fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxonomy) -> bool {
-    matches!(
-        taxonomy,
-        cadmpeg_ir::report::loss::LossTaxonomy::RecordNotTyped
-            | cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
-            | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
-            | cadmpeg_ir::report::loss::LossTaxonomy::ProceduralReduced
-            | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
-    )
+/// The plan writes and one of its losses carries `reason`: a writer refuses
+/// only a precondition, so inconsistent input degrades the record it affects
+/// (#209 §5.0).
+fn assert_encode_degrades(
+    plan: Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError>,
+    reason: &str,
+) {
+    let plan = plan.expect("inconsistent input degrades instead of refusing");
+    assert!(
+        plan.report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(reason)),
+        "{:?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("the degraded plan writes");
 }
 
 fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxonomy) -> bool {

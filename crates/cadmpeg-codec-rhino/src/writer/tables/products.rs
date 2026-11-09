@@ -294,6 +294,32 @@ pub(in crate::writer) fn definition_metadata_losses(
     version: crate::RhinoArchiveVersion,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let referenced = referenced_definitions(ir);
+    let kinds = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| {
+            definition.kind != cadmpeg_ir::products::ProductDefinitionKind::Part
+                && definition_written(ir, &referenced, definition)
+        })
+        .map(|definition| {
+            let occurrences = ir
+                .model
+                .occurrences
+                .iter()
+                .filter(|occurrence| {
+                    matches!(&occurrence.prototype, PrototypeReference::Local { definition: local } if *local == definition.id)
+                })
+                .map(|occurrence| occurrence.id.as_str())
+                .collect::<Vec<_>>();
+            crate::loss::RhinoLossCode::WriterProductMetadataReduced.note(format!(
+                "product definition {} of kind {:?} is written as a 3DM instance definition, which holds a part; its occurrence(s): {}",
+                definition.id,
+                definition.kind,
+                occurrences.join(", ")
+            ))
+        })
+        .collect::<Vec<_>>();
     ir.model
         .product_definitions
         .iter()
@@ -316,6 +342,22 @@ pub(in crate::writer) fn definition_metadata_losses(
                 ))
             })
         })
+        .chain(kinds)
+        .chain(
+            ir.model
+                .product_definitions
+                .iter()
+                .filter(|definition| {
+                    (definition.label.is_some() || !definition.bom_properties.is_empty())
+                        && definition_written(ir, &referenced, definition)
+                })
+                .map(|definition| {
+                    crate::loss::RhinoLossCode::WriterProductMetadataReduced.note(format!(
+                        "product definition {} label and BOM properties are not held by a 3DM instance definition",
+                        definition.id
+                    ))
+                }),
+        )
         .collect()
 }
 
@@ -401,9 +443,9 @@ pub(in crate::writer) fn definitions(
             }
             payload.extend(utf16(
                 definition
-                    .label
+                    .source_name
                     .as_deref()
-                    .or(definition.source_name.as_deref())
+                    .or(definition.label.as_deref())
                     .unwrap_or(""),
             )?);
             payload.extend(utf16(definition.description.as_deref().unwrap_or(""))?);
@@ -473,9 +515,9 @@ fn modern_definition(
     attributes.push(1);
     attributes.extend(utf16(
         definition
-            .label
+            .source_name
             .as_deref()
-            .or(definition.source_name.as_deref())
+            .or(definition.label.as_deref())
             .unwrap_or(""),
     )?);
     let mut payload = crc_chunk_with_direct(0x4000_8002, &attributes, &attributes)?;

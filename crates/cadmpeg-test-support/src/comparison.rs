@@ -129,12 +129,15 @@ pub(crate) fn unpaired_after_allowances(
     let target = Document::read(after, &BTreeSet::new())?;
     let pairs = pair(&source, &target, false, true);
     let mut unpaired = removed;
+    // A regenerated record need not pair, as in `agree_pairing`.
     unpaired.extend(
         source
             .records
             .iter()
             .enumerate()
-            .filter(|(index, _)| !pairs.contains_key(index))
+            .filter(|(index, record)| {
+                !pairs.contains_key(index) && !allowances.regenerated.contains(&record.id)
+            })
             .map(|(_, record)| record.id.clone()),
     );
     Ok(unpaired)
@@ -443,9 +446,9 @@ fn agree_once(
     regenerated: &BTreeSet<String>,
     cross: bool,
 ) -> Result<(), String> {
-    let before = without_fields(before, fields);
-    let before = Document::read(&before, pruned)?;
-    let after = Document::read(after, &BTreeSet::new())?;
+    let source = without_fields(before, fields);
+    let before = Document::read(&source, pruned)?;
+    let after = cross_additions_pruned(&source, &before, after, pruned, cross)?;
     if agree_pairing(
         before.clone(),
         after.clone(),
@@ -459,6 +462,44 @@ fn agree_once(
         return Ok(());
     }
     agree_pairing(before, after, permitted, regenerated, cross, true)
+}
+
+/// The re-decode read for comparison. In cross mode, a source record the
+/// comparison removes loses its list entries, and so does each re-decode
+/// record of the same arenas that pairs with no source record: the record a
+/// writer wrote in place of a degraded one is an addition (§5.2).
+fn cross_additions_pruned(
+    source: &Value,
+    before: &Document,
+    after: &Value,
+    pruned: &BTreeSet<String>,
+    cross: bool,
+) -> Result<Document, String> {
+    let read = Document::read(after, &BTreeSet::new())?;
+    if !cross || pruned.is_empty() {
+        return Ok(read);
+    }
+    let arenas = Document::read(source, &BTreeSet::new())?
+        .records
+        .iter()
+        .filter(|record| pruned.contains(&record.id))
+        .map(|record| record.arena.clone())
+        .collect::<BTreeSet<_>>();
+    let used = pair(before, &read, cross, true)
+        .into_values()
+        .collect::<BTreeSet<_>>();
+    let added = read
+        .records
+        .iter()
+        .enumerate()
+        .filter(|(index, record)| !used.contains(index) && arenas.contains(&record.arena))
+        .map(|(_, record)| record.id.clone())
+        .collect::<BTreeSet<_>>();
+    if added.is_empty() {
+        Ok(read)
+    } else {
+        Document::read(after, &added)
+    }
 }
 
 fn agree_pairing(
@@ -479,6 +520,30 @@ fn agree_pairing(
             .records
             .iter()
             .position(|candidate| candidate.id == record.id && candidate.arena == record.arena)
+        {
+            pairs.insert(index, other);
+        }
+    }
+    // A regenerated record can take the identity its new position implies.
+    // One that pairs neither by content nor by identity pairs with the next
+    // unpaired record of its arena, in arena order, so the records that name
+    // it still resolve through the identity mapping.
+    let taken: BTreeSet<usize> = pairs.values().copied().collect();
+    let mut free = BTreeMap::<&str, std::collections::VecDeque<usize>>::new();
+    for (index, record) in after.records.iter().enumerate() {
+        if !taken.contains(&index) {
+            free.entry(record.arena.as_str())
+                .or_default()
+                .push_back(index);
+        }
+    }
+    for (index, record) in before.records.iter().enumerate() {
+        if pairs.contains_key(&index) || !regenerated.contains(&record.id) {
+            continue;
+        }
+        if let Some(other) = free
+            .get_mut(record.arena.as_str())
+            .and_then(std::collections::VecDeque::pop_front)
         {
             pairs.insert(index, other);
         }

@@ -4,6 +4,7 @@
 use super::EntityStatus;
 use cadmpeg_ir::geometry::Surface;
 use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 use cadmpeg_ir::{CadIr, CodecFormat, SourceGeometryRole, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -12,6 +13,47 @@ pub(super) fn report_unowned_support(losses: &mut Vec<super::LossNote>, id: &str
     losses.push(code.note(format!(
         "1 support geometry record ({id}) has no exported owner and was withheld"
     )));
+}
+
+/// Identities that another geometry or topology record names. The writer
+/// writes such a carrier through that record. `None` when the encode depth
+/// refuses a reference walk, so the named set is unknown.
+fn neutral_children(ir: &CadIr) -> Option<BTreeSet<String>> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    let mut children = BTreeSet::new();
+    macro_rules! visit {
+        ($($arena:ident),* $(,)?) => {$(
+            for record in &ir.model.$arena {
+                let own = record.id.as_str();
+                record
+                    .visit_identity_references::<cadmpeg_core::decode::ResourceLimit>(
+                        &ctx,
+                        &mut |identity| {
+                            if identity != own {
+                                children.insert(identity.to_owned());
+                            }
+                            Ok(())
+                        },
+                    )
+                    .ok()?;
+            }
+        )*};
+    }
+    visit!(
+        curves,
+        procedural_curves,
+        surfaces,
+        procedural_surfaces,
+        vertices,
+        edges,
+        pcurves,
+        coedges,
+        loops,
+        faces
+    );
+    Some(children)
 }
 
 /// Every Directory sequence a native record names, so a referenced carrier
@@ -63,6 +105,8 @@ pub(super) struct SourceOwnership<'ir> {
     owned_surfaces: BTreeSet<&'ir SurfaceId>,
     owned: BTreeSet<u32>,
     annotation_use: BTreeSet<u32>,
+    neutral_children: Option<BTreeSet<String>>,
+    topology_free: bool,
 }
 
 impl<'ir> SourceOwnership<'ir> {
@@ -133,6 +177,8 @@ impl<'ir> SourceOwnership<'ir> {
             }
         }
         Self {
+            neutral_children: neutral_children(ir),
+            topology_free: ir.model.faces.is_empty() && ir.model.pcurves.is_empty(),
             statuses,
             owned_surfaces,
             owned,
@@ -188,12 +234,56 @@ impl<'ir> SourceOwnership<'ir> {
         }
     }
 
-    pub(super) fn surface_status(&self, surface: &Surface) -> Option<EntityStatus> {
-        let status = self.status(surface.source_object.as_ref());
-        // A dependent flag without an exported owner is still transferred as
-        // standalone geometry by some importers. Withhold that orphan instead.
-        (!status.is_physically_dependent() || self.owned_surfaces.contains(&surface.id))
-            .then_some(status)
+    /// Whether `surface` is physically dependent in the source and no exported
+    /// face uses it.
+    pub(super) fn is_unowned_support(&self, surface: &Surface) -> bool {
+        self.status(surface.source_object.as_ref())
+            .is_physically_dependent()
+            && !self.owned_surfaces.contains(&surface.id)
+    }
+
+    /// Whether a physically dependent carrier `id` without a written source
+    /// parent writes as standalone geometry. A face or parameter curve can
+    /// write a dependent carrier as its own part, and another geometry or
+    /// topology record that names `id` writes it; only a document without
+    /// faces and parameter curves leaves an unnamed carrier no other writer.
+    pub(super) fn writes_standalone(&self, id: &str) -> bool {
+        self.topology_free
+            && self
+                .neutral_children
+                .as_ref()
+                .is_some_and(|children| !children.contains(id))
+    }
+
+    /// Whether the carrier `id` of `ir` is physically dependent in the source,
+    /// has no exported owner, and does not write standalone.
+    pub(super) fn withholds(&self, ir: &CadIr, id: &str) -> bool {
+        let source = ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == id)
+            .map(|curve| curve.source_object.as_ref())
+            .or_else(|| {
+                ir.model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id.as_str() == id)
+                    .map(|surface| surface.source_object.as_ref())
+            })
+            .or_else(|| {
+                ir.model
+                    .points
+                    .iter()
+                    .find(|point| point.id.as_str() == id)
+                    .map(|point| point.source_object.as_ref())
+            });
+        let Some(source) = source else {
+            return false;
+        };
+        self.status(source).is_physically_dependent()
+            && !self.is_owned(source)
+            && !self.writes_standalone(id)
     }
 }
 

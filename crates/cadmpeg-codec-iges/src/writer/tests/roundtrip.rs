@@ -879,20 +879,12 @@ fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
         let report = plan
             .write_to(&mut produced)
             .expect("placed NURBS Type 122 output writes");
-        // The Type 128 output has no directrix, so the physically dependent
-        // source directrix has no written parent.
-        let withheld = report
-            .losses
-            .iter()
-            .filter(|loss| {
-                loss.code.taxonomy()
-                    == cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(withheld.len(), 1);
-        assert_eq!(
-            withheld[0].code,
-            crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
+        // The native Type 122 writes the placed directrix as its own part.
+        assert!(
+            report.losses.iter().all(|loss| loss.code.taxonomy()
+                != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred),
+            "{version:?}: {:#?}",
+            report.losses
         );
         let round_trip = IgesCodec
             .decode(&mut Cursor::new(produced), &DecodeOptions::default())

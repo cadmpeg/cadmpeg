@@ -157,10 +157,16 @@ pub(super) fn write(
             };
             for binding in &document.model.appearance_bindings {
                 let target = binding.target.typed_record_target(&document.model);
-                if point_targets.iter().flatten().any(|(_, selected)| {
-                    matches!(selected, cadmpeg_ir::appearance::AppearanceTarget::Point(_))
-                        && target.as_ref().unwrap_or(&binding.target) == selected
-                }) {
+                let carried_material = points.len() == 1
+                    && materials
+                        .appearance_index(binding.appearance.as_str())
+                        .is_some();
+                if !carried_material
+                    && point_targets.iter().flatten().any(|(_, selected)| {
+                        matches!(selected, cadmpeg_ir::appearance::AppearanceTarget::Point(_))
+                            && target.as_ref().unwrap_or(&binding.target) == selected
+                    })
+                {
                     let detail = if colors.is_some() && binding.visible.is_some() {
                         "is reduced to a point-cloud color; its material link and visibility are omitted"
                     } else if colors.is_some() {
@@ -220,7 +226,13 @@ pub(super) fn write(
                 Some(object_attributes_for_target(
                     document,
                     &identity,
-                    individual.map_or(identity.as_str(), |(target, _)| target),
+                    individual
+                        .or_else(|| {
+                            (points.len() == 1)
+                                .then(|| point_targets[0].as_ref())
+                                .flatten()
+                        })
+                        .map_or(identity.as_str(), |(target, _)| target),
                     name,
                     display.and_then(|value| value.color).or(body.color),
                     display.and_then(|value| value.visible).or(body.visible),

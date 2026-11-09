@@ -164,6 +164,7 @@ fn point_cloud_commits_one_vertex() {
                     .expect("finite point"),
             ],
             scaled: false,
+            colors: Vec::new(),
             warnings: Diagnostics::new(),
         })
     };
