@@ -19,7 +19,7 @@ use crate::test_support::smbh_geometry_test::{
 };
 use crate::test_support::zip_test::{
     f3d_with_damaged_design_bulkstream, f3d_with_damaged_protein_asset, f3d_with_smbh,
-    f3d_with_smbh_and_protein,
+    f3d_with_smbh_and_protein, with_damaged_design_index,
 };
 use crate::F3dCodec;
 
@@ -527,6 +527,51 @@ fn one_damaged_primary_index_gives_up_only_its_stream() {
         stub_ids[0].as_str()
     );
     assert_valid(&damaged);
+}
+
+fn assert_index_given_up(damaged: &cadmpeg_test_support::EditableDecodeResult) {
+    assert!(damaged.ir().scope.design);
+    assert!(damaged
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::DesignIntentUndecoded.kind()));
+    let unreadable = damaged
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0].message.contains("f3d.bulk_record"));
+    assert!(unreadable[0].message.contains("Design1/BulkStream.dat"));
+    assert_eq!(damaged.ir().native_unknowns("f3d").unwrap().len(), 1);
+    assert_valid(damaged);
+}
+
+#[test]
+fn a_damaged_primary_index_gives_up_only_its_stream() {
+    let full = decode(design_archive());
+    let damaged = decode(with_damaged_design_index(&design_archive()));
+    assert_index_given_up(&damaged);
+    assert_eq!(
+        damaged.ir().model.bodies.len(),
+        full.ir().model.bodies.len()
+    );
+    assert_eq!(damaged.ir().model.faces.len(), full.ir().model.faces.len());
+    assert!(!f3d_native(damaged.ir()).asm_histories.is_empty());
+}
+
+#[test]
+fn bodyless_materials_decode_through_a_damaged_primary_index() {
+    let archive = with_damaged_design_index(&design_archive());
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let materials = crate::materials::decode(&ctx, scan, &mut parts).unwrap();
+        assert!(!materials.appearances.is_empty());
+    });
 }
 
 #[test]

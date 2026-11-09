@@ -18,6 +18,7 @@ mod act;
 pub(super) mod attributes;
 pub(in crate::writer) mod canvas;
 pub(in crate::writer) mod decal;
+pub(in crate::writer) mod mesh;
 pub(super) mod features;
 mod index;
 pub(in crate::writer) mod native_bytes;
@@ -27,6 +28,7 @@ mod parameters;
 pub(in crate::writer) mod preconditions;
 mod presentation;
 pub(super) mod records;
+mod reemitted;
 mod reindex;
 pub(super) mod sketches;
 mod smbh;
@@ -49,6 +51,10 @@ pub(super) struct Generated {
     pub(super) regenerated_parameters: BTreeSet<String>,
     pub(super) written_recipes: BTreeSet<String>,
 }
+
+/// First `FusionDesignSegmentType` number of the authored mesh segments; the
+/// lower numbers hold the parameter, feature, Canvas and Decal segments.
+const MESH_SEGMENT_START: usize = 7;
 
 #[cfg(test)]
 pub(crate) fn write_new(
@@ -94,7 +100,7 @@ pub(super) fn write_with_limits(
     }
     validate_source_less_procedural_carriers(target)?;
     validate_source_less_topology_tolerances(target, &native)?;
-    validate_source_less_auxiliary_geometry(target)?;
+    validate_source_less_auxiliary_geometry(target, &native)?;
     let output_arena = cadmpeg_core::decode::DecodeArena::new();
     let output_policy = cadmpeg_core::decode::DecodePolicy {
         limits,
@@ -205,6 +211,27 @@ pub(super) fn write_with_limits(
     let encoded_decal = decal
         .map(|decal| decal::encode(decal, &output_ctx))
         .transpose()?;
+    let encoded_meshes = mesh::encode(mesh::select(target, &native), &output_ctx)?;
+    let design_native = reemitted::design1_native(
+        &native,
+        target,
+        &encoded_meshes,
+        written_sketches.as_ref(),
+    );
+    if let Some(design_native) = &design_native {
+        for kind in &mut design_registry.types {
+            kind.entity_ids.retain(|entity| {
+                design_native
+                    .design_types
+                    .iter()
+                    .any(|native| native.entities.values().any(|value| value == entity))
+                    || !native
+                        .design_types
+                        .iter()
+                        .any(|native| native.entities.values().any(|value| value == entity))
+            });
+        }
+    }
     if !records::needs_design_bulk(target, &native) {
         if let Some((_, meta)) = generated_features
             .as_ref()
@@ -233,6 +260,11 @@ pub(super) fn write_with_limits(
         }
     }
     let smbh = encode_smbh(target, &native, &attributes, limits, &output_ctx)?;
+    for (body, declared, derived) in preconditions::body_kind_mismatches(&target.model) {
+        residual_losses.push(crate::loss::F3dLossCode::WriterAuxiliaryOmitted.note(format!(
+            "body {body} kind {declared:?} is not encoded; its written topology reads back as {derived:?}"
+        )));
+    }
     let mut staged = tempfile::tempfile()?;
     let mut archive = zip::ZipWriter::new(&mut staged);
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -268,6 +300,32 @@ pub(super) fn write_with_limits(
         ] {
             archive
                 .start_file(name, options)
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            archive.write_all(data)?;
+        }
+    }
+    for (ordinal, encoded) in encoded_meshes.iter().enumerate() {
+        let segment = format!(
+            "{DESIGN_FOLDER}/FusionDesignSegmentType{}",
+            ordinal
+                .checked_add(MESH_SEGMENT_START)
+                .ok_or_else(|| CodecError::InvalidInput("F3D mesh segment count".into()))?
+        );
+        for (name, data) in [
+            (format!("{segment}/BulkStream.dat"), encoded.bulk.as_slice()),
+            (format!("{segment}/MetaStream.dat"), encoded.meta.as_slice()),
+        ] {
+            archive
+                .start_file(name, options)
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            archive.write_all(data)?;
+        }
+        for (entry, data) in &encoded.containers {
+            archive
+                .start_file(
+                    format!("{DESIGN_FOLDER}/ParaMeshGeometry.BlobParts/{entry}"),
+                    options,
+                )
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             archive.write_all(data)?;
         }
@@ -432,7 +490,7 @@ pub(super) fn write_with_limits(
     let mut design_bulk = encode_design_bulkstream(
         &output_ctx,
         target,
-        &native,
+        design_native.as_ref().unwrap_or(&native),
         &design_registry,
         Vec::new(),
         brep_name,
@@ -497,6 +555,14 @@ pub(super) fn write_with_limits(
         residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
             "canvas {} uses generated scope companion references",
             canvas.feature
+        )));
+    }
+    for encoded in &encoded_meshes {
+        written_features.push(encoded.feature.clone());
+        residual_losses.extend(encoded.losses.iter().cloned());
+        residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+            "mesh import {} writes its mesh-body presentation envelopes and scope tail as zero",
+            encoded.feature
         )));
     }
     if let Some(decal) = &encoded_decal {
@@ -599,6 +665,22 @@ pub(super) fn write_with_limits(
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
     let mut dispositions = coverage(has_native, target, &native);
+    let written_tessellations: BTreeSet<_> = encoded_meshes
+        .iter()
+        .flat_map(|encoded| encoded.tessellations.iter())
+        .collect();
+    if !written_tessellations.is_empty() {
+        dispositions.tessellations = if target
+            .model
+            .tessellations
+            .iter()
+            .all(|tessellation| written_tessellations.contains(&tessellation.id))
+        {
+            ArenaDisposition::Written
+        } else {
+            ArenaDisposition::Reported
+        };
+    }
     if let Some(canvas) = &encoded_canvas {
         dispositions.assets = if target
             .model
@@ -777,6 +859,9 @@ pub(super) fn write_with_limits(
                 cadmpeg_ir::features::FeatureOperation::ReferenceImage { .. },
             ) => Some("Canvas"),
             cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::MeshImport { .. },
+            ) => Some("Base Mesh Feature"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
             ) if kind.as_str() == "BaseFlange" => Some("BaseFlange"),
             cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -820,12 +905,6 @@ pub(super) fn write_with_limits(
                     format!("feature {} has no supported F3D encoding", feature.id),
                 ));
                 continue;
-            }
-            if feature.needs_recompute {
-                partial = true;
-                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
-                    format!("feature {} recompute state is not encoded", feature.id),
-                ));
             }
             if matches!(feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Operation(

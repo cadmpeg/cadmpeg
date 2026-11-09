@@ -79,7 +79,6 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             payload: crate::records::feature::scope::DesignFeatureKind::Extrude
                 .try_into()
                 .unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )
@@ -1750,3 +1749,4 @@ fn remove_body_group_refuses_empty_groups_wrong_roles_and_truncation() {
 }
 
 mod roles;
+mod unclosed;

@@ -2,13 +2,13 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 76497,
-      "payload_sha256": "eb5bba3cf6368eb29bee0f590f04613883299f9e545b5fe2b658f9e09d5d06af"
+      "payload_len": 77009,
+      "payload_sha256": "00e236525313130a75666dcc1992be624e452cba9f38ef7f6668218193a13b92"
     },
     {
       "name": "Box.Shape.brp",
-      "payload_len": 2561,
-      "payload_sha256": "4090c7890ba4cf04faf9a9b7f1e0e990f759a92f8b6e0ff7708cb3d6bba7b419"
+      "payload_len": 2582,
+      "payload_sha256": "26be724ca2c89c6fbd4475f4f694d3db9dddfee1daede1dcede8dcdec9ade845"
     },
     {
       "name": "techdraw-template.svg",
@@ -52,13 +52,13 @@
     },
     {
       "name": "Triangle.Shape.brp",
-      "payload_len": 602,
-      "payload_sha256": "07aa2d042f8c441c04b8b6c737a82392c6f5c74ae2a7719d7717323820a9cc9c"
+      "payload_len": 579,
+      "payload_sha256": "72a0a3705d90f0efe5c00f94467a6844962dd0fa5314c12e7b76613875289ea5"
     },
     {
       "name": "Cylinder.Shape.brp",
-      "payload_len": 1045,
-      "payload_sha256": "b479a2ba462df8e331db56b94e5a6a03d5f054672c27587b5552e94be03390a4"
+      "payload_len": 866,
+      "payload_sha256": "8727e76f3fe28d6aaf7833699751588b3ab3b068b154aa2f78c4aeea860da517"
     },
     {
       "name": "BoxCorners3",

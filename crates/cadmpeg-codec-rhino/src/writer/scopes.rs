@@ -192,6 +192,36 @@ fn drop_dangling_owner<T>(
 /// Drop appearance bindings whose target record is absent, naming each.
 /// A binding that names no record has no carrier to style; the writer
 /// would otherwise drop it silently when no object claims it.
+/// The curves a procedural surface construction references; the solved
+/// carrier that replaces the construction holds none of them.
+pub(super) fn construction_curves(
+    model: &cadmpeg_ir::document::Model,
+    construction: &str,
+) -> Vec<String> {
+    fn strings(value: &serde_json::Value, out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::String(text) => out.push(text.clone()),
+            serde_json::Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
+            serde_json::Value::Object(fields) => {
+                fields.values().for_each(|item| strings(item, out));
+            }
+            _ => {}
+        }
+    }
+    let mut referenced = Vec::new();
+    if let Some(definition) = model
+        .procedural_surfaces
+        .iter()
+        .find(|row| row.id.as_str() == construction)
+        .and_then(|row| serde_json::to_value(row.definition()).ok())
+    {
+        strings(&definition, &mut referenced);
+    }
+    referenced.retain(|id| model.curves.iter().any(|curve| curve.id.as_str() == id));
+    referenced.dedup();
+    referenced
+}
+
 fn drop_dangling_bindings(model: &mut cadmpeg_ir::document::Model, losses: &mut Vec<LossNote>) {
     let mut dropped: Vec<(String, &'static str)> = model
         .appearance_bindings
@@ -435,12 +465,27 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), sup
             .filter(|entity| shells.contains(entity.id.as_str()))
             .cloned()
             .collect();
-        scoped.model.faces = model
+        let member_order = scoped
+            .model
+            .shells
+            .iter()
+            .flat_map(cadmpeg_ir::topology::Shell::faces)
+            .enumerate()
+            .map(|(position, id)| (id.as_str(), position))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut scoped_faces = model
             .faces
             .iter()
             .filter(|entity| faces.contains(entity.id.as_str()))
             .cloned()
-            .collect();
+            .collect::<Vec<_>>();
+        scoped_faces.sort_by_key(|face| {
+            member_order
+                .get(face.id.as_str())
+                .copied()
+                .unwrap_or(usize::MAX)
+        });
+        scoped.model.faces = scoped_faces;
         scoped.model.loops = model
             .loops
             .iter()
@@ -523,8 +568,20 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), sup
             if let Some(construction) = surface.geometry.procedural_construction() {
                 let construction = construction.as_str().to_owned();
                 if surface.geometry.solved().is_some() {
+                    let omitted = construction_curves(model, &construction)
+                        .into_iter()
+                        .filter(|id| !curves.contains(id.as_str()))
+                        .collect::<Vec<_>>();
+                    let children = if omitted.is_empty() {
+                        String::new()
+                    } else {
+                        format!(
+                            "; its construction curve(s) {} are omitted",
+                            omitted.join(", ")
+                        )
+                    };
                     losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                        "surface {} procedural construction {construction} was reduced to a held solved carrier",
+                        "surface {} procedural construction {construction} was reduced to a held solved carrier{children}",
                         surface.id
                     )));
                 } else {
@@ -571,8 +628,24 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), sup
 /// baked record charges `WriterCarrierResolved` naming it: a trim and a
 /// Brep face each hold one carrier per record, not the wrapper.
 pub(super) fn resolve_wrappers(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
+    let faces = &scoped.model.faces;
     for surface in &mut scoped.model.surfaces {
+        let charged = losses.len();
         resolve_surface(surface, losses);
+        if losses.len() > charged {
+            let carried = faces
+                .iter()
+                .filter(|face| face.surface == surface.id)
+                .map(|face| face.id.as_str())
+                .collect::<Vec<_>>();
+            if !carried.is_empty() {
+                losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "surface {} resolved carrier is held by face(s) {}",
+                    surface.id,
+                    carried.join(", ")
+                )));
+            }
+        }
     }
     for pcurve in &mut scoped.model.pcurves {
         resolve_pcurve(pcurve, losses);

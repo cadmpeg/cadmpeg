@@ -80,7 +80,7 @@
       "features": "dropped",
       "loops": "reported",
       "mass_properties": "omitted",
-      "occurrences": "reported",
+      "occurrences": "written",
       "parameters": "dropped",
       "pcurves": "reported",
       "physical_materials": "omitted",

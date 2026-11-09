@@ -31,7 +31,7 @@ pub(crate) fn write(
     topology: &super::topology_join::TopologyJoin<'_>,
     objects: &mut [Object],
     names: &HashMap<String, String>,
-    properties: &[PropertyRecord],
+    (properties, exact): (&[PropertyRecord], &std::collections::HashSet<String>),
     output: MapOutput<'_>,
 ) -> Result<String, CodecError> {
     let MapOutput {
@@ -42,6 +42,7 @@ pub(crate) fn write(
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok(String::new());
     };
+    let native_entries = namespace.arena_as::<crate::native::EntryRecord>("entries")?;
     let mut tables = namespace.arena_as::<StringTableRecord>("string_tables")?;
     tables.sort_by_key(|table| {
         table
@@ -77,6 +78,11 @@ pub(crate) fn write(
         // would invent an archive member the source never had, and the
         // re-decode would gain a file reference the source lacks (#238).
         if entries.is_empty() {
+            // The document's default empty hasher is the root table; maps
+            // that name it still resolve.
+            if table.owner_property.is_none() {
+                table_indices.insert(table.index, 0);
+            }
             continue;
         }
         let Some(save_all) = table.save_all else {
@@ -114,10 +120,12 @@ pub(crate) fn write(
         let output_index = if table.owner_property.is_none() {
             0
         } else {
+            let Some(next) = next_hasher.checked_add(1) else {
+                debug_assert!(false, "one hasher index per string table fits usize");
+                continue;
+            };
             let index = next_hasher;
-            next_hasher = next_hasher.checked_add(1).ok_or_else(|| {
-                CodecError::InvalidInput("FCStd hasher count exceeds address space".into())
-            })?;
+            next_hasher = next;
             index
         };
         table_indices.insert(table.index, output_index);
@@ -139,14 +147,33 @@ pub(crate) fn write(
             content.push_str(&entry.payload);
             content.push('\n');
         }
-        let file = format!("StringHasher{output_index}.txt");
-        let stream = format!("StringTableStart v1 {}\n{content}", entries.len());
+        let file = table
+            .source_entry
+            .clone()
+            .filter(|name| !archive_entries.contains_key(name))
+            .unwrap_or_else(|| format!("StringHasher{output_index}.txt"));
+        // The stored member keeps FreeCAD's relative id coding; it stands
+        // while it still reads as the typed table.
+        let stored = table
+            .source_entry
+            .as_deref()
+            .filter(|name| *name == file)
+            .and_then(|name| native_entries.iter().find(|entry| entry.name() == name))
+            .and_then(crate::native::EntryRecord::payload)
+            .filter(|bytes| {
+                crate::element_map::parse_string_table(bytes, entries.len(), true)
+                    .is_ok_and(|parsed| parsed == entries)
+            });
+        let stream = stored.map_or_else(
+            || format!("StringTableStart v1 {}\n{content}", entries.len()).into_bytes(),
+            <[u8]>::to_vec,
+        );
         let carrier = format!("<StringHasher saveall=\"{}\" threshold=\"{threshold}\" count=\"0\" new=\"1\"/><StringHasher2 file=\"{file}\"/>", u8::from(save_all));
         if let Some(owner) = &table.owner_property {
-            let property = properties
-                .iter()
-                .find(|property| property.id == *owner)
-                .ok_or_else(|| CodecError::malformed("admitted hasher owner disappeared"))?;
+            let Some(property) = properties.iter().find(|property| property.id == *owner) else {
+                debug_assert!(false, "admitted hasher owner disappeared");
+                continue;
+            };
             let shape = names
                 .get(&property.owner)
                 .and_then(|name| objects.iter_mut().find(|object| object.name == *name))
@@ -175,7 +202,7 @@ pub(crate) fn write(
             );
             continue;
         }
-        archive_entries.insert(file, stream.into_bytes());
+        archive_entries.insert(file, stream);
         super::super::dispositions::record(
             outcomes,
             "string_tables",
@@ -204,7 +231,10 @@ pub(crate) fn write(
             );
             continue;
         };
-        if !topology.shape_matches(ctx, object, &property.name, archive_entries)? {
+        // A shape re-emitted from its own typed tables keeps every
+        // persistent name the map holds.
+        let exact = exact.contains(&property.id);
+        if !exact && !topology.shape_matches(ctx, object, &property.name, archive_entries)? {
             losses.push(
                 FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
                     "element map {} has an omitted shape property",
@@ -222,7 +252,7 @@ pub(crate) fn write(
             );
             continue;
         };
-        if !topology.map_resolves(&map, &object.name) {
+        if !exact && !topology.map_resolves(&map, &object.name) {
             losses.push(
                 FreecadLossCode::ExportNativePropertyNotTransferred
                     .note(format!("element map {} refers to omitted topology", map.id)),
@@ -282,11 +312,24 @@ pub(crate) fn write(
             hasher.map_or_else(String::new, |index| format!(" HasherIndex=\"{index}\""))
         );
         *shape = shape.replacen("<Part ", &part_attributes, 1);
-        let map_xml = format!(
-            "<ElementMap new=\"1\" count=\"0\"/><ElementMap2 count=\"{}\">{}</ElementMap2>",
-            map.declared_count.unwrap_or(0),
-            xml::escaped(&content)
-        );
+        // A map read from its own archive member is written back there, behind
+        // the placeholder marker FreeCAD keeps for older readers.
+        let side_entry = map
+            .source_entry
+            .clone()
+            .filter(|name| !archive_entries.contains_key(name));
+        let map_xml = if let Some(file) = side_entry {
+            let marker = "<ElementMap new=\"1\" count=\"1\"><Element key=\"Dummy\" value=\"Dummy\"/></ElementMap>";
+            let map_xml = format!("{marker}<ElementMap2 file=\"{}\"/>", xml::escaped(&file));
+            archive_entries.insert(file, format!("BeginElementMap v1\n{content}").into_bytes());
+            map_xml
+        } else {
+            format!(
+                "<ElementMap new=\"1\" count=\"0\"/><ElementMap2 count=\"{}\">{}</ElementMap2>",
+                map.declared_count.unwrap_or(0),
+                xml::escaped(&content)
+            )
+        };
         *shape = shape.replacen("</Property>", &format!("{map_xml}</Property>"), 1);
         super::super::dispositions::record(
             outcomes,

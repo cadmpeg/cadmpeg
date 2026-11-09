@@ -4,12 +4,11 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 
 use crate::bytes::take_reference;
 use crate::design::decode::text::fixed_guid_end;
 use crate::layout::body_consumer_browser_node_prefix as node_prefix;
-use crate::metastream::{primary_record_frames, MetaStream, PrimaryRecordFrame};
+use crate::metastream::{live_primary_record_frames, MetaStream, PrimaryRecordFrame};
 
 pub(crate) const COMBINE_TYPE_GUID: &str = "2A94257F-2020-4B19-9A68-103A2672F1B7";
 pub(crate) const REMOVE_BODY_TYPE_GUID: &str = "4A782808-FBDD-4351-A10A-F7AE5693D330";
@@ -17,22 +16,19 @@ const LOCAL_REFERENCE_LEN: usize = 11;
 
 /// Design entity suffixes of the bodies whose hidden browser nodes a consuming
 /// scope selects.
-pub(super) fn consumed_body_entities(
-    root: View<'_>,
-    meta: &MetaStream,
-) -> Result<HashSet<u64>, CodecError> {
+pub(super) fn consumed_body_entities(root: View<'_>, meta: &MetaStream) -> HashSet<u64> {
     let consumers = entities_of(meta, |guid| {
         [COMBINE_TYPE_GUID, REMOVE_BODY_TYPE_GUID]
             .iter()
             .any(|consumer| consumer.eq_ignore_ascii_case(guid))
     });
     if consumers.is_empty() {
-        return Ok(HashSet::new());
+        return HashSet::new();
     }
     let nodes = entities_of(meta, |guid| {
         crate::design::presentation::BROWSER_NODE_TYPE_GUID.eq_ignore_ascii_case(guid)
     });
-    let frames: HashMap<_, _> = primary_record_frames(meta, root.remaining())?
+    let frames: HashMap<_, _> = live_primary_record_frames(meta, root.remaining())
         .into_iter()
         .map(|frame| (frame.entity_id, frame))
         .collect();
@@ -54,7 +50,7 @@ pub(super) fn consumed_body_entities(
             }
         }
     });
-    Ok(consumed)
+    consumed
 }
 
 fn entities_of(meta: &MetaStream, selected: impl Fn(&str) -> bool) -> HashSet<u64> {

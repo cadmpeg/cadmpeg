@@ -15,21 +15,15 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 use std::collections::{HashMap, HashSet};
 
-fn frame(
-    object: &mut Object,
-    name: &str,
-    transform: Transform,
-    losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+fn frame(object: &mut Object, name: &str, transform: Transform, losses: &mut Vec<LossNote>) {
     object.set(
         name,
-        super::placement(transform, &object.name, losses)?.replacen(
+        super::placement(transform, &object.name, losses).replacen(
             "name=\"Placement\"",
             &format!("name=\"{name}\""),
             1,
         ),
     );
-    Ok(())
 }
 
 fn reference(
@@ -96,7 +90,7 @@ fn scalar(object: &mut Object, name: &str, value: Option<FiniteReal>, angular: b
                 },
                 "Float",
                 if angular {
-                    value.get().to_degrees()
+                    xml::degrees(value.get())
                 } else {
                     value.get()
                 },
@@ -261,10 +255,10 @@ pub(super) fn write(
             ));
         }
         names.insert(joint.id.as_str().to_owned(), name.clone());
-        let object = objects
-            .iter_mut()
-            .find(|object| object.name == name)
-            .ok_or_else(|| CodecError::malformed("joint output is absent"))?;
+        let Some(object) = objects.iter_mut().find(|object| object.name == name) else {
+            debug_assert!(false, "joint output is absent");
+            continue;
+        };
         for key in [
             "JointType",
             "ObjectToGround",
@@ -359,7 +353,7 @@ pub(super) fn write(
                 } else {
                     connector.frame
                 };
-                frame(object, "Placement", placement, losses)?;
+                frame(object, "Placement", placement, losses);
                 bool_property(object, "Detach1", connector.detached);
             }
             JointOperands::Pair {
@@ -394,13 +388,13 @@ pub(super) fn write(
                         &format!("Placement{suffix}"),
                         connector.frame,
                         losses,
-                    )?;
+                    );
                     frame(
                         object,
                         &format!("Offset{suffix}"),
                         offset_frames.map_or(Transform::identity(), |frames| frames[index]),
                         losses,
-                    )?;
+                    );
                     bool_property(object, &format!("Detach{suffix}"), connector.detached);
                 }
             }

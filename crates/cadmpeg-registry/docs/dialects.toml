@@ -888,13 +888,13 @@ witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/outer_directo
 # human summary and in the primary `DialectMatch.declared` map as
 # `splmsstr_version` or `ugii_version`. No decode branch compares the byte.
 #
-# The product string is provenance too. `product_record_layout`
-# (om.rs:8992-9011) requires the text to start with `NX ` (om.rs:9001) and
-# accepts two framings (`ProductRecordForm::Modern` / `LegacyFeature`,
-# om.rs:8986-8990). Each extracted value is carried as an opaque `String` on
-# its native `StoreHeader`; it is not projected onto the host dialect match.
+# The product string is provenance too. `ProductRecord::read`
+# (om/product.rs:56) accepts two framings (`ProductRecordForm::Modern` /
+# `LegacyFeature`, om/product.rs:44); the product text starts with `NX `
+# (om/product.rs:13) and is carried as its exact printable text on the
+# native store header, not projected onto the host dialect match.
 # Nothing parses a release number from it. Cardinality is used structurally
-# (`product_record_count != 1` rejects a candidate, om.rs:9336-9341); content
+# (`product_record_count != 1` rejects a candidate, om.rs:4215-4219); content
 # is not.
 #
 # Embedded Parasolid streams are classified from the inflated `PS\0\0`

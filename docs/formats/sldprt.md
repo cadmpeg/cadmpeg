@@ -1529,7 +1529,7 @@ After the name string, a named object's body holds a named-object header, at off
 | +12 | little-endian u32 |
 | +16 | Unicode `CString` |
 
-The object identifier at name string +8 is the identifier that §2's object-name records read. A named `moExtFeature_c` object writes a second name object after its name string instead of the header.
+The object identifier at name string +8 is the identifier that §2's object-name records read. A named `moExtFeature_c` object writes a second name object after its name string instead of the header. A name object whose string a class declaration or another name object follows within twelve bytes has no named-object header and states no object identifier.
 
 A feature or folder object writes a feature-object block after the named-object header's string. The head of the block opens with a list of the block's *inputs*: a little-endian u32 `0`, a little-endian u16, a little-endian u16 count *n*, *n* object pointers (§2.2), and twelve zero bytes. The fields after the list are at the offsets below when *n* is zero; inputs move them by their length. The u16 at +4 is zero in every class but `moBaseBody_c`, where it can be nonzero. An extrusion feature's one input is a reference to the `moProfileFeature_c` sketch feature it extrudes, which is why the extrusion classes write two more bytes before +20. A `moDetailCabinet_c` cabinet's inputs are its notes folders (open item EV-15).
 

@@ -450,7 +450,6 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 .expect("native family name")
                 .try_into()
                 .unwrap(),
-                unclosed_construction_operand_groups: Vec::new(),
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "001".to_owned(),
                 )
@@ -644,7 +643,6 @@ fn design_projection_gaps_keep_history_state_independent_of_feature_dependencies
                 .expect("native family name")
                 .try_into()
                 .unwrap(),
-                unclosed_construction_operand_groups: Vec::new(),
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "001".to_owned(),
                 )

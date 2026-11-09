@@ -288,22 +288,6 @@ pub(crate) fn transfer_neutral(
             }
         }
     }
-    // Explicit typed controls distinguish standalone product definitions from
-    // application objects used only to carry geometry or native organization.
-    for object in objects {
-        if crate::writer::products::metadata::included(properties, object.id().as_str(), true)?
-            == Some(true)
-        {
-            component_objects.push(object.id().as_str());
-        }
-    }
-    let mut controlled_components = Vec::new();
-    for object in component_objects {
-        if crate::writer::products::metadata::included(properties, object, true)? != Some(false) {
-            controlled_components.push(object);
-        }
-    }
-    let mut component_objects = controlled_components;
     component_objects.sort_unstable_by(Ord::cmp);
     component_objects.dedup();
 
@@ -457,11 +441,6 @@ pub(crate) fn transfer_neutral(
         matches!(record.node, ProductNode::Occurrence(_))
             && !element_objects.contains(record.object.as_str())
     }) {
-        if crate::writer::products::metadata::included(properties, &record.object, false)?
-            == Some(false)
-        {
-            continue;
-        }
         let owned = properties_by_owner
             .get(record.object.as_str())
             .map_or(&[][..], Vec::as_slice);
@@ -664,12 +643,9 @@ pub(crate) fn transfer_neutral(
             id: definition_id(object)?,
             kind,
             source_name: source_object.map(|object| object.name().to_owned()),
-            label: match metadata_string(ctx, owned, "CadmpegProductLabel")? {
-                Some(label) => {
-                    serde_json::from_str::<Option<String>>(&label).unwrap_or(Some(label))
-                }
-                None => metadata_string(ctx, owned, "Label")?,
-            },
+            label: metadata_string(ctx, owned, "Label")?
+                .filter(|label| !label.trim().is_empty())
+                .or_else(|| source_object.map(|object| object.name().to_owned())),
             description: metadata_string(ctx, owned, "Description")?,
             part_number: metadata_string(ctx, owned, part_number_carrier)?
                 .filter(|value| !value.is_empty()),
@@ -698,9 +674,6 @@ pub(crate) fn transfer_neutral(
         .iter()
         .filter(|object| placed_objects.contains(**object))
     {
-        if crate::writer::products::metadata::included(properties, object, false)? == Some(false) {
-            continue;
-        }
         let record = record_by_object.get(*object).copied();
         let local_transform = record
             .and_then(ProductNodeRecord::local_transform)
@@ -785,7 +758,50 @@ pub(crate) fn transfer_neutral(
         occurrence.ordinal = u32::try_from(rank)
             .map_err(|_| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
     }
-    crate::writer::products::metadata::apply(properties, &mut definitions, &mut occurrences)?;
+    // A container's children rank by position in its Group (#238 §5.5).
+    let mut groups: HashMap<String, HashMap<&str, usize>> = HashMap::new();
+    for occurrence in &occurrences {
+        let Some(record) = occurrence
+            .native_ref
+            .as_deref()
+            .and_then(|object| record_by_object.get(object).copied())
+        else {
+            continue;
+        };
+        groups.insert(
+            occurrence.id.as_str().to_owned(),
+            record
+                .members()
+                .iter()
+                .enumerate()
+                .map(|(position, member)| (member.as_str(), position))
+                .collect(),
+        );
+    }
+    // Members outside their parent's Group sort after it, by ordinal.
+    let mut children: HashMap<String, Vec<(Option<usize>, u32, usize)>> = HashMap::new();
+    for (index, occurrence) in occurrences.iter().enumerate() {
+        let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
+            continue;
+        };
+        let position = groups
+            .get(parent.as_str())
+            .zip(occurrence.native_ref.as_deref())
+            .and_then(|(group, native)| group.get(native).copied());
+        children
+            .entry(parent.as_str().to_owned())
+            .or_default()
+            .push((position, occurrence.ordinal, index));
+    }
+    for mut members in children.into_values() {
+        members.sort_unstable_by_key(|&(position, ordinal, index)| {
+            (position.is_none(), position, ordinal, index)
+        });
+        for (rank, (_, _, index)) in members.into_iter().enumerate() {
+            occurrences[index].ordinal = u32::try_from(rank)
+                .map_err(|_| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
+        }
+    }
     Ok((definitions, occurrences))
 }
 

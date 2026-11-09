@@ -144,3 +144,35 @@ fn marker_literals_keep_their_wire_spelling() {
         "sldprt:marker-geometry:2"
     );
 }
+
+#[test]
+fn a_name_followed_by_another_record_states_no_object_identifier() {
+    let mut payload = Vec::new();
+    for name in ["Sketch1", "Boss"] {
+        payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff]);
+        payload.push(u8::try_from(name.len()).unwrap());
+        for unit in name.encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+    payload.extend_from_slice(&[0; 8]);
+    payload.extend_from_slice(&7_u32.to_le_bytes());
+    payload.extend_from_slice(CLASS_MARKER);
+    payload.extend_from_slice(&12_u16.to_le_bytes());
+    payload.extend_from_slice(b"sgPntPntDist");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let names = object_names(&ctx, &payload, "lane").unwrap();
+    let identities = names
+        .iter()
+        .map(|name| {
+            (
+                name.value.as_str(),
+                name.object_id.and_then(crate::records::ObjectId::value),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(identities, [("Sketch1", None), ("Boss", Some(7))]);
+}

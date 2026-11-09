@@ -168,6 +168,18 @@ pub(super) fn row(ir: &CadIr, constraint: &SketchConstraint, indices: &Indices) 
                 entity(axis, indices)?,
             ],
         ),
+        C::PointSymmetric {
+            first,
+            second,
+            center,
+        } => (
+            14,
+            vec![
+                locus(first, indices)?,
+                locus(second, indices)?,
+                locus(center, indices)?,
+            ],
+        ),
         C::InternalAlignment {
             helper,
             parent,

@@ -35,14 +35,15 @@ fn unsafe_entry_names_refuse_construction_and_duplicates_remain_writer_limits() 
         &std::collections::HashMap::new(),
     )
     .expect_err("output order cannot be inferred from identity");
-    assert!(missing_order_error
-        .to_string()
-        .contains("no retained restoration order"));
+    assert!(matches!(
+        missing_order_error,
+        crate::writer::PatchError::Declined(reason) if reason.contains("no retained restoration order")
+    ));
     let duplicate_error = validate_entry_names(&[entry.record.clone(), entry.record])
         .expect_err("duplicate output paths are refused");
     assert!(matches!(
         duplicate_error,
-        cadmpeg_core::CodecError::Malformed(_)
+        crate::writer::PatchError::Declined(_)
     ));
 }
 
@@ -193,9 +194,7 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
         }),
         order: 0,
     };
-    let output = crate::writer::xml::native(&property, &std::collections::HashSet::new())
-        .unwrap()
-        .unwrap();
+    let output = crate::writer::xml::native(&property, &std::collections::HashSet::new()).unwrap();
     assert_eq!(output.matches(r#"value="same""#).count(), 1);
     assert_eq!(output.matches(r#"value="changed""#).count(), 1);
     assert!(
@@ -229,9 +228,8 @@ fn xml_serialization_preserves_normalized_whitespace() {
             side_entries: Vec::new(),
         }),
     };
-    let serialized = crate::writer::xml::native(&property, &std::collections::HashSet::new())
-        .unwrap()
-        .unwrap();
+    let serialized =
+        crate::writer::xml::native(&property, &std::collections::HashSet::new()).unwrap();
     assert!(serialized.contains("a&#9;b&#10;c&#13;d"));
     assert_eq!(serialized.matches("&#9;").count(), 2);
     assert_eq!(serialized.matches("&#10;").count(), 2);

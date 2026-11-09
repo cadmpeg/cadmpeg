@@ -22,6 +22,7 @@ mod tables;
 pub(crate) mod target;
 mod trim_iso;
 mod trims;
+mod user_strings;
 mod wire;
 use model::{
     ReducedCarrier, WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel,
@@ -481,6 +482,8 @@ fn write_buffered<'budget>(
         &long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes())?,
         "retain Rhino archive bytes",
     )?;
+    let layer_losses = omitted_layer_item_losses(ir, &plan.losses);
+    plan.losses.extend(layer_losses);
     let free_points = ir
         .model
         .points
@@ -1065,8 +1068,10 @@ fn prepare_write<'a, 'budget>(
                     .filter(|_| written_native.is_none())
                 {
                     losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                        "surface {} procedural construction {} was reduced to a held solved carrier",
-                        surface.id, construction
+                        "surface {} procedural construction {} was reduced to a held solved carrier{}",
+                        surface.id,
+                        construction,
+                        construction_curve_suffix(model, construction.as_str())
                     )));
                 }
             }
@@ -1078,7 +1083,8 @@ fn prepare_write<'a, 'budget>(
                         .geometry
                         .procedural_construction()
                         .map(|construction| format!(
-                            "; procedural construction {construction} omitted"
+                            "; procedural construction {construction} omitted{}",
+                            construction_curve_suffix(model, construction.as_str())
                         ))
                         .unwrap_or_default()
                 )));
@@ -1189,7 +1195,13 @@ fn prepare_write<'a, 'budget>(
         }
         let local = baked.clone();
         match placement::bake(&mut baked) {
-            Ok(()) => {}
+            Ok(()) => {
+                if placement.is_proper_rigid()
+                    && placement != cadmpeg_ir::transform::Transform::identity()
+                {
+                    losses.push(baked_placement_loss(&baked));
+                }
+            }
             Err(WriteError::Omit(reason)) => {
                 baked = local;
                 let body = &mut baked.model.bodies[0];
@@ -1201,12 +1213,11 @@ fn prepare_write<'a, 'budget>(
             }
             Err(error) => return Err(error),
         }
-        if let Some((wire, curve_id, conversion)) = wire::single_curve(&baked, archive_version)? {
+        if let Some((wire, edges)) = wire::wire_brep(&baked, archive_version)? {
             let body = &baked.model.bodies[0];
-            let edge = &baked.model.edges[0];
             let display = presentation::display(
                 ir,
-                &cadmpeg_ir::appearance::AppearanceTarget::Edge(edge.id.clone()),
+                &cadmpeg_ir::appearance::AppearanceTarget::Edge(edges[0].edge.id.clone()),
                 None,
             );
             ctx.charge_entities(wire.record_count, "write Rhino Brep records")?;
@@ -1222,12 +1233,19 @@ fn prepare_write<'a, 'budget>(
                 )?,
                 "retain Rhino Brep records",
             )?;
-            losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
-                "body {} wire ownership is written as a 3DM Brep without shell membership: region {}, shell {}",
-                body.id, baked.model.regions[0].id, baked.model.shells[0].id
-            )));
-            losses.extend(conversion);
-            if let Some(curve) = baked.model.curves.iter().find(|curve| curve.id == curve_id) {
+            if body.kind != cadmpeg_ir::topology::BodyKind::Wire {
+                losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                    "body {} of kind {:?} is written as a faceless 3DM Brep, which holds a wire body",
+                    body.id, body.kind
+                )));
+            }
+            for wire::WireEdge {
+                edge,
+                curve,
+                conversion,
+            } in edges
+            {
+                losses.extend(conversion);
                 if matches!(
                     curve.geometry.solved(),
                     Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Circle(_))
@@ -1253,8 +1271,8 @@ fn prepare_write<'a, 'budget>(
                         curve.id, edge.id
                     )));
                 }
+                written_curves.insert(curve.id.to_string());
             }
-            written_curves.insert(curve_id.to_string());
             written_bodies.insert(body.id.to_string());
             brep_count += 1;
             continue;
@@ -1509,6 +1527,81 @@ fn prepare_write<'a, 'budget>(
     })
 }
 
+/// The construction curves a dropped procedural surface construction leaves
+/// unwritten, as a loss message suffix.
+fn construction_curve_suffix(model: &cadmpeg_ir::document::Model, construction: &str) -> String {
+    let curves = scopes::construction_curves(model, construction);
+    if curves.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "; its construction curve(s) {} are omitted",
+            curves.join(", ")
+        )
+    }
+}
+
+/// Layers that lose a member because the write omits the member's record.
+fn omitted_layer_item_losses(ir: &CadIr, losses: &[LossNote]) -> Vec<LossNote> {
+    let omitted = |id: &str| {
+        let phrase = format!("{id} omitted");
+        losses.iter().any(|loss| {
+            loss.code == RhinoLossCode::WriterEntityOmitted.kind() && loss.message.contains(&phrase)
+        })
+    };
+    ir.model
+        .presentation_layers
+        .iter()
+        .filter_map(|layer| {
+            let members = layer
+                .items
+                .iter()
+                .filter_map(|item| serde_json::to_value(item).ok())
+                .filter_map(|item| {
+                    item.as_object()?
+                        .iter()
+                        .filter(|(key, _)| key.as_str() != "kind")
+                        .find_map(|(_, value)| value.as_str().map(str::to_owned))
+                })
+                .filter(|id| omitted(id))
+                .collect::<Vec<_>>();
+            (!members.is_empty()).then(|| {
+                RhinoLossCode::WriterEntityOmitted.note(format!(
+                    "layer {} loses omitted member(s) {}",
+                    layer.id,
+                    members.join(", ")
+                ))
+            })
+        })
+        .collect()
+}
+
+/// The records a baked placement writes in world coordinates: they re-decode
+/// as records without the body's local frame.
+fn baked_placement_loss(baked: &CadIr) -> LossNote {
+    let model = &baked.model;
+    let ids = model
+        .points
+        .iter()
+        .map(|row| row.id.as_str())
+        .chain(model.curves.iter().map(|row| row.id.as_str()))
+        .chain(model.surfaces.iter().map(|row| row.id.as_str()))
+        .chain(model.vertices.iter().map(|row| row.id.as_str()))
+        .chain(model.edges.iter().map(|row| row.id.as_str()))
+        .chain(model.coedges.iter().map(|row| row.id.as_str()))
+        .chain(model.loops.iter().map(|row| row.id.as_str()))
+        .chain(model.faces.iter().map(|row| row.id.as_str()))
+        .chain(model.shells.iter().map(|row| row.id.as_str()))
+        .chain(model.regions.iter().map(|row| row.id.as_str()))
+        .collect::<Vec<_>>();
+    RhinoLossCode::WriterBodyPlacementBaked.note(format!(
+        "body {} placement is baked into its geometry; {} record(s) are written in world coordinates: {}",
+        model.bodies[0].id,
+        ids.len(),
+        ids.join(", ")
+    ))
+}
+
 fn native_dispositions(
     ir: &CadIr,
     version: RhinoArchiveVersion,
@@ -1519,20 +1612,6 @@ fn native_dispositions(
         crate::native_registry::ARENAS,
         NativeDisposition::Dropped,
     );
-    for (namespace, store) in &ir.native.0 {
-        if namespace == "rhino" {
-            continue;
-        }
-        let arenas = store.arenas().keys().map(String::as_str);
-        dispositions = {
-            let mut next = dispositions;
-            // Foreign native namespaces are not preserved by the Rhino writer.
-            let foreign =
-                NativeDispositions::for_namespace(namespace, arenas, NativeDisposition::Dropped);
-            next.namespaces.extend(foreign.namespaces);
-            next
-        };
-    }
     let materials = MaterialPlan::new(ir)?;
     if let Some(records) = ir
         .native
@@ -4049,8 +4128,16 @@ fn analytic_revolution(
         }
     };
     let bounds = patch_bounds(point_at, [u0, u1], [v0, v1]);
+    let faces = ir
+        .model
+        .faces
+        .iter()
+        .filter(|face| face.surface.as_str() == id)
+        .map(|face| face.id.as_str())
+        .collect::<Vec<_>>();
     let loss = crate::loss::RhinoLossCode::WriterCarrierResolved.note(format!(
-        "surface {id} analytic {kind} carrier was rewritten as a native revolution surface over the used parameter range",
+        "surface {id} analytic {kind} carrier was rewritten as a native revolution surface over the used parameter range; its face(s) {} carry the revolution surface",
+        faces.join(", "),
     ));
     let v_domain = match analytic {
         SolvedSurfaceGeometry::Torus(_) => [0.0, std::f64::consts::TAU],
@@ -4301,8 +4388,6 @@ fn attributed_object_record(
     display: presentation::Display<'_>,
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
-    let name = display.name.unwrap_or_default();
-    let strings = object_user_strings(ir, identity, name);
     framed_object_record_with_userdata(
         object_type,
         class_uuid,
@@ -4316,7 +4401,7 @@ fn attributed_object_record(
             display.visible,
             materials,
         )?),
-        attribute_userdata_chunk(&strings)?,
+        object_userdata(ir, &[identity], display.name)?,
         &[],
     )
 }
@@ -4328,8 +4413,6 @@ fn surface_object_record(
     display: presentation::Display<'_>,
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
-    let name = display.name.unwrap_or_default();
-    let strings = object_user_strings(ir, identity, name);
     framed_object_record_with_userdata(
         if payload.class == crate::extrusion::ON_EXTRUSION.to_wire() {
             0x10
@@ -4347,7 +4430,7 @@ fn surface_object_record(
             display.visible,
             materials,
         )?),
-        attribute_userdata_chunk(&strings)?,
+        object_userdata(ir, &[identity], display.name)?,
         &[],
     )
 }
@@ -4359,8 +4442,6 @@ fn curve_object_record(
     display: presentation::Display<'_>,
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
-    let name = display.name.unwrap_or_default();
-    let strings = object_user_strings(ir, identity, name);
     framed_object_record_with_userdata(
         4,
         payload.class,
@@ -4374,7 +4455,7 @@ fn curve_object_record(
             display.visible,
             materials,
         )?),
-        attribute_userdata_chunk(&strings)?,
+        object_userdata(ir, &[identity], display.name)?,
         &[],
     )
 }
@@ -4386,8 +4467,6 @@ fn mesh_object_record(
     display: presentation::Display<'_>,
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
-    let name = display.name.unwrap_or_default();
-    let strings = object_user_strings(ir, identity, name);
     framed_object_record_with_userdata(
         0x20,
         MESH_CLASS,
@@ -4401,7 +4480,7 @@ fn mesh_object_record(
             display.visible,
             materials,
         )?),
-        attribute_userdata_chunk(&strings)?,
+        object_userdata(ir, &[identity], display.name)?,
         &[],
     )
 }
@@ -4415,7 +4494,6 @@ fn brep_object_record(
     visible: Option<bool>,
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
-    let strings = object_user_strings(ir, identity, name.unwrap_or_default());
     framed_object_record_with_userdata(
         0x10,
         BREP_CLASS,
@@ -4424,7 +4502,7 @@ fn brep_object_record(
         Some(object_attributes_payload(
             ir, identity, name, color, visible, materials,
         )?),
-        attribute_userdata_chunk(&strings)?,
+        object_userdata(ir, &[identity], name)?,
         &[],
     )
 }
@@ -4447,23 +4525,13 @@ fn framed_object_record(
     )
 }
 
-pub(super) fn framed_object_record_full(
-    object_type: i64,
-    class_uuid: [u8; 16],
-    payload: &[u8],
-    direct_class_data: Option<&[u8]>,
-    attributes: Option<Vec<u8>>,
-    attributes_userdata: Option<Vec<u8>>,
-) -> Result<Vec<u8>, CodecError> {
-    framed_object_record_with_userdata(
-        object_type,
-        class_uuid,
-        payload,
-        direct_class_data,
-        attributes,
-        attributes_userdata,
-        &[],
-    )
+/// The attributes userdata chunk carrying the user strings of `records`.
+fn object_userdata(
+    ir: &CadIr,
+    records: &[&str],
+    name: Option<&str>,
+) -> Result<Option<Vec<u8>>, CodecError> {
+    user_strings::attributes_userdata(&user_strings::object_user_strings(ir, records, name))
 }
 
 fn framed_object_record_with_userdata(
@@ -4501,213 +4569,6 @@ fn framed_object_record_with_userdata(
     }
     body.extend(object_end);
     zero_crc_chunk(TCODE_OBJECT_RECORD, &body)
-}
-
-/// Neutral facts without a dedicated object-attributes field survive as
-/// attribute user strings in a `ON_UserStringList` userdata chunk. The decode
-/// side reads the same keys back into `object_presentation`.
-pub(crate) fn object_user_strings(ir: &CadIr, identity: &str, name: &str) -> Vec<(String, String)> {
-    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
-    let mut result = Vec::new();
-    let attribute_target = |target: &AttributeTarget| -> bool {
-        let id = match target {
-            AttributeTarget::Body(id) => Some(id.as_str()),
-            AttributeTarget::Face(id) => Some(id.as_str()),
-            AttributeTarget::Edge(id) => Some(id.as_str()),
-            AttributeTarget::Vertex(id) => Some(id.as_str()),
-            AttributeTarget::Surface(id) => Some(id.as_str()),
-            AttributeTarget::Curve(id) => Some(id.as_str()),
-            AttributeTarget::Point(id) => Some(id.as_str()),
-            AttributeTarget::Tessellation(id) => Some(id.as_str()),
-            AttributeTarget::Occurrence(id) => Some(id.as_str()),
-            AttributeTarget::Record { id, .. } => Some(id.as_str()),
-            AttributeTarget::Document
-            | AttributeTarget::Shell(_)
-            | AttributeTarget::Loop(_)
-            | AttributeTarget::Coedge(_)
-            | AttributeTarget::Region(_)
-            | AttributeTarget::Feature(_)
-            | AttributeTarget::Sketch(_)
-            | AttributeTarget::Parameter(_)
-            | AttributeTarget::ProductDefinition(_)
-            | AttributeTarget::Pmi(_)
-            | AttributeTarget::Drawing(_)
-            | AttributeTarget::ViewPresentation(_)
-            | AttributeTarget::SemanticAnnotation(_) => None,
-        };
-        id.is_some_and(|id| id == identity || identity_uuid(id, identity))
-    };
-    if let Some(attribute) = ir.model.attributes.iter().find(|attribute| {
-        attribute_target(&attribute.target)
-            && (attribute.name == "name" || attribute.id.as_str().contains(":object-name#"))
-            && matches!(
-                attribute.values.as_slice(),
-                [Some(AttributeValue::String(_))]
-            )
-    }) {
-        if attribute.name != "name" {
-            result.push((
-                "cadmpeg:object-name-classification".to_owned(),
-                attribute.name.clone(),
-            ));
-        }
-        let Some(AttributeValue::String(value)) = attribute.values.first().and_then(Option::as_ref)
-        else {
-            unreachable!()
-        };
-        if !name.is_empty() && value != name {
-            result.push(("cadmpeg:object-name-value".to_owned(), value.clone()));
-        }
-    }
-    if let Some(body) = ir.model.bodies.iter().find(|body| {
-        (body.name.is_some() || body.color.is_some())
-            && identity_uuid(body.id.as_str(), identity)
-    }) {
-        if let Some(body_name) = body.name.as_deref() {
-            if body_name != name {
-                result.push(("cadmpeg:body-name".to_owned(), body_name.to_owned()));
-            }
-        }
-        if let Some(color) = body.color {
-            result.push((
-                "cadmpeg:body-color".to_owned(),
-                format!(
-                    "{:02x}{:02x}{:02x}{:02x}",
-                    unit_color_channel(color.r()).unwrap_or(0),
-                    unit_color_channel(color.g()).unwrap_or(0),
-                    unit_color_channel(color.b()).unwrap_or(0),
-                    unit_color_channel(1.0 - color.a()).unwrap_or(0),
-                ),
-            ));
-        }
-    }
-    if let Some(view) = ir.model.view_presentations.iter().find(|view| {
-        view.object
-            .as_deref()
-            .is_some_and(|object| object == identity || identity_uuid(object, identity))
-    }) {
-        result.push((
-            "cadmpeg:object-view-order".to_owned(),
-            view.order.to_string(),
-        ));
-        result.push((
-            "cadmpeg:object-view-visible".to_owned(),
-            view.visible
-                .map_or("none".to_owned(), |value| value.to_string()),
-        ));
-    }
-    if let Some(annotation) = ir
-        .model
-        .semantic_annotations
-        .iter()
-        .find(|annotation| annotation.id.as_str() == identity)
-    {
-        result.push((
-            "cadmpeg:annotation-order".to_owned(),
-            annotation.order.to_string(),
-        ));
-    }
-    result
-}
-
-fn identity_uuid(left: &str, right: &str) -> bool {
-    matched_uuid(left, right) && matched_uuid(right, left)
-}
-
-fn matched_uuid(candidate: &str, other: &str) -> bool {
-    let Some((_, key)) = candidate.split_once('#') else {
-        return false;
-    };
-    let candidate = if key.len() == 36 {
-        Some(&key[..36])
-    } else if key.len() > 36 && key.as_bytes().get(36).is_some_and(|byte| *byte == b'.') {
-        Some(&key[..36])
-    } else {
-        None
-    };
-    candidate.is_some_and(|uuid| other.contains(uuid))
-}
-
-fn anonymous_chunk(
-    major: i32,
-    minor: i32,
-    fields: &[u8],
-    children: &[std::ops::Range<usize>],
-) -> Result<Vec<u8>, CodecError> {
-    let mut body = major.to_le_bytes().to_vec();
-    body.extend(minor.to_le_bytes());
-    body.extend(fields);
-    let children = children
-        .iter()
-        .map(|range| range.start + 8..range.end + 8)
-        .collect::<Vec<_>>();
-    let ranges = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
-        .map_err(|error| CodecError::malformed(error.to_string()))?;
-    let mut direct = Vec::new();
-    for range in &ranges {
-        direct.extend_from_slice(&body[range]);
-    }
-    crc_chunk_with_direct(0x4000_8000, &body, &direct)
-}
-
-fn user_string_chunk(strings: &[(String, String)]) -> Result<Vec<u8>, CodecError> {
-    let count = i32::try_from(strings.len())
-        .map_err(|_| CodecError::malformed("user string count exceeds i32"))?;
-    let mut fields = count.to_le_bytes().to_vec();
-    let mut entry_ranges = Vec::new();
-    for (key, value) in strings {
-        let mut entry_fields = Vec::new();
-        entry_fields.extend(utf16(key)?);
-        entry_fields.extend(utf16(value)?);
-        let range_start = fields.len();
-        fields.extend(anonymous_chunk(1, 0, &entry_fields, &[])?);
-        entry_ranges.push(range_start..fields.len());
-    }
-    let list = anonymous_chunk(1, 0, &fields, &entry_ranges)?;
-    let payload = crc_chunk(0x4000_8000, &list)?;
-    let class = crate::objects::USER_STRING_LIST.to_wire();
-    let nil = [0; 16];
-    let transform: Vec<u8> = (0..16)
-        .flat_map(|index| {
-            let value: f64 = if index % 5 == 0 { 1.0 } else { 0.0 };
-            value.to_le_bytes().to_vec()
-        })
-        .collect();
-    let header_body = [
-        class.to_vec(),
-        class.to_vec(),
-        0_i32.to_le_bytes().to_vec(),
-        transform,
-        nil.to_vec(),
-        vec![0],
-        60_i32.to_le_bytes().to_vec(),
-        0_u32.to_le_bytes().to_vec(),
-    ]
-    .concat();
-    let header = crc_chunk(0x0002_fff9, &header_body)?;
-    let header_len = header.len();
-    let mut wrapper = vec![0x22];
-    wrapper.extend(header);
-    wrapper.extend(payload);
-    let children = [1..1 + header_len, 1 + header_len..wrapper.len()];
-    let ranges = crate::chunks::direct_checksum_ranges(&(0..wrapper.len()), &children)
-        .map_err(|error| CodecError::malformed(error.to_string()))?;
-    let mut hasher = crc32fast::Hasher::new();
-    for range in &ranges {
-        hasher.update(&wrapper[range]);
-    }
-    let mut final_body = wrapper;
-    final_body.extend(hasher.finalize().to_le_bytes());
-    long_chunk(0x0002_7ffd, &final_body)
-}
-
-pub(crate) fn attribute_userdata_chunk(
-    strings: &[(String, String)],
-) -> Result<Option<Vec<u8>>, CodecError> {
-    if strings.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(long_chunk(0x0200_0073, &user_string_chunk(strings)?)?))
 }
 
 /// Reuse the document's native UUID identity when present. Foreign identities

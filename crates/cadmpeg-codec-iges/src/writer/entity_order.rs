@@ -7,7 +7,7 @@ use super::{
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn source_order(
     ir: &CadIr,
@@ -105,4 +105,31 @@ pub(super) fn reorder(
     }
     super::remap_presentations(presentations, &remap);
     Ok(())
+}
+
+/// The native records that the output regenerates from neutral (#209 §2.3
+/// W2): each Directory record and each direction record whose entity the
+/// output writes.
+pub(super) fn regenerated_records(ir: &CadIr, entities: &[Entity]) -> BTreeSet<String> {
+    let Some(namespace) = ir.native.namespace("iges") else {
+        return BTreeSet::new();
+    };
+    let targets = attributes::targets(ir, entities);
+    let mut regenerated = BTreeSet::new();
+    for record in namespace.arenas().get("entities").into_iter().flatten() {
+        if targets.contains_key(record.id()) {
+            regenerated.insert(record.id().to_owned());
+        }
+    }
+    for record in namespace.arenas().get("directions").into_iter().flatten() {
+        let source = record
+            .field("source_entity")
+            .and_then(|value| value.as_str().map(str::to_owned));
+        if targets.contains_key(record.id())
+            || source.is_some_and(|source| targets.contains_key(&source))
+        {
+            regenerated.insert(record.id().to_owned());
+        }
+    }
+    regenerated
 }

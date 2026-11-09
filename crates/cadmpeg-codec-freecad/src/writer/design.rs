@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 /// Placement quaternion comes from the neutral matrix, never source XML.
 /// General affine placements cannot be stored by `App::PropertyPlacement`.
-pub(super) fn placement(transform: Transform) -> Result<String, CodecError> {
+pub(super) fn placement(transform: Transform) -> String {
     let rows = transform.affine_rows();
     let matrix = [
         [rows[0][0], rows[0][1], rows[0][2]],
@@ -32,7 +32,7 @@ pub(super) fn placement(transform: Transform) -> Result<String, CodecError> {
     } else {
         let i = (0..3)
             .max_by(|left, right| matrix[*left][*left].total_cmp(&matrix[*right][*right]))
-            .ok_or_else(|| CodecError::malformed("placement matrix is empty"))?;
+            .unwrap_or(0);
         let j = (i + 1) % 3;
         let k = (i + 2) % 3;
         let scale = (1.0 + matrix[i][i] - matrix[j][j] - matrix[k][k]).sqrt() * 2.0;
@@ -43,12 +43,18 @@ pub(super) fn placement(transform: Transform) -> Result<String, CodecError> {
         result[3] = (matrix[k][j] - matrix[j][k]) / scale;
         result
     };
-    if quaternion.iter().any(|value| !value.is_finite()) {
-        return Err(CodecError::malformed(
-            "placement cannot form a finite quaternion",
-        ));
-    }
-    Ok(xml::property(
+    // Callers pass rigid placements, whose rotation forms a finite unit
+    // quaternion.
+    debug_assert!(
+        quaternion.iter().all(|value| value.is_finite()),
+        "a rigid placement forms a finite quaternion"
+    );
+    let quaternion = if quaternion.iter().all(|value| value.is_finite()) {
+        quaternion
+    } else {
+        [0.0, 0.0, 0.0, 1.0]
+    };
+    xml::property(
         "Placement",
         "App::PropertyPlacement",
         &xml::element(
@@ -63,7 +69,7 @@ pub(super) fn placement(transform: Transform) -> Result<String, CodecError> {
                 ("Q3", quaternion[3].to_string()),
             ],
         ),
-    ))
+    )
 }
 
 /// Render a spreadsheet cell's content: a string literal carries its
@@ -197,12 +203,11 @@ pub(super) fn spreadsheets(
                 .map(|dimension| {
                     let index = dimension.index.get();
                     let name = if element == "Column" {
-                        let address = cadmpeg_ir::CellAddress::new(1, index)
-                            .ok_or_else(|| {
-                                CodecError::malformed("spreadsheet column must be positive")
-                            })?
-                            .a1();
-                        address.trim_end_matches('1').to_owned()
+                        let Some(address) = cadmpeg_ir::CellAddress::new(1, index) else {
+                            debug_assert!(false, "a spreadsheet column index is positive");
+                            return Ok(String::new());
+                        };
+                        address.a1().trim_end_matches('1').to_owned()
                     } else {
                         index.to_string()
                     };
