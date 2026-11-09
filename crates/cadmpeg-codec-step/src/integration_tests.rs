@@ -3,6 +3,7 @@
 
 mod assembly_bodies;
 mod declared_measures;
+mod multi_region_bodies;
 mod partial_geometry;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};

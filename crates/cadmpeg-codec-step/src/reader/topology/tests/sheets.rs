@@ -461,3 +461,28 @@ pub(crate) fn reader_recovers_a_valid_solid_from_writer_output() {
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
+
+/// A shell-based surface model is one body, with a region for each of its
+/// shells.
+#[test]
+fn a_surface_model_with_two_shells_is_one_body_with_two_regions() {
+    let decoded = crate::StepCodec::default()
+        .decode(
+            &mut std::io::Cursor::new(include_bytes!("data/tp14_two_shell_surface_model.p21")),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .expect("decode the two-shell surface model");
+    let model = &decoded.ir().model;
+    assert_eq!(model.bodies.len(), 1);
+    assert_eq!(model.bodies[0].id.as_str(), "step:data:body#50");
+    assert_eq!(model.bodies[0].regions.len(), 2);
+    assert_eq!(model.regions.len(), 2);
+    assert!(model
+        .regions
+        .iter()
+        .all(|region| region.body == model.bodies[0].id && region.shells.len() == 1));
+    assert_eq!(model.faces.len(), 2);
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
