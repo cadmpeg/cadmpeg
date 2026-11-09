@@ -279,6 +279,9 @@ pub(crate) enum F3dLossCode {
     /// A fillet with no bound history takes the one history, among several
     /// that hold its state pair, in which every edge group resolves.
     HistoricalEdgeHistoryInferred,
+    /// A feature with no bound history, whose state pair several histories
+    /// hold, takes the one history of the BREP blob that holds its outputs.
+    HistoricalOutputBlobHistoryInferred,
     /// A `Fillet` edge is the best-ranked deleted one of several geometric candidates.
     HistoricalFilletEdgeAmbiguous,
     /// A `Fillet` edge is the one of several shared support edges along the
@@ -729,6 +732,7 @@ impl F3dLossCode {
         Self::HistoricalFilletEdgeInferred,
         Self::HistoricalEdgeSelectionInferred,
         Self::HistoricalEdgeHistoryInferred,
+        Self::HistoricalOutputBlobHistoryInferred,
         Self::HistoricalFilletEdgeAmbiguous,
         Self::HistoricalFilletEdgeCovering,
         Self::HistoricalBodyBoundsUnresolved,
@@ -1026,6 +1030,7 @@ impl F3dLossCode {
             Self::HistoricalFilletEdgeInferred => "history.fillet-edge-inferred",
             Self::HistoricalEdgeSelectionInferred => "history.edge-selection-inferred",
             Self::HistoricalEdgeHistoryInferred => "history.edge-history-inferred",
+            Self::HistoricalOutputBlobHistoryInferred => "history.output-blob-history-inferred",
             Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
             Self::HistoricalFilletEdgeCovering => "history.fillet-edge-covering",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
@@ -1368,6 +1373,7 @@ impl F3dLossCode {
             | Self::HistoricalFilletEdgeInferred
             | Self::HistoricalEdgeSelectionInferred
             | Self::HistoricalEdgeHistoryInferred
+            | Self::HistoricalOutputBlobHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalFilletEdgeCovering
@@ -1607,6 +1613,7 @@ impl F3dLossCode {
             | Self::HistoricalFilletEdgeInferred
             | Self::HistoricalEdgeSelectionInferred
             | Self::HistoricalEdgeHistoryInferred
+            | Self::HistoricalOutputBlobHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalFilletEdgeCovering
@@ -1942,6 +1949,7 @@ mod tests {
                 "history.fillet-edge-inferred",
                 "history.edge-selection-inferred",
                 "history.edge-history-inferred",
+                "history.output-blob-history-inferred",
                 "history.fillet-edge-ambiguous",
                 "history.fillet-edge-covering",
                 "history.body-bounds-unresolved",

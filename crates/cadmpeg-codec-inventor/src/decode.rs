@@ -1115,6 +1115,9 @@ fn decode_container<'a>(
         losses.extend(crate::sketch::polygon_control_vertex_loss(
             &sketch_inventory.constraints,
         ));
+        losses.extend(crate::sketch::circle_parameter::loss(
+            &sketch_inventory.constraints,
+        ));
         losses.extend(crate::sketch::spline::point_relation_loss(
             &sketch_inventory.constraints,
         ));
