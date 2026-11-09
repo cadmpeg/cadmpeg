@@ -121,4 +121,49 @@ fn decode_reads_compact_null_owner_frames_and_reports_those_that_do_not_close() 
         panic!("expected one stream with an unparsed parameter frame");
     };
     assert_eq!(unparsed.count, 1);
+    let [flagged] = decoded.trailer_flags.as_slice() else {
+        panic!("expected one stream with a set trailer flag");
+    };
+    assert_eq!((flagged.stream.as_str(), flagged.count), (stream, 1));
+}
+
+#[test]
+fn decode_reports_a_compact_null_owner_frame_whose_tail_names_another_type() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let bulk = compact_null_owner_parameter_record("d87", [0, 0, 0, 1, 0]);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&bulk).unwrap();
+    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+        &[
+            (
+                "B0556F58-EE09-46A7-B18F-E296F48E5B13",
+                "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
+                3,
+                "CommonData",
+                &[20],
+            ),
+            (
+                "00000000-0000-4000-8000-000000000019",
+                "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
+                3,
+                "CommonData",
+                &[19],
+            ),
+        ],
+        &[],
+    );
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&metadata).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let decoded = with_scan(&archive, decode_parameters).unwrap();
+    assert!(decoded.parameters.is_empty());
+    assert!(decoded.trailer_flags.is_empty());
+    let [unparsed] = decoded.unparsed.as_slice() else {
+        panic!("expected one stream with an unparsed parameter frame");
+    };
+    assert_eq!(unparsed.count, 1);
 }

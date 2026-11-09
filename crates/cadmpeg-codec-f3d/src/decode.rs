@@ -1932,6 +1932,22 @@ fn report_unparsed_parameter_records(
     }
 }
 
+fn report_parameter_trailer_flags(
+    report: &mut DecodeBody,
+    flagged: &[crate::design::decode::parameters::TrailerFlagParameters],
+) {
+    for parameters in flagged {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterTrailerFlagUninterpreted,
+            format_args!(
+                "{} decoded parameter(s) in {} set byte 3 of the compact expression trailer; the flag is not interpreted.",
+                parameters.count, parameters.stream
+            ),
+        );
+    }
+}
+
 fn report_unparsed_parameter_owners(report: &mut DecodeBody, count: usize) {
     if count != 0 {
         push_loss_vec(
@@ -2734,6 +2750,7 @@ impl<'a> F3dDecodeSession<'a> {
             .losses
             .extend(prereqs.design_parameter_scope_losses.iter().cloned());
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
+        report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
         report_unparsed_parameter_owners(
             &mut self.report,
             prereqs.design_parameter_owner_unparsed.len(),

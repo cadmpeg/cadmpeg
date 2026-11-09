@@ -72,6 +72,16 @@ pub(crate) struct UnparsedParameterRecords {
     pub(crate) count: usize,
 }
 
+/// Decoded parameters in one Design `BulkStream` whose compact expression
+/// trailer sets byte 3.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TrailerFlagParameters {
+    /// Design `BulkStream` entry name.
+    pub(crate) stream: String,
+    /// Number of decoded parameters.
+    pub(crate) count: usize,
+}
+
 /// Decoded Design parameters and the parameter frames left unparsed.
 #[derive(Debug, Default)]
 pub(crate) struct DecodedParameters {
@@ -79,6 +89,8 @@ pub(crate) struct DecodedParameters {
     pub(crate) parameters: Vec<DesignParameter>,
     /// Per-stream counts of parameter frames that match no grammar.
     pub(crate) unparsed: Vec<UnparsedParameterRecords>,
+    /// Per-stream counts of decoded parameters whose trailer byte 3 is set.
+    pub(crate) trailer_flags: Vec<TrailerFlagParameters>,
 }
 
 /// Decode every indexed parameter record in each Design `BulkStream`.
@@ -89,6 +101,7 @@ pub(crate) struct DecodedParameters {
 pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameters, CodecError> {
     let mut out = Vec::new();
     let mut unparsed = Vec::new();
+    let mut trailer_flags = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -99,6 +112,7 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
         let mut position = 0usize;
         let mut emitted_record_indices = HashSet::new();
         let mut unparsed_count = 0usize;
+        let mut trailer_flag_count = 0usize;
         while let Some(at) = next_indexed_record_offset(bytes, position) {
             let end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
             let frame = &bytes[at..end];
@@ -115,10 +129,12 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                 }
 
                 let record_index = parsed.record_index;
+                let compact_flag = parsed.compact_flag;
                 match locate_design_parameter(parsed, &entry.name, at) {
                     Some(parameter) => {
                         emitted_record_indices.insert(record_index);
                         out.push(parameter);
+                        trailer_flag_count += usize::from(compact_flag);
                     }
                     None => unparsed_count = next_unparsed_count(unparsed_count)?,
                 }
@@ -139,11 +155,18 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                 count: unparsed_count,
             });
         }
+        if trailer_flag_count != 0 {
+            trailer_flags.push(TrailerFlagParameters {
+                stream: entry.name.clone(),
+                count: trailer_flag_count,
+            });
+        }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(DecodedParameters {
         parameters: out,
         unparsed,
+        trailer_flags,
     })
 }
 
@@ -169,6 +192,8 @@ pub(in crate::design) struct ParsedDesignParameter {
     comment: Option<ParsedParameterUnit>,
     flags: crate::records::parameters::DesignParameterFlags,
     text_value: Option<ParsedParameterUnit>,
+    /// Whether byte 3 of the five-byte compact expression trailer is `1`.
+    compact_flag: bool,
 }
 
 /// Unit token parsed in frame-relative coordinates.
@@ -589,6 +614,7 @@ fn parse_header_form(
             value: text_value,
             offset: FrameRelative(i128::from(u64_from_index(source_kind_end + 4))),
         }),
+        compact_flag: false,
     }))
 }
 
@@ -688,6 +714,7 @@ fn parse_comment_discriminated_parameter(
         }),
         flags,
         text_value: None,
+        compact_flag: false,
     }))
 }
 
@@ -782,9 +809,10 @@ fn compact_trailer_parameter(
     let (expression, expression_end) = parameter_text!(payload, expression_at, 1..=256);
     let expression_trailer_end = expression_end.checked_add(CLASS_287_EXPRESSION_TRAILER_LEN)?;
     let expression_trailer = payload.get(expression_end..expression_trailer_end)?;
-    if !matches!(expression_trailer, [0, 0, 0, 0 | 1, 0]) {
-        return None;
-    }
+    let compact_flag = match expression_trailer {
+        [0, 0, 0, flag @ (0 | 1), 0] => *flag == 1,
+        _ => return None,
+    };
     let source_kind_at = expression_trailer_end;
     let (source_kind, source_kind_end) = parameter_text!(payload, source_kind_at, 1..=256);
     let (unit, name, name_at, name_end) = if View::u32_le_at(payload, source_kind_end) == Some(0) {
@@ -830,6 +858,7 @@ fn compact_trailer_parameter(
         comment: None,
         flags: crate::records::parameters::DesignParameterFlags::default(),
         text_value: None,
+        compact_flag,
     }))
 }
 
@@ -1048,6 +1077,7 @@ fn parse_typed_compact_design_parameter(
             comment: None,
             flags: crate::records::parameters::DesignParameterFlags::default(),
             text_value: None,
+            compact_flag: false,
         }))
     })();
     parsed.transpose()
@@ -1105,6 +1135,7 @@ fn parse_legacy_design_parameter(
             comment: None,
             flags: crate::records::parameters::DesignParameterFlags::default(),
             text_value: None,
+            compact_flag: false,
         }))
     })();
     parsed.transpose()
