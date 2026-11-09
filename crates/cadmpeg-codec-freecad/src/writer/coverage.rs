@@ -181,8 +181,14 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
     ]) {
         dispositions.bodies = ArenaDisposition::Reported;
     }
-    if charged(&[FreecadLossCode::FeatureSourceTagNotTransferred]) {
+    if charged(&[
+        FreecadLossCode::FeatureSourceTagNotTransferred,
+        FreecadLossCode::FeatureDimensionParameterized,
+    ]) {
         dispositions.features = ArenaDisposition::Reported;
+    }
+    if charged(&[FreecadLossCode::TopologyRadialOrderNotStored]) {
+        dispositions.coedges = ArenaDisposition::Reported;
     }
     if charged(&[FreecadLossCode::JointFrameNotRigid]) {
         dispositions.assembly_joints = ArenaDisposition::Reported;
@@ -404,6 +410,7 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
                     || annotation.lower_tolerance.is_some()))
             || !annotation.parameters.is_empty()
             || !annotation.assets.is_empty()
+            || !annotation.runtime_type.contains("::")
         {
             losses.push(FreecadLossCode::ExportArenaNotTransferred.note(format!(
                 "annotation {} contains fields the FCStd writer cannot regenerate",

@@ -5,6 +5,7 @@ use super::super::xml::{self, Object};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::report::loss::LossNote;
+use serde_json::Value;
 use std::collections::HashMap;
 
 mod construction;
@@ -115,6 +116,30 @@ fn negate_direction(value: &mut serde_json::Value) {
     }
 }
 
+/// Whether `tag` has the `Module::Class` form of a `FreeCAD` type name.
+fn is_type_name(tag: &str) -> bool {
+    tag.split_once("::").is_some_and(|(module, class)| {
+        [module, class].into_iter().all(|part| {
+            part.chars()
+                .next()
+                .is_some_and(|first| first.is_ascii_alphabetic())
+                && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+    })
+}
+
+/// Whether `value` holds a literal dimension.
+fn holds_literal(value: &Value) -> bool {
+    match value {
+        Value::Object(fields) => {
+            fields.get("kind").and_then(Value::as_str) == Some("literal")
+                || fields.values().any(holds_literal)
+        }
+        Value::Array(items) => items.iter().any(holds_literal),
+        _ => false,
+    }
+}
+
 pub(in crate::writer) fn write(
     ir: &cadmpeg_ir::CadIr,
     feature: &Feature,
@@ -180,6 +205,14 @@ pub(in crate::writer) fn write(
                 "App::DocumentObjectGroup"
             }
             .into();
+            if !matches!(value["role"].as_str(), Some("solid_bodies" | "equations")) {
+                output.losses.push(
+                    crate::loss::FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                        "feature {} is written as a document group, which holds no feature role",
+                        feature.id
+                    )),
+                );
+            }
             links(object, "Group", &value["children"]["children"], names)?;
             if !value["children"]["active_child"].is_null() {
                 link(object, "Tip", &value["children"]["active_child"], names)?;
@@ -206,6 +239,16 @@ pub(in crate::writer) fn write(
                 }
             } else {
                 primitive(&value["solid"], object)?;
+            }
+            let authored = serde_json::to_value(feature.evaluation.definition())
+                .map_err(|error| FeatureError::Unsupported(error.to_string()))?;
+            if holds_literal(&authored["solid"]) || holds_literal(&authored["dimensions"]) {
+                output.losses.push(
+                    crate::loss::FreecadLossCode::FeatureDimensionParameterized.note(format!(
+                        "feature {} literal dimensions are stored as property parameters",
+                        feature.id
+                    )),
+                );
             }
             if !value["placement"].is_null() {
                 let transform: cadmpeg_ir::transform::Transform =
@@ -443,7 +486,18 @@ pub(in crate::writer) fn write(
         | "planar_patch"
         | "helix"
         | "scale" => construction(&value, object, names, &mut output.entries)?,
-        "native" => {} // The orchestrator emits this feature's validated native properties.
+        // The orchestrator emits this feature's validated native properties.
+        "native" => {
+            let native = value["kind"].as_str().unwrap_or_default();
+            if native != object.kind {
+                output.losses.push(
+                    crate::loss::FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                        "feature {} of native kind {native} is written as {}",
+                        feature.id, object.kind
+                    )),
+                );
+            }
+        }
         _ => {
             return unsupported(format!(
                 "neutral feature operation `{kind}` has no FreeCAD construction mapping"
@@ -499,7 +553,7 @@ pub(in crate::writer) fn write(
     // (#238 §5.5).
     if let Some(tag) = feature.source_tag.as_deref() {
         if tag != object.kind {
-            if matches!(kind, "stored_geometry" | "base_feature") {
+            if matches!(kind, "stored_geometry" | "base_feature") && is_type_name(tag) {
                 object.kind = tag.into();
             } else {
                 output.losses.push(
