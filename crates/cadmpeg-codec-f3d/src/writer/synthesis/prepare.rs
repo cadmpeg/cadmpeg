@@ -215,6 +215,22 @@ pub(super) fn auxiliary(
             );
         }
     }
+    // The reader parses a parametric surface curve only in its cache-first
+    // form; one without that tail is written but reads back as an unknown
+    // construction.
+    for procedural in &target.model.procedural_curves {
+        if matches!(
+            procedural.definition(),
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
+                family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric { tail: None, .. }
+            }
+        ) {
+            losses.push(F3dLossCode::WriterProceduralReduced.note(format!(
+                "parametric surface curve {} has no cache-first tail and reads back as an unknown construction",
+                procedural.id
+            )));
+        }
+    }
     for point in &mut target.model.points {
         if point.source_object.take().is_some() {
             losses.push(F3dLossCode::WriterSourceAssociationOmitted.note(format!(
