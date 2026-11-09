@@ -8443,7 +8443,7 @@ pub(crate) mod sketch_typed_compact_member_head {
 /// Spec §3.1. Record length 70 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header of a derived base scope. The same eleven bytes repeat twelve bytes before the frame end, followed by u8 0.
+/// Offsets are relative to the primary indexed header of a derived base scope whose references use the eleven-byte form; the 711-, 707-, and 491-byte typed-reference forms store other fields here. The same eleven bytes repeat twelve bytes before the frame end, followed by u8 0.
 /// ```
 pub(crate) mod derived_base_owner_reference {
     /// Record length in bytes. Spec §3.1.

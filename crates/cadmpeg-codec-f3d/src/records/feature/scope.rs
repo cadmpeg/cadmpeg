@@ -2154,6 +2154,14 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         }
         admitted.source_kind = wire.source_kind;
         admitted.occurrence_transfer = occurrence_transfer;
+        if wire.derived_base_owner.is_some_and(|owner| {
+            !super::derived_base::is_derived_base(&admitted)
+                || !owner.frame_holds(admitted.byte_offset(), admitted.paired_byte_offset())
+        }) {
+            return Err(DesignParameterScopePayloadError(
+                "derived_base_owner disagrees with scope".into(),
+            ));
+        }
         admitted.derived_base_owner = wire.derived_base_owner;
         Ok(admitted)
     }

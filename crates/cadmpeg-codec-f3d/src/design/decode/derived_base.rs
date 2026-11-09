@@ -3,16 +3,14 @@
 
 use crate::container::ContainerScan;
 use crate::layout::derived_base_owner_reference as owner;
-use crate::records::feature::derived_base::DesignDerivedBaseOwner;
+use crate::records::feature::derived_base::{
+    is_derived_base, DesignDerivedBaseOwner, REPEAT_FROM_END,
+};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
-
-/// Distance from the end of a derived base frame to the repeated owner
-/// reference.
-const REPEAT_FROM_END: usize = 12;
 
 /// Record the owner of each `Derived Base Feature` scope whose frame names it.
 pub(crate) fn mark_derived_base_owners(
@@ -45,14 +43,6 @@ pub(crate) fn mark_derived_base_owners(
         }
     }
     Ok(())
-}
-
-/// Whether `scope` is a `Derived Base Feature` scope.
-pub(crate) fn is_derived_base(scope: &DesignParameterScope) -> bool {
-    matches!(
-        scope.kind_name(),
-        "Derived Base Feature" | "DerivedBaseFeature"
-    )
 }
 
 /// The owner that `frame`, which starts at stream offset `start`, names at

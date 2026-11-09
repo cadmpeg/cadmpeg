@@ -94,13 +94,6 @@ impl<'a> ActiveBodies<'a> {
     }
 }
 
-fn is_derived_base(scope: &DesignParameterScope) -> bool {
-    matches!(
-        scope.kind_name(),
-        "Derived Base Feature" | "DerivedBaseFeature"
-    )
-}
-
 pub(super) fn bound_result_bodies(
     feature: &Feature,
 ) -> Option<&cadmpeg_ir::features::DistinctMembers<BodyId>> {
@@ -132,7 +125,9 @@ pub(super) fn bind_history_outputs(
     source: Option<&str>,
     active: &ActiveBodies<'_>,
 ) -> bool {
-    if scope.kind() != DesignFeatureKind::BaseFeature && !is_derived_base(scope) {
+    if scope.kind() != DesignFeatureKind::BaseFeature
+        && !crate::records::feature::derived_base::is_derived_base(scope)
+    {
         return false;
     }
     let native = match feature.evaluation.definition() {
@@ -183,46 +178,6 @@ pub(super) fn finalize_body_sets(feature: &mut Feature) {
     }
 }
 
-/// The outputs of a derived base group feature in the record-index order of
-/// its scopes, each scope contributing the outputs of its own history state;
-/// every other feature keeps `outputs`.
-pub(super) fn derived_base_output_order(
-    feature: &cadmpeg_ir::features::Feature,
-    scopes: &[crate::records::feature::scope::DesignParameterScope],
-    history_index: usize,
-    state_outputs: &std::collections::HashMap<(usize, i64), Option<Vec<i64>>>,
-    outputs: Vec<i64>,
-) -> Vec<i64> {
-    let Some(group) = feature
-        .native_ref
-        .as_deref()
-        .and_then(|id| scopes.iter().find(|scope| scope.id == id))
-        .and_then(|scope| crate::records::feature::derived_base::derived_base_group(scope, scopes))
-    else {
-        return outputs;
-    };
-    let mut ordered = Vec::new();
-    for scope in group {
-        let Some(Some(slots)) = scope
-            .history_state_id()
-            .and_then(|state| state_outputs.get(&(history_index, state)))
-        else {
-            continue;
-        };
-        for slot in slots {
-            if outputs.contains(slot) && !ordered.contains(slot) {
-                ordered.push(*slot);
-            }
-        }
-    }
-    for slot in outputs {
-        if !ordered.contains(&slot) {
-            ordered.push(slot);
-        }
-    }
-    ordered
-}
-
 pub(crate) fn losses(
     features: &[Feature],
     scopes: &[DesignParameterScope],
@@ -233,12 +188,12 @@ pub(crate) fn losses(
             .iter()
             .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
             .or_else(|| {
-                let group =
-                    crate::records::feature::derived_base::derived_base_group(scope, scopes)?;
-                let first = group.first()?.id.as_str();
-                features
-                    .iter()
-                    .find(|feature| feature.native_ref.as_deref() == Some(first))
+                features.iter().find(|feature| {
+                    crate::records::feature::derived_base::feature_derived_base_scopes(
+                        feature, scopes,
+                    )
+                    .is_some_and(|group| group.iter().any(|member| member.id == scope.id))
+                })
             });
         match scope.kind_name() {
             "Base Feature" => {

@@ -8562,7 +8562,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 70 B
 
-Offsets are relative to the primary indexed header of a derived base scope. The same eleven bytes repeat twelve bytes before the frame end, followed by u8 0.
+Offsets are relative to the primary indexed header of a derived base scope whose references use the eleven-byte form; the 711-, 707-, and 491-byte typed-reference forms store other fields here. The same eleven bytes repeat twelve bytes before the frame end, followed by u8 0.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/derived_base.rs`

@@ -128,6 +128,27 @@ pub(crate) struct ProjectInputs<'a> {
 
 /// Authored construction ordinal of every parameter scope represented by a
 /// neutral top-level feature. All input scopes must share one Design stream.
+/// The derived base group that `scope` leads when the group took its
+/// owner's timeline position: the scope holds an ordinal, is no timeline
+/// item itself, and no other scope of the group holds an ordinal.
+fn projected_derived_base_group<'a>(
+    scope: &DesignParameterScope,
+    scopes: &'a [DesignParameterScope],
+    source_ordinals: &HashMap<(&str, u32), u64>,
+    timeline_items: &HashSet<(&str, u64)>,
+) -> Option<Vec<&'a DesignParameterScope>> {
+    let group = crate::records::feature::derived_base::derived_base_group(scope, scopes)?;
+    let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+    let (first, rest) = group.split_first()?;
+    (first.record_index == scope.record_index
+        && source_ordinals.contains_key(&(stream, scope.record_index))
+        && !timeline_items.contains(&(stream, u64::from(scope.record_index)))
+        && rest
+            .iter()
+            .all(|member| !source_ordinals.contains_key(&(stream, member.record_index))))
+    .then_some(group)
+}
+
 fn authored_scope_ordinals<'a>(
     scopes: &'a [DesignParameterScope],
     timelines: &[DesignFeatureTimeline],
@@ -327,18 +348,25 @@ fn authored_scope_ordinals_for_stream<'a>(
             let _ = out.insert((stream, scope.record_index), ordinal);
         }
     }
+    let claimed = out.values().copied().collect::<HashSet<_>>();
     for ((_, owner), group) in
         crate::records::feature::derived_base::derived_base_groups(scopes.iter().copied())
     {
-        if scopes_by_record.contains_key(&owner) {
+        let (Some(ordinal), Some(first)) =
+            (item_ordinals.get(&u64::from(owner)).copied(), group.first())
+        else {
+            continue;
+        };
+        if scopes_by_record.contains_key(&owner)
+            || claimed.contains(&ordinal)
+            || group
+                .iter()
+                .any(|scope| out.contains_key(&(stream, scope.record_index)))
+        {
             continue;
         }
-        if let (Some(ordinal), Some(first)) =
-            (item_ordinals.get(&u64::from(owner)).copied(), group.first())
-        {
-            // discarded-value: each derived base group is visited once in this stream.
-            let _ = out.insert((stream, first.record_index), ordinal);
-        }
+        // discarded-value: no scope of the group holds an ordinal yet.
+        let _ = out.insert((stream, first.record_index), ordinal);
     }
     for scope in scopes {
         let Some(target_record_index) = scope
@@ -689,6 +717,17 @@ pub(crate) fn project_parameter_design_with_edge_identities(
     let unruled_flange_thicknesses = std::cell::Cell::new(0_usize);
 
     let source_ordinals = authored_scope_ordinals(scopes, timelines)?;
+    let timeline_items = timelines
+        .iter()
+        .flat_map(|timeline| {
+            let stream = native_stream(timeline.id()).unwrap_or(ids::DEFAULT_STREAM);
+            timeline
+                .frame()
+                .items()
+                .iter()
+                .map(move |item| (stream, item.value))
+        })
+        .collect::<HashSet<_>>();
 
     let mut scope_ids = HashMap::new();
     {
@@ -1482,13 +1521,31 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         && scope.previous_history_state_id().is_none(),
                 ),
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                source_properties: if matches!(
-                    &definition,
-                    FeatureDefinition::Operation(FeatureOperation::Native { .. })
-                ) {
-                    scope_properties(scope, native_scope, placements)?
-                } else {
-                    BTreeMap::new()
+                source_properties: {
+                    let mut properties = if matches!(
+                        &definition,
+                        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+                    ) {
+                        scope_properties(scope, native_scope, placements)?
+                    } else {
+                        BTreeMap::new()
+                    };
+                    if let Some(group) = projected_derived_base_group(
+                        scope,
+                        scopes,
+                        &source_ordinals,
+                        &timeline_items,
+                    ) {
+                        properties.insert(
+                            crate::records::feature::derived_base::derived_base_scopes_property(),
+                            group
+                                .iter()
+                                .map(|member| member.record_index.to_string())
+                                .collect::<Vec<_>>()
+                                .join(","),
+                        );
+                    }
+                    properties
                 },
                 source_tag: Some(scope.source_kind_name().to_owned()),
                 source_text: None,

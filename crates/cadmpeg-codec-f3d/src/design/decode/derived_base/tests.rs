@@ -44,7 +44,11 @@ fn a_derived_base_owner_needs_two_equal_well_formed_references() {
         ),
         (
             frame(75, 8269)[..70].to_vec(),
-            "the frame ends inside the repeat",
+            "the repeat overlaps the first reference",
+        ),
+        (
+            frame(405, 8269)[..65].to_vec(),
+            "the frame ends inside the first reference",
         ),
     ] {
         assert_eq!(derived_base_owner(&frame, 0), None, "{reason}");

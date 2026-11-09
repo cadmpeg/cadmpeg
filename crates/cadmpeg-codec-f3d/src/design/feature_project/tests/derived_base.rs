@@ -118,3 +118,38 @@ fn a_derived_base_scope_without_a_vacant_timeline_owner_forms_no_feature() {
         "a scope occupies the owner"
     );
 }
+
+#[test]
+fn a_derived_base_group_yields_to_a_claimed_owner_or_a_positioned_member() {
+    let positioned = [derived(70, 62, 77, Some(50)), derived(79, 77, 78, Some(50))];
+    assert_eq!(
+        ordinals(&positioned, &[50, 79]),
+        [(79, 1)],
+        "a member that is a timeline item keeps its position and voids the group"
+    );
+
+    let mut base = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#60"),
+        DesignFeatureKind::BaseFeature,
+        60,
+    );
+    if let crate::records::feature::scope::DesignScopePayloadMut::BaseFeature(slot) =
+        base.payload_mut()
+    {
+        *slot = Some(
+            crate::records::feature::base_feature::DesignBaseFeatureConstruction::TimelineOwnedBodies {
+                parameter_bodies: Vec::new(),
+                bodies: Vec::new(),
+                owner_record: 50,
+                owner_reference_offset: 0,
+                copy_sources: Vec::new(),
+            },
+        );
+    }
+    let claimed = [base, derived(70, 62, 77, Some(50))];
+    assert_eq!(
+        ordinals(&claimed, &[50]),
+        [(60, 0)],
+        "a Base Feature that the owner already positions keeps it"
+    );
+}

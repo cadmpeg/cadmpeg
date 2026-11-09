@@ -1903,7 +1903,7 @@ pub(crate) fn bind_feature_outputs(
             )));
             continue;
         };
-        let outputs = stored_bodies::derived_base_output_order(
+        let outputs = crate::records::feature::derived_base::derived_base_output_order(
             feature,
             scopes,
             history_index,
@@ -1982,7 +1982,9 @@ fn feature_history_states(
         .native_ref
         .as_deref()
         .and_then(|id| scopes.iter().find(|scope| scope.id == id))?;
-    if let Some(group) = crate::records::feature::derived_base::derived_base_group(scope, scopes) {
+    if let Some(group) =
+        crate::records::feature::derived_base::feature_derived_base_scopes(feature, scopes)
+    {
         // A derive operation spans the history states of all its derived scopes.
         return Some((
             group.last()?.history_state_id()?,
