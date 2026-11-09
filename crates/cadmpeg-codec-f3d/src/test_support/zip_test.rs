@@ -19,7 +19,7 @@ use crate::test_support::manifest_test::{
 };
 use crate::test_support::protein_test::{
     generated_definition_catalog_for, generated_instance_properties_for,
-    generated_schema_from_paged,
+    generated_protein_schema, generated_schema_from_paged,
 };
 use crate::test_support::sketch_stream_test::generated_design_bulkstream;
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
@@ -1221,6 +1221,12 @@ fn f3d_with_smbh_and_instance_properties_and_design_with_act(
                 .write_all(&generated_definition_catalog_for(
                     generated_schema_from_paged(properties),
                 ))
+                .unwrap();
+            nested
+                .start_file("Schemas/InstanceSchema.xml", stored)
+                .unwrap();
+            nested
+                .write_all(generated_protein_schema(generated_schema_from_paged(properties)).as_bytes())
                 .unwrap();
             nested.finish().unwrap().into_inner()
         })
