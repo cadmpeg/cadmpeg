@@ -604,6 +604,7 @@ fn observe_fcstd() -> ObservedFcstd {
         UnheldClass::RangelessEdgePcurve,
         UnheldClass::ReinterpretedConstructionSurface,
         UnheldClass::SecondCoedgePcurve,
+        UnheldClass::SharedConstructionSource,
     ]);
     let rules = super::freecad_storage::topology_rules();
     let reduced = encoder
