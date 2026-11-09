@@ -148,6 +148,7 @@ fn bind_groups(
             entity_operands: &[],
             body_recipe_operands: &[],
             histories: &mut [history],
+            scope_histories: &std::collections::HashMap::new(),
         },
     );
     let FeatureDefinition::Operation(FeatureOperation::DeleteFace { faces, .. }) =
