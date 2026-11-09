@@ -7,7 +7,6 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::native::F3dNative;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::EvaluationFailure;
@@ -1657,9 +1656,7 @@ fn closed_edge_traversal(
             parameter,
         ) {
             Ok(end) => end.get(),
-            Err(EvaluationFailure::ResourceLimit(limit)) => {
-                return Err(CodecError::ResourceLimit(limit).into())
-            }
+            Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit.into()),
             Err(
                 EvaluationFailure::NoValue
                 | EvaluationFailure::NonFinite(_)

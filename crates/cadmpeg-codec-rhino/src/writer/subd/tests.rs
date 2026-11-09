@@ -3,6 +3,7 @@
 
 use super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, ArenaDisposition, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::math::Point3;
