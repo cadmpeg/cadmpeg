@@ -291,6 +291,9 @@ pub(crate) enum StepLossCode {
     OccurrenceNoWritableProduct,
     /// Occurrence metadata values were not represented.
     OccurrenceMetadataOmitted,
+    /// External occurrences name their document by a persisted document
+    /// identity, which was written as the identifier of the external source.
+    ExternalDocumentIdAsSource,
     /// PMI annotations were not written.
     PmiAnnotationNotWritten,
     /// A PMI dimension's parameter reference was not represented.
@@ -400,6 +403,9 @@ pub(crate) enum StepLossCode {
     EdgeNo3dCurve,
     /// Edges with no 3D curve were written without their parameter range.
     EdgeRangeOmitted,
+    /// Edges whose stated parameter range ends off their vertices were
+    /// written with the range their vertices imply.
+    EdgeRangeOffVertices,
     /// An edge was omitted because its curve is not writable.
     EdgeCurveNotWritable,
     /// An edge was omitted because its curve is unsupported.
@@ -572,6 +578,7 @@ impl StepLossCode {
         Self::OccurrenceExternalProduct,
         Self::OccurrenceNoWritableProduct,
         Self::OccurrenceMetadataOmitted,
+        Self::ExternalDocumentIdAsSource,
         Self::PmiAnnotationNotWritten,
         Self::PmiParameterReferenceOmitted,
         Self::SourceAssociationOmitted,
@@ -624,6 +631,7 @@ impl StepLossCode {
         Self::LoopEdgeMissingForOrder,
         Self::EdgeNo3dCurve,
         Self::EdgeRangeOmitted,
+        Self::EdgeRangeOffVertices,
         Self::EdgeCurveNotWritable,
         Self::EdgeCurveUnsupported,
         Self::LoopNoContinuousOrdering,
@@ -792,6 +800,7 @@ impl StepLossCode {
             Self::OccurrenceExternalProduct => "occurrence.external-product",
             Self::OccurrenceNoWritableProduct => "occurrence.no-writable-product",
             Self::OccurrenceMetadataOmitted => "occurrence.metadata-omitted",
+            Self::ExternalDocumentIdAsSource => "occurrence.external-document-id-as-source",
             Self::PmiAnnotationNotWritten => "pmi.annotation-not-written",
             Self::PmiParameterReferenceOmitted => "pmi.parameter-reference-omitted",
             Self::SourceAssociationOmitted => "source.association-omitted",
@@ -850,6 +859,7 @@ impl StepLossCode {
             Self::LoopEdgeMissingForOrder => "topology.loop-edge-missing-for-order",
             Self::EdgeNo3dCurve => "topology.edge-no-3d-curve",
             Self::EdgeRangeOmitted => "topology.edge-range-omitted",
+            Self::EdgeRangeOffVertices => "topology.edge-range-off-vertices",
             Self::EdgeCurveNotWritable => "topology.edge-curve-not-writable",
             Self::EdgeCurveUnsupported => "topology.edge-curve-unsupported",
             Self::LoopNoContinuousOrdering => "topology.loop-no-continuous-ordering",
@@ -927,6 +937,7 @@ impl StepLossCode {
             | Self::ProductSourceNameReduced
             | Self::ProductBomPropertyOmitted
             | Self::OccurrenceMetadataOmitted
+            | Self::ExternalDocumentIdAsSource
             | Self::SourceAssociationOmitted
             | Self::DisplayColorUnstyled
             | Self::WireBodyTransparencyOmitted
@@ -990,6 +1001,7 @@ impl StepLossCode {
             | Self::ProductBomPropertyOmitted
             | Self::OccurrenceNoWritableProduct
             | Self::OccurrenceMetadataOmitted
+            | Self::ExternalDocumentIdAsSource
             | Self::ValidationItemUnsupported => LossTaxonomy::MetadataNotTransferred,
             Self::AttributeStringInvalid
             | Self::LayerItemWithoutCarrier
@@ -1070,6 +1082,7 @@ impl StepLossCode {
             | Self::LoopEdgeMissingForOrder
             | Self::EdgeNo3dCurve
             | Self::EdgeRangeOmitted
+            | Self::EdgeRangeOffVertices
             | Self::EdgeCurveNotWritable
             | Self::EdgeCurveUnsupported
             | Self::LoopNoContinuousOrdering
@@ -1311,6 +1324,7 @@ mod tests {
                 "occurrence.external-product",
                 "occurrence.no-writable-product",
                 "occurrence.metadata-omitted",
+                "occurrence.external-document-id-as-source",
                 "pmi.annotation-not-written",
                 "pmi.parameter-reference-omitted",
                 "source.association-omitted",
@@ -1363,6 +1377,7 @@ mod tests {
                 "topology.loop-edge-missing-for-order",
                 "topology.edge-no-3d-curve",
                 "topology.edge-range-omitted",
+                "topology.edge-range-off-vertices",
                 "topology.edge-curve-not-writable",
                 "topology.edge-curve-unsupported",
                 "topology.loop-no-continuous-ordering",

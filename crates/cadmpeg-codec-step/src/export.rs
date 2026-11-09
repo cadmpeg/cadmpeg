@@ -41,6 +41,7 @@ use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::writer::{refs, string, Emitter, Ref};
 
+mod attributes;
 mod implicit_outer;
 mod non_manifold;
 mod ownership;
@@ -1163,11 +1164,7 @@ impl<'a> Builder<'a> {
             matches!(occurrence.parent, OccurrenceParent::Root {})
                 && matches!(
                     &occurrence.prototype,
-                    PrototypeReference::External {
-                        document: cadmpeg_ir::products::ExternalDocument::Path { .. }
-                            | cadmpeg_ir::products::ExternalDocument::Missing {},
-                        ..
-                    }
+                    PrototypeReference::External { .. }
                 )
                 && occurrence
                     .effective_transform()
@@ -2694,239 +2691,6 @@ impl<'a> Builder<'a> {
             .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{product_def}"))
     }
 
-    fn emit_document_attributes(&mut self, owner: Ref, context: Ref) {
-        if !matches!(
-            self.schema,
-            StepSchema::Ap242Edition1 | StepSchema::Ap242Edition2 | StepSchema::Ap242Edition3
-        ) {
-            return;
-        }
-        let ir = self.ir;
-        for attribute in &ir.model.attributes {
-            if attribute.target != AttributeTarget::Document || self.attribute_is_written(attribute)
-            {
-                continue;
-            }
-            let mut values = Vec::new();
-            for value in &attribute.values {
-                let held = match value {
-                    Some(AttributeValue::String(value)) => {
-                        Some(("DESCRIPTIVE_REPRESENTATION_ITEM", string(value)))
-                    }
-                    Some(AttributeValue::Integer(value)) => Some((
-                        "VALUE_REPRESENTATION_ITEM",
-                        format!("COUNT_MEASURE({value})"),
-                    )),
-                    Some(AttributeValue::Float(value)) => Some((
-                        "VALUE_REPRESENTATION_ITEM",
-                        format!("NUMERIC_MEASURE({})", self.emitter.real(value.get())),
-                    )),
-                    Some(AttributeValue::Boolean(value)) => Some((
-                        "BOOLEAN_REPRESENTATION_ITEM",
-                        if *value { ".T." } else { ".F." }.to_owned(),
-                    )),
-                    _ => None,
-                };
-                values.extend(held);
-            }
-            if values.is_empty() || values.len() != attribute.values.len() {
-                self.loss(
-                    StepLossCode::DocumentAttributeValueDegraded,
-                    format!(
-                        "document attribute '{}' value cannot be held in the CAx-IF representation form",
-                        attribute.name
-                    ),
-                );
-                continue;
-            }
-            let name = string(&attribute.name);
-            let property = self
-                .emitter
-                .emit("PROPERTY_DEFINITION", &format!("{name},'',{owner}"));
-            // Several values are the ordered row the attribute name labels.
-            let item = if let [(kind, value)] = values.as_slice() {
-                self.emitter.emit(kind, &format!("{name},{value}"))
-            } else {
-                let items: Vec<_> = values
-                    .iter()
-                    .map(|(kind, value)| self.emitter.emit(kind, &format!("'',{value}")))
-                    .collect();
-                self.emitter.emit(
-                    "ROW_REPRESENTATION_ITEM",
-                    &format!("{name},{}", refs(&items)),
-                )
-            };
-            let representation = self
-                .emitter
-                .emit("REPRESENTATION", &format!("'',({item}),{context}"));
-            self.emitter.emit(
-                "PROPERTY_DEFINITION_REPRESENTATION",
-                &format!("{property},{representation}"),
-            );
-            self.consumed_attribute_ids
-                .insert(attribute.id.as_str().to_owned());
-        }
-    }
-
-    fn emit_scalar_attribute(
-        &mut self,
-        attribute: &cadmpeg_ir::attributes::SourceAttribute,
-        owner: Ref,
-        context: Ref,
-    ) {
-        let scalar_items = !matches!(self.schema, StepSchema::Ap203Edition1 | StepSchema::Ap214);
-        let mut values = Vec::new();
-        for value in &attribute.values {
-            let item = match value {
-                Some(AttributeValue::String(value)) => {
-                    ("DESCRIPTIVE_REPRESENTATION_ITEM", string(value))
-                }
-                Some(AttributeValue::Integer(value)) if scalar_items => {
-                    ("INTEGER_REPRESENTATION_ITEM", value.to_string())
-                }
-                Some(AttributeValue::Float(value)) if scalar_items => {
-                    ("REAL_REPRESENTATION_ITEM", self.emitter.real(value.get()))
-                }
-                Some(AttributeValue::Boolean(value)) if scalar_items => (
-                    "BOOLEAN_REPRESENTATION_ITEM",
-                    if *value { ".T." } else { ".F." }.to_owned(),
-                ),
-                _ => return,
-            };
-            values.push(item);
-        }
-        if values.is_empty() || (values.len() > 1 && !scalar_items) {
-            return;
-        }
-        let property = self.emitter.emit(
-            "PROPERTY_DEFINITION",
-            &format!("{},'',{owner}", string(&attribute.name)),
-        );
-        let items: Vec<_> = values
-            .into_iter()
-            .map(|(kind, value)| self.emitter.emit(kind, &format!("'',{value}")))
-            .collect();
-        let item = if let [item] = items.as_slice() {
-            *item
-        } else {
-            self.emitter
-                .emit("ROW_REPRESENTATION_ITEM", &format!("'',{}", refs(&items)))
-        };
-        let representation = self
-            .emitter
-            .emit("REPRESENTATION", &format!("'',({item}),{context}"));
-        self.emitter.emit(
-            "PROPERTY_DEFINITION_REPRESENTATION",
-            &format!("{property},{representation}"),
-        );
-        if matches!(attribute.target, AttributeTarget::Record { .. }) {
-            self.loss(
-                StepLossCode::SourceAttributeTargetNormalized,
-                format!("attribute {} was written with a typed target", attribute.id),
-            );
-        }
-        self.consumed_attribute_ids
-            .insert(attribute.id.as_str().to_owned());
-    }
-
-    fn emit_geometry_attributes(&mut self, context: Ref) {
-        if !matches!(
-            self.schema,
-            StepSchema::Ap242Edition1 | StepSchema::Ap242Edition2 | StepSchema::Ap242Edition3
-        ) {
-            return;
-        }
-        let ir = self.ir;
-        for attribute in &ir.model.attributes {
-            if self.attribute_is_written(attribute)
-                || attribute.values.is_empty()
-                || !attribute.values.iter().all(|value| {
-                    matches!(
-                        value,
-                        Some(
-                            AttributeValue::String(_)
-                                | AttributeValue::Integer(_)
-                                | AttributeValue::Float(_)
-                                | AttributeValue::Boolean(_)
-                        )
-                    )
-                })
-            {
-                continue;
-            }
-            let item = match &attribute.target {
-                AttributeTarget::Body(id) => {
-                    self.body_step_item_refs.get(id.as_str()).and_then(|items| {
-                        match items.as_slice() {
-                            [item] => Some(*item),
-                            _ => None,
-                        }
-                    })
-                }
-                AttributeTarget::Face(id) => self.face_step_refs.get(id.as_str()).copied(),
-                AttributeTarget::Edge(id) if !self.split_edges.contains(id.as_str()) => {
-                    self.edge_refs.get(id.as_str()).copied()
-                }
-                AttributeTarget::Vertex(id) => self.vertex_refs.get(id.as_str()).copied(),
-                AttributeTarget::Surface(id) => self
-                    .surface_refs
-                    .get(id.as_str())
-                    .map(|surface| surface.reference),
-                AttributeTarget::Curve(id) => self.curve_refs.get(id.as_str()).copied(),
-                AttributeTarget::Point(id) => self.point_refs.get(id.as_str()).copied(),
-                AttributeTarget::Tessellation(id) => self.tessellation_step_refs.get(id).copied(),
-                AttributeTarget::Record { arena, id } => match arena.as_str() {
-                    "bodies" => {
-                        self.body_step_item_refs
-                            .get(id)
-                            .and_then(|items| match items.as_slice() {
-                                [item] => Some(*item),
-                                _ => None,
-                            })
-                    }
-                    "faces" => self.face_step_refs.get(id).copied(),
-                    "edges" if !self.split_edges.contains(id.as_str()) => {
-                        self.edge_refs.get(id).copied()
-                    }
-                    "vertices" => self.vertex_refs.get(id).copied(),
-                    "surfaces" => self.surface_refs.get(id).map(|surface| surface.reference),
-                    "curves" => self.curve_refs.get(id).copied(),
-                    "points" => self.point_refs.get(id).copied(),
-                    "tessellations" => self.tessellation_step_refs.get(id).copied(),
-                    _ => None,
-                },
-                _ => None,
-            };
-            let Some(item) = item else {
-                continue;
-            };
-            let representation = self
-                .emitter
-                .emit("REPRESENTATION", &format!("'',({item}),{context}"));
-            let owner = self.emitter.emit(
-                "CHARACTERIZED_ITEM_WITHIN_REPRESENTATION",
-                &format!("'','',{item},{representation}"),
-            );
-            self.emit_scalar_attribute(attribute, owner, context);
-        }
-    }
-
-    fn emit_occurrence_attributes(&mut self, context: Ref) {
-        let ir = self.ir;
-        for attribute in &ir.model.attributes {
-            let occurrence = match &attribute.target {
-                AttributeTarget::Occurrence(id) => self.occurrence_step_refs.get(id.as_str()),
-                AttributeTarget::Record { arena, id } if arena.as_str() == "occurrences" => {
-                    self.occurrence_step_refs.get(id)
-                }
-                _ => None,
-            };
-            if let Some(usage) = occurrence.copied() {
-                self.emit_scalar_attribute(attribute, usage, context);
-            }
-        }
-    }
-
     fn emit_product_graph(&mut self, context: Ref) {
         let (application, _, _) = self.schema.application_protocol();
         let app_context = self
@@ -2981,11 +2745,7 @@ impl<'a> Builder<'a> {
             supports_external_reference
                 && matches!(
                     &occurrence.prototype,
-                    PrototypeReference::External {
-                        document: cadmpeg_ir::products::ExternalDocument::Path { .. }
-                            | cadmpeg_ir::products::ExternalDocument::Missing {},
-                        ..
-                    }
+                    PrototypeReference::External { .. }
                 )
                 && occurrence
                     .effective_transform()
@@ -3495,7 +3255,16 @@ impl<'a> Builder<'a> {
                 let location = match document {
                     cadmpeg_ir::products::ExternalDocument::Path { path } => path.as_str(),
                     cadmpeg_ir::products::ExternalDocument::Missing {} => "",
-                    cadmpeg_ir::products::ExternalDocument::DocumentId { .. } => continue,
+                    cadmpeg_ir::products::ExternalDocument::DocumentId { document_id } => {
+                        self.loss(
+                            StepLossCode::ExternalDocumentIdAsSource,
+                            format!(
+                                "external occurrence '{}' names its document by identity '{document_id}', written as the identifier of its external source",
+                                occurrence.id
+                            ),
+                        );
+                        document_id.as_str()
+                    }
                 };
                 let source = self.emitter.emit(
                     "EXTERNAL_SOURCE",
@@ -3813,10 +3582,11 @@ impl<'a> Builder<'a> {
     fn emit_shape_items(&mut self, context: Ref) -> Vec<Ref> {
         let mut items = Vec::new();
         let ir = self.ir;
+        let regions = region_order(ir);
         // A wireframe model is one body, with a region per connected edge
         // set, so the regions of a wire body share one model.
         let mut wire_regions = HashMap::<&str, Vec<&cadmpeg_ir::topology::Region>>::new();
-        for region in &ir.model.regions {
+        for &region in &regions {
             if self
                 .bodies
                 .get(region.body.as_str())
@@ -3831,7 +3601,7 @@ impl<'a> Builder<'a> {
         // A shell-based surface model is one body, with a region per shell,
         // so the shells of a sheet body's regions share one model.
         let mut sheet_regions_left = HashMap::<&str, usize>::new();
-        for region in &ir.model.regions {
+        for &region in &regions {
             if self
                 .bodies
                 .get(region.body.as_str())
@@ -3855,7 +3625,7 @@ impl<'a> Builder<'a> {
             }
         }
         let mut sheet_shells = BTreeMap::<&str, Vec<Ref>>::new();
-        for region in &ir.model.regions {
+        for &region in &regions {
             let body_kind = self
                 .bodies
                 .get(region.body.as_str())
@@ -4002,6 +3772,7 @@ impl<'a> Builder<'a> {
             shell_refs.extend(voids.iter().map(|(shell, _)| *shell));
             let Some(first_shell) = shell_refs.first().copied() else {
                 if self.emit_surface_set(region, context, &mut items, true) {
+                    self.emit_region_fallback_geometry(region, context, false, &mut items);
                     continue;
                 }
                 self.emit_region_fallback_geometry(region, context, false, &mut items);
@@ -4164,7 +3935,8 @@ impl<'a> Builder<'a> {
                     continue;
                 }
                 let qualifies = self.faces.get(face_id.as_str()).copied().filter(|face| {
-                    face.loops.is_empty() && (!recovered || self.surface_is_self_bounded(face))
+                    (face.loops.is_empty() && (!recovered || self.surface_is_self_bounded(face)))
+                        || (recovered && self.bounded_only_by_open_rings(face))
                 });
                 match qualifies {
                     Some(face) => faces.push(face),
@@ -4211,6 +3983,40 @@ impl<'a> Builder<'a> {
         );
         self.push_region_recovery_item(region, context, item, items);
         true
+    }
+
+    /// Whether every loop of the face is a ring whose oriented coedges do not
+    /// close into a path, which a STEP `EDGE_LOOP` cannot state.
+    fn bounded_only_by_open_rings(&self, face: &Face) -> bool {
+        !face.loops.is_empty()
+            && face.loops.iter().all(|loop_id| {
+                self.loops
+                    .get(loop_id.as_str())
+                    .is_some_and(|lp| self.open_ring(lp))
+            })
+    }
+
+    fn open_ring(&self, lp: &Loop) -> bool {
+        if !matches!(lp.boundary, cadmpeg_ir::topology::LoopBoundary::Ring(_)) {
+            return false;
+        }
+        let mut balance = HashMap::<&str, i64>::new();
+        for coedge_id in lp.coedges() {
+            let Some((coedge, edge)) = self
+                .coedges
+                .get(coedge_id.as_str())
+                .and_then(|coedge| Some((coedge, self.edges.get(coedge.edge.as_str())?)))
+            else {
+                return false;
+            };
+            let (start, end) = match coedge.sense {
+                Sense::Forward => (&edge.start, &edge.end),
+                Sense::Reversed => (&edge.end, &edge.start),
+            };
+            *balance.entry(start.as_str()).or_default() += 1;
+            *balance.entry(end.as_str()).or_default() -= 1;
+        }
+        balance.values().any(|count| *count != 0)
     }
 
     /// Whether the face's surface carries its own boundary: a curve-bounded
@@ -4353,6 +4159,7 @@ impl<'a> Builder<'a> {
             && edges.is_empty()
             && !self.body_step_refs.contains_key(region.body.as_str())
             && !self.wire_recovery_bodies.contains(region.body.as_str())
+            && !self.surface_set_bodies.contains(region.body.as_str())
         {
             let mut loops = Vec::new();
             let mut vertices = Vec::new();
@@ -4402,48 +4209,32 @@ impl<'a> Builder<'a> {
                 return;
             }
         }
-        let mut points = Vec::new();
-        let mut point_set = std::collections::HashSet::new();
+        let mut loops = Vec::new();
         let mut retained_vertices = Vec::new();
         for vertex_id in &ordered_missing {
-            let Some(point) = self
-                .vertices
-                .get(vertex_id.as_str())
-                .and_then(|vertex| self.points.get(vertex.point.as_str()))
-                .copied()
-            else {
-                continue;
-            };
-            let reference = if let Some(reference) = self.point_refs.get(point.id.as_str()) {
-                *reference
-            } else {
-                let name = Self::carrier_name(&self.carrier_names, point.id.as_str());
-                let reference =
-                    geometry::distinct_point(&mut self.emitter, name, point.position().get());
-                self.point_refs
-                    .insert(point.id.as_str().to_owned(), reference);
-                reference
-            };
-            if point_set.insert(reference) {
-                points.push(reference);
+            if let Some(vertex) = self.emit_vertex(vertex_id.as_str()) {
+                loops.push(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
                 retained_vertices.push(format!("'{vertex_id}'"));
             }
         }
-        if points.is_empty() {
+        if loops.is_empty() {
             return;
         }
         self.loss(
             StepLossCode::RegionVerticesRecovered,
             format!(
-                "region {} retained {} vertices as points after their topology was omitted: {}",
+                "region {} retained {} vertices in a wireframe model after their topology was omitted: {}",
                 region.id,
-                points.len(),
+                loops.len(),
                 retained_vertices.join(", "),
             ),
         );
+        let shell = self
+            .emitter
+            .emit("WIRE_SHELL", &format!("'',{}", refs(&loops)));
         let item = self
             .emitter
-            .emit("GEOMETRIC_CURVE_SET", &format!("'',{}", refs(&points)));
+            .emit("SHELL_BASED_WIREFRAME_MODEL", &format!("'',({shell})"));
         self.push_region_recovery_item(region, context, item, items);
     }
 
@@ -4924,7 +4715,10 @@ impl<'a> Builder<'a> {
                 .or_else(|| self.emit_curve(&curve_id))
                 .or_else(|| {
                     let curve = self.curves.get(curve_id.as_str())?;
-                    if self.construction_supports.contains(&curve_id)
+                    // A constructed curve the writer cannot construct keeps
+                    // its record as a bare carrier, as a support or a root.
+                    let constructed = self.procedural_curves.contains_key(curve_id.as_str());
+                    if (self.construction_supports.contains(&curve_id) && !constructed)
                         || curve.parameter_range.is_some()
                         || !matches!(
                             curve.geometry.solved(),
@@ -6774,7 +6568,7 @@ impl<'a> Builder<'a> {
                 if matches!(definition, ProceduralSurfaceDefinition::SubSurface(_)) {
                     self.loss(
                         StepLossCode::ProceduralSubSurfaceNormalized,
-                        format!("procedural surface '{id}' was written as a rectangular trim of its support"),
+                        format!("procedural surface '{id}' of surface '{surface_id}' was written as a rectangular trim of its support"),
                     );
                 }
                 let chart = match &definition {
@@ -8400,6 +8194,17 @@ impl<'a> Builder<'a> {
     }
 
     fn note_unrepresented(&mut self) {
+        let off = edges_with_ranges_off_their_vertices(self.ir);
+        if !off.is_empty() {
+            self.loss(
+                StepLossCode::EdgeRangeOffVertices,
+                format!(
+                    "{} edge(s) state a parameter range whose ends lie off their vertices; STEP derives an edge's range from its vertices: {}",
+                    off.len(),
+                    off.iter().map(|id| format!("'{id}'")).collect::<Vec<_>>().join(", ")
+                ),
+            );
+        }
         if !self.ranged_bare_edges.is_empty() {
             let edges = self
                 .ranged_bare_edges
@@ -10011,6 +9816,66 @@ impl<'a> Builder<'a> {
             written_drawing_context: self.written_drawing_context.clone(),
         }
     }
+}
+
+/// Edges whose curve, at the ends of their stated parameter range, lies off
+/// their vertices by more than the document tolerance.
+/// Regions in the order their bodies list them, so that a model that holds
+/// several regions of one body keeps the body's region order.
+fn region_order(ir: &CadIr) -> Vec<&cadmpeg_ir::topology::Region> {
+    let by_id = ir
+        .model
+        .regions
+        .iter()
+        .map(|region| (region.id.as_str(), region))
+        .collect::<HashMap<_, _>>();
+    let mut seen = HashSet::new();
+    let mut order = Vec::with_capacity(ir.model.regions.len());
+    let listed = ir
+        .model
+        .bodies
+        .iter()
+        .flat_map(|body| body.regions.iter())
+        .filter_map(|id| by_id.get(id.as_str()).copied());
+    for region in listed.chain(ir.model.regions.iter()) {
+        if seen.insert(region.id.as_str()) {
+            order.push(region);
+        }
+    }
+    order
+}
+
+fn edges_with_ranges_off_their_vertices(ir: &CadIr) -> BTreeSet<&str> {
+    let index = cadmpeg_ir::index::ModelIndex::build(ir);
+    let tolerance = ir.tolerances.linear_or_default().get();
+    let position = |vertex: &cadmpeg_ir::ids::VertexId| {
+        let vertex = index.vertices(vertex.as_str(), cadmpeg_ir::index::StandardIndex)?;
+        let point = index.points(vertex.point.as_str(), cadmpeg_ir::index::StandardIndex)?;
+        Some(point.position().get())
+    };
+    let off = |curve: &cadmpeg_ir::ids::CurveId, parameter: f64, vertex| {
+        position(vertex).is_some_and(|vertex| {
+            cadmpeg_ir::eval::model_curve_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &index,
+                curve,
+                parameter,
+            )
+            .is_ok_and(|point| point.get().distance(vertex) > tolerance)
+        })
+    };
+    ir.model
+        .edges
+        .iter()
+        .filter(|edge| {
+            edge.curve()
+                .zip(edge.param_range())
+                .is_some_and(|(curve, range)| {
+                    off(curve, range[0], &edge.start) || off(curve, range[1], &edge.end)
+                })
+        })
+        .map(|edge| edge.id.as_str())
+        .collect()
 }
 
 fn datum_target_form_text(form: &DatumTargetForm) -> &str {
