@@ -2116,7 +2116,7 @@ mod tests {
         let mut unheld = before.clone();
         unheld["model"]["surfaces"]
             .as_array_mut()
-            .unwrap()
+            .expect("surfaces")
             .push(json!(
                 {"id": "cone", "geometry": {"kind": "cone", "ratio": 0.5, "half_angle": 0.5}}
             ));
@@ -2124,7 +2124,7 @@ mod tests {
         let mut projected_unheld = projected.clone();
         projected_unheld["model"]["surfaces"]
             .as_array_mut()
-            .unwrap()
+            .expect("surfaces")
             .push(json!({"id": "cone"}));
         let required =
             super::required_ids_with_source(&projected_unheld, &unheld, &carried, "step");
