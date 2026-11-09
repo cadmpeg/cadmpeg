@@ -609,6 +609,25 @@ pub(super) fn append(
             Err(reason) => omitted(&mut result.losses, attribute.id.as_str(), reason),
         }
     }
+    let restated = ir
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| {
+            matches!(&attribute.target, AttributeTarget::Record { arena, id } if ir.model.contains_record(*arena, id))
+                && result.preserved.contains(attribute.id.as_str())
+        })
+        .map(|attribute| attribute.id.as_str())
+        .collect::<Vec<_>>();
+    if !restated.is_empty() {
+        result
+            .losses
+            .push(IgesLossCode::WriterAttributeTargetRestated.note(format!(
+                "IGES attribute owners read back as typed targets; {} attribute(s) with a record target are restated: {}",
+                restated.len(),
+                restated.join(", ")
+            )));
+    }
     result
 }
 

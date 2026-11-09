@@ -310,10 +310,12 @@ fn neutral_views(
                     .is_some()
             });
             if !element {
-                losses.push(FreecadLossCode::ExportPresentationNotTransferred.note(format!(
-                    "occurrence {} visibility is written as its link view provider's",
-                    occurrence.id
-                )));
+                losses.push(
+                    FreecadLossCode::ExportPresentationNotTransferred.note(format!(
+                        "occurrence {} visibility is written as its link view provider's",
+                        occurrence.id
+                    )),
+                );
             }
             if let Some(name) = names
                 .get(occurrence.id.as_str())

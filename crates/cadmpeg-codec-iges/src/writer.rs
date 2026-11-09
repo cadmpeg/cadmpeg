@@ -6340,6 +6340,7 @@ fn append_surface_entities(
     let status = ownership.status(surface.source_object.as_ref());
     let base_index = entities.len();
     let mut additions = surface_entities_for_ir(ctx, ir, surface, base_index, version)?;
+    losses.extend(edge_carriers::surface_placement_applied_loss(surface));
     support_records::retain(ir, surface, &mut additions, base_index);
     if let Some(entity) = additions.last_mut() {
         entity.status = status;

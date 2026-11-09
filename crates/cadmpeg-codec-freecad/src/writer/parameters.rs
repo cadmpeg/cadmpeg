@@ -543,7 +543,13 @@ pub(super) fn write(
             Some(ParameterValue::Boolean(value)) => {
                 xml::scalar(property_name, "App::PropertyBool", "Bool", *value)
             }
-            Some(ParameterValue::String(value)) => xml::string(property_name, value),
+            Some(ParameterValue::String(value)) => {
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "parameter {} is stored as a text property, which holds no parameter",
+                    parameter.id
+                )));
+                xml::string(property_name, value)
+            }
             None => {
                 losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                     "parameter {} has no evaluated value from which to type a native scalar property", parameter.id

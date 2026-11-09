@@ -64,7 +64,10 @@ pub(crate) fn geometry_name<'a>(
 /// Asserts that the count equals the number of listed ids and that the ids
 /// are sorted.
 pub(crate) fn omitted_record_ids(message: &str) -> Vec<&str> {
-    for single in [" omits native record ", " omits foreign unknown record identity "] {
+    for single in [
+        " omits native record ",
+        " omits foreign unknown record identity ",
+    ] {
         if let Some((id, _)) = message
             .split_once(single)
             .and_then(|(_, rest)| rest.split_once(" from `"))

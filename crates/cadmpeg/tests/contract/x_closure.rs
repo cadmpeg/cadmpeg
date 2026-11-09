@@ -317,6 +317,7 @@ fn step_observe() -> StepObserved {
         cadmpeg_test_support::carried::UnheldClass::DocumentIdentityReference,
         cadmpeg_test_support::carried::UnheldClass::ColourlessAppearance,
         cadmpeg_test_support::carried::UnheldClass::UnplacedPresentation,
+        cadmpeg_test_support::carried::UnheldClass::OpenSolid,
     ]);
     StepObserved {
         carried,
@@ -567,13 +568,17 @@ fn observe_fcstd() -> ObservedFcstd {
     }
     let fixed_paths = single_value_paths(&documents);
     let carried = observe_carried(&documents);
+    let rules = super::freecad_storage::topology_rules();
     let reduced = encoder
         .reduced_fields()
         .iter()
         .map(|row| ReducedProbe {
             path: row.path,
             storage: row.storage,
-            normalize: None,
+            normalize: rules
+                .iter()
+                .find(|rule| rule.path == row.path && rule.storage == row.storage)
+                .and_then(|rule| rule.normalize),
         })
         .collect();
     ObservedFcstd {
@@ -780,11 +785,35 @@ fn observe_iges() -> ObservedIges {
     );
     carried.arenas.extend(scan.arenas);
     carried.variants.extend(scan.variants);
+    carried.unheld = iges_unheld_classes();
     ObservedIges {
         carried,
         fixed_paths,
         known_losses,
     }
+}
+
+/// Record classes IGES 5.3 cannot hold (#209 §5.2): Type 194 is a right
+/// circular cone; Type 314 colours state no transparency; a Type 186 solid
+/// bounds one connected volume; a Type 504 edge takes its range from its
+/// vertices and needs a model curve; a Type 508 loop is closed; a Type 416
+/// reference names a file; an annotation places its text; and the Global
+/// resolution is the one tolerance, which Type 502 and 504 solid topology
+/// does not state.
+fn iges_unheld_classes() -> std::collections::BTreeSet<cadmpeg_test_support::carried::UnheldClass> {
+    use cadmpeg_test_support::carried::UnheldClass;
+    std::collections::BTreeSet::from([
+        UnheldClass::EllipticalCone,
+        UnheldClass::TranslucentLineBinding,
+        UnheldClass::MultiRegionSolid,
+        UnheldClass::RangeOffVertices,
+        UnheldClass::OpenRing,
+        UnheldClass::CurvelessEdgePcurve,
+        UnheldClass::DocumentIdentityReference,
+        UnheldClass::ColourlessAppearance,
+        UnheldClass::UnplacedPresentation,
+        UnheldClass::UnstatedTolerance,
+    ])
 }
 
 fn run_iges_other_format(format: &str, observed: &ObservedIges) -> Vec<String> {

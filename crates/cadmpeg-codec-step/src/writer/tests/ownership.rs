@@ -1309,8 +1309,7 @@ fn a_nested_compound_the_writer_cannot_construct_keeps_both_carriers() {
     let mut ir = standalone_subset_curve(None);
     let line: CurveId = "test:model:curve#basis".try_into().unwrap();
     let compound = |id: &str, construction: &str, component: &CurveId| {
-        let construction_id: cadmpeg_ir::ids::ProceduralCurveId =
-            construction.try_into().unwrap();
+        let construction_id: cadmpeg_ir::ids::ProceduralCurveId = construction.try_into().unwrap();
         (
             Curve {
                 native_ref: None,
@@ -1339,10 +1338,16 @@ fn a_nested_compound_the_writer_cannot_construct_keeps_both_carriers() {
         )
     };
     let inner_id: CurveId = "test:model:curve#inner".try_into().unwrap();
-    let (inner, inner_construction) =
-        compound(inner_id.as_str(), "test:model:procedural_curve#inner", &line);
-    let (outer, outer_construction) =
-        compound("test:model:curve#outer", "test:model:procedural_curve#outer", &inner_id);
+    let (inner, inner_construction) = compound(
+        inner_id.as_str(),
+        "test:model:procedural_curve#inner",
+        &line,
+    );
+    let (outer, outer_construction) = compound(
+        "test:model:curve#outer",
+        "test:model:procedural_curve#outer",
+        &inner_id,
+    );
     ir.model.curves.extend([inner, outer]);
     ir.model
         .procedural_curves
