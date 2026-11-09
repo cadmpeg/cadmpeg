@@ -5,7 +5,10 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::ids::BodyId;
 
-use super::{plain_history_images, retain_live_annotations};
+use super::{
+    body_preselection, has_plain_beside_partition_streams, plain_history_images,
+    retain_live_annotations,
+};
 use crate::parasolid::StreamKind;
 
 #[test]
@@ -186,5 +189,36 @@ fn an_unattributed_body_withholds_no_plain_image() {
     assert_eq!(
         plain_history_images(stream_kinds(&kinds), &unknown_stream),
         None
+    );
+}
+
+#[test]
+fn plain_images_beside_partitions_suppress_terminal_lineage_preselection() {
+    assert!(has_plain_beside_partition_streams([
+        StreamKind::Partition,
+        StreamKind::Deltas,
+        StreamKind::Plain,
+    ]));
+    assert!(!has_plain_beside_partition_streams([
+        StreamKind::Plain,
+        StreamKind::Plain
+    ]));
+    assert!(!has_plain_beside_partition_streams([
+        StreamKind::Partition,
+        StreamKind::Deltas
+    ]));
+
+    assert_eq!(body_preselection(None, Some("terminal"), true), None);
+    assert_eq!(
+        body_preselection(Some("membership"), Some("terminal"), true),
+        Some("membership")
+    );
+    assert_eq!(
+        body_preselection(None, Some("terminal"), false),
+        Some("terminal")
+    );
+    assert_eq!(
+        body_preselection(Some("membership"), Some("terminal"), false),
+        Some("membership")
     );
 }

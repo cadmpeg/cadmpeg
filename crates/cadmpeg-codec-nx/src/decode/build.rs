@@ -212,7 +212,11 @@ pub(super) fn try_decode_geometry(
         }),
         None => None,
     };
-    let preselection = rmfastload_preselection.or(terminal_preselection);
+    let preselection = body_preselection(
+        rmfastload_preselection,
+        terminal_preselection,
+        has_plain_beside_partition_streams(scan.streams.iter().map(crate::parasolid::Stream::kind)),
+    );
     let (chart_count, geometry_record_count) = scan
         .streams
         .iter()
@@ -1748,6 +1752,34 @@ pub(super) fn rmfastload_stream_indices(selected: &BTreeSet<BodyId>) -> Option<B
         streams.insert(body_stream_index(body)?);
     }
     Some(streams)
+}
+
+/// Whether a part has both partition streams and plain cached-body streams.
+fn has_plain_beside_partition_streams(kinds: impl IntoIterator<Item = StreamKind>) -> bool {
+    let (mut partition, mut plain) = (false, false);
+    for kind in kinds {
+        match kind {
+            StreamKind::Partition => partition = true,
+            StreamKind::Plain => plain = true,
+            StreamKind::Deltas | StreamKind::Preview => {}
+        }
+    }
+    partition && plain
+}
+
+/// The stream-level preselection. Plain history images beside partition
+/// streams are withheld before terminal lineage selects, so terminal-lineage
+/// preselection runs only for a part without them.
+fn body_preselection<T>(
+    membership: Option<T>,
+    terminal_lineage: Option<T>,
+    plain_beside_partition: bool,
+) -> Option<T> {
+    if plain_beside_partition {
+        membership
+    } else {
+        membership.or(terminal_lineage)
+    }
 }
 
 /// The plain-stream bodies of a part that also has partition-stream bodies.
