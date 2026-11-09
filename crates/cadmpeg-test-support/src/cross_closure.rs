@@ -587,15 +587,58 @@ fn is_named_degradation_disagreement(
         || rest.contains("right null")
 }
 
+/// `after` with its references to the re-reads of named degraded records
+/// nulled.
+///
+/// A record the writer degrades and names need not reappear, so `before`
+/// nulls the references to it (§5.2). Its re-read is an unpaired record of
+/// the same arena in `after`; nulling the references to those records lets
+/// the referrers pair, while every unpaired record stays accounted for.
 fn null_added_topology_refs(
+    before: &Value,
     after: &Value,
-    _named_degraded: &BTreeSet<String>,
-    _report: &cadmpeg_ir::report::export::ExportReport,
+    named_degraded: &BTreeSet<String>,
 ) -> Value {
-    // References remapped through added STEP records are handled by
-    // disagreement filtering when the source record carries a named
-    // degradation loss (#209 §5.2).
-    after.clone()
+    if named_degraded.is_empty() {
+        return after.clone();
+    }
+    let arena_ids = |document: &Value| -> BTreeMap<String, BTreeSet<String>> {
+        let mut arenas = BTreeMap::new();
+        for (arena, rows) in document
+            .get("model")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+        {
+            let ids: BTreeSet<String> = rows
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|row| row.get("id")?.as_str().map(str::to_owned))
+                .collect();
+            arenas.insert(arena.clone(), ids);
+        }
+        arenas
+    };
+    let degraded_arenas: BTreeSet<String> = arena_ids(before)
+        .into_iter()
+        .filter(|(_, ids)| !ids.is_disjoint(named_degraded))
+        .map(|(arena, _)| arena)
+        .collect();
+    let Ok((_, unpaired_after)) = unpaired_both(before, after, true) else {
+        return after.clone();
+    };
+    let added: BTreeSet<String> = arena_ids(after)
+        .into_iter()
+        .filter(|(arena, _)| degraded_arenas.contains(arena))
+        .flat_map(|(_, ids)| ids)
+        .filter(|id| unpaired_after.contains(id))
+        .collect();
+    let retained: BTreeSet<String> = before_rows(after)
+        .into_keys()
+        .filter(|id| !added.contains(id))
+        .collect();
+    null_dangling(after, &retained)
 }
 /// The comparison half of [`cross_findings`], over serialized documents.
 #[must_use]
@@ -645,7 +688,7 @@ pub fn cross_compare(
         config.reduced,
     );
     let adjusted = apply_reduced(&nulled, config.reduced, true);
-    let normalized = null_added_topology_refs(&normalized, &named_degraded, report);
+    let normalized = null_added_topology_refs(&adjusted, &normalized, &named_degraded);
     findings.extend(native_findings(
         &projected,
         &normalized,
@@ -1018,6 +1061,25 @@ pub fn single_value_paths(documents: &[Value]) -> BTreeMap<String, Value> {
 #[cfg(test)]
 mod tests {
     use super::single_value_paths;
+
+    #[test]
+    fn a_referrer_of_a_named_degraded_record_pairs_with_its_re_read() {
+        let before = serde_json::json!({"model": {
+            "bodies": [{"id": "src:body#1", "kind": "solid"}],
+            "regions": [{"id": "src:region#1", "body": null}],
+        }});
+        let after = serde_json::json!({"model": {
+            "bodies": [{"id": "out:body#1", "kind": "sheet"}],
+            "regions": [{"id": "out:region#1", "body": "out:body#1"}],
+        }});
+        let degraded = std::collections::BTreeSet::from(["src:body#1".to_owned()]);
+        let nulled = super::null_added_topology_refs(&before, &after, &degraded);
+        assert_eq!(nulled["model"]["regions"][0]["body"], serde_json::json!(null));
+        assert_eq!(nulled["model"]["bodies"][0]["id"], serde_json::json!("out:body#1"));
+        let unchanged =
+            super::null_added_topology_refs(&before, &after, &std::collections::BTreeSet::new());
+        assert_eq!(unchanged, after);
+    }
 
     #[test]
     fn a_named_remap_onto_the_writers_added_record_is_a_degradation() {
