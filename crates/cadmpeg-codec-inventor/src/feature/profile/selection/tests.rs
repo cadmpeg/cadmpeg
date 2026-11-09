@@ -105,3 +105,98 @@ fn whole_sketch_requires_one_complete_closed_profile_and_resolved_plane() {
         .whole_sketch("test", 0, &complete)
         .is_none());
 }
+
+mod whole_curve {
+    use super::*;
+    use cadmpeg_ir::{
+        math::{Point2, Vector3},
+        sketches::{
+            SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchPlacement, SketchProfiles,
+        },
+    };
+
+    fn sketch(id: &SketchId) -> Sketch {
+        Sketch {
+            id: id.clone(),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("plane"),
+            profiles: SketchProfiles::default(),
+            native_ref: None,
+        }
+    }
+
+    fn line(sketch: &SketchId, name: &str, start: (f64, f64), end: (f64, f64)) -> SketchEntity {
+        SketchEntity::new(
+            SketchEntityId::mint(format!("test:design:sketch-entity#{name}")).expect("id"),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(start.0, start.1),
+                end: Point2::new(end.0, end.1),
+            })
+            .expect("line"),
+        )
+    }
+
+    fn run(entities: &[SketchEntity], edge: &ProfileEdge) -> Option<SketchEntityId> {
+        let id = SketchId::mint("test:design:sketch#path").expect("id");
+        let sketch = sketch(&id);
+        let frame = SketchFrame::new(&sketch).expect("frame");
+        ProfileIndex::new(&[], &[], &[], &[], entities).whole_curve(&frame, &sketch, edge)
+    }
+
+    fn path_edge(start: (f64, f64, f64), end: (f64, f64, f64)) -> ProfileEdge {
+        ProfileEdge {
+            name: None,
+            start: Point3::new(start.0, start.1, start.2),
+            end: Point3::new(end.0, end.1, end.2),
+            middle: None,
+            spline: None,
+        }
+    }
+
+    #[test]
+    fn edge_running_along_exactly_one_whole_curve_selects_it() {
+        let id = SketchId::mint("test:design:sketch#path").expect("id");
+        let entities = [
+            line(&id, "first", (0.0, 0.0), (30.0, 0.0)),
+            line(&id, "second", (30.0, 0.0), (30.0, 20.0)),
+        ];
+        let selected = run(&entities, &path_edge((30.0, 20.0, 0.0), (30.0, 0.0, 0.0)));
+        assert_eq!(selected.as_ref(), Some(entities[1].id()));
+    }
+
+    #[test]
+    fn partial_ambiguous_construction_and_off_plane_edges_select_nothing() {
+        let id = SketchId::mint("test:design:sketch#path").expect("id");
+        let long = line(&id, "long", (0.0, 0.0), (30.0, 0.0));
+        let edge = path_edge((0.0, 0.0, 0.0), (30.0, 0.0, 0.0));
+        assert!(run(std::slice::from_ref(&long), &edge).is_some());
+        // The edge covers only part of the curve.
+        assert!(run(
+            std::slice::from_ref(&long),
+            &path_edge((0.0, 0.0, 0.0), (20.0, 0.0, 0.0))
+        )
+        .is_none());
+        // Two curves with the same extent leave the selection ambiguous.
+        let twin = line(&id, "twin", (30.0, 0.0), (0.0, 0.0));
+        assert!(run(&[long.clone(), twin], &edge).is_none());
+        // A construction curve is not a path member.
+        assert!(run(&[long.clone().with_construction(true)], &edge).is_none());
+        // An edge off the sketch plane has no sketch coordinates.
+        assert!(run(
+            std::slice::from_ref(&long),
+            &path_edge((0.0, 0.0, 5.0), (30.0, 0.0, 5.0))
+        )
+        .is_none());
+        // A curve of another sketch is ignored.
+        let other = SketchId::mint("test:design:sketch#other").expect("id");
+        assert!(run(&[line(&other, "far", (0.0, 0.0), (30.0, 0.0))], &edge).is_none());
+    }
+}

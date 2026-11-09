@@ -4,7 +4,7 @@
 use cadmpeg_ir::{
     features::{PathRef, PlanarProfileRef},
     math::Point3,
-    sketches::{Sketch, SketchGeometryDefinition},
+    sketches::{Sketch, SketchEntityId, SketchGeometryDefinition},
 };
 
 use super::{
@@ -108,6 +108,27 @@ impl ProfileIndex<'_> {
         ))
     }
 
+    /// The unique non-construction curve of `sketch` that `edge` runs along
+    /// in full. No other curve of the sketch has the same extent.
+    fn whole_curve(
+        &self,
+        frame: &SketchFrame,
+        sketch: &Sketch,
+        edge: &ProfileEdge,
+    ) -> Option<SketchEntityId> {
+        let mut matches = self.by_id.values().filter(|entity| {
+            entity.sketch == sketch.id
+                && !entity.construction
+                && !matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
+                && Piece::new(frame, entity, edge).is_some_and(|piece| piece.whole)
+        });
+        let entity = matches.next()?;
+        matches.next().is_none().then(|| entity.id().clone())
+    }
+
     pub(in crate::feature) fn selected_path(
         &self,
         token: &str,
@@ -129,11 +150,17 @@ impl ProfileIndex<'_> {
         let mut resolved = false;
         for (sketch_ordinal, sketch) in sketches {
             let frame = SketchFrame::new(sketch)?;
+            let named = names
+                .iter()
+                .any(|name| self.curves.contains_key(&(token, *sketch_ordinal, *name)));
             let curves = wire
                 .edges
                 .iter()
                 .zip(&names)
                 .map(|(edge, name)| {
+                    if !named {
+                        return self.whole_curve(&frame, sketch, edge);
+                    }
                     let id = self
                         .curves
                         .get(&(token, *sketch_ordinal, *name))?
