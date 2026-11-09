@@ -2605,7 +2605,16 @@ fn validate_features(
                 },
             );
             if expected.ok().is_none_or(|expected| {
-                !crate::feature::body_selection::matches(expected, definition, &body_joins, None)
+                !crate::feature::body_selection::split_matches(
+                    expected,
+                    definition,
+                    &body_joins,
+                    &crate::feature::body_selection::produced_before(
+                        &ir.model.features,
+                        &ir.model.feature_result_topologies,
+                        feature,
+                    ),
+                )
             }) {
                 findings.push(finding(
                     Check::NativeLinks,
