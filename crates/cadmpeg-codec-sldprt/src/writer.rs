@@ -7,6 +7,7 @@ use std::num::NonZeroU16;
 
 mod accounting;
 mod bounded_curve;
+mod configuration_archive;
 mod custom_properties;
 mod edge_direction;
 mod envelope;
@@ -605,6 +606,20 @@ pub(super) fn write_semantic_at(
             payload,
         )?;
         consumed_source_layout |= lane_consumed_source_layout;
+        // Synthesis retains no source `Config-N`, so the lane's class tags
+        // need the class map it authors.
+        if let (true, Some(configuration), Some(archive)) = (
+            prepared_design,
+            lane.configuration.as_ref(),
+            configuration_archive::authored(lane),
+        ) {
+            push_generated_metadata_member(
+                &mut sections,
+                &original_metadata_sections,
+                format!("Contents/Config-{configuration}"),
+                archive,
+            )?;
+        }
     }
     sections.extend(previews::sections(ir)?);
     if let Some(payload) = crate::pmi::write::payload(ir, native.as_ref())? {

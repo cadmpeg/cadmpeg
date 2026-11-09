@@ -206,8 +206,51 @@ fn exact_reference(
         };
         payloads.push(parse_reference_payload(name, *view)?);
     }
+    let Some(curves) = saved_curves(&payloads)? else {
+        return Ok(None);
+    };
+    let Some(projection) = sources.project(view) else {
+        return Ok(None);
+    };
+    if curves.len() != selectors.len()
+        || curves
+            .iter()
+            .any(|(curve, range)| !projection.contains(curve, *range))
+    {
+        return Ok(None);
+    }
+    let page = |points: [[f64; 2]; 2]| {
+        let (Some(position), Some(scale), Some(0.0)) = (view.position, view.scale, rotation) else {
+            return Vec::new();
+        };
+        let points = points.map(|point| {
+            FiniteVector::new([
+                position[0] + scale.get() * point[0],
+                position[1] - scale.get() * point[1],
+            ])
+        });
+        let [Some(first), Some(second)] = points else {
+            return Vec::new();
+        };
+        vec![first, second]
+    };
+    let measured = measurement(kind, &curves).and_then(|(value, points)| {
+        let value = FiniteReal::new(value)?;
+        Some((value, points.map_or_else(Vec::new, page)))
+    });
+    Ok(measured)
+}
+
+/// A saved reference curve and the parameter range of its edge.
+pub(crate) type SavedCurve<'a> = (&'a TextCurve, [FiniteReal; 2]);
+
+/// The curve and parameter range of each saved reference edge, when every
+/// payload holds one unplaced, non-degenerate edge on a 3D curve.
+pub(crate) fn saved_curves(
+    payloads: &[(crate::brep::ShapePayload, crate::brep::ParsedPolygons)],
+) -> Result<Option<Vec<SavedCurve<'_>>>, CodecError> {
     let mut curves = Vec::new();
-    for (payload, polygons) in &payloads {
+    for (payload, polygons) in payloads {
         let Some(tables) = Tables::from_shape(
             payload,
             "",
@@ -250,32 +293,16 @@ fn exact_reference(
         };
         curves.push((curve, *parameter_range));
     }
-    let Some(projection) = sources.project(view) else {
-        return Ok(None);
-    };
-    if curves.len() != selectors.len()
-        || curves
-            .iter()
-            .any(|(curve, range)| !projection.contains(curve, *range))
-    {
-        return Ok(None);
-    }
-    let page = |points: [[f64; 2]; 2]| {
-        let (Some(position), Some(scale), Some(0.0)) = (view.position, view.scale, rotation) else {
-            return Vec::new();
-        };
-        let points = points.map(|point| {
-            FiniteVector::new([
-                position[0] + scale.get() * point[0],
-                position[1] - scale.get() * point[1],
-            ])
-        });
-        let [Some(first), Some(second)] = points else {
-            return Vec::new();
-        };
-        vec![first, second]
-    };
-    let measured = match (kind, curves.as_slice()) {
+    Ok(Some(curves))
+}
+
+/// The value of a dimension of `kind` measured on its saved reference
+/// curves, with the two reference points its page anchors place.
+pub(crate) fn measurement(
+    kind: &DimensionKind,
+    curves: &[SavedCurve<'_>],
+) -> Option<(f64, Option<[[f64; 2]; 2]>)> {
+    match (kind, curves) {
         (
             DimensionKind::Distance {}
             | DimensionKind::HorizontalDistance {}
@@ -285,7 +312,7 @@ fn exact_reference(
             let origin = origin.get();
             let direction = direction.get();
             if origin.z != 0.0 || direction.z != 0.0 {
-                return Ok(None);
+                return None;
             }
             let points = range.map(|parameter| {
                 [
@@ -298,9 +325,9 @@ fn exact_reference(
                 DimensionKind::Distance {} => delta[0].hypot(delta[1]),
                 DimensionKind::HorizontalDistance {} => delta[0].abs(),
                 DimensionKind::VerticalDistance {} => delta[1].abs(),
-                _ => return Ok(None),
+                _ => return None,
             };
-            FiniteReal::new(value).map(|value| (value, page(points)))
+            Some((value, Some(points)))
         }
         (
             DimensionKind::Radius {} | DimensionKind::Diameter {},
@@ -325,7 +352,7 @@ fn exact_reference(
                 || direction.x.hypot(direction.y) != 1.0
                 || radius.get() <= 0.0
             {
-                return Ok(None);
+                return None;
             }
             let center = [center.x, center.y];
             let delta = [radius.get() * direction.x, radius.get() * direction.y];
@@ -340,14 +367,8 @@ fn exact_reference(
             } else {
                 radius.get()
             };
-            FiniteReal::new(value).map(|value| {
-                let anchors = if range[0].get() == 0.0 && range[1].get() == std::f64::consts::TAU {
-                    page([first, second])
-                } else {
-                    Vec::new()
-                };
-                (value, anchors)
-            })
+            let full = range[0].get() == 0.0 && range[1].get() == std::f64::consts::TAU;
+            Some((value, full.then_some([first, second])))
         }
         (
             DimensionKind::Angle {},
@@ -366,18 +387,17 @@ fn exact_reference(
             let first = first.get();
             let second = second.get();
             if first.z != 0.0 || second.z != 0.0 {
-                return Ok(None);
+                return None;
             }
             let cross = first.x * second.y - first.y * second.x;
             let dot = first.x * second.x + first.y * second.y;
             if dot != 0.0 || !cross.is_finite() || cross <= 0.0 {
-                return Ok(None);
+                return None;
             }
-            FiniteReal::new(90.0).map(|value| (value, Vec::new()))
+            Some((90.0, None))
         }
         _ => None,
-    };
-    Ok(measured)
+    }
 }
 
 fn is_false(properties: &Properties<'_>, owner: &str, name: &str) -> Result<bool, CodecError> {

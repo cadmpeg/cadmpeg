@@ -39,9 +39,14 @@ fn reference(
     losses: &mut Vec<LossNote>,
 ) -> Option<String> {
     let (object, file) = match &operand.container {
-        OperandContainer::External { external_document } => {
-            (operand.object.clone(), external(external_document, losses))
-        }
+        OperandContainer::External { external_document } => (
+            operand.object.clone(),
+            external(
+                external_document,
+                &format!("joint operand {}", operand.object),
+                losses,
+            ),
+        ),
         OperandContainer::Root {} => (
             names.get(&operand.object).cloned().or_else(|| {
                 names

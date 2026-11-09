@@ -52,7 +52,11 @@ pub(super) fn pcurves(
             omitted.insert(pcurve.id.clone());
         }
     }
+    // Records that lose a parameter-space curve use are degraded, and the
+    // omission loss names them with the curves.
+    let mut degraded = BTreeSet::new();
     for coedge in &mut target.model.coedges {
+        let before = coedge.pcurves.len();
         coedge
             .pcurves
             .retain(|use_| !omitted.contains(&use_.pcurve));
@@ -61,13 +65,26 @@ pub(super) fn pcurves(
                 omitted.insert(use_.pcurve);
             }
         }
+        if coedge.pcurves.len() != before {
+            degraded.insert(coedge.id.as_str().to_owned());
+        }
     }
     for coedge in &mut target.model.coedges {
+        let before = coedge.pcurves.len();
         coedge
             .pcurves
             .retain(|use_| !omitted.contains(&use_.pcurve));
+        if coedge.pcurves.len() != before {
+            degraded.insert(coedge.id.as_str().to_owned());
+        }
     }
     for boundary in &mut target.model.loops {
+        if boundary
+            .vertex_pcurves()
+            .any(|use_| omitted.contains(&use_.pcurve))
+        {
+            degraded.insert(boundary.id.as_str().to_owned());
+        }
         match &mut boundary.boundary {
             LoopBoundary::Vertex { pcurves, .. } => {
                 pcurves.retain(|use_| !omitted.contains(&use_.pcurve));
@@ -94,8 +111,9 @@ pub(super) fn pcurves(
             .map(cadmpeg_ir::ids::PcurveId::as_str)
             .collect::<Vec<_>>()
             .join(", ");
+        let users = degraded.into_iter().collect::<Vec<_>>().join(", ");
         losses.push(F3dLossCode::WriterPcurveOmitted.note(format!(
-            "{} unsupported parameter-space curves are omitted: {identities}; spatial edge carriers remain",
+            "{} unsupported parameter-space curves are omitted: {identities}; spatial edge carriers remain; their uses are omitted from {users}",
             omitted.len(),
         )));
     }
@@ -195,6 +213,22 @@ pub(super) fn auxiliary(
                 F3dLossCode::WriterAuxiliaryOmitted
                     .note(format!("face {} tolerance is not encoded", face.id)),
             );
+        }
+    }
+    // The reader parses a parametric surface curve only in its cache-first
+    // form; one without that tail is written but reads back as an unknown
+    // construction.
+    for procedural in &target.model.procedural_curves {
+        if matches!(
+            procedural.definition(),
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
+                family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric { tail: None, .. }
+            }
+        ) {
+            losses.push(F3dLossCode::WriterProceduralReduced.note(format!(
+                "parametric surface curve {} has no cache-first tail and reads back as an unknown construction",
+                procedural.id
+            )));
         }
     }
     for point in &mut target.model.points {

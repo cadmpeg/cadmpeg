@@ -109,6 +109,18 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
         },
     },
     cadmpeg_ir::codec::write::ReducedField {
+        path: "model.semantic_annotations[].value",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/annotation.value-derived",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.coedges",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/topology.radial-order-not-stored",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
         path: "model.parameters[].name",
         storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
             loss: "fcstd/parameter.name-not-transferred",

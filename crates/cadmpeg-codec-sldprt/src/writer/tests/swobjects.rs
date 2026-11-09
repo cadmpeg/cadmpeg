@@ -628,7 +628,12 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let marker_lane = &sldprt_native(decoded.ir()).feature_input_lanes[0];
+    let native = sldprt_native(decoded.ir());
+    let marker_lane = native
+        .feature_input_lanes
+        .iter()
+        .find(|lane| lane.id == "sldprt:feature-input:resolved-features#config-0")
+        .unwrap();
     assert_eq!(
         marker_lane
             .sketch_entities

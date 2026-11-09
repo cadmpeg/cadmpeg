@@ -24,6 +24,15 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
             loss: "f3d/writer.appearance-properties-omitted",
         },
     },
+    // F3D stores no recompute flag; a reader reads every feature as current
+    // and the export charges the stale evaluation naming the feature
+    // (#209 §2.5).
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.features[].needs_recompute",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "export/evaluation.stale",
+        },
+    },
 ];
 
 /// Preserve an eligible source dialect, or synthesize the selected catalog target.

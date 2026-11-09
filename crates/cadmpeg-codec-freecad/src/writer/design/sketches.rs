@@ -32,11 +32,16 @@ pub(crate) fn write(
         let index = if let Some(index) = objects.iter().position(|object| object.name == name) {
             index
         } else {
-            objects.push(Object::new(
+            let mut object = Object::new(
                 name.clone(),
                 "Sketcher::SketchObject",
-                sketch.name.as_deref().unwrap_or(sketch.id.as_str()),
-            ));
+                sketch.name.as_deref().unwrap_or_default(),
+            );
+            // FreeCAD restores an absent Label as the object name.
+            if sketch.name.is_none() {
+                object.properties.shift_remove("Label");
+            }
+            objects.push(object);
             objects.len() - 1
         };
         names.insert(sketch.id.as_str().to_owned(), name);
@@ -170,6 +175,21 @@ pub(crate) fn write(
             if let Some(row) = constraints::row(ir, constraint, &indices)
                 .or_else(|| native::constraint(ir, constraint, &indices))
             {
+                let stored = format!("Constraint{}", constraints.len() + 1);
+                for parameter in constraint
+                    .definition
+                    .kind()
+                    .dimension_parameters()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|id| ir.model.parameters.iter().find(|row| row.id == id))
+                    .filter(|parameter| parameter.name != stored)
+                {
+                    losses.push(FreecadLossCode::ParameterNameNotTransferred.note(format!(
+                        "parameter {} is stored as the value of {stored}",
+                        parameter.id
+                    )));
+                }
                 names.insert(
                     format!("constraint-path:{}", constraint.id),
                     format!("Constraints[{}]", constraints.len()),
