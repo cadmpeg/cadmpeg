@@ -496,7 +496,7 @@ fn two_covering_blends_that_consume_one_edge_conflict() {
 }
 
 #[test]
-fn an_unbound_fillet_takes_a_covering_history_only_when_no_other_history_resolves() {
+fn an_unbound_fillet_takes_a_covering_history_only_when_it_alone_binds() {
     let proven = || history_between("f3d:proven", input(z()), output());
     // History rows are kept in slot order.
     let covering = |id: &str| {
@@ -515,20 +515,13 @@ fn an_unbound_fillet_takes_a_covering_history_only_when_no_other_history_resolve
             .collect::<Vec<_>>()
     };
 
+    // One history binds by a shared edge and the other through the covering
+    // reading: more than one history binds every group, so the native
+    // selection stays.
     let (edges, bindings) = bind_unbound(&mut [proven(), covering("f3d:covering")]);
-    assert_eq!(slots(&edges), ["17"]);
-    assert_eq!(
-        bindings.inferred_scope_histories,
-        [(SCOPE_ID.to_owned(), "f3d:proven".to_owned())]
-    );
-    assert_eq!(
-        history_notes(&bindings),
-        ["feature f3d:test:feature#42: its scope has no bound history and 2 histories hold its state pair; its edges resolve without the covering reading only in f3d:proven, and through it in 1 other history."]
-    );
-    assert!(bindings
-        .notes
-        .iter()
-        .all(|note| note.code != F3dLossCode::HistoricalFilletEdgeCovering.kind()));
+    assert_eq!(edges, native());
+    assert!(bindings.inferred_scope_histories.is_empty());
+    assert!(bindings.notes.is_empty(), "{:?}", bindings.notes);
 
     let (edges, bindings) = bind_unbound(&mut [unresolved(), covering("f3d:covering")]);
     assert_eq!(slots(&edges), ["17"]);
@@ -538,7 +531,7 @@ fn an_unbound_fillet_takes_a_covering_history_only_when_no_other_history_resolve
     );
     assert_eq!(
         history_notes(&bindings),
-        ["feature f3d:test:feature#42: its scope has no bound history and 2 histories hold its state pair; its edges resolve only in f3d:covering, through the covering reading."]
+        ["feature f3d:test:feature#42: its scope has no bound history and 2 histories hold its state pair; its edges resolve only in f3d:covering."]
     );
     assert!(bindings
         .notes
@@ -552,7 +545,7 @@ fn an_unbound_fillet_takes_a_covering_history_only_when_no_other_history_resolve
 }
 
 #[test]
-fn a_covering_transition_that_binds_no_group_does_not_rank_its_history() {
+fn a_covering_transition_that_binds_no_group_does_not_resolve_its_history() {
     let mut input = two_along([0.0, 4.0], [2.0, 4.0]);
     input.curve_axes.sort_by_key(|axis| axis.curve);
     input.edge_samples.sort_by_key(|sample| sample.edge);

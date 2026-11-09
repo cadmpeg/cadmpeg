@@ -547,8 +547,7 @@ fn replaceable_native(selection: &EdgeSelection) -> Option<&str> {
 /// blend whose supports share several edges along its axis gives the one
 /// whose span covers the blend's axial extent, with a note that states the
 /// status of every shared edge; a stated slot keeps this note, because the
-/// edges that the blend consumes stay assumed. Returns whether a group binds
-/// and whether a blend of its transition takes the covering reading.
+/// edges that the blend consumes stay assumed. Returns whether a group binds.
 pub(super) fn bind_fillet_groups(
     definition: &mut FeatureDefinition,
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -561,20 +560,17 @@ pub(super) fn bind_fillet_groups(
         &AsmHistoricalTopology,
     ),
     notes: &mut Vec<LossNote>,
-) -> GroupBinding {
+) -> bool {
     let FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: fillet_groups,
     }) = definition
     else {
-        return GroupBinding::Unbound;
+        return false;
     };
     let (transition, input, output) = states;
     let Some(blends) = transition_blends(transition, input, output) else {
-        return GroupBinding::Unbound;
+        return false;
     };
-    let covering = blends
-        .iter()
-        .any(|blend| matches!(blend.found, Found::Covering { .. }));
     let mut rebound = false;
     let radii = fillet_groups
         .iter()
@@ -584,14 +580,14 @@ pub(super) fn bind_fillet_groups(
         })
         .collect::<Vec<_>>();
     let Some(edges) = group_edges(&radii, &blends) else {
-        return GroupBinding::Unbound;
+        return false;
     };
     if !fillet_groups
         .iter()
         .zip(&edges)
         .all(|(group, slots)| agrees(&group.edges, feature_id, previous_state_id, slots))
     {
-        return GroupBinding::Unbound;
+        return false;
     }
     let found = blends
         .iter()
@@ -654,24 +650,7 @@ pub(super) fn bind_fillet_groups(
             rebound = true;
         }
     }
-    match (rebound, covering) {
-        (false, _) => GroupBinding::Unbound,
-        (true, false) => GroupBinding::Bound,
-        (true, true) => GroupBinding::BoundCovering,
-    }
-}
-
-/// What `bind_fillet_groups` bound from one transition.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum GroupBinding {
-    /// No group binds.
-    Unbound,
-    /// A group binds, and no blend of the transition takes the covering
-    /// reading.
-    Bound,
-    /// A group binds, and a blend of the transition takes the covering
-    /// reading.
-    BoundCovering,
+    rebound
 }
 
 /// The notes of an edge that a blend reading infers from `candidates`, in
@@ -858,8 +837,7 @@ pub(crate) fn bind_fillet_blend_edges(
         }
         // An unbound scope whose state pair several histories hold takes the
         // one history whose blends bind a group and leave every group a
-        // complete selection, ranking histories without the covering reading
-        // first.
+        // complete selection.
         let mut resolved = Vec::new();
         for (candidate, state) in candidates.iter().enumerate() {
             if !available.contains(&(position, Some(candidate))) {
@@ -870,7 +848,7 @@ pub(crate) fn bind_fillet_blend_edges(
             };
             let mut definition = feature.evaluation.definition().clone();
             let mut candidate_notes = Vec::new();
-            let binding = bind_fillet_groups(
+            let binds = bind_fillet_groups(
                 &mut definition,
                 &feature_id,
                 state.scope,
@@ -879,47 +857,22 @@ pub(crate) fn bind_fillet_blend_edges(
                 states,
                 &mut candidate_notes,
             );
-            if binding != GroupBinding::Unbound && every_fillet_group_complete(&definition) {
-                resolved.push((
-                    state.history,
-                    state.scope,
-                    definition,
-                    candidate_notes,
-                    binding == GroupBinding::BoundCovering,
-                ));
+            if binds && every_fillet_group_complete(&definition) {
+                resolved.push((state.history, state.scope, definition, candidate_notes));
             }
         }
-        let covering_only = resolved.iter().filter(|resolved| resolved.4).count();
-        if covering_only < resolved.len() {
-            resolved.retain(|resolved| !resolved.4);
-        }
-        if let [(history, scope, definition, candidate_notes, covering)] = resolved.as_mut_slice() {
+        if let [(history, scope, definition, candidate_notes)] = resolved.as_mut_slice() {
             let definition = definition.clone();
             feature
                 .evaluation
                 .edit(|current, _| *current = definition.clone());
             notes.append(candidate_notes);
-            let history_id = histories
-                .get(*history)
-                .map_or("", |history| history.id.as_str());
-            notes.push(F3dLossCode::HistoricalEdgeHistoryInferred.note(match covering_only {
-                0 => format!(
-                    "feature {}: its scope has no bound history and {} histories hold its state pair; its edges resolve only in {history_id}.",
-                    feature_id.as_str(),
-                    candidates.len(),
-                ),
-                _ if *covering => format!(
-                    "feature {}: its scope has no bound history and {} histories hold its state pair; its edges resolve only in {history_id}, through the covering reading.",
-                    feature_id.as_str(),
-                    candidates.len(),
-                ),
-                _ => format!(
-                    "feature {}: its scope has no bound history and {} histories hold its state pair; its edges resolve without the covering reading only in {history_id}, and through it in {covering_only} other {}.",
-                    feature_id.as_str(),
-                    candidates.len(),
-                    if covering_only == 1 { "history" } else { "histories" },
-                ),
-            }));
+            notes.push(F3dLossCode::HistoricalEdgeHistoryInferred.note(format!(
+                "feature {}: its scope has no bound history and {} histories hold its state pair; its edges resolve only in {}.",
+                feature_id.as_str(),
+                candidates.len(),
+                histories.get(*history).map_or("", |history| history.id.as_str())
+            )));
             if let Some(history) = histories.get(*history) {
                 inferred_scope_histories.push((scope.id.clone(), history.id.clone()));
             }
@@ -950,8 +903,8 @@ fn fillet_states<'a>(
     ))
 }
 
-/// Whether every group of a Fillet definition names historical edges.
-/// Whether every group of a fillet has a complete historical selection.
+/// Whether every group of a Fillet definition has a complete historical
+/// selection.
 fn every_fillet_group_complete(definition: &FeatureDefinition) -> bool {
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
         return false;
