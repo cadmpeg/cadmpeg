@@ -105,6 +105,11 @@ macro_rules! declare_arena_dispositions {
         }
 
         impl ArenaDispositions {
+            /// Every model arena with one disposition.
+            #[must_use]
+            pub const fn uniform(disposition: ArenaDisposition) -> Self {
+                Self { $($field: disposition,)* }
+            }
             /// The disposition of one registered model arena.
             pub fn disposition(&self, kind: EntityKind) -> ArenaDisposition {
                 [$(self.$field),*].get(kind.index()).copied().unwrap_or(ArenaDisposition::Omitted)
