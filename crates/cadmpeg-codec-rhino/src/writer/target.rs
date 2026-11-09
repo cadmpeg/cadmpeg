@@ -35,8 +35,11 @@ pub(crate) fn plan(
     };
     let ctx = DecodeContext::for_encode(&arena, &policy);
     // The caller's entity ceiling bounds the input records synthesis visits
-    // (#217 §5.0).
-    let records = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    // (#217 §5.0). The inspection has its own account, so the records the
+    // write emits keep the whole budget.
+    let inspection_arena = DecodeArena::new();
+    let inspection = DecodeContext::for_encode(&inspection_arena, &policy);
+    let records = cadmpeg_core::encode::EncodeSession::from_context(&inspection)?;
     for count in input.ir.census().values() {
         records.charge_entities(
             cadmpeg_core::decode::u64_from_index(*count),
