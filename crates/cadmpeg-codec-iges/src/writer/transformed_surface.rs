@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{placement_entities, surface_entities, DecodeContext, Entity, Placement};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::analytic::PlaneSurface;
 use cadmpeg_ir::geometry::{PlacedSurface, SolvedSurfaceGeometry};
 use cadmpeg_ir::scalar::FiniteReal;
@@ -12,9 +11,10 @@ pub(super) fn entities(
     placed: &PlacedSurface,
     base_index: usize,
     version: crate::IgesVersion,
-) -> Result<Vec<Entity>, CodecError> {
-    let unsupported =
-        || CodecError::InvalidInput("IGES cannot preserve this surface placement".into());
+) -> Result<Vec<Entity>, crate::writer::WriteError> {
+    let unsupported = || {
+        crate::writer::WriteError::Unwritable("IGES cannot preserve this surface placement".into())
+    };
     if let SolvedSurfaceGeometry::Plane(plane) = placed.basis() {
         let world = world_plane(*placed.transform(), plane).ok_or_else(unsupported)?;
         return surface_entities(

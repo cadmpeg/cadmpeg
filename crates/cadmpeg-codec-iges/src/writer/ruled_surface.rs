@@ -3,8 +3,8 @@
 
 use super::{
     append_curve_entity, curve_reference_span, flatten_curve, model_surface_point,
-    natural_nurbs_domain, reference_marker, same_point, CadIr, CodecError, CurveEntityRequest,
-    CurveId, Entity, EntityStatus, EvaluationFailure, Sense, SolvedSurfaceGeometry, Surface,
+    natural_nurbs_domain, reference_marker, same_point, CadIr, CurveEntityRequest, CurveId, Entity,
+    EntityStatus, EvaluationFailure, Sense, SolvedSurfaceGeometry, Surface,
 };
 
 /// A Type 118 ruled surface between two rails (IGES 5.3 §4.17). The neutral
@@ -19,7 +19,7 @@ pub(super) fn entities(
     rails: [&CurveId; 2],
     base_index: usize,
     version: crate::IgesVersion,
-) -> Result<Vec<Entity>, CodecError> {
+) -> Result<Vec<Entity>, crate::writer::WriteError> {
     let geometry = &surface.geometry;
     let (form, developable) = source_fields(ir, surface, rails).unwrap_or((1, 0));
     let mut entities = Vec::new();
@@ -32,10 +32,14 @@ pub(super) fn entities(
             .iter()
             .find(|curve| curve.id == *rail)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("IGES Type 118 rail {rail} is missing"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "IGES Type 118 rail {rail} is missing"
+                ))
             })?;
         let rail_geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-            CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
+            crate::writer::WriteError::Unwritable(
+                "IGES curve carrier has no solved geometry".into(),
+            )
         })?)?;
         let span = curve
             .parameter_range
@@ -54,11 +58,9 @@ pub(super) fn entities(
                 reference_offset: base_index,
             },
         )?;
-        indices.push(
-            base_index
-                .checked_add(local)
-                .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?,
-        );
+        indices.push(base_index.checked_add(local).ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("IGES entity index overflows".into())
+        })?);
         second_span = span;
     }
     let reversed = second_span.and_then(|span| {

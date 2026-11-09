@@ -83,7 +83,8 @@ fn feature_input_rename_reports_utf16_capacity() {
         crate::writer::SourceTrust::Trustworthy,
     )
     .unwrap_err()
-    .into();
+    .try_into()
+    .expect("an encode failure");
     assert!(
         matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
         field, limit: 65_535, value: 65_536

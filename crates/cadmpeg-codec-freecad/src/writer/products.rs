@@ -90,6 +90,34 @@ fn external(document: &ExternalDocument, owner: &str, losses: &mut Vec<LossNote>
     }
 }
 
+/// A link stores its scale in `ScaleVector`; `FreeCAD` restores a uniform
+/// scale from `Scale`.
+fn set_scale(object: &mut Object, scale: [f64; 3]) {
+    object.set(
+        "ScaleVector",
+        xml::property(
+            "ScaleVector",
+            "App::PropertyVector",
+            &xml::element(
+                "PropertyVector",
+                &[
+                    ("valueX", scale[0].to_string()),
+                    ("valueY", scale[1].to_string()),
+                    ("valueZ", scale[2].to_string()),
+                ],
+            ),
+        ),
+    );
+    if scale[0] == scale[1] && scale[1] == scale[2] {
+        object.set(
+            "Scale",
+            xml::scalar("Scale", "App::PropertyFloat", "Float", scale[0]),
+        );
+    } else {
+        object.properties.shift_remove("Scale");
+    }
+}
+
 fn fresh_name(proposed: &str, used: &mut HashSet<String>) -> String {
     let mut candidate = proposed.to_owned();
     // With n occupied names, one of these n + 1 distinct candidates is free.
@@ -191,8 +219,6 @@ fn definitions(
                 kind = native.type_name.as_str();
             }
         }
-        // A `None` label is written as the object Name and re-decodes as
-        // `Some`, an addition (#238 §5.5).
         let label = definition
             .label
             .as_deref()
@@ -277,6 +303,7 @@ fn definitions(
                     | "PartNumber"
                     | "Placement"
                     | "Group"
+                    | "Scale"
                     | "ScaleVector"
                     | "Visibility"
             ) || definition
@@ -315,7 +342,32 @@ fn definitions(
                 );
             }
         }
-        object.set("Label", xml::string("Label", label));
+        if definition.source_name.is_none() {
+            losses.push(
+                FreecadLossCode::ProductSourceNameNotTransferred.note(format!(
+                    "product {} has no source name and is emitted as {name}",
+                    definition.id
+                )),
+            );
+        }
+        if definition.kind == ProductDefinitionKind::Part && !definition.bodies.is_empty() {
+            losses.push(
+                FreecadLossCode::ProductMembershipNotTransferred.note(format!(
+                    "product {} holds its bodies through objects inside the part",
+                    definition.id
+                )),
+            );
+        }
+        // FreeCAD restores an absent Label as the object name.
+        if definition
+            .label
+            .as_deref()
+            .is_some_and(|label| !label.is_empty())
+        {
+            object.set("Label", xml::string("Label", label));
+        } else {
+            object.properties.shift_remove("Label");
+        }
         // A part container states its part number in `Id`.
         let part_number = if definition.kind == ProductDefinitionKind::Part {
             "Id"
@@ -919,21 +971,7 @@ pub(super) fn write(
                         occurrence.id
                     )));
                 } else if scale != [1.0; 3] {
-                    object.set(
-                        "ScaleVector",
-                        xml::property(
-                            "ScaleVector",
-                            "App::PropertyVector",
-                            &xml::element(
-                                "PropertyVector",
-                                &[
-                                    ("valueX", scale[0].to_string()),
-                                    ("valueY", scale[1].to_string()),
-                                    ("valueZ", scale[2].to_string()),
-                                ],
-                            ),
-                        ),
-                    );
+                    set_scale(object, scale);
                 }
             }
         }
@@ -1130,21 +1168,7 @@ fn resolve_linked_transforms(
                         ),
                     );
                     if scale != [1.0; 3] {
-                        object.set(
-                            "ScaleVector",
-                            xml::property(
-                                "ScaleVector",
-                                "App::PropertyVector",
-                                &xml::element(
-                                    "PropertyVector",
-                                    &[
-                                        ("valueX", scale[0].to_string()),
-                                        ("valueY", scale[1].to_string()),
-                                        ("valueZ", scale[2].to_string()),
-                                    ],
-                                ),
-                            ),
-                        );
+                        set_scale(object, scale);
                     }
                 }
             }
@@ -1193,21 +1217,7 @@ fn resolve_linked_transforms(
                 ),
             );
             if scale != [1.0; 3] {
-                object.set(
-                    "ScaleVector",
-                    xml::property(
-                        "ScaleVector",
-                        "App::PropertyVector",
-                        &xml::element(
-                            "PropertyVector",
-                            &[
-                                ("valueX", scale[0].to_string()),
-                                ("valueY", scale[1].to_string()),
-                                ("valueZ", scale[2].to_string()),
-                            ],
-                        ),
-                    ),
-                );
+                set_scale(object, scale);
             }
         }
     }

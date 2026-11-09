@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::CadIr;
 
@@ -71,7 +70,7 @@ fn a_curve_with_edges_stored_in_both_directions_is_refused() {
     ir.model.edges[1].set_curve(shared).unwrap();
     let error = reversed_compact_edges(&ir).err().unwrap();
     assert!(
-        matches!(&error, CodecError::NotImplemented(message)
+        matches!(&error, crate::writer::write_error::WriteError::Unwritable(message)
             if message.ends_with("carries edges stored in both directions")),
         "{error:?}"
     );

@@ -8,7 +8,6 @@ mod container;
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
@@ -319,13 +318,13 @@ fn native_indices(native: &NativeMesh<'_>) -> GraphIndices {
     }
 }
 
-fn fresh_indices(bodies: usize) -> Result<GraphIndices, CodecError> {
+fn fresh_indices(bodies: usize) -> Result<GraphIndices, crate::writer::WriteError> {
     let mut next = 0u32;
     let mut take = || {
-        next = next
-            .checked_add(1)
-            .ok_or_else(|| CodecError::InvalidInput("F3D mesh record index exceeds u32".into()))?;
-        Ok::<_, CodecError>(next)
+        next = next.checked_add(1).ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("F3D mesh record index exceeds u32".into())
+        })?;
+        Ok::<_, crate::writer::WriteError>(next)
     };
     let scope = take()?;
     let scope_owner = take()?;
@@ -382,7 +381,7 @@ fn derived_guid(seed: &str, uppercase: bool) -> String {
     text
 }
 
-fn header(out: &mut Vec<u8>, tag: u32, index: u32) -> Result<(), CodecError> {
+fn header(out: &mut Vec<u8>, tag: u32, index: u32) -> Result<(), crate::writer::WriteError> {
     native_lp_ascii(out, &tag.to_string())?;
     out.extend_from_slice(&index.to_le_bytes());
     Ok(())
@@ -577,7 +576,7 @@ struct Segment {
 }
 
 impl Segment {
-    fn record(&mut self, tag: u32, index: u32) -> Result<(), CodecError> {
+    fn record(&mut self, tag: u32, index: u32) -> Result<(), crate::writer::WriteError> {
         self.primary.push(crate::metastream::RecordIndexEntry {
             entity_id: u64::from(index),
             bulk_offset: cadmpeg_core::decode::u64_from_index(self.bulk.len()),
@@ -591,7 +590,7 @@ impl Segment {
 pub(super) fn encode(
     imports: Vec<MeshImport<'_>>,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<Vec<EncodedMesh>, CodecError> {
+) -> Result<Vec<EncodedMesh>, crate::writer::WriteError> {
     let mut encoded = Vec::new();
     for import in imports {
         if let Some(mesh) = encode_import(&import, ctx)? {
@@ -604,7 +603,7 @@ pub(super) fn encode(
 fn encode_import(
     import: &MeshImport<'_>,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<Option<EncodedMesh>, CodecError> {
+) -> Result<Option<EncodedMesh>, crate::writer::WriteError> {
     let indices = match &import.native {
         Some(native) => native_indices(native),
         None => fresh_indices(import.tessellations.len())?,
@@ -670,8 +669,9 @@ fn encode_import(
     }
     let indices_scope_owner = indices.scope_owner;
     let mut segment = Segment::default();
-    let body_count = u32::try_from(indices.bodies.len())
-        .map_err(|_| CodecError::InvalidInput("F3D mesh body count exceeds u32".into()))?;
+    let body_count = u32::try_from(indices.bodies.len()).map_err(|_| {
+        crate::writer::WriteError::Unwritable("F3D mesh body count exceeds u32".into())
+    })?;
     ctx.charge_entities(
         6 + 7 * u64::from(body_count),
         "F3D Design mesh graph records",
@@ -775,7 +775,9 @@ fn encode_import(
     };
     segment.bulk.extend_from_slice(
         &u32::try_from(members.len())
-            .map_err(|_| CodecError::InvalidInput("F3D mesh scope member count".into()))?
+            .map_err(|_| {
+                crate::writer::WriteError::Unwritable("F3D mesh scope member count".into())
+            })?
             .to_le_bytes(),
     );
     for member in &members {
@@ -819,19 +821,27 @@ fn encode_import(
         .map(|class| {
             let (guid, base, version, module) = class.registration();
             Ok(GeneratedDesignType {
-                type_guid: guid.to_owned().try_into().map_err(CodecError::Malformed)?,
-                base_type_guid: Some(base.to_owned().try_into().map_err(CodecError::Malformed)?),
+                type_guid: guid
+                    .to_owned()
+                    .try_into()
+                    .map_err(crate::writer::WriteError::Unwritable)?,
+                base_type_guid: Some(
+                    base.to_owned()
+                        .try_into()
+                        .map_err(crate::writer::WriteError::Unwritable)?,
+                ),
                 version,
                 module: module.to_owned(),
                 entity_ids: segment.entities.remove(&class.tag()).unwrap_or_default(),
             })
         })
-        .collect::<Result<_, CodecError>>()?;
+        .collect::<Result<_, crate::writer::WriteError>>()?;
     if let Some(native) = &import.native {
         for (member, kind) in &native.members {
             let tag = 256
-                + u32::try_from(types.len())
-                    .map_err(|_| CodecError::InvalidInput("F3D mesh type count".into()))?;
+                + u32::try_from(types.len()).map_err(|_| {
+                    crate::writer::WriteError::Unwritable("F3D mesh type count".into())
+                })?;
             ctx.charge_entities(1, "F3D Design mesh member record")?;
             segment.record(tag, *member)?;
             let mut generated = GeneratedDesignType::from(*kind);
@@ -845,7 +855,9 @@ fn encode_import(
         browser_nodes: None,
     };
     let meta = encode_design_metastream(&registry, &segment.primary, &segment.secondary)?
-        .ok_or_else(|| CodecError::malformed("F3D mesh segment has no type table"))?;
+        .ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("F3D mesh segment has no type table".into())
+        })?;
     let native_records = import
         .native
         .as_ref()
@@ -1087,12 +1099,13 @@ fn channels(
     tessellation: &Tessellation,
     placement: [f64; 16],
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<Channel>, CodecError> {
+) -> Result<Vec<Channel>, crate::writer::WriteError> {
     let triangles = tessellation.triangles();
     let flat: Vec<u32> = triangles.iter().flatten().copied().collect();
     let vertex_count = tessellation.vertex_count();
-    let vertex_count_u32 = u32::try_from(vertex_count)
-        .map_err(|_| CodecError::InvalidInput("F3D mesh vertex count exceeds u32".into()))?;
+    let vertex_count_u32 = u32::try_from(vertex_count).map_err(|_| {
+        crate::writer::WriteError::Unwritable("F3D mesh vertex count exceeds u32".into())
+    })?;
     let normals = corner_normal_bytes(tessellation, placement);
     let mut written_normals = normals.is_empty();
     let mut written_groups = tessellation.triangle_groups().is_empty();
@@ -1265,7 +1278,7 @@ fn normal_channel(
 fn group_channel(
     tessellation: &Tessellation,
     stored: Option<&[u8]>,
-) -> Result<Channel, CodecError> {
+) -> Result<Channel, crate::writer::WriteError> {
     let groups = tessellation.triangle_groups();
     let guid = |ordinal: usize, source: Option<&String>| {
         source
@@ -1309,8 +1322,9 @@ fn group_channel(
     let mut keys = vec![0_u32; triangles.len()];
     let mut records = Vec::new();
     for (ordinal, group) in groups.iter().enumerate() {
-        let key = u32::try_from(ordinal)
-            .map_err(|_| CodecError::InvalidInput("F3D mesh group count exceeds u32".into()))?;
+        let key = u32::try_from(ordinal).map_err(|_| {
+            crate::writer::WriteError::Unwritable("F3D mesh group count exceeds u32".into())
+        })?;
         for triangle in &group.triangles {
             if let Some(slot) = usize::try_from(*triangle)
                 .ok()
@@ -1322,7 +1336,7 @@ fn group_channel(
         records.push((key, guid(ordinal, group.source_id.as_ref())));
     }
     let values = container::terminal_delta(&keys).ok_or_else(|| {
-        CodecError::NotImplemented("F3D mesh group keys leave the i32 range".into())
+        crate::writer::WriteError::Unsupported("F3D mesh group keys leave the i32 range".into())
     })?;
     Ok(Channel {
         domain: ChannelDomain::Triangle,

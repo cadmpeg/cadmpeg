@@ -91,28 +91,8 @@ fn semantic_writer_round_trips_typed_sweep() {
     dependencies.remove(0);
     inconsistent.model.features[3].dependencies =
         cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap();
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::test_support::plan_inherited_write(
-            &inconsistent,
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("inconsistent dependencies must be rejected"),
-    };
-    assert!(
-        message.contains("profile feature is absent from the consumer's dependencies"),
-        "{message}"
-    );
+    let record = inconsistent.model.features[3].id.to_string();
+    crate::test_support::assert_written_naming(&inconsistent, decoded.source_fidelity(), &record);
 
     let mut encoded = Vec::new();
     crate::test_support::serialize_edited_history(

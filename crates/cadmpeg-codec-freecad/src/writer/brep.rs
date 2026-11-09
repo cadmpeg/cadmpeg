@@ -994,7 +994,7 @@ fn serialize_geometry_inner(
             )));
             continue;
         };
-        let degenerate = edge.curve().is_none()
+        let degenerate = (edge.curve().is_none() && start == end)
             || edge
                 .curve()
                 .and_then(|id| ir.model.curves.iter().find(|curve| curve.id == *id))
@@ -1005,6 +1005,12 @@ fn serialize_geometry_inner(
                         cadmpeg_ir::geometry::SolvedCurveGeometry::Degenerate(_)
                     )
                 });
+        if edge.curve().is_none() && edge.param_range().is_some() {
+            losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                "edge {} has no curve, so OCCT holds no parameter range for it",
+                edge.id
+            )));
+        }
         let ring: Vec<&cadmpeg_ir::topology::Coedge> = ir
             .model
             .coedges
@@ -1057,6 +1063,10 @@ fn serialize_geometry_inner(
             match edge.curve() {
                 Some(curve) => {
                     let Some((curve, location)) = curve_ids.get(curve.as_str()) else {
+                        losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "edge {} has a curve with no OCCT representation and is omitted",
+                            edge.id
+                        )));
                         continue;
                     };
                     let curve_record = edge
@@ -1086,12 +1096,15 @@ fn serialize_geometry_inner(
                     let Some(range) =
                         range.and_then(|range| occt_curve_range(ir, curve_record, range))
                     else {
+                        losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "edge {} has no OCCT parameter range on its curve and is omitted",
+                            edge.id
+                        )));
                         continue;
                     };
                     format!("1 {curve} {location} {} {}", range[0], range[1])
                 }
-                None if start == end => String::new(),
-                None => continue,
+                None => String::new(),
             }
         };
         let mut seen = std::collections::HashSet::new();
@@ -1567,8 +1580,8 @@ fn serialize_geometry_inner(
                 let children = if !faces.is_empty() && !members.is_empty() && !shell_degraded {
                     split = true;
                     losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
-                        "shell {} is written as a shell of its faces beside its wire edges and free vertices",
-                        shell.id
+                        "shell {} of region {} in body {} is written as a shell of its faces beside its wire edges and free vertices",
+                        shell.id, region.id, body.id
                     )));
                     let (edges, vertices): (Vec<_>, Vec<_>) = members
                         .into_iter()
@@ -2209,7 +2222,8 @@ fn stored_radial_next<'a>(
 
 /// Whether `geometry` written through `chart` re-reads as a placed pcurve:
 /// the reader keeps a non-identity chart as a placement, except an
-/// axis-aligned isometry of a line or conic, which it folds into the curve.
+/// axis-aligned isometry of a line or conic and any chart of a NURBS, which
+/// it folds into the curve.
 fn rechartered(
     geometry: &cadmpeg_ir::geometry::pcurve::PcurveGeometry,
     chart: cadmpeg_ir::transform::Transform2,
@@ -2226,7 +2240,12 @@ fn rechartered(
             | PcurveGeometry::Parabola(_)
             | PcurveGeometry::Hyperbola(_)
     );
-    !identity && !matches!(geometry, PcurveGeometry::Transformed(_)) && (!isometric || !foldable)
+    !identity
+        && !matches!(
+            geometry,
+            PcurveGeometry::Transformed(_) | PcurveGeometry::Nurbs { .. }
+        )
+        && (!isometric || !foldable)
 }
 
 /// The loss text naming the boundary records of the omitted face `face`:

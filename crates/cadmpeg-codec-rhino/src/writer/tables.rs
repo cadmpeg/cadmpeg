@@ -3,9 +3,9 @@
 
 use super::{
     attributed_object_record, class_wrapper, class_wrapper_with_direct, crc_chunk,
-    crc_chunk_with_direct, default_layer_payload, framed_object_record, native_count_limit,
-    neutral_object_uuid, object_attributes_payload, short_chunk, unit_color_channel, utf16,
-    wire_index, CadIr, CodecError, LossNote, RhinoLossCode, LAYER_CLASS, TCODE_ENDOFTABLE,
+    crc_chunk_with_direct, default_layer_payload, framed_object_record, neutral_object_uuid,
+    object_attributes_payload, short_chunk, unit_color_channel, utf16, wire_index,
+    writable_count_limit, CadIr, LossNote, RhinoLossCode, LAYER_CLASS, TCODE_ENDOFTABLE,
     TCODE_LAYER_RECORD,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
@@ -94,7 +94,7 @@ fn uuid(value: Option<&Value>, identity: &str) -> [u8; 16] {
         .map_or_else(|| neutral_object_uuid(identity), crate::wire::Uuid::to_wire)
 }
 
-fn anonymous(major: i32, minor: i32, fields: &[u8]) -> Result<Vec<u8>, CodecError> {
+fn anonymous(major: i32, minor: i32, fields: &[u8]) -> Result<Vec<u8>, crate::writer::WriteError> {
     anonymous_with_children(major, minor, fields, &[])
 }
 
@@ -103,7 +103,7 @@ fn anonymous_with_children(
     minor: i32,
     fields: &[u8],
     children: &[std::ops::Range<usize>],
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, crate::writer::WriteError> {
     let mut body = major.to_le_bytes().to_vec();
     body.extend(minor.to_le_bytes());
     body.extend(fields);
@@ -112,7 +112,7 @@ fn anonymous_with_children(
         .map(|range| range.start + 8..range.end + 8)
         .collect::<Vec<_>>();
     let ranges = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
-        .map_err(CodecError::malformed)?;
+        .map_err(|error| crate::writer::WriteError::Omit(error.to_string()))?;
     let mut direct = Vec::new();
     for range in &ranges {
         direct.extend_from_slice(&body[range]);
@@ -125,7 +125,7 @@ fn component(
     index: i32,
     name: &str,
     source_uuid: Option<&Value>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, crate::writer::WriteError> {
     let mut fields = 13u32.to_le_bytes().to_vec();
     fields.extend(uuid(source_uuid, identity));
     fields.extend(index.to_le_bytes());
@@ -153,7 +153,7 @@ fn integer(fields: Option<&Map<String, Value>>, name: &str, default: i32) -> i32
 pub(super) fn layer_linetype(
     ir: &CadIr,
     layer: &PresentationLayer,
-) -> Result<(i32, i32), CodecError> {
+) -> Result<(i32, i32), crate::writer::WriteError> {
     let native = own_layer(ir, layer);
     let source = integer(native.as_ref(), "linetype_index", -1);
     Ok((source, native::linetype_index(ir, source)?.unwrap_or(-1)))
@@ -205,7 +205,9 @@ pub(super) fn layer_material_losses(
     losses
 }
 
-pub(super) fn layer_linetype_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
+pub(super) fn layer_linetype_losses(
+    ir: &CadIr,
+) -> Result<Vec<LossNote>, crate::writer::WriteError> {
     let mut losses = Vec::new();
     for layer in &ir.model.presentation_layers {
         let (source, target) = layer_linetype(ir, layer)?;
@@ -220,15 +222,18 @@ pub(super) fn layer_linetype_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecEr
     Ok(losses)
 }
 
-fn color(fields: Option<&Map<String, Value>>, name: &str) -> Result<[u8; 4], CodecError> {
+fn color(
+    fields: Option<&Map<String, Value>>,
+    name: &str,
+) -> Result<[u8; 4], crate::writer::WriteError> {
     let Some(value) = fields
         .and_then(|fields| fields.get(name))
         .filter(|value| !value.is_null())
     else {
         return Ok([0, 0, 0, 0]);
     };
-    let color: cadmpeg_ir::topology::Color =
-        crate::wire::native_color(value).map_err(CodecError::malformed)?;
+    let color: cadmpeg_ir::topology::Color = crate::wire::native_color(value)
+        .map_err(|error| crate::writer::WriteError::Omit(error.to_string()))?;
     Ok([
         unit_color_channel(color.r())?,
         unit_color_channel(color.g())?,
@@ -241,11 +246,11 @@ fn layer_color(
     ir: &CadIr,
     layer: &PresentationLayer,
     name: &str,
-) -> Result<([u8; 4], Option<LossNote>), CodecError> {
+) -> Result<([u8; 4], Option<LossNote>), crate::writer::WriteError> {
     let native = own_layer(ir, layer);
     match color(native.as_ref(), name) {
         Ok(color) => Ok((color, None)),
-        Err(CodecError::Malformed(reason) | CodecError::InvalidInput(reason)) => Ok((
+        Err(crate::writer::WriteError::Omit(reason)) => Ok((
             [0, 0, 0, 0],
             Some(RhinoLossCode::WriterLayerColorReduced.note(format!(
                 "layer {} native {} {name} is omitted: {reason}",
@@ -257,7 +262,7 @@ fn layer_color(
     }
 }
 
-pub(super) fn layer_color_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
+pub(super) fn layer_color_losses(ir: &CadIr) -> Result<Vec<LossNote>, crate::writer::WriteError> {
     let mut losses = Vec::new();
     for layer in &ir.model.presentation_layers {
         for name in ["color", "plot_color"] {
@@ -272,7 +277,7 @@ pub(super) fn layer_color_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError
 pub(super) fn layer_colors_complete(
     ir: &CadIr,
     layer: &PresentationLayer,
-) -> Result<bool, CodecError> {
+) -> Result<bool, crate::writer::WriteError> {
     Ok(layer_color(ir, layer, "color")?.1.is_none()
         && layer_color(ir, layer, "plot_color")?.1.is_none())
 }
@@ -329,7 +334,7 @@ pub(super) fn inherits_layer_color(
 pub(super) fn layers(
     ir: &CadIr,
     materials: &materials::MaterialPlan,
-) -> Result<Vec<Vec<u8>>, CodecError> {
+) -> Result<Vec<Vec<u8>>, crate::writer::WriteError> {
     if ir.model.presentation_layers.is_empty() {
         return Ok(vec![crc_chunk_with_direct(
             TCODE_LAYER_RECORD,
@@ -359,7 +364,7 @@ pub(super) fn layers(
         payload.extend(
             i32::try_from(index)
                 .map_err(|_| {
-                    native_count_limit(2_147_483_647, cadmpeg_core::decode::u64_from_index(index))
+                    writable_count_limit(2_147_483_647, cadmpeg_core::decode::u64_from_index(index))
                 })?
                 .to_le_bytes(),
         );
@@ -466,7 +471,7 @@ fn item_identity(item: &PresentationItem) -> &str {
     }
 }
 
-pub(super) fn layer_index(ir: &CadIr, identity: &str) -> Result<i32, CodecError> {
+pub(super) fn layer_index(ir: &CadIr, identity: &str) -> Result<i32, crate::writer::WriteError> {
     if ir.model.presentation_layers.is_empty()
         && (object_record(ir, identity).is_none()
             || ir
@@ -523,7 +528,7 @@ pub(super) fn layer_index(ir: &CadIr, identity: &str) -> Result<i32, CodecError>
         .or_else(point_body_layer)
         .map_or(Ok(0), |index| {
             i32::try_from(index).map_err(|_| {
-                native_count_limit(2_147_483_647, cadmpeg_core::decode::u64_from_index(index))
+                writable_count_limit(2_147_483_647, cadmpeg_core::decode::u64_from_index(index))
             })
         })
 }

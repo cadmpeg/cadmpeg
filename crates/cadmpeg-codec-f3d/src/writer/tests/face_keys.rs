@@ -102,7 +102,7 @@ fn source_free_synthesis_preserves_face_keys_and_drops_only_unresolved_targets()
 }
 
 #[test]
-fn native_face_key_slot_refuses_duplicate_targets_and_capacity_overflow() {
+fn native_face_key_slot_omits_duplicate_targets_and_refuses_capacity_overflow() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let first = record(0, Some(7));
     let second = record(1, Some(8));
@@ -119,22 +119,31 @@ fn native_face_key_slot_refuses_duplicate_targets_and_capacity_overflow() {
             &[first_wire, second_wire],
         )
         .unwrap();
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("the removed native backlink cannot encode duplicate target claims"),
-    };
-    assert!(message.contains("unknown field `face`"), "{message}");
-    let oversized = record(0, Some(u64::MAX));
+    crate::test_support::assert_written_naming(&ir, None, &first.id());
+    let limit = crate::writer::capacity::CAPACITY_FIELDS[0].limit;
+    let largest = record(0, Some(limit));
+    ir.model.faces[0].native_ref = Some(largest.id());
+    ir.native
+        .namespace_mut("f3d")
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "face_native_keys",
+            &[largest],
+        )
+        .unwrap();
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("the largest signed key is written");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(f3d_native(decoded.ir())
+        .face_native_keys
+        .iter()
+        .any(|record| record.asm_face_key == Some(limit)));
+    let oversized = record(0, Some(limit + 1));
     ir.model.faces[0].native_ref = Some(oversized.id());
     ir.native
         .namespace_mut("f3d")
@@ -144,21 +153,11 @@ fn native_face_key_slot_refuses_duplicate_targets_and_capacity_overflow() {
             &[oversized],
         )
         .unwrap();
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("the signed native field cannot hold u64::MAX"),
-    };
-    assert!(message.contains("signed 64-bit native slot"), "{message}");
+    assert!(matches!(
+        F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit),
+        Err(cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, value, .. })
+            if field == &crate::writer::capacity::CAPACITY_FIELDS[0] && value == limit + 1
+    ));
 }
 
 #[test]

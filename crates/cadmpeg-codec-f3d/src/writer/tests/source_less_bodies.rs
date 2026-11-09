@@ -428,30 +428,12 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     f3d_native_mut(&mut source_less)
         .creation_timestamps
         .push(duplicate);
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("duplicate generated timestamp target must be rejected"),
-    };
-    assert!(
-        message.contains("multiple F3D creation timestamps target the same entity"),
-        "{message}"
-    );
+    let record = f3d_native(&source_less).creation_timestamps[0].id.clone();
+    crate::test_support::assert_written_naming(&source_less, None, &record);
 }
 
 #[test]
-fn generated_source_less_reports_unsupported_links_and_rejects_incoherent_ordinals() {
+fn generated_source_less_reports_unsupported_links_and_omits_incoherent_ordinals() {
     use crate::records::sketch_links::{PersistentDesignLink, SketchCurveLink};
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -492,27 +474,12 @@ fn generated_source_less_reports_unsupported_links_and_rejects_incoherent_ordina
         design_reference: 7,
         ordinal: 1,
     }];
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("noncanonical persistent link order must not be rewritten"),
-    };
-    assert!(message.contains("contiguous ordinals"), "{message}");
+    let record = "f3d:generated:persistent-design-link#0".to_owned();
+    crate::test_support::assert_written_naming(&source_less, None, &record);
 }
 
 #[test]
-fn generated_source_less_rejects_collapsed_native_topology_metadata() {
+fn generated_source_less_omits_collapsed_native_topology_metadata() {
     use cadmpeg_asm::brep::records::{EdgeContinuity, TolerantVertexTail};
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -538,26 +505,8 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             })
             .into();
     }
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("duplicate edge metadata must not collapse"),
-    };
-    assert!(
-        message.contains("multiple F3D edge-continuity records"),
-        "{message}"
-    );
+    let record = f3d_native(&source_less).edge_continuities[0].id();
+    crate::test_support::assert_written_naming(&source_less, None, &record);
 
     {
         let mut native = f3d_native_mut(&mut source_less);
@@ -702,26 +651,8 @@ fn generated_source_less_writes_typed_asm_history_graph() {
             preamble.stream_size = 3;
         }
     }
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("incoherent generated history preamble must be rejected"),
-    };
-    assert!(
-        message.contains("head state_id == stream_size and nonnegative history_entry_count"),
-        "{message}"
-    );
+    let record = f3d_native(&source_less).asm_histories[0].id.clone();
+    crate::test_support::assert_written_naming(&source_less, None, &record);
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less history round trip");
@@ -743,7 +674,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
 }
 
 #[test]
-fn generated_source_less_rejects_lossy_asm_history_graphs() {
+fn generated_source_less_omits_lossy_asm_history_graphs() {
     let source = f3d_with_smbh(&synthetic_geometry_with_history_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -766,26 +697,14 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         orphan_fields,
     )
     .expect("valid native identity");
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        F3dCodec
-            .plan(EncodeInput::new(&orphaned, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("orphan history records must not be discarded"),
-    };
-    assert!(
-        message.contains("orphaned or ambiguously parented records"),
-        "{message}"
-    );
+    let record = orphaned
+        .native
+        .namespace("f3d")
+        .expect("F3D namespace")
+        .arenas()["asm_history_records"][0]
+        .id()
+        .to_owned();
+    crate::test_support::assert_written_naming(&orphaned, None, &record);
 
     let mut duplicate = decoded.ir().clone();
     duplicate.source = None;
@@ -799,26 +718,14 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .get_mut("asm_delta_states")
         .expect("delta-state arena");
     states.push(states[0].clone());
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        F3dCodec
-            .plan(EncodeInput::new(&duplicate, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("duplicate history identities must not multiply children"),
-    };
-    assert!(
-        message.contains("asm_delta_states contains duplicate record ids"),
-        "{message}"
-    );
+    let record = duplicate
+        .native
+        .namespace("f3d")
+        .expect("F3D namespace")
+        .arenas()["asm_delta_states"][0]
+        .id()
+        .to_owned();
+    crate::test_support::assert_written_naming(&duplicate, None, &record);
 
     // W2: chain links are source layout. A broken chain is relinked where
     // the history is carried; a history whose states hold retained payloads

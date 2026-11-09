@@ -49,6 +49,37 @@ fn records_reordered_and_renumbered_pass() {
 }
 
 #[test]
+fn annotation_order_compares_as_a_rank_among_paired_records() {
+    let annotations = |rows: Value| json!({"model": {"semantic_annotations": rows}, "native": {}});
+    let before = annotations(json!([
+        {"id":"leader","order":0,"kind":"leader"},
+        {"id":"a","order":1,"kind":"text"},
+        {"id":"b","order":3,"kind":"dimension"}
+    ]));
+    let after = annotations(json!([
+        {"id":"x","order":0,"kind":"text"},
+        {"id":"y","order":1,"kind":"dimension"}
+    ]));
+    let removed = Allowances::removed(BTreeSet::from(["leader".to_owned()]));
+    assert!(agree(&before, &after, &removed, Mode::Same).is_ok());
+    let swapped = annotations(json!([
+        {"id":"x","order":1,"kind":"text"},
+        {"id":"y","order":0,"kind":"dimension"}
+    ]));
+    assert!(agree(&before, &swapped, &removed, Mode::Same).is_err());
+    let twins = annotations(json!([
+        {"id":"leader","order":0,"kind":"leader"},
+        {"id":"a","order":1,"kind":"dimension"},
+        {"id":"b","order":2,"kind":"dimension"}
+    ]));
+    let written = annotations(json!([
+        {"id":"x","order":0,"kind":"dimension"},
+        {"id":"y","order":1,"kind":"dimension"}
+    ]));
+    assert!(agree(&twins, &written, &removed, Mode::Same).is_ok());
+}
+
+#[test]
 fn relative_float_difference_at_one_e_minus_thirteen_passes() {
     let before = document(&json!([{"id":"a","x":100.0}]));
     let after = document(&json!([{"id":"x","x":100.0 * (1.0 + 1.0e-13)}]));

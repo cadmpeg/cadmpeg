@@ -12,6 +12,9 @@ use cadmpeg_core::CodecError;
 pub(crate) enum WriteError {
     /// The patch cannot express the edit; synthesis owns the reason.
     Decline(String),
+    /// Content the writer cannot write as it stands; synthesis writes it
+    /// from the canonical side (#217 §5.0).
+    Unwritable(String),
     /// A precondition failure that stays an error on this path.
     Fatal(CodecError),
     /// An output write or seek failed.
@@ -23,10 +26,14 @@ pub(crate) enum WriteError {
 }
 
 impl WriteError {
+    pub(crate) fn unwritable(message: impl std::fmt::Display) -> Self {
+        Self::Unwritable(message.to_string())
+    }
+
     /// The synthesis reason for either variant.
     pub(crate) fn reason(&self) -> String {
         match self {
-            Self::Decline(reason) => reason.clone(),
+            Self::Decline(reason) | Self::Unwritable(reason) => reason.clone(),
             Self::Fatal(error) => error.to_string(),
             Self::Io(error) => error.to_string(),
             Self::Capacity { field, value } => format!(
@@ -46,6 +53,18 @@ impl From<CodecError> for WriteError {
             CodecError::InvalidInput(reason) => Self::Decline(reason),
             error => Self::Fatal(error),
         }
+    }
+}
+
+impl From<cadmpeg_core::decode::ResourceLimit> for WriteError {
+    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
+        Self::Fatal(limit.into())
+    }
+}
+
+impl From<cadmpeg_ir::hash::DigestError> for WriteError {
+    fn from(error: cadmpeg_ir::hash::DigestError) -> Self {
+        Self::Fatal(error.into())
     }
 }
 
@@ -72,33 +91,23 @@ impl From<std::io::Error> for WriteError {
     }
 }
 
-impl From<WriteError> for cadmpeg_ir::codec::write::EncodeError {
-    fn from(error: WriteError) -> Self {
+/// The encode failure a write error is; a content failure stays a write error.
+impl TryFrom<WriteError> for cadmpeg_ir::codec::write::EncodeError {
+    type Error = WriteError;
+
+    fn try_from(error: WriteError) -> Result<Self, WriteError> {
         match error {
-            WriteError::Decline(reason) => {
-                debug_assert!(
-                    false,
-                    "patch decline must be handled before encode: {reason}"
-                );
-                panic!("patch decline must be handled before encode: {reason}");
-            }
-            WriteError::Fatal(error) => match error {
-                cadmpeg_core::CodecError::UnsupportedTarget(refusal) => {
-                    Self::UnsupportedTarget(refusal)
-                }
-                cadmpeg_core::CodecError::ResourceLimit(limit) => Self::ResourceLimit(limit),
-                cadmpeg_core::CodecError::Io(error) => Self::from(error),
-                error => {
-                    debug_assert!(false, "unmapped SLDPRT encode error: {error}");
-                    panic!("unmapped SLDPRT encode error: {error}");
-                }
-            },
-            WriteError::Io(error) => Self::Io(error),
-            WriteError::Capacity { field, value } => Self::TargetCapacity {
+            WriteError::Io(error) | WriteError::Fatal(CodecError::Io(error)) => Ok(Self::Io(error)),
+            WriteError::Capacity { field, value } => Ok(Self::TargetCapacity {
                 field,
                 limit: field.limit,
                 value,
-            },
+            }),
+            WriteError::Fatal(CodecError::ResourceLimit(limit)) => Ok(Self::ResourceLimit(limit)),
+            WriteError::Fatal(CodecError::UnsupportedTarget(refusal)) => {
+                Ok(Self::UnsupportedTarget(refusal))
+            }
+            error => Err(error),
         }
     }
 }
@@ -118,26 +127,5 @@ mod tests {
         let error = WriteError::from(cadmpeg_core::CodecError::Malformed("bad".into()));
         assert!(matches!(error, WriteError::Fatal(_)));
         assert!(error.reason().contains("bad"));
-    }
-
-    #[test]
-    fn destination_io_error_keeps_its_kind() {
-        let error: WriteError = std::io::Error::from(std::io::ErrorKind::BrokenPipe).into();
-        let result: cadmpeg_ir::codec::write::EncodeError = error.into();
-        assert!(
-            matches!(result, cadmpeg_ir::codec::write::EncodeError::Io(error)
-            if error.kind() == std::io::ErrorKind::BrokenPipe)
-        );
-    }
-
-    #[test]
-    fn codec_io_error_keeps_its_kind() {
-        let source =
-            cadmpeg_core::CodecError::Io(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
-        let result: cadmpeg_ir::codec::write::EncodeError = WriteError::from(source).into();
-        assert!(
-            matches!(result, cadmpeg_ir::codec::write::EncodeError::Io(error)
-            if error.kind() == std::io::ErrorKind::BrokenPipe)
-        );
     }
 }

@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
     FeatureOperation, FeatureTreeNodeRole, SketchFeatureBinding, TreeChildren,
@@ -39,7 +38,7 @@ pub(super) fn prepare(
     let orphaned =
         crate::history::write::parameters::orphaned_scalar_parameters(ir, native.as_ref())
             .map_err(|error| {
-                cadmpeg_core::CodecError::malformed(format_args!(
+                crate::writer::write_error::WriteError::Unwritable(format!(
                     "SLDPRT orphaned scalar scan failed: {error}"
                 ))
             })?;
@@ -91,7 +90,11 @@ pub(super) fn prepare(
                 .take()
                 .map_or_else(Vec::new, |bodies| bodies.iter().cloned().collect());
             bodies.extend(unconfigured.iter().cloned());
-            configuration.bodies = Some(bodies.try_into().map_err(CodecError::malformed)?);
+            configuration.bodies = Some(
+                bodies
+                    .try_into()
+                    .map_err(crate::writer::write_error::WriteError::unwritable)?,
+            );
             losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
                 "configuration {} carries {} body(s) without configuration membership",
                 configuration.id,
@@ -318,7 +321,9 @@ pub(super) fn synthesize_neutral_features_repairing(
 const GLOBAL_PARAMETERS: &str = "Global parameters";
 
 /// The generated "Global parameters" owner (#237 §7.10), appended on first use.
-pub(super) fn generated_global_owner(ir: &mut CadIr) -> Result<FeatureId, CodecError> {
+pub(super) fn generated_global_owner(
+    ir: &mut CadIr,
+) -> Result<FeatureId, crate::writer::write_error::WriteError> {
     if let Some(id) = find_generated_global_owner(ir) {
         return Ok(id);
     }
@@ -352,7 +357,7 @@ pub(super) fn find_generated_global_owner(ir: &CadIr) -> Option<FeatureId> {
         .map(|feature| feature.id.clone())
 }
 
-fn ensure_owners(ir: &mut CadIr) -> Result<(), CodecError> {
+fn ensure_owners(ir: &mut CadIr) -> Result<(), crate::writer::write_error::WriteError> {
     if ir
         .model
         .parameters
@@ -424,7 +429,7 @@ fn append_feature(
     ir: &mut CadIr,
     name: &str,
     operation: FeatureOperation,
-) -> Result<FeatureId, CodecError> {
+) -> Result<FeatureId, crate::writer::write_error::WriteError> {
     let ordinal = match ir
         .model
         .features
@@ -454,9 +459,15 @@ fn append_feature(
     let id = suffixes
         .map(|suffix| format!("{GENERATED_FEATURE_PREFIX}{suffix}"))
         .find(|candidate| !used.contains(candidate.as_str()))
-        .ok_or_else(|| CodecError::malformed("cannot allocate a generated feature identity"))?;
+        .ok_or_else(|| {
+            crate::writer::write_error::WriteError::Unwritable(
+                "cannot allocate a generated feature identity".into(),
+            )
+        })?;
     let id = FeatureId::mint(id).map_err(|error| {
-        CodecError::malformed(format_args!("generated feature identity: {error}"))
+        crate::writer::write_error::WriteError::Unwritable(format!(
+            "generated feature identity: {error}"
+        ))
     })?;
     ir.model.features.push(Feature {
         product_definition: None,
@@ -511,7 +522,7 @@ fn sketches(
                     let mut part = candidate.clone();
                     part.model.sketches[0].profiles = vec![profile.clone()]
                         .try_into()
-                        .map_err(CodecError::malformed)?;
+                        .map_err(crate::writer::write_error::WriteError::unwritable)?;
                     part.model
                         .sketch_entities
                         .retain(|entity| profile.iter().any(|use_| &use_.entity == entity.id()));
@@ -546,7 +557,9 @@ fn sketches(
                     .iter_mut()
                     .find(|value| value.id == sketch.id)
                 {
-                    value.profiles = profiles.try_into().map_err(CodecError::malformed)?;
+                    value.profiles = profiles
+                        .try_into()
+                        .map_err(crate::writer::write_error::WriteError::unwritable)?;
                 }
             }
             Err(error) => return Err(error),
@@ -678,7 +691,10 @@ fn sketches(
                     constraint.id
                 )));
             }
-            Err(WriteError::Fatal(CodecError::Malformed(reason))) => {
+            Err(
+                WriteError::Unwritable(reason)
+                | WriteError::Fatal(cadmpeg_core::CodecError::Malformed(reason)),
+            ) => {
                 if reason.contains("is not owned by its sketch feature") {
                     let mut local = constraint.clone();
                     if localize_dimension(ir, &mut local)? {
@@ -703,8 +719,10 @@ fn sketches(
                 }
                 let mut authored = original.clone();
                 authored.model.sketch_constraints = vec![constraint.clone()];
-                if let Err(error @ WriteError::Fatal(CodecError::Malformed(_))) =
-                    try_sketch(&authored)
+                if let Err(
+                    error @ (WriteError::Unwritable(_)
+                    | WriteError::Fatal(cadmpeg_core::CodecError::Malformed(_))),
+                ) = try_sketch(&authored)
                 {
                     if !reason.contains("is not satisfied by measured geometry") {
                         return Err(error);
@@ -725,7 +743,7 @@ fn sketches(
 fn localize_dimension(
     ir: &CadIr,
     constraint: &mut cadmpeg_ir::sketches::SketchConstraint,
-) -> Result<bool, CodecError> {
+) -> Result<bool, crate::writer::write_error::WriteError> {
     use cadmpeg_ir::features::{Dimension, DimensionValue};
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
@@ -754,7 +772,9 @@ fn localize_dimension(
         _ => false,
     };
     if changed {
-        constraint.definition = definition.try_into().map_err(CodecError::malformed)?;
+        constraint.definition = definition
+            .try_into()
+            .map_err(crate::writer::write_error::WriteError::unwritable)?;
     }
     Ok(changed)
 }

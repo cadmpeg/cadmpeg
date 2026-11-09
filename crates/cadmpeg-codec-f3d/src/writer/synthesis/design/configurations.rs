@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral configuration tables and name-bound activation rules.
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::DesignParameter;
 use cadmpeg_ir::report::loss::LossNote;
@@ -16,7 +15,7 @@ pub(super) fn regenerate(
     native: &mut F3dNative,
     parameters: &[DesignParameter],
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let authored_features = if target
         .model
         .configurations
@@ -134,7 +133,7 @@ pub(super) fn regenerate(
                             .map(|candidate| candidate.name.clone())
                     })
                     .ok_or_else(|| {
-                        CodecError::InvalidInput(format!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "F3D configuration {} has a dangling expression reference",
                             configuration.id
                         ))
@@ -145,7 +144,7 @@ pub(super) fn regenerate(
                 );
             } else {
                 // (C): a typed override must name a parameter held by the document.
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "configuration {} references missing parameter {id}",
                     configuration.id
                 )));
@@ -158,7 +157,7 @@ pub(super) fn regenerate(
                 .iter()
                 .find(|feature| &feature.id == id)
             else {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "configuration {} references missing feature {id}",
                     configuration.id,
                 )));
@@ -248,7 +247,7 @@ pub(super) fn regenerate(
                     break candidate;
                 }
                 suffix = suffix.checked_add(1).ok_or_else(|| {
-                    CodecError::NotImplemented(
+                    crate::writer::WriteError::Unsupported(
                         "F3D configuration table name space exhausted".into(),
                     )
                 })?;
@@ -291,7 +290,9 @@ pub(super) fn regenerate(
                     crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
                 );
                 next_rule_index = next_rule_index.checked_add(1).ok_or_else(|| {
-                    CodecError::NotImplemented("F3D configuration rule name space exhausted".into())
+                    crate::writer::WriteError::Unsupported(
+                        "F3D configuration rule name space exhausted".into(),
+                    )
                 })?;
                 if !reserved_rule_names.contains(&candidate)
                     && !used_rule_names.contains(&candidate)

@@ -4,7 +4,6 @@
 use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 use cadmpeg_ir::features::Dimension;
 use cadmpeg_ir::pmi::{DimensionKind, PmiDefinition, PmiQuantity};
@@ -28,7 +27,10 @@ struct Record {
     text: Option<String>,
 }
 
-pub(crate) fn reduce(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
+pub(crate) fn reduce(
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), crate::writer::write_error::WriteError> {
     let native = ir
         .native
         .namespace("sldprt")
@@ -67,7 +69,8 @@ pub(crate) fn reduce(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), C
                         dimension.nominal().cloned(),
                         None,
                     );
-                    *dimension = replacement.map_err(CodecError::malformed)?;
+                    *dimension =
+                        replacement.map_err(crate::writer::write_error::WriteError::unwritable)?;
                 }
                 supported.contains(&annotation.id)
             }
@@ -228,7 +231,7 @@ fn supported_dimension(ir: &CadIr, dimension: &cadmpeg_ir::pmi::PmiDimension) ->
 pub(crate) fn payload(
     ir: &CadIr,
     native: Option<&SldprtNative>,
-) -> Result<Option<Vec<u8>>, CodecError> {
+) -> Result<Option<Vec<u8>>, crate::writer::write_error::WriteError> {
     let records = records(ir, native)?;
     if records.is_empty() {
         return Ok(None);
@@ -239,8 +242,8 @@ pub(crate) fn payload(
             let (value, _) = record_payload(&record)?;
             Ok((record.guid, value))
         })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    database::encode(&entries).map(Some)
+        .collect::<Result<Vec<_>, crate::writer::write_error::WriteError>>()?;
+    Ok(database::encode(&entries).map(Some)?)
 }
 
 /// The map and display-text offsets the authored database gives each
@@ -248,7 +251,7 @@ pub(crate) fn payload(
 pub(crate) fn authored_offsets(
     ir: &CadIr,
     native: Option<&SldprtNative>,
-) -> Result<BTreeMap<String, (u64, u64)>, CodecError> {
+) -> Result<BTreeMap<String, (u64, u64)>, crate::writer::write_error::WriteError> {
     let mut offsets = BTreeMap::new();
     for (index, record) in records(ir, native)?.into_values().enumerate() {
         let (value, text) = record_payload(&record)?;
@@ -262,14 +265,14 @@ pub(crate) fn authored_offsets(
 fn records(
     ir: &CadIr,
     native: Option<&SldprtNative>,
-) -> Result<BTreeMap<String, Record>, CodecError> {
+) -> Result<BTreeMap<String, Record>, crate::writer::write_error::WriteError> {
     let mut records = BTreeMap::<String, Record>::new();
     for source in native.into_iter().flat_map(|native| &native.pmi_dimensions) {
         if ir.scope.model && !supplies_history_dimension(ir, source) {
             continue;
         }
         if source.item_count.get() != 1 {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::write_error::WriteError::Decline(format!(
                 "SLDPRT PMI {} contains untyped additional items",
                 source.id
             )));
@@ -295,7 +298,7 @@ fn records(
             {
                 continue;
             }
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::write_error::WriteError::Decline(format!(
                 "SLDPRT PMI {} has no semantic database encoding",
                 annotation.id
             )));
@@ -324,13 +327,13 @@ fn records(
             || annotation.name.is_some()
             || annotation.visible.is_some()
         {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::write_error::WriteError::Decline(format!(
                 "SLDPRT PMI {} requires semantic-field reduction",
                 annotation.id
             )));
         }
         let value = dimension.resolved_nominal(ir).ok_or_else(|| {
-            CodecError::InvalidInput(format!(
+            crate::writer::write_error::WriteError::Decline(format!(
                 "SLDPRT PMI {} has no evaluated nominal",
                 annotation.id
             ))
@@ -429,7 +432,9 @@ fn apply_neutral_metadata(ir: &CadIr, id: &cadmpeg_ir::ids::PmiId, record: &mut 
 }
 
 /// The record's `MessagePack` map and the offset of its display text in it.
-fn record_payload(record: &Record) -> Result<(Vec<u8>, usize), CodecError> {
+fn record_payload(
+    record: &Record,
+) -> Result<(Vec<u8>, usize), crate::writer::write_error::WriteError> {
     let mut out = vec![0x87];
     string(&mut out, "annoType")?;
     out.push(1);
@@ -466,10 +471,12 @@ fn record_payload(record: &Record) -> Result<(Vec<u8>, usize), CodecError> {
     Ok((out, text_offset))
 }
 
-fn string(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+fn string(out: &mut Vec<u8>, value: &str) -> Result<(), crate::writer::write_error::WriteError> {
     // (O-capacity): MessagePack strings have at most a u32 byte length.
     let length = u32::try_from(value.len()).map_err(|_| {
-        CodecError::malformed("SLDPRT PMI text exceeds the MessagePack string capacity")
+        crate::writer::write_error::WriteError::Unwritable(
+            "SLDPRT PMI text exceeds the MessagePack string capacity".into(),
+        )
     })?;
     if let Ok(length) = u8::try_from(length) {
         if length < 32 {

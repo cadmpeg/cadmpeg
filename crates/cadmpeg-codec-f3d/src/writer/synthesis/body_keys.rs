@@ -5,13 +5,15 @@ use std::collections::BTreeSet;
 
 use cadmpeg_asm::brep::records::identity::NativeRecordNamespace;
 use cadmpeg_asm::brep::records::BodyNativeKey;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 
 use crate::native::F3dNative;
 use crate::records::bodies::{BodyVisibility, BodyVisibilityContent};
 
-pub(super) fn reconcile(target: &mut CadIr, native: &mut F3dNative) -> Result<(), CodecError> {
+pub(super) fn reconcile(
+    target: &mut CadIr,
+    native: &mut F3dNative,
+) -> Result<(), crate::writer::WriteError> {
     // Key row for a neutral body, resolved through the body's `native_ref`.
     fn key_for<'a>(
         keys: &'a [BodyNativeKey],
@@ -97,10 +99,12 @@ pub(super) fn reconcile(target: &mut CadIr, native: &mut F3dNative) -> Result<()
                 BodyNativeKey {
                     source_namespace: namespace.clone(),
                     record_index: u32::try_from(record_index).map_err(|_| {
-                        CodecError::InvalidInput("F3D body record index exceeds u32".into())
+                        crate::writer::WriteError::Unwritable(
+                            "F3D body record index exceeds u32".into(),
+                        )
                     })?,
                     body_ordinal: u32::try_from(ordinal).map_err(|_| {
-                        CodecError::InvalidInput("F3D body ordinal exceeds u32".into())
+                        crate::writer::WriteError::Unwritable("F3D body ordinal exceeds u32".into())
                     })?,
                     source_brep: None,
                     asm_body_key: key,
@@ -140,7 +144,7 @@ pub(super) fn reconcile(target: &mut CadIr, native: &mut F3dNative) -> Result<()
                 entity_suffix: suffix,
                 visible,
             })
-            .map_err(CodecError::Malformed)?,
+            .map_err(crate::writer::WriteError::Unwritable)?,
         );
     }
     native.body_native_keys = body_keys;
@@ -155,7 +159,7 @@ fn assign(
     used: &mut BTreeSet<u64>,
     maximum: u64,
     label: &str,
-) -> Result<u64, CodecError> {
+) -> Result<u64, crate::writer::WriteError> {
     if let Some(value) = preferred.filter(|value| *value <= maximum) {
         if used.insert(value) {
             return Ok(value);
@@ -169,7 +173,9 @@ fn assign(
         value = value
             .checked_add(1)
             .filter(|value| *value <= maximum)
-            .ok_or_else(|| CodecError::InvalidInput(format!("F3D {label} capacity exhausted")))?;
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable(format!("F3D {label} capacity exhausted"))
+            })?;
     }
     used.insert(value);
     Ok(value)

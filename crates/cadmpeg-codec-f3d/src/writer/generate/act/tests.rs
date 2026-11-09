@@ -64,7 +64,7 @@ fn current_typed_act_records_reemit_without_source_frames_or_locations() {
     bounded_policy.limits.max_retained_bytes = 1;
     let bounded = cadmpeg_core::decode::DecodeContext::for_encode(&bounded_arena, &bounded_policy);
     assert!(
-        matches!(encode(&displaced, &bounded), Err(CodecError::ResourceLimit(limit))
+        matches!(encode(&displaced, &bounded), Err(crate::writer::WriteError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
     );
     let count = u64::try_from(
@@ -76,7 +76,7 @@ fn current_typed_act_records_reemit_without_source_frames_or_locations() {
     policy.limits.max_entities = count - 1;
     let limited = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
     assert!(
-        matches!(encode(&native, &limited), Err(CodecError::ResourceLimit(limit))
+        matches!(encode(&native, &limited), Err(crate::writer::WriteError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
         && limit.limit == count - 1)
     );

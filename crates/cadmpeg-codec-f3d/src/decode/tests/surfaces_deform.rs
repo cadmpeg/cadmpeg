@@ -101,7 +101,7 @@ fn assert_solved_carriers_reduction(ir: &cadmpeg_ir::CadIr) {
 }
 
 #[test]
-fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
+fn generated_source_less_writes_around_duplicate_procedural_surface_owners() {
     for (smbh, label) in [
         (synthetic_cyl_spl_sur_smbh(), "cached"),
         (synthetic_helix_surface_smbh(true), "cacheless"),
@@ -120,26 +120,8 @@ fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
         let duplicate = source_less.model.procedural_surfaces[0].clone();
         source_less.model.procedural_surfaces.push(duplicate);
 
-        // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            F3dCodec
-                .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-                .and_then(|plan| plan.write_to(&mut Vec::new()))
-        }));
-        let message = match &result {
-            Ok(Err(error)) => error.to_string(),
-            Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-                panic
-                    .downcast_ref::<&str>()
-                    .map(ToString::to_string)
-                    .unwrap_or_default()
-            }),
-            Ok(Ok(_)) => panic!("duplicate procedural owner must be rejected"),
-        };
-        assert!(
-            message.contains("multiple procedural constructions"),
-            "unexpected {label} duplicate-owner error: {message}"
-        );
+        let record = source_less.model.procedural_surfaces[0].id.to_string();
+        crate::test_support::assert_written_naming(&source_less, None, &record);
     }
 }
 

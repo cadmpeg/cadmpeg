@@ -2,8 +2,8 @@
 //! Reconstruct typed native records without reading retained source bytes.
 
 use super::{
-    attributes, map_parameter_references, number, reference_marker, CadIr, CodecError,
-    DirectoryLineFont, Entity, EntityStatus, FiniteReal, LossNote,
+    attributes, map_parameter_references, number, reference_marker, CadIr, DirectoryLineFont,
+    Entity, EntityStatus, FiniteReal, LossNote,
 };
 use cadmpeg_ir::native::NativeRecord;
 use serde_json::{Map, Value};
@@ -316,7 +316,9 @@ fn count(fields: &Map<String, Value>, name: &str, length: usize) -> Result<Strin
 /// Gives each physically dependent entity that no written entity references a
 /// Type 402 Form 7 group parent: a dependent entity is valid only under a
 /// parent (IGES 5.3 §2.2.4.4.9), and the group adds no geometry.
-pub(super) fn attach_unowned_dependents(entities: &mut Vec<Entity>) -> Result<(), CodecError> {
+pub(super) fn attach_unowned_dependents(
+    entities: &mut Vec<Entity>,
+) -> Result<(), crate::writer::WriteError> {
     let mut referenced = BTreeSet::new();
     for record in entities.iter() {
         map_parameter_references(&record.parameter_body, |index| {

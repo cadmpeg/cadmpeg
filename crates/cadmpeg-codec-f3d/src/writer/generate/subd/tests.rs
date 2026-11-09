@@ -25,7 +25,7 @@ fn cage_record_limit_counts_only_written_records() {
     let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
     let error = super::encode(&ctx, surface, true).unwrap_err();
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        matches!(error, crate::writer::WriteError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
             && (limit.limit, limit.used, limit.additional) == (24, 24, 1))
     );

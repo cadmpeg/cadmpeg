@@ -1544,15 +1544,7 @@ impl EncoderBackend for FcstdCodec {
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, EncodeError> {
-        writer::target::plan(input, &target).map_err(|error| match error {
-            cadmpeg_core::CodecError::UnsupportedTarget(r) => EncodeError::UnsupportedTarget(r),
-            cadmpeg_core::CodecError::ResourceLimit(l) => EncodeError::ResourceLimit(l),
-            cadmpeg_core::CodecError::Io(e) => EncodeError::from(e),
-            error => {
-                debug_assert!(false, "unmapped FreeCAD encode error: {error}");
-                panic!("unmapped FreeCAD encode error: {error}");
-            }
-        })
+        writer::target::plan(input, &target)
     }
 }
 

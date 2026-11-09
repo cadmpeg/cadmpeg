@@ -27,7 +27,7 @@ pub(super) fn append(
     entities: &mut Vec<Entity>,
     consumed: &mut BTreeSet<String>,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<String>, CodecError> {
+) -> Result<Vec<String>, crate::writer::WriteError> {
     let UnownedCurves {
         ir,
         version,
@@ -125,12 +125,14 @@ impl UnownedCurveOutput<'_, '_> {
         &mut self,
         curve: &cadmpeg_ir::geometry::Curve,
         status: EntityStatus,
-    ) -> Result<(), CodecError> {
+    ) -> Result<(), crate::writer::WriteError> {
         let ir = self.ir;
         let geometry = match compound::geometry(ir, &curve.id) {
             Some(geometry) => geometry,
             None => flatten_curve(curve.geometry.solved().ok_or_else(|| {
-                CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
+                crate::writer::WriteError::Unwritable(
+                    "IGES curve carrier has no solved geometry".into(),
+                )
             })?)?,
         };
         let span = curve
@@ -155,7 +157,10 @@ impl UnownedCurveOutput<'_, '_> {
             Ok(_) => self
                 .losses
                 .extend(super::edge_carriers::placement_applied_loss(curve)),
-            Err(CodecError::InvalidInput(reason)) => {
+            Err(
+                crate::writer::WriteError::Unwritable(reason)
+                | crate::writer::WriteError::Codec(CodecError::InvalidInput(reason)),
+            ) => {
                 self.entities.truncate(before);
                 self.losses.push(
                     IgesLossCode::WriterEntityOmitted

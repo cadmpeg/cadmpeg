@@ -207,7 +207,7 @@ fn rendering_material(value: &Value) -> Result<Vec<u8>, WriteError> {
             1
         }
     };
-    Ok(super::super::anonymous(1, minor, &body)?)
+    super::super::anonymous(1, minor, &body)
 }
 
 fn rendering_mapping(value: &Value) -> Result<Vec<u8>, WriteError> {
@@ -265,9 +265,7 @@ fn rendering_mapping(value: &Value) -> Result<Vec<u8>, WriteError> {
         body.extend(super::super::anonymous(1, minor, &payload)?);
         children.push(start..body.len());
     }
-    Ok(super::super::anonymous_with_children(
-        1, 0, &body, &children,
-    )?)
+    super::super::anonymous_with_children(1, 0, &body, &children)
 }
 
 pub(super) struct EncodedAttributes {

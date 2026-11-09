@@ -347,16 +347,6 @@ fn write_path_structurally_authors_fidelity_resolution() {
     );
 }
 
-macro_rules! uniform_dispositions {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-        fn uniform_dispositions(disposition: ArenaDisposition) -> ArenaDispositions {
-            ArenaDispositions { $($field: disposition,)* }
-        }
-    };
-}
-
-crate::document::arena_registry!(uniform_dispositions);
-
 struct CoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for CoverageEncoder {
@@ -385,7 +375,7 @@ fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
     let ir = unit_cube().expect("valid unit cube fixture");
     assert_eq!(ir.model.faces.len(), 6);
     assert!(ir.model.subds.is_empty());
-    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    let mut dispositions = ArenaDispositions::uniform(ArenaDisposition::Written);
     dispositions.faces = ArenaDisposition::Omitted;
     dispositions.subds = ArenaDisposition::Omitted;
 
@@ -414,9 +404,9 @@ fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
 fn written_reported_dropped_and_complete_coverage_charge_no_loss() {
     let ir = unit_cube().expect("valid unit cube fixture");
     for coverage in [
-        ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Written)),
-        ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Reported)),
-        ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Dropped)),
+        ArenaCoverage::Declared(ArenaDispositions::uniform(ArenaDisposition::Written)),
+        ArenaCoverage::Declared(ArenaDispositions::uniform(ArenaDisposition::Reported)),
+        ArenaCoverage::Declared(ArenaDispositions::uniform(ArenaDisposition::Dropped)),
         ArenaCoverage::Complete,
     ] {
         assert_eq!(coverage_losses(&ir, coverage), Vec::new(), "{coverage:?}");
@@ -425,13 +415,13 @@ fn written_reported_dropped_and_complete_coverage_charge_no_loss() {
 
 #[test]
 fn arena_dispositions_carry_each_declared_field() {
-    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    let mut dispositions = ArenaDispositions::uniform(ArenaDisposition::Written);
     dispositions.faces = ArenaDisposition::Dropped;
     dispositions.features = ArenaDisposition::Omitted;
     assert!(!dispositions.carries(EntityKind::Face));
     assert!(!dispositions.carries(EntityKind::Feature));
     assert!(dispositions.carries(EntityKind::Edge));
-    let reported = uniform_dispositions(ArenaDisposition::Reported);
+    let reported = ArenaDispositions::uniform(ArenaDisposition::Reported);
     for kind in EntityKind::ALL {
         assert!(reported.carries(kind), "{kind:?}");
         assert!(ArenaCoverage::Complete.carries(kind), "{kind:?}");
@@ -473,7 +463,7 @@ fn validation_report(findings: Vec<Finding>) -> ValidationReport {
 #[test]
 fn carried_errors_exclude_warnings_and_include_unlocated_errors() {
     let ir = CadIr::empty();
-    let plan = CoverageEncoder(ArenaCoverage::Declared(uniform_dispositions(
+    let plan = CoverageEncoder(ArenaCoverage::Declared(ArenaDispositions::uniform(
         ArenaDisposition::Dropped,
     )))
     .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -515,7 +505,7 @@ fn carried_errors_follow_model_coverage_and_related_locations() {
         (ArenaDisposition::Dropped, false),
         (ArenaDisposition::Omitted, false),
     ] {
-        let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+        let mut dispositions = ArenaDispositions::uniform(ArenaDisposition::Written);
         dispositions.faces = disposition;
         let plan = CoverageEncoder(ArenaCoverage::Declared(dispositions))
             .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -547,7 +537,7 @@ fn carried_errors_follow_native_format_and_complete_coverage() {
         "invalid native record",
         Severity::Error,
     )]);
-    let declared = ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Written));
+    let declared = ArenaCoverage::Declared(ArenaDispositions::uniform(ArenaDisposition::Written));
     let cadir = CoverageEncoder(declared)
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();

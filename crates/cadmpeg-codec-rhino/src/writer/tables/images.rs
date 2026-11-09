@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Embedded resources are authored from the current asset bytes.
 
-use super::{class_wrapper, crc_chunk_with_direct, records, utf16, uuid, CadIr, CodecError, Value};
+use super::{class_wrapper, crc_chunk_with_direct, records, utf16, uuid, CadIr, Value};
 use crate::loss::RhinoLossCode;
 use cadmpeg_ir::assets::AssetContent;
 use cadmpeg_ir::report::loss::LossNote;
@@ -27,7 +27,7 @@ fn image_length(identity: &str, native: Option<&str>, length: u64) -> Result<u32
     })
 }
 
-pub(in crate::writer) fn images(ir: &CadIr) -> Result<ImageExport, CodecError> {
+pub(in crate::writer) fn images(ir: &CadIr) -> Result<ImageExport, crate::writer::WriteError> {
     let mut output = ImageExport {
         records: Vec::new(),
         losses: Vec::new(),
