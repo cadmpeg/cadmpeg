@@ -258,9 +258,9 @@ fn regenerate_planar_curve(
             let orientation = if normal.as_raw().z < 0.0 { -1.0 } else { 1.0 };
             let reference = reference_direction.as_raw();
             let phase = reference.y.atan2(reference.x);
-            let (Some(c), Ok(r), Some(s), Some(e)) = (
+            let r = *length;
+            let (Some(c), Some(s), Some(e)) = (
                 point(at.u, at.v),
-                cadmpeg_ir::scalar::PositiveLength::try_from(*length),
                 cadmpeg_ir::scalar::Angle::new((from.get() - phase) * orientation),
                 cadmpeg_ir::scalar::Angle::new((to.get() - phase) * orientation),
             ) else {
