@@ -500,7 +500,10 @@ impl<'a> MirrorIndex<'a> {
             if !source.participants.references().is_empty() {
                 return None;
             }
-            vec![PatternSeed::Bodies(BodySelection::Native(collection.id()))]
+            vec![PatternSeed::Bodies(
+                self.body_source(token, collection, items.references())
+                    .unwrap_or_else(|| BodySelection::Native(collection.id())),
+            )]
         } else {
             if source.participants.references().is_empty() {
                 return None;

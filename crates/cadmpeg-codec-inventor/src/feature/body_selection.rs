@@ -8,7 +8,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::{
-    BodySelection, CombineOperands, FeatureDefinition, FeatureOperation, TrimBodyOperands,
+    patterns::PatternSeed, BodySelection, CombineOperands, FeatureDefinition, FeatureOperation,
+    TrimBodyOperands,
 };
 use cadmpeg_ir::ids::BodyId;
 use serde::{Deserialize, Serialize};
@@ -298,6 +299,13 @@ pub(crate) fn definition(
         FeatureDefinition::Operation(FeatureOperation::MirrorShape { source, .. }) => {
             selection(source, bodies, None);
         }
+        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => {
+            for seed in seeds {
+                if let PatternSeed::Bodies(source) = seed {
+                    selection(source, bodies, None);
+                }
+            }
+        }
         FeatureDefinition::Operation(
             FeatureOperation::MoveBody {
                 bodies: selected, ..
@@ -490,6 +498,13 @@ pub(crate) fn native_losses(
                 FeatureDefinition::Operation(FeatureOperation::MirrorShape { source, .. }) => {
                     native(source)
                 }
+                FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => seeds
+                    .iter()
+                    .map(|seed| match seed {
+                        PatternSeed::Bodies(source) => native(source),
+                        _ => 0,
+                    })
+                    .sum(),
                 _ => 0,
             }
         })
