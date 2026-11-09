@@ -313,13 +313,25 @@ fn definitions(
             }
         }
         object.set("Label", xml::string("Label", label));
+        // A part container states its part number in `Id`.
+        let part_number = if definition.kind == ProductDefinitionKind::Part {
+            "Id"
+        } else {
+            "PartNumber"
+        };
         for (key, value) in [
             ("Description", definition.description.as_ref()),
-            ("PartNumber", definition.part_number.as_ref()),
+            (part_number, definition.part_number.as_ref()),
         ] {
-            object.properties.shift_remove(key);
             if let Some(value) = value {
                 object.set(key, xml::string(key, value));
+            } else if object
+                .properties
+                .get(key)
+                .and_then(|xml| xml::property_string_value(xml))
+                .is_some_and(|text| !text.is_empty())
+            {
+                object.properties.shift_remove(key);
             }
         }
         for (key, value) in &definition.bom_properties {
