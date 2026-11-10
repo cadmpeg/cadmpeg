@@ -264,7 +264,9 @@ impl GpuDispatcher {
         v_params: &[f64],
     ) -> Option<Vec<Point3>> {
         match backend {
-            BackendKind::RtxTensorCore => None,
+            BackendKind::RtxTensorCore => global_cuda().and_then(|cu| {
+                cu.tensor_core_eval_bicubic_bezier_grid(control_points, u_params, v_params)
+            }),
             BackendKind::PtxSm86 => global_cuda().and_then(|cu| {
                 cu.ptx_sm86_eval_bicubic_bezier_grid(control_points, u_params, v_params)
             }),
@@ -708,7 +710,12 @@ fn benchmark_single(
                     let out = cu.ptx_sm86_eval_bicubic_bezier_grid(&ctrl, &u_params, &u_params)?;
                     std::hint::black_box(&out);
                 }
-                BackendKind::RtxTensorCore => return None,
+                BackendKind::RtxTensorCore => {
+                    let cu = global_cuda()?;
+                    let out =
+                        cu.tensor_core_eval_bicubic_bezier_grid(&ctrl, &u_params, &u_params)?;
+                    std::hint::black_box(&out);
+                }
                 BackendKind::CpuSpatialIndex
                 | BackendKind::VulkanRtCore
                 | BackendKind::RtxRtCore => return None,

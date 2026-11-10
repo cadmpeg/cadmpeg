@@ -751,6 +751,119 @@ L_SM86_BEZ_EXIT:
 
 // 4c. Handcrafted RTX Tensor Core two-stage contraction for bicubic rational Bezier surface evaluation:
 // Stage 1 contracts U_basis (N_u x 4) * G_c (4 x 4), Stage 2 contracts (U_basis * G_c) (8 x 4) * V_basis^T (4 x 8)
+// using mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64.
+.visible .entry rtx_tc_bezier_eval_f64(
+    .param .u64 param_ug,
+    .param .u64 param_v_basis,
+    .param .u64 param_out,
+    .param .u32 param_nu,
+    .param .u32 param_nv
+) {
+    .reg .pred %p<5>;
+    .reg .b32 %r<24>;
+    .reg .b64 %rd<20>;
+    .reg .f64 %fa<4>, %fb0, %fc0, %fc1, %fd<8>, %fw0, %fw1, %finv0, %finv1, %fx, %fy, %fz;
+
+    ld.param.u64 %rd1, [param_ug];
+    ld.param.u64 %rd2, [param_v_basis];
+    ld.param.u64 %rd3, [param_out];
+    ld.param.u32 %r1, [param_nu];
+    ld.param.u32 %r2, [param_nv];
+
+    cvta.to.global.u64 %rd4, %rd1;
+    cvta.to.global.u64 %rd5, %rd2;
+    cvta.to.global.u64 %rd6, %rd3;
+
+    mov.u32 %r3, %ctaid.y;
+    shl.b32 %r4, %r3, 3;       // u_base = blockIdx.y * 8
+    mov.u32 %r5, %ctaid.x;
+    shl.b32 %r6, %r5, 3;       // v_base = blockIdx.x * 8
+
+    mov.u32 %r7, %tid.x;
+    and.b32 %r8, %r7, 31;      // lane
+    shr.u32 %r9, %r8, 2;       // group_id (0..7)
+    and.b32 %r10, %r8, 3;      // thread_in_group (0..3: j control index)
+
+    add.u32 %r11, %r4, %r9;    // u_idx = u_base + group_id
+    add.u32 %r12, %r6, %r9;    // v_idx_for_B = v_base + group_id
+
+    mov.f64 %fa0, 0d0000000000000000;
+    mov.f64 %fa1, 0d0000000000000000;
+    mov.f64 %fa2, 0d0000000000000000;
+    mov.f64 %fa3, 0d0000000000000000;
+
+    setp.lt.u32 %p1, %r11, %r1;
+    @!%p1 bra L_TC_BEZ_SKIP_A;
+
+    // param_ug layout: [u_idx][j = thread_in_group][comp = 0..3] -> (u_idx * 16 + j * 4) * 8
+    shl.b32 %r13, %r11, 4;
+    shl.b32 %r14, %r10, 2;
+    add.u32 %r13, %r13, %r14;
+    mul.wide.u32 %rd7, %r13, 8;
+    add.u64 %rd8, %rd4, %rd7;
+    ld.global.f64 %fa0, [%rd8 + 0];
+    ld.global.f64 %fa1, [%rd8 + 8];
+    ld.global.f64 %fa2, [%rd8 + 16];
+    ld.global.f64 %fa3, [%rd8 + 24];
+
+L_TC_BEZ_SKIP_A:
+    mov.f64 %fb0, 0d0000000000000000;
+    setp.lt.u32 %p2, %r12, %r2;
+    @!%p2 bra L_TC_BEZ_SKIP_B;
+
+    shl.b32 %r15, %r12, 2;
+    add.u32 %r15, %r15, %r10;
+    mul.wide.u32 %rd9, %r15, 8;
+    add.u64 %rd10, %rd5, %rd9;
+    ld.global.f64 %fb0, [%rd10];
+
+L_TC_BEZ_SKIP_B:
+    mov.f64 %fc0, 0d0000000000000000;
+    mov.f64 %fc1, 0d0000000000000000;
+
+    // 4 Tensor Core MMA instructions for homogeneous components x*w, y*w, z*w, w
+    mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 {%fd0, %fd1}, {%fa0}, {%fb0}, {%fc0, %fc1};
+    mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 {%fd2, %fd3}, {%fa1}, {%fb0}, {%fc0, %fc1};
+    mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 {%fd4, %fd5}, {%fa2}, {%fb0}, {%fc0, %fc1};
+    mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 {%fd6, %fd7}, {%fa3}, {%fb0}, {%fc0, %fc1};
+
+    @!%p1 bra L_TC_BEZ_EXIT;
+
+    shl.b32 %r16, %r10, 1;
+    add.u32 %r17, %r6, %r16;   // v0
+    add.u32 %r18, %r17, 1;     // v1
+
+    setp.lt.u32 %p3, %r17, %r2;
+    @!%p3 bra L_TC_BEZ_EXIT;
+
+    div.rn.f64 %fx, %fd0, %fd6;
+    div.rn.f64 %fy, %fd2, %fd6;
+    div.rn.f64 %fz, %fd4, %fd6;
+
+    mad.lo.u32 %r19, %r11, %r2, %r17;
+    mul.wide.u32 %rd11, %r19, 32;
+    add.u64 %rd12, %rd6, %rd11;
+    st.global.f64 [%rd12 + 0],  %fx;
+    st.global.f64 [%rd12 + 8],  %fy;
+    st.global.f64 [%rd12 + 16], %fz;
+    st.global.f64 [%rd12 + 24], %fd6;
+
+    setp.lt.u32 %p4, %r18, %r2;
+    @!%p4 bra L_TC_BEZ_EXIT;
+
+    div.rn.f64 %fx, %fd1, %fd7;
+    div.rn.f64 %fy, %fd3, %fd7;
+    div.rn.f64 %fz, %fd5, %fd7;
+
+    st.global.f64 [%rd12 + 32], %fx;
+    st.global.f64 [%rd12 + 40], %fy;
+    st.global.f64 [%rd12 + 48], %fz;
+    st.global.f64 [%rd12 + 56], %fd7;
+
+L_TC_BEZ_EXIT:
+    ret;
+}
+
 ";
 
 /// Hardware context for safe `cudarc` CUDA Driver API execution, `OptiX` RT Core BVH traversal, and RTX Tensor Core PTX dispatch.
@@ -765,6 +878,7 @@ pub struct CudaContext {
     fn_sm86_pairwise_dist: CudaFunction,
     fn_simt_bezier_eval: CudaFunction,
     fn_sm86_bezier_eval: CudaFunction,
+    fn_tc_bezier_eval: CudaFunction,
 }
 
 static GLOBAL_CUDA: OnceLock<Option<CudaContext>> = OnceLock::new();
@@ -806,6 +920,7 @@ impl CudaContext {
             fn_sm86_pairwise_dist: module.load_function("cuda_sm86_pairwise_dist_f64").ok()?,
             fn_simt_bezier_eval: module.load_function("cuda_simt_bezier_eval_f64").ok()?,
             fn_sm86_bezier_eval: module.load_function("cuda_sm86_bezier_eval_f64").ok()?,
+            fn_tc_bezier_eval: module.load_function("rtx_tc_bezier_eval_f64").ok()?,
             device_name,
             compute_capability: (major, minor),
             ctx,
@@ -1103,6 +1218,82 @@ impl CudaContext {
             v_params,
         )
     }
+
+    /// Evaluates bicubic rational Bézier surface patches on a tensor grid `(u, v)`
+    /// using RTX Tensor Core `mma.sync.aligned.m8n8k4.row.col.f64` two-stage contractions.
+    #[must_use]
+    pub fn tensor_core_eval_bicubic_bezier_grid(
+        &self,
+        control_points: &[[[f64; 4]; 4]; 4],
+        u_params: &[f64],
+        v_params: &[f64],
+    ) -> Option<Vec<Point3>> {
+        let total = u_params.len().checked_mul(v_params.len())?;
+        if total == 0 {
+            return Some(Vec::new());
+        }
+        if !self.supports_tensor_cores() {
+            return None;
+        }
+        self.ctx.bind_to_thread().ok()?;
+        let stream = self.ctx.default_stream();
+        let nu_u32 = u32::try_from(u_params.len()).ok()?;
+        let nv_u32 = u32::try_from(v_params.len()).ok()?;
+
+        let u_bases: Vec<[f64; 4]> = u_params
+            .iter()
+            .map(|&u| cpu::cubic_bernstein_basis(u))
+            .collect();
+        let mut flat_ug: Vec<f64> = Vec::with_capacity(u_params.len().checked_mul(16)?);
+        for bu in &u_bases {
+            for (c0, c1, c2, c3) in control_points[0]
+                .iter()
+                .zip(&control_points[1])
+                .zip(&control_points[2])
+                .zip(&control_points[3])
+                .map(|(((a, b), c), d)| (a, b, c, d))
+            {
+                for (((&v0, &v1), &v2), &v3) in c0.iter().zip(c1).zip(c2).zip(c3) {
+                    flat_ug
+                        .push(bu[0].mul_add(v0, bu[1].mul_add(v1, bu[2].mul_add(v2, bu[3] * v3))));
+                }
+            }
+        }
+        let flat_vb: Vec<f64> = v_params
+            .iter()
+            .flat_map(|&v| cpu::cubic_bernstein_basis(v))
+            .collect();
+
+        let d_ug = stream.clone_htod(&flat_ug).ok()?;
+        let d_vb = stream.clone_htod(&flat_vb).ok()?;
+        let out_f64_len = total.checked_mul(4)?;
+        let mut d_out = stream.alloc_zeros::<f64>(out_f64_len).ok()?;
+
+        let grid_x = nv_u32.div_ceil(8);
+        let grid_y = nu_u32.div_ceil(8);
+        let cfg = LaunchConfig {
+            grid_dim: (grid_x, grid_y, 1),
+            block_dim: (32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let mut builder = stream.launch_builder(&self.fn_tc_bezier_eval);
+        builder.arg(&d_ug);
+        builder.arg(&d_vb);
+        builder.arg(&mut d_out);
+        builder.arg(&nu_u32);
+        builder.arg(&nv_u32);
+        // Safety: kernel signature matches (u64, u64, u64, u32, u32) and buffer bounds are verified.
+        unsafe { builder.launch(cfg) }.ok()?;
+
+        let raw_out = stream.clone_dtoh(&d_out).ok()?;
+        Some(
+            raw_out
+                .chunks_exact(4)
+                .map(|p| Point3::new(p[0], p[1], p[2]))
+                .collect(),
+        )
+    }
+
     /// Whether the active GPU supports NVIDIA `OptiX` hardware RT Core acceleration.
     #[must_use]
     pub const fn supports_optix_rt(&self) -> bool {
@@ -1348,6 +1539,41 @@ mod tests {
         } else {
             assert!(ctx
                 .ptx_sm86_eval_bicubic_bezier_grid(&ctrl, &u_params, &v_params)
+                .is_none());
+        }
+    }
+
+    #[test]
+    fn cuda_tensor_core_bezier_matches_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let mut ctrl = [[[0.0_f64; 4]; 4]; 4];
+        for (i, row) in ctrl.iter_mut().enumerate() {
+            for (j, pole) in row.iter_mut().enumerate() {
+                let u = f64::from(u32::try_from(i).unwrap_or(0));
+                let v = f64::from(u32::try_from(j).unwrap_or(0));
+                let w = 1.0 + 0.1 * (u + v);
+                *pole = [u * w, v * w, (u * u - v) * 0.25 * w, w];
+            }
+        }
+        let u_params: Vec<f64> = (0..11).map(|i| f64::from(i) / 10.0).collect();
+        let v_params: Vec<f64> = (0..9).map(|j| f64::from(j) / 8.0).collect();
+
+        let expected_bez = cpu::eval_bicubic_bezier_grid(&ctrl, &u_params, &v_params);
+        if ctx.supports_tensor_cores() {
+            let tc_bez = ctx
+                .tensor_core_eval_bicubic_bezier_grid(&ctrl, &u_params, &v_params)
+                .expect("Tensor Core Bezier eval");
+            assert_eq!(expected_bez.len(), tc_bez.len());
+            for (e, t) in expected_bez.iter().zip(&tc_bez) {
+                assert!((e.x - t.x).abs() < CUDA_PARITY_TOLERANCE);
+                assert!((e.y - t.y).abs() < CUDA_PARITY_TOLERANCE);
+                assert!((e.z - t.z).abs() < CUDA_PARITY_TOLERANCE);
+            }
+        } else {
+            assert!(ctx
+                .tensor_core_eval_bicubic_bezier_grid(&ctrl, &u_params, &v_params)
                 .is_none());
         }
     }
