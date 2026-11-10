@@ -1510,6 +1510,153 @@ L_SM86_PIS_EXIT:
     ret;
 }
 
+// 7. CUDA SIMT Stack-Based Flattened KD-Tree Nearest-Neighbor Query (FP64)
+.visible .entry cuda_simt_kdtree_query_f64(
+    .param .u64 param_nodes,
+    .param .u64 param_queries,
+    .param .u64 param_out,
+    .param .u32 param_n_queries,
+    .param .u32 param_n_nodes
+) {
+    .local .align 16 .b8 %stack[512];
+    .reg .pred %p<12>;
+    .reg .b32 %r<24>;
+    .reg .b64 %rd<18>;
+    .reg .f64 %fd<16>;
+
+    ld.param.u64 %rd1, [param_nodes];
+    ld.param.u64 %rd2, [param_queries];
+    ld.param.u64 %rd3, [param_out];
+    ld.param.u32 %r1, [param_n_queries];
+    ld.param.u32 %r2, [param_n_nodes];
+
+    mov.u32 %r3, %ctaid.x;
+    mov.u32 %r4, %ntid.x;
+    mov.u32 %r5, %tid.x;
+    mad.lo.u32 %r6, %r3, %r4, %r5;
+    setp.ge.u32 %p0, %r6, %r1;
+    @%p0 bra L_KD_EXIT;
+
+    cvta.to.global.u64 %rd4, %rd1;
+    cvta.to.global.u64 %rd5, %rd2;
+    cvta.to.global.u64 %rd6, %rd3;
+
+    mul.wide.u32 %rd7, %r6, 32;
+    add.u64 %rd8, %rd5, %rd7;
+    ld.global.f64 %fd0, [%rd8 + 0];  // qx
+    ld.global.f64 %fd1, [%rd8 + 8];  // qy
+    ld.global.f64 %fd2, [%rd8 + 16]; // qz
+
+    mov.f64 %fd3, 0d7FF0000000000000; // best_sq = +inf
+    setp.eq.u32 %p1, %r2, 0;
+    @%p1 bra L_KD_STORE;
+
+    sub.u32 %r8, %r2, 1;
+    min.u32 %r8, %r6, %r8;
+    mul.wide.u32 %rd12, %r8, 32;
+    add.u64 %rd13, %rd4, %rd12;
+    ld.global.f64 %fd5, [%rd13 + 0];
+    ld.global.f64 %fd6, [%rd13 + 8];
+    ld.global.f64 %fd7, [%rd13 + 16];
+    sub.f64 %fd8,  %fd0, %fd5;
+    sub.f64 %fd9,  %fd1, %fd6;
+    sub.f64 %fd10, %fd2, %fd7;
+    mul.f64 %fd3, %fd10, %fd10;
+    fma.rn.f64 %fd3, %fd9, %fd9, %fd3;
+    fma.rn.f64 %fd3, %fd8, %fd8, %fd3;
+
+    mov.u64 %rd9, %stack;
+    st.local.u32 [%rd9 + 0], 0;
+    st.local.u32 [%rd9 + 4], %r2;
+    st.local.f64 [%rd9 + 8], 0d0000000000000000;
+    mov.u32 %r7, 1; // sp = 1
+
+L_KD_LOOP:
+    setp.eq.u32 %p2, %r7, 0;
+    @%p2 bra L_KD_STORE;
+
+    sub.u32 %r7, %r7, 1;
+    shl.b32 %r8, %r7, 4;
+    cvt.u64.u32 %rd10, %r8;
+    add.u64 %rd11, %rd9, %rd10;
+    ld.local.u32 %r9,  [%rd11 + 0]; // node_idx
+    ld.local.u32 %r10, [%rd11 + 4]; // subtree_end
+    ld.local.f64 %fd4, [%rd11 + 8]; // lower_bound_sq
+
+    setp.ge.f64 %p3, %fd4, %fd3;
+    @%p3 bra L_KD_LOOP;
+
+    mul.wide.u32 %rd12, %r9, 32;
+    add.u64 %rd13, %rd4, %rd12;
+    ld.global.f64 %fd5, [%rd13 + 0];  // nx
+    ld.global.f64 %fd6, [%rd13 + 8];  // ny
+    ld.global.f64 %fd7, [%rd13 + 16]; // nz
+    ld.global.u32 %r11, [%rd13 + 24]; // split_axis
+    ld.global.u32 %r12, [%rd13 + 28]; // right_child
+
+    sub.f64 %fd8,  %fd0, %fd5;
+    sub.f64 %fd9,  %fd1, %fd6;
+    sub.f64 %fd10, %fd2, %fd7;
+
+    mul.f64 %fd11, %fd10, %fd10;
+    fma.rn.f64 %fd11, %fd9, %fd9, %fd11;
+    fma.rn.f64 %fd11, %fd8, %fd8, %fd11;
+    min.f64 %fd3, %fd3, %fd11;
+
+    setp.eq.u32 %p4, %r11, 0;
+    setp.eq.u32 %p5, %r11, 1;
+    selp.f64 %fd12, %fd9,  %fd10, %p5;
+    selp.f64 %fd12, %fd8,  %fd12, %p4;
+    mul.f64 %fd13, %fd12, %fd12; // axis_diff_sq
+
+    min.u32 %r13, %r12, %r10; // left_end = min(right_child, subtree_end)
+    add.u32 %r14, %r9, 1;     // left_idx = node_idx + 1
+
+    setp.le.f64 %p6, %fd12, 0d0000000000000000;
+    selp.u32 %r15, %r14, %r12, %p6; // near_idx
+    selp.u32 %r16, %r13, %r10, %p6; // near_end
+    selp.u32 %r17, %r12, %r14, %p6; // far_idx
+    selp.u32 %r18, %r10, %r13, %p6; // far_end
+
+    setp.lt.u32 %p7, %r17, %r18;
+    setp.lt.f64 %p8, %fd13, %fd3;
+    and.pred %p7, %p7, %p8;
+    setp.lt.u32 %p9, %r7, 32;
+    and.pred %p7, %p7, %p9;
+    @!%p7 bra L_KD_PUSH_NEAR;
+
+    shl.b32 %r19, %r7, 4;
+    cvt.u64.u32 %rd14, %r19;
+    add.u64 %rd15, %rd9, %rd14;
+    st.local.u32 [%rd15 + 0], %r17;
+    st.local.u32 [%rd15 + 4], %r18;
+    st.local.f64 [%rd15 + 8], %fd13;
+    add.u32 %r7, %r7, 1;
+
+L_KD_PUSH_NEAR:
+    setp.lt.u32 %p10, %r15, %r16;
+    setp.lt.u32 %p11, %r7, 32;
+    and.pred %p10, %p10, %p11;
+    @!%p10 bra L_KD_LOOP;
+
+    shl.b32 %r20, %r7, 4;
+    cvt.u64.u32 %rd16, %r20;
+    add.u64 %rd17, %rd9, %rd16;
+    st.local.u32 [%rd17 + 0], %r15;
+    st.local.u32 [%rd17 + 4], %r16;
+    st.local.f64 [%rd17 + 8], 0d0000000000000000;
+    add.u32 %r7, %r7, 1;
+    bra L_KD_LOOP;
+
+L_KD_STORE:
+    mul.wide.u32 %rd12, %r6, 8;
+    add.u64 %rd13, %rd6, %rd12;
+    st.global.f64 [%rd13], %fd3;
+
+L_KD_EXIT:
+    ret;
+}
+
 // 8. CUDA SIMT Stack-Based Flattened BVH Closest-Point-on-Mesh Query (FP64)
 .visible .entry cuda_simt_bvh_closest_point_f64(
     .param .u64 param_bvh,
@@ -3900,6 +4047,12 @@ struct CachedCudaMesh {
     d_bvh: CudaSlice<f64>,
 }
 
+struct CachedCudaKdCloud {
+    hash: u64,
+    n_nodes: u32,
+    d_nodes: CudaSlice<f64>,
+}
+
 /// Hardware context for safe `cudarc` CUDA Driver API execution, `OptiX` RT Core BVH traversal, and RTX Tensor Core PTX dispatch.
 pub struct CudaContext {
     device_name: String,
@@ -3917,9 +4070,11 @@ pub struct CudaContext {
     fn_sm86_ray_mesh: CudaFunction,
     fn_simt_point_in_solid: CudaFunction,
     fn_sm86_point_in_solid: CudaFunction,
+    fn_simt_kdtree_query: CudaFunction,
     fn_simt_bvh_closest_point: CudaFunction,
     fn_sm86_bvh_closest_point: CudaFunction,
     compute_mesh_cache: Mutex<Option<CachedCudaMesh>>,
+    compute_kd_cache: Mutex<[Option<CachedCudaKdCloud>; 2]>,
     optix: Option<OptixPipelines>,
 }
 
@@ -3968,6 +4123,7 @@ impl CudaContext {
             fn_sm86_ray_mesh: module.load_function("cuda_sm86_ray_mesh_f64").ok()?,
             fn_simt_point_in_solid: module.load_function("cuda_simt_point_in_solid_f64").ok()?,
             fn_sm86_point_in_solid: module.load_function("cuda_sm86_point_in_solid_f64").ok()?,
+            fn_simt_kdtree_query: module.load_function("cuda_simt_kdtree_query_f64").ok()?,
             fn_simt_bvh_closest_point: module
                 .load_function("cuda_simt_bvh_closest_point_f64")
                 .ok()?,
@@ -3975,6 +4131,7 @@ impl CudaContext {
                 .load_function("cuda_sm86_bvh_closest_point_f64")
                 .ok()?,
             compute_mesh_cache: Mutex::new(None),
+            compute_kd_cache: Mutex::new([None, None]),
             optix,
             device_name,
             compute_capability: (major, minor),
@@ -4436,6 +4593,89 @@ impl CudaContext {
         f(guard.as_ref()?)
     }
 
+    fn serialize_flat_kdtree(flat_tree: &crate::spatial::FlatKdTree3) -> Vec<f64> {
+        flat_tree
+            .nodes()
+            .iter()
+            .flat_map(|n| {
+                let meta = (u64::from(n.right_child) << 32) | u64::from(n.split_axis);
+                [n.point.x, n.point.y, n.point.z, f64::from_bits(meta)]
+            })
+            .collect()
+    }
+
+    fn with_cached_cuda_kd_pair<R>(
+        &self,
+        stream: &Arc<CudaStream>,
+        points_a: &[Point3],
+        points_b: &[Point3],
+        f: impl FnOnce(&CachedCudaKdCloud, &CachedCudaKdCloud) -> Option<R>,
+    ) -> Option<R> {
+        let hash_a = Self::hash_point_cloud(points_a, 0);
+        let hash_b = Self::hash_point_cloud(points_b, 0);
+        let mut guard = self.compute_kd_cache.lock().ok()?;
+        let rebuild_a = match guard[0].as_ref() {
+            Some(c) => c.hash != hash_a || usize::try_from(c.n_nodes).ok()? != points_a.len(),
+            None => true,
+        };
+        let rebuild_b = match guard[1].as_ref() {
+            Some(c) => c.hash != hash_b || usize::try_from(c.n_nodes).ok()? != points_b.len(),
+            None => true,
+        };
+        match (rebuild_a, rebuild_b) {
+            (true, true) => {
+                let (flat_a, flat_b) = rayon::join(
+                    || {
+                        let tree = crate::spatial::KdTree3::build(points_a).flatten();
+                        Self::serialize_flat_kdtree(&tree)
+                    },
+                    || {
+                        let tree = crate::spatial::KdTree3::build(points_b).flatten();
+                        Self::serialize_flat_kdtree(&tree)
+                    },
+                );
+                let n_a = u32::try_from(points_a.len()).ok()?;
+                let n_b = u32::try_from(points_b.len()).ok()?;
+                let d_a = stream.clone_htod(&flat_a).ok()?;
+                let d_b = stream.clone_htod(&flat_b).ok()?;
+                guard[0] = Some(CachedCudaKdCloud {
+                    hash: hash_a,
+                    n_nodes: n_a,
+                    d_nodes: d_a,
+                });
+                guard[1] = Some(CachedCudaKdCloud {
+                    hash: hash_b,
+                    n_nodes: n_b,
+                    d_nodes: d_b,
+                });
+            }
+            (true, false) => {
+                let tree = crate::spatial::KdTree3::build(points_a).flatten();
+                let flat_a = Self::serialize_flat_kdtree(&tree);
+                let n_a = u32::try_from(points_a.len()).ok()?;
+                let d_a = stream.clone_htod(&flat_a).ok()?;
+                guard[0] = Some(CachedCudaKdCloud {
+                    hash: hash_a,
+                    n_nodes: n_a,
+                    d_nodes: d_a,
+                });
+            }
+            (false, true) => {
+                let tree = crate::spatial::KdTree3::build(points_b).flatten();
+                let flat_b = Self::serialize_flat_kdtree(&tree);
+                let n_b = u32::try_from(points_b.len()).ok()?;
+                let d_b = stream.clone_htod(&flat_b).ok()?;
+                guard[1] = Some(CachedCudaKdCloud {
+                    hash: hash_b,
+                    n_nodes: n_b,
+                    d_nodes: d_b,
+                });
+            }
+            (false, false) => {}
+        }
+        f(guard[0].as_ref()?, guard[1].as_ref()?)
+    }
+
     fn dispatch_ray_mesh_kernel(
         &self,
         func: &CudaFunction,
@@ -4603,6 +4843,55 @@ impl CudaContext {
         self.dispatch_point_in_solid_kernel(&self.fn_sm86_point_in_solid, points, mesh)
     }
 
+    fn dispatch_kdtree_nearest_sq_cached(
+        &self,
+        stream: &Arc<CudaStream>,
+        target: &CachedCudaKdCloud,
+        queries: &CachedCudaKdCloud,
+    ) -> Option<Vec<f64>> {
+        let q_len = usize::try_from(queries.n_nodes).ok()?;
+        let mut d_out = stream.alloc_zeros::<f64>(q_len).ok()?;
+
+        let block = 128_u32;
+        let grid = queries.n_nodes.div_ceil(block);
+        let cfg = LaunchConfig {
+            grid_dim: (grid, 1, 1),
+            block_dim: (block, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let mut builder = stream.launch_builder(&self.fn_simt_kdtree_query);
+        builder.arg(&target.d_nodes);
+        builder.arg(&queries.d_nodes);
+        builder.arg(&mut d_out);
+        builder.arg(&queries.n_nodes);
+        builder.arg(&target.n_nodes);
+        // Safety: kernel signature matches (u64, u64, u64, u32, u32) and buffer bounds are verified.
+        unsafe { builder.launch(cfg) }.ok()?;
+
+        stream.clone_dtoh(&d_out).ok()
+    }
+
+    /// Executes symmetric Hausdorff distance via CUDA SIMT stack-based KD-tree traversal in $\mathcal{O}(N \log M)$ time.
+    #[must_use]
+    pub fn simt_spatial_hausdorff(&self, points_a: &[Point3], points_b: &[Point3]) -> Option<f64> {
+        if points_a.is_empty() || points_b.is_empty() {
+            return Some(0.0);
+        }
+        self.ctx.bind_to_thread().ok()?;
+        let stream = self.ctx.default_stream();
+        self.with_cached_cuda_kd_pair(&stream, points_a, points_b, |cloud_a, cloud_b| {
+            let dists_ab = self.dispatch_kdtree_nearest_sq_cached(&stream, cloud_b, cloud_a)?;
+            let dists_ba = self.dispatch_kdtree_nearest_sq_cached(&stream, cloud_a, cloud_b)?;
+            let mut max_sq = 0.0_f64;
+            for &d in dists_ab.iter().chain(&dists_ba) {
+                if d > max_sq {
+                    max_sq = d;
+                }
+            }
+            Some(max_sq.sqrt())
+        })
+    }
+
     fn dispatch_bvh_closest_point_kernel(
         &self,
         func: &CudaFunction,
@@ -4717,6 +5006,25 @@ impl CudaContext {
         }
         if let Some(last_t) = mesh.triangles.last() {
             last_t.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    fn hash_point_cloud(points: &[Point3], r_pad_bits: u64) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        points.len().hash(&mut hasher);
+        r_pad_bits.hash(&mut hasher);
+        let step = (points.len() / 256).max(1);
+        for p in points.iter().step_by(step) {
+            p.x.to_bits().hash(&mut hasher);
+            p.y.to_bits().hash(&mut hasher);
+            p.z.to_bits().hash(&mut hasher);
+        }
+        if let Some(last_p) = points.last() {
+            last_p.x.to_bits().hash(&mut hasher);
+            last_p.y.to_bits().hash(&mut hasher);
+            last_p.z.to_bits().hash(&mut hasher);
         }
         hasher.finish()
     }
@@ -5650,6 +5958,30 @@ mod tests {
             assert!((e.closest_point.z - a.closest_point.z).abs() < CUDA_PARITY_TOLERANCE);
             assert_eq!(s.triangle_index, a.triangle_index);
         }
+    }
+
+    #[test]
+    fn cuda_simt_spatial_hausdorff_matches_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let pts_a: Vec<Point3> = (0_u32..64)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f * 0.15 - 2.0, (f * 0.3).sin(), (f * 0.2).cos())
+            })
+            .collect();
+        let pts_b: Vec<Point3> = (0_u32..53)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f * 0.15 - 1.92, (f * 0.3).sin() - 0.04, (f * 0.2).cos())
+            })
+            .collect();
+        let expected_h = crate::spatial::kd_hausdorff_distance(&pts_a, &pts_b);
+        let actual_h = ctx
+            .simt_spatial_hausdorff(&pts_a, &pts_b)
+            .expect("CUDA SIMT spatial Hausdorff");
+        assert!((expected_h - actual_h).abs() < CUDA_PARITY_TOLERANCE);
     }
 
     #[test]

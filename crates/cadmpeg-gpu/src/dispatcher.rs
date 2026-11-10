@@ -417,7 +417,9 @@ impl GpuDispatcher {
                 Some(spatial::kd_hausdorff_distance(points_a, points_b))
             }
             BackendKind::PtxSm86 => None,
-            BackendKind::CudaCompute => None,
+            BackendKind::CudaCompute => {
+                global_cuda().and_then(|cu| cu.simt_spatial_hausdorff(points_a, points_b))
+            }
             BackendKind::VulkanCompute => {
                 global_vulkan().and_then(|vk| vk.compute_spatial_hausdorff(points_a, points_b))
             }
@@ -965,7 +967,11 @@ fn benchmark_single(
                     std::hint::black_box(h);
                 }
                 BackendKind::VulkanRtCore => return None,
-                BackendKind::CudaCompute => return None,
+                BackendKind::CudaCompute => {
+                    let cu = global_cuda()?;
+                    let h = cu.simt_spatial_hausdorff(&pts_a, &pts_b)?;
+                    std::hint::black_box(h);
+                }
                 BackendKind::PtxSm86 => return None,
                 BackendKind::RtxRtCore => return None,
                 BackendKind::RtxTensorCore => return None,
