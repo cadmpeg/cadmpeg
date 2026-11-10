@@ -214,6 +214,10 @@ pub(crate) enum F3dLossCode {
     FeaturePipeCircularSectionInferred,
     /// A Pipe whose fractions both equal one is assumed to sweep its whole path group.
     FeaturePipeWholePathExtentAssumed,
+    /// A Pipe section without an unchanged new-body result is assumed to be a circle.
+    FeaturePipeCircularSectionAssumed,
+    /// A Pipe with one unit and one zero fraction is assumed to start its section at a path end.
+    FeaturePipePathEndSectionAssumed,
     SurfacePatchInteriorConstraintAssumed,
     SurfacePatchUnnamedGroupsAssumedInactive,
     SurfacePatchUnorderedReferenceRunsAssumed,
@@ -722,6 +726,8 @@ impl F3dLossCode {
         Self::FeatureDerivedBaseUnresolved,
         Self::FeaturePipeCircularSectionInferred,
         Self::FeaturePipeWholePathExtentAssumed,
+        Self::FeaturePipeCircularSectionAssumed,
+        Self::FeaturePipePathEndSectionAssumed,
         Self::SurfacePatchInteriorConstraintAssumed,
         Self::SurfacePatchUnnamedGroupsAssumedInactive,
         Self::SurfacePatchUnorderedReferenceRunsAssumed,
@@ -1030,6 +1036,8 @@ impl F3dLossCode {
             Self::FeatureDerivedBaseUnresolved => "feature.derived-base-unresolved",
             Self::FeaturePipeCircularSectionInferred => "feature.pipe-circular-section-inferred",
             Self::FeaturePipeWholePathExtentAssumed => "feature.pipe-whole-path-extent-assumed",
+            Self::FeaturePipeCircularSectionAssumed => "feature.pipe-circular-section-assumed",
+            Self::FeaturePipePathEndSectionAssumed => "feature.pipe-path-end-section-assumed",
             Self::SurfacePatchInteriorConstraintAssumed => {
                 "feature.surface-patch-interior-constraint-assumed"
             }
@@ -1403,6 +1411,8 @@ impl F3dLossCode {
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
+            | Self::FeaturePipeCircularSectionAssumed
+            | Self::FeaturePipePathEndSectionAssumed
             | Self::SurfacePatchInteriorConstraintAssumed
             | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
@@ -1666,6 +1676,8 @@ impl F3dLossCode {
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
+            | Self::FeaturePipeCircularSectionAssumed
+            | Self::FeaturePipePathEndSectionAssumed
             | Self::SurfacePatchInteriorConstraintAssumed
             | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
@@ -2009,6 +2021,8 @@ mod tests {
                 "feature.derived-base-unresolved",
                 "feature.pipe-circular-section-inferred",
                 "feature.pipe-whole-path-extent-assumed",
+                "feature.pipe-circular-section-assumed",
+                "feature.pipe-path-end-section-assumed",
                 "feature.surface-patch-interior-constraint-assumed",
                 "feature.surface-patch-unnamed-groups-assumed-inactive",
                 "feature.surface-patch-unordered-reference-runs-assumed",
