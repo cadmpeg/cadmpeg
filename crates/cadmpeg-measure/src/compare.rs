@@ -20,6 +20,8 @@ mod rows;
 use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::decode::{u64_from_index, ResourceDimension, ResourceFailure, ResourceLimit};
+use cadmpeg_gpu::{ClosestPointResult, RayHit3, RayQuery3, TriangleMeshView};
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::CadIr;
 use serde::Serialize;
 
@@ -572,4 +574,144 @@ pub fn compare(
             used: work.used,
         },
     })
+}
+
+/// Minimum problem size for multi-threaded Rayon spatial queries.
+const PARALLEL_SPATIAL_THRESHOLD: usize = 256;
+/// Minimum problem size for routing spatial comparison queries through `cadmpeg_gpu::global_dispatcher`.
+const GPU_SPATIAL_DISPATCH_THRESHOLD: usize = 4096;
+
+/// Computes the symmetric Hausdorff distance between two sampled 3D point sets.
+#[must_use]
+pub fn hausdorff_distance(points_a: &[Point3], points_b: &[Point3]) -> f64 {
+    let span = points_a.len().max(points_b.len());
+    if span < PARALLEL_SPATIAL_THRESHOLD {
+        cadmpeg_gpu::spatial::kd_hausdorff_distance(points_a, points_b)
+    } else if span < GPU_SPATIAL_DISPATCH_THRESHOLD {
+        cadmpeg_gpu::spatial::rayon_hausdorff_distance(points_a, points_b)
+    } else {
+        cadmpeg_gpu::hausdorff_distance(points_a, points_b)
+    }
+}
+
+/// Computes the $N \times M$ pairwise squared Euclidean distance matrix between two 3D point sets.
+#[must_use]
+pub fn pairwise_squared_distances(points_a: &[Point3], points_b: &[Point3]) -> Vec<f64> {
+    let pairs = points_a.len().checked_mul(points_b.len());
+    if pairs.is_some_and(|n| n < PARALLEL_SPATIAL_THRESHOLD * PARALLEL_SPATIAL_THRESHOLD) {
+        cadmpeg_gpu::cpu::pairwise_distance_squared(points_a, points_b)
+    } else if pairs
+        .is_some_and(|n| n < GPU_SPATIAL_DISPATCH_THRESHOLD * PARALLEL_SPATIAL_THRESHOLD)
+    {
+        cadmpeg_gpu::cpu::rayon_pairwise_distance_squared(points_a, points_b)
+    } else {
+        cadmpeg_gpu::pairwise_squared_distances(points_a, points_b)
+    }
+}
+
+/// Finds the closest point and squared distance on an indexed triangle mesh for each query point.
+#[must_use]
+pub fn closest_points_on_mesh(
+    points: &[Point3],
+    mesh: TriangleMeshView<'_>,
+) -> Vec<ClosestPointResult> {
+    if points.len() < PARALLEL_SPATIAL_THRESHOLD {
+        cadmpeg_gpu::spatial::closest_points_on_mesh(points, mesh)
+    } else if points.len() < GPU_SPATIAL_DISPATCH_THRESHOLD {
+        cadmpeg_gpu::spatial::rayon_closest_points_on_mesh(points, mesh)
+    } else {
+        cadmpeg_gpu::closest_points_on_mesh(points, mesh)
+    }
+}
+
+/// Determines inside/outside solid containment for a batch of 3D query points against a closed mesh.
+#[must_use]
+pub fn points_in_solid_parity(points: &[Point3], mesh: TriangleMeshView<'_>) -> Vec<bool> {
+    if points.len() < PARALLEL_SPATIAL_THRESHOLD {
+        cadmpeg_gpu::spatial::points_in_solid_parity(points, mesh)
+    } else if points.len() < GPU_SPATIAL_DISPATCH_THRESHOLD {
+        cadmpeg_gpu::spatial::rayon_points_in_solid_parity(points, mesh)
+    } else {
+        cadmpeg_gpu::points_in_solid_parity(points, mesh)
+    }
+}
+
+/// Intersects a batch of rays against an indexed triangle mesh.
+#[must_use]
+pub fn intersect_rays_mesh(rays: &[RayQuery3], mesh: TriangleMeshView<'_>) -> Vec<RayHit3> {
+    if rays.len() < PARALLEL_SPATIAL_THRESHOLD {
+        cadmpeg_gpu::spatial::intersect_rays_mesh(rays, mesh)
+    } else if rays.len() < GPU_SPATIAL_DISPATCH_THRESHOLD {
+        cadmpeg_gpu::spatial::rayon_intersect_rays_mesh(rays, mesh)
+    } else {
+        cadmpeg_gpu::intersect_rays_mesh(rays, mesh)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_gpu::{RayQuery3, TriangleMeshView};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    use super::{
+        closest_points_on_mesh, hausdorff_distance, intersect_rays_mesh,
+        pairwise_squared_distances, points_in_solid_parity,
+    };
+
+    #[test]
+    fn spatial_comparison_helpers_dispatch_point_and_mesh_queries() {
+        let vertices = [
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, -2.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+            Point3::new(0.0, 0.0, -2.0),
+        ];
+        let triangles = [
+            [0, 2, 4],
+            [2, 1, 4],
+            [1, 3, 4],
+            [3, 0, 4],
+            [2, 0, 5],
+            [1, 2, 5],
+            [3, 1, 5],
+            [0, 3, 5],
+        ];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+
+        let shifted: Vec<Point3> = vertices
+            .iter()
+            .map(|p| Point3::new(p.x + 0.5, p.y, p.z))
+            .collect();
+        assert!((hausdorff_distance(&vertices, &shifted) - 0.5).abs() < 1.0e-12);
+
+        let d2 = pairwise_squared_distances(&vertices[..2], &vertices[..2]);
+        assert_eq!(d2.len(), 4);
+        assert!(d2[0].abs() < 1.0e-12);
+        assert!((d2[1] - 16.0).abs() < 1.0e-12);
+
+        let inside = points_in_solid_parity(
+            &[Point3::new(0.0, 0.0, 0.0), Point3::new(5.0, 0.0, 0.0)],
+            mesh,
+        );
+        assert_eq!(inside, vec![true, false]);
+
+        let closest = closest_points_on_mesh(&[Point3::new(3.0, 0.0, 0.0)], mesh);
+        assert_eq!(closest.len(), 1);
+        assert!((closest[0].distance_sq - 1.0).abs() < 1.0e-12);
+
+        let rays = [RayQuery3 {
+            origin: Point3::new(-5.0, 0.1, 0.1),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+            t_min: 0.0,
+            t_max: 20.0,
+        }];
+        let hits = intersect_rays_mesh(&rays, mesh);
+        assert_eq!(hits.len(), 1);
+        assert!(hits[0].hit);
+    }
 }

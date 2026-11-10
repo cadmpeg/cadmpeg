@@ -285,15 +285,19 @@ impl<'a> BodyInput<'a, '_> {
     fn vertex_box(&self, body: &Body) -> Option<Quantity<BoxValue>> {
         let id = body.id.as_str();
         let points = self.owners.body_vertex_points(id);
-        let (first, rest) = points.split_first()?;
+        if points.is_empty() {
+            return None;
+        }
         let placement = match self.placements.get(id) {
             Some(Ok(placement)) => *placement,
             Some(Err(missing)) => return Some(missing.quantity()),
             None => Placement::identity(),
         };
-        let mut aabb = Aabb::of_point(placement.point(*first));
+        let placed = placement.points(&points);
+        let (first, rest) = placed.split_first()?;
+        let mut aabb = Aabb::of_point(*first);
         for point in rest {
-            aabb.include(placement.point(*point));
+            aabb.include(*point);
         }
         let tau = model_tolerance(
             self.owners.ir.tolerances.linear.get(),

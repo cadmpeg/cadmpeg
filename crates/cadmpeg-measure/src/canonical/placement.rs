@@ -29,6 +29,11 @@ const IDENTITY_ROWS: [[f64; 4]; 3] = [
     [0.0, 0.0, 1.0, 0.0],
 ];
 
+/// Minimum batch size for multi-threaded Rayon CPU point transformation.
+const PARALLEL_BATCH_THRESHOLD: usize = 256;
+/// Minimum batch size for routing point transformations through `cadmpeg_gpu::global_dispatcher`.
+const GPU_DISPATCH_BATCH_THRESHOLD: usize = 4096;
+
 impl Placement {
     pub(crate) fn identity() -> Self {
         Self {
@@ -120,6 +125,30 @@ impl Placement {
             r[0] * point.x + r[1] * point.y + r[2] * point.z + r[3]
         });
         Point3::new(x, y, z)
+    }
+
+    /// Map a batch of points through `cadmpeg-gpu`.
+    pub(crate) fn points(self, points: &[Point3]) -> Vec<Point3> {
+        if self.class == PlacementClass::Identity {
+            return points.to_vec();
+        }
+        let rows = self.transform.affine_rows();
+        let matrix = [rows[0], rows[1], rows[2], [0.0, 0.0, 0.0, 1.0]];
+        let homogeneous: Vec<[f64; 4]> = points
+            .iter()
+            .map(|point| [point.x, point.y, point.z, 1.0])
+            .collect();
+        let transformed = if homogeneous.len() < PARALLEL_BATCH_THRESHOLD {
+            cadmpeg_gpu::cpu::batch_transform_4x4(&matrix, &homogeneous)
+        } else if homogeneous.len() < GPU_DISPATCH_BATCH_THRESHOLD {
+            cadmpeg_gpu::cpu::rayon_batch_transform_4x4(&matrix, &homogeneous)
+        } else {
+            cadmpeg_gpu::transform_points_4x4(&matrix, &homogeneous)
+        };
+        transformed
+            .into_iter()
+            .map(|[x, y, z, _]| Point3::new(x, y, z))
+            .collect()
     }
 
     /// Map a vector by the linear part.
@@ -237,5 +266,20 @@ mod tests {
         let direction = placement.rotate(Vector3::new(1.0, 0.0, 0.0));
         assert!((direction.y - 1.0).abs() < 1.0e-15);
         assert_eq!(placement.model_term(2, 10.0), 0.0);
+
+        let batch: Vec<Point3> = (0..128)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f, -0.5 * f, 2.0 * f + 1.0)
+            })
+            .collect();
+        let mapped = placement.points(&batch);
+        assert_eq!(mapped.len(), batch.len());
+        for (input, actual) in batch.iter().zip(&mapped) {
+            let expected = placement.point(*input);
+            assert!((actual.x - expected.x).abs() < 1.0e-12);
+            assert!((actual.y - expected.y).abs() < 1.0e-12);
+            assert!((actual.z - expected.z).abs() < 1.0e-12);
+        }
     }
 }
