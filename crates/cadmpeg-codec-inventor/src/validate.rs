@@ -1916,6 +1916,7 @@ fn validate_features(
                 values: &ir.model.parameters,
                 transforms: &data.pm_dc_transforms,
                 directions: &data.pm_dc_directions,
+                bodies: &body_joins,
             })
         });
     let revolve_sketches = ir
