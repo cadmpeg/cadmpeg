@@ -1862,3 +1862,16 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-360. One-sided face-target Extrude without a termination group
+
+**Question.** Which stored relation supplies the termination face of a one-sided face-target Extrude whose operand roster has no termination group?
+
+**Known.** A one-sided face target (direction `1`, first-side extent `2`) stores one role-`0x0000001100000000` termination group, distinct from its start group. A selected-face start adds one start group before it in scope-reference order. A shape target replaces the termination group with one role-`0x0000000500000000` target group.
+
+**Need.** The termination face of such a scope, or the stored state that makes the extent end without one.
+
+**Conflict.** The Mini AfterSherpa V6 Zodiac BMO part stores a one-sided Cut scope with a selected-face start, one start face group, a `Side1Offset` owner, no termination group, and no shape-target group.
+
+**Note.** None.
+

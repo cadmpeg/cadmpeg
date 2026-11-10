@@ -343,3 +343,23 @@ fn a_new_body_distance_extrude_can_store_a_selected_face_start_without_a_group()
     assert!(conflicts(&native(DesignExtrudeOperation::Join, true)));
     assert!(conflicts(&native(DesignExtrudeOperation::NewBody, false)));
 }
+
+/// DR-360: a face extent whose roster stores every expected group except its
+/// termination groups.
+#[test]
+fn a_face_extent_can_lack_only_its_termination_groups() {
+    use crate::records::topology::extrude_selection::DesignExtrudeFaceRole::{Start, Termination};
+    use crate::validate::extrude_face_roles_lack_only_terminations as lacks;
+    assert!(lacks(&[Start, Termination], [Some(Start)].into_iter()));
+    assert!(lacks(&[Termination, Termination], [].into_iter()));
+    assert!(!lacks(&[Start, Termination], [].into_iter()));
+    assert!(!lacks(
+        &[Start, Termination],
+        [Some(Start), Some(Termination)].into_iter()
+    ));
+    assert!(!lacks(&[Start], [Some(Start)].into_iter()));
+    assert!(!lacks(
+        &[Termination, Termination],
+        [Some(Termination)].into_iter()
+    ));
+}
