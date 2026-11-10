@@ -1077,7 +1077,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** Keep the group as the native face selection.
+**Note.** The decoder projects the one face that the member resolves as the terminating face and reports `feature.hole-extent-face-assumed`. A member that resolves no face or several faces keeps the group as the native face selection.
 
 ### DR-254. Reference edges of a Hole's placement distances
 

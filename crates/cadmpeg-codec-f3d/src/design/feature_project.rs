@@ -51,6 +51,7 @@ mod paste_copy;
 mod path_pattern;
 mod pattern_seeds;
 mod reverse_normal;
+mod revolve_target;
 mod surface_offset;
 mod surface_patch;
 
@@ -807,18 +808,29 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     body_recipe_operands,
                 )
                 .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
-                Some(DesignFeatureFamily::Revolve) => project_fixed_revolve_with_entities(
-                    scope,
-                    construction_groups,
-                    edge_operands,
-                    entity_selection_operands,
-                    face_operands,
-                    (placements, curve_identities),
-                    design_types,
-                )
-                .unwrap_or(FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                    family: UnresolvedFamily::Revolve,
-                })),
+                Some(DesignFeatureFamily::Revolve) => {
+                    let mut definition = project_fixed_revolve_with_entities(
+                        scope,
+                        construction_groups,
+                        edge_operands,
+                        entity_selection_operands,
+                        face_operands,
+                        (placements, curve_identities),
+                        design_types,
+                    )
+                    .unwrap_or(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                        family: UnresolvedFamily::Revolve,
+                    }));
+                    revolve_target::bind_revolve_shape_target(
+                        &mut definition,
+                        scope,
+                        construction_groups,
+                        face_operands,
+                        body_recipe_operands,
+                        histories,
+                    );
+                    definition
+                }
                 Some(DesignFeatureFamily::Loft) => project_fixed_loft(scope, inputs, ctx)?
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1456,14 +1468,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     scope.feature_ordinal
                 )),
                 suppressed: Some(
-                    matches!(
-                        family,
-                        Some(
-                            DesignFeatureFamily::Extrude
-                                | DesignFeatureFamily::Fillet
-                                | DesignFeatureFamily::Chamfer
-                        )
-                    ) && scope.history_state_id().is_none()
+                    family.is_some_and(stateless_scope_is_suppressed)
+                        && scope.history_state_id().is_none()
                         && scope.previous_history_state_id().is_none(),
                 ),
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -5901,6 +5907,21 @@ fn project_fixed_chamfer(
     )))
 }
 
+/// Whether a scope of this family with null current and preceding
+/// history-state identities is suppressed. An active scope of these families
+/// changes ASM topology and carries both identities.
+fn stateless_scope_is_suppressed(family: DesignFeatureFamily) -> bool {
+    matches!(
+        family,
+        DesignFeatureFamily::Extrude
+            | DesignFeatureFamily::Fillet
+            | DesignFeatureFamily::Chamfer
+            | DesignFeatureFamily::Hole
+            | DesignFeatureFamily::Thread
+            | DesignFeatureFamily::Combine
+    )
+}
+
 fn fixed_boolean_operation(operation: DesignExtrudeOperation) -> cadmpeg_ir::features::BooleanOp {
     match operation {
         DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
@@ -7481,15 +7502,40 @@ fn hole_extent_loss(scope: &DesignParameterScope) -> cadmpeg_ir::report::loss::L
     ))
 }
 
-/// The face that ends an Extents To Hole: the native identity of its sole
-/// role-`0x0000000500000000` group, which has one member.
+/// The face that ends an Extents To Hole. Its sole
+/// role-`0x0000000500000000` group has one member. When that member is the
+/// one direct `face` recipe operand of the scope at its record and resolves
+/// one face of the preceding state, that face ends the hole (DR-243).
+/// Otherwise the group stays the native selection.
 fn hole_extent_face(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     let group = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X5)?;
-    (group.members().len() == 1)
-        .then(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone()))
+    let [member] = group.members() else {
+        return None;
+    };
+    let stream = native_stream(&scope.id);
+    let resolved = unique_feature_match(face_operands.iter().filter(|operand| {
+        native_stream(&operand.id) == stream
+            && operand.scope_record_index == scope.record_index
+            && operand.record_index() == member.value
+    }))
+    .filter(|operand| {
+        operand.group_record_index().is_none()
+            && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::Face
+    })
+    .and_then(|operand| match operand.resolved_face_slots.as_slice() {
+        [face] => crate::design::face_resolve::historical_face_selection_with_native(
+            scope,
+            scope.previous_history_state_id()?,
+            vec![*face],
+            group.id.clone(),
+        ),
+        _ => None,
+    });
+    Some(resolved.unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())))
 }
 
 fn hole_termination(
@@ -7510,7 +7556,7 @@ fn hole_termination(
     match extent.extent_control {
         Some(0) if extent.saved_non_distance_depth.is_some() && depth.is_none() => {
             Some(LinearTermination::ToFace {
-                face: hole_extent_face(scope, groups)?,
+                face: hole_extent_face(scope, groups, face_operands)?,
                 offset: None,
             })
         }
@@ -7645,6 +7691,16 @@ fn project_hole(
         losses.push(hole_extent_loss(scope));
         return Ok(None);
     };
+    if let LinearTermination::ToFace {
+        face: FaceSelection::Historical { native, .. },
+        ..
+    } = &extent
+    {
+        losses.push(crate::loss::F3dLossCode::HoleExtentFaceAssumed.note(format!(
+            "Hole scope {} ends at the face that the member of its Extents To group {native} resolves.",
+            scope.id
+        )));
+    }
     if !matches!(parameters.len(), 2..=7) {
         return Ok(None);
     }
