@@ -22457,6 +22457,155 @@ source = "spec"
 anchor = "A typed-reference Extrude selection group stores ten zero bytes after its indexed header"
 
 [[record]]
+name = "profile_loop_curve_entry"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Each entry is u32 `2`, the u64 sketch-curve primary identity"
+size = 40
+note = "The entry kind is 2 with typed references and 3 with compact references."
+
+[[record.field]]
+name = "kind"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "Each entry is u32 `2`, the u64 sketch-curve primary identity"
+
+[[record.field]]
+name = "primary_id"
+offset = 4
+type = "u64"
+source = "spec"
+anchor = "the u64 sketch-curve primary identity"
+
+[[record.field]]
+name = "secondary_id"
+offset = 12
+type = "u64"
+source = "spec"
+anchor = "the u64 sketch-curve secondary identity"
+
+[[record.field]]
+name = "entry_fields"
+offset = 20
+type = "u32[3]"
+source = "spec"
+anchor = "three u32 operands, and eight zero bytes"
+
+[[record.field]]
+name = "zero_tail"
+offset = 32
+type = "bytes[8]"
+source = "spec"
+anchor = "three u32 operands, and eight zero bytes"
+
+[[record]]
+name = "compact_reference_profile_selection_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+size = 36
+note = "Offsets are relative to the selection primary indexed header; the LP-UTF16 asset GUID and owner text follow."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record.field]]
+name = "identity_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record.field]]
+name = "constant_one"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record]]
+name = "compact_reference_profile_chain_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+size = 42
+note = "Offsets are relative to the chain record indexed header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_14"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record.field]]
+name = "chain_marker"
+offset = 25
+type = "bytes[6]"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record.field]]
+name = "sketch_scope_reference"
+offset = 31
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record]]
+name = "compact_reference_profile_identity_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+size = 36
+note = "Offsets are relative to the identity record indexed header; the counted region groups begin at offset 32."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record.field]]
+name = "selection_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record.field]]
+name = "region_group_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record]]
 name = "typed_reference_profile_selection_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
 kind = "byte"

@@ -101,7 +101,7 @@ pub(crate) struct SketchCurveSelectionResolution<'a> {
     pub(crate) groups: &'a [DesignConstructionOperandGroup],
     /// Nested entity-selection operands.
     pub(crate) operands: &'a [DesignEntitySelectionOperand],
-    /// Typed-reference profile selections listing Sketch curve loops.
+    /// Profile selections listing Sketch curve loops.
     pub(crate) profile_curves:
         &'a [crate::records::topology::entity_selection::DesignProfileCurveSelection],
     /// Projected Sketch placement carriers.
@@ -919,6 +919,9 @@ pub(crate) fn bind_extrude_profile_selections(
                         break 'feature_edit;
                     }
                     if matching_groups.is_empty() {
+                        if let Some(selected) = compact_profile_loops(scope, sketch, curve_resolution) {
+                            *profile = selected;
+                        }
                         break 'feature_edit;
                     }
                     let group_ids: Vec<_> = matching_groups
@@ -1048,6 +1051,14 @@ fn resolve_entity_selection_profile(
     use cadmpeg_ir::features::{PathRef, PlanarProfileRef, ProfileRef};
 
     if group.role() != DesignOperandRole::PROFILE {
+        return None;
+    }
+    if resolution.profile_curves.iter().any(|selection| {
+        native_stream(&selection.id) == native_stream(&group.id)
+            && selection.group_record_index == group.record_index
+            && selection.scope_record_index == group.scope_record_index
+            && selection.compact_references()
+    }) {
         return None;
     }
     if resolution.profile_curves.iter().any(|selection| {
@@ -3938,6 +3949,10 @@ fn resolve_profile_curve_regions(
                 let mut matches = source.profiles.iter().enumerate().filter(|(_, profile)| {
                     profile.len() == selected.len()
                         && profile.iter().all(|use_| selected.contains(&use_.entity))
+                        && (!selection.compact_references()
+                            || selected
+                                .iter()
+                                .all(|entity| profile.iter().any(|use_| &use_.entity == entity)))
                 });
                 let (index, _) = matches.next()?;
                 if matches.next().is_some() {
@@ -3969,6 +3984,75 @@ fn resolve_profile_curve_regions(
         .map(ProfileRef::Planar)
 }
 
+fn compact_profile_loops(
+    scope: &DesignParameterScope,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    resolution: &SketchCurveSelectionResolution<'_>,
+) -> Option<cadmpeg_ir::features::ProfileRef> {
+    if sketch.profiles.len() < 2 {
+        return None;
+    }
+    let operand = scope.extrude_profile()?;
+    let mut groups = resolution.groups.iter().filter(|group| {
+        native_stream(&group.id) == native_stream(&scope.id)
+            && group.scope_record_index == scope.record_index
+            && group.role() == DesignOperandRole::PROFILE
+            && matches!(group.members(), [member] if member.value == operand.record_index)
+    });
+    let group = groups.next()?;
+    if groups.next().is_some() {
+        return None;
+    }
+    compact_profile_loop_selection(group, &resolution.path_resolution())
+}
+
+fn compact_profile_loop_selection(
+    group: &DesignConstructionOperandGroup,
+    resolution: &EntitySelectionPathResolution<'_>,
+) -> Option<cadmpeg_ir::features::ProfileRef> {
+    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
+
+    let mut selections = resolution
+        .profile_curves
+        .iter()
+        .filter(|selection| {
+            native_stream(&selection.id) == native_stream(&group.id)
+                && selection.scope_record_index == group.scope_record_index
+                && selection.group_record_index == group.record_index
+        })
+        .peekable();
+    if selections.peek().is_none()
+        || selections
+            .any(|selection| !selection.compact_references() || !selection.complete_loop_groups())
+    {
+        return None;
+    }
+    let ProfileRef::Planar(PlanarProfileRef::SketchRegions { sketch, regions }) =
+        resolve_profile_curve_regions(group, resolution)?
+    else {
+        return None;
+    };
+    if regions
+        .iter()
+        .any(|region| matches!(region, SketchProfileRegion::Loops { loops } if !loops.holes().is_empty()))
+    {
+        return Some(ProfileRef::Planar(PlanarProfileRef::SketchRegions {
+            sketch,
+            regions,
+        }));
+    }
+    let profiles = regions
+        .iter()
+        .map(|region| match region {
+            SketchProfileRegion::Loops { loops } if loops.holes().is_empty() => Some(loops.outer()),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    PlanarProfileRef::sketch_profiles(sketch, profiles)
+        .ok()
+        .map(ProfileRef::Planar)
+}
+
 fn resolve_profile_curve_arrangement_regions(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
@@ -3978,6 +4062,14 @@ fn resolve_profile_curve_arrangement_regions(
     let Some(stream) = native_stream(&group.id) else {
         return Ok(None);
     };
+    if resolution.profile_curves.iter().any(|selection| {
+        native_stream(&selection.id) == Some(stream)
+            && selection.scope_record_index == group.scope_record_index
+            && selection.group_record_index == group.record_index
+            && selection.compact_references()
+    }) {
+        return Ok(None);
+    }
     let Some((sketch, curves)) = profile_curve_selection_curves(group, stream, resolution) else {
         return Ok(None);
     };
@@ -4146,8 +4238,12 @@ fn resolve_profile_curve_path(
                 && selection.scope_record_index == group.scope_record_index
                 && selection.group_record_index == group.record_index
         })
-        .flat_map(crate::records::topology::entity_selection::DesignProfileCurveSelection::regions)
-        .any(|loops| !matches!(loops.as_slice(), [loop_] if loop_.outer))
+        .any(|selection| {
+            selection.compact_references()
+                || selection
+                    .regions()
+                    .any(|loops| !matches!(loops.as_slice(), [loop_] if loop_.outer))
+        })
     {
         return None;
     }
@@ -4196,6 +4292,7 @@ fn profile_curve_selection_curves(
         });
         let selection = available!(matches.next());
         if !selection.valid_layout()
+            || selection.compact_references() && !selection.complete_loop_groups()
             || matches.next().is_some()
             || sketch_scope.is_some_and(|scope| scope != selection.sketch_scope_record_index)
             || owner_text.is_some_and(|text: &str| text != selection.owner_text)
