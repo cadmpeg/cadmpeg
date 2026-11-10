@@ -202,7 +202,9 @@ impl GpuDispatcher {
     ) -> Option<Vec<[f64; 4]>> {
         match backend {
             BackendKind::RtxTensorCore => None,
-            BackendKind::PtxSm86 => None,
+            BackendKind::PtxSm86 => {
+                global_cuda().and_then(|cu| cu.ptx_sm86_batch_transform_4x4(matrix, points))
+            }
             BackendKind::CudaCompute => {
                 global_cuda().and_then(|cu| cu.simt_batch_transform_4x4(matrix, points))
             }
@@ -598,7 +600,11 @@ fn benchmark_single(
                     let out = cu.simt_batch_transform_4x4(&matrix, &pts)?;
                     std::hint::black_box(&out);
                 }
-                BackendKind::PtxSm86 => return None,
+                BackendKind::PtxSm86 => {
+                    let cu = global_cuda()?;
+                    let out = cu.ptx_sm86_batch_transform_4x4(&matrix, &pts)?;
+                    std::hint::black_box(&out);
+                }
                 BackendKind::RtxTensorCore => return None,
                 BackendKind::CpuSpatialIndex
                 | BackendKind::VulkanRtCore
