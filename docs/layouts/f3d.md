@@ -7400,9 +7400,28 @@ Parsed by:
 | 63 | 24 | `v_direction` | `f64[3]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 | 87 | 11 | `u_distance` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 | 98 | 11 | `v_distance` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 109 | 2 | `zero_distance` | `bytes[2]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 109 | 1 | `symmetric` | `u8` | little | spec | Offset 109 stores the symmetric byte of direction one |
+| 110 | 1 | `zero_after_symmetric` | `u8` | little | spec | Offset 110 is zero. |
 | 111 | 11 | `v_count_repeat` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 | 122 | 11 | `u_direction` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+
+## `rectangular_pattern_payload_distribution`
+
+Spec §Assembly operands · layout: byte offsets · size: 29 B
+
+Offsets are relative to the byte after the leading zero byte or V-direction reference.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 12 | `zero_run` | `bytes[12]` | little | spec | Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow. |
+| 12 | 4 | `fixed_two` | `u32` | little | spec | Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow. · value `2` |
+| 16 | 4 | `word` | `u32` | little | spec | Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow. |
+| 20 | 4 | `sentinel` | `u32` | little | spec | Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow. |
+| 24 | 1 | `distance_type` | `u8` | little | spec | The next byte is the distance type |
+| 25 | 4 | `entry_count` | `u32` | little | spec | A u32 entry count, that many sixteen-byte entries |
 
 ## `rectangular_pattern_payload_suffix`
 
