@@ -373,7 +373,7 @@ travel.
 
 **Question.** What do the flag byte at offset 20 and the u32 at offset 25 of a flagged empty mesh collection store, and can a flagged collection have bodies?
 
-**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. Every flagged collection is empty, and its u32 is `1`.
+**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. Every empty flagged collection stores u32 `1`. DR-337 records a flagged collection whose nested record lists two mesh bodies.
 
 **Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value and shows whether a flagged collection keeps bodies.
 
@@ -1885,7 +1885,7 @@ when the operation transition carries no candidate for the group members?
 
 **Conflict.** The specified flagged empty collection has equal first and nested body counts. Collection 173 has first count zero and two nested body references.
 
-**Note.** Collection validation failure prevents both mesh feature definitions from receiving tessellation references.
+**Note.** Collection validation failure prevents both mesh feature definitions from receiving tessellation references. DR-85 tracks the flagged-collection word.
 
 ### DR-338. Extended circular-pattern axis controls and selection runs
 
