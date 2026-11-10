@@ -252,6 +252,10 @@ pub(crate) enum F3dLossCode {
     ParameterUnprojected,
     /// Typed compact parameter frames match no parameter grammar.
     ParameterRecordUnparsed,
+    /// Decoded parameters set byte 3 of the compact expression trailer.
+    ParameterTrailerFlagUninterpreted,
+    /// Decoded compact null-owner parameters have no owner binding.
+    ParameterOwnerUnstored,
     /// Design parameter owner bindings have no recognized feature scope.
     ParameterOwnerUnrecognized,
     /// Design parameters retain owner frames that match no admitted grammar.
@@ -719,6 +723,8 @@ impl F3dLossCode {
         Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
         Self::ParameterRecordUnparsed,
+        Self::ParameterTrailerFlagUninterpreted,
+        Self::ParameterOwnerUnstored,
         Self::ParameterOwnerUnrecognized,
         Self::ParameterOwnerUnparsed,
         Self::ParameterUnitUntyped,
@@ -1018,6 +1024,8 @@ impl F3dLossCode {
             Self::MoveUnprojected => "feature.move-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
+            Self::ParameterTrailerFlagUninterpreted => "parameter.trailer-flag-uninterpreted",
+            Self::ParameterOwnerUnstored => "parameter.owner-unstored",
             Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
             Self::ParameterOwnerUnparsed => "parameter.owner-unparsed",
             Self::ParameterUnitUntyped => "parameter.unit-untyped",
@@ -1362,6 +1370,8 @@ impl F3dLossCode {
             | Self::ParameterOwnerUnparsed
             | Self::ParameterRecordUnparsed
             | Self::ParameterOwnerUnrecognized
+            | Self::ParameterTrailerFlagUninterpreted
+            | Self::ParameterOwnerUnstored
             | Self::ParameterUnitUntyped
             | Self::MaterialDistanceUnitUntyped
             | Self::FaceAppearanceAmbiguous
@@ -1604,6 +1614,8 @@ impl F3dLossCode {
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnrecognized
+            | Self::ParameterTrailerFlagUninterpreted
+            | Self::ParameterOwnerUnstored
             | Self::ParameterUnitUntyped
             | Self::ParameterExpressionUnbound
             | Self::HistoryDependencyUnprojected
@@ -1936,6 +1948,8 @@ mod tests {
                 "feature.scope-envelope-superseded",
                 "parameter.unprojected",
                 "parameter.record-unparsed",
+                "parameter.trailer-flag-uninterpreted",
+                "parameter.owner-unstored",
                 "parameter.owner-unrecognized",
                 "parameter.owner-unparsed",
                 "parameter.unit-untyped",

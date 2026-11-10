@@ -350,9 +350,10 @@ pub(crate) fn split_matches(
     actual: &FeatureDefinition,
     bodies: &HashMap<String, BodyId>,
     earlier: &HashSet<String>,
+    qualified_target: bool,
 ) -> bool {
     definition(&mut expected, bodies, None);
-    plane_trim_local(&mut expected, earlier);
+    split_local(&mut expected, earlier, qualified_target);
     &expected == actual
 }
 
@@ -429,7 +430,10 @@ pub(crate) fn produced_before(
         else {
             continue;
         };
-        if label.class_id() != super::derived::CLASS_ID {
+        if !super::FeatureFamily::Base
+            .class_ids()
+            .contains(&label.class_id())
+        {
             continue;
         }
         if let Some((_, output)) = base::wrappers(source, label.class_id(), |ordinal| {
@@ -479,12 +483,75 @@ fn combine_local(
     }
 }
 
-fn plane_trim_local(definition: &mut FeatureDefinition, earlier: &HashSet<String>) {
-    let FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane { targets, .. }) =
-        definition
-    else {
-        return;
+pub(crate) fn qualified_split_target(
+    source: &super::PmDcFeature,
+    properties: &[PmDcFeatureProperty],
+) -> bool {
+    let resolve = |reference: crate::pmdc::PmDcReference| {
+        let ordinal = reference.record_ordinal()?;
+        let mut matches = properties.iter().filter(|property| {
+            property.identity.segment_token == source.identity.segment_token
+                && property.identity.record_ordinal == ordinal
+        });
+        let property = matches.next()?;
+        matches.next().is_none().then_some(property)
     };
+    let Some(reference) = source.properties.references().get(7) else {
+        return false;
+    };
+    if !reference.qualified() {
+        return false;
+    }
+    let Some(selection) = resolve(*reference) else {
+        return false;
+    };
+    let super::PmDcFeaturePropertyKind::References {
+        family: super::PmDcFeatureReferenceFamily::BodySelection,
+        items,
+    } = &selection.kind
+    else {
+        return false;
+    };
+    let [wrapper] = items.references() else {
+        return false;
+    };
+    wrapper.qualified()
+        && resolve(*wrapper).is_some_and(|property| {
+            property.identity.type_id
+                == crate::record_identity::RecordTypeId::from_bytes(super::SURFACE_BODY_TYPE)
+                && matches!(property.kind, super::PmDcFeaturePropertyKind::SurfaceBody { body }
+                    if body.index() != 0 && !body.qualified())
+        })
+}
+
+fn split_local(
+    definition: &mut FeatureDefinition,
+    earlier: &HashSet<String>,
+    qualified_target: bool,
+) {
+    let targets = match definition {
+        FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane { targets, .. }) => {
+            targets
+        }
+        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, .. })
+            if qualified_target =>
+        {
+            targets
+        }
+        FeatureDefinition::Operation(FeatureOperation::TrimBodies { operands, .. }) => {
+            let mut targets = operands.targets().clone();
+            local_split_selection(&mut targets, earlier);
+            if let Ok(retained) = TrimBodyOperands::new(targets, operands.tools().clone()) {
+                *operands = retained;
+            }
+            return;
+        }
+        _ => return,
+    };
+    local_split_selection(targets, earlier);
+}
+
+fn local_split_selection(targets: &mut BodySelection, earlier: &HashSet<String>) {
     let BodySelection::Native(wrapper) = targets else {
         return;
     };
@@ -577,10 +644,19 @@ pub(crate) fn project(
                 properties: &inventory.properties,
             },
         );
+        let qualified_target = matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::SplitBody { .. })
+        ) && feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| sources.get(native))
+            .and_then(Option::as_ref)
+            .is_some_and(|source| qualified_split_target(source, &inventory.properties));
         feature.evaluation.edit(|value, _| {
             definition(value, bodies, group.as_deref());
             combine_local(value, &earlier, group.as_deref());
-            plane_trim_local(value, &earlier);
+            split_local(value, &earlier, qualified_target);
         });
         if let Some(outputs) = outputs(&feature.id, &model.feature_result_topologies, bodies) {
             feature.evaluation.set_outputs(outputs);

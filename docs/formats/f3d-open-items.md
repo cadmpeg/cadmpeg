@@ -371,11 +371,11 @@ travel.
 
 ### DR-85. Flagged empty mesh-collection word
 
-**Question.** What do the flag byte at offset 20 and the u32 at offset 25 of a flagged empty mesh collection store, and can a flagged collection have bodies?
+**Question.** What do the flag byte at offset 20 and the u32 at offset 25 of a flagged empty mesh collection store?
 
-**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. Every flagged collection is empty, and its u32 is `1`.
+**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. Every empty flagged collection stores u32 `1`. DR-337 records a flagged collection whose nested record lists two mesh bodies.
 
-**Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value and shows whether a flagged collection keeps bodies.
+**Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value.
 
 ### DR-115. Mesh container decode-failure taxonomy
 
@@ -1418,25 +1418,23 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** What does byte 29 state in a 262-byte `Base Feature` frame whose layout otherwise matches the 262-byte zero-body form?
 
-**Known.** Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 as zero. One public frame stores `1` at offset 29 and zero in the rest of that run. Its current and preceding history states are equal. The decoder retains it as an unbound stored-body scope.
+**Known.** Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 as zero. One public frame stores `1` at offset 29 and zero in the rest of that run. Its current and preceding history states are equal. The decoder retains it as an unbound stored-body scope. Two controlled one-body `Base Feature` saves from the current Fusion release store `1` in the matching byte: a 331-byte class-260/258 frame whose body is built in place, and a 316-byte class-368/258 frame whose body is a copy of a body in a referenced design. In each frame the run `u8 1`, eight zero bytes, this byte, and `u8 0` precedes a u32 body count `1`; the byte is at offset 63 in the first frame and at offset 48 in the second. Neither frame length is a form in `f3d.md` §3.1.
 
-**Need.** Frames of this form that differ only in byte 29.
+**Need.** Saves of one design that differ only in this byte, for example across Fusion releases or design options.
 
 **Conflict.** None.
 
 **Note.** Two other public frames of this form store zero at offset 29.
 
-### DR-251. Compact parameter frame with a null owner and trailer byte 3
+### DR-251. Compact null-owner parameters: owner and trailer byte 3
 
-**Question.** Which grammar admits a compact parameter frame with a null owner, and what does byte 3 of its compact expression trailer state?
+**Question.** Does the null owner of a compact null-owner dimension parameter mean that the parameter has no owner or that the frame does not store it, and what does byte 3 of the five-byte compact expression trailer state when it is `1`?
 
-**Known.** Five Linear Dimension parameter frames store the compact header with `u8 0` at offset 30 and the LP-UTF16 expression at offset 31, followed by the five-byte trailer `00 00 00 01 00`, the source kind, the unit, the name, the evaluated scalar, and the parameter tail. Their expressions chain the parameters (`6.35 mm`, then each names the previous one). The compact owned trailer stores the driven flag at byte 1, which aligns with byte 6 of the wide expression trailer; under that alignment, byte 3 is the position of the wide favorite flag. The class-`287` grammar admits the same trailer `00 00 00 01 00`.
+**Known.** The specification states the compact null-owner parameter form and the class-`287` form, which both admit the trailers `00 00 00 00 00` and `00 00 00 01 00`. Five Linear Dimension parameters in the compact null-owner form store `00 00 00 01 00`; their expressions chain the parameters (`6.35 mm`, then each names the previous one). The compact owned trailer stores the driven flag at byte 1, which aligns with byte 6 of the wide expression trailer; under that alignment, byte 3 is the position of the wide favorite flag. These frames store the null owner `u8 0` at offset 30 while their source kind names a Linear Dimension. The decoder reads them without an owner binding and reports `parameter.owner-unstored` for each stream with such a parameter. It keeps the parameter flags at their defaults and reports `parameter.trailer-flag-uninterpreted` for each stream with a decoded parameter whose byte 3 is `1`.
 
-**Need.** Fusion's own reading of the five parameters (favorite, driving state, owner) from a local import of a public design that stores this form, or a second public design with the compact null-owner form.
+**Need.** Fusion's own reading of the five parameters (favorite, driving state, owner) from a local import of a public design that stores this form, or a second public design with the compact null-owner form or a compact trailer that sets byte 3.
 
 **Conflict.** None.
-
-**Note.** The five frames match no grammar.
 
 ### DR-175. Ownerless fixed Fillet lanes across several operand groups
 
@@ -1864,3 +1862,87 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-336. Placement-owner As-built scope with an 87-byte tail
+
+**Question.** How does a placement-owner As-built scope with an 87-byte tail bind its connector frames, motion, and limits?
+
+**Known.** One public wiring assembly stores scope 7461, class pair 371/263, type `AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0` version 1, with a 421-byte frame. Its eleven reference-table members are 7471, 7473, 7476, 7487, 7490, 7501, 7504, 7507, 7510, 7518, and 7521. Owners 7501 through 7510 supply three zero offsets and a zero angle. Owners 7518 and 7521 supply −π/6 and zero radians. The prefix names locators 7462 and 7465, each of type `2E3AC990-483D-4A55-8662-C064B976A957` version 3. Both locators store a null construction reference and a matrix. Construction 7471 has type `7B6C3C2D-4096-4E6D-B225-699E8C2D9355` version 8 and stores a decoded placement matrix. Motion record 7531 references occurrence records 279 and 4716 and joint record 7460. It stores freedom code 2. The motion decoder binds it to record 279 through its reference at offset 24. With the decoded occurrence placements, both locator matrices compose to the same frame in the occurrences' shared parent within a maximum matrix-cell difference of 2.5e-14 after translation-unit conversion.
+
+**Need.** Define the roles of the motion record's ordered references and the admission rule that distinguishes the placement-owner layout from the direct-construction layout. Establish the motion and limit association for this layout.
+
+**Conflict.** The direct-construction 421-byte layout places scalar owners at reference positions four through seven and its solved frame at position eight. This scope places scalar owners at positions five through eight and stores a selection record at position four. Frame length selects two distinct layouts.
+
+**Note.** The decoder retains the scope and its six parameter values. Neutral projection requires the placement-owner layout and its motion binding together.
+
+### DR-337. Version-six mesh-body graph and flagged collection counts
+
+**Question.** What do the two prefix words of a flagged mesh collection select when its nested record lists mesh bodies, and how does that collection bind version-six mesh-body records?
+
+**Known.** One public strain-relief part stores collection 173, type `443807AD-8025-41A3-8A50-5157579C3D78` version 0, with flag 1, prefix words 0 and 2, and nested body members 177 and 563. Base Mesh Feature scopes 184 and 570 name body records 177 and 563 in their prefixes and records 188 and 574 in their reference tables. Both body records have type `EA90DA22-556C-4C61-89BB-20C2681B7A9D` version 6. The archive contains two `.paramesh` entries. Collection validation fails before body decoding. The mesh-body reader admits version 7.
+
+**Need.** Define the two collection prefix words, the nested collection layout, the version-six body fields, and the reciprocal joins from each feature to its container. Preserve each body's affine placement and container identity through the join.
+
+**Conflict.** The specified flagged empty collection has equal first and nested body counts. Collection 173 has first count zero and two nested body references.
+
+**Note.** Collection validation failure prevents both mesh feature definitions from receiving tessellation references. DR-85 tracks the flagged-collection word.
+
+### DR-338. Extended circular-pattern axis controls and selection runs
+
+**Question.** How do the controls and selection runs of the 220-, 221-, and 241-byte circular-pattern axis frames determine the directed axis and its selected entity?
+
+**Known.** The decoder admits the 195-byte inline axis frame and the 118-, 129-, and 130-byte identity forms. An extended frame carries an origin and displacement in the same positions as the rectangular-pattern direction frame. Two 221-byte component-pattern frames carry a unit X displacement and an origin at Z = 1.92 cm. Their saved occurrence transforms are positive quarter turns about that line. A 220-byte feature-pattern frame carries a Z displacement. Its seed holes occur in symmetric pairs, so positive and negative quarter turns yield the same saved hole set. A 241-byte body-pattern frame carries an X displacement and three consecutive selection references. Its total-angle owner stores a full turn.
+
+**Need.** Bind each extended selection run to its selected entity. Compare the controls for three instances over a partial turn in each travel direction, with asymmetric seeds, for each frame form. Bind each instance to its saved BREP geometry.
+
+**Conflict.** None.
+
+**Note.** DR-327 tracks the separator of the earlier two-wrapper form.
+
+### DR-339. Circular component-pattern seed paths
+
+**Question.** How does a circular pattern's role `0x0000010000000000` path group identify its seed occurrence and ordered generated occurrences?
+
+**Known.** Two circular component-pattern scopes have an empty member run in this role and two auxiliary paths. Each scope has one later ordinal-2 occurrence carrier and an earlier ordinal-1 carrier with the same component GUID. Both generated carriers store the positive quarter-turn transform described in DR-338. The decoder's component-pattern occurrence binder consumes rectangular-pattern instance frames. Circular-pattern seed selection requires a nonempty face or body group.
+
+**Need.** Join the auxiliary path identities to occurrence carriers through stored references. Confirm the join with multiple earlier occurrences of the same component and with reordered generated occurrences. Bind the selected occurrences to saved instance geometry.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-341. Chamfer distance reference face
+
+**Question.** Which stored field assigns the first distance of a two-distance chamfer, or the distance of a distance-angle chamfer, to an input support face?
+
+**Known.** Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false.
+
+**Need.** A rule that binds each selected input edge to its distance reference face, with both face widths checked against the stored dimensional specification. The rule must cover reversed recipe-reference order, propagated edge chains, and support faces split by earlier operations.
+
+**Conflict.** None.
+
+**Note.** The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
+
+### DR-342. Chamfer recipes with conflicting transition selections
+
+**Question.** Which stored context selects the input edges when a standard chamfer recipe and the exact ASM treatment transition supply different edge candidates?
+
+**Known.** A standard edge recipe can retain several primary-reference boundary candidates or an empty intersection. The same scope can carry a compact persistent identity with a nonempty treatment-transition chain. A chain describes the complete operation transition. The projector retains independently resolved recipe edges in a partial historical selection and retains the unresolved operand identities.
+
+**Need.** A rule for the recipe's evaluation context and selected edge run that accounts for every operand and every edge of the treatment transition. A multi-member group also needs the assignment between members and selected edges when the recipe carries distinct selections.
+
+**Conflict.** None.
+
+**Note.** DR-333 tracks the candidate-face meaning of prefix record index `1`.
+
+### DR-343. Chamfer rotation parameter on oblique support faces
+
+**Question.** How does `rotateAngle` determine the second setback of a chamfer whose input support faces meet at an oblique angle?
+
+**Known.** The projector pairs `leftDistance` with `rotateAngle` and transfers the pair as `ChamferSpec::DistanceAngle`. That IR form measures its angle from the distance reference face. An operation with a 0.4 mm `leftDistance` and a 30-degree `rotateAngle` has input plane normals `(0, 0, 1)` and `(0.8660254037844384, 0, 0.5000000000000004)`. Its result treatment plane has normal `(0.6265218814381287, 0, 0.779403831193578)`. The stored distance is the setback on the second input plane. The other setback is approximately 0.230940108 mm.
+
+**Need.** A dimension rule checked on acute, right-angle, and obtuse support pairs with both setback assignments. The checks must distinguish a face angle from a parameter that encodes the ratio of two setbacks.
+
+**Conflict.** The result plane forms an angle of approximately 21.2 degrees with the second input plane and 38.8 degrees with the first. Each differs from the 30-degree IR angle.
+
+**Note.** DR-341 tracks the input reference-face assignment.
