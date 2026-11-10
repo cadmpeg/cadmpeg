@@ -3,6 +3,7 @@
 
 use std::sync::{Arc, OnceLock};
 
+use cadmpeg_ir::math::Point3;
 use cudarc::driver::{CudaContext as CudarcContext, CudaFunction, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::Ptx;
 
@@ -271,6 +272,73 @@ L_TC_TF_EXIT:
     ret;
 }
 
+// 3. Standard CUDA SIMT pairwise squared distance matrix (N x M, FP64)
+.visible .entry cuda_simt_pairwise_dist_f64(
+    .param .u64 param_a,
+    .param .u64 param_b,
+    .param .u64 param_out,
+    .param .u32 param_n,
+    .param .u32 param_m
+) {
+    .reg .pred %p<3>;
+    .reg .b32 %r<12>;
+    .reg .b64 %rd<14>;
+    .reg .f64 %fd<12>;
+
+    ld.param.u64 %rd1, [param_a];
+    ld.param.u64 %rd2, [param_b];
+    ld.param.u64 %rd3, [param_out];
+    ld.param.u32 %r1, [param_n];
+    ld.param.u32 %r2, [param_m];
+
+    mov.u32 %r3, %ctaid.y;
+    mov.u32 %r4, %ntid.y;
+    mov.u32 %r5, %tid.y;
+    mad.lo.u32 %r6, %r3, %r4, %r5; // row i
+
+    mov.u32 %r7, %ctaid.x;
+    mov.u32 %r8, %ntid.x;
+    mov.u32 %r9, %tid.x;
+    mad.lo.u32 %r10, %r7, %r8, %r9; // col j
+
+    setp.ge.u32 %p1, %r6, %r1;
+    setp.ge.u32 %p2, %r10, %r2;
+    or.pred %p1, %p1, %p2;
+    @%p1 bra L_SIMT_DIST_EXIT;
+
+    cvta.to.global.u64 %rd4, %rd1;
+    cvta.to.global.u64 %rd5, %rd2;
+    cvta.to.global.u64 %rd6, %rd3;
+
+    mul.wide.u32 %rd7, %r6, 32;
+    add.u64 %rd8, %rd4, %rd7;
+    ld.global.f64 %fd0, [%rd8 + 0];
+    ld.global.f64 %fd1, [%rd8 + 8];
+    ld.global.f64 %fd2, [%rd8 + 16];
+
+    mul.wide.u32 %rd9, %r10, 32;
+    add.u64 %rd10, %rd5, %rd9;
+    ld.global.f64 %fd3, [%rd10 + 0];
+    ld.global.f64 %fd4, [%rd10 + 8];
+    ld.global.f64 %fd5, [%rd10 + 16];
+
+    sub.f64 %fd6, %fd0, %fd3;
+    sub.f64 %fd7, %fd1, %fd4;
+    sub.f64 %fd8, %fd2, %fd5;
+
+    mul.f64 %fd9, %fd8, %fd8;
+    fma.rn.f64 %fd9, %fd7, %fd7, %fd9;
+    fma.rn.f64 %fd9, %fd6, %fd6, %fd9;
+
+    mad.lo.u32 %r11, %r6, %r2, %r10;
+    mul.wide.u32 %rd11, %r11, 8;
+    add.u64 %rd12, %rd6, %rd11;
+    st.global.f64 [%rd12], %fd9;
+
+L_SIMT_DIST_EXIT:
+    ret;
+}
+
 ";
 
 /// Hardware context for safe `cudarc` CUDA Driver API execution, `OptiX` RT Core BVH traversal, and RTX Tensor Core PTX dispatch.
@@ -281,6 +349,7 @@ pub struct CudaContext {
     fn_simt_transform: CudaFunction,
     fn_sm86_transform: CudaFunction,
     fn_tc_transform: CudaFunction,
+    fn_simt_pairwise_dist: CudaFunction,
 }
 
 static GLOBAL_CUDA: OnceLock<Option<CudaContext>> = OnceLock::new();
@@ -318,6 +387,7 @@ impl CudaContext {
             fn_simt_transform: module.load_function("cuda_simt_transform_4x4_f64").ok()?,
             fn_sm86_transform: module.load_function("cuda_sm86_transform_4x4_f64").ok()?,
             fn_tc_transform: module.load_function("rtx_tc_transform_4x4_f64").ok()?,
+            fn_simt_pairwise_dist: module.load_function("cuda_simt_pairwise_dist_f64").ok()?,
             device_name,
             compute_capability: (major, minor),
             ctx,
@@ -463,6 +533,56 @@ impl CudaContext {
         Some(out)
     }
 
+    fn dispatch_pairwise_distance_kernel(
+        &self,
+        func: &CudaFunction,
+        points_a: &[Point3],
+        points_b: &[Point3],
+    ) -> Option<Vec<f64>> {
+        let total = points_a.len().checked_mul(points_b.len())?;
+        if total == 0 {
+            return Some(Vec::new());
+        }
+        self.ctx.bind_to_thread().ok()?;
+        let stream = self.ctx.default_stream();
+        let n_u32 = u32::try_from(points_a.len()).ok()?;
+        let m_u32 = u32::try_from(points_b.len()).ok()?;
+        let flat_a: Vec<f64> = points_a.iter().flat_map(|p| [p.x, p.y, p.z, 0.0]).collect();
+        let flat_b: Vec<f64> = points_b.iter().flat_map(|p| [p.x, p.y, p.z, 0.0]).collect();
+
+        let d_a = stream.clone_htod(&flat_a).ok()?;
+        let d_b = stream.clone_htod(&flat_b).ok()?;
+        let mut d_out = stream.alloc_zeros::<f64>(total).ok()?;
+
+        let grid_x = m_u32.div_ceil(16);
+        let grid_y = n_u32.div_ceil(16);
+        let cfg = LaunchConfig {
+            grid_dim: (grid_x, grid_y, 1),
+            block_dim: (16, 16, 1),
+            shared_mem_bytes: 0,
+        };
+        let mut builder = stream.launch_builder(func);
+        builder.arg(&d_a);
+        builder.arg(&d_b);
+        builder.arg(&mut d_out);
+        builder.arg(&n_u32);
+        builder.arg(&m_u32);
+        // Safety: kernel signature matches (u64, u64, u64, u32, u32) and buffer bounds are verified.
+        unsafe { builder.launch(cfg) }.ok()?;
+
+        stream.clone_dtoh(&d_out).ok()
+    }
+
+    /// Executes standard CUDA SIMT pairwise squared distance matrix computation.
+    #[must_use]
+    pub fn simt_pairwise_distance_squared(
+        &self,
+        points_a: &[Point3],
+        points_b: &[Point3],
+    ) -> Option<Vec<f64>> {
+        self.dispatch_pairwise_distance_kernel(&self.fn_simt_pairwise_dist, points_a, points_b)
+    }
+
     /// Whether the active GPU supports NVIDIA `OptiX` hardware RT Core acceleration.
     #[must_use]
     pub const fn supports_optix_rt(&self) -> bool {
@@ -583,6 +703,34 @@ mod tests {
             assert!(ctx
                 .tensor_core_batch_transform_4x4(&matrix, &points)
                 .is_none());
+        }
+    }
+
+    #[test]
+    fn cuda_simt_pairwise_distances_match_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let pts_a: Vec<Point3> = (0..17)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(1000.0 + f * 0.25, -500.0 + f * 0.5, 250.0 - f * 0.125)
+            })
+            .collect();
+        let pts_b: Vec<Point3> = (0..13)
+            .map(|j| {
+                let f = f64::from(j);
+                Point3::new(1000.5 + f * 0.125, -499.0 - f * 0.25, 249.5 + f * 0.375)
+            })
+            .collect();
+
+        let expected_dist = cpu::pairwise_distance_squared(&pts_a, &pts_b);
+        let simt_dist = ctx
+            .simt_pairwise_distance_squared(&pts_a, &pts_b)
+            .expect("SIMT dist");
+
+        for (&e, &s) in expected_dist.iter().zip(&simt_dist) {
+            assert!((e - s).abs() < CUDA_PARITY_TOLERANCE);
         }
     }
 

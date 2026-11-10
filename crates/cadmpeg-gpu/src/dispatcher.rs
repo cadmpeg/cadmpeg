@@ -235,7 +235,9 @@ impl GpuDispatcher {
     ) -> Option<Vec<f64>> {
         match backend {
             BackendKind::PtxSm86 => None,
-            BackendKind::CudaCompute => None,
+            BackendKind::CudaCompute => {
+                global_cuda().and_then(|cu| cu.simt_pairwise_distance_squared(points_a, points_b))
+            }
             BackendKind::VulkanCompute => global_vulkan()
                 .and_then(|vk| vk.compute_pairwise_distance_squared(points_a, points_b)),
             BackendKind::CpuParallelSpatialIndex => {
@@ -648,7 +650,11 @@ fn benchmark_single(
                     let out = vk.compute_pairwise_distance_squared(&pts_a, &pts_b)?;
                     std::hint::black_box(&out);
                 }
-                BackendKind::CudaCompute => return None,
+                BackendKind::CudaCompute => {
+                    let cu = global_cuda()?;
+                    let out = cu.simt_pairwise_distance_squared(&pts_a, &pts_b)?;
+                    std::hint::black_box(&out);
+                }
                 BackendKind::PtxSm86 => return None,
                 BackendKind::RtxTensorCore
                 | BackendKind::VulkanRtCore
