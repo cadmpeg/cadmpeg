@@ -2688,6 +2688,17 @@ impl DesignParameterScope {
     }
 
     /// Stored display spelling of the family name.
+    /// The frame length the scope has when it stores its canonical
+    /// feature-family name in place of the stored one.
+    pub(crate) fn canonical_name_frame_length(&self) -> Option<u64> {
+        let units = |name: &str| {
+            cadmpeg_core::decode::u64_from_index(name.encode_utf16().count()).checked_mul(2)
+        };
+        self.frame_length
+            .checked_sub(units(self.source_kind_name())?)?
+            .checked_add(units(self.kind_name())?)
+    }
+
     pub(crate) fn source_kind_name(&self) -> &str {
         self.source_kind
             .as_deref()

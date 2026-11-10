@@ -172,7 +172,7 @@ pub(super) fn source_names(
     let [Token::Long(stored_schema), Token::Long(count), values @ ..] = rest else {
         return None;
     };
-    if !matches!(schema, 38 | 40 | 42) || *stored_schema != i64::from(schema) {
+    if !class_chain_matched_schema(schema) || *stored_schema != i64::from(schema) {
         return None;
     }
     let count = usize::try_from(*count).ok()?;

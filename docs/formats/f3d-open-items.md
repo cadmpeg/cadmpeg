@@ -466,7 +466,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What does selection kind `16` select in a rectangular-pattern direction record, what do its origin and displacement mean, and what record does the marked reference at offset 138 name?
 
-**Known.** `f3d.md` §3.1 "A rectangular-pattern direction record is a 220-byte frame" gives the frame, the U-then-V order, and the direction as the normalized displacement. Kind `8` selects a linear edge, with the edge start point and the edge vector. A kind-`16` record stores a unit displacement and an origin on the selected entity; the specification does not name the entity kind. The reference at offset 138 names a record outside the scope reference table.
+**Known.** `f3d.md` §3.1 "A rectangular-pattern direction record has a 220-byte, 221-byte, or 195-byte form" gives the frame, the U-then-V order, and the direction as the normalized displacement. Kind `8` selects a linear edge, with the edge start point and the edge vector. A kind-`16` record stores a unit displacement and an origin on the selected entity. The reference at offset 138 names a record outside the scope reference table.
 
 **Need.** A writer must emit the selection kind, the origin, and the reference at offset 138 for a direction that does not come from a linear edge, and a reader must know whether a kind-`16` origin is a point of a planar face, an axis, or another entity.
 
@@ -1837,6 +1837,42 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder projects the scope from its ordered reference table and keeps these lanes in the native scope bytes.
 
+### DR-315. Offset-21 Boolean of the compact, marked, and counted Shell prefixes
+
+**Question.** Which `Shell` option does the Boolean at primary-header offset 21 of the compact, marked, and counted prefixes store?
+
+**Known.** `f3d.md` §3.1 "One of four prefixes precedes the slots" defines the four prefixes. The byte is `0` or `1`. The present wall slot sets the wall direction: inside-slot scopes with either value of the byte add their walls inside the kept faces. The cornered prefix stores the tangent-chain Boolean at the same offset. The decoder stores the byte and its offset in the `prefix_flag` field of the native `Shell` operation and reports `feature.shell-prefix-flag-assumed` with the value and offset for each such scope.
+
+**Need.** Controlled saves of one `Shell` in each prefix that change only the tangent-chain option, and saves that change only the corner type, with the byte compared across each pair.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-316. Auxiliary references of the counted Shell prefix
+
+**Question.** What do the counted auxiliary references after the wall slots of the counted `Shell` prefix name, and do they change the walls?
+
+**Known.** `f3d.md` §3.1 "In the counted prefix" defines the count and the eleven-byte marked references, which are outside the ordered reference table. Each referenced record stores a 36-code-unit LP-UTF16 GUID, a marked reference, and a marked reference to the owning `Shell` scope. The decoder keeps their record indices in `auxiliary_references`, projects the `Shell` from its wall slot and face group, and reports `feature.shell-auxiliary-references-native`.
+
+**Need.** Controlled saves of one `Shell` with zero, one, and two auxiliary references, with the result bodies, that show the user action which adds each reference.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-330. Shell table references outside the face-group members
+
+**Question.** What does an ordered reference of a compact, marked, or counted `Shell` scope name when it is neither the face group, the wall scalar, nor a member of the face group?
+
+**Known.** `f3d.md` §3.1 "A u32 one, a marked reference to the face group" states that in the compact, marked, and counted prefixes the remaining ordered references are the members of the face group. The decoder projects such a `Shell` from its wall slot and face group and reports `feature.shell-table-members-assumed` with the remaining references and the group members.
+
+**Need.** A `Shell` scope whose remaining ordered references differ from its face-group members, with the result body that shows whether those references change the walls.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ### DR-311. Extension method of a SurfaceExtend scope
 
 **Question.** Which field of a `SurfaceExtend` scope stores the extension method, and which records can the trailing reference of a SurfaceExtend or boundary-carrier SurfaceOffset group name?
@@ -2078,3 +2114,39 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-340. Compact profile loop groups and their region descendants
+
+**Question.** Which regions of a compact profile loop group form the feature selection when the group carries an initial region and further regions that divide it?
+
+**Known.** The HexGrid Extrude 3 profile operand names Sketch entity 245. Its nested record 7385 starts with a reference to profile operand 7382 and a counted loop recipe. The first region has exterior curve identities 276, 274, 275, 277 and hole identities 120:114, 122:118, 123:119, 121:116. Two further regions divide this rectangular annulus at the rectangle with curve identities 105 through 108. Each entry has kind 3, a primary and secondary identity, three operands, and eight zero bytes. Every listed identity binds to a curve owned by Sketch 245. The neutral Sketch carries two profile loops: the inner rectangle with primary identities 120 through 123 and the central hexagon with primary identities 131 through 136. The outer rectangles' curves stay outside those two loops. The decoder retains the compact loop groups in `design_profile_curve_selections`. Its complete-loop projection requires an exact loop join and a complete analytic Cut-transition certificate.
+
+**Need.** A selection rule for the initial region and its further regions, with cases that select different proper subsets of the descendants. Bind the three entry operands to direction and curve portions for the compact spelling.
+
+**Conflict.** None.
+
+**Note.** Extrude 3 retains its native selection group. Existing `SketchRegions` with explicit boundary uses can represent the rectangular annulus after its selected boundaries and traversal directions are established.
+
+### DR-358. Compact complete-loop region identity across sketch arrangements
+
+**Question.** Which stored relation selects an atomic region when a compact complete-loop group names boundaries that occur in several nested or intersecting regions?
+
+**Known.** The compact group lists exterior and hole loops through persistent curve identities. An exact neutral loop join identifies each boundary. A one-sided blind Cut from the profile plane can certify its candidate set through the changed ASM planar regions and analytic lateral carriers. The decoder retains the native selection when this certificate is incomplete. A scope can have an empty face delta or an unbound history state.
+
+**Need.** The relation between the compact entry operands, the arrangement region identity, and the selected side of each boundary, including intersecting loops, nested loops, selected-face starts, and operations with an empty face delta.
+
+**Conflict.** None.
+
+**Note.** DR-340 covers the further-region program. This item covers groups whose further-region counts are zero.
+
+### DR-335. Extrude bounded-face programs across boundary changes
+
+**Question.** Which stored relations bind an `Extrude` start or termination recipe when its node run covers an earlier boundary, a node has one endpoint clause, or a prefix operand has an empty face lane in the preceding topology?
+
+**Known.** A two-sided termination stores two bounded-face recipes with Design reference `302`. One program has five nodes, of which four have a parsed two-clause structure. The other has four parsed two-clause nodes; its first prefix operand names face slot `50`, whose preceding loop has eight edges. Its aggregate candidate lane contains four side faces. A further termination program has eight parsed nodes and two empty prefix-face lanes. Two further programs have five nodes each and retain one unparsed node each. Their remaining candidates include several preceding faces.
+
+**Need.** The mapping of a saved boundary edge to a chain of preceding edges, the single-clause grammar and closed-edge binding of DR-170, and the binding of empty prefix-face lanes. Independent selections before and after a boundary split must distinguish a selected face from its adjacent faces.
+
+**Conflict.** None.
+
+**Note.** These start and termination groups retain their native identities when the candidate, support, complete-loop, and plane proofs remain unresolved.

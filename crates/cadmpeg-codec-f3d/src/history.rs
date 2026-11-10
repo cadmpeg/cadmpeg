@@ -5781,6 +5781,24 @@ fn bind_historical_face_operand_candidates<'a>(
         face_recipes,
     } = caches;
     let stream = crate::ids::native_stream(&operand.id);
+    let feature_family = crate::design::design_feature_family(&scope.kind());
+    let has_extrude_face_group = feature_family
+        == Some(crate::design::DesignFeatureFamily::Extrude)
+        && operand_groups
+            .iter()
+            .filter(|group| {
+                crate::ids::native_stream(&group.id) == stream
+                    && group.scope_record_index == scope.record_index
+                    && Some(group.record_index) == operand.group_record_index()
+                    && group.extrude_face_role().is_some()
+                    && operand
+                        .group_member_ordinal()
+                        .and_then(|ordinal| usize::try_from(ordinal).ok())
+                        .and_then(|ordinal| group.members().get(ordinal))
+                        .is_some_and(|member| member.value == operand.record_index())
+            })
+            .count()
+            == 1;
     for reference in &mut operand.recipe_references {
         bind_historical_recipe_reference_candidates(reference, topology, recipe_topologies)?;
     }
@@ -5819,7 +5837,6 @@ fn bind_historical_face_operand_candidates<'a>(
         } else {
             None
         };
-    let feature_family = crate::design::design_feature_family(&scope.kind());
     let thread_face_candidates = if feature_family
         == Some(crate::design::DesignFeatureFamily::Thread)
         && exact_face_selection_group(operand, scope, operand_groups).is_some()
@@ -6109,6 +6126,18 @@ fn bind_historical_face_operand_candidates<'a>(
         // Every recipe node matches one boundary edge of this face and the
         // face fans around both of its ends.
         operand.resolved_face_slots = vec![face];
+    }
+    if feature_family == Some(crate::design::DesignFeatureFamily::Extrude)
+        && operand.resolved_face_slots.is_empty()
+        && operand.resolved_active_face.is_none()
+        && has_extrude_face_group
+    {
+        if let Some(face) = face_recipes
+            .get(topology, face_recipe::FaceRecipeIndex::new)
+            .resolve_loop(operand)
+        {
+            operand.resolved_face_slots = vec![face];
+        }
     }
     Ok(())
 }

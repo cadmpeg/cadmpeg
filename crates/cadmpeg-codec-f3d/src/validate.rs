@@ -3053,16 +3053,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 let relation =
                     records_by_index.get(&(native_stream, construction.relation_record_index));
                 let frame_matches_transform = match (
-                    scope.frame_length(),
+                    scope.canonical_name_frame_length().unwrap_or_default(),
                     scope.paired_class_tag.as_str(),
                     construction.placement.as_ref(),
                 ) {
-                    (272, "262", None) if scope.class_tag.as_str() == "357" => true,
-                    (276, "262", None)
-                        if matches!(scope.class_tag.as_str(), "357" | "360" | "362") =>
-                    {
-                        true
-                    }
+                    (272 | 276, _, None) => true,
                     (261, "263", None) if scope.class_tag.as_str() == "296" => true,
                     (261, "261", None) if scope.class_tag.as_str() == "410" => true,
                     (261, "258", None) if scope.class_tag.as_str() == "426" => true,
@@ -3076,10 +3071,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             .is_some_and(|expected_offset| matrix.scope.offset == expected_offset)
                             && matrix.carrier_offset.is_none()
                     }
-                    (404, _, Some(matrix)) => {
+                    (frame_length @ (400 | 404), _, Some(matrix)) => {
                         scope
                             .byte_offset()
-                            .checked_add(54)
+                            .checked_add(if frame_length == 400 { 50 } else { 54 })
                             .is_some_and(|expected_offset| matrix.scope.offset == expected_offset)
                             && matrix
                                 .carrier_offset

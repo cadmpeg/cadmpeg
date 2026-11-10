@@ -2114,6 +2114,7 @@ fn validate_features(
                 feature,
                 raw_feature,
                 &ir.model.feature_input_topologies,
+                &data.active_carrier,
                 |id| {
                     let mut candidates = data
                         .pm_dc_feature_properties
@@ -2535,6 +2536,7 @@ fn validate_features(
             feature,
             raw_feature,
             &ir.model.feature_input_topologies,
+            &data.active_carrier,
             |id| {
                 let mut candidates = data
                     .pm_dc_feature_properties

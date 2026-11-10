@@ -1394,9 +1394,10 @@ anchor = "a marked reference to the second angle lane at offset 46"
 
 [[record]]
 name = "shell_wall_slot_scope_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs"
 kind = "byte"
 section = "3.1"
-anchor = "A `Shell` scope can store its walls in optional slots"
+anchor = "In the cornered prefix"
 size = 23
 note = "Offsets are relative to the primary indexed scope header. The optional wall slots start at offset 23."
 
@@ -1405,14 +1406,14 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "An indexed Design record header is `u32 class_tag_length`"
+anchor = "Offsets are relative to the primary indexed header"
 
 [[record.field]]
 name = "zero_run_10"
 offset = 11
 type = "bytes[10]"
 source = "spec"
-anchor = "offsets 11 through 20 are zero, offset 21 is the tangent-chain Boolean"
+anchor = "In the cornered prefix, offsets 11 through 20 are zero"
 
 [[record.field]]
 name = "tangent_chain"
@@ -1429,188 +1430,94 @@ source = "spec"
 anchor = "offset 22 is the corner Boolean"
 
 [[record]]
-name = "shell_class_369_261_scope_frame"
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+name = "shell_compact_slot_scope_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs"
 kind = "byte"
 section = "3.1"
-anchor = "A class-`369`/`261` `Shell` scope has a 271-byte frame"
-size = 271
-note = "Offsets are relative to the primary indexed header. The paired class-261 header begins at offset 271; the class pair and frame length admit this form."
+anchor = "In the compact prefix"
+size = 22
+note = "Offsets are relative to the primary indexed scope header. The optional wall slots start at offset 22."
 
 [[record.field]]
 name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "primary indexed header"
+anchor = "Offsets are relative to the primary indexed header"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "In the compact prefix, offsets 11 through 20 are zero"
+
+[[record.field]]
+name = "flag"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "In the compact prefix, offsets 11 through 20 are zero and offset 21 is a Boolean"
+
+[[record]]
+name = "shell_marked_slot_scope_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs"
+kind = "byte"
+section = "3.1"
+anchor = "In the marked prefix"
+size = 27
+note = "Offsets are relative to the primary indexed scope header. The marked prefix starts its wall slots at offset 26. The counted prefix stores zero at offset 26 and starts its wall slots at offset 27."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Offsets are relative to the primary indexed header"
 
 [[record.field]]
 name = "zero_run_9"
 offset = 11
 type = "bytes[9]"
 source = "spec"
-anchor = "offsets 11 through 19 are zero"
+anchor = "In the marked prefix, offsets 11 through 19 are zero"
 
 [[record.field]]
 name = "feature_form"
 offset = 20
 type = "u8"
 source = "spec"
-anchor = "offset 20 is `1`"
+anchor = "offset 20 is `1`, offset 21 is a Boolean"
 value = 1
 
 [[record.field]]
-name = "outward"
+name = "flag"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "offset 21 is the outward Boolean"
+anchor = "offset 20 is `1`, offset 21 is a Boolean"
 
 [[record.field]]
 name = "zero_run_3"
 offset = 22
 type = "bytes[3]"
 source = "spec"
-anchor = "offsets 22 through 24 are zero"
+anchor = "offsets 22 through 24 are zero, and offset 25 is `1`"
 
 [[record.field]]
-name = "scalar_marker"
+name = "slot_marker"
 offset = 25
 type = "u8"
 source = "spec"
-anchor = "Offset 25 is `1`"
+anchor = "offsets 22 through 24 are zero, and offset 25 is `1`"
 value = 1
 
 [[record.field]]
-name = "scalar_reference"
+name = "marked_slots"
 offset = 26
-type = "bytes[11]"
-source = "spec"
-anchor = "the marked reference at offset 26 names the first ordered scalar"
-
-[[record.field]]
-name = "zero_run_9_after_scalar"
-offset = 37
-type = "bytes[9]"
-source = "spec"
-anchor = "Offsets 37 through 45 are zero"
-
-[[record.field]]
-name = "group_form"
-offset = 46
 type = "u8"
 source = "spec"
-anchor = "offset 46 is `1`"
-value = 1
-
-[[record.field]]
-name = "group_reference"
-offset = 50
-type = "bytes[11]"
-source = "spec"
-anchor = "the marked reference at offset 50 names the second ordered construction group"
-
-[[record.gap]]
-offset = 47
-size = 3
-note = "The three bytes before the marked second-group reference are zero."
-
-[[record.field]]
-name = "guid_code_unit_count"
-offset = 61
-type = "u32"
-source = "spec"
-anchor = "A u32 `36` at offset 61"
-value = 36
-
-[[record.field]]
-name = "guid"
-offset = 65
-type = "bytes[72]"
-source = "spec"
-anchor = "a 36-code-unit null GUID at offset 65"
-
-[[record.field]]
-name = "zero_run_3_before_references"
-offset = 137
-type = "bytes[3]"
-source = "spec"
-anchor = "offsets 137 through 139 are zero"
-
-[[record.field]]
-name = "reference_count"
-offset = 140
-type = "u32"
-source = "spec"
-anchor = "The three-entry ordered reference table begins at offset 140"
-value = 3
-
-[[record.field]]
-name = "reference_entry_0"
-offset = 144
-type = "bytes[11]"
-source = "spec"
-anchor = "The three-entry ordered reference table begins at offset 140"
-
-[[record.field]]
-name = "reference_entry_1"
-offset = 155
-type = "bytes[11]"
-source = "spec"
-anchor = "The three-entry ordered reference table begins at offset 140"
-
-[[record.field]]
-name = "reference_entry_2"
-offset = 166
-type = "bytes[11]"
-source = "spec"
-anchor = "The three-entry ordered reference table begins at offset 140"
-
-[[record.field]]
-name = "history_state_id"
-offset = 177
-type = "u32"
-source = "spec"
-anchor = "The current history-state identity is at offset 177"
-
-[[record.field]]
-name = "kind_code_unit_count"
-offset = 181
-type = "u32"
-source = "spec"
-anchor = "the kind count is u32 `5` at offset 181"
-value = 5
-
-[[record.field]]
-name = "kind"
-offset = 185
-type = "bytes[10]"
-source = "spec"
-anchor = "`Shell` begins at offset 185"
-
-[[record.field]]
-name = "feature_ordinal"
-offset = 195
-type = "u32"
-source = "spec"
-anchor = "the feature ordinal follows at offset 195"
-
-[[record.field]]
-name = "previous_history_state_id"
-offset = 225
-type = "u32"
-source = "spec"
-anchor = "the preceding history-state identity is at offset 225"
-
-[[record.gap]]
-offset = 199
-size = 26
-note = "The generic fixed scope tail precedes the preceding history-state identity."
-
-[[record.gap]]
-offset = 229
-size = 42
-note = "The generic fixed scope tail closes immediately before the paired class-261 header."
+anchor = "The slots start at offset 26"
 
 [[record]]
 name = "thicken_scope_prologue"
@@ -22335,6 +22242,155 @@ source = "spec"
 anchor = "A typed-reference Extrude selection group stores ten zero bytes after its indexed header"
 
 [[record]]
+name = "profile_loop_curve_entry"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Each entry is u32 `2`, the u64 sketch-curve primary identity"
+size = 40
+note = "The entry kind is 2 with typed references and 3 with compact references."
+
+[[record.field]]
+name = "kind"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "Each entry is u32 `2`, the u64 sketch-curve primary identity"
+
+[[record.field]]
+name = "primary_id"
+offset = 4
+type = "u64"
+source = "spec"
+anchor = "the u64 sketch-curve primary identity"
+
+[[record.field]]
+name = "secondary_id"
+offset = 12
+type = "u64"
+source = "spec"
+anchor = "the u64 sketch-curve secondary identity"
+
+[[record.field]]
+name = "entry_fields"
+offset = 20
+type = "u32[3]"
+source = "spec"
+anchor = "three u32 operands, and eight zero bytes"
+
+[[record.field]]
+name = "zero_tail"
+offset = 32
+type = "bytes[8]"
+source = "spec"
+anchor = "three u32 operands, and eight zero bytes"
+
+[[record]]
+name = "compact_reference_profile_selection_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+size = 36
+note = "Offsets are relative to the selection primary indexed header; the LP-UTF16 asset GUID and owner text follow."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record.field]]
+name = "identity_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record.field]]
+name = "constant_one"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record]]
+name = "compact_reference_profile_chain_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+size = 42
+note = "Offsets are relative to the chain record indexed header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_14"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record.field]]
+name = "chain_marker"
+offset = 25
+type = "bytes[6]"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record.field]]
+name = "sketch_scope_reference"
+offset = 31
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record]]
+name = "compact_reference_profile_identity_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+size = 36
+note = "Offsets are relative to the identity record indexed header; the counted region groups begin at offset 32."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record.field]]
+name = "selection_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record.field]]
+name = "region_group_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record]]
 name = "typed_reference_profile_selection_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
 kind = "byte"
@@ -23124,7 +23180,7 @@ name = "rectangular_pattern_direction_record"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
 kind = "byte"
 section = "Assembly operands"
-anchor = "A rectangular-pattern direction record is a 220-byte frame, and its paired header starts at offset 220."
+anchor = "The 220-byte form has its paired header at offset 220."
 size = 220
 note = "Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 220."
 
@@ -23756,7 +23812,7 @@ name = "component_insert_identity_scope_272_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs"
 kind = "byte"
 section = "3.1"
-anchor = "The class-`357` / class-`262` 272-byte Component Insert scope"
+anchor = "The 272-byte Component Insert scope"
 size = 126
 
 [[record.field]]
@@ -23814,6 +23870,77 @@ offset = 50
 type = "bytes[76]"
 source = "spec"
 anchor = "The LP-UTF16 null GUID starts at offset 50"
+
+[[record]]
+name = "component_insert_matrix_scope_400_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The 400-byte frame stores the fields of the 272-byte frame through offset 47"
+size = 254
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The 400-byte frame stores the fields of the 272-byte frame through offset 47"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "The 400-byte frame stores the fields of the 272-byte frame through offset 47"
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 25
+type = "u64"
+source = "spec"
+anchor = "The 400-byte frame stores the fields of the 272-byte frame through offset 47"
+
+[[record.field]]
+name = "zero_after_identity"
+offset = 33
+type = "bytes[4]"
+source = "spec"
+anchor = "The 400-byte frame stores the fields of the 272-byte frame through offset 47"
+
+[[record.field]]
+name = "relation_reference"
+offset = 37
+type = "bytes[5]"
+source = "spec"
+anchor = "The 400-byte frame stores the fields of the 272-byte frame through offset 47"
+
+[[record.field]]
+name = "zero_after_relation"
+offset = 42
+type = "bytes[6]"
+source = "spec"
+anchor = "The 400-byte frame stores the fields of the 272-byte frame through offset 47"
+
+[[record.field]]
+name = "matrix_markers"
+offset = 48
+type = "bytes[2]"
+source = "spec"
+anchor = "bytes `01 00` at offset 48"
+
+[[record.field]]
+name = "transform"
+offset = 50
+type = "f64[16]"
+source = "spec"
+anchor = "a row-major rigid transform at offset 50"
+
+[[record.field]]
+name = "null_guid"
+offset = 178
+type = "bytes[76]"
+source = "spec"
+anchor = "Its LP-UTF16 null GUID starts at offset 178"
 
 [[record]]
 name = "component_insert_identity_scope_276_prefix"
@@ -32004,3 +32131,167 @@ offset = 252
 type = "bytes[51]"
 source = "spec"
 anchor = "Typed references at offsets 147 and 252 repeat the owning Extrude scope"
+
+[[record]]
+name = "rectangular_pattern_compact_spacing_direction_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The compact spacing direction form is a 195-byte frame."
+size = 195
+note = "Offsets are relative to the primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "selection_kind"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "origin"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "displacement"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "zero_run_16"
+offset = 73
+type = "bytes[16]"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "distance_type"
+offset = 89
+type = "u32"
+value = 7
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "selection_count"
+offset = 93
+type = "u32"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "selection_reference"
+offset = 97
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "zero_run_2"
+offset = 108
+type = "bytes[2]"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "auxiliary_count"
+offset = 110
+type = "u32"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 114
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "role"
+offset = 125
+type = "u64"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "zero_run_after_role"
+offset = 133
+type = "bytes[10]"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "opaque_index"
+offset = 143
+type = "u32"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "opaque_scalar"
+offset = 147
+type = "f64"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "opaque_index_repeat"
+offset = 155
+type = "u32"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "index_plus_two_reference"
+offset = 159
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "separator_zero_run"
+offset = 170
+type = "bytes[2]"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "index_plus_one_reference"
+offset = 172
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "scope_separator"
+offset = 183
+type = "u8"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record.field]]
+name = "scope_reference"
+offset = 184
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact spacing direction form is a 195-byte frame."

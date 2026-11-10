@@ -475,52 +475,49 @@ Spec §3.1 · layout: byte offsets · size: 23 B
 
 Offsets are relative to the primary indexed scope header. The optional wall slots start at offset 23.
 
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
-| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | offsets 11 through 20 are zero, offset 21 is the tangent-chain Boolean |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Offsets are relative to the primary indexed header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | In the cornered prefix, offsets 11 through 20 are zero |
 | 21 | 1 | `tangent_chain` | `u8` | little | spec | offset 21 is the tangent-chain Boolean |
 | 22 | 1 | `rounded_corners` | `u8` | little | spec | offset 22 is the corner Boolean |
 
-## `shell_class_369_261_scope_frame`
+## `shell_compact_slot_scope_prefix`
 
-Spec §3.1 · layout: byte offsets · size: 271 B
+Spec §3.1 · layout: byte offsets · size: 22 B
 
-Offsets are relative to the primary indexed header. The paired class-261 header begins at offset 271; the class pair and frame length admit this form.
+Offsets are relative to the primary indexed scope header. The optional wall slots start at offset 22.
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | primary indexed header |
-| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | offsets 11 through 19 are zero |
-| 20 | 1 | `feature_form` | `u8` | little | spec | offset 20 is `1` · value `1` |
-| 21 | 1 | `outward` | `u8` | little | spec | offset 21 is the outward Boolean |
-| 22 | 3 | `zero_run_3` | `bytes[3]` | little | spec | offsets 22 through 24 are zero |
-| 25 | 1 | `scalar_marker` | `u8` | little | spec | Offset 25 is `1` · value `1` |
-| 26 | 11 | `scalar_reference` | `bytes[11]` | little | spec | the marked reference at offset 26 names the first ordered scalar |
-| 37 | 9 | `zero_run_9_after_scalar` | `bytes[9]` | little | spec | Offsets 37 through 45 are zero |
-| 46 | 1 | `group_form` | `u8` | little | spec | offset 46 is `1` · value `1` |
-| 50 | 11 | `group_reference` | `bytes[11]` | little | spec | the marked reference at offset 50 names the second ordered construction group |
-| 61 | 4 | `guid_code_unit_count` | `u32` | little | spec | A u32 `36` at offset 61 · value `36` |
-| 65 | 72 | `guid` | `bytes[72]` | little | spec | a 36-code-unit null GUID at offset 65 |
-| 137 | 3 | `zero_run_3_before_references` | `bytes[3]` | little | spec | offsets 137 through 139 are zero |
-| 140 | 4 | `reference_count` | `u32` | little | spec | The three-entry ordered reference table begins at offset 140 · value `3` |
-| 144 | 11 | `reference_entry_0` | `bytes[11]` | little | spec | The three-entry ordered reference table begins at offset 140 |
-| 155 | 11 | `reference_entry_1` | `bytes[11]` | little | spec | The three-entry ordered reference table begins at offset 140 |
-| 166 | 11 | `reference_entry_2` | `bytes[11]` | little | spec | The three-entry ordered reference table begins at offset 140 |
-| 177 | 4 | `history_state_id` | `u32` | little | spec | The current history-state identity is at offset 177 |
-| 181 | 4 | `kind_code_unit_count` | `u32` | little | spec | the kind count is u32 `5` at offset 181 · value `5` |
-| 185 | 10 | `kind` | `bytes[10]` | little | spec | `Shell` begins at offset 185 |
-| 195 | 4 | `feature_ordinal` | `u32` | little | spec | the feature ordinal follows at offset 195 |
-| 225 | 4 | `previous_history_state_id` | `u32` | little | spec | the preceding history-state identity is at offset 225 |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Offsets are relative to the primary indexed header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | In the compact prefix, offsets 11 through 20 are zero |
+| 21 | 1 | `flag` | `u8` | little | spec | In the compact prefix, offsets 11 through 20 are zero and offset 21 is a Boolean |
 
-Unstated regions:
+## `shell_marked_slot_scope_prefix`
 
-- `47..50` (3 B): The three bytes before the marked second-group reference are zero.
-- `199..225` (26 B): The generic fixed scope tail precedes the preceding history-state identity.
-- `229..271` (42 B): The generic fixed scope tail closes immediately before the paired class-261 header.
+Spec §3.1 · layout: byte offsets · size: 27 B
+
+Offsets are relative to the primary indexed scope header. The marked prefix starts its wall slots at offset 26. The counted prefix stores zero at offset 26 and starts its wall slots at offset 27.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Offsets are relative to the primary indexed header |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | In the marked prefix, offsets 11 through 19 are zero |
+| 20 | 1 | `feature_form` | `u8` | little | spec | offset 20 is `1`, offset 21 is a Boolean · value `1` |
+| 21 | 1 | `flag` | `u8` | little | spec | offset 20 is `1`, offset 21 is a Boolean |
+| 22 | 3 | `zero_run_3` | `bytes[3]` | little | spec | offsets 22 through 24 are zero, and offset 25 is `1` |
+| 25 | 1 | `slot_marker` | `u8` | little | spec | offsets 22 through 24 are zero, and offset 25 is `1` · value `1` |
+| 26 | 1 | `marked_slots` | `u8` | little | spec | The slots start at offset 26 |
 
 ## `thicken_scope_prologue`
 
@@ -6842,6 +6839,80 @@ Unstated regions:
 
 - `0..11` (11 B): The indexed header precedes this field run.
 
+## `profile_loop_curve_entry`
+
+Spec §3.1 · layout: byte offsets · size: 40 B
+
+The entry kind is 2 with typed references and 3 with compact references.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `kind` | `u32` | little | spec | Each entry is u32 `2`, the u64 sketch-curve primary identity |
+| 4 | 8 | `primary_id` | `u64` | little | spec | the u64 sketch-curve primary identity |
+| 12 | 8 | `secondary_id` | `u64` | little | spec | the u64 sketch-curve secondary identity |
+| 20 | 12 | `entry_fields` | `u32[3]` | little | spec | three u32 operands, and eight zero bytes |
+| 32 | 8 | `zero_tail` | `bytes[8]` | little | spec | three u32 operands, and eight zero bytes |
+
+## `compact_reference_profile_selection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 36 B
+
+Offsets are relative to the selection primary indexed header; the LP-UTF16 asset GUID and owner text follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The compact profile-loop selection uses eleven-byte local references. |
+| 21 | 11 | `identity_reference` | `bytes[11]` | little | spec | The compact profile-loop selection uses eleven-byte local references. |
+| 32 | 4 | `constant_one` | `u32` | little | spec | The compact profile-loop selection uses eleven-byte local references. |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `compact_reference_profile_chain_record`
+
+Spec §3.1 · layout: byte offsets · size: 42 B
+
+Offsets are relative to the chain record indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 14 | `zero_run_14` | `bytes[14]` | little | spec | The compact profile-loop selection uses eleven-byte local references. |
+| 25 | 6 | `chain_marker` | `bytes[6]` | little | spec | The compact profile-loop selection uses eleven-byte local references. |
+| 31 | 11 | `sketch_scope_reference` | `bytes[11]` | little | spec | The compact profile-loop selection uses eleven-byte local references. |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `compact_reference_profile_identity_record`
+
+Spec §3.1 · layout: byte offsets · size: 36 B
+
+Offsets are relative to the identity record indexed header; the counted region groups begin at offset 32.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The compact profile-loop selection uses eleven-byte local references. |
+| 21 | 11 | `selection_reference` | `bytes[11]` | little | spec | The compact profile-loop selection uses eleven-byte local references. |
+| 32 | 4 | `region_group_count` | `u32` | little | spec | The compact profile-loop selection uses eleven-byte local references. |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
 ## `typed_reference_profile_selection_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 76 B
@@ -7293,6 +7364,25 @@ Parsed by:
 | 42 | 6 | `zero_after_relation` | `bytes[6]` | little | spec | six zero bytes at offset 42 |
 | 48 | 2 | `identity_markers` | `bytes[2]` | little | spec | identity bytes `01 01` at offset 48 |
 | 50 | 76 | `null_guid` | `bytes[76]` | little | spec | The LP-UTF16 null GUID starts at offset 50 |
+
+## `component_insert_matrix_scope_400_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 254 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The 400-byte frame stores the fields of the 272-byte frame through offset 47 |
+| 11 | 14 | `zero_prefix` | `bytes[14]` | little | spec | The 400-byte frame stores the fields of the 272-byte frame through offset 47 |
+| 25 | 8 | `occurrence_identity` | `u64` | little | spec | The 400-byte frame stores the fields of the 272-byte frame through offset 47 |
+| 33 | 4 | `zero_after_identity` | `bytes[4]` | little | spec | The 400-byte frame stores the fields of the 272-byte frame through offset 47 |
+| 37 | 5 | `relation_reference` | `bytes[5]` | little | spec | The 400-byte frame stores the fields of the 272-byte frame through offset 47 |
+| 42 | 6 | `zero_after_relation` | `bytes[6]` | little | spec | The 400-byte frame stores the fields of the 272-byte frame through offset 47 |
+| 48 | 2 | `matrix_markers` | `bytes[2]` | little | spec | bytes `01 00` at offset 48 |
+| 50 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid transform at offset 50 |
+| 178 | 76 | `null_guid` | `bytes[76]` | little | spec | Its LP-UTF16 null GUID starts at offset 178 |
 
 ## `component_insert_identity_scope_276_prefix`
 
@@ -9499,6 +9589,40 @@ Unstated regions:
 - `139..147` (8 B): The scalar trailer precedes the repeated owner reference.
 - `198..200` (2 B): Two trailer bytes precede the presentation reference.
 - `251..252` (1 B): One trailer byte precedes the final owner reference.
+
+## `rectangular_pattern_compact_spacing_direction_record`
+
+Spec §Assembly operands · layout: byte offsets · size: 195 B
+
+Offsets are relative to the primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 21 | 4 | `selection_kind` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 25 | 24 | `origin` | `f64[3]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 49 | 24 | `displacement` | `f64[3]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 73 | 16 | `zero_run_16` | `bytes[16]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 89 | 4 | `distance_type` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. · value `7` |
+| 93 | 4 | `selection_count` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 97 | 11 | `selection_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 108 | 2 | `zero_run_2` | `bytes[2]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 110 | 4 | `auxiliary_count` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 114 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 125 | 8 | `role` | `u64` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 133 | 10 | `zero_run_after_role` | `bytes[10]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 143 | 4 | `opaque_index` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 147 | 8 | `opaque_scalar` | `f64` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 155 | 4 | `opaque_index_repeat` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 159 | 11 | `index_plus_two_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 170 | 2 | `separator_zero_run` | `bytes[2]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 172 | 11 | `index_plus_one_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 183 | 1 | `scope_separator` | `u8` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 184 | 11 | `scope_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
 
 ## Not tabulated
 
