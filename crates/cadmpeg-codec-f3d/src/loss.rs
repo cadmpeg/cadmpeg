@@ -60,6 +60,8 @@ pub(crate) enum F3dLossCode {
     ConstructionClosingFlagAssumed,
     /// A Chamfer's non-face group is read as its edge group despite its role.
     ChamferEdgeRoleAssumed,
+    /// A Coil's Boolean target group whose member count is not one is read as one body selection.
+    CoilTargetMembersAssumed,
     /// Design configuration JSON members have no assigned neutral semantics.
     ConfigurationMemberUnassigned,
     /// Design configuration rules have no unambiguous activation target.
@@ -250,6 +252,10 @@ pub(crate) enum F3dLossCode {
     ParameterUnprojected,
     /// Typed compact parameter frames match no parameter grammar.
     ParameterRecordUnparsed,
+    /// Decoded parameters set byte 3 of the compact expression trailer.
+    ParameterTrailerFlagUninterpreted,
+    /// Decoded compact null-owner parameters have no owner binding.
+    ParameterOwnerUnstored,
     /// Design parameter owner bindings have no recognized feature scope.
     ParameterOwnerUnrecognized,
     /// Design parameters retain owner frames that match no admitted grammar.
@@ -274,8 +280,17 @@ pub(crate) enum F3dLossCode {
     HistoricalFilletEdgeInferred,
     /// An edge-treatment edge is read from the faces its recipe names; it bounds no candidate face.
     HistoricalEdgeSelectionInferred,
+    /// A fillet with no bound history takes the one history, among several
+    /// that hold its state pair, in which every edge group resolves.
+    HistoricalEdgeHistoryInferred,
+    /// A feature with no bound history, whose state pair several histories
+    /// hold, takes the one history of the BREP blob that holds its outputs.
+    HistoricalOutputBlobHistoryInferred,
     /// A `Fillet` edge is the best-ranked deleted one of several geometric candidates.
     HistoricalFilletEdgeAmbiguous,
+    /// A `Fillet` edge is the one of several shared support edges along the
+    /// blend axis whose span covers the blend's axial extent.
+    HistoricalFilletEdgeCovering,
     /// Historical body bounding geometry could not be computed from point carriers.
     HistoricalBodyBoundsUnresolved,
     /// Historical body center geometry uses incomplete topology or vertex evidence.
@@ -397,6 +412,8 @@ pub(crate) enum F3dLossCode {
     FeatureFixedFilletAssignmentNative,
     /// Extrude scope retains an unassigned extent payload.
     FeatureExtrudeExtentNative,
+    /// An Extrude face extent has fewer termination groups than its side count.
+    FeatureExtrudeTerminationMissing,
     /// A marker-one `Revolve` scope has a token-independent frame length outside its documented set.
     FeatureRevolveLayoutAssumed,
     /// A marked `Move` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record.
@@ -412,6 +429,8 @@ pub(crate) enum F3dLossCode {
     FeatureSurfaceBoundaryFlagRecordAssumed,
     /// `PathPattern` flip, orientation, or start settings have no curve-driven pattern field.
     FeaturePathPatternPlacementNotTransferred,
+    /// A rectangular pattern's symmetric distribution or coincident direction has no linear pattern field.
+    FeatureRectangularPatternPlacementNotTransferred,
     /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
     FeatureThickenFlagsAssumed,
     /// Feature face operands stay unresolved inside historical selections.
@@ -629,6 +648,7 @@ impl F3dLossCode {
         Self::ConstructionTrackingPathUntyped,
         Self::ConstructionClosingFlagAssumed,
         Self::ChamferEdgeRoleAssumed,
+        Self::CoilTargetMembersAssumed,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
@@ -719,6 +739,8 @@ impl F3dLossCode {
         Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
         Self::ParameterRecordUnparsed,
+        Self::ParameterTrailerFlagUninterpreted,
+        Self::ParameterOwnerUnstored,
         Self::ParameterOwnerUnrecognized,
         Self::ParameterOwnerUnparsed,
         Self::ParameterUnitUntyped,
@@ -731,7 +753,10 @@ impl F3dLossCode {
         Self::HistoricalEdgeMidpointsUnresolved,
         Self::HistoricalFilletEdgeInferred,
         Self::HistoricalEdgeSelectionInferred,
+        Self::HistoricalEdgeHistoryInferred,
+        Self::HistoricalOutputBlobHistoryInferred,
         Self::HistoricalFilletEdgeAmbiguous,
+        Self::HistoricalFilletEdgeCovering,
         Self::HistoricalBodyBoundsUnresolved,
         Self::HistoricalBodyCenterPartial,
         Self::HistoricalSplitPlaneInferred,
@@ -789,6 +814,7 @@ impl F3dLossCode {
         Self::FeatureCombineToolConsumptionAssumed,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
+        Self::FeatureExtrudeTerminationMissing,
         Self::FeatureRevolveLayoutAssumed,
         Self::FeatureMoveTransformAssumed,
         Self::FeatureLoftReferenceUnresolved,
@@ -797,6 +823,7 @@ impl F3dLossCode {
         Self::FeatureSurfaceExtendDistanceNonpositive,
         Self::FeatureSurfaceBoundaryFlagRecordAssumed,
         Self::FeaturePathPatternPlacementNotTransferred,
+        Self::FeatureRectangularPatternPlacementNotTransferred,
         Self::FeatureThickenFlagsAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureTrimCellTableNative,
@@ -914,6 +941,7 @@ impl F3dLossCode {
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConstructionClosingFlagAssumed => "feature.construction-closing-flag-assumed",
             Self::ChamferEdgeRoleAssumed => "feature.chamfer-edge-role-assumed",
+            Self::CoilTargetMembersAssumed => "feature.coil-target-members-assumed",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
             Self::ConfigurationParameterOverrideUnbound => {
@@ -1026,6 +1054,8 @@ impl F3dLossCode {
             Self::MoveUnprojected => "feature.move-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
+            Self::ParameterTrailerFlagUninterpreted => "parameter.trailer-flag-uninterpreted",
+            Self::ParameterOwnerUnstored => "parameter.owner-unstored",
             Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
             Self::ParameterOwnerUnparsed => "parameter.owner-unparsed",
             Self::ParameterUnitUntyped => "parameter.unit-untyped",
@@ -1037,7 +1067,10 @@ impl F3dLossCode {
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
             Self::HistoricalFilletEdgeInferred => "history.fillet-edge-inferred",
             Self::HistoricalEdgeSelectionInferred => "history.edge-selection-inferred",
+            Self::HistoricalEdgeHistoryInferred => "history.edge-history-inferred",
+            Self::HistoricalOutputBlobHistoryInferred => "history.output-blob-history-inferred",
             Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
+            Self::HistoricalFilletEdgeCovering => "history.fillet-edge-covering",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
             Self::HistoricalBodyCenterPartial => "history.body-center-partial",
             Self::HistoricalSplitPlaneInferred => "history.split-plane-inferred",
@@ -1116,6 +1149,7 @@ impl F3dLossCode {
             }
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
+            Self::FeatureExtrudeTerminationMissing => "feature.extrude-termination-missing",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
@@ -1131,6 +1165,9 @@ impl F3dLossCode {
             }
             Self::FeaturePathPatternPlacementNotTransferred => {
                 "feature.path-pattern-placement-not-transferred"
+            }
+            Self::FeatureRectangularPatternPlacementNotTransferred => {
+                "feature.rectangular-pattern-placement-not-transferred"
             }
             Self::FeatureThickenFlagsAssumed => "feature.thicken-flags-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
@@ -1298,6 +1335,7 @@ impl F3dLossCode {
             | Self::ConstructionTrackingPathUntyped
             | Self::ConstructionClosingFlagAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::CoilTargetMembersAssumed
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
@@ -1383,6 +1421,8 @@ impl F3dLossCode {
             | Self::ParameterOwnerUnparsed
             | Self::ParameterRecordUnparsed
             | Self::ParameterOwnerUnrecognized
+            | Self::ParameterTrailerFlagUninterpreted
+            | Self::ParameterOwnerUnstored
             | Self::ParameterUnitUntyped
             | Self::MaterialDistanceUnitUntyped
             | Self::FaceAppearanceAmbiguous
@@ -1393,8 +1433,11 @@ impl F3dLossCode {
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
             | Self::HistoricalEdgeSelectionInferred
+            | Self::HistoricalEdgeHistoryInferred
+            | Self::HistoricalOutputBlobHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
+            | Self::HistoricalFilletEdgeCovering
             | Self::HistoricalBodyBoundsUnresolved
             | Self::HistoricalBodyCenterPartial
             | Self::HistoricalSplitPlaneInferred
@@ -1451,6 +1494,7 @@ impl F3dLossCode {
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
+            | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
@@ -1459,6 +1503,7 @@ impl F3dLossCode {
             | Self::FeatureSurfaceExtendDistanceNonpositive
             | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeaturePathPatternPlacementNotTransferred
+            | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
@@ -1547,6 +1592,7 @@ impl F3dLossCode {
             Self::ScopeOwnerUnresolved
             | Self::ConstructionClosingFlagAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::CoilTargetMembersAssumed
             | Self::OperationPoseApplied
             | Self::OperationPoseDisagrees
             | Self::OperationPoseNative
@@ -1639,6 +1685,8 @@ impl F3dLossCode {
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnrecognized
+            | Self::ParameterTrailerFlagUninterpreted
+            | Self::ParameterOwnerUnstored
             | Self::ParameterUnitUntyped
             | Self::ParameterExpressionUnbound
             | Self::HistoryDependencyUnprojected
@@ -1647,8 +1695,11 @@ impl F3dLossCode {
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
             | Self::HistoricalEdgeSelectionInferred
+            | Self::HistoricalEdgeHistoryInferred
+            | Self::HistoricalOutputBlobHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
+            | Self::HistoricalFilletEdgeCovering
             | Self::HistoricalBodyBoundsUnresolved
             | Self::HistoricalBodyCenterPartial
             | Self::HistoricalSplitPlaneInferred
@@ -1705,6 +1756,7 @@ impl F3dLossCode {
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
+            | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
@@ -1713,6 +1765,7 @@ impl F3dLossCode {
             | Self::FeatureSurfaceExtendDistanceNonpositive
             | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeaturePathPatternPlacementNotTransferred
+            | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
@@ -1878,6 +1931,7 @@ mod tests {
                 "feature.tracking-path-untyped",
                 "feature.construction-closing-flag-assumed",
                 "feature.chamfer-edge-role-assumed",
+                "feature.coil-target-members-assumed",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",
@@ -1968,6 +2022,8 @@ mod tests {
                 "feature.scope-envelope-superseded",
                 "parameter.unprojected",
                 "parameter.record-unparsed",
+                "parameter.trailer-flag-uninterpreted",
+                "parameter.owner-unstored",
                 "parameter.owner-unrecognized",
                 "parameter.owner-unparsed",
                 "parameter.unit-untyped",
@@ -1980,7 +2036,10 @@ mod tests {
                 "history.edge-midpoints-unresolved",
                 "history.fillet-edge-inferred",
                 "history.edge-selection-inferred",
+                "history.edge-history-inferred",
+                "history.output-blob-history-inferred",
                 "history.fillet-edge-ambiguous",
+                "history.fillet-edge-covering",
                 "history.body-bounds-unresolved",
                 "history.body-center-partial",
                 "history.split-plane-inferred",
@@ -2038,6 +2097,7 @@ mod tests {
                 "feature.combine-tool-consumption-assumed",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
+                "feature.extrude-termination-missing",
                 "feature.revolve-layout-assumed",
                 "feature.move-transform-assumed",
                 "feature.loft-reference-unresolved",
@@ -2046,6 +2106,7 @@ mod tests {
                 "feature.surface-extend-distance-nonpositive",
                 "feature.surface-boundary-flag-record-assumed",
                 "feature.path-pattern-placement-not-transferred",
+                "feature.rectangular-pattern-placement-not-transferred",
                 "feature.thicken-flags-assumed",
                 "feature.face-operand-unresolved",
                 "feature.trim-cell-table-native",

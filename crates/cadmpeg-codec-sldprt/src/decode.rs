@@ -1732,6 +1732,10 @@ fn append_design_losses(
                         || incomplete_body_selection(tools)
                         || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
                 }
+                FeatureOperation::TrimBodiesAtPlane { targets, keep, .. } => {
+                    incomplete_body_selection(targets)
+                        || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
+                }
                 FeatureOperation::SplitBody { targets, tool } => {
                     incomplete_body_selection(targets)
                         || match tool {
@@ -3573,6 +3577,7 @@ fn build_geometry_ir(
         scan,
         &mut annotations,
         Some(&topology_index),
+        &face_identities,
         &histories,
         &mut pmi_losses,
     )?;
@@ -4387,6 +4392,7 @@ fn build_metadata_ir(
         scan,
         &mut annotations,
         None,
+        &[],
         &histories,
         &mut pmi_losses,
     )?;

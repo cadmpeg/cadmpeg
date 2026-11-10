@@ -5084,13 +5084,23 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer,
                 ) => group.extrude_role().is_none(),
                 Some(design::DesignFeatureFamily::Coil) => {
-                    group.role()
-                        == if scope.coil_has_ten_reference_target() {
-                            DesignOperandRole::BODIES_A
-                        } else {
-                            DesignOperandRole::BODIES_B
-                        }
+                    let admitted = |candidate: &records::topology::construction::DesignConstructionOperandGroup| {
+                        design_stream(&candidate.id) == native_stream
+                            && candidate.scope_record_index == group.scope_record_index
+                            && scope.coil_target_group_admits(
+                                candidate.role(),
+                                candidate.scope_reference_ordinal,
+                            )
+                    };
+                    admitted(group)
                         && group.extrude_role().is_none()
+                        && group.members().len() == 1
+                        && native
+                            .design_construction_operand_groups
+                            .iter()
+                            .filter(|candidate| admitted(candidate))
+                            .count()
+                            == 1
                 }
                 Some(design::DesignFeatureFamily::Move) => {
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
@@ -5696,6 +5706,23 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
 }
 
+/// True for a one-sided face target whose stored face-group roles equal
+/// `expected` with its termination role removed (DR-360).
+fn one_sided_face_target_lacks_only_its_termination(
+    extent: records::feature::extrude::DesignExtrudeExtent,
+    expected: &[records::topology::extrude_selection::DesignExtrudeFaceRole],
+    stored: impl Iterator<Item = Option<records::topology::extrude_selection::DesignExtrudeFaceRole>>,
+) -> bool {
+    use records::topology::extrude_selection::DesignExtrudeFaceRole::Termination;
+    extent == records::feature::extrude::DesignExtrudeExtent::OneSidedToFace
+        && expected.contains(&Termination)
+        && stored.eq(expected
+            .iter()
+            .copied()
+            .filter(|role| *role != Termination)
+            .map(Some))
+}
+
 /// Validate Extrude profile, operation, start, and extent operand agreement.
 /// The body operands are design-intent records, so the operation is checked
 /// against them only in a document that holds them.
@@ -6100,11 +6127,19 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == records::feature::extrude::DesignExtrudeOperation::NewBody
                 && face_operand_group_count == 0
                 && face_groups.is_empty();
+            // DR-360: a one-sided face target whose roster stores every
+            // expected group except its termination group.
+            let termination_missing = one_sided_face_target_lacks_only_its_termination(
+                extrude_extent,
+                &expected_face_roles,
+                face_groups.iter().map(|group| group.extrude_face_role()),
+            );
             if ctx.holds_design_intent()
                 && !invalid_face_groups_hide_extent_conflict
                 && (!extent_matches_operands
                     || !start_matches_operands
                     || (!selected_start_without_group
+                        && !termination_missing
                         && (face_operand_group_count != expected_face_group_count
                             || face_groups
                                 .iter()

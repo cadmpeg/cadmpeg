@@ -68,6 +68,9 @@ const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;
 /// Millimetres of translation along its axis that a `MoveFace` rotation
 /// admits.
 const EPS_MOVE_FACE_SCREW_TRANSLATION: f64 = 1.0e-9;
+/// Largest difference, in radians, between a circular pattern's total angle
+/// and a full turn for which the pattern still spans the full turn.
+const EPS_CIRCULAR_PATTERN_FULL_TURN: f64 = 1.0e-12;
 const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E12: f64 = 1.0e-12;
 /// Largest `1 - cos` between a rectangular-pattern direction record and the
@@ -978,6 +981,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         face_operands,
                         entity_selection_operands,
                         scopes,
+                        &mut projection_losses,
                     )
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Pattern {
@@ -1026,10 +1030,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     project_thicken(scope, face_operands, construction_groups)?
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
-                Some(DesignFeatureFamily::Coil) => {
-                    project_coil(scope, &parameters, construction_groups)?
-                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
-                }
+                Some(DesignFeatureFamily::Coil) => project_coil(
+                    scope,
+                    &parameters,
+                    construction_groups,
+                    &mut projection_losses,
+                )?
+                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Scale) => {
                     if let Some(operation) = scope.scale_operation() {
                         let factor =
@@ -6985,6 +6992,14 @@ fn project_circular_pattern(
         FeatureDefinition, FeatureOperation,
     };
     let construction = scope.circular_pattern_construction()?;
+    // The separator byte of a 130-byte axis record has no settled meaning
+    // (DR-327); only a full turn, whose instances do not depend on the
+    // direction of travel, projects from it.
+    if construction.axis_separator_flag_offset.is_some()
+        && (construction.angle.get() - std::f64::consts::TAU).abs() > EPS_CIRCULAR_PATTERN_FULL_TURN
+    {
+        return None;
+    }
     let (axis_origin, axis_dir) = circular_pattern_axis(&construction.axis)?;
     let group = pattern_seed_group(scope, groups)?;
     let seeds = pattern_group_seeds(
@@ -7058,6 +7073,7 @@ fn project_rectangular_pattern_scalars(
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternSeed, PatternTransform},
@@ -7068,10 +7084,24 @@ fn project_rectangular_pattern_scalars(
     let construction = scope.rectangular_pattern_construction()?;
     let mut direction_records = construction.directions().iter();
     let mut active = Vec::new();
-    let adjacent = construction
-        .directions()
-        .first()
-        .is_some_and(|record| record.distance_type == 7);
+    let mut dropped = Vec::new();
+    let distribution = construction.distribution();
+    let adjacent = distribution.map_or_else(
+        || {
+            construction
+                .directions()
+                .first()
+                .is_some_and(|record| record.distance_type == 7)
+        },
+        |distribution| !distribution.total_extent.value,
+    );
+    if distribution.is_some_and(|distribution| distribution.symmetric.value) {
+        // The extent of a symmetric direction has no settled measurement.
+        if !adjacent || construction.u_extent() == 0.0 {
+            return None;
+        }
+        dropped.push("the symmetric distribution of direction one".to_owned());
+    }
     for (axis, (count, extent)) in [
         (construction.u_count(), construction.u_extent()),
         (construction.v_count(), construction.v_extent()),
@@ -7082,6 +7112,13 @@ fn project_rectangular_pattern_scalars(
         let Some(intervals) = PatternIntervals::new(count) else {
             continue;
         };
+        if extent == 0.0 {
+            dropped.push(format!(
+                "the {count} coincident instances of direction {}",
+                ["one", "two"][axis]
+            ));
+            continue;
+        }
         let stored_direction = if axis == 1 && construction.secondary_direction().is_some() {
             construction.secondary_direction().and_then(|record| {
                 cadmpeg_ir::units::UnitVector3::normalized(Vector3::from(
@@ -7182,6 +7219,17 @@ fn project_rectangular_pattern_scalars(
         omitted_instances: Vec::new(),
     })
     .ok()?;
+    if !dropped.is_empty() {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternPlacementNotTransferred.note(
+                format!(
+                    "RectangularPattern scope {} drops {}: a linear pattern has no field for them.",
+                    scope.id,
+                    dropped.join(" and ")
+                ),
+            ),
+        );
+    }
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds,
         pattern,
@@ -9283,6 +9331,7 @@ fn project_coil(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     construction_groups: &[DesignConstructionOperandGroup],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection,
@@ -9395,15 +9444,10 @@ fn project_coil(
             // Boolean target and must not suppress the typed result.
             None
         } else {
-            let expected_role = if scope.coil_has_ten_reference_target() {
-                DesignOperandRole::BODIES_A
-            } else {
-                DesignOperandRole::BODIES_B
-            };
             let mut body_groups = construction_groups.iter().filter(|group| {
                 native_stream(&group.id) == Some(stream)
                     && group.scope_record_index == scope.record_index
-                    && group.role() == expected_role
+                    && scope.coil_target_group_admits(group.role(), group.scope_reference_ordinal)
             });
             let first_body_group = body_groups.next();
             if body_groups.next().is_some() {
@@ -9470,6 +9514,14 @@ fn project_coil(
         },
     };
     let clockwise = or_none!(scope.coil_clockwise());
+    if let Some(group) = first_body_group.filter(|group| group.members().len() != 1) {
+        losses.push(crate::loss::F3dLossCode::CoilTargetMembersAssumed.note(format!(
+            "Coil scope {} targets group {} with {} members; the group is read as one body selection.",
+            scope.id,
+            group.id,
+            group.members().len()
+        )));
+    }
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Coil {
         construction: CoilConstruction {
             placement,

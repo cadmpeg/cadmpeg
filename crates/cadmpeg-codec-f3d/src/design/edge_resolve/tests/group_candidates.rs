@@ -296,3 +296,174 @@ fn unique_group_assignment_keeps_each_resolved_member_edge() {
         Some(vec![17, 18])
     );
 }
+
+fn fragment_transition_group() -> (
+    Vec<crate::records::topology::edge_identity::DesignEdgeOperand>,
+    Vec<crate::records::topology::edge_identity::DesignEdgeIdentityOperand>,
+    Vec<crate::records::topology::historical_context::AsmFaceBoundary>,
+) {
+    let (mut operands, identities) = transition_complete_group();
+    let program = [
+        -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 1, -1, 0, -1, 2, -1, 0, 0, -1, 3, 0, -1, 0, -1, 0, -1,
+        0, 0, -1,
+    ];
+    let structure = crate::design::decode::operands::edge_recipe_structure(
+        &cadmpeg_test_support::service_decode_context(),
+        &program,
+    )
+    .unwrap()
+    .unwrap();
+    let mut boundaries = Vec::new();
+    for (operand, edge) in operands.iter_mut().zip([101, 103, 105]) {
+        operand.recipe_structure = Some(structure.clone());
+        operand.recipe_state_id = Some(7);
+        let base = i64::from(operand.record_index()) * 10;
+        for (face, edges) in [
+            (base, vec![edge, 201]),
+            (base + 1, vec![202, 203]),
+            (base + 2, vec![edge, 204]),
+        ] {
+            boundaries.push(serde_json::from_value(serde_json::json!({
+                "id": format!("face-{face}"), "parent": "state-7", "face_slot": face,
+                "loops": [{"loop_slot": face, "coedge_slots": [face*2, face*2+1], "edge_slots": edges}],
+            })).unwrap());
+        }
+        operand.recipe_reference_contexts = [vec![base,base+1],vec![base+2]].into_iter()
+            .enumerate().map(|(ordinal,faces)| serde_json::from_value(serde_json::json!({
+                "reference_ordinal": ordinal, "result_faces": [], "result_shared_edge_slots": [],
+                "preceding_faces": faces.iter().map(|f| format!("f3d:brep:entity#{f}")).collect::<Vec<_>>(),
+                "preceding_face_boundary_ids": faces.iter().map(|f| format!("face-{f}")).collect::<Vec<_>>(),
+                "shared_edge_slots": [], "changed_shared_edge_slots": [],
+            })).unwrap()).collect();
+    }
+    (operands.to_vec(), identities.to_vec(), boundaries)
+}
+
+#[test]
+fn complete_transition_selection_precedes_fragment_lane_singletons() {
+    let (operands, identities, boundaries) = fragment_transition_group();
+    let mut selection_group = group(2, 10);
+    selection_group
+        .try_set_members(
+            [10, 11, 12]
+                .into_iter()
+                .map(|value| crate::records::identity::Located {
+                    value,
+                    offset: u64::from(value) * 11,
+                })
+                .collect(),
+        )
+        .unwrap();
+    let feature = FeatureId::mint("f3d:model:feature#fragment-transition").unwrap();
+    let boundaries = boundaries.iter().map(|b| (b.id.as_str(), b)).collect();
+    for (operand, edge) in operands.iter().zip([101, 103, 105]) {
+        assert_eq!(
+            crate::history::fragment_edge::context_edge(operand, &boundaries).map(|e| e.slot),
+            Some(edge)
+        );
+    }
+    let mut selection = crate::design::edge_resolve::resolved_edge_treatment_group(
+        &selection_group,
+        std::slice::from_ref(&selection_group),
+        &operands,
+        &identities,
+        Some(7),
+        &feature,
+        Some(0.35),
+    )
+    .unwrap();
+    let expected = EdgeSelection::historical(
+        crate::ids::feature_input_topology_id(&feature, 7),
+        [101, 102, 103, 104, 105]
+            .into_iter()
+            .map(|edge| {
+                crate::ids::history_input_edge_id(
+                    &crate::ids::feature_input_prefix(&feature, 7),
+                    edge,
+                )
+            })
+            .collect(),
+        selection_group.id.clone(),
+    )
+    .unwrap();
+    assert_eq!(selection, expected);
+    let mut notes = Vec::new();
+    crate::design::edge_resolve::fragment_fallback::apply_group(
+        &mut selection,
+        &selection_group,
+        &operands,
+        &identities,
+        &boundaries,
+        &feature,
+        &mut notes,
+    );
+    assert_eq!(selection, expected);
+    assert!(notes.is_empty());
+    assert!(operands.iter().all(|o| o.resolved_edge_slot.is_none()));
+}
+
+#[test]
+fn fragment_fallback_keeps_partial_edges_and_resolves_only_unresolved_members() {
+    let (operands, _, boundaries) = fragment_transition_group();
+    let mut selection_group = group(2, 10);
+    selection_group
+        .try_set_members(
+            [10, 11, 12]
+                .into_iter()
+                .map(|value| crate::records::identity::Located {
+                    value,
+                    offset: u64::from(value) * 11,
+                })
+                .collect(),
+        )
+        .unwrap();
+    let feature = FeatureId::mint("f3d:model:feature#fragment-partial").unwrap();
+    let edge = |slot| {
+        crate::ids::history_input_edge_id(&crate::ids::feature_input_prefix(&feature, 7), slot)
+    };
+    let state = crate::ids::feature_input_topology_id(&feature, 7);
+    let mut selection = EdgeSelection::historical_partial(
+        state.clone(),
+        vec![edge(104), edge(102)],
+        vec![operands[2].id.clone()],
+        selection_group.id.clone(),
+    )
+    .unwrap();
+    let boundaries = boundaries.iter().map(|b| (b.id.as_str(), b)).collect();
+    let mut notes = Vec::new();
+    let original = selection.clone();
+    let mut selected_identity = identity(12, &[]);
+    selected_identity.resolved_edge_slot = Some(106);
+    crate::design::edge_resolve::fragment_fallback::apply_group(
+        &mut selection,
+        &selection_group,
+        &operands,
+        &[selected_identity],
+        &boundaries,
+        &feature,
+        &mut notes,
+    );
+    assert_eq!(selection, original);
+    assert!(notes.is_empty());
+    crate::design::edge_resolve::fragment_fallback::apply_group(
+        &mut selection,
+        &selection_group,
+        &operands,
+        &[],
+        &boundaries,
+        &feature,
+        &mut notes,
+    );
+    assert_eq!(
+        selection,
+        EdgeSelection::historical(
+            state,
+            vec![edge(104), edge(102), edge(105)],
+            selection_group.id
+        )
+        .unwrap()
+    );
+    assert_eq!(notes.len(), 1);
+    assert!(notes[0].message.contains(&operands[2].id));
+    assert!(operands.iter().all(|o| o.resolved_edge_slot.is_none()));
+}
