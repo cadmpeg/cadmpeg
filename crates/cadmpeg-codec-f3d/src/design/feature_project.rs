@@ -793,22 +793,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             parameters: BTreeMap::new(),
                         })
                     }),
-                Some(DesignFeatureFamily::Draft) => project_draft(
-                    scope,
-                    scopes,
-                    construction_groups,
-                    entity_selection_operands,
-                    face_operands,
-                    histories,
-                    design_types,
-                    component_naming_spaces,
-                )?
-                .unwrap_or_else(|| {
-                    FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: scope.kind_name().into(),
-                        parameters: BTreeMap::new(),
+                Some(DesignFeatureFamily::Draft) => {
+                    project_draft(scope, inputs)?.unwrap_or_else(|| {
+                        FeatureDefinition::Operation(FeatureOperation::Native {
+                            kind: scope.kind_name().into(),
+                            parameters: BTreeMap::new(),
+                        })
                     })
-                }),
+                }
                 Some(DesignFeatureFamily::ReplaceFace) => project_replace_face(
                     scope,
                     construction_groups,
@@ -3608,15 +3600,20 @@ fn scope_space_is_model_space(
 
 fn project_draft(
     scope: &DesignParameterScope,
-    scopes: &[DesignParameterScope],
-    groups: &[DesignConstructionOperandGroup],
-    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-    face_operands: &[DesignFaceOperand],
-    histories: &[crate::history_records::AsmHistory],
-    design_types: &[crate::records::entity_header::SegmentType],
-    component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
+    inputs: &ProjectInputs<'_>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    let &ProjectInputs {
+        scopes,
+        construction_groups: groups,
+        entity_selection_operands,
+        face_operands,
+        histories,
+        design_types,
+        component_naming_spaces,
+        ..
+    } = inputs;
 
     let construction = or_none!(scope.draft_operation());
     let flipped = construction.flags.is_some_and(|flags| flags.flipped);

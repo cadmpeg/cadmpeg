@@ -171,16 +171,19 @@ fn project(
 ) -> Option<Projected> {
     let definition = super::super::project_draft(
         scope,
-        std::slice::from_ref(scope),
-        &groups(),
-        selections,
-        &[],
-        &[],
-        &crate::test_support::origin_types::origin_design_types(
-            "f3d:test/Design/MetaStream.dat",
-            39,
-        ),
-        &[naming_space(scope, 1)],
+        &super::super::ProjectInputs {
+            scopes: std::slice::from_ref(scope),
+            construction_groups: &groups(),
+            entity_selection_operands: selections,
+            face_operands: &[],
+            histories: &[],
+            design_types: &crate::test_support::origin_types::origin_design_types(
+                "f3d:test/Design/MetaStream.dat",
+                39,
+            ),
+            component_naming_spaces: &[naming_space(scope, 1)],
+            ..Default::default()
+        },
     )
     .unwrap()?;
     let FeatureDefinition::Operation(FeatureOperation::Draft {
@@ -260,16 +263,19 @@ fn an_origin_plane_in_a_stream_of_several_components_keeps_no_frame() {
     ] {
         let definition = super::super::project_draft(
             &scope,
-            std::slice::from_ref(&scope),
-            &groups(),
-            &[selection(42, &[])],
-            &[],
-            &[],
-            &crate::test_support::origin_types::origin_design_types(
-                "f3d:test/Design/MetaStream.dat",
-                39,
-            ),
-            &spaces,
+            &super::super::ProjectInputs {
+                scopes: std::slice::from_ref(&scope),
+                construction_groups: &groups(),
+                entity_selection_operands: &[selection(42, &[])],
+                face_operands: &[],
+                histories: &[],
+                design_types: &crate::test_support::origin_types::origin_design_types(
+                    "f3d:test/Design/MetaStream.dat",
+                    39,
+                ),
+                component_naming_spaces: &spaces,
+                ..Default::default()
+            },
         )
         .unwrap()
         .unwrap();
@@ -379,13 +385,16 @@ fn a_flip_reverses_the_pull_of_a_work_plane() {
         let scope = draft_scope(0.25, Some(flipped));
         let definition = super::super::project_draft(
             &scope,
-            &[scope.clone(), plane.clone()],
-            &groups(),
-            &[selection(282, &[])],
-            &[],
-            &[],
-            &[],
-            &[],
+            &super::super::ProjectInputs {
+                scopes: &[scope.clone(), plane.clone()],
+                construction_groups: &groups(),
+                entity_selection_operands: &[selection(282, &[])],
+                face_operands: &[],
+                histories: &[],
+                design_types: &[],
+                component_naming_spaces: &[],
+                ..Default::default()
+            },
         )
         .unwrap()
         .unwrap();
@@ -419,13 +428,16 @@ fn a_flip_reverses_the_pull_of_a_parting_line() {
     let tool = group(103, 113, DesignOperandRole::ROLE_0X21);
     let definition = super::super::project_draft(
         &scope,
-        &[scope.clone(), plane],
-        &[faces, neutral, tool],
-        &[selection(282, &[])],
-        &[],
-        &[],
-        &[],
-        &[],
+        &super::super::ProjectInputs {
+            scopes: &[scope.clone(), plane],
+            construction_groups: &[faces, neutral, tool],
+            entity_selection_operands: &[selection(282, &[])],
+            face_operands: &[],
+            histories: &[],
+            design_types: &[],
+            component_naming_spaces: &[],
+            ..Default::default()
+        },
     )
     .unwrap()
     .unwrap();
@@ -513,16 +525,19 @@ fn the_first_lane_drafts_the_plane_normal_side_whatever_the_flip() {
         ] {
             let definition = super::super::project_draft(
                 &scope,
-                &scopes,
-                &groups(),
-                &[selection(identity, &[])],
-                &[],
-                &[],
-                &crate::test_support::origin_types::origin_design_types(
-                    "f3d:test/Design/MetaStream.dat",
-                    39,
-                ),
-                &[],
+                &super::super::ProjectInputs {
+                    scopes: &scopes,
+                    construction_groups: &groups(),
+                    entity_selection_operands: &[selection(identity, &[])],
+                    face_operands: &[],
+                    histories: &[],
+                    design_types: &crate::test_support::origin_types::origin_design_types(
+                        "f3d:test/Design/MetaStream.dat",
+                        39,
+                    ),
+                    component_naming_spaces: &[],
+                    ..Default::default()
+                },
             )
             .unwrap()
             .unwrap();
@@ -573,13 +588,16 @@ fn a_two_sided_draft_needs_a_neutral_plane_pull() {
             .unwrap();
         let definition = super::super::project_draft(
             &scope,
-            &[scope.clone(), plane.clone()],
-            &[faces.clone(), neutral.clone(), tool.clone()],
-            &[selection(282, &[])],
-            &[],
-            &[],
-            &[],
-            &[],
+            &super::super::ProjectInputs {
+                scopes: &[scope.clone(), plane.clone()],
+                construction_groups: &[faces.clone(), neutral.clone(), tool.clone()],
+                entity_selection_operands: &[selection(282, &[])],
+                face_operands: &[],
+                histories: &[],
+                design_types: &[],
+                component_naming_spaces: &[],
+                ..Default::default()
+            },
         )
         .unwrap();
         assert_eq!(definition.is_some(), expected);
