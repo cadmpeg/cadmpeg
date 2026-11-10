@@ -417,7 +417,7 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &offset_scope),
+        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &offset_scope, &mut Vec::new()),
         Some(DesignDirectFaceOperation::OffsetFaces(
             crate::records::feature::direct_face::DesignOffsetFacesOperation {
                 distance,
@@ -456,7 +456,7 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &offset_scope),
+        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &offset_scope, &mut Vec::new()),
         Some(DesignDirectFaceOperation::OffsetFaces(
             crate::records::feature::direct_face::DesignOffsetFacesOperation {
                 distance,
@@ -500,6 +500,7 @@ pub(super) fn fixed_kind_tail_operations(
                     bytes,
                     &crate::design::test_support::indexed_record_offsets_for_test(bytes),
                     scope,
+                    &mut Vec::new(),
                 )
             };
         assert!(matches!(
@@ -613,79 +614,35 @@ pub(super) fn fixed_kind_tail_operations(
             ..
         })) if native == "thicken-group"
     ));
-    let shell_at = bytes.len();
-    let mut shell = vec![0; 278];
-    shell[25] = 1;
-    shell[27] = 1;
-    shell[28..32].copy_from_slice(&1_778u32.to_le_bytes());
-    shell[51..55].copy_from_slice(&1u32.to_le_bytes());
-    shell[55] = 1;
-    shell[56..60].copy_from_slice(&200u32.to_le_bytes());
-    bytes.extend_from_slice(&shell);
-    let mut shell_thickness = vec![0; 105];
-    shell_thickness[0..4].copy_from_slice(&3u32.to_le_bytes());
-    shell_thickness[4..7].copy_from_slice(b"321");
-    shell_thickness[7..11].copy_from_slice(&1_778u32.to_le_bytes());
-    shell_thickness[24] = 1;
-    shell_thickness[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
-    shell_thickness[40..48].copy_from_slice(&0.5f64.to_le_bytes());
-    shell_thickness.extend_from_slice(&3u32.to_le_bytes());
-    shell_thickness.extend_from_slice(b"265");
-    shell_thickness.extend_from_slice(&1_778u32.to_le_bytes());
-    bytes.extend_from_slice(&shell_thickness);
     let mut shell_scope = scope.clone();
     shell_scope
         .try_edit(|draft| {
-            draft.byte_offset = u64_from_index(shell_at);
             draft.payload = crate::records::feature::scope::DesignFeatureKind::Shell
                 .try_into()
                 .unwrap();
-            draft.frame_length = 278;
             draft.reference_members =
                 crate::records::identity::ReferenceRun::unlocated(vec![200, 201, 1_778]);
+            draft.frame_length = 278;
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
+    if let crate::records::feature::scope::DesignScopePayloadMut::Shell(slot) =
+        shell_scope.payload_mut()
     {
-        let construction = exact_direct_face_operation(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &shell_scope,
-        );
-        match (shell_scope.payload_mut(), construction) {
-            (
-                crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot),
-                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::OffsetFaces(
-                    value,
-                )),
-            ) => *slot = Some(value),
-            (
-                crate::records::feature::scope::DesignScopePayloadMut::Shell(slot),
-                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Shell(value)),
-            ) => *slot = Some(value),
-            (
-                crate::records::feature::scope::DesignScopePayloadMut::Thicken(slot),
-                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Thicken(
-                    value,
-                )),
-            ) => *slot = Some(value),
-            _ => {}
-        }
+        *slot = Some(crate::records::feature::direct_face::DesignShellOperation {
+            thickness: cadmpeg_ir::scalar::PositiveReal::new(0.5).unwrap(),
+            thickness_record_index: 1_778,
+            thickness_offset: 0,
+            outward: true,
+            outward_offset: 0,
+            wall_slots: None,
+            prefix_flag: None,
+            auxiliary_references: Vec::new(),
+        });
     }
-    assert!(matches!(
-        &shell_scope.payload(),
-        crate::records::feature::scope::DesignScopePayload::Shell(Some(
-            crate::records::feature::direct_face::DesignShellOperation {
-                thickness,
-                thickness_record_index: 1_778,
-                outward: true,
-                ..
-            }
-        )) if thickness.get() == 0.5
-    ));
     let mut shell_group = thicken_group.clone();
     shell_group.id = "shell-group".into();
     shell_group.scope_record_index = shell_scope.record_index;
@@ -702,269 +659,28 @@ pub(super) fn fixed_kind_tail_operations(
             ..
         })) if (native == "shell-group") && actual_thickness.get() == 5.0
     ));
-    let compact_shell_at = bytes.len();
-    let mut compact_shell = vec![0; 268];
-    compact_shell[21] = 1;
-    compact_shell[22] = 1;
-    compact_shell[23..27].copy_from_slice(&9_000u32.to_le_bytes());
-    compact_shell[42..46].copy_from_slice(&1u32.to_le_bytes());
-    compact_shell[46] = 1;
-    compact_shell[47..51].copy_from_slice(&200u32.to_le_bytes());
-    bytes.extend_from_slice(&compact_shell);
-    let mut compact_shell_thickness = vec![0; 103];
-    compact_shell_thickness[0..4].copy_from_slice(&3u32.to_le_bytes());
-    compact_shell_thickness[4..7].copy_from_slice(b"354");
-    compact_shell_thickness[7..11].copy_from_slice(&9_000u32.to_le_bytes());
-    compact_shell_thickness[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
-    compact_shell_thickness[24] = 1;
-    compact_shell_thickness[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
-    compact_shell_thickness[40..48].copy_from_slice(&0.25f64.to_le_bytes());
-    compact_shell_thickness[48] = 1;
-    compact_shell_thickness[49..53].copy_from_slice(&9_001u32.to_le_bytes());
-    compact_shell_thickness[59..63].copy_from_slice(&10u32.to_le_bytes());
-    compact_shell_thickness[67] = 1;
-    compact_shell_thickness[68..72].copy_from_slice(&scope.record_index.to_le_bytes());
-    compact_shell_thickness[80] = 1;
-    compact_shell_thickness[81..85].copy_from_slice(&9_002u32.to_le_bytes());
-    compact_shell_thickness[92] = 1;
-    compact_shell_thickness[93..97].copy_from_slice(&scope.record_index.to_le_bytes());
-    compact_shell_thickness.extend_from_slice(&3u32.to_le_bytes());
-    compact_shell_thickness.extend_from_slice(b"258");
-    compact_shell_thickness.extend_from_slice(&9_000u32.to_le_bytes());
-    bytes.extend_from_slice(&compact_shell_thickness);
-    let mut compact_shell_scope = DesignParameterScope::try_new(
-        crate::records::feature::scope::DesignParameterScopeDraft {
-            byte_offset: u64_from_index(compact_shell_at),
-            reference_count_offset: u64_from_index(compact_shell_at + 9),
-            frame_length: 268,
-            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
-                200, 201, 9_000,
-            ]),
-            ..shell_scope.clone().into_draft()
-        }
-        .with_fixture_layout(),
-    )
-    .unwrap();
-    assert!(matches!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &compact_shell_scope),
-        Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
-            thickness,
-            thickness_record_index: 9_000,
-            outward: true,
-            outward_offset,
-            ..
-        })) if thickness.get() == 0.25 && outward_offset == u64_from_index(compact_shell_at + 21)
-    ));
-    let shifted_shell_at = bytes.len();
-    let mut shifted_shell = vec![0; 278];
-    shifted_shell[20] = 1;
-    shifted_shell[25] = 1;
-    shifted_shell[27] = 1;
-    shifted_shell[28..32].copy_from_slice(&9_000u32.to_le_bytes());
-    shifted_shell[51..55].copy_from_slice(&1u32.to_le_bytes());
-    shifted_shell[55] = 1;
-    shifted_shell[56..60].copy_from_slice(&200u32.to_le_bytes());
-    bytes.extend_from_slice(&shifted_shell);
-    let shifted_shell_scope = DesignParameterScope::try_new(
-        crate::records::feature::scope::DesignParameterScopeDraft {
-            byte_offset: u64_from_index(shifted_shell_at),
-            reference_count_offset: u64_from_index(shifted_shell_at + 9),
-            frame_length: 278,
-            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
-                9_000, 200, 201,
-            ]),
-            ..shell_scope.clone().into_draft()
-        }
-        .with_fixture_layout(),
-    )
-    .unwrap();
-    assert!(matches!(
-        exact_direct_face_operation(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &shifted_shell_scope,
-        ),
-        Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
-            thickness,
-            thickness_record_index: 9_000,
-            outward: false,
-            outward_offset,
-            ..
-        })) if thickness.get() == 0.25 && outward_offset == u64_from_index(shifted_shell_at + 21)
-    ));
-    let thickness_first_shell_at = bytes.len();
-    let mut thickness_first_shell = vec![0; 278];
-    thickness_first_shell[20] = 1;
-    thickness_first_shell[21] = 1;
-    thickness_first_shell[25..29].copy_from_slice(&[1, 0, 0, 1]);
-    thickness_first_shell[29..33].copy_from_slice(&9_000u32.to_le_bytes());
-    thickness_first_shell[51..55].copy_from_slice(&1u32.to_le_bytes());
-    thickness_first_shell[55] = 1;
-    thickness_first_shell[56..60].copy_from_slice(&200u32.to_le_bytes());
-    bytes.extend_from_slice(&thickness_first_shell);
-    let thickness_first_shell_scope = DesignParameterScope::try_new(
-        crate::records::feature::scope::DesignParameterScopeDraft {
-            byte_offset: u64_from_index(thickness_first_shell_at),
-            reference_count_offset: u64_from_index(thickness_first_shell_at + 9),
-            frame_length: 278,
-            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
-                9_000, 200, 201,
-            ]),
-            ..shell_scope.clone().into_draft()
-        }
-        .with_fixture_layout(),
-    )
-    .unwrap();
-    assert!(matches!(
-        exact_direct_face_operation(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &thickness_first_shell_scope,
-        ),
-        Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
-            thickness,
-            thickness_record_index: 9_000,
-            outward: true,
-            outward_offset,
-            ..
-        })) if thickness.get() == 0.25 && outward_offset == u64_from_index(thickness_first_shell_at + 21)
-    ));
-    let thickness_first_inward_at = bytes.len();
-    let mut thickness_first_inward = thickness_first_shell.clone();
-    thickness_first_inward[21] = 0;
-    bytes.extend_from_slice(&thickness_first_inward);
-    let thickness_first_inward_scope = DesignParameterScope::try_new(
-        crate::records::feature::scope::DesignParameterScopeDraft {
-            byte_offset: u64_from_index(thickness_first_inward_at),
-            reference_count_offset: u64_from_index(thickness_first_inward_at + 9),
-            frame_length: 278,
-            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
-                9_000, 200, 201,
-            ]),
-            ..shell_scope.clone().into_draft()
-        }
-        .with_fixture_layout(),
-    )
-    .unwrap();
-    assert!(matches!(
-        exact_direct_face_operation(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &thickness_first_inward_scope,
-        ),
-        Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
-            thickness,
-            thickness_record_index: 9_000,
-            outward: false,
-            outward_offset,
-            ..
-        })) if thickness.get() == 0.25 && outward_offset == u64_from_index(thickness_first_inward_at + 21)
-    ));
-
-    // Negative rejection tests for the 268-byte thickness-first Shell scope:
-    // 1. byte 27 = 1 rejects because the [1, 0, 0, 1] marker at 25..29 requires byte 27 == 0.
-    let neg_byte_27_at = bytes.len();
-    let mut neg_byte_27 = thickness_first_shell.clone();
-    neg_byte_27[27] = 1;
-    bytes.extend_from_slice(&neg_byte_27);
-    let neg_byte_27_scope = DesignParameterScope::try_new(
-        crate::records::feature::scope::DesignParameterScopeDraft {
-            byte_offset: u64_from_index(neg_byte_27_at),
-            reference_count_offset: u64_from_index(neg_byte_27_at + 9),
-            frame_length: 278,
-            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
-                9_000, 200, 201,
-            ]),
-            ..shell_scope.clone().into_draft()
-        }
-        .with_fixture_layout(),
-    )
-    .unwrap();
-    assert_eq!(
-        exact_direct_face_operation(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &neg_byte_27_scope,
-        ),
-        None
-    );
-
-    // 2. outward = 2 rejects because outward admits only 0 or 1.
-    let neg_outward_at = bytes.len();
-    let mut neg_outward = thickness_first_shell.clone();
-    neg_outward[21] = 2;
-    bytes.extend_from_slice(&neg_outward);
-    let neg_outward_scope = DesignParameterScope::try_new(
-        crate::records::feature::scope::DesignParameterScopeDraft {
-            byte_offset: u64_from_index(neg_outward_at),
-            reference_count_offset: u64_from_index(neg_outward_at + 9),
-            frame_length: 278,
-            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
-                9_000, 200, 201,
-            ]),
-            ..shell_scope.clone().into_draft()
-        }
-        .with_fixture_layout(),
-    )
-    .unwrap();
-    assert_eq!(
-        exact_direct_face_operation(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &neg_outward_scope,
-        ),
-        None
-    );
-
-    // 3. thickness/first-reference mismatch rejects when the u32 at offset 29 disagrees with the first member.
-    let neg_mismatch_at = bytes.len();
-    bytes.extend_from_slice(&thickness_first_shell);
-    let neg_mismatch_scope = DesignParameterScope::try_new(
-        crate::records::feature::scope::DesignParameterScopeDraft {
-            byte_offset: u64_from_index(neg_mismatch_at),
-            reference_count_offset: u64_from_index(neg_mismatch_at + 9),
-            frame_length: 278,
-            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
-                9_001, 200, 201,
-            ]),
-            ..shell_scope.clone().into_draft()
-        }
-        .with_fixture_layout(),
-    )
-    .unwrap();
-    assert_eq!(
-        exact_direct_face_operation(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &neg_mismatch_scope,
-        ),
-        None
-    );
+    let mut compact_shell_scope = shell_scope.clone();
+    compact_shell_scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![200, 201, 9_000]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    if let crate::records::feature::scope::DesignScopePayloadMut::Shell(slot) =
+        compact_shell_scope.payload_mut()
     {
-        let construction = exact_direct_face_operation(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &compact_shell_scope,
-        );
-        match (compact_shell_scope.payload_mut(), construction) {
-            (
-                crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot),
-                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::OffsetFaces(
-                    value,
-                )),
-            ) => *slot = Some(value),
-            (
-                crate::records::feature::scope::DesignScopePayloadMut::Shell(slot),
-                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Shell(value)),
-            ) => *slot = Some(value),
-            (
-                crate::records::feature::scope::DesignScopePayloadMut::Thicken(slot),
-                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Thicken(
-                    value,
-                )),
-            ) => *slot = Some(value),
-            _ => {}
-        }
+        *slot = Some(crate::records::feature::direct_face::DesignShellOperation {
+            thickness: cadmpeg_ir::scalar::PositiveReal::new(0.25).unwrap(),
+            thickness_record_index: 9_000,
+            thickness_offset: 0,
+            outward: true,
+            outward_offset: 0,
+            wall_slots: None,
+            prefix_flag: None,
+            auxiliary_references: Vec::new(),
+        });
     }
     shell_group.operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
@@ -985,6 +701,7 @@ pub(super) fn fixed_kind_tail_operations(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &offset_scope,
+            &mut Vec::new(),
         );
         match (offset_scope.payload_mut(), construction) {
             (
