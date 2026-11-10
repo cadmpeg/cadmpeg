@@ -691,6 +691,39 @@ fn the_join_resolves_split_and_base_body_keys_through_their_links() {
 }
 
 #[test]
+fn a_split_with_a_local_target_binds_through_its_wrapper_link() {
+    let split = source(1, 5, &[]);
+    let wrappers = [wrapper_property(10)];
+    let links = [link(20, 9)];
+    let local = BodySelection::local(vec![wrappers[0].id()], wrappers[0].id()).expect("local");
+    let model = [neutral(
+        &split,
+        SPLIT_TAG,
+        FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            targets: local,
+            tool: SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(
+                "tool".to_owned(),
+            )),
+        }),
+    )];
+    let joins = [wrapper_link(&wrappers[0], &links[0])];
+    let features = [split];
+    let records = join(
+        &index(),
+        &Inputs {
+            features: &features,
+            model_features: &model,
+            kernel_links: &links,
+            wrapper_links: &joins,
+            properties: &wrappers,
+        },
+    );
+    // Source 5 first appears in state 1, which loses key 9.
+    assert_eq!(records[0].binding, Binding::Bound);
+    assert_eq!(records[0].body_key, Some(9));
+}
+
+#[test]
 fn a_validated_arena_refuses_a_forged_record() {
     let features = [source(1, 5, &[])];
     let model = [stored(&features[0], "extrude")];
