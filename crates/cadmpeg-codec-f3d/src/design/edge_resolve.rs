@@ -13,6 +13,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
+pub(crate) mod fragment_fallback;
 mod surface_patch;
 use surface_patch::{surface_patch_grouped_recipe_edges, SurfacePatchRecipeEdges};
 
