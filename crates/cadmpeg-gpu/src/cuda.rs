@@ -339,6 +339,124 @@ L_SIMT_DIST_EXIT:
     ret;
 }
 
+// 3b. Ampere sm_86 shared-memory 16x16 tiled pairwise squared distance matrix (N x M, FP64)
+.visible .entry cuda_sm86_pairwise_dist_f64(
+    .param .u64 param_a,
+    .param .u64 param_b,
+    .param .u64 param_out,
+    .param .u32 param_n,
+    .param .u32 param_m
+) {
+    .shared .align 16 .b8 %smem_a[512];
+    .shared .align 16 .b8 %smem_b[512];
+    .reg .pred %p<6>;
+    .reg .b32 %r<20>;
+    .reg .b64 %rd<18>;
+    .reg .f64 %fd<12>;
+
+    ld.param.u64 %rd1, [param_a];
+    ld.param.u64 %rd2, [param_b];
+    ld.param.u64 %rd3, [param_out];
+    ld.param.u32 %r1, [param_n];
+    ld.param.u32 %r2, [param_m];
+
+    cvta.to.global.u64 %rd4, %rd1;
+    cvta.to.global.u64 %rd5, %rd2;
+    cvta.to.global.u64 %rd6, %rd3;
+
+    mov.u32 %r3, %ctaid.y;
+    shl.b32 %r4, %r3, 4;           // block_row = blockIdx.y * 16
+    mov.u32 %r5, %ctaid.x;
+    shl.b32 %r6, %r5, 4;           // block_col = blockIdx.x * 16
+
+    mov.u32 %r7, %tid.y;
+    mov.u32 %r8, %tid.x;
+    shl.b32 %r9, %r7, 4;
+    add.u32 %r9, %r9, %r8;         // linear_tid = tid.y * 16 + tid.x (0..255)
+
+    // Cooperative coalesced load of 16 points of A (64 f64s) by linear_tid 0..63
+    setp.lt.u32 %p1, %r9, 64;
+    @!%p1 bra L_SM86_DIST_LOAD_B;
+    shr.u32 %r10, %r9, 2;          // pt_idx = linear_tid >> 2 (0..15)
+    add.u32 %r11, %r4, %r10;       // global_row = block_row + pt_idx
+    mov.f64 %fd0, 0d0000000000000000;
+    setp.lt.u32 %p2, %r11, %r1;
+    @!%p2 bra L_SM86_DIST_STORE_SMEM_A;
+    and.b32 %r12, %r9, 3;          // comp = linear_tid & 3
+    shl.b32 %r13, %r11, 2;
+    add.u32 %r13, %r13, %r12;      // global_row * 4 + comp
+    mul.wide.u32 %rd7, %r13, 8;
+    add.u64 %rd8, %rd4, %rd7;
+    ld.global.nc.f64 %fd0, [%rd8];
+L_SM86_DIST_STORE_SMEM_A:
+    mov.u64 %rd9, %smem_a;
+    mul.wide.u32 %rd10, %r9, 8;
+    add.u64 %rd9, %rd9, %rd10;
+    st.shared.f64 [%rd9], %fd0;
+
+L_SM86_DIST_LOAD_B:
+    // Cooperative coalesced load of 16 points of B (64 f64s) by linear_tid 64..127
+    sub.u32 %r14, %r9, 64;
+    setp.lt.u32 %p3, %r14, 64;
+    @!%p3 bra L_SM86_DIST_SYNC;
+    shr.u32 %r10, %r14, 2;         // pt_idx = (linear_tid - 64) >> 2 (0..15)
+    add.u32 %r11, %r6, %r10;       // global_col = block_col + pt_idx
+    mov.f64 %fd0, 0d0000000000000000;
+    setp.lt.u32 %p4, %r11, %r2;
+    @!%p4 bra L_SM86_DIST_STORE_SMEM_B;
+    and.b32 %r12, %r14, 3;         // comp = (linear_tid - 64) & 3
+    shl.b32 %r13, %r11, 2;
+    add.u32 %r13, %r13, %r12;      // global_col * 4 + comp
+    mul.wide.u32 %rd7, %r13, 8;
+    add.u64 %rd8, %rd5, %rd7;
+    ld.global.nc.f64 %fd0, [%rd8];
+L_SM86_DIST_STORE_SMEM_B:
+    mov.u64 %rd9, %smem_b;
+    mul.wide.u32 %rd10, %r14, 8;
+    add.u64 %rd9, %rd9, %rd10;
+    st.shared.f64 [%rd9], %fd0;
+
+L_SM86_DIST_SYNC:
+    bar.sync 0;
+
+    add.u32 %r15, %r4, %r7;        // row = block_row + tid.y
+    add.u32 %r16, %r6, %r8;        // col = block_col + tid.x
+    setp.ge.u32 %p1, %r15, %r1;
+    setp.ge.u32 %p2, %r16, %r2;
+    or.pred %p1, %p1, %p2;
+    @%p1 bra L_SM86_DIST_EXIT;
+
+    mov.u64 %rd11, %smem_a;
+    mul.wide.u32 %rd12, %r7, 32;
+    add.u64 %rd11, %rd11, %rd12;
+    ld.shared.f64 %fd1, [%rd11 + 0];
+    ld.shared.f64 %fd2, [%rd11 + 8];
+    ld.shared.f64 %fd3, [%rd11 + 16];
+
+    mov.u64 %rd13, %smem_b;
+    mul.wide.u32 %rd14, %r8, 32;
+    add.u64 %rd13, %rd13, %rd14;
+    ld.shared.f64 %fd4, [%rd13 + 0];
+    ld.shared.f64 %fd5, [%rd13 + 8];
+    ld.shared.f64 %fd6, [%rd13 + 16];
+
+    sub.f64 %fd7, %fd1, %fd4;
+    sub.f64 %fd8, %fd2, %fd5;
+    sub.f64 %fd9, %fd3, %fd6;
+
+    mul.f64 %fd10, %fd9, %fd9;
+    fma.rn.f64 %fd10, %fd8, %fd8, %fd10;
+    fma.rn.f64 %fd10, %fd7, %fd7, %fd10;
+
+    mad.lo.u32 %r17, %r15, %r2, %r16;
+    mul.wide.u32 %rd15, %r17, 8;
+    add.u64 %rd16, %rd6, %rd15;
+    st.global.f64 [%rd16], %fd10;
+
+L_SM86_DIST_EXIT:
+    ret;
+}
+
 ";
 
 /// Hardware context for safe `cudarc` CUDA Driver API execution, `OptiX` RT Core BVH traversal, and RTX Tensor Core PTX dispatch.
@@ -350,6 +468,7 @@ pub struct CudaContext {
     fn_sm86_transform: CudaFunction,
     fn_tc_transform: CudaFunction,
     fn_simt_pairwise_dist: CudaFunction,
+    fn_sm86_pairwise_dist: CudaFunction,
 }
 
 static GLOBAL_CUDA: OnceLock<Option<CudaContext>> = OnceLock::new();
@@ -388,6 +507,7 @@ impl CudaContext {
             fn_sm86_transform: module.load_function("cuda_sm86_transform_4x4_f64").ok()?,
             fn_tc_transform: module.load_function("rtx_tc_transform_4x4_f64").ok()?,
             fn_simt_pairwise_dist: module.load_function("cuda_simt_pairwise_dist_f64").ok()?,
+            fn_sm86_pairwise_dist: module.load_function("cuda_sm86_pairwise_dist_f64").ok()?,
             device_name,
             compute_capability: (major, minor),
             ctx,
@@ -583,6 +703,19 @@ impl CudaContext {
         self.dispatch_pairwise_distance_kernel(&self.fn_simt_pairwise_dist, points_a, points_b)
     }
 
+    /// Executes Ampere `sm_86` shared-memory $16 \times 16$ tiled pairwise squared distance matrix computation.
+    #[must_use]
+    pub fn ptx_sm86_pairwise_distance_squared(
+        &self,
+        points_a: &[Point3],
+        points_b: &[Point3],
+    ) -> Option<Vec<f64>> {
+        if !self.supports_sm86() {
+            return None;
+        }
+        self.dispatch_pairwise_distance_kernel(&self.fn_sm86_pairwise_dist, points_a, points_b)
+    }
+
     /// Whether the active GPU supports NVIDIA `OptiX` hardware RT Core acceleration.
     #[must_use]
     pub const fn supports_optix_rt(&self) -> bool {
@@ -731,6 +864,40 @@ mod tests {
 
         for (&e, &s) in expected_dist.iter().zip(&simt_dist) {
             assert!((e - s).abs() < CUDA_PARITY_TOLERANCE);
+        }
+    }
+
+    #[test]
+    fn cuda_sm86_pairwise_distances_match_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let pts_a: Vec<Point3> = (0..35)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(1000.0 + f * 0.25, -500.0 + f * 0.5, 250.0 - f * 0.125)
+            })
+            .collect();
+        let pts_b: Vec<Point3> = (0..29)
+            .map(|j| {
+                let f = f64::from(j);
+                Point3::new(1000.5 + f * 0.125, -499.0 - f * 0.25, 249.5 + f * 0.375)
+            })
+            .collect();
+
+        let expected_dist = cpu::pairwise_distance_squared(&pts_a, &pts_b);
+        if ctx.supports_sm86() {
+            let sm86_dist = ctx
+                .ptx_sm86_pairwise_distance_squared(&pts_a, &pts_b)
+                .expect("PTX sm_86 tiled pairwise dist");
+            assert_eq!(expected_dist.len(), sm86_dist.len());
+            for (&e, &s) in expected_dist.iter().zip(&sm86_dist) {
+                assert!((e - s).abs() < CUDA_PARITY_TOLERANCE);
+            }
+        } else {
+            assert!(ctx
+                .ptx_sm86_pairwise_distance_squared(&pts_a, &pts_b)
+                .is_none());
         }
     }
 
