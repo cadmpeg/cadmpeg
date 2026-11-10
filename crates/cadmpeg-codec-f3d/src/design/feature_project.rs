@@ -7041,17 +7041,22 @@ fn project_circular_pattern(
         count: construction.count.get(),
     })
     .ok()?;
-    if construction
-        .symmetric
-        .is_some_and(|symmetric| symmetric.value)
-        && (construction.angle.get() - std::f64::consts::TAU).abs() > EPS_CIRCULAR_PATTERN_FULL_TURN
-    {
-        losses.push(
-            crate::loss::F3dLossCode::FeatureCircularPatternPlacementNotTransferred.note(format!(
-                "CircularPattern scope {} drops the symmetric distribution: a circular pattern has no field for it.",
-                scope.id
-            )),
-        );
+    if (construction.angle.get() - std::f64::consts::TAU).abs() > EPS_CIRCULAR_PATTERN_FULL_TURN {
+        match construction.symmetric.map(|symmetric| symmetric.value) {
+            Some(true) => losses.push(
+                crate::loss::F3dLossCode::FeatureCircularPatternPlacementNotTransferred.note(format!(
+                    "CircularPattern scope {} drops the symmetric distribution: a circular pattern has no field for it.",
+                    scope.id
+                )),
+            ),
+            Some(false) => {}
+            None => losses.push(
+                crate::loss::F3dLossCode::FeatureCircularPatternDistributionAssumed.note(format!(
+                    "CircularPattern scope {} is read as one-sided: its partial turn has no readable payload symmetric byte.",
+                    scope.id
+                )),
+            ),
+        }
     }
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds,

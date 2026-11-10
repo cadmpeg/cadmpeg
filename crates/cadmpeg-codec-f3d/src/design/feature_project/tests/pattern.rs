@@ -212,6 +212,31 @@ fn a_symmetric_partial_turn_reports_its_dropped_distribution() {
     assert!(loss.message.contains("symmetric distribution"));
     assert!(with(std::f64::consts::TAU, true).is_empty());
     assert!(with(std::f64::consts::FRAC_PI_2, false).is_empty());
+
+    let mut scope = circular_scope();
+    if let crate::records::feature::scope::DesignScopePayloadMut::CPattern(Some(construction)) =
+        scope.payload_mut()
+    {
+        construction.angle =
+            cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap();
+    }
+    let mut losses = Vec::new();
+    project_circular_pattern(
+        &scope,
+        &[group(10, 20, DesignOperandRole::BODIES_B)],
+        &[],
+        &[],
+        &[],
+        &mut losses,
+    )
+    .expect("circular pattern");
+    let [loss] = losses.as_slice() else {
+        panic!("one assumption loss");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::FeatureCircularPatternDistributionAssumed.kind()
+    );
 }
 
 #[test]
