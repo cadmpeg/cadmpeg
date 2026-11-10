@@ -123,6 +123,7 @@ fn fixture() -> (FeatureInventory, Feature) {
     inventory.edge_inputs.faces.insert(
         (token, FACE_SOURCE),
         SelectedFace {
+            schema: 42,
             owner: 5,
             owners: vec![5, EDGE_FACES[0]],
             generators: 1,
