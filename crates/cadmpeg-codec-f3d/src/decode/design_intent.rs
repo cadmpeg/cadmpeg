@@ -594,6 +594,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &prereqs.design_parameters,
         &prereqs.design_parameter_owner_unparsed,
     );
+    losses.extend(
+        crate::design::decode::operands::extrude_extent::report_missing_terminations(
+            &design.design_parameter_scopes,
+            &design.design_construction_operand_groups,
+        ),
+    );
     let projected = crate::design::feature_project::project_parameter_design_with_edge_identities(
         ctx,
         &crate::design::feature_project::ProjectInputs {
@@ -739,6 +745,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     // A fillet that took the one history in which its edges resolve reads
     // its input topology and outputs from that history.
     scope_histories.extend(fillet_bindings.inferred_scope_histories);
+    crate::design::edge_resolve::fragment_fallback::apply_features(
+        &mut model.features,
+        &design.design_construction_operand_groups,
+        &design.design_edge_operands,
+        &design.design_edge_identity_operands,
+        &design.asm_face_boundaries,
+        &mut losses,
+    );
     model.feature_input_topologies = crate::history::project_feature_input_topologies(
         &model.features,
         &design.design_parameter_scopes,

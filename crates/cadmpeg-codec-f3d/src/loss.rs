@@ -412,6 +412,8 @@ pub(crate) enum F3dLossCode {
     FeatureFixedFilletAssignmentNative,
     /// Extrude scope retains an unassigned extent payload.
     FeatureExtrudeExtentNative,
+    /// An Extrude face extent has fewer termination groups than its side count.
+    FeatureExtrudeTerminationMissing,
     /// A marker-one `Revolve` scope has a token-independent frame length outside its documented set.
     FeatureRevolveLayoutAssumed,
     /// A marked `Move` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record.
@@ -427,6 +429,8 @@ pub(crate) enum F3dLossCode {
     FeatureSurfaceBoundaryFlagRecordAssumed,
     /// `PathPattern` flip, orientation, or start settings have no curve-driven pattern field.
     FeaturePathPatternPlacementNotTransferred,
+    /// A rectangular pattern's symmetric distribution or coincident direction has no linear pattern field.
+    FeatureRectangularPatternPlacementNotTransferred,
     /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
     FeatureThickenFlagsAssumed,
     /// Feature face operands stay unresolved inside historical selections.
@@ -798,6 +802,7 @@ impl F3dLossCode {
         Self::FeatureCombineToolConsumptionAssumed,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
+        Self::FeatureExtrudeTerminationMissing,
         Self::FeatureRevolveLayoutAssumed,
         Self::FeatureMoveTransformAssumed,
         Self::FeatureLoftReferenceUnresolved,
@@ -806,6 +811,7 @@ impl F3dLossCode {
         Self::FeatureSurfaceExtendDistanceNonpositive,
         Self::FeatureSurfaceBoundaryFlagRecordAssumed,
         Self::FeaturePathPatternPlacementNotTransferred,
+        Self::FeatureRectangularPatternPlacementNotTransferred,
         Self::FeatureThickenFlagsAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureTrimCellTableNative,
@@ -1119,6 +1125,7 @@ impl F3dLossCode {
             }
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
+            Self::FeatureExtrudeTerminationMissing => "feature.extrude-termination-missing",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
@@ -1134,6 +1141,9 @@ impl F3dLossCode {
             }
             Self::FeaturePathPatternPlacementNotTransferred => {
                 "feature.path-pattern-placement-not-transferred"
+            }
+            Self::FeatureRectangularPatternPlacementNotTransferred => {
+                "feature.rectangular-pattern-placement-not-transferred"
             }
             Self::FeatureThickenFlagsAssumed => "feature.thicken-flags-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
@@ -1443,6 +1453,7 @@ impl F3dLossCode {
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
+            | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
@@ -1451,6 +1462,7 @@ impl F3dLossCode {
             | Self::FeatureSurfaceExtendDistanceNonpositive
             | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeaturePathPatternPlacementNotTransferred
+            | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
@@ -1685,6 +1697,7 @@ impl F3dLossCode {
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
+            | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
@@ -1693,6 +1706,7 @@ impl F3dLossCode {
             | Self::FeatureSurfaceExtendDistanceNonpositive
             | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeaturePathPatternPlacementNotTransferred
+            | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
@@ -2023,6 +2037,7 @@ mod tests {
                 "feature.combine-tool-consumption-assumed",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
+                "feature.extrude-termination-missing",
                 "feature.revolve-layout-assumed",
                 "feature.move-transform-assumed",
                 "feature.loft-reference-unresolved",
@@ -2031,6 +2046,7 @@ mod tests {
                 "feature.surface-extend-distance-nonpositive",
                 "feature.surface-boundary-flag-record-assumed",
                 "feature.path-pattern-placement-not-transferred",
+                "feature.rectangular-pattern-placement-not-transferred",
                 "feature.thicken-flags-assumed",
                 "feature.face-operand-unresolved",
                 "feature.trim-cell-table-native",
