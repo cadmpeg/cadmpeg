@@ -236,3 +236,108 @@ fn the_owners_follow_every_face_selection_pair() {
     swapped_three.swapped_owners = true;
     assert!(swapped_three.decode().is_none());
 }
+
+fn owner_marked_extended(
+    modeled_flag: u8,
+    marker_second: u8,
+    entries: u32,
+    swapped: bool,
+) -> Vec<u8> {
+    fn marked(bytes: &mut Vec<u8>, record: u32) {
+        bytes.push(1);
+        bytes.extend_from_slice(&record.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    let mut bytes = vec![0; 34];
+    bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
+    bytes[25..33].copy_from_slice(&60.0f64.to_le_bytes());
+    bytes.extend_from_slice(&entries.to_le_bytes());
+    for _ in 0..entries {
+        bytes.extend_from_slice(&[0; 16]);
+    }
+    lp_utf16(&mut bytes, "6H");
+    lp_utf16(&mut bytes, "");
+    lp_utf16(&mut bytes, "M10x1.5");
+    lp_utf16(&mut bytes, "10.0");
+    lp_utf16(&mut bytes, "ISO Metric profile");
+    bytes.extend_from_slice(&[1, marker_second, 0, 0, 0]);
+    bytes.extend_from_slice(&0.985f64.to_le_bytes());
+    bytes.extend_from_slice(&0.814f64.to_le_bytes());
+    bytes.push(modeled_flag);
+    bytes.extend_from_slice(&0.15f64.to_le_bytes());
+    bytes.extend_from_slice(&0.893f64.to_le_bytes());
+    bytes.push(0);
+    let (first, second) = if swapped {
+        (OFFSET_OWNER, LENGTH_OWNER)
+    } else {
+        (LENGTH_OWNER, OFFSET_OWNER)
+    };
+    marked(&mut bytes, first);
+    marked(&mut bytes, second);
+    bytes.push(1);
+    bytes
+}
+
+fn decode_owner_marked(bytes: &[u8]) -> Option<DesignThreadConstruction> {
+    let references = vec![101, 102, OFFSET_OWNER, LENGTH_OWNER];
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:owner-marked-extended-thread#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        SCOPE,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 600;
+            draft.paired_byte_offset = 600;
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(references);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let owners = [(OFFSET_OWNER, 0u32, 0.0), (LENGTH_OWNER, 1, 2.0)]
+        .into_iter()
+        .map(|(index, ordinal, value)| {
+            let owner = crate::design::decode::parameters::parse_parameter_owner(
+                &crate::design::test_support::parameter_owner_frame(),
+            )
+            .unwrap()
+            .into_record("test", 1000 + u64::from(ordinal) * 200)
+            .unwrap();
+            let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(owner);
+            wire.record_index = index;
+            wire.scope_record_index = SCOPE;
+            wire.local_ordinal = ordinal;
+            wire.evaluated_value = value;
+            wire.parameter_record_index = index + 1;
+            wire.companion_record_index = index + 2;
+            crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap()
+        })
+        .collect::<Vec<_>>();
+    exact_thread_construction(bytes, &scope, &owners)
+}
+
+#[test]
+fn the_owner_marked_extended_prefix_reads_modeled_from_the_tail() {
+    let construction =
+        decode_owner_marked(&owner_marked_extended(1, 1, 0, false)).expect("modeled thread");
+    assert_eq!(construction.form, DesignThreadForm::StandardExtended);
+    assert_eq!(construction.designation.as_str(), "M10x1.5");
+    assert_eq!(construction.designation_offset, 50);
+    assert_eq!(construction.face_group_record_indices, [101]);
+    assert_eq!(
+        extended(&construction),
+        &DesignThreadExtended {
+            class: "6H".into(),
+            external: false,
+            modeled: true,
+            full_length: Some(true),
+        }
+    );
+    let cosmetic =
+        decode_owner_marked(&owner_marked_extended(0, 1, 0, false)).expect("cosmetic thread");
+    assert!(!extended(&cosmetic).modeled);
+    assert!(decode_owner_marked(&owner_marked_extended(1, 1, 1, false)).is_none());
+    assert!(decode_owner_marked(&owner_marked_extended(1, 2, 0, false)).is_none());
+    assert!(decode_owner_marked(&owner_marked_extended(2, 1, 0, false)).is_none());
+    assert!(decode_owner_marked(&owner_marked_extended(1, 1, 0, true)).is_none());
+}

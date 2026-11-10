@@ -129,6 +129,8 @@ pub(super) enum ThreadPrefix {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ExtendedThreadPrefix {
     external: bool,
+    /// The pitch-marker byte states the modeled flag. The entry count is zero.
+    modeled_from_tail: bool,
     modeled: bool,
     class: String,
     designation_copy: String,
@@ -165,7 +167,10 @@ fn exact_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
         None
     };
     let extended = extended_thread_prefix(bytes);
-    let mut candidates = [direct, owner_marked, extended].into_iter().flatten();
+    let owner_marked_extended = owner_marked_extended_thread_prefix(bytes);
+    let mut candidates = [direct, owner_marked, extended, owner_marked_extended]
+        .into_iter()
+        .flatten();
     let prefix = candidates.next()?;
     candidates.next().is_none().then_some(prefix)
 }
@@ -194,7 +199,44 @@ fn extended_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
     Some((
         ThreadPrefix::Extended(ExtendedThreadPrefix {
             external,
+            modeled_from_tail: false,
             modeled,
+            class,
+            designation_copy,
+        }),
+        designation_at,
+    ))
+}
+
+/// The owner-marked header with the extended fields four bytes later.
+///
+/// The entry count is zero. The pitch-marker byte of the extended standard tail
+/// states whether the thread is modeled.
+fn owner_marked_extended_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
+    let shift = thread_owner::FIXED_SCALAR.checked_sub(thread_extended::FIXED_SCALAR)?;
+    if bytes.get(thread_owner::ZERO_RUN_9..thread_owner::OWNER_MARKER)? != [0; 9]
+        || View::u32_le_at(bytes, thread_owner::OWNER_MARKER)? != 1
+        || bytes.get(thread_owner::SEPARATOR) != Some(&0)
+        || View::f64_le_at(bytes, thread_owner::FIXED_SCALAR)?.to_bits() != 60.0f64.to_bits()
+    {
+        return None;
+    }
+    let external = match bytes.get(thread_extended::EXTERNAL_FLAG.checked_add(shift)?)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    if View::u32_le_at(bytes, thread_extended::ENTRY_COUNT.checked_add(shift)?)? != 0 {
+        return None;
+    }
+    let class_at = thread_extended::LEN.checked_add(shift)?;
+    let (class, copy_at) = lp_utf16_bounded(bytes, class_at, 1..=THREAD_CLASS_UNITS)?;
+    let (designation_copy, designation_at) = lp_utf16_bounded(bytes, copy_at, 0..=128)?;
+    Some((
+        ThreadPrefix::Extended(ExtendedThreadPrefix {
+            external,
+            modeled_from_tail: true,
+            modeled: false,
             class,
             designation_copy,
         }),
@@ -234,11 +276,21 @@ pub(super) fn parse_thread_payload(
         }
         let (pitch_marker, trailer_kind, full_length) =
             match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
-                (ThreadPrefix::Extended(prefix), [flag @ (0 | 1), 1, 0, 0, 0]) => (
-                    u8::from(prefix.modeled),
-                    ThreadTrailerKind::ExtendedStandard,
-                    Some(*flag == 1),
-                ),
+                (ThreadPrefix::Extended(prefix), [flag @ (0 | 1), 1, 0, 0, 0]) => {
+                    let pitch_marker = if prefix.modeled_from_tail {
+                        match bytes.get(after_profile + thread_tail::PITCH_MARKER) {
+                            Some(&marker @ (0 | 1)) => marker,
+                            _ => return None,
+                        }
+                    } else {
+                        u8::from(prefix.modeled)
+                    };
+                    (
+                        pitch_marker,
+                        ThreadTrailerKind::ExtendedStandard,
+                        Some(*flag == 1),
+                    )
+                }
                 (ThreadPrefix::Standard, [0, 1, 0, 0, 0]) => (1, ThreadTrailerKind::Standard, None),
                 (ThreadPrefix::Standard, [1, 1, 0, 0, 0]) => {
                     (0, ThreadTrailerKind::StandardLegacy, None)
@@ -247,7 +299,9 @@ pub(super) fn parse_thread_payload(
                     (0, ThreadTrailerKind::StandardCompact, None)
                 }
                 (ThreadPrefix::Compact, [1, 2, 0, 0, 0]) => (0, ThreadTrailerKind::Compact, None),
-                (ThreadPrefix::Extended(prefix), [1, 2, 0, 0, 0]) if !prefix.modeled => {
+                (ThreadPrefix::Extended(prefix), [1, 2, 0, 0, 0])
+                    if !prefix.modeled && !prefix.modeled_from_tail =>
+                {
                     (0, ThreadTrailerKind::Compact, None)
                 }
                 (ThreadPrefix::Compact, [1, 1, 0, 0, 0]) => {
@@ -355,7 +409,11 @@ pub(super) fn parse_thread_payload(
             extended: extended.map(|prefix| thread::DesignThreadExtended {
                 class: prefix.class.clone(),
                 external: prefix.external,
-                modeled: prefix.modeled,
+                modeled: if prefix.modeled_from_tail {
+                    pitch_marker == 1
+                } else {
+                    prefix.modeled
+                },
                 full_length,
             }),
         })
