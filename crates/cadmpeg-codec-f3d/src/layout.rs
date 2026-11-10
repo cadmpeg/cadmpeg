@@ -7310,12 +7310,38 @@ pub(crate) mod rectangular_pattern_payload_prefix {
     pub(crate) const U_DISTANCE: usize = 87;
     /// Offset of `v_distance` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const V_DISTANCE: usize = 98;
-    /// Offset of `zero_distance` (`bytes[2]`). Spec §Assembly operands.
-    pub(crate) const ZERO_DISTANCE: usize = 109;
+    /// Offset of `symmetric` (`u8`). Spec §Assembly operands.
+    pub(crate) const SYMMETRIC: usize = 109;
+    /// Offset of `zero_after_symmetric` (`u8`). Spec §Assembly operands.
+    pub(crate) const ZERO_AFTER_SYMMETRIC: usize = 110;
     /// Offset of `v_count_repeat` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const V_COUNT_REPEAT: usize = 111;
     /// Offset of `u_direction` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const U_DIRECTION: usize = 122;
+}
+
+/// Byte offsets for the `rectangular_pattern_payload_distribution` record.
+///
+/// Spec §Assembly operands. Record length 29 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the leading zero byte or V-direction reference.
+/// ```
+pub(crate) mod rectangular_pattern_payload_distribution {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 29;
+    /// Offset of `zero_run` (`bytes[12]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN: usize = 0;
+    /// Offset of `fixed_two` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const FIXED_TWO: usize = 12;
+    /// Stated value of `fixed_two` (`u32`). Spec §Assembly operands.
+    pub(crate) const FIXED_TWO_VALUE: u32 = 0x0000_0002;
+    /// Offset of `sentinel` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SENTINEL: usize = 20;
+    /// Offset of `distance_type` (`u8`). Spec §Assembly operands.
+    pub(crate) const DISTANCE_TYPE: usize = 24;
+    /// Offset of `entry_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const ENTRY_COUNT: usize = 25;
 }
 
 /// Byte offsets for the `rectangular_pattern_payload_suffix` record.
