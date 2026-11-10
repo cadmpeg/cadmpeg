@@ -2053,7 +2053,7 @@ fn extrude_start_plane_geometry_candidates(
     Some(faces.iter().map(|face| face.id.clone()).collect())
 }
 
-fn extrude_profile_sketch_id(
+pub(crate) fn extrude_profile_sketch_id(
     profile: &cadmpeg_ir::features::ProfileRef,
 ) -> Option<&cadmpeg_ir::sketches::SketchId> {
     use cadmpeg_ir::features::ProfileRef;
@@ -2325,6 +2325,24 @@ fn extrude_target_plane_candidate(
     if matching_operands.next().is_some() {
         return None;
     }
+    let direct = face_operand_candidates(operand);
+    let referenced: HashSet<_> = operand
+        .recipe_references
+        .iter()
+        .flat_map(|reference| {
+            reference
+                .candidate_faces
+                .iter()
+                .chain(&reference.alternate_selector_faces)
+        })
+        .collect();
+    if !referenced.is_empty()
+        && direct
+            .iter()
+            .any(|candidate| !referenced.contains(candidate))
+    {
+        return None;
+    }
     let direction_length = sweep_direction.norm();
     let mut found = None;
     let mut ambiguous = false;
@@ -2361,7 +2379,6 @@ fn extrude_target_plane_candidate(
             }
         }
     };
-    let direct = face_operand_candidates(operand);
     if direct.is_empty() {
         if !has_nested_bounded_face_history_candidates(operand) {
             return None;
