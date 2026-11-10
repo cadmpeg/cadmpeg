@@ -26,6 +26,7 @@ mod reference_rows;
 mod scene;
 mod sketch_regions;
 mod tracking_path_headers;
+mod treatment_losses;
 mod work_planes;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
