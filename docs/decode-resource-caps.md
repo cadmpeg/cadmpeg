@@ -239,6 +239,25 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-pvz`      | `src/model.rs`                                     | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the structure definition graph, roots included; child occurrences that close a cycle count toward it. At the limit expansion stops, and a path of `max_recursion_depth` definitions stops its branch; both report `structure.occurrence-expansion-truncated`. |
 | `cadmpeg-codec-pvz`      | `src/brep/records.rs`                              | `MAX_BSPLINE_DEGREE`                      | `20`                                                    | 1    | Admitted degree of an exact-stream B-spline surface, edge curve or pcurve, as for ASM `MAX_NURBS_DEGREE`. A record of a higher order refuses the exact stream as malformed; the member keeps its tessellation and `geometry.exact-undecoded` is reported. |
 | `cadmpeg-codec-pvz`      | `src/brep/topology.rs`                             | `MAX_TOPOLOGY_WORK`                       | `1 << 24`                                               | 4    | Floor of the derived-search `WorkBudget` of one exact stream; the allowance is the larger of this floor and 1,024 times its face, loop, coedge and edge records. Face-region nesting charges one unit per polygon sample of each containment test, and coincident-edge pairing one unit per candidate test. A face whose nesting finds the budget empty keeps one unclassified region; pairing stops; each skip is reported as `exact.topology-work-exhausted`. |
+| `cadmpeg-codec-edrawings` | `src/stream.rs` | `MAX_COMMENT_LEN` | `64` | 2 | Bytes of the `eModel` comment line, version number included. A longer line is refused as malformed. |
+| `cadmpeg-codec-edrawings` | `src/stream.rs` | `MAX_WRAPPER_RECORDS` | `8` | 2 | Wrapper records read before the `Z` body record of the `eModel` member. A wrapper with no body record within the limit is refused as malformed. |
+| `cadmpeg-codec-edrawings` | `src/hsf/walk.rs` | `MAX_SEGMENT_DEPTH` | `256` | 2 | Segment nesting depth of the model stream. A deeper stream is refused as `edrawings/model.malformed`. |
+| `cadmpeg-codec-edrawings` | `src/hsf/walk.rs` | `MAX_SHELL_VERTICES` | `1 << 24` | 2 | Vertices one shell record declares. The vertex bytes must also fit the unread stream (`View::counted`). Excess refuses the stream as `edrawings/model.malformed`. |
+| `cadmpeg-codec-edrawings` | `src/hsf/walk.rs` | `MAX_MASK_WORDS` | `4` | 1 | Mask words of one `H` or `R` attribute record. The known lists have at most three. |
+| `cadmpeg-codec-edrawings` | `src/hsf/walk.rs` | `MAX_COLOUR_MASK_BYTES` | `4` | 1 | Mask bytes of one `~` colour record. The known records have at most two. |
+| `cadmpeg-codec-edrawings` | `src/hsf/scene.rs` | `MAX_NODES` | `100_000` | 2 | Tree nodes of the model stream. Excess refuses the stream as `edrawings/model.malformed`. |
+| `cadmpeg-codec-edrawings` | `src/hsf/scene.rs` | `MAX_BODIES` | `100_000` | 2 | Library bodies of the model stream. Excess refuses the stream as `edrawings/model.malformed`. |
+| `cadmpeg-codec-edrawings` | `src/hsf/scene.rs` | `MAX_SLOTS` | `8_000_000` | 2 | Object slots `q` of the model stream. Excess refuses the stream as `edrawings/model.malformed`. |
+| `cadmpeg-codec-edrawings` | `src/hsf/scene.rs` | `MAX_OBJECTS` | `8_000_000` | 2 | Shells, shell instances, and text objects the scene keeps. Excess refuses the stream as `edrawings/model.malformed`. |
+| `cadmpeg-codec-edrawings` | `src/hsf/scene.rs` | `MAX_COMPONENTS` | `200_000` | 2 | Display state components the scene keeps. Excess refuses the stream as `edrawings/model.malformed`. |
+| `cadmpeg-codec-edrawings` | `src/hsf/shape.rs` | `MAX_INSTANCE_CHAIN` | `8` | 4 | Shell instances followed to a source shell. A longer chain leaves the shell out and reports `edrawings/model.shell-invalid`. |
+| `cadmpeg-codec-edrawings` | `src/hsf/emit.rs` | `MAX_LISTED` | `5` | N | Names a loss message lists. It bounds message text only. |
+| `cadmpeg-codec-edrawings` | `src/mesh_brep.rs` | `MAX_TRIANGLES` | `5_000_000` | 2 | Triangles of one body. A larger mesh is left out and reported as `edrawings/model.shell-invalid` or `edrawings/geometry.body-failed`. |
+| `cadmpeg-codec-edrawings` | `src/mesh_brep.rs` | `MAX_POSITIONS` | `15_000_000` | 2 | Points of one body. A larger mesh is left out and reported as `edrawings/model.shell-invalid` or `edrawings/geometry.body-failed`. |
+| `cadmpeg-codec-edrawings` | `src/mesh_brep.rs` | `MAX_COORDINATE_MM` | `1.0e9` | 2 | Absolute coordinate of a point of one body, in millimetres. A body with a larger coordinate is left out and reported as `edrawings/geometry.body-failed`. |
+| `cadmpeg-codec-edrawings` | `src/mesh_brep.rs` | `MAX_REPAIR_ROUNDS` | `8` | 4 | T-junction repair rounds of one body. Each round splits one edge of each triangle. At exhaustion the remaining open edges stay open and the body is reported as `edrawings/geometry.open-body`. |
+| `cadmpeg-codec-edrawings` | `src/mesh_brep.rs` | `MAX_REPAIR_PROBES` | `1 << 16` | 4 | Floor of the grid cells and vertices one T-junction repair round tests; the allowance is this floor plus 64 for each triangle. At exhaustion the round ends without splitting and the remaining open edges stay open. |
+| `cadmpeg-codec-edrawings` | `src/mesh_brep.rs` | `MAX_NESTING_RAY_TESTS` | `1 << 27` | 4 | Triangle-ray tests of one body that decide which closed component lies inside which. At exhaustion a component lies within another when its box does and its volume is smaller. |
 | `cadmpeg-codec-usd`      | `src/detect.rs`                                    | `MAX_VERSION_TOKEN`                       | `32`                                                    | 1    | Bytes of the version token read after a `#usda ` or `#sdf ` header cookie. A longer token is cut at the bound and classifies as `usd:unknown`.                                                                                                                                                                                                                                                                                                                  |
 | `cadmpeg-codec-usd`      | `src/schema/shading.rs`                            | `MAX_CONNECTION_HOPS`                     | `16`                                                    | 4    | Input connections followed from one `UsdPreviewSurface` input to a value. At the bound the input is not read and its material is reported as `appearance.material-not-transferred`.                                                                                                                                                                                                                                                                             |
 | `cadmpeg-codec-usd`      | `src/schema/texture.rs`                            | `MAX_NETWORK_HOPS`                        | `16`                                                    | 4    | Connections followed from one surface input through an image node to its texture-coordinate reader, or from a texture input to its value. At the bound the input has no texture and its material is reported as `appearance.material-not-transferred`. |
@@ -544,16 +563,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 329.
+Production `MAX_*` constants: 348.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
-| 1    | Format or reader invariant | 42    |
-| 2    | Per-input bound            | 76    |
+| 1    | Format or reader invariant | 44    |
+| 2    | Per-input bound            | 88    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 165   |
-| N    | Not a decode bound         | 46    |
-|      | Total                      | 329   |
+| 4    | Local work cap             | 169   |
+| N    | Not a decode bound         | 47    |
+|      | Total                      | 348   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -563,7 +582,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 5,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 24,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 36,
-`cadmpeg-codec-catia` 74, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
+`cadmpeg-codec-catia` 74, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-edrawings` 19, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
 ## Routing

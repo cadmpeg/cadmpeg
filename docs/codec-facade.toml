@@ -65,6 +65,11 @@ hidden = [
 fuzz = "required"
 
 [[crate]]
+id = "edrawings"
+names = ["EdrawingsCodec"]
+fuzz = "required"
+
+[[crate]]
 id = "pvz"
 names = ["PvzCodec"]
 fuzz = "required"

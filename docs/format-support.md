@@ -71,6 +71,7 @@ its result.
 | CATIA V5 `.CATPart`                               | L3    |
 | Creo Parametric `.prt`                            | L1    |
 | Creo View `.pvz`                                  | L3    |
+| SolidWorks eDrawings `.eprt` and `.easm`          | L2    |
 | OpenUSD layers                                    | L2    |
 | STEP Part 21                                      | L8    |
 
@@ -563,6 +564,42 @@ These gaps remain:
 
 ### Write and round trip
 
+- **Native write: None.**
+- **Round trip: None.**
+
+## SolidWorks eDrawings `.eprt` and `.easm`
+
+**Container:** ZIP package with an `eModel` member that holds a HOOPS Stream Format model
+
+<!-- generated: dialects edrawings -->
+
+**Ladder: L2.**
+
+| Dialect               | Read                   | Write |
+| --------------------- | ---------------------- | ----- |
+| `edrawings:hsf-19-10` | detected               | none  |
+| `edrawings:hsf-18-00` | detected               | none  |
+| `edrawings:hsf-19-00` | detected               | none  |
+| `edrawings:unknown`   | unclassified-recovered | none  |
+
+<!-- /generated: dialects edrawings -->
+
+The codec opens the ZIP framing, reads the wrapper of the `eModel` member, expands its zlib model stream under the decode caps, and classifies the package from the stream version in the comment line. The dialect `edrawings:hsf-19-10` covers streams re-saved by the eDrawings viewer, and `edrawings:hsf-18-00` and `edrawings:hsf-19-00` cover streams written directly by SolidWorks. The writer and the declared version occur together in the observed files (EDR-10). The codec walks the model stream with the exact record rules of the dialect and rebuilds each body from its display meshes as a faceted B-rep: planar faces with straight edges. A part becomes one part definition. An assembly becomes one part definition for each distinct list of bodies, group definitions for the assembly and its nested sub-assemblies, and an occurrence tree with the absolute placements of the instances.
+
+These gaps remain:
+
+- The stream holds display meshes only. Bodies come out as planar faces, and decode reports `edrawings/geometry.reconstructed-from-mesh` (EDR-08).
+- Bodies that are not watertight become sheets (`edrawings/geometry.open-body`).
+- Materials, document properties, and lighting do not transfer (EDR-06).
+- Attribute records with an unknown mask stop the walk with `edrawings/model.malformed` (EDR-07).
+- Stream versions other than `19.10`, `19.00`, and `18.00` are read on the residual path (EDR-04, `edrawings/source.dialect-unverified`).
+- Colours of face groups, part-level colour overrides, and display-state colour overrides of `edrawings:hsf-18-00` and `edrawings:hsf-19-00` do not transfer (EDR-13, `edrawings/appearance.face-colour-reduced`, `edrawings/appearance.override-dropped`).
+
+### Read profile
+- **Container and versions: Partial.** The codec admits the ZIP package through the shared archive snapshot, requires an `eModel` member, and reads its wrapper and zlib stream. The package members are listed with their roles.
+- **Geometry: Partial.** The model stream is walked and decoded. Shells become faceted bodies in millimetres, with colours, names, and the current display state. Only display meshes exist in the source.
+
+### Write and round trip
 - **Native write: None.**
 - **Round trip: None.**
 
