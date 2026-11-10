@@ -596,6 +596,161 @@ L_SIMT_BEZ_EXIT:
     ret;
 }
 
+// 4b. Ampere sm_86 shared-memory control net + non-coherent load bicubic rational Bezier surface evaluation (FP64)
+.visible .entry cuda_sm86_bezier_eval_f64(
+    .param .u64 param_ctrl,
+    .param .u64 param_u,
+    .param .u64 param_v,
+    .param .u64 param_out,
+    .param .u32 param_nu,
+    .param .u32 param_nv
+) {
+    .shared .align 16 .b8 %smem_ctrl[512];
+    .reg .pred %p<5>;
+    .reg .b32 %r<18>;
+    .reg .b64 %rd<16>;
+    .reg .f64 %fd<28>;
+
+    ld.param.u64 %rd1, [param_ctrl];
+    ld.param.u64 %rd2, [param_u];
+    ld.param.u64 %rd3, [param_v];
+    ld.param.u64 %rd4, [param_out];
+    ld.param.u32 %r1, [param_nu];
+    ld.param.u32 %r2, [param_nv];
+
+    cvta.to.global.u64 %rd5, %rd1;
+    cvta.to.global.u64 %rd6, %rd2;
+    cvta.to.global.u64 %rd7, %rd3;
+    cvta.to.global.u64 %rd8, %rd4;
+
+    mov.u32 %r3, %ctaid.y;
+    mov.u32 %r4, %ntid.y;
+    mov.u32 %r5, %tid.y;
+    mad.lo.u32 %r6, %r3, %r4, %r5; // u_idx
+
+    mov.u32 %r7, %ctaid.x;
+    mov.u32 %r8, %ntid.x;
+    mov.u32 %r9, %tid.x;
+    mad.lo.u32 %r10, %r7, %r8, %r9; // v_idx
+
+    // Cooperative load of 64 f64s of the 4x4x4 control net into shared memory
+    mad.lo.u32 %r15, %r5, %r8, %r9; // linear_tid
+    setp.lt.u32 %p1, %r15, 64;
+    @!%p1 bra L_SM86_BEZ_SYNC;
+    mul.wide.u32 %rd9, %r15, 8;
+    add.u64 %rd10, %rd5, %rd9;
+    ld.global.nc.f64 %fd0, [%rd10];
+    mov.u64 %rd11, %smem_ctrl;
+    add.u64 %rd11, %rd11, %rd9;
+    st.shared.f64 [%rd11], %fd0;
+
+L_SM86_BEZ_SYNC:
+    bar.sync 0;
+
+    setp.ge.u32 %p1, %r6, %r1;
+    setp.ge.u32 %p2, %r10, %r2;
+    or.pred %p1, %p1, %p2;
+    @%p1 bra L_SM86_BEZ_EXIT;
+
+    mul.wide.u32 %rd9, %r6, 8;
+    add.u64 %rd9, %rd6, %rd9;
+    ld.global.nc.f64 %fd26, [%rd9]; // u
+
+    mul.wide.u32 %rd10, %r10, 8;
+    add.u64 %rd10, %rd7, %rd10;
+    ld.global.nc.f64 %fd27, [%rd10]; // v
+
+    sub.f64 %fd8, 0d3FF0000000000000, %fd26;
+    mul.f64 %fd9, %fd8, %fd8;
+    mul.f64 %fd10, %fd26, %fd26;
+    mul.f64 %fd0, %fd9, %fd8;
+    mul.f64 %fd1, %fd9, %fd26;
+    mul.f64 %fd1, %fd1, 0d4008000000000000;
+    mul.f64 %fd2, %fd8, %fd10;
+    mul.f64 %fd2, %fd2, 0d4008000000000000;
+    mul.f64 %fd3, %fd10, %fd26;
+
+    sub.f64 %fd8, 0d3FF0000000000000, %fd27;
+    mul.f64 %fd9, %fd8, %fd8;
+    mul.f64 %fd10, %fd27, %fd27;
+    mul.f64 %fd4, %fd9, %fd8;
+    mul.f64 %fd5, %fd9, %fd27;
+    mul.f64 %fd5, %fd5, 0d4008000000000000;
+    mul.f64 %fd6, %fd8, %fd10;
+    mul.f64 %fd6, %fd6, 0d4008000000000000;
+    mul.f64 %fd7, %fd10, %fd27;
+
+    mov.f64 %fd20, 0d0000000000000000;
+    mov.f64 %fd21, 0d0000000000000000;
+    mov.f64 %fd22, 0d0000000000000000;
+    mov.f64 %fd23, 0d0000000000000000;
+
+    mov.u64 %rd15, %smem_ctrl;
+    mov.u32 %r11, 0;
+L_SM86_BEZ_LOOP:
+    setp.ge.u32 %p1, %r11, 16;
+    @%p1 bra L_SM86_BEZ_DONE;
+
+    shr.u32 %r12, %r11, 2;
+    and.b32 %r13, %r11, 3;
+
+    setp.eq.u32 %p2, %r12, 0;
+    setp.eq.u32 %p3, %r12, 1;
+    setp.eq.u32 %p4, %r12, 2;
+    mov.f64 %fd12, %fd3;
+    selp.f64 %fd12, %fd2, %fd12, %p4;
+    selp.f64 %fd12, %fd1, %fd12, %p3;
+    selp.f64 %fd12, %fd0, %fd12, %p2;
+
+    setp.eq.u32 %p2, %r13, 0;
+    setp.eq.u32 %p3, %r13, 1;
+    setp.eq.u32 %p4, %r13, 2;
+    mov.f64 %fd13, %fd7;
+    selp.f64 %fd13, %fd6, %fd13, %p4;
+    selp.f64 %fd13, %fd5, %fd13, %p3;
+    selp.f64 %fd13, %fd4, %fd13, %p2;
+
+    mul.f64 %fd14, %fd12, %fd13;
+
+    mul.wide.u32 %rd11, %r11, 32;
+    add.u64 %rd12, %rd15, %rd11;
+    ld.shared.f64 %fd15, [%rd12 + 0];
+    ld.shared.f64 %fd16, [%rd12 + 8];
+    ld.shared.f64 %fd17, [%rd12 + 16];
+    ld.shared.f64 %fd18, [%rd12 + 24];
+
+    fma.rn.f64 %fd20, %fd14, %fd15, %fd20;
+    fma.rn.f64 %fd21, %fd14, %fd16, %fd21;
+    fma.rn.f64 %fd22, %fd14, %fd17, %fd22;
+    fma.rn.f64 %fd23, %fd14, %fd18, %fd23;
+
+    add.u32 %r11, %r11, 1;
+    bra L_SM86_BEZ_LOOP;
+
+L_SM86_BEZ_DONE:
+    abs.f64 %fd24, %fd23;
+    setp.gt.f64 %p2, %fd24, 0d3D719799812DEA11;
+    div.rn.f64 %fd25, 0d3FF0000000000000, %fd23;
+    selp.f64 %fd25, %fd25, 0d3FF0000000000000, %p2;
+
+    mul.f64 %fd20, %fd20, %fd25;
+    mul.f64 %fd21, %fd21, %fd25;
+    mul.f64 %fd22, %fd22, %fd25;
+
+    mad.lo.u32 %r14, %r6, %r2, %r10;
+    mul.wide.u32 %rd13, %r14, 32;
+    add.u64 %rd14, %rd8, %rd13;
+    st.global.f64 [%rd14 + 0],  %fd20;
+    st.global.f64 [%rd14 + 8],  %fd21;
+    st.global.f64 [%rd14 + 16], %fd22;
+    st.global.f64 [%rd14 + 24], %fd23;
+
+L_SM86_BEZ_EXIT:
+    ret;
+}
+
+// 4c. Handcrafted RTX Tensor Core two-stage contraction for bicubic rational Bezier surface evaluation:
+// Stage 1 contracts U_basis (N_u x 4) * G_c (4 x 4), Stage 2 contracts (U_basis * G_c) (8 x 4) * V_basis^T (4 x 8)
 ";
 
 /// Hardware context for safe `cudarc` CUDA Driver API execution, `OptiX` RT Core BVH traversal, and RTX Tensor Core PTX dispatch.
@@ -609,6 +764,7 @@ pub struct CudaContext {
     fn_simt_pairwise_dist: CudaFunction,
     fn_sm86_pairwise_dist: CudaFunction,
     fn_simt_bezier_eval: CudaFunction,
+    fn_sm86_bezier_eval: CudaFunction,
 }
 
 static GLOBAL_CUDA: OnceLock<Option<CudaContext>> = OnceLock::new();
@@ -649,6 +805,7 @@ impl CudaContext {
             fn_simt_pairwise_dist: module.load_function("cuda_simt_pairwise_dist_f64").ok()?,
             fn_sm86_pairwise_dist: module.load_function("cuda_sm86_pairwise_dist_f64").ok()?,
             fn_simt_bezier_eval: module.load_function("cuda_simt_bezier_eval_f64").ok()?,
+            fn_sm86_bezier_eval: module.load_function("cuda_sm86_bezier_eval_f64").ok()?,
             device_name,
             compute_capability: (major, minor),
             ctx,
@@ -928,6 +1085,24 @@ impl CudaContext {
         )
     }
 
+    /// Evaluates bicubic rational Bézier surface patches via Ampere `sm_86` PTX with shared-memory control net.
+    #[must_use]
+    pub fn ptx_sm86_eval_bicubic_bezier_grid(
+        &self,
+        control_points: &[[[f64; 4]; 4]; 4],
+        u_params: &[f64],
+        v_params: &[f64],
+    ) -> Option<Vec<Point3>> {
+        if !self.supports_sm86() {
+            return None;
+        }
+        self.dispatch_bezier_eval_kernel(
+            &self.fn_sm86_bezier_eval,
+            control_points,
+            u_params,
+            v_params,
+        )
+    }
     /// Whether the active GPU supports NVIDIA `OptiX` hardware RT Core acceleration.
     #[must_use]
     pub const fn supports_optix_rt(&self) -> bool {
@@ -1139,6 +1314,41 @@ mod tests {
             assert!((e.x - s.x).abs() < CUDA_PARITY_TOLERANCE);
             assert!((e.y - s.y).abs() < CUDA_PARITY_TOLERANCE);
             assert!((e.z - s.z).abs() < CUDA_PARITY_TOLERANCE);
+        }
+    }
+
+    #[test]
+    fn cuda_sm86_bezier_matches_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let mut ctrl = [[[0.0_f64; 4]; 4]; 4];
+        for (i, row) in ctrl.iter_mut().enumerate() {
+            for (j, pole) in row.iter_mut().enumerate() {
+                let u = f64::from(u32::try_from(i).unwrap_or(0));
+                let v = f64::from(u32::try_from(j).unwrap_or(0));
+                let w = 1.0 + 0.1 * (u + v);
+                *pole = [u * w, v * w, (u * u - v) * 0.25 * w, w];
+            }
+        }
+        let u_params: Vec<f64> = (0..11).map(|i| f64::from(i) / 10.0).collect();
+        let v_params: Vec<f64> = (0..9).map(|j| f64::from(j) / 8.0).collect();
+
+        let expected_bez = cpu::eval_bicubic_bezier_grid(&ctrl, &u_params, &v_params);
+        if ctx.supports_sm86() {
+            let sm86_bez = ctx
+                .ptx_sm86_eval_bicubic_bezier_grid(&ctrl, &u_params, &v_params)
+                .expect("PTX sm_86 Bezier eval");
+            assert_eq!(expected_bez.len(), sm86_bez.len());
+            for (e, s) in expected_bez.iter().zip(&sm86_bez) {
+                assert!((e.x - s.x).abs() < CUDA_PARITY_TOLERANCE);
+                assert!((e.y - s.y).abs() < CUDA_PARITY_TOLERANCE);
+                assert!((e.z - s.z).abs() < CUDA_PARITY_TOLERANCE);
+            }
+        } else {
+            assert!(ctx
+                .ptx_sm86_eval_bicubic_bezier_grid(&ctrl, &u_params, &v_params)
+                .is_none());
         }
     }
 
