@@ -489,6 +489,8 @@ pub(crate) enum F3dLossCode {
     FeatureTrimMemberTypeAssumed,
     /// An Extrude bounded-face operand drops fallback faces that one recipe operand contradicts.
     FeatureFaceOperandFallbackContradicted,
+    /// An Extrude to-face termination keeps its native group: its recipe face and
+    /// the derived preceding-face set disagree and no stored cap decides.
     FeatureExtrudeTargetDisputed,
     /// Edge-treatment selections retain native recipes; no historical edge.
     FeatureEdgeSelectionNative,
