@@ -90,7 +90,7 @@ fn validation_accepts_transformed_insert_frames_with_other_paired_tags() {
 }
 
 #[test]
-fn validation_accepts_identity_insert_frame_and_rejects_wrong_pair() {
+fn validation_accepts_identity_insert_frame_with_any_paired_class_tag() {
     use crate::records::{
         decal::DesignRecordHeader,
         feature::{
@@ -222,15 +222,18 @@ fn validation_accepts_identity_insert_frame_and_rejects_wrong_pair() {
     }
     f3d_native_mut(&mut ir).xref_references.clear();
 
+    let paired_frame_rejected = |ir: &cadmpeg_ir::CadIr| {
+        let findings = crate::test_support::with_decode_context(|ctx| {
+            crate::validate::validate_native(ctx, ir).unwrap()
+        });
+        findings.iter().any(|finding| {
+            finding.entity.as_deref() == Some(scope_id.as_str())
+                && finding.message == "Fusion Design parameter scope has an invalid paired frame"
+        })
+    };
     f3d_native_mut(&mut ir).design_parameter_scopes[0].paired_class_tag =
         crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
-    let findings = crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native(ctx, &ir).unwrap()
-    });
-    assert!(findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(scope_id.as_str())
-            && finding.message == "Fusion Design parameter scope has an invalid paired frame"
-    }));
+    assert!(!paired_frame_rejected(&ir));
 }
 
 #[test]

@@ -7331,6 +7331,30 @@ pub(crate) mod component_insert_identity_scope_272_prefix {
     pub(crate) const NULL_GUID: usize = 50;
 }
 
+/// Byte offsets for the `component_insert_matrix_scope_400_prefix` record.
+///
+/// Spec §3.1. Record length 254 B.
+pub(crate) mod component_insert_matrix_scope_400_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 254;
+    /// Offset of `zero_prefix` (`bytes[14]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 11;
+    /// Offset of `occurrence_identity` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const OCCURRENCE_IDENTITY: usize = 25;
+    /// Offset of `zero_after_identity` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_AFTER_IDENTITY: usize = 33;
+    /// Offset of `relation_reference` (`bytes[5]`). Spec §3.1.
+    pub(crate) const RELATION_REFERENCE: usize = 37;
+    /// Offset of `zero_after_relation` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_AFTER_RELATION: usize = 42;
+    /// Offset of `matrix_markers` (`bytes[2]`). Spec §3.1.
+    pub(crate) const MATRIX_MARKERS: usize = 48;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 50;
+    /// Offset of `null_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const NULL_GUID: usize = 178;
+}
+
 /// Byte offsets for the `emboss_scope_reference_table_prefix` record.
 ///
 /// Spec §3.1. Record length 239 B.

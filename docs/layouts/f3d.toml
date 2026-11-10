@@ -23785,7 +23785,7 @@ name = "component_insert_identity_scope_272_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs"
 kind = "byte"
 section = "3.1"
-anchor = "The class-`357` / class-`262` 272-byte Component Insert scope"
+anchor = "The 272-byte Component Insert scope"
 size = 126
 
 [[record.field]]
@@ -23843,6 +23843,77 @@ offset = 50
 type = "bytes[76]"
 source = "spec"
 anchor = "The LP-UTF16 null GUID starts at offset 50"
+
+[[record]]
+name = "component_insert_matrix_scope_400_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The 400-byte frame stores the fields of the 272-byte frame through offset 47"
+size = 254
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The 400-byte frame stores the fields of the 272-byte frame through offset 47"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "The 400-byte frame stores the fields of the 272-byte frame through offset 47"
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 25
+type = "u64"
+source = "spec"
+anchor = "The 400-byte frame stores the fields of the 272-byte frame through offset 47"
+
+[[record.field]]
+name = "zero_after_identity"
+offset = 33
+type = "bytes[4]"
+source = "spec"
+anchor = "The 400-byte frame stores the fields of the 272-byte frame through offset 47"
+
+[[record.field]]
+name = "relation_reference"
+offset = 37
+type = "bytes[5]"
+source = "spec"
+anchor = "The 400-byte frame stores the fields of the 272-byte frame through offset 47"
+
+[[record.field]]
+name = "zero_after_relation"
+offset = 42
+type = "bytes[6]"
+source = "spec"
+anchor = "The 400-byte frame stores the fields of the 272-byte frame through offset 47"
+
+[[record.field]]
+name = "matrix_markers"
+offset = 48
+type = "bytes[2]"
+source = "spec"
+anchor = "bytes `01 00` at offset 48"
+
+[[record.field]]
+name = "transform"
+offset = 50
+type = "f64[16]"
+source = "spec"
+anchor = "a row-major rigid transform at offset 50"
+
+[[record.field]]
+name = "null_guid"
+offset = 178
+type = "bytes[76]"
+source = "spec"
+anchor = "Its LP-UTF16 null GUID starts at offset 178"
 
 [[record]]
 name = "component_insert_identity_scope_276_prefix"
