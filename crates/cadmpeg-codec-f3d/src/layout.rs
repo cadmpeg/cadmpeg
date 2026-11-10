@@ -9365,3 +9365,21 @@ pub(crate) mod surface_trim_cell_entry {
     /// Offset of `value` (`u64`, little-endian). Spec §3.1.
     pub(crate) const VALUE: usize = 11;
 }
+
+/// Byte offsets for the `rectangular_pattern_compact_spacing_direction_record` record.
+///
+/// Spec §Assembly operands. Record length 195 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header.
+/// ```
+pub(crate) mod rectangular_pattern_compact_spacing_direction_record {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 195;
+    /// Offset of `selection_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SELECTION_COUNT: usize = 93;
+    /// Offset of `separator_zero_run` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const SEPARATOR_ZERO_RUN: usize = 170;
+    /// Offset of `index_plus_one_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEX_PLUS_ONE_REFERENCE: usize = 172;
+}

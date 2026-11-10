@@ -9475,6 +9475,40 @@ Spec §3.1 · layout: byte offsets · size: 19 B
 | 0 | 11 | `record_reference` | `bytes[11]` | little | spec | a marked indexed-record reference at entry offset 0 |
 | 11 | 8 | `value` | `u64` | little | spec | a positive u64 entry value at entry offset 11 |
 
+## `rectangular_pattern_compact_spacing_direction_record`
+
+Spec §Assembly operands · layout: byte offsets · size: 195 B
+
+Offsets are relative to the primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 21 | 4 | `selection_kind` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 25 | 24 | `origin` | `f64[3]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 49 | 24 | `displacement` | `f64[3]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 73 | 16 | `zero_run_16` | `bytes[16]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 89 | 4 | `distance_type` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. · value `7` |
+| 93 | 4 | `selection_count` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 97 | 11 | `selection_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 108 | 2 | `zero_run_2` | `bytes[2]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 110 | 4 | `auxiliary_count` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 114 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 125 | 8 | `role` | `u64` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 133 | 10 | `zero_run_after_role` | `bytes[10]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 143 | 4 | `opaque_index` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 147 | 8 | `opaque_scalar` | `f64` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 155 | 4 | `opaque_index_repeat` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 159 | 11 | `index_plus_two_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 170 | 2 | `separator_zero_run` | `bytes[2]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 172 | 11 | `index_plus_one_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 183 | 1 | `scope_separator` | `u8` | little | spec | The compact spacing direction form is a 195-byte frame. |
+| 184 | 11 | `scope_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

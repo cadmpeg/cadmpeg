@@ -469,7 +469,7 @@ travel.
 
 **Question.** What does selection kind `16` select in a rectangular-pattern direction record, what do its origin and displacement mean, and what record does the marked reference at offset 138 name?
 
-**Known.** `f3d.md` §3.1 "A rectangular-pattern direction record is a 220-byte frame" gives the frame, the U-then-V order, and the direction as the normalized displacement. Kind `8` selects a linear edge, with the edge start point and the edge vector. A kind-`16` record stores a unit displacement and an origin on the selected entity; the specification does not name the entity kind. The reference at offset 138 names a record outside the scope reference table.
+**Known.** `f3d.md` §3.1 "A rectangular-pattern direction record has a 220-byte, 221-byte, or 195-byte form" gives the frame, the U-then-V order, and the direction as the normalized displacement. Kind `8` selects a linear edge, with the edge start point and the edge vector. A kind-`16` record stores a unit displacement and an origin on the selected entity. The reference at offset 138 names a record outside the scope reference table.
 
 **Need.** A writer must emit the selection kind, the origin, and the reference at offset 138 for a direction that does not come from a linear edge, and a reader must know whether a kind-`16` origin is a point of a planar face, an axis, or another entity.
 
