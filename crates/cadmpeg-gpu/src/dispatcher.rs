@@ -303,7 +303,9 @@ impl GpuDispatcher {
         mesh: TriangleMeshView<'_>,
     ) -> Option<Vec<RayHit3>> {
         match backend {
-            BackendKind::RtxRtCore => None,
+            BackendKind::RtxRtCore => {
+                global_cuda().and_then(|cu| cu.optix_rt_ray_mesh_intersect(rays, mesh))
+            }
             BackendKind::VulkanRtCore => {
                 global_vulkan().and_then(|vk| vk.rt_core_ray_mesh_intersect(rays, mesh))
             }
@@ -764,10 +766,18 @@ fn benchmark_single(
                 })
                 .collect();
 
-            if matches!(backend, BackendKind::VulkanRtCore) {
-                if let Some(vk) = global_vulkan() {
-                    std::hint::black_box(vk.rt_core_ray_mesh_intersect(&rays[..1], mesh));
+            match backend {
+                BackendKind::VulkanRtCore => {
+                    if let Some(vk) = global_vulkan() {
+                        std::hint::black_box(vk.rt_core_ray_mesh_intersect(&rays[..1], mesh));
+                    }
                 }
+                BackendKind::RtxRtCore => {
+                    if let Some(cu) = global_cuda() {
+                        std::hint::black_box(cu.optix_rt_ray_mesh_intersect(&rays[..1], mesh));
+                    }
+                }
+                _ => {}
             }
 
             let t0 = Instant::now();
@@ -804,7 +814,11 @@ fn benchmark_single(
                     let out = cu.ptx_sm86_ray_mesh_intersect(&rays, mesh)?;
                     std::hint::black_box(&out);
                 }
-                (OperationKind::RayMeshIntersection, BackendKind::RtxRtCore) => return None,
+                (OperationKind::RayMeshIntersection, BackendKind::RtxRtCore) => {
+                    let cu = global_cuda()?;
+                    let out = cu.optix_rt_ray_mesh_intersect(&rays, mesh)?;
+                    std::hint::black_box(&out);
+                }
                 (OperationKind::PointInSolidParity, BackendKind::Cpu) => {
                     let out = cpu::point_in_solid_parity(&pts, mesh);
                     std::hint::black_box(&out);

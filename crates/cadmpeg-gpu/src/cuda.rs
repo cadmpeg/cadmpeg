@@ -5,12 +5,19 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use cadmpeg_ir::math::Point3;
 use cudarc::driver::{
-    CudaContext as CudarcContext, CudaFunction, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
+    CudaContext as CudarcContext, CudaFunction, CudaSlice, CudaStream, DevicePtr, LaunchConfig,
+    PushKernelArg,
 };
 use cudarc::nvrtc::Ptx;
+use cudarc::optix::{
+    sys as optix_sys, OptixAccel, OptixContext, OptixModule, OptixPipeline, OptixProgramGroup,
+    OptixSbt,
+};
 
 use crate::cpu;
 use crate::{RayHit3, RayQuery3, TriangleMeshView};
+
+const OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT_U32: u32 = 1;
 
 /// Complete PTX 7.1 module targeting `sm_80` (Ampere and newer) containing
 /// FP64 SIMT compute kernels, Ampere `sm_86` warp-butterfly kernels, and
@@ -1179,7 +1186,382 @@ L_SM86_RAY_EXIT:
     ret;
 }
 
+// 11. CUDA OptiX RT Core + FP64 Ray-Mesh intersection refinement kernel
+.visible .entry cuda_optix_ray_mesh_f64(
+    .param .u64 param_rays,
+    .param .u64 param_tris,
+    .param .u64 param_cand_prim,
+    .param .u64 param_out,
+    .param .u32 param_n_rays,
+    .param .u32 param_n_tris
+) {
+    .reg .pred %p<8>;
+    .reg .b32 %r<12>;
+    .reg .b64 %rd<16>;
+    .reg .f64 %fd<42>;
+
+    ld.param.u64 %rd1, [param_rays];
+    ld.param.u64 %rd2, [param_tris];
+    ld.param.u64 %rd14, [param_cand_prim];
+    ld.param.u64 %rd3, [param_out];
+    ld.param.u32 %r1, [param_n_rays];
+    ld.param.u32 %r2, [param_n_tris];
+
+    mov.u32 %r3, %ctaid.x;
+    mov.u32 %r4, %ntid.x;
+    mov.u32 %r5, %tid.x;
+    mad.lo.u32 %r6, %r3, %r4, %r5;
+    setp.ge.u32 %p0, %r6, %r1;
+    @%p0 bra L_OPTIX_RAY_EXIT;
+
+    cvta.to.global.u64 %rd4, %rd1;
+    cvta.to.global.u64 %rd5, %rd2;
+    cvta.to.global.u64 %rd15, %rd14;
+    cvta.to.global.u64 %rd6, %rd3;
+
+    mul.wide.u32 %rd7, %r6, 64;
+    add.u64 %rd8, %rd4, %rd7;
+    ld.global.nc.f64 %fd0, [%rd8 + 0];
+    ld.global.nc.f64 %fd1, [%rd8 + 8];
+    ld.global.nc.f64 %fd2, [%rd8 + 16];
+    ld.global.nc.f64 %fd3, [%rd8 + 24];
+    ld.global.nc.f64 %fd4, [%rd8 + 32];
+    ld.global.nc.f64 %fd5, [%rd8 + 40];
+    ld.global.nc.f64 %fd6, [%rd8 + 48];
+    ld.global.nc.f64 %fd7, [%rd8 + 56];
+
+    mov.f64 %fd30, %fd7;
+    mov.u32 %r7, 0xffffffff;
+    mov.f64 %fd31, 0d0000000000000000;
+    mov.f64 %fd32, 0d0000000000000000;
+
+    mul.wide.u32 %rd7, %r6, 4;
+    add.u64 %rd8, %rd15, %rd7;
+    ld.global.nc.u32 %r9, [%rd8];
+
+    mov.u32 %r10, 0;
+    setp.lt.u32 %p1, %r9, %r2;
+    @!%p1 bra L_OPTIX_RAY_CHECK_SMALL;
+    mov.u32 %r8, %r9;
+    bra L_OPTIX_RAY_EVAL;
+
+L_OPTIX_RAY_CHECK_SMALL:
+    setp.le.u32 %p1, %r2, 16;
+    @!%p1 bra L_OPTIX_RAY_DONE;
+
+L_OPTIX_RAY_START_LOOP:
+    mov.u32 %r10, 1;
+    mov.u32 %r8, 0;
+
+L_OPTIX_RAY_LOOP:
+    setp.ge.u32 %p1, %r8, %r2;
+    @%p1 bra L_OPTIX_RAY_DONE;
+    setp.eq.u32 %p1, %r8, %r9;
+    @%p1 bra L_OPTIX_RAY_NEXT;
+
+L_OPTIX_RAY_EVAL:
+    mul.wide.u32 %rd9, %r8, 72;
+    add.u64 %rd10, %rd5, %rd9;
+    ld.global.nc.f64 %fd8,  [%rd10 + 0];
+    ld.global.nc.f64 %fd9,  [%rd10 + 8];
+    ld.global.nc.f64 %fd10, [%rd10 + 16];
+    ld.global.nc.f64 %fd11, [%rd10 + 24];
+    ld.global.nc.f64 %fd12, [%rd10 + 32];
+    ld.global.nc.f64 %fd13, [%rd10 + 40];
+    ld.global.nc.f64 %fd14, [%rd10 + 48];
+    ld.global.nc.f64 %fd15, [%rd10 + 56];
+    ld.global.nc.f64 %fd16, [%rd10 + 64];
+
+    mul.f64 %fd17, %fd6, %fd15;
+    neg.f64 %fd17, %fd17;
+    fma.rn.f64 %fd17, %fd5, %fd16, %fd17;
+    mul.f64 %fd18, %fd4, %fd16;
+    neg.f64 %fd18, %fd18;
+    fma.rn.f64 %fd18, %fd6, %fd14, %fd18;
+    mul.f64 %fd19, %fd5, %fd14;
+    neg.f64 %fd19, %fd19;
+    fma.rn.f64 %fd19, %fd4, %fd15, %fd19;
+
+    mul.f64 %fd20, %fd13, %fd19;
+    fma.rn.f64 %fd20, %fd12, %fd18, %fd20;
+    fma.rn.f64 %fd20, %fd11, %fd17, %fd20;
+
+    abs.f64 %fd21, %fd20;
+    setp.le.f64 %p2, %fd21, 0d3D719799812DEA11;
+    @%p2 bra L_OPTIX_RAY_AFTER_EVAL;
+
+    div.rn.f64 %fd22, 0d3FF0000000000000, %fd20;
+
+    sub.f64 %fd23, %fd0, %fd8;
+    sub.f64 %fd24, %fd1, %fd9;
+    sub.f64 %fd25, %fd2, %fd10;
+
+    mul.f64 %fd26, %fd25, %fd19;
+    fma.rn.f64 %fd26, %fd24, %fd18, %fd26;
+    fma.rn.f64 %fd26, %fd23, %fd17, %fd26;
+    mul.f64 %fd26, %fd26, %fd22;
+
+    setp.lt.f64 %p3, %fd26, 0dBDA5FD7FE1796495;
+    setp.gt.f64 %p4, %fd26, 0d3FF000000000AFEC;
+    or.pred %p3, %p3, %p4;
+    @%p3 bra L_OPTIX_RAY_AFTER_EVAL;
+
+    mul.f64 %fd27, %fd25, %fd12;
+    neg.f64 %fd27, %fd27;
+    fma.rn.f64 %fd27, %fd24, %fd13, %fd27;
+    mul.f64 %fd28, %fd23, %fd13;
+    neg.f64 %fd28, %fd28;
+    fma.rn.f64 %fd28, %fd25, %fd11, %fd28;
+    mul.f64 %fd29, %fd24, %fd11;
+    neg.f64 %fd29, %fd29;
+    fma.rn.f64 %fd29, %fd23, %fd12, %fd29;
+
+    mul.f64 %fd33, %fd6, %fd29;
+    fma.rn.f64 %fd33, %fd5, %fd28, %fd33;
+    fma.rn.f64 %fd33, %fd4, %fd27, %fd33;
+    mul.f64 %fd33, %fd33, %fd22;
+
+    add.f64 %fd34, %fd26, %fd33;
+    setp.lt.f64 %p3, %fd33, 0dBDA5FD7FE1796495;
+    setp.gt.f64 %p4, %fd34, 0d3FF000000000AFEC;
+    or.pred %p3, %p3, %p4;
+    @%p3 bra L_OPTIX_RAY_AFTER_EVAL;
+
+    mul.f64 %fd35, %fd16, %fd29;
+    fma.rn.f64 %fd35, %fd15, %fd28, %fd35;
+    fma.rn.f64 %fd35, %fd14, %fd27, %fd35;
+    mul.f64 %fd35, %fd35, %fd22;
+
+    setp.lt.f64 %p5, %fd35, %fd3;
+    setp.ge.f64 %p6, %fd35, %fd30;
+    or.pred %p5, %p5, %p6;
+    @%p5 bra L_OPTIX_RAY_AFTER_EVAL;
+
+    mov.f64 %fd30, %fd35;
+    mov.u32 %r7, %r8;
+    mov.f64 %fd31, %fd26;
+    mov.f64 %fd32, %fd33;
+
+L_OPTIX_RAY_AFTER_EVAL:
+    setp.eq.u32 %p1, %r10, 0;
+    @%p1 bra L_OPTIX_RAY_CHECK_SMALL;
+
+L_OPTIX_RAY_NEXT:
+    add.u32 %r8, %r8, 1;
+    bra L_OPTIX_RAY_LOOP;
+
+L_OPTIX_RAY_DONE:
+    mul.wide.u32 %rd11, %r6, 32;
+    add.u64 %rd12, %rd6, %rd11;
+    cvt.u64.u32 %rd13, %r7;
+    mov.b64 %fd36, %rd13;
+    st.global.f64 [%rd12 + 0],  %fd30;
+    st.global.f64 [%rd12 + 8],  %fd36;
+    st.global.f64 [%rd12 + 16], %fd31;
+    st.global.f64 [%rd12 + 24], %fd32;
+
+L_OPTIX_RAY_EXIT:
+    ret;
+}
+
 ";
+
+const OPTIX_PTX_MODULE: &str = "\
+.version 7.0
+.target sm_75
+.address_size 64
+
+.const .align 8 .b8 params[32];
+
+.extern .func (.reg .u32 $value) _optix_get_launch_index_x ();
+.extern .func (.reg .u32 $value) _optix_read_primitive_idx ();
+.extern .func () _optix_set_payload_0 (.reg .u32 $value);
+.extern .func () _optix_ignore_intersection ();
+.extern .func (.reg .u32 p0) _optix_trace_1 (
+    .reg .u64 handle,
+    .reg .f32 rayOriginX,
+    .reg .f32 rayOriginY,
+    .reg .f32 rayOriginZ,
+    .reg .f32 rayDirectionX,
+    .reg .f32 rayDirectionY,
+    .reg .f32 rayDirectionZ,
+    .reg .f32 tmin,
+    .reg .f32 tmax,
+    .reg .f32 rayTime,
+    .reg .u32 visibilityMask,
+    .reg .u32 rayFlags,
+    .reg .u32 SBToffset,
+    .reg .u32 SBTstride,
+    .reg .u32 missSBTIndex,
+    .reg .u32 p0
+);
+
+.visible .entry __raygen__candidate()
+{
+    .reg .u32 %idx, %prim, %vis, %flags, %sbt_off, %sbt_stride, %miss_idx;
+    .reg .u64 %handle, %rays_base, %out_prim_base, %off64, %off4, %ray_ptr, %out_prim_ptr;
+    .reg .f64 %ox64, %oy64, %oz64, %dx64, %dy64, %dz64;
+    .reg .f32 %ox, %oy, %oz, %dx, %dy, %dz, %tmin, %tmax, %rtime;
+
+    call (%idx), _optix_get_launch_index_x, ();
+    ld.const.u64 %handle, [params + 0];
+    ld.const.u64 %rays_base, [params + 8];
+    ld.const.u64 %out_prim_base, [params + 16];
+
+    mul.wide.u32 %off64, %idx, 64;
+    add.u64 %ray_ptr, %rays_base, %off64;
+
+    ld.global.f64 %ox64, [%ray_ptr + 0];
+    ld.global.f64 %oy64, [%ray_ptr + 8];
+    ld.global.f64 %oz64, [%ray_ptr + 16];
+    ld.global.f64 %dx64, [%ray_ptr + 32];
+    ld.global.f64 %dy64, [%ray_ptr + 40];
+    ld.global.f64 %dz64, [%ray_ptr + 48];
+
+    cvt.rn.f32.f64 %ox, %ox64;
+    cvt.rn.f32.f64 %oy, %oy64;
+    cvt.rn.f32.f64 %oz, %oz64;
+    cvt.rn.f32.f64 %dx, %dx64;
+    cvt.rn.f32.f64 %dy, %dy64;
+    cvt.rn.f32.f64 %dz, %dz64;
+
+    mov.f32 %tmin, 0f00000000;
+    mov.f32 %tmax, 0f7149F2CA;
+    mov.f32 %rtime, 0f00000000;
+    mov.u32 %vis, 255;
+    mov.u32 %flags, 0;
+    mov.u32 %sbt_off, 0;
+    mov.u32 %sbt_stride, 1;
+    mov.u32 %miss_idx, 0;
+    mov.u32 %prim, -1;
+
+    call (%prim), _optix_trace_1, (
+        %handle,
+        %ox, %oy, %oz,
+        %dx, %dy, %dz,
+        %tmin, %tmax, %rtime,
+        %vis, %flags, %sbt_off, %sbt_stride, %miss_idx,
+        %prim
+    );
+
+    mul.wide.u32 %off4, %idx, 4;
+    add.u64 %out_prim_ptr, %out_prim_base, %off4;
+    st.global.u32 [%out_prim_ptr], %prim;
+    ret;
+}
+
+.visible .entry __closesthit__ch()
+{
+    .reg .u32 %prim;
+    call (%prim), _optix_read_primitive_idx, ();
+    call (), _optix_set_payload_0, (%prim);
+    ret;
+}
+
+.visible .entry __miss__ms()
+{
+    .reg .u32 %none;
+    mov.u32 %none, -1;
+    call (), _optix_set_payload_0, (%none);
+    ret;
+}
+";
+
+fn f64_to_blas_f32(val: f64) -> f32 {
+    if !val.is_finite() || val == 0.0 {
+        return 0.0;
+    }
+    let clamped = val.clamp(-1.0e15, 1.0e15);
+    let bits = clamped.to_bits();
+    let sign_u32 = u32::try_from(bits >> 63).unwrap_or(0) << 31;
+    let exp_i32 = i32::try_from((bits >> 52) & 0x7ff).unwrap_or(0) - 1023;
+    if exp_i32 < -126 {
+        return 0.0;
+    }
+    if exp_i32 > 127 {
+        return f32::from_bits(sign_u32 | (254 << 23) | 0x007f_ffff);
+    }
+    let exp_f32 = u32::try_from(exp_i32 + 127).unwrap_or(0) << 23;
+    let mant_24 = (bits & 0x000f_ffff_ffff_ffff) >> 28;
+    let sticky = (bits & ((1_u64 << 28) - 1)) != 0;
+    let frac_23 = mant_24 >> 1;
+    let round_bit = mant_24 & 1;
+    let round_up = round_bit == 1 && (sticky || (frac_23 & 1) == 1);
+    let f32_bits = sign_u32 | (exp_f32 + u32::try_from(frac_23 + u64::from(round_up)).unwrap_or(0));
+    f32::from_bits(f32_bits)
+}
+
+struct CachedOptixMesh {
+    hash: u64,
+    n_tris: u32,
+    n_nodes: u32,
+    r_pad_sq: f64,
+    blas_closest: OptixAccel,
+    blas_anyhit: OptixAccel,
+    blas_aabb: OptixAccel,
+    d_tris_edges: CudaSlice<f64>,
+    d_tris_verts: CudaSlice<f64>,
+    d_bvh: CudaSlice<f64>,
+}
+
+struct OptixPipelines {
+    ctx: Arc<OptixContext>,
+    ray_pipeline: Arc<OptixPipeline>,
+    ray_sbt: OptixSbt,
+    fn_optix_ray_mesh: CudaFunction,
+    mesh_cache: Mutex<Option<CachedOptixMesh>>,
+}
+
+impl OptixPipelines {
+    fn probe(
+        ctx: &Arc<CudarcContext>,
+        cuda_module: &Arc<cudarc::driver::CudaModule>,
+    ) -> Option<Self> {
+        if !OptixContext::is_available() {
+            return None;
+        }
+        let optix_ctx = OptixContext::new(ctx).ok()?;
+        if optix_ctx.rtcore_version().ok()? == 0 {
+            return None;
+        }
+        let stream = ctx.default_stream();
+        let module_opts = optix_sys::OptixModuleCompileOptions::default();
+        let pipeline_opts = optix_sys::OptixPipelineCompileOptions {
+            numPayloadValues: 1,
+            numAttributeValues: 2,
+            ..Default::default()
+        };
+        let link_opts = optix_sys::OptixPipelineLinkOptions::default();
+
+        let optix_module =
+            OptixModule::from_ptx(&optix_ctx, OPTIX_PTX_MODULE, &module_opts, &pipeline_opts)
+                .ok()?;
+        let rg_ray =
+            OptixProgramGroup::new_raygen(&optix_ctx, &optix_module, "__raygen__candidate").ok()?;
+        let ms =
+            OptixProgramGroup::new_miss(&optix_ctx, Some((&optix_module, "__miss__ms"))).ok()?;
+        let hg_closest = OptixProgramGroup::new_hitgroup(
+            &optix_ctx,
+            Some((&optix_module, "__closesthit__ch")),
+            None,
+            None,
+        )
+        .ok()?;
+
+        let ray_groups = [rg_ray.clone(), ms.clone(), hg_closest.clone()];
+        let ray_pipeline =
+            OptixPipeline::new(&optix_ctx, &pipeline_opts, &link_opts, &ray_groups, 1).ok()?;
+        let ray_sbt = OptixSbt::from_groups(&stream, &rg_ray, &[&ms], &[&hg_closest]).ok()?;
+
+        Some(Self {
+            ctx: optix_ctx,
+            ray_pipeline,
+            ray_sbt,
+            fn_optix_ray_mesh: cuda_module.load_function("cuda_optix_ray_mesh_f64").ok()?,
+            mesh_cache: Mutex::new(None),
+        })
+    }
+}
 
 struct CachedCudaMesh {
     hash: u64,
@@ -1206,6 +1588,7 @@ pub struct CudaContext {
     fn_simt_ray_mesh: CudaFunction,
     fn_sm86_ray_mesh: CudaFunction,
     compute_mesh_cache: Mutex<Option<CachedCudaMesh>>,
+    optix: Option<OptixPipelines>,
 }
 
 static GLOBAL_CUDA: OnceLock<Option<CudaContext>> = OnceLock::new();
@@ -1238,6 +1621,7 @@ impl CudaContext {
             .ok()?;
 
         let module = ctx.load_module(Ptx::from_src(CUDA_PTX_MODULE)).ok()?;
+        let optix = OptixPipelines::probe(&ctx, &module);
 
         Some(Self {
             fn_simt_transform: module.load_function("cuda_simt_transform_4x4_f64").ok()?,
@@ -1251,6 +1635,7 @@ impl CudaContext {
             fn_simt_ray_mesh: module.load_function("cuda_simt_ray_mesh_f64").ok()?,
             fn_sm86_ray_mesh: module.load_function("cuda_sm86_ray_mesh_f64").ok()?,
             compute_mesh_cache: Mutex::new(None),
+            optix,
             device_name,
             compute_capability: (major, minor),
             ctx,
@@ -1817,8 +2202,9 @@ impl CudaContext {
     /// Whether the active GPU supports NVIDIA `OptiX` hardware RT Core acceleration.
     #[must_use]
     pub const fn supports_optix_rt(&self) -> bool {
-        false
+        self.optix.is_some()
     }
+
     fn hash_mesh(mesh: TriangleMeshView<'_>) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -1843,6 +2229,299 @@ impl CudaContext {
             last_t.hash(&mut hasher);
         }
         hasher.finish()
+    }
+
+    fn build_cached_optix_mesh(
+        optix: &OptixPipelines,
+        stream: &Arc<CudaStream>,
+        mesh: TriangleMeshView<'_>,
+        hash: u64,
+    ) -> Option<CachedOptixMesh> {
+        let n_tris = u32::try_from(mesh.triangles.len()).ok()?;
+        let flat_bvh = crate::spatial::MeshBvh3::build(mesh).flatten();
+        let n_nodes = u32::try_from(flat_bvh.nodes().len()).ok()?;
+
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut min_z = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        let mut max_z = f64::NEG_INFINITY;
+
+        let mut verts_f32: Vec<[f32; 3]> = Vec::with_capacity(mesh.vertices.len());
+        for v in mesh.vertices {
+            if v.x.is_finite() && v.y.is_finite() && v.z.is_finite() {
+                min_x = min_x.min(v.x);
+                min_y = min_y.min(v.y);
+                min_z = min_z.min(v.z);
+                max_x = max_x.max(v.x);
+                max_y = max_y.max(v.y);
+                max_z = max_z.max(v.z);
+            }
+            verts_f32.push([
+                f64_to_blas_f32(v.x),
+                f64_to_blas_f32(v.y),
+                f64_to_blas_f32(v.z),
+            ]);
+        }
+        let diag = if min_x <= max_x {
+            let dx = max_x - min_x;
+            let dy = max_y - min_y;
+            let dz = max_z - min_z;
+            (dx * dx + dy * dy + dz * dz).sqrt().max(1.0e-3)
+        } else {
+            1.0
+        };
+        let sqrt_tris = f64::from(n_tris.max(1)).sqrt();
+        let r_pad = (diag * 0.42 / sqrt_tris).max(1.0e-3);
+        let r_pad_sq = r_pad * r_pad;
+        let r_pad_aabb = r_pad * 1.002 + 1.0e-5;
+
+        let mut indices_u32: Vec<[u32; 3]> = Vec::with_capacity(mesh.triangles.len());
+        let mut flat_tris_edges: Vec<f64> =
+            Vec::with_capacity(mesh.triangles.len().checked_mul(9)?);
+        let mut flat_tris_verts: Vec<f64> =
+            Vec::with_capacity(mesh.triangles.len().checked_mul(9)?);
+        let mut tri_aabbs: Vec<optix_sys::OptixAabb> = Vec::with_capacity(mesh.triangles.len());
+
+        for tri in mesh.triangles {
+            let i0 = usize::try_from(tri[0]).ok()?;
+            let i1 = usize::try_from(tri[1]).ok()?;
+            let i2 = usize::try_from(tri[2]).ok()?;
+            let v0 = *mesh.vertices.get(i0)?;
+            let v1 = *mesh.vertices.get(i1)?;
+            let v2 = *mesh.vertices.get(i2)?;
+            let valid = v0.x.is_finite()
+                && v0.y.is_finite()
+                && v0.z.is_finite()
+                && v1.x.is_finite()
+                && v1.y.is_finite()
+                && v1.z.is_finite()
+                && v2.x.is_finite()
+                && v2.y.is_finite()
+                && v2.z.is_finite();
+            indices_u32.push(if valid { *tri } else { [0, 0, 0] });
+            flat_tris_edges.extend_from_slice(&[
+                v0.x,
+                v0.y,
+                v0.z,
+                v1.x - v0.x,
+                v1.y - v0.y,
+                v1.z - v0.z,
+                v2.x - v0.x,
+                v2.y - v0.y,
+                v2.z - v0.z,
+            ]);
+            flat_tris_verts
+                .extend_from_slice(&[v0.x, v0.y, v0.z, v1.x, v1.y, v1.z, v2.x, v2.y, v2.z]);
+
+            if valid {
+                let tmin_x = v0.x.min(v1.x).min(v2.x) - r_pad_aabb;
+                let tmin_y = v0.y.min(v1.y).min(v2.y) - r_pad_aabb;
+                let tmin_z = v0.z.min(v1.z).min(v2.z) - r_pad_aabb;
+                let tmax_x = v0.x.max(v1.x).max(v2.x) + r_pad_aabb;
+                let tmax_y = v0.y.max(v1.y).max(v2.y) + r_pad_aabb;
+                let tmax_z = v0.z.max(v1.z).max(v2.z) + r_pad_aabb;
+                tri_aabbs.push(optix_sys::OptixAabb {
+                    minX: f64_to_blas_f32(tmin_x),
+                    minY: f64_to_blas_f32(tmin_y),
+                    minZ: f64_to_blas_f32(tmin_z),
+                    maxX: f64_to_blas_f32(tmax_x),
+                    maxY: f64_to_blas_f32(tmax_y),
+                    maxZ: f64_to_blas_f32(tmax_z),
+                });
+            } else {
+                tri_aabbs.push(optix_sys::OptixAabb::default());
+            }
+        }
+
+        let flat_bvh_buf: Vec<f64> = flat_bvh
+            .nodes()
+            .iter()
+            .flat_map(|n| {
+                let meta = (u64::from(n.right_child) << 32) | u64::from(n.triangle_index);
+                [
+                    n.aabb_min.x,
+                    n.aabb_min.y,
+                    n.aabb_min.z,
+                    n.aabb_max.x,
+                    n.aabb_max.y,
+                    n.aabb_max.z,
+                    f64::from_bits(meta),
+                    0.0,
+                ]
+            })
+            .collect();
+
+        let d_verts_f32 = stream.clone_htod(&verts_f32).ok()?;
+        let d_indices_u32 = stream.clone_htod(&indices_u32).ok()?;
+        let d_tri_aabbs = stream.clone_htod(&tri_aabbs).ok()?;
+
+        let blas_closest = OptixAccel::build_triangles(
+            &optix.ctx,
+            stream,
+            &d_verts_f32,
+            Some(&d_indices_u32),
+            OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT_U32,
+            None,
+        )
+        .ok()?;
+        let blas_anyhit = OptixAccel::build_triangles(
+            &optix.ctx,
+            stream,
+            &d_verts_f32,
+            Some(&d_indices_u32),
+            0,
+            None,
+        )
+        .ok()?;
+        let blas_aabb = OptixAccel::build_aabbs(
+            &optix.ctx,
+            stream,
+            &d_tri_aabbs,
+            OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT_U32,
+            None,
+        )
+        .ok()?;
+
+        let d_tris_edges = stream.clone_htod(&flat_tris_edges).ok()?;
+        let d_tris_verts = stream.clone_htod(&flat_tris_verts).ok()?;
+        let d_bvh = stream.clone_htod(&flat_bvh_buf).ok()?;
+
+        Some(CachedOptixMesh {
+            hash,
+            n_tris,
+            n_nodes,
+            r_pad_sq,
+            blas_closest,
+            blas_anyhit,
+            blas_aabb,
+            d_tris_edges,
+            d_tris_verts,
+            d_bvh,
+        })
+    }
+
+    fn with_cached_optix_mesh<R>(
+        optix: &OptixPipelines,
+        stream: &Arc<CudaStream>,
+        mesh: TriangleMeshView<'_>,
+        f: impl FnOnce(&CachedOptixMesh) -> Option<R>,
+    ) -> Option<R> {
+        let hash = Self::hash_mesh(mesh);
+        let mut guard = optix.mesh_cache.lock().ok()?;
+        let needs_rebuild = match guard.as_ref() {
+            Some(cached) => {
+                cached.hash != hash || usize::try_from(cached.n_tris).ok()? != mesh.triangles.len()
+            }
+            None => true,
+        };
+        if needs_rebuild {
+            *guard = Some(Self::build_cached_optix_mesh(optix, stream, mesh, hash)?);
+        }
+        let c = guard.as_ref()?;
+        let _ = (
+            c.n_nodes,
+            c.r_pad_sq,
+            &c.blas_anyhit,
+            &c.blas_aabb,
+            &c.d_tris_verts,
+            &c.d_bvh,
+        );
+        f(c)
+    }
+
+    /// Executes hardware RT Core ray-mesh intersection via `cudarc::optix` (`OptixAccel` + `OptixPipeline::launch`) and exact FP64 Möller-Trumbore refinement.
+    #[must_use]
+    pub fn optix_rt_ray_mesh_intersect(
+        &self,
+        rays: &[RayQuery3],
+        mesh: TriangleMeshView<'_>,
+    ) -> Option<Vec<RayHit3>> {
+        let optix = self.optix.as_ref()?;
+        if rays.is_empty() {
+            return Some(Vec::new());
+        }
+        if mesh.triangles.is_empty() {
+            return Some((0..rays.len()).map(|_| RayHit3::miss()).collect());
+        }
+        self.ctx.bind_to_thread().ok()?;
+        let stream = self.ctx.default_stream();
+        let n_rays = u32::try_from(rays.len()).ok()?;
+
+        let flat_rays: Vec<f64> = rays
+            .iter()
+            .flat_map(|r| {
+                [
+                    r.origin.x,
+                    r.origin.y,
+                    r.origin.z,
+                    r.t_min,
+                    r.direction.x,
+                    r.direction.y,
+                    r.direction.z,
+                    r.t_max,
+                ]
+            })
+            .collect();
+        let d_rays = stream.clone_htod(&flat_rays).ok()?;
+        let d_cand_prim = stream.alloc_zeros::<u32>(rays.len()).ok()?;
+        let out_f64_len = rays.len().checked_mul(4)?;
+        let mut d_out = stream.alloc_zeros::<f64>(out_f64_len).ok()?;
+
+        Self::with_cached_optix_mesh(optix, &stream, mesh, |cached| {
+            let params_raw = {
+                let (rays_ptr, _s1) = d_rays.device_ptr(&stream);
+                let (cand_ptr, _s2) = d_cand_prim.device_ptr(&stream);
+                [cached.blas_closest.handle(), rays_ptr, cand_ptr, 0_u64]
+            };
+            let d_params = stream.clone_htod(&params_raw).ok()?;
+            optix
+                .ray_pipeline
+                .launch(&stream, &d_params, &optix.ray_sbt, n_rays, 1, 1)
+                .ok()?;
+
+            let block = 128_u32;
+            let grid = n_rays.div_ceil(block);
+            let cfg = LaunchConfig {
+                grid_dim: (grid, 1, 1),
+                block_dim: (block, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let mut builder = stream.launch_builder(&optix.fn_optix_ray_mesh);
+            builder.arg(&d_rays);
+            builder.arg(&cached.d_tris_edges);
+            builder.arg(&d_cand_prim);
+            builder.arg(&mut d_out);
+            builder.arg(&n_rays);
+            builder.arg(&cached.n_tris);
+            // Safety: kernel signature matches (u64, u64, u64, u64, u32, u32) and buffer bounds are verified.
+            unsafe { builder.launch(cfg) }.ok()?;
+            Some(())
+        })?;
+
+        let raw_out = stream.clone_dtoh(&d_out).ok()?;
+        Some(
+            raw_out
+                .chunks_exact(4)
+                .map(|r| {
+                    let Ok(tri_idx) = u32::try_from(r[1].to_bits()) else {
+                        return RayHit3::miss();
+                    };
+                    if tri_idx == u32::MAX {
+                        RayHit3::miss()
+                    } else {
+                        RayHit3 {
+                            hit: true,
+                            t: r[0],
+                            triangle_index: tri_idx,
+                            barycentric_u: r[2].clamp(0.0, 1.0),
+                            barycentric_v: r[3].clamp(0.0, 1.0),
+                        }
+                    }
+                })
+                .collect(),
+        )
     }
 }
 
@@ -2240,5 +2919,50 @@ mod tests {
         assert_eq!(simt_out, cpu_out);
         assert_eq!(simt_out[0][0], 1.0e40);
         assert!(!simt_out[0][0].is_nan());
+    }
+
+    #[test]
+    fn cuda_optix_rt_ray_mesh_matches_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        if !ctx.supports_optix_rt() {
+            return;
+        }
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+        ];
+        let triangles = [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let rays: Vec<RayQuery3> = (0_u32..48)
+            .map(|i| {
+                let f = f64::from(i) * 0.05;
+                RayQuery3 {
+                    origin: Point3::new(0.1 + f, 0.25, -1.5),
+                    direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    t_min: 0.0,
+                    t_max: 50.0,
+                }
+            })
+            .collect();
+        let expected = cpu::ray_mesh_intersect(&rays, mesh);
+        let actual = ctx
+            .optix_rt_ray_mesh_intersect(&rays, mesh)
+            .expect("CUDA OptiX RT Core ray-mesh intersection");
+        for (e, a) in expected.iter().zip(&actual) {
+            assert_eq!(e.hit, a.hit);
+            assert_eq!(e.triangle_index, a.triangle_index);
+            if e.hit {
+                assert!((e.t - a.t).abs() < CUDA_PARITY_TOLERANCE);
+                assert!((e.barycentric_u - a.barycentric_u).abs() < CUDA_PARITY_TOLERANCE);
+                assert!((e.barycentric_v - a.barycentric_v).abs() < CUDA_PARITY_TOLERANCE);
+            }
+        }
     }
 }
