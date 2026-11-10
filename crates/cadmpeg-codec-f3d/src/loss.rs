@@ -412,6 +412,8 @@ pub(crate) enum F3dLossCode {
     FeatureFixedFilletAssignmentNative,
     /// Extrude scope retains an unassigned extent payload.
     FeatureExtrudeExtentNative,
+    /// An Extrude face extent has fewer termination groups than its side count.
+    FeatureExtrudeTerminationMissing,
     /// A marker-one `Revolve` scope has a token-independent frame length outside its documented set.
     FeatureRevolveLayoutAssumed,
     /// A marked `Move` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record.
@@ -798,6 +800,7 @@ impl F3dLossCode {
         Self::FeatureCombineToolConsumptionAssumed,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
+        Self::FeatureExtrudeTerminationMissing,
         Self::FeatureRevolveLayoutAssumed,
         Self::FeatureMoveTransformAssumed,
         Self::FeatureLoftReferenceUnresolved,
@@ -1119,6 +1122,7 @@ impl F3dLossCode {
             }
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
+            Self::FeatureExtrudeTerminationMissing => "feature.extrude-termination-missing",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
@@ -1443,6 +1447,7 @@ impl F3dLossCode {
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
+            | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
@@ -1685,6 +1690,7 @@ impl F3dLossCode {
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
+            | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
@@ -2023,6 +2029,7 @@ mod tests {
                 "feature.combine-tool-consumption-assumed",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
+                "feature.extrude-termination-missing",
                 "feature.revolve-layout-assumed",
                 "feature.move-transform-assumed",
                 "feature.loft-reference-unresolved",
