@@ -37,6 +37,7 @@ struct Fixture {
     gap_before_table: usize,
     scalars: Vec<(u32, f64)>,
     corrupt: Option<(usize, u8)>,
+    lead: usize,
 }
 
 impl Fixture {
@@ -57,6 +58,7 @@ impl Fixture {
             gap_before_table: 0,
             scalars: vec![(INSIDE, 0.25), (OUTSIDE, 0.5)],
             corrupt: None,
+            lead: 0,
         }
     }
 
@@ -143,7 +145,8 @@ impl Fixture {
     }
 
     fn decode_with_losses(&self) -> (Option<DesignShellOperation>, Vec<LossNote>) {
-        let bytes = self.bytes();
+        let mut bytes = vec![0; self.lead];
+        bytes.extend(self.bytes());
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let class_tag =
             DesignClassTag::try_from(String::from_utf8(self.class_tag.to_vec()).unwrap()).unwrap();
@@ -152,7 +155,7 @@ impl Fixture {
             &records,
             90,
             &class_tag,
-            0,
+            u64::try_from(self.lead).unwrap(),
             Some(SHELL_TYPE_GUID),
         )
         .unwrap()
@@ -370,9 +373,9 @@ fn the_offset_21_boolean_is_stored_and_reported() {
                 crate::loss::F3dLossCode::FeatureShellPrefixFlagAssumed.kind()
             );
             assert!(
-                losses[0]
-                    .message
-                    .contains(&format!("Boolean {flag} at byte 21 of its {name} prefix")),
+                losses[0].message.contains(&format!(
+                    "Boolean {flag} at byte 21 (primary-header offset 21 of its {name} prefix)"
+                )),
                 "{}",
                 losses[0].message
             );
@@ -380,6 +383,19 @@ fn the_offset_21_boolean_is_stored_and_reported() {
             stored.push(operation);
         }
         assert_ne!(stored[0], stored[1]);
+
+        let mut placed = prefixed(prefix, Some(INSIDE), None);
+        placed.flag = 1;
+        placed.lead = 48_192;
+        let (operation, losses) = placed.decode_with_losses();
+        assert_eq!(operation.unwrap().prefix_flag.unwrap().offset, 48_213);
+        assert!(
+            losses[0].message.contains(&format!(
+                "Boolean 1 at byte 48213 (primary-header offset 21 of its {name} prefix)"
+            )),
+            "{}",
+            losses[0].message
+        );
     }
 
     let (cornered, losses) = Fixture::new(Some(INSIDE), None).decode_with_losses();

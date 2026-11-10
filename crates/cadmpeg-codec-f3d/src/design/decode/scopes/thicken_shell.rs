@@ -318,11 +318,11 @@ pub(super) fn exact_shell_wall_slots(
     let prefix_flag = match frame.prefix.flag() {
         Some((flag, name)) => {
             let at = start.checked_add(flag)?;
-            let flag = direct_face::DesignShellPrefixFlag {
+            let stored = direct_face::DesignShellPrefixFlag {
                 value: bytes.get(at) == Some(&1),
                 offset: u64::try_from(at).ok()?,
             };
-            Some((flag, name))
+            Some((stored, flag, name))
         }
         None => None,
     };
@@ -333,9 +333,9 @@ pub(super) fn exact_shell_wall_slots(
             rounded_corners: bytes.get(start + shell_slots::ROUNDED_CORNERS) == Some(&1),
             outside: both,
         });
-    if let Some((flag, name)) = prefix_flag {
+    if let Some((flag, header_offset, name)) = prefix_flag {
         losses.push(crate::loss::F3dLossCode::FeatureShellPrefixFlagAssumed.note(format!(
-            "Shell scope {} stores Boolean {} at byte {} of its {name} prefix; the Shell option this Boolean selects is unresolved (DR-315), and the present wall slot sets the wall direction.",
+            "Shell scope {} stores Boolean {} at byte {} (primary-header offset {header_offset} of its {name} prefix); the Shell option this Boolean selects is unresolved (DR-315), and the present wall slot sets the wall direction.",
             scope.id,
             u8::from(flag.value),
             flag.offset,
@@ -349,7 +349,7 @@ pub(super) fn exact_shell_wall_slots(
             outward: frame.inside.is_none(),
             outward_offset,
             wall_slots,
-            prefix_flag: prefix_flag.map(|(flag, _)| flag),
+            prefix_flag: prefix_flag.map(|(flag, _, _)| flag),
             auxiliary_references: frame.auxiliary,
         },
     ))
