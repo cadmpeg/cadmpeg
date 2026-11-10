@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Deterministic CPU reference implementations for all GPU-offloaded operations.
 
+use cadmpeg_ir::math::{Point3, Vector3};
+use rayon::prelude::*;
+
 use crate::{ClosestPointResult, RayHit3, RayQuery3, TriangleMeshView};
 
 /// Minimum determinant magnitude for ray-triangle intersection before treating a ray as parallel.
@@ -58,6 +61,24 @@ pub fn batch_transform_4x4(matrix: &[[f64; 4]; 4], points: &[[f64; 4]]) -> Vec<[
     out
 }
 
+/// Applies a $4 \times 4$ row-major transformation matrix in parallel using Rayon.
+#[must_use]
+pub fn rayon_batch_transform_4x4(matrix: &[[f64; 4]; 4], points: &[[f64; 4]]) -> Vec<[f64; 4]> {
+    points
+        .par_iter()
+        .map(|p| {
+            let mut row = [0.0_f64; 4];
+            for r in 0..4 {
+                row[r] = matrix[r][0].mul_add(
+                    p[0],
+                    matrix[r][1].mul_add(p[1], matrix[r][2].mul_add(p[2], matrix[r][3] * p[3])),
+                );
+            }
+            row
+        })
+        .collect()
+}
+
 /// Computes the $N \times M$ row-major matrix of squared Euclidean distances between `points_a` and `points_b`.
 #[must_use]
 pub fn pairwise_distance_squared(points_a: &[Point3], points_b: &[Point3]) -> Vec<f64> {
@@ -81,6 +102,34 @@ pub fn pairwise_distance_squared(points_a: &[Point3], points_b: &[Point3]) -> Ve
             *dst = dx.mul_add(dx, dy.mul_add(dy, dz * dz));
         }
     }
+    out
+}
+
+/// Computes the $N \times M$ row-major matrix of squared Euclidean distances in parallel using Rayon.
+#[must_use]
+pub fn rayon_pairwise_distance_squared(points_a: &[Point3], points_b: &[Point3]) -> Vec<f64> {
+    let total = points_a.len().checked_mul(points_b.len()).unwrap_or(0);
+    if total == 0 {
+        return Vec::new();
+    }
+    let m = points_b.len();
+    let bx: Vec<f64> = points_b.iter().map(|b| b.x).collect();
+    let by: Vec<f64> = points_b.iter().map(|b| b.y).collect();
+    let bz: Vec<f64> = points_b.iter().map(|b| b.z).collect();
+    let mut out: Vec<f64> = (0..total).map(|_| 0.0_f64).collect();
+    out.par_chunks_mut(m)
+        .zip(points_a.par_iter())
+        .for_each(|(row, a)| {
+            let ax = a.x;
+            let ay = a.y;
+            let az = a.z;
+            for (((dst, &x), &y), &z) in row.iter_mut().zip(&bx).zip(&by).zip(&bz) {
+                let dx = ax - x;
+                let dy = ay - y;
+                let dz = az - z;
+                *dst = dx.mul_add(dx, dy.mul_add(dy, dz * dz));
+            }
+        });
     out
 }
 
@@ -177,6 +226,58 @@ pub fn eval_bicubic_bezier_grid(
             out.push(Point3::new(hom[0] * inv_w, hom[1] * inv_w, hom[2] * inv_w));
         }
     }
+    out
+}
+
+/// Evaluates a bicubic rational Bézier surface patch in parallel using Rayon.
+#[must_use]
+pub fn rayon_eval_bicubic_bezier_grid(
+    control_points: &[[[f64; 4]; 4]; 4],
+    u_params: &[f64],
+    v_params: &[f64],
+) -> Vec<Point3> {
+    let total = u_params.len().checked_mul(v_params.len()).unwrap_or(0);
+    if total == 0 {
+        return Vec::new();
+    }
+    let nv = v_params.len();
+    let v_bases: Vec<[f64; 4]> = v_params.iter().map(|&v| cubic_bernstein_basis(v)).collect();
+    let mut out: Vec<Point3> = (0..total).map(|_| Point3::new(0.0, 0.0, 0.0)).collect();
+    out.par_chunks_mut(nv)
+        .zip(u_params.par_iter())
+        .for_each(|(row_out, &u)| {
+            let bu = cubic_bernstein_basis(u);
+            let mut u_contracted = [[0.0_f64; 4]; 4];
+            for j in 0..4 {
+                for c in 0..4 {
+                    u_contracted[j][c] = bu[0].mul_add(
+                        control_points[0][j][c],
+                        bu[1].mul_add(
+                            control_points[1][j][c],
+                            bu[2].mul_add(control_points[2][j][c], bu[3] * control_points[3][j][c]),
+                        ),
+                    );
+                }
+            }
+            for (dst, bv) in row_out.iter_mut().zip(&v_bases) {
+                let mut hom = [0.0_f64; 4];
+                for c in 0..4 {
+                    hom[c] = bv[0].mul_add(
+                        u_contracted[0][c],
+                        bv[1].mul_add(
+                            u_contracted[1][c],
+                            bv[2].mul_add(u_contracted[2][c], bv[3] * u_contracted[3][c]),
+                        ),
+                    );
+                }
+                let inv_w = if hom[3].abs() > RATIONAL_WEIGHT_FLOOR {
+                    1.0 / hom[3]
+                } else {
+                    1.0
+                };
+                *dst = Point3::new(hom[0] * inv_w, hom[1] * inv_w, hom[2] * inv_w);
+            }
+        });
     out
 }
 
@@ -704,5 +805,50 @@ mod tests {
         let (proj, dist_sq) = closest_point_on_triangle(query, v0, v1, v2);
         assert!(proj.x.is_finite() && proj.y.is_finite() && proj.z.is_finite());
         assert!(dist_sq >= 1.0 - 1.0e-9);
+    }
+
+    #[test]
+    fn rayon_parallel_kernels_match_serial_cpu() {
+        let matrix = [
+            [1.5, -0.5, 0.25, 4.0],
+            [0.0, 2.0, -1.0, -2.0],
+            [-0.25, 0.5, 3.0, 1.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let pts = [
+            [1.0, 2.0, 3.0, 1.0],
+            [-4.0, 0.5, 2.5, 1.0],
+            [0.0, -1.5, 4.0, 1.0],
+        ];
+        assert_eq!(
+            rayon_batch_transform_4x4(&matrix, &pts),
+            batch_transform_4x4(&matrix, &pts)
+        );
+
+        let pts_a = [Point3::new(0.0, 1.0, 2.0), Point3::new(-1.0, 3.0, 0.5)];
+        let pts_b = [
+            Point3::new(2.0, -1.0, 0.0),
+            Point3::new(0.5, 0.5, 0.5),
+            Point3::new(-2.0, 4.0, 1.0),
+        ];
+        assert_eq!(
+            rayon_pairwise_distance_squared(&pts_a, &pts_b),
+            pairwise_distance_squared(&pts_a, &pts_b)
+        );
+
+        let mut cp = [[[0.0_f64; 4]; 4]; 4];
+        for (i, row) in cp.iter_mut().enumerate() {
+            for (j, cell) in row.iter_mut().enumerate() {
+                let u = f64::from(u8::try_from(i).unwrap_or(0));
+                let v = f64::from(u8::try_from(j).unwrap_or(0));
+                *cell = [u, v, u * v, 1.0];
+            }
+        }
+        let u_params = [0.0, 0.5, 1.0];
+        let v_params = [0.0, 0.25, 0.75, 1.0];
+        assert_eq!(
+            rayon_eval_bicubic_bezier_grid(&cp, &u_params, &v_params),
+            eval_bicubic_bezier_grid(&cp, &u_params, &v_params)
+        );
     }
 }

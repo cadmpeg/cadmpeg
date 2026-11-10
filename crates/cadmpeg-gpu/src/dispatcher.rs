@@ -205,7 +205,9 @@ impl GpuDispatcher {
             BackendKind::PtxSm86 => None,
             BackendKind::CudaCompute => None,
             BackendKind::VulkanCompute => None,
-            BackendKind::CpuParallelSpatialIndex => None,
+            BackendKind::CpuParallelSpatialIndex => {
+                Some(cpu::rayon_batch_transform_4x4(matrix, points))
+            }
             BackendKind::Cpu => Some(cpu::batch_transform_4x4(matrix, points)),
             BackendKind::CpuSpatialIndex | BackendKind::VulkanRtCore | BackendKind::RtxRtCore => {
                 None
@@ -227,7 +229,9 @@ impl GpuDispatcher {
             BackendKind::PtxSm86 => None,
             BackendKind::CudaCompute => None,
             BackendKind::VulkanCompute => None,
-            BackendKind::CpuParallelSpatialIndex => None,
+            BackendKind::CpuParallelSpatialIndex => {
+                Some(cpu::rayon_pairwise_distance_squared(points_a, points_b))
+            }
             BackendKind::Cpu => Some(cpu::pairwise_distance_squared(points_a, points_b)),
             BackendKind::RtxTensorCore
             | BackendKind::VulkanRtCore
@@ -252,7 +256,11 @@ impl GpuDispatcher {
             BackendKind::PtxSm86 => None,
             BackendKind::CudaCompute => None,
             BackendKind::VulkanCompute => None,
-            BackendKind::CpuParallelSpatialIndex => None,
+            BackendKind::CpuParallelSpatialIndex => Some(cpu::rayon_eval_bicubic_bezier_grid(
+                control_points,
+                u_params,
+                v_params,
+            )),
             BackendKind::Cpu => Some(cpu::eval_bicubic_bezier_grid(
                 control_points,
                 u_params,
@@ -277,7 +285,9 @@ impl GpuDispatcher {
         match backend {
             BackendKind::RtxRtCore => None,
             BackendKind::VulkanRtCore => None,
-            BackendKind::CpuParallelSpatialIndex => None,
+            BackendKind::CpuParallelSpatialIndex => {
+                Some(spatial::rayon_intersect_rays_mesh(rays, mesh))
+            }
             BackendKind::CpuSpatialIndex => Some(spatial::intersect_rays_mesh(rays, mesh)),
             BackendKind::PtxSm86 => None,
             BackendKind::CudaCompute => None,
@@ -300,7 +310,9 @@ impl GpuDispatcher {
         match backend {
             BackendKind::RtxRtCore => None,
             BackendKind::VulkanRtCore => None,
-            BackendKind::CpuParallelSpatialIndex => None,
+            BackendKind::CpuParallelSpatialIndex => {
+                Some(spatial::rayon_points_in_solid_parity(points, mesh))
+            }
             BackendKind::CpuSpatialIndex => Some(spatial::points_in_solid_parity(points, mesh)),
             BackendKind::PtxSm86 => None,
             BackendKind::CudaCompute => None,
@@ -323,7 +335,9 @@ impl GpuDispatcher {
         match backend {
             BackendKind::RtxRtCore => None,
             BackendKind::VulkanRtCore => None,
-            BackendKind::CpuParallelSpatialIndex => None,
+            BackendKind::CpuParallelSpatialIndex => {
+                Some(spatial::rayon_closest_points_on_mesh(points, mesh))
+            }
             BackendKind::CpuSpatialIndex => Some(spatial::closest_points_on_mesh(points, mesh)),
             BackendKind::PtxSm86 => None,
             BackendKind::CudaCompute => None,
@@ -346,7 +360,9 @@ impl GpuDispatcher {
         match backend {
             BackendKind::RtxRtCore => None,
             BackendKind::VulkanRtCore => None,
-            BackendKind::CpuParallelSpatialIndex => None,
+            BackendKind::CpuParallelSpatialIndex => {
+                Some(spatial::rayon_hausdorff_distance(points_a, points_b))
+            }
             BackendKind::CpuSpatialIndex => {
                 Some(spatial::kd_hausdorff_distance(points_a, points_b))
             }
@@ -564,7 +580,10 @@ fn benchmark_single(
                     let out = cpu::batch_transform_4x4(&matrix, &pts);
                     std::hint::black_box(&out);
                 }
-                BackendKind::CpuParallelSpatialIndex => return None,
+                BackendKind::CpuParallelSpatialIndex => {
+                    let out = cpu::rayon_batch_transform_4x4(&matrix, &pts);
+                    std::hint::black_box(&out);
+                }
                 BackendKind::VulkanCompute => return None,
                 BackendKind::CudaCompute => return None,
                 BackendKind::PtxSm86 => return None,
@@ -595,7 +614,10 @@ fn benchmark_single(
                     let out = cpu::pairwise_distance_squared(&pts_a, &pts_b);
                     std::hint::black_box(&out);
                 }
-                BackendKind::CpuParallelSpatialIndex => return None,
+                BackendKind::CpuParallelSpatialIndex => {
+                    let out = cpu::rayon_pairwise_distance_squared(&pts_a, &pts_b);
+                    std::hint::black_box(&out);
+                }
                 BackendKind::VulkanCompute => return None,
                 BackendKind::CudaCompute => return None,
                 BackendKind::PtxSm86 => return None,
@@ -621,7 +643,10 @@ fn benchmark_single(
                     let out = cpu::eval_bicubic_bezier_grid(&ctrl, &u_params, &u_params);
                     std::hint::black_box(&out);
                 }
-                BackendKind::CpuParallelSpatialIndex => return None,
+                BackendKind::CpuParallelSpatialIndex => {
+                    let out = cpu::rayon_eval_bicubic_bezier_grid(&ctrl, &u_params, &u_params);
+                    std::hint::black_box(&out);
+                }
                 BackendKind::VulkanCompute => return None,
                 BackendKind::CudaCompute => return None,
                 BackendKind::PtxSm86 => return None,
@@ -677,7 +702,8 @@ fn benchmark_single(
                     std::hint::black_box(&out);
                 }
                 (OperationKind::RayMeshIntersection, BackendKind::CpuParallelSpatialIndex) => {
-                    return None
+                    let out = spatial::rayon_intersect_rays_mesh(&rays, mesh);
+                    std::hint::black_box(&out);
                 }
                 (OperationKind::RayMeshIntersection, BackendKind::VulkanCompute) => return None,
                 (OperationKind::RayMeshIntersection, BackendKind::VulkanRtCore) => return None,
@@ -693,7 +719,8 @@ fn benchmark_single(
                     std::hint::black_box(&out);
                 }
                 (OperationKind::PointInSolidParity, BackendKind::CpuParallelSpatialIndex) => {
-                    return None
+                    let out = spatial::rayon_points_in_solid_parity(&pts, mesh);
+                    std::hint::black_box(&out);
                 }
                 (OperationKind::PointInSolidParity, BackendKind::VulkanCompute) => return None,
                 (OperationKind::PointInSolidParity, BackendKind::VulkanRtCore) => return None,
@@ -709,7 +736,8 @@ fn benchmark_single(
                     std::hint::black_box(&out);
                 }
                 (OperationKind::ClosestPointMesh, BackendKind::CpuParallelSpatialIndex) => {
-                    return None
+                    let out = spatial::rayon_closest_points_on_mesh(&pts, mesh);
+                    std::hint::black_box(&out);
                 }
                 (OperationKind::ClosestPointMesh, BackendKind::VulkanCompute) => return None,
                 (OperationKind::ClosestPointMesh, BackendKind::VulkanRtCore) => return None,
@@ -756,7 +784,10 @@ fn benchmark_single(
                     let h = spatial::kd_hausdorff_distance(&pts_a, &pts_b);
                     std::hint::black_box(h);
                 }
-                BackendKind::CpuParallelSpatialIndex => return None,
+                BackendKind::CpuParallelSpatialIndex => {
+                    let h = spatial::rayon_hausdorff_distance(&pts_a, &pts_b);
+                    std::hint::black_box(h);
+                }
                 BackendKind::VulkanCompute => return None,
                 BackendKind::VulkanRtCore => return None,
                 BackendKind::CudaCompute => return None,

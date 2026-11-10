@@ -1216,6 +1216,141 @@ pub fn points_in_solid_parity(points: &[Point3], mesh: TriangleMeshView<'_>) -> 
     parity
 }
 
+fn parallel_directed_kd_hausdorff_sq(
+    queries: &[Point3],
+    targets: &[Point3],
+    tree: &KdTree3,
+    shared_max_bits: &std::sync::atomic::AtomicU64,
+) {
+    use rayon::prelude::*;
+    use std::sync::atomic::Ordering;
+
+    let n_targets = targets.len();
+    queries
+        .par_chunks(256)
+        .enumerate()
+        .for_each(|(chunk_idx, chunk)| {
+            let base_idx = chunk_idx * 256;
+            let mut local_max_sq = f64::from_bits(shared_max_bits.load(Ordering::Relaxed));
+            let mut last_witness = targets[base_idx % n_targets];
+
+            for (offset, &q) in chunk.iter().enumerate() {
+                if offset.is_multiple_of(16) {
+                    let global_sq = f64::from_bits(shared_max_bits.load(Ordering::Relaxed));
+                    if global_sq > local_max_sq {
+                        local_max_sq = global_sq;
+                    }
+                }
+                if point_dist_sq(q, last_witness) <= local_max_sq {
+                    continue;
+                }
+                let corr = targets[(base_idx + offset) % n_targets];
+                if point_dist_sq(q, corr) <= local_max_sq {
+                    last_witness = corr;
+                    continue;
+                }
+                if let Some((best_idx, d_sq)) = tree.nearest_sq_above_cutoff(q, local_max_sq) {
+                    if let Some(&w) = targets.get(best_idx) {
+                        last_witness = w;
+                    }
+                    if d_sq > local_max_sq {
+                        local_max_sq = d_sq;
+                        let new_bits = local_max_sq.to_bits();
+                        let mut cur_bits = shared_max_bits.load(Ordering::Relaxed);
+                        while f64::from_bits(cur_bits) < local_max_sq {
+                            match shared_max_bits.compare_exchange_weak(
+                                cur_bits,
+                                new_bits,
+                                Ordering::Relaxed,
+                                Ordering::Relaxed,
+                            ) {
+                                Ok(_) => break,
+                                Err(actual) => cur_bits = actual,
+                            }
+                        }
+                    }
+                }
+            }
+        });
+}
+
+/// Computes the exact symmetric Hausdorff distance between two 3D point sets using Rayon
+/// multi-threaded parallel $k$-d tree queries with lock-free Taha–Hanbury early-break.
+#[must_use]
+pub fn rayon_hausdorff_distance(points_a: &[Point3], points_b: &[Point3]) -> f64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    if points_a.is_empty() || points_b.is_empty() {
+        return 0.0;
+    }
+
+    let shared_max_bits = AtomicU64::new(0.0_f64.to_bits());
+    let (tree_a, tree_b) = rayon::join(|| KdTree3::build(points_a), || KdTree3::build(points_b));
+    parallel_directed_kd_hausdorff_sq(points_a, points_b, &tree_b, &shared_max_bits);
+    parallel_directed_kd_hausdorff_sq(points_b, points_a, &tree_a, &shared_max_bits);
+
+    f64::from_bits(shared_max_bits.load(Ordering::Relaxed)).sqrt()
+}
+
+/// Finds the closest point on `mesh` for each point using Rayon multi-threaded BVH search.
+#[must_use]
+pub fn rayon_closest_points_on_mesh(
+    points: &[Point3],
+    mesh: TriangleMeshView<'_>,
+) -> Vec<ClosestPointResult> {
+    use rayon::prelude::*;
+
+    if points.is_empty() || mesh.triangles.is_empty() {
+        return closest_points_on_mesh(points, mesh);
+    }
+
+    let bvh = MeshBvh3::build(mesh);
+    points
+        .par_iter()
+        .map(|&p| bvh.closest_point(p, mesh))
+        .collect()
+}
+
+/// Intersects a batch of rays against an indexed triangle mesh using Rayon multi-threaded BVH traversal.
+#[must_use]
+pub fn rayon_intersect_rays_mesh(rays: &[RayQuery3], mesh: TriangleMeshView<'_>) -> Vec<RayHit3> {
+    use rayon::prelude::*;
+
+    if rays.is_empty() || mesh.triangles.is_empty() {
+        return intersect_rays_mesh(rays, mesh);
+    }
+
+    let bvh = MeshBvh3::build(mesh);
+    rays.par_iter()
+        .map(|ray| bvh.intersect_ray(ray, mesh))
+        .collect()
+}
+
+/// Determines inside/outside solid containment for query points using Rayon multi-threaded BVH ray casting.
+#[must_use]
+pub fn rayon_points_in_solid_parity(points: &[Point3], mesh: TriangleMeshView<'_>) -> Vec<bool> {
+    use rayon::prelude::*;
+
+    if points.is_empty() || mesh.triangles.is_empty() {
+        return points_in_solid_parity(points, mesh);
+    }
+
+    let bvh = MeshBvh3::build(mesh);
+    points
+        .par_iter()
+        .map(|&p| {
+            let ray = RayQuery3 {
+                origin: p,
+                direction: PARITY_RAY_DIRECTION,
+                t_min: 0.0,
+                t_max: f64::INFINITY,
+            };
+            let crossings = bvh.count_surface_crossings(&ray, mesh);
+            crossings % 2 == 1
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1315,6 +1450,10 @@ mod tests {
             .expect("coplanar nearest");
         assert_eq!(idx_cop, 5);
         assert!((pt_cop.x - 5.0).abs() < PARITY_TOLERANCE);
+
+        let h_single = kd_hausdorff_distance(&coplanar, &single);
+        let h_rayon = rayon_hausdorff_distance(&coplanar, &single);
+        assert_eq!(h_single, h_rayon);
     }
 
     #[test]
@@ -1557,5 +1696,60 @@ mod tests {
         assert!((disp_cp[0].closest_point.x - query.x).abs() < PARITY_TOLERANCE);
         assert!((disp_cp[0].closest_point.y - query.y).abs() < PARITY_TOLERANCE);
         assert!((disp_cp[0].closest_point.z - query.z).abs() < PARITY_TOLERANCE);
+    }
+
+    #[test]
+    fn rayon_parallel_spatial_queries_match_single_threaded() {
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+        ];
+        let triangles = [[0_u32, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let queries: Vec<Point3> = (0..32_u32)
+            .map(|i| {
+                let f = f64::from(i) * 0.1 - 0.5;
+                Point3::new(f, f * 0.8 + 0.2, f * -0.4 + 0.5)
+            })
+            .collect();
+        let rays: Vec<RayQuery3> = queries
+            .iter()
+            .map(|&origin| RayQuery3 {
+                origin,
+                direction: crate::cpu::PARITY_RAY_DIRECTION,
+                t_min: 0.0,
+                t_max: 100.0,
+            })
+            .collect();
+
+        let h_st = kd_hausdorff_distance(&queries, &vertices);
+        let h_mt = rayon_hausdorff_distance(&queries, &vertices);
+        assert!((h_st - h_mt).abs() < PARITY_TOLERANCE);
+
+        let cp_st = closest_points_on_mesh(&queries, mesh);
+        let cp_mt = rayon_closest_points_on_mesh(&queries, mesh);
+        for (a, b) in cp_st.iter().zip(&cp_mt) {
+            assert_eq!(a.triangle_index, b.triangle_index);
+            assert!((a.distance_sq - b.distance_sq).abs() < PARITY_TOLERANCE);
+        }
+
+        let hits_st = intersect_rays_mesh(&rays, mesh);
+        let hits_mt = rayon_intersect_rays_mesh(&rays, mesh);
+        for (a, b) in hits_st.iter().zip(&hits_mt) {
+            assert_eq!(a.hit, b.hit);
+            if a.hit {
+                assert_eq!(a.triangle_index, b.triangle_index);
+                assert!((a.t - b.t).abs() < PARITY_TOLERANCE);
+            }
+        }
+
+        let par_st = points_in_solid_parity(&queries, mesh);
+        let par_mt = rayon_points_in_solid_parity(&queries, mesh);
+        assert_eq!(par_st, par_mt);
     }
 }
