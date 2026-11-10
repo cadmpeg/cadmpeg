@@ -146,6 +146,25 @@ struct Projected {
     outward: Option<bool>,
 }
 
+fn naming_space(
+    scope: &DesignParameterScope,
+    component_record_index: u64,
+) -> crate::records::recipes::DesignComponentNamingSpace {
+    let stream = crate::ids::native_stream(&scope.id).unwrap();
+    crate::records::recipes::DesignComponentNamingSpace {
+        id: format!("{stream}:design-component-naming-space#{component_record_index}"),
+        byte_offset: component_record_index,
+        component_record_index,
+        context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+            .to_owned()
+            .try_into()
+            .expect("GUID"),
+        context_uuid_offset: component_record_index + 12,
+        name: None,
+        name_offset: None,
+    }
+}
+
 fn project(
     scope: &DesignParameterScope,
     selections: &[DesignEntitySelectionOperand],
@@ -161,7 +180,7 @@ fn project(
             "f3d:test/Design/MetaStream.dat",
             39,
         ),
-        &[],
+        &[naming_space(scope, 1)],
     )
     .unwrap()?;
     let FeatureDefinition::Operation(FeatureOperation::Draft {
@@ -217,29 +236,13 @@ fn an_origin_plane_states_its_normal_as_the_pull_direction() {
 #[test]
 fn an_xref_occurrence_scope_is_not_in_model_space() {
     let mut scope = draft_scope(0.25, Some(false));
-    let stream = crate::ids::native_stream(&scope.id).unwrap().to_owned();
-    let space = crate::records::recipes::DesignComponentNamingSpace {
-        id: format!("{stream}:design-component-naming-space#1"),
-        byte_offset: 1,
-        component_record_index: 1,
-        context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
-            .to_owned()
-            .try_into()
-            .expect("GUID"),
-        context_uuid_offset: 13,
-        name: None,
-        name_offset: None,
-    };
+    let space = naming_space(&scope, 1);
     assert!(super::super::scope_space_is_model_space(
         &scope,
         std::slice::from_ref(&space)
     ));
-    let xref = scope.id.replacen("f3d:", "f3d:xref/root/occurrence-0/", 1);
-    let space = crate::records::recipes::DesignComponentNamingSpace {
-        id: space.id.replacen("f3d:", "f3d:xref/root/occurrence-0/", 1),
-        ..space
-    };
-    scope.id = xref;
+    scope.id = scope.id.replacen("f3d:", "f3d:xref/root/occurrence-0/", 1);
+    let space = naming_space(&scope, 1);
     assert!(!super::super::scope_space_is_model_space(
         &scope,
         std::slice::from_ref(&space)
@@ -249,19 +252,7 @@ fn an_xref_occurrence_scope_is_not_in_model_space() {
 #[test]
 fn an_origin_plane_in_a_stream_of_several_components_keeps_no_frame() {
     let scope = draft_scope(0.25, Some(false));
-    let stream = crate::ids::native_stream(&scope.id).unwrap().to_owned();
-    let space = |component_record_index| crate::records::recipes::DesignComponentNamingSpace {
-        id: format!("{stream}:design-component-naming-space#{component_record_index}"),
-        byte_offset: component_record_index,
-        component_record_index,
-        context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
-            .to_owned()
-            .try_into()
-            .expect("GUID"),
-        context_uuid_offset: component_record_index + 12,
-        name: None,
-        name_offset: None,
-    };
+    let space = |component_record_index| naming_space(&scope, component_record_index);
     for (spaces, framed) in [
         (Vec::new(), false),
         (vec![space(1)], true),
