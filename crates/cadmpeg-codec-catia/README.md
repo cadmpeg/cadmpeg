@@ -66,6 +66,18 @@ streams transfer face-local constructions. Inner-without-directory layouts
 transfer A8/B2 carriers. Complete scalar formula graphs transfer typed
 parameters. Unresolved native bytes stay attached to the IR as unknown records.
 
+## Shared sheet boundaries
+
+Two face occurrences of one native edge can use different curve parameters.
+Shared-boundary transfer aligns their pcurves and retries rejected faces after
+a neighboring face is admitted. Analytic reprojection retains the seeded
+periodic chart branches.
+
+A matching incident edge can corroborate a shared vertex repair. Endpoint
+and boundary retry seeds admit discrepancies up to 0.005 mm. Alignment and
+reprojection check the recovered pcurve's lift against the selected 3D edge
+at 0.001 mm. A repaired outer boundary must contain each inner loop.
+
 ## Sheet surface transfer
 
 A complete rolling-ball jet defines a native procedural surface from its

@@ -30,11 +30,21 @@ use crate::families::FamilyEntityAdmission;
 use crate::loss::CatiaLossCode;
 use crate::nurbs::LaneRefusals;
 
-use super::{curve_point, edge_alignment, interval_parameter, Patch, SheetSurfaceFit, Use, GAP_MM};
+use super::{
+    curve_point, edge_alignment, interval_parameter, trimmed_face, Patch, SheetSurfaceFit, Use,
+    GAP_MM,
+};
 
 const EDGE_SAMPLES: u32 = 40;
+const MAX_SHARED_EDGE_SEED_GAP_MM: f64 = 0.005;
+const MAX_CORROBORATED_VERTEX_GAP_MM: f64 = 0.005;
+type AdmittedEdges = BTreeMap<usize, (usize, usize, usize)>;
 
 fn matches_edge(a: &Use, b: &Use) -> Option<bool> {
+    matches_edge_within(a, b, GAP_MM)
+}
+
+fn matches_edge_within(a: &Use, b: &Use, tolerance: f64) -> Option<bool> {
     let same = edge_alignment::edge_relation(a, b)?;
     let sample = |side: &Use, f: f64| {
         let t = interval_parameter(side.curve.full_knot_endpoints().endpoints(), f);
@@ -44,7 +54,7 @@ fn matches_edge(a: &Use, b: &Use) -> Option<bool> {
     };
     for step in 0..=EDGE_SAMPLES {
         let f = f64::from(step) / f64::from(EDGE_SAMPLES);
-        if sample(a, f)?.distance(sample(b, if same { f } else { 1.0 - f })?) > GAP_MM {
+        if sample(a, f)?.distance(sample(b, if same { f } else { 1.0 - f })?) > tolerance {
             return None;
         }
     }
@@ -125,10 +135,121 @@ pub(super) fn append(
     }))
 }
 
-fn compatible_patches(patches: &mut [Patch]) -> BTreeSet<usize> {
+// Use the admitted vertex when a geometrically matching occurrence of the
+// same edge corroborates it. Retain the independently fitted curve endpoints.
+fn repair_corroborated_vertices(
+    patch: &mut Patch,
+    prior: &[Patch],
+    vertices: &BTreeMap<usize, Point3>,
+    edges: &AdmittedEdges,
+    retry: bool,
+) -> bool {
+    let mut repairs = BTreeMap::new();
+    for side in &patch.sides {
+        for &(vertex, point) in &side.vertices {
+            let Some(&anchor) = vertices.get(&vertex) else {
+                continue;
+            };
+            let gap = anchor.distance(point);
+            if gap <= GAP_MM || gap > MAX_CORROBORATED_VERTEX_GAP_MM {
+                continue;
+            }
+            let witnessed = patch.sides.iter().any(|witness| {
+                let Some(&(1, face, edge)) = edges.get(&witness.edge) else {
+                    return false;
+                };
+                let prior = &prior[face].sides[edge];
+                let incoming = witness
+                    .vertices
+                    .iter()
+                    .any(|&(id, point)| id == vertex && point.distance(anchor) <= GAP_MM);
+                let inherited = retry
+                    && prior
+                        .vertices
+                        .iter()
+                        .zip(prior.curve.full_knot_endpoints().endpoints())
+                        .any(|(&(id, point), parameter)| {
+                            id == vertex
+                                && point.distance(anchor) <= GAP_MM
+                                && curve_point(&prior.curve, parameter).is_some_and(|end| {
+                                    let gap = end.distance(anchor);
+                                    gap > GAP_MM && gap <= MAX_CORROBORATED_VERTEX_GAP_MM
+                                })
+                        });
+                (incoming || inherited) && matches_edge(prior, witness).is_some()
+            });
+            if witnessed {
+                repairs.insert(vertex, anchor);
+            }
+        }
+    }
+    for side in &mut patch.sides {
+        for (vertex, point) in &mut side.vertices {
+            if let Some(&anchor) = repairs.get(vertex) {
+                if point.distance(anchor) <= MAX_CORROBORATED_VERTEX_GAP_MM {
+                    *point = anchor;
+                }
+            }
+        }
+    }
+    !repairs.is_empty()
+}
+
+struct TrimEndpoint {
+    face: usize,
+    edge: usize,
+    point: Point3,
+}
+
+fn endpoint_witnesses(patches: &[Patch]) -> BTreeMap<usize, Vec<TrimEndpoint>> {
+    let mut witnesses = BTreeMap::<_, Vec<_>>::new();
+    for patch in patches {
+        for side in &patch.sides {
+            for (&(vertex, _), parameter) in side
+                .vertices
+                .iter()
+                .zip(side.curve.full_knot_endpoints().endpoints())
+            {
+                if let Some(point) = curve_point(&side.curve, parameter) {
+                    witnesses.entry(vertex).or_default().push(TrimEndpoint {
+                        face: patch.face,
+                        edge: side.edge,
+                        point,
+                    });
+                }
+            }
+        }
+    }
+    witnesses
+}
+
+fn has_trim_witnesses(
+    face: usize,
+    side: &Use,
+    witnesses: &BTreeMap<usize, Vec<TrimEndpoint>>,
+) -> bool {
+    side.vertices
+        .iter()
+        .zip(side.curve.full_knot_endpoints().endpoints())
+        .all(|(&(vertex, anchor), parameter)| {
+            curve_point(&side.curve, parameter).is_some_and(|point| {
+                point.distance(anchor) <= GAP_MM
+                    || witnesses.get(&vertex).is_some_and(|ends| {
+                        ends.iter().any(|end| {
+                            end.face != face
+                                && end.edge != side.edge
+                                && end.point.distance(point) <= GAP_MM
+                        })
+                    })
+            })
+        })
+}
+
+fn compatible_patches(patches: &mut Vec<Patch>) -> BTreeSet<usize> {
     let mut admitted = BTreeSet::<usize>::new();
     let mut vertices = BTreeMap::<usize, Point3>::new();
-    let mut edges = BTreeMap::<usize, (usize, usize, usize)>::new();
+    let mut edges = AdmittedEdges::new();
+    let witnesses = endpoint_witnesses(patches);
     for index in 0..patches.len() {
         let (prior, rest) = patches.split_at_mut(index);
         let patch = &mut rest[0];
@@ -137,6 +258,8 @@ fn compatible_patches(patches: &mut [Patch]) -> BTreeSet<usize> {
         if rolling_boundary_retry && admitted.iter().any(|&i| prior[i].face == patch.face) {
             continue;
         }
+        let repaired_vertices =
+            repair_corroborated_vertices(patch, prior, &vertices, &edges, false);
         let mut local = BTreeMap::<usize, Point3>::new();
         let mut replacements = Vec::new();
         if !patch.sides.iter_mut().all(|side| {
@@ -152,13 +275,15 @@ fn compatible_patches(patches: &mut [Patch]) -> BTreeSet<usize> {
                         || edge_alignment::align(first, side, &patch.surface).is_some()
                     {
                         true
-                    } else if rolling_boundary_retry {
+                    } else if rolling_boundary_retry || repaired_vertices {
                         false
                     } else {
                         let mut aligned = first.clone();
-                        let closed =
-                            edge_alignment::align(side, &mut aligned, &prior[face].surface)
-                                .is_some();
+                        let surface = &prior[face].surface;
+                        let closed = edge_alignment::align(side, &mut aligned, surface).is_some()
+                            || (has_trim_witnesses(patch.face, side, &witnesses)
+                                && edge_alignment::align_seed(side, &mut aligned, surface)
+                                    .is_some());
                         if closed {
                             replacements.push((face, side_index, aligned));
                         }
@@ -183,7 +308,84 @@ fn compatible_patches(patches: &mut [Patch]) -> BTreeSet<usize> {
                 .or_insert((1, index, side_index));
         }
     }
+    let mut admitted_faces = admitted
+        .iter()
+        .map(|&i| patches[i].face)
+        .collect::<BTreeSet<_>>();
+    loop {
+        let before = admitted.len();
+        for index in 0..patches.len() {
+            let patch = &patches[index];
+            if admitted_faces.contains(&patch.face) {
+                continue;
+            }
+            let Some(retry) = retry_shared_boundary(patch, patches, &vertices, &edges) else {
+                continue;
+            };
+            let index = patches.len();
+            for (side_index, side) in retry.sides.iter().enumerate() {
+                for &(id, point) in &side.vertices {
+                    vertices.entry(id).or_insert(point);
+                }
+                edges
+                    .entry(side.edge)
+                    .and_modify(|(count, _, _)| *count += 1)
+                    .or_insert((1, index, side_index));
+            }
+            admitted.insert(index);
+            admitted_faces.insert(retry.face);
+            patches.push(retry);
+        }
+        if admitted.len() == before {
+            break;
+        }
+    }
     admitted
+}
+
+fn retry_shared_boundary(
+    patch: &Patch,
+    admitted: &[Patch],
+    vertices: &BTreeMap<usize, Point3>,
+    edges: &AdmittedEdges,
+) -> Option<Patch> {
+    let mut retry = Patch {
+        sides: patch.sides.clone(),
+        inner_starts: patch.inner_starts.clone(),
+        surface: patch.surface.clone(),
+        ..*patch
+    };
+    let repaired = repair_corroborated_vertices(&mut retry, admitted, vertices, edges, true);
+    let mut modified = repaired;
+    let mut local = BTreeMap::new();
+    for side in &mut retry.sides {
+        match edges.get(&side.edge) {
+            Some(&(1, face, edge)) => {
+                let prior = &admitted[face].sides[edge];
+                if matches_edge(prior, side).is_none() {
+                    if edge_alignment::align(prior, side, &retry.surface).is_none() {
+                        matches_edge_within(prior, side, MAX_SHARED_EDGE_SEED_GAP_MM)?;
+                        *side = edge_alignment::reproject(prior, side, &retry.surface)?;
+                    }
+                    modified = true;
+                }
+            }
+            None => (),
+            Some(_) => return None,
+        }
+        for &(id, point) in &side.vertices {
+            let existing = *local
+                .entry(id)
+                .or_insert_with(|| *vertices.get(&id).unwrap_or(&point));
+            if point.distance(existing) > GAP_MM {
+                return None;
+            }
+        }
+    }
+    if !modified {
+        return None;
+    }
+    trimmed_face::holes_are_contained(&retry)?.then_some(retry)
 }
 
 fn append_component(
