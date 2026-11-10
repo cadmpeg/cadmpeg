@@ -7322,6 +7322,25 @@ Parsed by:
 | 48 | 2 | `identity_markers` | `bytes[2]` | little | spec | identity bytes `01 01` at offset 48 |
 | 50 | 76 | `null_guid` | `bytes[76]` | little | spec | The LP-UTF16 null GUID starts at offset 50 |
 
+## `component_insert_matrix_scope_400_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 254 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The 400-byte frame stores the fields of the 272-byte frame through offset 47 |
+| 11 | 14 | `zero_prefix` | `bytes[14]` | little | spec | The 400-byte frame stores the fields of the 272-byte frame through offset 47 |
+| 25 | 8 | `occurrence_identity` | `u64` | little | spec | The 400-byte frame stores the fields of the 272-byte frame through offset 47 |
+| 33 | 4 | `zero_after_identity` | `bytes[4]` | little | spec | The 400-byte frame stores the fields of the 272-byte frame through offset 47 |
+| 37 | 5 | `relation_reference` | `bytes[5]` | little | spec | The 400-byte frame stores the fields of the 272-byte frame through offset 47 |
+| 42 | 6 | `zero_after_relation` | `bytes[6]` | little | spec | The 400-byte frame stores the fields of the 272-byte frame through offset 47 |
+| 48 | 2 | `matrix_markers` | `bytes[2]` | little | spec | bytes `01 00` at offset 48 |
+| 50 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid transform at offset 50 |
+| 178 | 76 | `null_guid` | `bytes[76]` | little | spec | Its LP-UTF16 null GUID starts at offset 178 |
+
 ## `component_insert_identity_scope_276_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 130 B
