@@ -87,6 +87,7 @@ fn fixed_extrude(
                         side_extent_discriminators: [1, 1],
                         side_extent_discriminator_offsets: [177, 190],
                         first_side_target_ordinal: None,
+                        seventh_slot_record_index: None,
                         distance_tail: None,
                         extent,
                         direction_face_extend_offsets: [132, 136],
@@ -249,35 +250,45 @@ fn two_sided_distance_with_a_zero_side_travels_the_other_side() {
         DesignExtrudeExtent::TwoSidedDistance,
         DesignFixedExtrudeParameters::default(),
     );
-    let parameter = |kind: &str, value| {
+    let parameter = |kind: &str, unit: &str, value| {
         crate::design::decode::parameters::parse_design_parameter_record(
             &crate::design::test_support::parameter_record(
                 Some(44),
                 "value",
                 kind,
-                Some("mm"),
+                Some(unit),
                 "d1",
                 value,
             ),
         )
         .unwrap()
     };
-    let along = parameter("AlongDistance", 0.0);
-    let against = parameter("AgainstDistance", 1.2);
+    let along = parameter("AlongDistance", "mm", 0.0);
+    let against = parameter("AgainstDistance", "mm", 1.2);
+    let first_taper = parameter("TaperAngle", "deg", 0.1);
+    let second_taper = parameter("Side2TaperAngle", "deg", 0.05);
     let placement = placement();
-    let definition = crate::test_support::with_decode_context(|ctx| {
-        project_extrude(
-            ctx,
-            &scope,
-            &[(0, &along), (1, &against)],
-            &[],
-            &[],
-            std::slice::from_ref(&placement),
-            &[],
-        )
-    })
-    .unwrap()
-    .expect("two-sided Extrude with zero first side");
+    let project = |second_taper: &crate::records::parameters::DesignParameter| {
+        crate::test_support::with_decode_context(|ctx| {
+            project_extrude(
+                ctx,
+                &scope,
+                &[
+                    (0, &along),
+                    (1, &against),
+                    (2, &first_taper),
+                    (3, second_taper),
+                ],
+                &[],
+                &[],
+                std::slice::from_ref(&placement),
+                &[],
+            )
+        })
+        .unwrap()
+        .expect("two-sided Extrude with zero first side")
+    };
+    let definition = project(&second_taper);
     let FeatureDefinition::Operation(FeatureOperation::Extrude {
         direction,
         extent: ExtrudeExtent::OneSided { side },
@@ -293,6 +304,19 @@ fn two_sided_distance_with_a_zero_side_travels_the_other_side() {
     assert!(
         matches!(side.termination, LinearTermination::Blind { length } if length.get() == 12.0)
     );
+    assert_eq!(
+        side.draft.map(cadmpeg_ir::scalar::SlopeAngle::get),
+        Some(0.05)
+    );
+
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent: ExtrudeExtent::OneSided { side },
+        ..
+    }) = project(&parameter("Side2TaperAngle", "deg", 0.0))
+    else {
+        panic!("one-sided Extrude definition");
+    };
+    assert_eq!(side.draft, None);
 }
 
 #[test]

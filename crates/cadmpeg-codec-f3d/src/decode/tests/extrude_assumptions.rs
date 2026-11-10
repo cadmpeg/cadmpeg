@@ -47,6 +47,7 @@ fn scope_with(
         DesignExtrudeExtent::OneSidedDistance => (1, [1, 0]),
         DesignExtrudeExtent::OneSidedToFace => (1, [2, 0]),
         DesignExtrudeExtent::TwoSidedToFaces => (2, [2, 0]),
+        DesignExtrudeExtent::TwoSidedDistance => (2, [1, 1]),
         DesignExtrudeExtent::TwoSidedDistanceToFace
         | DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne => (2, [1, 2]),
         DesignExtrudeExtent::TwoSidedDistanceThroughAll => (2, [1, 4]),
@@ -73,6 +74,7 @@ fn scope_with(
                     side_extent_discriminators: sides,
                     side_extent_discriminator_offsets: [177, 190],
                     first_side_target_ordinal: None,
+                    seventh_slot_record_index: None,
                     distance_tail: None,
                     extent,
                     direction_face_extend_offsets: [132, 136],
@@ -170,7 +172,11 @@ fn sketch_profile() -> DesignSketchProfileOperand {
     .unwrap()
 }
 
-fn parameter(record_index: u32, source_kind: &str) -> crate::records::parameters::DesignParameter {
+fn parameter(
+    record_index: u32,
+    source_kind: &str,
+    evaluated_value: f64,
+) -> crate::records::parameters::DesignParameter {
     crate::records::parameters::DesignParameter::try_from(
         crate::records::parameters::DesignParameterDraft {
             id: format!("{STREAM}:design-parameter#{record_index}"),
@@ -193,7 +199,7 @@ fn parameter(record_index: u32, source_kind: &str) -> crate::records::parameters
             }),
             name: "d1".into(),
             name_offset: 100,
-            evaluated_value: 0.2,
+            evaluated_value,
             evaluated_value_offset: 110,
         },
     )
@@ -314,7 +320,7 @@ fn wall_thickness_owner_reports_its_native_inputs() {
     ));
     native
         .design_parameters
-        .push(parameter(40, "Side1WallThickness"));
+        .push(parameter(40, "Side1WallThickness", 0.2));
     native.design_parameter_owners.push(owner(40));
     let extrude = || definition(SCOPE_ID, profile_plane(), one_sided());
     assert_eq!(
@@ -324,7 +330,7 @@ fn wall_thickness_owner_reports_its_native_inputs() {
         )]
     );
 
-    native.design_parameters[0] = parameter(40, "AlongDistance");
+    native.design_parameters[0] = parameter(40, "AlongDistance", 0.2);
     assert!(notes(&native, extrude(), code).is_empty());
 }
 
@@ -561,4 +567,35 @@ fn role_43_profile_group_reports_the_assumed_surface_profile() {
         code
     )
     .is_empty());
+}
+
+#[test]
+fn zero_first_side_reports_its_ignored_taper() {
+    let code = F3dLossCode::FeatureExtrudeZeroSideTaperIgnored;
+    let mut native = native_with(scope(
+        DesignExtrudeExtent::TwoSidedDistance,
+        DesignExtrudeStart::ProfilePlane,
+    ));
+    native
+        .design_parameters
+        .push(parameter(40, "AlongDistance", 0.0));
+    native
+        .design_parameters
+        .push(parameter(50, "TaperAngle", 0.1));
+    native.design_parameter_owners.push(owner(40));
+    native.design_parameter_owners.push(owner(50));
+    let extrude = || definition(SCOPE_ID, profile_plane(), one_sided());
+    assert_eq!(
+        notes(&native, extrude(), code),
+        [format!(
+            "Extrude {FEATURE_ID} ignores the first-side taper because its first side has zero length."
+        )]
+    );
+
+    native.design_parameters[1] = parameter(50, "TaperAngle", 0.0);
+    assert!(notes(&native, extrude(), code).is_empty());
+
+    native.design_parameters[0] = parameter(40, "AlongDistance", 0.3);
+    native.design_parameters[1] = parameter(50, "TaperAngle", 0.1);
+    assert!(notes(&native, extrude(), code).is_empty());
 }

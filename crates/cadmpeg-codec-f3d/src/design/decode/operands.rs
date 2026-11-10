@@ -2198,11 +2198,20 @@ pub(in crate::design) fn assign_extrude_face_roles(
             )
         })
         .count();
+    let seventh_slot_record_index = scope
+        .extrude_prologue()
+        .and_then(DesignExtrudePrologue::seventh_slot_record_index);
     let start_group_absent = face_group_count == 1
         && scope
             .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent)
-            == Some(DesignExtrudeExtent::OneSidedToFace);
+            == Some(DesignExtrudeExtent::OneSidedToFace)
+        && groups.iter().any(|group| {
+            matches!(
+                extrude_operand_role(scope, group.role()),
+                Some(PendingExtrudeRole::Faces(_))
+            ) && Some(group.record_index) == seventh_slot_record_index
+        });
     let mut face_groups =
         groups
             .iter_mut()

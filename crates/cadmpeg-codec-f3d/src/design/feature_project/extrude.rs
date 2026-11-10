@@ -547,6 +547,14 @@ pub(super) fn project_extrude(
     // arm refuses it.
     let along = along.map(|(along, direction)| (NonZeroLength::try_from(along).ok(), direction));
     let against = against.map(|against| NonZeroLength::try_from(against).ok());
+    let first_side_zero = matches!(
+        (prologue.extent(), along, against),
+        (
+            Some(DesignExtrudeExtent::TwoSidedDistance),
+            Some((None, AlongDirection::SignedDistance)),
+            Some(Some(_)),
+        )
+    );
     let (shape, reverse_direction) = match (or_none!(prologue.extent()), along, against) {
         (DesignExtrudeExtent::OneSidedDistance, Some((Some(along), along_direction)), None)
             if (matches!(along_direction, AlongDirection::PrologueReversal)
@@ -867,6 +875,11 @@ pub(super) fn project_extrude(
         .transpose()
         .ok();
     let second_draft = or_none!(second_draft);
+    let (draft, second_draft) = if first_side_zero {
+        (second_draft, None)
+    } else {
+        (draft, second_draft)
+    };
     // A side-two draft requires a two-sided extent. Other extents have no neutral
     // field for it, so return None.
     if second_draft.is_some() && !matches!(shape, ExtentShape::TwoSided { .. }) {

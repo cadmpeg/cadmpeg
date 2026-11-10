@@ -352,6 +352,7 @@ pub(crate) enum F3dLossCode {
     FeatureExtrudeSketchPlacementNative,
     FeatureExtrudeTargetOptionAssumed,
     FeatureExtrudeStartFaceAbsentAssumed,
+    FeatureExtrudeZeroSideTaperIgnored,
     /// An Extrude face profile's inferred face set lists unresolved members in face-slot order.
     FeatureExtrudeProfileFaceOrderAssumed,
     /// An Extrude face profile's end-cap search stopped at a local cap.
@@ -818,6 +819,7 @@ impl F3dLossCode {
         Self::FeatureExtrudeSketchPlacementNative,
         Self::FeatureExtrudeTargetOptionAssumed,
         Self::FeatureExtrudeStartFaceAbsentAssumed,
+        Self::FeatureExtrudeZeroSideTaperIgnored,
         Self::FeatureExtrudeProfileFaceOrderAssumed,
         Self::FeatureExtrudeProfileFaceSearchCapped,
         Self::FeatureExtrudeProfileCapFacesInferred,
@@ -1162,6 +1164,7 @@ impl F3dLossCode {
             Self::FeatureExtrudeStartFaceAbsentAssumed => {
                 "feature.extrude-start-face-absent-assumed"
             }
+            Self::FeatureExtrudeZeroSideTaperIgnored => "feature.extrude-zero-side-taper-ignored",
             Self::FeatureExtrudeProfileFaceOrderAssumed => {
                 "feature.extrude-profile-face-order-assumed"
             }
@@ -1544,6 +1547,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeSketchPlacementNative
             | Self::FeatureExtrudeTargetOptionAssumed
             | Self::FeatureExtrudeStartFaceAbsentAssumed
+            | Self::FeatureExtrudeZeroSideTaperIgnored
             | Self::FeatureExtrudeProfileFaceOrderAssumed
             | Self::FeatureExtrudeProfileFaceSearchCapped
             | Self::FeatureExtrudeProfileCapFacesInferred
@@ -1823,6 +1827,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeSketchPlacementNative
             | Self::FeatureExtrudeTargetOptionAssumed
             | Self::FeatureExtrudeStartFaceAbsentAssumed
+            | Self::FeatureExtrudeZeroSideTaperIgnored
             | Self::FeatureExtrudeProfileFaceOrderAssumed
             | Self::FeatureExtrudeProfileFaceSearchCapped
             | Self::FeatureExtrudeProfileCapFacesInferred
@@ -2181,6 +2186,7 @@ mod tests {
                 "feature.extrude-sketch-placement-native",
                 "feature.extrude-target-option-assumed",
                 "feature.extrude-start-face-absent-assumed",
+                "feature.extrude-zero-side-taper-ignored",
                 "feature.extrude-profile-face-order-assumed",
                 "feature.extrude-profile-face-search-capped",
                 "feature.extrude-profile-cap-faces-inferred",

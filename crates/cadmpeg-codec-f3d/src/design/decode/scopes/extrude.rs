@@ -1534,6 +1534,7 @@ fn exact_current_extrude_prologue_with(
             u64_from_index(second_side_extent_offset),
         ],
         first_side_target_ordinal,
+        seventh_slot_record_index: final_slot_reference,
         distance_tail,
         extent,
         direction_face_extend_offsets: [

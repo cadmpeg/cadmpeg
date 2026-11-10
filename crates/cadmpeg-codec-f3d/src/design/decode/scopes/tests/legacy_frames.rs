@@ -580,6 +580,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
                 side_extent_discriminators: [1, 0],
                 side_extent_discriminator_offsets: [77, 90],
                 first_side_target_ordinal: None,
+                seventh_slot_record_index: None,
                 distance_tail: None,
                 extent: DesignExtrudeExtent::OneSidedDistance,
                 direction_face_extend_offsets: [32, 36],

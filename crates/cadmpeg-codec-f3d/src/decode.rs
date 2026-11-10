@@ -2003,6 +2003,37 @@ fn report_design_projection_gaps(
             })
             .collect()
     };
+    let scope_values = |kind: &str| -> std::collections::HashMap<(&str, u32), Vec<f64>> {
+        let parameters: std::collections::HashMap<(&str, u32), f64> = native
+            .design_parameters
+            .iter()
+            .filter(|parameter| parameter.source_kind_str() == kind)
+            .filter_map(|parameter| {
+                crate::ids::native_stream(&parameter.id).map(|stream| {
+                    (
+                        (stream, parameter.record_index),
+                        parameter.evaluated_value().get(),
+                    )
+                })
+            })
+            .collect();
+        let mut values: std::collections::HashMap<(&str, u32), Vec<f64>> =
+            std::collections::HashMap::new();
+        for owner in &native.design_parameter_owners {
+            let Some(stream) = crate::ids::native_stream(owner.id()) else {
+                continue;
+            };
+            if let Some(value) = parameters.get(&(stream, owner.parameter_record_index())) {
+                values
+                    .entry((stream, owner.scope_record_index()))
+                    .or_default()
+                    .push(*value);
+            }
+        }
+        values
+    };
+    let along_values = scope_values("AlongDistance");
+    let taper_values = scope_values("TaperAngle");
     let wall_scopes = scopes_owning(&["Side1WallThickness", "Side2WallThickness"]);
     let along_scopes = scopes_owning(&["AlongDistance"]);
     let scopes_by_id: std::collections::HashMap<&str, _> = native
@@ -2133,6 +2164,39 @@ fn report_design_projection_gaps(
                 "Extrude {} reads its selected-face start without a start group as the offset profile plane (DR-322).",
                 feature.id
             )));
+        }
+        let scope_key =
+            crate::ids::native_stream(&scope.id).map(|stream| (stream, scope.record_index));
+        let first_side_zero = scope_key
+            .and_then(|key| along_values.get(&key))
+            .is_some_and(|values| values.as_slice() == [0.0]);
+        let first_side_taper = scope_key
+            .and_then(|key| taper_values.get(&key))
+            .is_some_and(|values| values.iter().any(|value| *value != 0.0))
+            || scope
+                .fixed_extrude_parameters()
+                .and_then(|fixed| fixed.taper_angle.as_ref())
+                .is_some_and(|taper| taper.value.get() != 0.0);
+        if prologue.extent()
+            == Some(crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedDistance)
+            && first_side_zero
+            && first_side_taper
+            && matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude {
+                        extent: cadmpeg_ir::features::ExtrudeExtent::OneSided { .. },
+                        ..
+                    }
+                )
+            )
+        {
+            report.losses.push(
+                F3dLossCode::FeatureExtrudeZeroSideTaperIgnored.note(format!(
+                "Extrude {} ignores the first-side taper because its first side has zero length.",
+                feature.id
+            )),
+            );
         }
         if prologue.extent()
             == Some(crate::records::feature::extrude::DesignExtrudeExtent::SymmetricDistance)
