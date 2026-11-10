@@ -284,6 +284,7 @@ fn capped_rectangular_pattern_instance_search_reports_a_loss() {
                     ),
                     directions: Vec::new(),
                     secondary_direction: None,
+                    distribution: None,
                 },
             )
             .unwrap(),
