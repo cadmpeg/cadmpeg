@@ -1836,6 +1836,42 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder projects the scope from its ordered reference table and keeps these lanes in the native scope bytes.
 
+### DR-315. Offset-21 Boolean of the compact, marked, and counted Shell prefixes
+
+**Question.** Which `Shell` option does the Boolean at primary-header offset 21 of the compact, marked, and counted prefixes store?
+
+**Known.** `f3d.md` §3.1 "One of four prefixes precedes the slots" defines the four prefixes. The byte is `0` or `1`. The present wall slot sets the wall direction: inside-slot scopes with either value of the byte add their walls inside the kept faces. The cornered prefix stores the tangent-chain Boolean at the same offset. The decoder stores the byte and its offset in the `prefix_flag` field of the native `Shell` operation and reports `feature.shell-prefix-flag-assumed` with the value and offset for each such scope.
+
+**Need.** Controlled saves of one `Shell` in each prefix that change only the tangent-chain option, and saves that change only the corner type, with the byte compared across each pair.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-316. Auxiliary references of the counted Shell prefix
+
+**Question.** What do the counted auxiliary references after the wall slots of the counted `Shell` prefix name, and do they change the walls?
+
+**Known.** `f3d.md` §3.1 "In the counted prefix" defines the count and the eleven-byte marked references, which are outside the ordered reference table. Each referenced record stores a 36-code-unit LP-UTF16 GUID, a marked reference, and a marked reference to the owning `Shell` scope. The decoder keeps their record indices in `auxiliary_references`, projects the `Shell` from its wall slot and face group, and reports `feature.shell-auxiliary-references-native`.
+
+**Need.** Controlled saves of one `Shell` with zero, one, and two auxiliary references, with the result bodies, that show the user action which adds each reference.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-330. Shell table references outside the face-group members
+
+**Question.** What does an ordered reference of a compact, marked, or counted `Shell` scope name when it is neither the face group, the wall scalar, nor a member of the face group?
+
+**Known.** `f3d.md` §3.1 "A u32 one, a marked reference to the face group" states that in the compact, marked, and counted prefixes the remaining ordered references are the members of the face group. The decoder projects such a `Shell` from its wall slot and face group and reports `feature.shell-table-members-assumed` with the remaining references and the group members.
+
+**Need.** A `Shell` scope whose remaining ordered references differ from its face-group members, with the result body that shows whether those references change the walls.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ### DR-311. Extension method of a SurfaceExtend scope
 
 **Question.** Which field of a `SurfaceExtend` scope stores the extension method, and which records can the trailing reference of a SurfaceExtend or boundary-carrier SurfaceOffset group name?

@@ -362,7 +362,9 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_direct_face_operation(bytes, &records, &scope);
+                let construction =
+                    exact_direct_face_operation(bytes, &records, &scope, &mut losses);
+                let scope_offset = scope.byte_offset();
                 match (scope.payload_mut(), construction) {
                     (
                         scope::DesignScopePayloadMut::OffsetFaces(slot),
@@ -371,7 +373,20 @@ pub(crate) fn decode_parameter_scopes(
                     (
                         scope::DesignScopePayloadMut::Shell(slot),
                         Some(direct_face::DesignDirectFaceOperation::Shell(value)),
-                    ) => *slot = Some(value),
+                    ) => {
+                        if !value.auxiliary_references.is_empty() {
+                            losses.push(
+                                crate::loss::F3dLossCode::FeatureShellAuxiliaryReferencesNative
+                                    .note(format!(
+                                        "Shell scope at {} in {} projects from its wall slot and face group; its auxiliary references {:?} have no neutral form.",
+                                        scope_offset,
+                                        entry.name,
+                                        value.auxiliary_references
+                                    )),
+                            );
+                        }
+                        *slot = Some(value);
+                    }
                     _ => {}
                 }
             }
