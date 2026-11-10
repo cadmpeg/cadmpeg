@@ -105,7 +105,7 @@ fn named_cylinder_reports_unbound_placement() {
     let mut flipped = placement.clone();
     flipped.fields.axis_flipped.as_mut().unwrap().value = 1;
     let mut other_version = placement.clone();
-    other_version.type_version = 8;
+    other_version.type_version = 7;
     let mut inferred_x = placement.clone();
     inferred_x.fields.inferred_x_axis.value = 1;
     let mut inferred_z = placement.clone();
@@ -135,4 +135,49 @@ fn named_cylinder_reports_unbound_placement() {
         };
         assert!(cylinder.transform.is_none());
     }
+}
+
+#[test]
+fn named_cylinder_binds_version_eight_solved_frame() {
+    let mut placement = crate::test_support::placement_construction::grammar_placement(8, 0);
+    placement.record_index = 255;
+    let expected = placement.fields.matrix;
+    let mut scope = scope();
+    assert!(super::bind(std::slice::from_mut(&mut scope), &[placement]).is_empty());
+    let crate::records::feature::scope::DesignScopePayload::CylinderPrimitive(Some(cylinder)) =
+        scope.payload()
+    else {
+        panic!("expected cylinder");
+    };
+    assert_eq!(cylinder.transform, expected);
+    assert_eq!(
+        cylinder.transform.unwrap().value.rows(),
+        crate::test_support::placement_construction::GRAMMAR_FRAME_ROWS
+    );
+}
+
+#[test]
+fn named_cylinder_version_eight_reflection_keeps_dimensions_unplaced() {
+    let mut placement = placement();
+    placement.type_version = 8;
+    let mut matrix = placement.fields.matrix.unwrap();
+    let mut rows = matrix.value.rows();
+    for row in &mut rows {
+        row[0] = -row[0];
+    }
+    matrix.value = rows.try_into().unwrap();
+    placement.fields.matrix = Some(matrix);
+    let mut scope = scope();
+    assert_eq!(
+        super::bind(std::slice::from_mut(&mut scope), &[placement]).len(),
+        1
+    );
+    let crate::records::feature::scope::DesignScopePayload::CylinderPrimitive(Some(cylinder)) =
+        scope.payload()
+    else {
+        panic!("expected cylinder");
+    };
+    assert!(cylinder.transform.is_none());
+    assert_eq!(cylinder.height.get(), 2.6);
+    assert_eq!(cylinder.diameter.get(), 0.5);
 }

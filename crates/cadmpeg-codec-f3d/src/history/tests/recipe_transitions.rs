@@ -191,6 +191,7 @@ fn split_face_case() -> (
             entity_operands: &[],
             body_recipe_operands: &[],
             histories: &mut [history],
+            scope_histories: &std::collections::HashMap::new(),
         },
     );
 
@@ -959,6 +960,7 @@ fn hole_case_with(
             entity_operands: &[],
             body_recipe_operands: &[],
             histories: &mut [history],
+            scope_histories: &std::collections::HashMap::new(),
         },
     );
 

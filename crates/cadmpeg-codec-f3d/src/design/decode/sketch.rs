@@ -1712,7 +1712,31 @@ fn decode_headers_for_indices(
     }) {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = crate::ids::native_scope(&entry.name);
+        let first = out.len();
         decode_headers_for_indices_from_stream(&entry.name, &scope, bytes, wanted, &mut out);
+        if let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? {
+            if let Ok(frames) = design_primary_frames(bytes, &meta) {
+                let by_index: HashMap<_, _> = frames
+                    .into_iter()
+                    .filter_map(|frame| {
+                        u32::try_from(frame.entity_id)
+                            .ok()
+                            .map(|index| (index, frame))
+                    })
+                    .collect();
+                for header in &mut out[first..] {
+                    if let Some(frame) = by_index.get(&header.record_index) {
+                        header.byte_offset = u64_from_index(frame.start);
+                        header.class_tag = frame.class_tag.clone();
+                        header.id = design_record_id(
+                            &entry.name,
+                            ":design-record-header#",
+                            header.byte_offset,
+                        );
+                    }
+                }
+            }
+        }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
@@ -3544,7 +3568,10 @@ struct ParsedSketchGeometryGroup {
 }
 
 fn parse_sketch_geometry_group(payload: &[u8]) -> Option<ParsedSketchGeometryGroup> {
-    use crate::layout::sketch_geometry_group_prefix as group;
+    use crate::layout::{
+        sketch_geometry_group_prefix as group, sketch_geometry_group_short_tail as short_tail,
+        sketch_geometry_group_tail as long_tail,
+    };
     let field = |offset, len| {
         let mut view = View::over_retained(payload);
         view.skip(offset)?;
@@ -3588,10 +3615,16 @@ fn parse_sketch_geometry_group(payload: &[u8]) -> Option<ParsedSketchGeometryGro
     }
     let mut tail = View::over_retained(payload);
     tail.skip(cursor)?;
-    if tail.take(4)? != [0; 4] {
-        return None;
+    if tail.u8()? != short_tail::OWNER_MARKER_VALUE {
+        let mut zero_run = View::over_retained(payload);
+        zero_run.skip(cursor)?;
+        if zero_run.take(long_tail::OWNER_MARKER - long_tail::ZERO_RUN)?
+            != [0; long_tail::OWNER_MARKER - long_tail::ZERO_RUN]
+        {
+            return None;
+        }
+        cursor = cursor.checked_add(long_tail::OWNER_MARKER)?;
     }
-    cursor = cursor.checked_add(4)?;
     let sketch = take_same_segment_sketch_reference(payload, &mut cursor)?;
     (cursor == payload.len()).then_some(ParsedSketchGeometryGroup {
         ordinal,

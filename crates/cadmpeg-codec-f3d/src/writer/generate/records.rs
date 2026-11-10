@@ -147,7 +147,6 @@ pub(super) fn encode_design_bulkstream(
                 curve_identities: &native.sketch_curve_identities,
                 face_operands: &native.design_face_operands,
                 body_recipe_operands: &native.design_body_recipe_operands,
-                legacy_loft_body_carriers: &native.design_loft_legacy_body_carriers,
                 placements: &native.design_sketch_placements,
                 body_bindings: &native.design_body_bindings,
                 component_naming_spaces: &native.design_component_naming_spaces,

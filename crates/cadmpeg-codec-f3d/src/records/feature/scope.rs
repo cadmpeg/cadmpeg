@@ -3132,21 +3132,45 @@ impl DesignParameterScope {
             .and_then(|coil| coil.operation.map(|field| field.offset))
     }
 
-    /// Whether this scope is a ten-reference `CoilPrimitive` form, whose
-    /// Boolean target group has role `0x0000000400000000`.
+    /// Whether this scope is a ten-reference `CoilPrimitive` form.
     pub(crate) fn coil_has_ten_reference_target(&self) -> bool {
-        let at = |relative: usize| {
-            u64::try_from(relative)
-                .ok()
-                .and_then(|relative| self.byte_offset().checked_add(relative))
-        };
         self.kind() == DesignFeatureKind::CoilPrimitive
             && self.reference_members().len() == 10
-            && self.coil_operation_offset().is_some_and(|offset| {
-                at(crate::layout::coil_long_scope_fixed_prologue::OPERATION) == Some(offset)
-                    || at(crate::layout::coil_ten_reference_compact_prologue::OPERATION)
-                        == Some(offset)
-            })
+            && (self.coil_operation_at(crate::layout::coil_long_scope_fixed_prologue::OPERATION)
+                || self.coil_has_ten_reference_compact_prologue())
+    }
+
+    /// Whether `role` at `scope_reference_ordinal` is the Boolean target group
+    /// role of this `CoilPrimitive` or `SpirePrimitive` scope.
+    pub(crate) fn coil_target_group_admits(
+        &self,
+        role: crate::records::topology::extrude_selection::DesignOperandRole,
+        scope_reference_ordinal: u32,
+    ) -> bool {
+        use crate::records::topology::extrude_selection::DesignOperandRole;
+        if self.coil_has_ten_reference_compact_prologue() {
+            matches!(
+                (role, scope_reference_ordinal),
+                (DesignOperandRole::BODIES_A, 0) | (DesignOperandRole::BODIES_B, 8)
+            )
+        } else if self.coil_has_ten_reference_target() {
+            role == DesignOperandRole::BODIES_A
+        } else {
+            role == DesignOperandRole::BODIES_B
+        }
+    }
+
+    fn coil_has_ten_reference_compact_prologue(&self) -> bool {
+        self.kind() == DesignFeatureKind::CoilPrimitive
+            && self.reference_members().len() == 10
+            && self.coil_operation_at(crate::layout::coil_ten_reference_compact_prologue::OPERATION)
+    }
+
+    fn coil_operation_at(&self, relative: usize) -> bool {
+        let offset = u64::try_from(relative)
+            .ok()
+            .and_then(|relative| self.byte_offset().checked_add(relative));
+        offset.is_some() && self.coil_operation_offset() == offset
     }
 
     pub(crate) fn coil_extent(&self) -> Option<DesignCoilExtent> {

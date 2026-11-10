@@ -357,6 +357,12 @@ jobs:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Compile cadmpeg-ir without optimization
+        # The steps below compile cadmpeg-ir with three feature sets and run
+        # few of its tests. A Cargo config profile overrides the manifest's.
+        shell: bash
+        run: printf '[profile.dev.package.cadmpeg-ir]\nopt-level = 0\n' >> "${CARGO_HOME:-$HOME/.cargo}/config.toml"
+
       - name: Schema feature
         if: needs.changes.outputs.schema == 'true'
         # The CLI enables IR schemas. This gate also checks schema assertions

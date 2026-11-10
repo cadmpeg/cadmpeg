@@ -269,6 +269,7 @@ rewrite_enum!(FeatureOperation, []; {
     BoundaryFill { tools, cells },
     CutWithSurface { targets, tools, reverse },
     TrimBodies { operands, keep },
+    TrimBodiesAtPlane { targets, plane, keep },
     SplitBody { targets, tool },
     SplitFace { targets, tool },
     DeleteBody { bodies, mode },

@@ -1932,6 +1932,38 @@ fn report_unparsed_parameter_records(
     }
 }
 
+fn report_parameter_trailer_flags(
+    report: &mut DecodeBody,
+    flagged: &[crate::design::decode::parameters::StreamParameterCount],
+) {
+    for parameters in flagged {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterTrailerFlagUninterpreted,
+            format_args!(
+                "{} decoded parameter(s) in {} set byte 3 of the compact expression trailer; the flag is not interpreted, and their driven and favorite flags are assumed false.",
+                parameters.count, parameters.stream
+            ),
+        );
+    }
+}
+
+fn report_parameter_null_owners(
+    report: &mut DecodeBody,
+    null_owners: &[crate::design::decode::parameters::StreamParameterCount],
+) {
+    for parameters in null_owners {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterOwnerUnstored,
+            format_args!(
+                "{} decoded parameter(s) in {} store the null owner in the compact null-owner form; they are read without an owner binding.",
+                parameters.count, parameters.stream
+            ),
+        );
+    }
+}
+
 fn report_unparsed_parameter_owners(report: &mut DecodeBody, count: usize) {
     if count != 0 {
         push_loss_vec(
@@ -2734,6 +2766,8 @@ impl<'a> F3dDecodeSession<'a> {
             .losses
             .extend(prereqs.design_parameter_scope_losses.iter().cloned());
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
+        report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
+        report_parameter_null_owners(&mut self.report, &prereqs.design_parameter_null_owners);
         report_unparsed_parameter_owners(
             &mut self.report,
             prereqs.design_parameter_owner_unparsed.len(),
@@ -3801,6 +3835,61 @@ fn project_mesh_bodies(
         }
     };
     native.design_mesh_features = decoded.features;
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_guid_byte_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_split_stream_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_history_window_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_operation_record_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_face_group_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_word_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_wrapper_tail_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_body_identity_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_owner_frame_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_body_frame_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_scope_prefix_losses(
+            &native.design_mesh_features,
+        ));
     let mut texture_assets = Vec::new();
     for texture in native
         .design_mesh_features
@@ -3832,7 +3921,7 @@ fn project_mesh_bodies(
             let asset = texture.asset.clone();
             texture_table.push((source_id, asset));
         }
-        for body in feature.bodies() {
+        for body in feature.all_bodies() {
             if let Some(tessellation_id) = &body.tessellation_id {
                 insert_mesh_texture_table(&mut texture_tables, tessellation_id, &texture_table)?;
             }
@@ -3910,15 +3999,22 @@ fn project_mesh_bodies(
     }
     for feature in &native.design_mesh_features {
         let stream = crate::ids::native_stream(&feature.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-        insert_mesh_scope_tessellations(
-            &mut projection.tessellations_by_scope,
-            stream,
-            feature.scope().record().record_index(),
-            feature
+        for scope in feature.scopes() {
+            let mut bodies = feature
                 .bodies()
                 .iter()
-                .filter_map(|body| body.tessellation_id.as_deref()),
-        )?;
+                .filter(|body| body.scope_record_index == scope.record().record_index())
+                .collect::<Vec<_>>();
+            bodies.sort_by_key(|body| body.scope_body_ordinal);
+            insert_mesh_scope_tessellations(
+                &mut projection.tessellations_by_scope,
+                stream,
+                scope.record().record_index(),
+                bodies
+                    .into_iter()
+                    .filter_map(|body| body.tessellation_id.as_deref()),
+            )?;
+        }
     }
     report_unresolved_mesh_attributes(report, &unresolved);
     Ok(projection)

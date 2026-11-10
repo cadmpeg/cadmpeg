@@ -34,7 +34,7 @@ members = [
 exclude = ["crates/cadmpeg-fuzz"]
 
 [workspace.package]
-version = "0.6.10"
+version = "0.6.11"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/cadmpeg/cadmpeg"
@@ -42,29 +42,29 @@ homepage = "https://github.com/cadmpeg/cadmpeg"
 rust-version = "1.88"
 
 [workspace.dependencies]
-cadmpeg-asm = { path = "crates/cadmpeg-asm", version = "0.6.10" }
-cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.6.10" }
-cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.6.10" }
-cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.6.10" }
-cadmpeg-measure = { path = "crates/cadmpeg-measure", version = "0.6.10" }
-cadmpeg-parasolid = { path = "crates/cadmpeg-parasolid", version = "0.6.10" }
-cadmpeg-registry = { path = "crates/cadmpeg-registry", version = "0.6.10", default-features = false }
-cadmpeg-tessellate = { path = "crates/cadmpeg-tessellate", version = "0.6.10" }
+cadmpeg-asm = { path = "crates/cadmpeg-asm", version = "0.6.11" }
+cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.6.11" }
+cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.6.11" }
+cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.6.11" }
+cadmpeg-measure = { path = "crates/cadmpeg-measure", version = "0.6.11" }
+cadmpeg-parasolid = { path = "crates/cadmpeg-parasolid", version = "0.6.11" }
+cadmpeg-registry = { path = "crates/cadmpeg-registry", version = "0.6.11", default-features = false }
+cadmpeg-tessellate = { path = "crates/cadmpeg-tessellate", version = "0.6.11" }
 cadmpeg-test-support = { path = "crates/cadmpeg-test-support" }
-cadmpeg-protein = { path = "crates/cadmpeg-protein", version = "0.6.10" }
-cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.6.10" }
-cadmpeg-codec-inventor = { path = "crates/cadmpeg-codec-inventor", version = "0.6.10" }
-cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.6.10" }
-cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.6.10" }
-cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.6.10" }
-cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.6.10" }
-cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.6.10" }
-cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.6.10" }
-cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.6.10" }
-cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.6.10" }
-cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.6.10" }
-cadmpeg-codec-pvz = { path = "crates/cadmpeg-codec-pvz", version = "0.6.10" }
-cadmpeg-codec-usd = { path = "crates/cadmpeg-codec-usd", version = "0.6.10" }
+cadmpeg-protein = { path = "crates/cadmpeg-protein", version = "0.6.11" }
+cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.6.11" }
+cadmpeg-codec-inventor = { path = "crates/cadmpeg-codec-inventor", version = "0.6.11" }
+cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.6.11" }
+cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.6.11" }
+cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.6.11" }
+cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.6.11" }
+cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.6.11" }
+cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.6.11" }
+cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.6.11" }
+cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.6.11" }
+cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.6.11" }
+cadmpeg-codec-pvz = { path = "crates/cadmpeg-codec-pvz", version = "0.6.11" }
+cadmpeg-codec-usd = { path = "crates/cadmpeg-codec-usd", version = "0.6.11" }
 
 # 1.0.229 is the floor, not a preference: serde_derive gained the
 # collected_deny_unknown_fields epilogue there, which is what makes
@@ -150,6 +150,10 @@ opt-level = 2
 # crate takes about 100 s longer. Debug assertions and overflow checks stay on.
 [profile.dev.package.cadmpeg-ir]
 opt-level = 1
+
+# Measurement tests spend most of their time in this crate's quadrature.
+[profile.dev.package.cadmpeg-measure]
+opt-level = 2
 
 [profile.test]
 # Test failures need `file:line` in the backtrace; they do not need variable

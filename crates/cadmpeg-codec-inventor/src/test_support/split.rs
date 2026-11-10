@@ -184,7 +184,29 @@ pub(crate) fn set_version(source: &mut PmDcFeature, version: u8) {
 }
 
 pub(crate) fn trim_fixture() -> (PmDcFeature, Vec<PmDcFeatureProperty>) {
-    let (mut source, mut properties) = face_fixture(false);
+    trim_fixture_with(false)
+}
+
+/// Work-plane trim over the work plane at ordinal 42; `side` is the slot-6
+/// Boolean.
+pub(crate) fn plane_trim_fixture(side: bool) -> (PmDcFeature, Vec<PmDcFeatureProperty>) {
+    let (mut source, mut properties) = trim_fixture_with(side);
+    set_kind(
+        &mut properties,
+        2,
+        PmDcFeaturePropertyKind::Enumeration {
+            family: PmDcFeatureEnumFamily::Auxiliary,
+            type_value: 4,
+            value: 2,
+        },
+    );
+    set_slot(&mut source, 5, reference(43));
+    set_slot(&mut source, 8, reference(0));
+    (source, properties)
+}
+
+fn trim_fixture_with(side: bool) -> (PmDcFeature, Vec<PmDcFeatureProperty>) {
+    let (mut source, mut properties) = face_fixture(side);
     set_kind(
         &mut properties,
         0,

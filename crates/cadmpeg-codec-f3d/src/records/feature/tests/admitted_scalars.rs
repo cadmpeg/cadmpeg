@@ -140,6 +140,8 @@ fn surface_offset_boundary_carrier_refuses_a_nonpositive_tolerance() {
 fn circular_pattern_construction_refuses_a_nonpositive_angle() {
     refuses_zero(
         &DesignCircularPatternConstruction {
+            axis_separator_flag_offset: None,
+            symmetric: None,
             count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index: 11,
             count_offset: 40,

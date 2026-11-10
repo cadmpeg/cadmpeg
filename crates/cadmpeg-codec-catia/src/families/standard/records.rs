@@ -370,6 +370,33 @@ pub(super) fn standard_surface_record_groups(
     Ok(groups)
 }
 
+/// Counts source-closed surface rosters and those with valid local supports.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct SurfaceRosterCensus {
+    pub(crate) rosters: usize,
+    pub(crate) records: usize,
+    pub(crate) supported_rosters: usize,
+    pub(crate) supported_records: usize,
+}
+
+pub(crate) fn surface_roster_census(
+    ctx: &DecodeContext<'_>,
+    brep: &[u8],
+) -> Result<SurfaceRosterCensus, CodecError> {
+    let mut census = SurfaceRosterCensus::default();
+    for records in standard_surface_record_groups(ctx, brep)? {
+        census.rosters += 1;
+        census.records += records.len();
+        if let Some(support_start) = records.last().map(StandardSurfaceRecord::end) {
+            if standard_curve_supports_at(brep, records.len(), support_start).is_some() {
+                census.supported_rosters += 1;
+                census.supported_records += records.len();
+            }
+        }
+    }
+    Ok(census)
+}
+
 /// One surface roster and its positionally following, face-local support
 /// table. Support face references remain local to this population.
 #[derive(Debug, Clone)]
@@ -1169,5 +1196,33 @@ mod tests {
         })
         .expect("compute the standard surface populations");
         assert_eq!(populations.len(), 1);
+    }
+
+    #[test]
+    fn surface_roster_census_distinguishes_support_from_roster_closure() {
+        let mut bytes = vec![0x34, 0x12, 0, 0, 0, 0];
+        for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x01);
+        bytes.push(0x60);
+        let census = crate::test_support::with_service_context(|ctx| {
+            super::surface_roster_census(ctx, &bytes)
+        })
+        .expect("census");
+        assert_eq!(census.rosters, 1);
+        assert_eq!(census.records, 1);
+        assert_eq!(census.supported_rosters, 0);
+        assert_eq!(census.supported_records, 0);
+
+        bytes.extend_from_slice(&[1, 0, 0, 0x00, 0x02, 0x00, 0x33, 0x36, 0, 0]);
+        let census = crate::test_support::with_service_context(|ctx| {
+            super::surface_roster_census(ctx, &bytes)
+        })
+        .expect("supported census");
+        assert_eq!(census.rosters, 1);
+        assert_eq!(census.records, 1);
+        assert_eq!(census.supported_rosters, 1);
+        assert_eq!(census.supported_records, 1);
     }
 }
