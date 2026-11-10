@@ -204,7 +204,9 @@ impl GpuDispatcher {
             BackendKind::RtxTensorCore => None,
             BackendKind::PtxSm86 => None,
             BackendKind::CudaCompute => None,
-            BackendKind::VulkanCompute => None,
+            BackendKind::VulkanCompute => {
+                global_vulkan().and_then(|vk| vk.compute_batch_transform_4x4(matrix, points))
+            }
             BackendKind::CpuParallelSpatialIndex => {
                 Some(cpu::rayon_batch_transform_4x4(matrix, points))
             }
@@ -584,7 +586,11 @@ fn benchmark_single(
                     let out = cpu::rayon_batch_transform_4x4(&matrix, &pts);
                     std::hint::black_box(&out);
                 }
-                BackendKind::VulkanCompute => return None,
+                BackendKind::VulkanCompute => {
+                    let vk = global_vulkan()?;
+                    let out = vk.compute_batch_transform_4x4(&matrix, &pts)?;
+                    std::hint::black_box(&out);
+                }
                 BackendKind::CudaCompute => return None,
                 BackendKind::PtxSm86 => return None,
                 BackendKind::RtxTensorCore => return None,
