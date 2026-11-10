@@ -268,7 +268,7 @@ fn face_recipe_ordinals_keep_zero_and_group_design_references() {
     let structure = super::DesignFaceRecipeStructure {
         root: 0,
         prelude: [0, 2],
-        sides: [side([1, 0, 0]), side([2, 0, 0])],
+        sides: vec![side([1, 0, 0]), side([2, 0, 0])],
         postlude_value: None,
     };
     assert!(structure.has_valid_operand_ordinals(&references));
@@ -323,7 +323,7 @@ fn recipe_structure(root: i32) -> super::DesignFaceRecipeStructure {
     super::DesignFaceRecipeStructure {
         root,
         prelude: [0, 2],
-        sides: [side([0, 0, 0]), side([0, 0, 0])],
+        sides: vec![side([0, 0, 0]), side([0, 0, 0])],
         postlude_value: None,
     }
 }

@@ -3275,7 +3275,7 @@ mod tests {
             Some(crate::records::topology::face::DesignFaceRecipeStructure {
                 root: 0,
                 prelude: [0, 2],
-                sides: [side.clone(), side],
+                sides: vec![side.clone(), side],
                 postlude_value: None,
             });
         operand
