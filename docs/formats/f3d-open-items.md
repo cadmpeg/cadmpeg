@@ -597,7 +597,7 @@ travel.
 
 **Question.** What do byte `01` at offset 49 and the f32 values at offsets 62 and 66 of a sketch geometry group store, and which operations write a group?
 
-**Known.** `f3d.md` §3.1 "A sketch geometry group has type GUID" gives the layout and the ownership joins. Every group stores `01` at offset 49 and f32 `1.0` at offsets 62 and 66. The sketch that owns a group is named by the reference table of a `MeshSection` scope.
+**Known.** `f3d.md` §3.1 "A sketch geometry group has type GUID" gives the layout and the ownership joins. Every group stores `01` at offset 49 and f32 `1.0` at offsets 62 and 66. The sketch that owns a group is named by the reference table of a `MeshSection` scope. A controlled `Create Mesh Section Sketch` save from Fusion 2706.1.17, with a mesh body in a `Base Feature` and the XY construction plane, stores one group in the `86 + 11N` form with `01` at offset 49, f32 `1.0` at offsets 62 and 66, ordinal `1`, and 25 member references.
 
 **Need.** Groups written by another operation, or groups with other values in these fields.
 
@@ -1058,9 +1058,9 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which edges does a constant-radius `Fillet` group select when its transition inserts a blend without a cylinder or torus row, a blend with no replaced edge or with two, two groups with one radius, or more replaced edges than the group has distinct members? Can a rounded edge keep its slot?
 
-**Known.** The specification states the edges from the blend faces of the transition when every new carrier is a cylinder or torus blend. A sphere, spline, or variable blend has no spine row. A tangent chain rounds more edges than the group has members. A historical partial selection can name an edge that the transition keeps.
+**Known.** The specification states the edges from the blend faces of the transition when every new carrier is a cylinder or torus blend. A sphere, spline, or variable blend has no spine row. A tangent chain rounds more edges than the group has members. A historical partial selection can name an edge that the transition keeps. The covering rule takes every other shared edge that the transition deletes as consumed by the blend. In a control whose fillet passes a parallel edge 1.5 mm from the rounded corner between planes, the supports share both edges, the rounded edge covers the extent, and the consumed edge covers half of it.
 
-**Need.** Controls that fillet one edge of a tangent chain, a corner of three rounded edges, and an edge between curved faces, and controls that show whether a selected edge can keep its slot.
+**Need.** Controls that fillet one edge of a tangent chain, a corner of three rounded edges, and an edge between curved faces, controls that show whether a selected edge can keep its slot, and controls whose blend consumes a parallel edge between curved supports or along the whole blend.
 
 **Conflict.** None.
 
@@ -1202,7 +1202,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which native relation binds a parameter scope to its ASM history when several histories contain the same endpoint pair and the scope has no unique body-map or whole-body recipe binding?
 
-**Known.** Current and preceding state identities are local to one ASM history. Independent history graphs can contain the same endpoint pair and complete predecessor chain. A result body-map carrier or whole-body recipe candidate faces can bind a scope to one BREP basename. Copied feature groups can retain the same endpoint pairs in separate histories.
+**Known.** Current and preceding state identities are local to one ASM history. Independent history graphs can contain the same endpoint pair and complete predecessor chain. A result body-map carrier or whole-body recipe candidate faces can bind a scope to one BREP basename. Copied feature groups can retain the same endpoint pairs in separate histories. Each component's bodies live in their own BREP blob, and a history's id names its blob. When a scope has no such binding, the decoder reads the feature's history properties from the one history of the BREP blob that holds every body the feature outputs, or that a Base Feature resolves, when exactly one history of that blob holds the pair, and reports `history.output-blob-history-inferred`.
 
 **Need.** The native reference chain from each copied scope to its history or BREP basename. Files that change the copied scope's source component while they retain its endpoint pair.
 
@@ -1426,17 +1426,15 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Two other public frames of this form store zero at offset 29.
 
-### DR-251. Compact parameter frame with a null owner and trailer byte 3
+### DR-251. Compact null-owner parameters: owner and trailer byte 3
 
-**Question.** Which grammar admits a compact parameter frame with a null owner, and what does byte 3 of its compact expression trailer state?
+**Question.** Does the null owner of a compact null-owner dimension parameter mean that the parameter has no owner or that the frame does not store it, and what does byte 3 of the five-byte compact expression trailer state when it is `1`?
 
-**Known.** Five Linear Dimension parameter frames store the compact header with `u8 0` at offset 30 and the LP-UTF16 expression at offset 31, followed by the five-byte trailer `00 00 00 01 00`, the source kind, the unit, the name, the evaluated scalar, and the parameter tail. Their expressions chain the parameters (`6.35 mm`, then each names the previous one). The compact owned trailer stores the driven flag at byte 1, which aligns with byte 6 of the wide expression trailer; under that alignment, byte 3 is the position of the wide favorite flag. The class-`287` grammar admits the same trailer `00 00 00 01 00`.
+**Known.** The specification states the compact null-owner parameter form and the class-`287` form, which both admit the trailers `00 00 00 00 00` and `00 00 00 01 00`. Five Linear Dimension parameters in the compact null-owner form store `00 00 00 01 00`; their expressions chain the parameters (`6.35 mm`, then each names the previous one). The compact owned trailer stores the driven flag at byte 1, which aligns with byte 6 of the wide expression trailer; under that alignment, byte 3 is the position of the wide favorite flag. These frames store the null owner `u8 0` at offset 30 while their source kind names a Linear Dimension. The decoder reads them without an owner binding and reports `parameter.owner-unstored` for each stream with such a parameter. It keeps the parameter flags at their defaults and reports `parameter.trailer-flag-uninterpreted` for each stream with a decoded parameter whose byte 3 is `1`.
 
-**Need.** Fusion's own reading of the five parameters (favorite, driving state, owner) from a local import of a public design that stores this form, or a second public design with the compact null-owner form.
+**Need.** Fusion's own reading of the five parameters (favorite, driving state, owner) from a local import of a public design that stores this form, or a second public design with the compact null-owner form or a compact trailer that sets byte 3.
 
 **Conflict.** None.
-
-**Note.** The five frames match no grammar.
 
 ### DR-175. Ownerless fixed Fillet lanes across several operand groups
 
@@ -1848,6 +1846,18 @@ when the operation transition carries no candidate for the group members?
 **Known.** The 129-byte two-wrapper form stores two zero bytes there, and the 130-byte form stores `u8 1` and two zero bytes, with every later field one byte later. The 220-byte rectangular-pattern direction record stores the same `u8 1` and two zero bytes between the same two references. The decoder projects a pattern whose axis comes from the 130-byte form only when its total angle is a full turn, where the instance set does not depend on the direction of travel. In a 130-byte record whose pattern repeats an Extrude twenty times over a full turn, both wrappers carry the same persistent identity. No ASM history topology holds that identity. The design type table lists it among the entity identities of the body-visibility browser-node member type `D26351F0-5940-4D23-AA20-2C35475A6D9E`. It is one less than the record index of the seed Extrude's scope. The axis stays unresolved.
 
 **Need.** Saves of one circular pattern of a body about an edge axis, with a total angle of 90 degrees and three instances, once in each direction of travel, plus the same pattern as a full turn. Save the full-turn pattern once about a linear edge, once about a circular edge, and once about a construction axis. Each save needs the axis record frame, its wrapper records, the parameter owners, and the ASM history.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-333. Edge recipes whose prefix record index names no tagged face
+
+**Question.** Which faces does a standard Fillet or Chamfer edge recipe select as candidate faces when the i32 record index at `name−16` of its prefix frame is `1`?
+
+**Known.** An edge operand's candidate faces are the faces of the bound ASM history whose persistent subentity tags name the recipe's prefix record index. One public printer assembly stores 1,235 edge operands. 86 of them store record index `1`, and in each of these the bound history holds no persistent subentity tag that names design reference `1`, so the operand has no candidate faces. Four of the 86 store no prefix references. For the other 82, the prefix references resolve to between 4 and 44 faces. Of the 1,149 operands with another record index, 1,039 have candidate faces, but no fixed relation joins those faces to the faces of the prefix references. In 820 of the 1,039, the candidate faces are equal to neither the union of the reference faces nor the union of the faces tagged by the positive references, and are not a subset of the reference faces. The decoder keeps the edges of the 86 operands native.
+
+**Need.** A single-body part whose `Fillet` rounds one edge of a box, saved once. Then the same `Fillet` with a second edge added, and the same `Fillet` after an earlier feature that changes one face next to the edge. Save each design in the top-level component and once in a component placed in another design. Each save needs the edge-recipe operand records, the parameter scope, and the ASM history.
 
 **Conflict.** None.
 

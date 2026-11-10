@@ -2093,6 +2093,7 @@ impl FeatureFamily {
                     FeatureOperation::SplitBody { .. }
                         | FeatureOperation::SplitFace { .. }
                         | FeatureOperation::TrimBodies { .. }
+                        | FeatureOperation::TrimBodiesAtPlane { .. }
                 )
             )
         )
@@ -2129,7 +2130,8 @@ impl FeatureFamily {
             FeatureDefinition::Operation(
                 FeatureOperation::SplitBody { .. }
                 | FeatureOperation::SplitFace { .. }
-                | FeatureOperation::TrimBodies { .. },
+                | FeatureOperation::TrimBodies { .. }
+                | FeatureOperation::TrimBodiesAtPlane { .. },
             ) => Some(Self::Split),
             _ => None,
         }
@@ -2871,6 +2873,8 @@ fn apply_history(
         .filter(|pattern| Some(pattern.identity.segment_token.as_str()) == token)
         .map(|pattern| (pattern.identity.record_ordinal, pattern))
         .collect::<HashMap<_, _>>();
+    let mirror_planes =
+        mirror::MirrorIndex::new(&inventory.properties, &[], &inventory.work_planes);
     for item in projected.iter_mut() {
         let Some(placement) = history.placement(item.record) else {
             continue;
@@ -2912,6 +2916,14 @@ fn apply_history(
                 })
                 .unwrap_or_default(),
         };
+        let mut consumed = consumed;
+        let mut supplier = None;
+        if let (true, Some(token), Some(pattern)) =
+            (item.neutral, token, patterns.get(&item.record).copied())
+        {
+            supplier = mirror::supplying_plane(&mirror_planes, token, pattern);
+            consumed.extend(supplier);
+        }
         for ordinal in consumed {
             let Some(dependency) = ids.get(&ordinal) else {
                 continue;
@@ -2923,6 +2935,11 @@ fn apply_history(
                 continue;
             }
             item.feature.dependencies.insert(dependency.clone());
+            if supplier == Some(ordinal) {
+                item.feature
+                    .evaluation
+                    .edit(|definition, _| mirror::without_supplied_plane_reference(definition));
+            }
         }
     }
     Ok(())

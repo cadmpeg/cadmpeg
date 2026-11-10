@@ -964,3 +964,365 @@ fn body_mirror_pattern_seeds_resolve_with_the_wrapper_joins_and_stay_local_witho
     assert_eq!(losses[0].code.local_code(), "feature.body-selection-native");
     assert!(native_losses(&model_of(feature_seed), &joins()).is_empty());
 }
+
+fn plain_feature(
+    name: &str,
+    ordinal: u64,
+    suppressed: Option<bool>,
+) -> cadmpeg_ir::features::Feature {
+    use cadmpeg_ir::features::{DistinctMembers, Feature, FeatureContent, FeatureEvaluation};
+    Feature {
+        id: FeatureId::mint(format!("test:model:feature#{name}")).expect("synthetic feature"),
+        ordinal,
+        name: None,
+        suppressed,
+        dependencies: DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(combine(BodySelection::Native(
+            "tool".into(),
+        ))),
+        native_ref: None,
+        product_definition: None,
+    }
+}
+
+fn result_of(feature: &cadmpeg_ir::features::Feature, wrappers: &[&str]) -> FeatureResultTopology {
+    FeatureResultTopology::new(
+        FeatureResultTopologyId::mint(format!(
+            "test:model:feature-result#{}",
+            feature.id.as_str().rsplit('#').next().expect("name")
+        ))
+        .expect("synthetic result"),
+        feature.id.clone(),
+        FeatureResultMembers::new(
+            wrappers
+                .iter()
+                .map(|wrapper| NonBlankString::new(*wrapper).expect("wrapper"))
+                .collect(),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .expect("members"),
+        None,
+    )
+}
+
+#[test]
+fn produced_wrappers_come_from_earlier_unsuppressed_features_only() {
+    let earlier = plain_feature("earlier", 3, Some(false));
+    let suppressed = plain_feature("suppressed", 4, Some(true));
+    let later = plain_feature("later", 9, Some(false));
+    let consumer = plain_feature("consumer", 6, Some(false));
+    let features = [earlier, suppressed, later, consumer];
+    let results = [
+        result_of(&features[0], &["made"]),
+        result_of(&features[1], &["skipped"]),
+        result_of(&features[2], &["future"]),
+    ];
+    let produced = produced_before(&features, &results, &features[3], &empty_producer_records());
+    assert_eq!(produced, HashSet::from(["made".to_owned()]));
+}
+
+#[test]
+fn unplaced_producer_is_not_an_earlier_producer() {
+    let unplaced = plain_feature("unplaced", 1, None);
+    let consumer = plain_feature("consumer", 6, Some(false));
+    let features = [unplaced, consumer];
+    let results = [result_of(&features[0], &["made"])];
+    assert!(
+        produced_before(&features, &results, &features[1], &empty_producer_records()).is_empty()
+    );
+}
+
+#[test]
+fn unplaced_combine_has_no_earlier_producers() {
+    let producer = plain_feature("producer", 1, Some(false));
+    let consumer = plain_feature("consumer", 6, None);
+    let features = [producer, consumer];
+    let results = [result_of(&features[0], &["made"])];
+    assert!(
+        produced_before(&features, &results, &features[1], &empty_producer_records()).is_empty()
+    );
+    let mut actual = combine(BodySelection::Native("tool".into()));
+    combine_local(&mut actual, &HashSet::new(), None);
+    assert_eq!(actual, combine(BodySelection::Native("tool".into())));
+}
+
+#[test]
+fn unjoined_combine_operands_stay_local_only_when_every_wrapper_is_produced_earlier() {
+    let tools = || {
+        BodySelection::NativeSet(
+            NativeSelections::try_from(vec!["tool".into(), "other".into()])
+                .expect("distinct wrappers"),
+        )
+    };
+    let operands = |actual: &FeatureDefinition| {
+        let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) = actual
+        else {
+            panic!("combine")
+        };
+        operands.clone().into_parts()
+    };
+    let all: HashSet<String> = ["target", "tool", "other"].map(String::from).into();
+    let mut actual = combine(tools());
+    combine_local(&mut actual, &all, Some("tools"));
+    let (target, tools_after) = operands(&actual);
+    assert_eq!(
+        target,
+        BodySelection::local(vec!["target".into()], "target".into()).expect("local")
+    );
+    assert_eq!(
+        tools_after,
+        BodySelection::local(vec!["tool".into(), "other".into()], "tools".into()).expect("local")
+    );
+    assert!(combine_matches(
+        combine(tools()),
+        &actual,
+        &HashMap::new(),
+        Some("tools"),
+        &all
+    ));
+    // A wrapper that no earlier feature produces keeps its selection native.
+    let partial: HashSet<String> = ["target", "tool"].map(String::from).into();
+    let mut actual = combine(tools());
+    combine_local(&mut actual, &partial, Some("tools"));
+    let (target, tools_after) = operands(&actual);
+    assert!(matches!(target, BodySelection::Local { .. }));
+    assert_eq!(tools_after, tools());
+    // A set without its collection identity stays native.
+    let mut actual = combine(tools());
+    combine_local(&mut actual, &all, None);
+    assert_eq!(operands(&actual).1, tools());
+    // A complete current-body join wins over the local form.
+    let mut actual = combine(tools());
+    definition(&mut actual, &joins(), Some("tools"));
+    combine_local(&mut actual, &all, Some("tools"));
+    assert!(matches!(
+        operands(&actual).0,
+        BodySelection::Resolved { .. }
+    ));
+}
+
+fn plane_trim(targets: BodySelection) -> FeatureDefinition {
+    FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane {
+        targets,
+        plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
+        keep: cadmpeg_ir::features::BodyTrimSide::Forward,
+    })
+}
+
+fn plane_trim_targets(definition: &FeatureDefinition) -> &BodySelection {
+    let FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane { targets, .. }) =
+        definition
+    else {
+        panic!("plane trim")
+    };
+    targets
+}
+
+#[test]
+fn unjoined_plane_trim_target_stays_local_only_when_its_wrapper_is_produced_earlier() {
+    let produced: HashSet<String> = ["target".to_owned()].into();
+    // An earlier producer makes the wrapper a persistent input body.
+    let mut actual = plane_trim(BodySelection::Native("target".into()));
+    plane_trim_local(&mut actual, &produced);
+    assert_eq!(
+        plane_trim_targets(&actual),
+        &BodySelection::local(vec!["target".into()], "target".into()).expect("local")
+    );
+    assert!(split_matches(
+        plane_trim(BodySelection::Native("target".into())),
+        &actual,
+        &HashMap::new(),
+        &produced
+    ));
+    // The expected form of a Local selection is not accepted without a producer.
+    assert!(!split_matches(
+        plane_trim(BodySelection::Native("target".into())),
+        &actual,
+        &HashMap::new(),
+        &HashSet::new()
+    ));
+    // A wrapper that no earlier feature produces keeps its selection native.
+    let mut actual = plane_trim(BodySelection::Native("target".into()));
+    plane_trim_local(&mut actual, &["other".to_owned()].into());
+    assert_eq!(
+        plane_trim_targets(&actual),
+        &BodySelection::Native("target".into())
+    );
+    plane_trim_local(&mut actual, &HashSet::new());
+    assert_eq!(
+        plane_trim_targets(&actual),
+        &BodySelection::Native("target".into())
+    );
+    // A complete current-body join wins over the local form.
+    let mut actual = plane_trim(BodySelection::Native("target".into()));
+    definition(&mut actual, &joins(), None);
+    plane_trim_local(&mut actual, &produced);
+    assert!(matches!(
+        plane_trim_targets(&actual),
+        BodySelection::Resolved { .. }
+    ));
+}
+
+#[test]
+fn local_plane_trim_target_counts_in_the_unjoined_body_loss() {
+    use cadmpeg_ir::features::{DistinctMembers, Feature, FeatureContent, FeatureEvaluation};
+    let mut actual = plane_trim(BodySelection::Native("target".into()));
+    plane_trim_local(&mut actual, &["target".to_owned()].into());
+    let mut model = Model::default();
+    model.features.push(Feature {
+        id: FeatureId::mint("test:model:feature#trim").expect("feature"),
+        ordinal: 1,
+        name: None,
+        suppressed: Some(false),
+        dependencies: DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: Some("trim_bodies".into()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(actual),
+        native_ref: None,
+        product_definition: None,
+    });
+    let losses = native_losses(&model, &HashMap::new());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "feature.body-selection-native");
+}
+
+fn empty_producer_records() -> ProducerRecords<'static> {
+    ProducerRecords {
+        features: &[],
+        labels: &[],
+        properties: &[],
+    }
+}
+
+fn native_derived_producer() -> (cadmpeg_ir::features::Feature, FeatureInventory, String) {
+    use crate::feature::tests::{test_feature, test_label, test_property};
+    use crate::feature::PmDcFeaturePropertyKind;
+    let mut source = test_feature(10, 3, &[(0, 20), (1, 21), (2, 22)]);
+    let mut input = test_property(
+        20,
+        PmDcFeaturePropertyKind::SurfaceBody {
+            body: crate::pmdc::PmDcReference::from_packed(0x8000_001f),
+        },
+    );
+    let mut output = test_property(
+        21,
+        PmDcFeaturePropertyKind::SurfaceBody {
+            body: crate::pmdc::PmDcReference::from_packed(1),
+        },
+    );
+    for wrapper in [&mut input, &mut output] {
+        wrapper.identity.type_id =
+            crate::record_identity::RecordTypeId::from_bytes(crate::feature::SURFACE_BODY_TYPE);
+    }
+    source.edit(|payload| payload.save_version_major = 19);
+    input.edit(|payload| payload.save_version_major = 19);
+    output.edit(|payload| payload.save_version_major = 19);
+    let wrapper = output.id();
+    let mut producer = plain_feature("derived", 1, Some(false));
+    producer.native_ref = Some(source.id());
+    producer.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Other("derived".into()),
+            parameters: std::collections::BTreeMap::default(),
+        }),
+    );
+    let inventory = FeatureInventory {
+        features: vec![source],
+        labels: vec![test_label(10, 1, crate::feature::derived::CLASS_ID, &[])],
+        properties: vec![input, output],
+        ..FeatureInventory::default()
+    };
+    (producer, inventory, wrapper)
+}
+
+fn check_derived_selection(trim: bool, ordinal: u64, suppressed: Option<bool>, joined: bool) {
+    let (mut producer, inventory, wrapper) = native_derived_producer();
+    producer.ordinal = ordinal;
+    producer.suppressed = suppressed;
+    let original = if trim {
+        plane_trim(BodySelection::Native(wrapper.clone()))
+    } else {
+        combine(BodySelection::Native(wrapper.clone()))
+    };
+    let mut consumer = plain_feature("consumer", 6, Some(false));
+    consumer.evaluation =
+        cadmpeg_ir::features::FeatureEvaluation::from_definition(original.clone());
+    let mut model = Model::default();
+    model.features = vec![producer, consumer];
+    let bodies = if joined {
+        HashMap::from([(wrapper.clone(), body("derived"))])
+    } else {
+        HashMap::new()
+    };
+    project(&mut model, &bodies, &inventory);
+    assert!(model.feature_result_topologies.is_empty());
+    let actual = model.features[1].evaluation.definition();
+    let expected = if joined {
+        BodySelection::Resolved {
+            bodies: vec![body("derived")].try_into().expect("body"),
+            native: wrapper.clone(),
+        }
+    } else if ordinal < 6 && suppressed == Some(false) {
+        BodySelection::local(vec![wrapper.clone()], wrapper).expect("local")
+    } else {
+        BodySelection::Native(wrapper)
+    };
+    if trim {
+        assert_eq!(plane_trim_targets(actual), &expected);
+    } else {
+        let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) = actual
+        else {
+            panic!("combine")
+        };
+        assert_eq!(operands.clone().into_parts().1, expected);
+    }
+    let earlier = produced_before(
+        &model.features,
+        &model.feature_result_topologies,
+        &model.features[1],
+        &ProducerRecords {
+            features: &inventory.features,
+            labels: &inventory.labels,
+            properties: &inventory.properties,
+        },
+    );
+    if trim {
+        assert!(split_matches(original, actual, &bodies, &earlier));
+    } else {
+        assert!(combine_matches(original, actual, &bodies, None, &earlier));
+    }
+}
+
+#[test]
+fn native_derived_result_makes_plane_trim_target_local() {
+    check_derived_selection(true, 1, Some(false), false);
+}
+
+#[test]
+fn native_derived_result_makes_combine_tool_local() {
+    check_derived_selection(false, 1, Some(false), false);
+}
+
+#[test]
+fn later_unplaced_or_suppressed_native_derived_producer_keeps_selections_native() {
+    for trim in [true, false] {
+        for (ordinal, suppressed) in [(9, Some(false)), (1, None), (1, Some(true))] {
+            check_derived_selection(trim, ordinal, suppressed, false);
+        }
+    }
+}
+
+#[test]
+fn native_derived_result_current_body_join_wins() {
+    for trim in [true, false] {
+        check_derived_selection(trim, 1, Some(false), true);
+    }
+}

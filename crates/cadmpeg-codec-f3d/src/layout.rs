@@ -119,7 +119,7 @@ pub(crate) mod sketch_container_visibility_member_prefix {
 /// Spec §3.1. Record length 75 B.
 ///
 /// ```text
-/// Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes and the owning sketch container reference follow.
+/// Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes or none, and the owning sketch container reference follow.
 /// ```
 pub(crate) mod sketch_geometry_group_prefix {
     /// Record length in bytes. Spec §3.1.
@@ -156,6 +156,32 @@ pub(crate) mod sketch_geometry_group_prefix {
     pub(crate) const ZERO_BYTE_2_VALUE: u8 = 0;
     /// Offset of `member_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const MEMBER_COUNT: usize = 71;
+}
+
+/// Byte offsets for the `sketch_geometry_group_tail` record.
+///
+/// Spec §3.1. Record length 15 B.
+///
+/// ```text
+/// Offsets are relative to the end of the member reference run of a 90 + 11N byte sketch geometry group. The tail ends the frame.
+/// ```
+pub(crate) mod sketch_geometry_group_tail {
+    /// Offset of `zero_run` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 0;
+    /// Offset of `owner_marker` (`u8`). Spec §3.1.
+    pub(crate) const OWNER_MARKER: usize = 4;
+}
+
+/// Byte offsets for the `sketch_geometry_group_short_tail` record.
+///
+/// Spec §3.1. Record length 11 B.
+///
+/// ```text
+/// Offsets are relative to the end of the member reference run of an 86 + 11N byte sketch geometry group. The tail ends the frame.
+/// ```
+pub(crate) mod sketch_geometry_group_short_tail {
+    /// Stated value of `owner_marker` (`u8`). Spec §3.1.
+    pub(crate) const OWNER_MARKER_VALUE: u8 = 1;
 }
 
 /// Byte offsets for the `design_decal_scope_prefix` record.
@@ -238,6 +264,26 @@ pub(crate) mod design_parameter_legacy_287_prefix {
     pub(crate) const ZERO_RUN_6: usize = 35;
     /// Offset of `expression_length` (`u32`, little-endian). Spec §3.1.
     pub(crate) const EXPRESSION_LENGTH: usize = 41;
+}
+
+/// Byte offsets for the `design_parameter_compact_null_owner_prefix` record.
+///
+/// Spec §3.1. Record length 35 B.
+///
+/// ```text
+/// Offsets are relative to the class-372 parameter header through the expression length. The variable expression is followed by the class-287 expression trailer and remainder.
+/// ```
+pub(crate) mod design_parameter_compact_null_owner_prefix {
+    /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_15: usize = 11;
+    /// Offset of `source_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SOURCE_ORDINAL: usize = 26;
+    /// Offset of `owner_marker` (`u8`). Spec §3.1.
+    pub(crate) const OWNER_MARKER: usize = 30;
+    /// Stated value of `owner_marker` (`u8`). Spec §3.1.
+    pub(crate) const OWNER_MARKER_VALUE: u8 = 0;
+    /// Offset of `expression_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXPRESSION_LENGTH: usize = 31;
 }
 
 /// Byte offsets for the `design_parameter_typed_compact_owned_prefix` record.
