@@ -197,6 +197,80 @@ L_SM86_TF_EXIT:
 }
 
 // 2. Handcrafted RTX Tensor Core 4x4 homogeneous point transform using mma.sync.aligned.m8n8k4.row.col.f64
+// Each warp (32 lanes) processes 8 points (rows 0..7 of A_8x4) against B_4x8 (where cols 0..3 and 4..7 hold M^T).
+.visible .entry rtx_tc_transform_4x4_f64(
+    .param .u64 param_mat_col,
+    .param .u64 param_in,
+    .param .u64 param_out,
+    .param .u32 param_n
+) {
+    .reg .pred %p<4>;
+    .reg .b32 %r<16>;
+    .reg .b64 %rd<16>;
+    .reg .f64 %fa0, %fb0, %fc0, %fc1, %fd0, %fd1;
+
+    ld.param.u64 %rd1, [param_mat_col];
+    ld.param.u64 %rd2, [param_in];
+    ld.param.u64 %rd3, [param_out];
+    ld.param.u32 %r1, [param_n];
+
+    cvta.to.global.u64 %rd4, %rd1;
+    cvta.to.global.u64 %rd5, %rd2;
+    cvta.to.global.u64 %rd6, %rd3;
+
+    // 1 warp (32 threads) per block; blockIdx.x selects tile of 8 points
+    mov.u32 %r2, %ctaid.x;
+    shl.b32 %r3, %r2, 3;       // base_point = blockIdx.x * 8
+    mov.u32 %r4, %tid.x;
+    and.b32 %r5, %r4, 31;      // lane = tid & 31
+    shr.u32 %r6, %r5, 2;       // group_id = lane >> 2 (0..7: point row within tile)
+    and.b32 %r7, %r5, 3;       // thread_in_group = lane & 3 (0..3: k coord index)
+
+    add.u32 %r8, %r3, %r6;     // point_idx = base_point + group_id
+    mov.f64 %fa0, 0d0000000000000000;
+    setp.lt.u32 %p1, %r8, %r1;
+    @!%p1 bra L_TC_TF_SKIP_LOAD_A;
+
+    // Load A[group_id, thread_in_group] = points[point_idx * 4 + thread_in_group]
+    shl.b32 %r9, %r8, 2;
+    add.u32 %r9, %r9, %r7;
+    mul.wide.u32 %rd7, %r9, 8;
+    add.u64 %rd8, %rd5, %rd7;
+    ld.global.f64 %fa0, [%rd8];
+
+L_TC_TF_SKIP_LOAD_A:
+    // Load B[thread_in_group, group_id]: col = group_id & 3, row = thread_in_group
+    // param_mat_col stores M[col, row] at index (col * 4 + row)
+    and.b32 %r10, %r6, 3;
+    shl.b32 %r11, %r10, 2;
+    add.u32 %r11, %r11, %r7;
+    mul.wide.u32 %rd9, %r11, 8;
+    add.u64 %rd10, %rd4, %rd9;
+    ld.global.f64 %fb0, [%rd10];
+
+    mov.f64 %fc0, 0d0000000000000000;
+    mov.f64 %fc1, 0d0000000000000000;
+
+    // Execute Ampere/Ada FP64 Tensor Core MMA: D_8x8 = A_8x4 * B_4x8 + C_8x8
+    mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 {%fd0, %fd1}, {%fa0}, {%fb0}, {%fc0, %fc1};
+
+    // Lanes with thread_in_group < 2 hold columns (0, 1) and (2, 3) of row group_id
+    setp.lt.u32 %p2, %r7, 2;
+    and.pred %p3, %p1, %p2;
+    @!%p3 bra L_TC_TF_EXIT;
+
+    shl.b32 %r12, %r8, 2;
+    shl.b32 %r13, %r7, 1;
+    add.u32 %r12, %r12, %r13;
+    mul.wide.u32 %rd11, %r12, 8;
+    add.u64 %rd12, %rd6, %rd11;
+    st.global.f64 [%rd12 + 0], %fd0;
+    st.global.f64 [%rd12 + 8], %fd1;
+
+L_TC_TF_EXIT:
+    ret;
+}
+
 ";
 
 /// Hardware context for safe `cudarc` CUDA Driver API execution, `OptiX` RT Core BVH traversal, and RTX Tensor Core PTX dispatch.
@@ -206,6 +280,7 @@ pub struct CudaContext {
     ctx: Arc<CudarcContext>,
     fn_simt_transform: CudaFunction,
     fn_sm86_transform: CudaFunction,
+    fn_tc_transform: CudaFunction,
 }
 
 static GLOBAL_CUDA: OnceLock<Option<CudaContext>> = OnceLock::new();
@@ -242,6 +317,7 @@ impl CudaContext {
         Some(Self {
             fn_simt_transform: module.load_function("cuda_simt_transform_4x4_f64").ok()?,
             fn_sm86_transform: module.load_function("cuda_sm86_transform_4x4_f64").ok()?,
+            fn_tc_transform: module.load_function("rtx_tc_transform_4x4_f64").ok()?,
             device_name,
             compute_capability: (major, minor),
             ctx,
@@ -345,6 +421,48 @@ impl CudaContext {
         self.dispatch_transform_4x4_kernel(&self.fn_sm86_transform, matrix, points)
     }
 
+    /// Executes RTX Tensor Core (`mma.sync.aligned.m8n8k4.row.col.f64`) 4x4 batch point transformation.
+    #[must_use]
+    pub fn tensor_core_batch_transform_4x4(
+        &self,
+        matrix: &[[f64; 4]; 4],
+        points: &[[f64; 4]],
+    ) -> Option<Vec<[f64; 4]>> {
+        if points.is_empty() {
+            return Some(Vec::new());
+        }
+        if !self.supports_tensor_cores() {
+            return None;
+        }
+        self.ctx.bind_to_thread().ok()?;
+        let stream = self.ctx.default_stream();
+        let n_u32 = u32::try_from(points.len()).ok()?;
+        let flat_in = points.as_flattened();
+
+        let d_mat = stream.clone_htod(matrix.as_flattened()).ok()?;
+        let d_in = stream.clone_htod(flat_in).ok()?;
+        // Safety: every element of `d_out` is written by the kernel before `memcpy_dtoh`.
+        let mut d_out = unsafe { stream.alloc::<f64>(flat_in.len()) }.ok()?;
+
+        let grid = n_u32.div_ceil(8);
+        let cfg = LaunchConfig {
+            grid_dim: (grid, 1, 1),
+            block_dim: (32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let mut builder = stream.launch_builder(&self.fn_tc_transform);
+        builder.arg(&d_mat);
+        builder.arg(&d_in);
+        builder.arg(&mut d_out);
+        builder.arg(&n_u32);
+        // Safety: kernel signature matches (u64, u64, u64, u32) and buffer bounds are verified.
+        unsafe { builder.launch(cfg) }.ok()?;
+
+        let mut out: Vec<[f64; 4]> = (0..points.len()).map(|_| [0.0_f64; 4]).collect();
+        stream.memcpy_dtoh(&d_out, out.as_flattened_mut()).ok()?;
+        Some(out)
+    }
+
     /// Whether the active GPU supports NVIDIA `OptiX` hardware RT Core acceleration.
     #[must_use]
     pub const fn supports_optix_rt(&self) -> bool {
@@ -430,6 +548,41 @@ mod tests {
             }
         } else {
             assert!(ctx.ptx_sm86_batch_transform_4x4(&matrix, &points).is_none());
+        }
+    }
+
+    #[test]
+    fn cuda_tensor_core_transform_matches_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let matrix = [
+            [1.25, -0.5, 0.25, 4.0],
+            [0.5, 2.0, -0.75, -2.5],
+            [-0.25, 0.125, 1.5, 1.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let points: Vec<[f64; 4]> = (0..19)
+            .map(|i| {
+                let f = f64::from(i);
+                [f * 0.3 - 1.0, f * -0.7 + 2.0, f * 0.5, 1.0]
+            })
+            .collect();
+
+        let expected = cpu::batch_transform_4x4(&matrix, &points);
+        if ctx.supports_tensor_cores() {
+            let tc_out = ctx
+                .tensor_core_batch_transform_4x4(&matrix, &points)
+                .expect("Tensor Core transform succeeded");
+            for (e, t) in expected.iter().zip(&tc_out) {
+                for c in 0..4 {
+                    assert!((e[c] - t[c]).abs() < CUDA_PARITY_TOLERANCE);
+                }
+            }
+        } else {
+            assert!(ctx
+                .tensor_core_batch_transform_4x4(&matrix, &points)
+                .is_none());
         }
     }
 
