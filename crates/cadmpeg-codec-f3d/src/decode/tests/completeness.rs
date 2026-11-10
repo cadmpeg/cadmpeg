@@ -549,10 +549,10 @@ fn a_native_neutral_plane_is_complete_with_a_parallel_plane_frame() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let draft = |frame_normal: Option<Vector3>| {
+    let draft_with = |frame_normal: Option<Vector3>, datum: Option<&str>| {
         let mut pull = DraftPull::new(
             FeatureDirection3::new(Vector3::new(0.0, 0.0, -1.0)).unwrap(),
-            None,
+            datum.map(|datum| cadmpeg_ir::features::FeatureId::mint(datum).unwrap()),
         );
         pull.frame = frame_normal.map(|normal| {
             FeatureSupportPlaneFrame::new(
@@ -575,6 +575,11 @@ fn a_native_neutral_plane_is_complete_with_a_parallel_plane_frame() {
             second_side: None,
         })
     };
+    let draft = |frame_normal| draft_with(frame_normal, None);
+    assert!(feature_definition_is_incomplete(&draft_with(
+        Some(Vector3::new(0.0, 0.0, 1.0)),
+        Some("f3d:test:feature#2")
+    )));
     assert!(!feature_definition_is_incomplete(&draft(Some(
         Vector3::new(0.0, 0.0, 1.0)
     ))));

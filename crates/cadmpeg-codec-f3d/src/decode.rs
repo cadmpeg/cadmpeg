@@ -395,7 +395,9 @@ fn draft_neutral_plane_is_resolved(
                         .plane
                         .as_ref()
                         .is_some_and(|plane| plane.as_str() == *native)
-                        || (pull.frame.is_some() && pull.frame_matches_direction()))
+                        || (pull.plane.is_none()
+                            && pull.frame.is_some()
+                            && pull.frame_matches_direction()))
             }),
             _ => false,
         }

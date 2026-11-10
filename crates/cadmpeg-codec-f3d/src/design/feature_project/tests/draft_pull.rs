@@ -215,6 +215,38 @@ fn an_origin_plane_states_its_normal_as_the_pull_direction() {
 }
 
 #[test]
+fn an_xref_occurrence_scope_is_not_in_model_space() {
+    let mut scope = draft_scope(0.25, Some(false));
+    let stream = crate::ids::native_stream(&scope.id).unwrap().to_owned();
+    let space = crate::records::recipes::DesignComponentNamingSpace {
+        id: format!("{stream}:design-component-naming-space#1"),
+        byte_offset: 1,
+        component_record_index: 1,
+        context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+            .to_owned()
+            .try_into()
+            .expect("GUID"),
+        context_uuid_offset: 13,
+        name: None,
+        name_offset: None,
+    };
+    assert!(super::super::scope_space_is_model_space(
+        &scope,
+        std::slice::from_ref(&space)
+    ));
+    let xref = scope.id.replacen("f3d:", "f3d:xref/root/occurrence-0/", 1);
+    let space = crate::records::recipes::DesignComponentNamingSpace {
+        id: space.id.replacen("f3d:", "f3d:xref/root/occurrence-0/", 1),
+        ..space
+    };
+    scope.id = xref;
+    assert!(!super::super::scope_space_is_model_space(
+        &scope,
+        std::slice::from_ref(&space)
+    ));
+}
+
+#[test]
 fn an_origin_plane_in_a_stream_of_several_components_keeps_no_frame() {
     let scope = draft_scope(0.25, Some(false));
     let stream = crate::ids::native_stream(&scope.id).unwrap().to_owned();
@@ -230,7 +262,11 @@ fn an_origin_plane_in_a_stream_of_several_components_keeps_no_frame() {
         name: None,
         name_offset: None,
     };
-    for (spaces, framed) in [(vec![space(1)], true), (vec![space(1), space(2)], false)] {
+    for (spaces, framed) in [
+        (Vec::new(), false),
+        (vec![space(1)], true),
+        (vec![space(1), space(2)], false),
+    ] {
         let definition = super::super::project_draft(
             &scope,
             std::slice::from_ref(&scope),

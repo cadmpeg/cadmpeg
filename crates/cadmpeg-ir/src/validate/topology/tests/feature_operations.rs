@@ -172,6 +172,12 @@ fn a_draft_pull_frame_normal_is_parallel_to_its_direction() {
         ),
     ];
     let mut ir = unit_cube().expect("valid unit cube fixture");
+    let mut both = pull(Vector3::new(0.0, 0.0, 1.0), x);
+    both.plane = Some(crate::features::FeatureId::mint("synthetic:test:feature#datum").unwrap());
+    let both_id = "synthetic:test:feature#draft-frame-both";
+    ir.model
+        .features
+        .push(feature(both_id, cases.len(), draft(neutral(both))));
     let mut expected = Vec::new();
     for (ordinal, (anchor, refused)) in cases.into_iter().enumerate() {
         let id = format!("synthetic:test:feature#draft-frame-{ordinal}");
@@ -190,6 +196,10 @@ fn a_draft_pull_frame_normal_is_parallel_to_its_direction() {
             "{id}"
         );
     }
+    assert!(findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(both_id)
+            && finding.message == "draft pull states both a datum plane and a plane frame"
+    }));
 }
 
 fn feature(

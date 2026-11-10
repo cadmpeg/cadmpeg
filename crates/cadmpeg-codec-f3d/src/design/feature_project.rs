@@ -3588,19 +3588,22 @@ fn selected_origin_plane(
         .map(|plane| (ordinal, plane.normal))
 }
 
-/// Return whether a scope's Design stream holds at most one component, so
-/// that component's local space is model space.
-fn scope_stream_has_one_component(
+/// Return whether a scope's local space is model space: the scope belongs to
+/// the root document and its Design stream binds exactly one component.
+fn scope_space_is_model_space(
     scope: &DesignParameterScope,
     component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
 ) -> bool {
-    let stream = native_stream(&scope.id);
-    component_naming_spaces
-        .iter()
-        .filter(|space| native_stream(&space.id) == stream)
-        .take(2)
-        .count()
-        <= 1
+    let Some(stream) = native_stream(&scope.id) else {
+        return false;
+    };
+    crate::ids::in_root_document(&scope.id)
+        && component_naming_spaces
+            .iter()
+            .filter(|space| native_stream(&space.id) == Some(stream))
+            .take(2)
+            .count()
+            == 1
 }
 
 fn project_draft(
@@ -3704,7 +3707,7 @@ fn project_draft(
                     cadmpeg_ir::features::FeatureDirection3::from(direction),
                     None,
                 );
-                if scope_stream_has_one_component(scope, component_naming_spaces) {
+                if scope_space_is_model_space(scope, component_naming_spaces) {
                     pull.frame =
                         crate::history::selection::design_geometry_origin_plane_frame(ordinal);
                 }
