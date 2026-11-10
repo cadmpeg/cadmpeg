@@ -475,6 +475,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     )?;
     let placements = crate::design::decode::placement_construction::decode(ctx, scan)?;
     design.design_placement_constructions = placements.records;
+    crate::design::decode::placement_construction::coils::bind(
+        scan,
+        &mut design.design_parameter_scopes,
+        &design.design_record_headers,
+        &design.design_placement_constructions,
+    )?;
     if placements.unparsed != 0 {
         push_loss_vec(
             &mut losses,
@@ -617,7 +623,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             curve_identities: &design.sketch_curve_identities,
             face_operands: &design.design_face_operands,
             body_recipe_operands: &design.design_body_recipe_operands,
-            legacy_loft_body_carriers: &design.design_loft_legacy_body_carriers,
             placements: &design.design_sketch_placements,
             body_bindings: &prereqs.design_body_bindings,
             component_naming_spaces: &prereqs.design_component_naming_spaces,

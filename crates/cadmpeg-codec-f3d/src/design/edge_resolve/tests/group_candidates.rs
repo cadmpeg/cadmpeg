@@ -467,3 +467,217 @@ fn fragment_fallback_keeps_partial_edges_and_resolves_only_unresolved_members() 
     assert!(notes[0].message.contains(&operands[2].id));
     assert!(operands.iter().all(|o| o.resolved_edge_slot.is_none()));
 }
+
+/// A member whose two referenced faces hold the changed edges listed.
+fn two_side_operand(
+    record_index: u32,
+    sides: [(&str, &[i64]); 2],
+    deleted: &[i64],
+) -> crate::records::topology::edge_identity::DesignEdgeOperand {
+    let mut operand = recipe_edge_operand(record_index, &[], &[]);
+    let side = || crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
+        header_value: 0,
+        scalars: Vec::new(),
+        payload_prefix: Vec::new(),
+        entries: Vec::new(),
+    };
+    operand.recipe_structure = Some(
+        crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+            root: 2,
+            sides: vec![side(), side()],
+        },
+    );
+    operand.recipe_reference_contexts = sides
+        .iter()
+        .enumerate()
+        .map(|(ordinal, (face, edges))| {
+            serde_json::from_value(serde_json::json!({
+                "reference_ordinal": ordinal,
+                "result_faces": [],
+                "result_shared_edge_slots": [],
+                "preceding_faces": [face],
+                "shared_edge_slots": [],
+                "changed_shared_edge_slots": [],
+                "changed_reference_edge_slots": edges,
+            }))
+            .unwrap()
+        })
+        .collect();
+    operand.transition_deleted_edge_slots = deleted.to_vec();
+    operand
+}
+
+#[test]
+fn a_two_reference_group_selects_the_edges_its_transition_deletes() {
+    use crate::design::edge_resolve::shared_reference_deleted_edge_group_candidates;
+    let deleted = [10, 11, 12];
+    // Two members share the faces of edges 10 and 12; the third names edge 11.
+    let operands = [
+        two_side_operand(
+            1,
+            [
+                ("f3d:brep:entity#1", &[10, 11, 12]),
+                ("f3d:brep:entity#2", &[10, 12]),
+            ],
+            &deleted,
+        ),
+        two_side_operand(
+            2,
+            [
+                ("f3d:brep:entity#1", &[10, 11, 12]),
+                ("f3d:brep:entity#2", &[10, 12]),
+            ],
+            &deleted,
+        ),
+        two_side_operand(
+            3,
+            [
+                ("f3d:brep:entity#1", &[10, 11, 12]),
+                ("f3d:brep:entity#3", &[11]),
+            ],
+            &deleted,
+        ),
+    ];
+    let resolve = |operands: &[crate::records::topology::edge_identity::DesignEdgeOperand]| {
+        let operands = operands.iter().collect::<Vec<_>>();
+        crate::test_support::with_decode_context(|ctx| {
+            shared_reference_deleted_edge_group_candidates(&operands, ctx)
+        })
+        .unwrap()
+    };
+    assert_eq!(resolve(&operands), Some(vec![10, 11, 12]));
+    // A transition that deletes another edge does not state the group.
+    let mut extra = operands.clone();
+    for operand in &mut extra {
+        operand.transition_deleted_edge_slots = vec![10, 11, 12, 13];
+    }
+    assert_eq!(resolve(&extra), None);
+    // Members that leave a deleted edge uncovered state nothing.
+    let mut uncovered = operands.clone();
+    uncovered[2] = two_side_operand(
+        3,
+        [
+            ("f3d:brep:entity#1", &[10, 11, 12]),
+            ("f3d:brep:entity#2", &[10, 12]),
+        ],
+        &deleted,
+    );
+    assert_eq!(resolve(&uncovered), None);
+}
+
+fn two_face_treatment_group(
+) -> crate::records::topology::construction::DesignConstructionOperandGroup {
+    let mut selection_group = group(2, 10);
+    selection_group
+        .try_set_members(
+            [10, 11]
+                .into_iter()
+                .map(|value| crate::records::identity::Located {
+                    value,
+                    offset: u64::from(value) * 11,
+                })
+                .collect(),
+        )
+        .unwrap();
+    selection_group
+}
+
+fn resolve_two_face_treatment(
+    operands: &[crate::records::topology::edge_identity::DesignEdgeOperand],
+) -> (EdgeSelection, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    let group = two_face_treatment_group();
+    let feature = FeatureId::mint("f3d:model:feature#two-face-treatment").unwrap();
+    let mut losses = Vec::new();
+    let selection = crate::test_support::with_decode_context(|ctx| {
+        super::resolved_edge_treatment_group_with_corners(
+            &group,
+            crate::design::edge_resolve::EdgeTreatmentInputs {
+                groups: std::slice::from_ref(&group),
+                operands,
+                identity_operands: &[],
+                vertex_operands: &[],
+                histories: &[],
+                previous_state_id: Some(7),
+                feature_id: &feature,
+                treatment_radius: None,
+            },
+            ctx,
+            &mut losses,
+        )
+    })
+    .unwrap();
+    (selection, losses)
+}
+
+fn two_face_treatment_operands() -> [crate::records::topology::edge_identity::DesignEdgeOperand; 2]
+{
+    [10, 11].map(|index| {
+        two_side_operand(
+            index,
+            [
+                ("f3d:brep:entity#1", &[10, 11]),
+                ("f3d:brep:entity#2", &[10, 11]),
+            ],
+            &[10, 11],
+        )
+    })
+}
+
+#[test]
+fn two_face_deleted_set_preserves_a_resolved_surviving_edge() {
+    let mut operands = two_face_treatment_operands();
+    operands[0].resolved_edge_slot = Some(99);
+    let (selection, losses) = resolve_two_face_treatment(&operands);
+    let feature = FeatureId::mint("f3d:model:feature#two-face-treatment").unwrap();
+    assert_eq!(
+        selection,
+        EdgeSelection::historical_partial(
+            crate::ids::feature_input_topology_id(&feature, 7),
+            vec![crate::ids::history_input_edge_id(
+                &crate::ids::feature_input_prefix(&feature, 7),
+                99
+            )],
+            vec![operands[1].id.clone()],
+            two_face_treatment_group().id,
+        )
+        .unwrap()
+    );
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn two_face_deleted_set_charges_one_assumption_note_per_group() {
+    let operands = two_face_treatment_operands();
+    let (selection, losses) = resolve_two_face_treatment(&operands);
+    let feature = FeatureId::mint("f3d:model:feature#two-face-treatment").unwrap();
+    assert_eq!(
+        selection,
+        EdgeSelection::historical(
+            crate::ids::feature_input_topology_id(&feature, 7),
+            [10, 11]
+                .into_iter()
+                .map(|edge| crate::ids::history_input_edge_id(
+                    &crate::ids::feature_input_prefix(&feature, 7),
+                    edge
+                ))
+                .collect(),
+            two_face_treatment_group().id.clone(),
+        )
+        .unwrap()
+    );
+    assert_eq!(losses.len(), 1);
+    let expected = crate::loss::F3dLossCode::HistoricalEdgeSelectionDeletedSetAssumed.note(
+        "Group f3d:test:group-2 is read with the assumption that the treated edge set equals the transition-deleted set."
+    );
+    assert_eq!(losses[0], expected);
+}
+
+#[test]
+fn exact_two_face_members_charge_no_deleted_set_assumption() {
+    let mut operands = two_face_treatment_operands();
+    operands[0].resolved_edge_slot = Some(10);
+    operands[1].resolved_edge_slot = Some(11);
+    let (selection, losses) = resolve_two_face_treatment(&operands);
+    assert!(matches!(selection, EdgeSelection::Historical { .. }));
+    assert!(losses.is_empty());
+}

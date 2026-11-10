@@ -231,9 +231,9 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Question.** Which native carrier stores the editable `Pipe` section type? What sets the origin and orientation of a partially consumed path, and does a `Pipe` whose forward and reverse fractions both equal one sweep its whole path group when its section lies inside the path?
 
-**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin. The decoder reads a new-body `Pipe` as a circular section swept along its whole path group when its result bodies are solids that no later feature changes, every face of them lies on a plane, on a cylinder whose radius is the outside radius or, for a hollow section, the inner radius, or on a torus whose minor radius is one of those radii, the faces include at least one curved face of each radius, and the forward and reverse fractions both equal one. It reports `feature.pipe-circular-section-inferred` and `feature.pipe-whole-path-extent-assumed`.
+**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin. The decoder reads a `Pipe` with a new-body, join, or cut result operation as a circular section swept along its whole path group when its forward and reverse fractions both equal one, or one equals one and the other zero. The decoder tests the result bodies of a new-body `Pipe` that has result bodies when no later feature names one of those bodies and every later body-changing feature names its own result bodies. The test passes when the result bodies are solids whose every face lies on a plane, on a cylinder whose radius is the outside radius or, for a hollow section, the inner radius, or on a torus whose minor radius is one of those radii, and the faces include at least one curved face of each radius. A `Pipe` that passes the test reports `feature.pipe-circular-section-inferred`, and a `Pipe` that fails it stays native. Every other `Pipe` with those fractions reports `feature.pipe-circular-section-assumed`; this includes a new-body `Pipe` followed by a body-changing feature that names no result bodies. Fractions that both equal one report `feature.pipe-whole-path-extent-assumed`. For one unit and one zero fraction, the decoder assumes that the section lies at the path end where the unit fraction starts, and reports `feature.pipe-path-end-section-assumed`.
 
-**Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links. Partial-path reconstruction needs the native path parameter origin and orientation. A `Pipe` with fractions of one whose section lies inside a multi-edge path, saved with its result body, shows which part of the path it sweeps.
+**Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links. Partial-path reconstruction needs the native path parameter origin and orientation. A `Pipe` with fractions of one whose section lies inside a multi-edge path, saved with its result body, shows which part of the path it sweeps. A `Pipe` with one unit and one zero fraction, saved with its result body, shows which path end holds the section.
 
 **Conflict.** None.
 
@@ -366,13 +366,37 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** An ownerless feature input has no owner binding in the current parameter model, and the meaning of the set trailer bytes is unknown. A rule must bind the document trailer to a localized `User Parameter` source kind before such a frame forms a document parameter.
 
-### DR-85. Flagged empty mesh-collection word
+### DR-85. Flagged mesh-collection words
 
-**Question.** What do the flag byte at offset 20 and the u32 at offset 25 of a flagged empty mesh collection store?
+**Question.** What do the flag byte at offset 20 and the u32 at offset 25 of a flagged mesh collection store, and what does the u32 of each flagged body entry store?
 
-**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. Every empty flagged collection stores u32 `1`. DR-337 records a flagged collection whose nested record lists two mesh bodies.
+**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. The u32 at offset 25 is `1` in every empty flagged collection, and in collections with bodies it is at least the body count: it equals the body count in six collections and in DR-337's collection 173, and it is 6 and 4 in two collections with two bodies and 3 in one collection with one body. Every body entry stores `1`. DR-337 records a flagged collection whose nested record lists two mesh bodies.
 
-**Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value.
+**Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, establishes the meanings of these fields.
+
+### DR-292. Mesh Design record words
+
+**Question.** What do the mesh-GUID bytes at offsets 21 through 31, the mesh-body prefix words, and the remaining mesh-operation member fields store?
+
+**Known.** The mesh-GUID record carries eleven bytes. A mesh body carries one prefix word; a flagged mesh body carries two. The operation member references a mesh body. The operation scope frame can also store marked same-segment references to the mesh-GUID records of input meshes, at frame positions that vary. The decoder takes every reference in the scope frame that names a mesh-GUID record with a reciprocal entry name as an input. The decoder retains the words and the operation source records and reports `mesh.guid-bytes-uninterpreted`, `mesh.body-words-native`, and `mesh.operation-records-native`.
+
+**Need.** A design saved after individual body insert, move, and scale operations establishes the meanings of these fields. A controlled mesh operation establishes the remaining member fields.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-293. Mesh stream metadata
+
+**Question.** What component order does a split mesh stream use, what history bound does its compression encoding state, and what does the mesh face-group registry value count?
+
+**Known.** A split stream stores two, three, or four equal-length f32 segments. The decoder retains its descriptor, reads the segments in stored order, and reports `mesh.split-stream-assumed`. It uses the larger of 1 MiB and the declared output length as the LZMA history bound and reports `mesh.history-window-assumed`. A face-group channel lists key and GUID entries. The decoder retains field 9 and all entries, uses the triangle selectors, and reports `mesh.face-groups-assumed` when the count differs or a group has no triangles.
+
+**Need.** A mesh with distinct known coordinates establishes the component order. A documented encoding rule establishes the history bound. A controlled face-group edit establishes the meaning of field 9.
+
+**Conflict.** None.
+
+**Note.** None.
 
 ### DR-115. Mesh container decode-failure taxonomy
 
@@ -1614,11 +1638,11 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder keeps the prefix in the native occurrence frame.
 
-### DR-268. Marked reference of the standard Loft scope
+### DR-268. Loft setting of the standard Loft scope marked reference
 
-**Question.** What does the nonzero u64 target of a non-null marked reference at standard `Loft` scope offset 33 name, and which Loft setting selects a non-null reference?
+**Question.** Which Loft setting selects a non-null marked reference at standard `Loft` scope offset 33?
 
-**Known.** `f3d.md` §3.1 "The compact fixed-prefix `Loft` scope has ten zero bytes" gives the reference syntax. In each scope with a non-null reference, the scope has one role-`0x0000000500000000` rail group and the target equals the record index of that group. Scopes with rail groups or a centerline group also store a null reference. The decoder keeps the target in the Loft construction, records `feature.loft-reference-unresolved`, and projects the Loft with closed false, solid true, ruled false, and linearize false.
+**Known.** `f3d.md` §3.1 "The compact fixed-prefix `Loft` scope has ten zero bytes" gives the reference syntax, and §3.1 "A `Loft` has at least two sections" makes the group that the target names a rail. In each scope with a non-null reference, the scope has one role-`0x0000000500000000` rail group and the target equals the record index of that group. Scopes with rail groups or a centerline group also store a null reference. The decoder keeps the target in the Loft construction, records `feature.loft-reference-unresolved`, and projects the Loft with closed false, solid true, ruled false, and linearize false.
 
 **Need.** Saves of one railed `Loft` that change one rail or guide setting at a time, each recording byte 33 and the target, and a save whose target is not a record of the scope's reference table.
 
@@ -1635,6 +1659,31 @@ when the operation transition carries no candidate for the group members?
 **Need.** Saves of one three-flag `Loft` that change closed, solid, ruled, and linearize one at a time, each recording the three flag bytes.
 
 **Conflict.** None.
+
+**Note.** None.
+
+
+### DR-331. Fields of the Loft scope body
+
+**Question.** Which Loft settings do the head words, the three references, the selector, and the six bytes between the rail list and the third reference of the `Loft` scope body select, and what does the section record `N` of a section-list entry store?
+
+**Known.** `f3d.md` §3.1 "The `Loft` scope body starts after the result-operation u32" gives the field order. The first head word is `-1` or `1`. A nonzero selector precedes a non-null second reference, which names a parameter owned by the scope. The decoder reads the rail list and the section list, takes construction-operand group `N+1` as the section group of section-list entry `N`, keeps the other fields in the scope bytes, and projects the Loft with closed false, solid true, ruled false, and linearize false.
+
+**Need.** Saves of one `Loft` that change one end condition, one guide setting, and closed, solid, ruled, and linearize one at a time, each recording the scope body.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-332. Centerline of a Loft rail list
+
+**Question.** Does a rail list whose only entry is a role-`0x0000000700000000` group identify a centerline or one rail?
+
+**Known.** `f3d.md` §3.1 "A `Loft` has at least two sections" gives the rail list. A rail list with two or more entries can hold role-`0x0000000700000000` groups, and those groups are rails. When the rail list has one role-`0x0000000700000000` entry and the offset-33 reference is null, the decoder projects that entry as `LoftGuidance::Centerline` and records `feature.loft-centerline-assumed`.
+
+**Need.** One save of a centerline `Loft` and one save of a one-rail `Loft` whose rail is a model edge, each recording the rail list and the group roles.
+
+**Conflict.** The decoder assigns the centerline from the role of a sole rail-list entry, and role-`0x0000000700000000` entries of longer rail lists are rails.
 
 **Note.** None.
 
@@ -1683,6 +1732,30 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** The decoder reports `feature.profile-crossing-loop-assumed` for each selection that takes regions from this rule. When an Extrude selection resolves to whole stored profile loops, alone or as regions of an outer loop with hole loops, the decoder also compares the faces its transition changed on planes parallel to the Sketch. It selects each atomic region bounded only by the loops' curves whose interior point a face on such a plane held before the transition and no face holds after it, and reports `feature.profile-cut-regions-assumed`. When no such selection exists and the Extrude is a Cut, it also takes the removed atomic regions of every non-construction Sketch curve, provided at least one taken region uses a curve outside the stored loops. A region that a plane gains refuses the reading. A region that one plane holds on both sides while another removes it refuses the reading. A region that planes hold on both sides and none removes stays unselected, and so does a region that no face on such a plane holds before or after the transition. This selection also reports `feature.profile-cut-regions-assumed`.
+
+### DR-372. Flagged mesh scope prefix
+
+**Question.** What does the u32 in the flagged mesh feature scope prefix mean?
+
+**Known.** The flagged scope stores a u32 before its body count. The decoder retains the u32.
+
+**Need.** Controlled saves that vary the flagged prefix and establish the u32 meaning.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `mesh.scope-prefix-uninterpreted`.
+
+### DR-373. Mesh body and collection-owner payload fields
+
+**Question.** What do the compact matrix flags, the further mesh-body reference slot, and the remaining mesh-body, mesh-wrapper, and collection-owner payload fields mean?
+
+**Known.** A version-6 body stores placement matrices, graph references, a display name, and additional bytes. A matrix presence byte `01` has no matrix payload. Fifteen bytes separate the second presence byte and its payload from the first presentation envelope. The decoder uses an identity matrix for this form. A body can store a zero byte in its feature-scope slot and a reference in its further reference slot. The decoder reads a zero byte in the further slot and rejects other bodies. The collection owner stores a named collection reference and other fields. A mesh wrapper can continue after its fixed prefix. The decoder retains these bytes.
+
+**Need.** Controlled saves that vary one body or collection-owner property at a time and identify the remaining fields.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `mesh.body-bytes-uninterpreted`, `mesh.body-identity-assumed`, `mesh.wrapper-bytes-uninterpreted`, and `mesh.owner-bytes-uninterpreted`.
 
 ### DR-305. Inferred-axis bytes of a WorkPlane placement
 
@@ -1914,19 +1987,19 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** What do the two prefix words of a flagged mesh collection select when its nested record lists mesh bodies, and how does that collection bind version-six mesh-body records?
 
-**Known.** One public strain-relief part stores collection 173, type `443807AD-8025-41A3-8A50-5157579C3D78` version 0, with flag 1, prefix words 0 and 2, and nested body members 177 and 563. Base Mesh Feature scopes 184 and 570 name body records 177 and 563 in their prefixes and records 188 and 574 in their reference tables. Both body records have type `EA90DA22-556C-4C61-89BB-20C2681B7A9D` version 6. The archive contains two `.paramesh` entries. Collection validation fails before body decoding. The mesh-body reader admits version 7.
+**Known.** One public strain-relief part stores collection 173, type `443807AD-8025-41A3-8A50-5157579C3D78` version 0, with flag 1, prefix words 0 and 2, and nested body members 177 and 563. Base Mesh Feature scopes 184 and 570 name body records 177 and 563 in their prefixes and records 188 and 574 in their reference tables. Both body records have type `EA90DA22-556C-4C61-89BB-20C2681B7A9D` version 6. The archive contains two `.paramesh` entries. Collection validation fails before body decoding with a mesh-body reader that admits only version 7. The mesh-body reader admits versions 6 and 7; `f3d.md` §3.1 "The mesh-body class" gives the version-6 layout, and DR-373 tracks its retained fields.
 
 **Need.** Define the two collection prefix words, the nested collection layout, the version-six body fields, and the reciprocal joins from each feature to its container. Preserve each body's affine placement and container identity through the join.
 
 **Conflict.** The specified flagged empty collection has equal first and nested body counts. Collection 173 has first count zero and two nested body references.
 
-**Note.** Collection validation failure prevents both mesh feature definitions from receiving tessellation references. DR-85 tracks the flagged-collection word.
+**Note.** Collection validation failure prevents both mesh feature definitions from receiving tessellation references. DR-85 tracks the flagged-collection word. This part has not been decoded with the version-6 mesh-body reader.
 
 ### DR-338. Extended circular-pattern axis controls and selection runs
 
 **Question.** How do the controls and selection runs of the 220-, 221-, and 241-byte circular-pattern axis frames determine the directed axis and its selected entity?
 
-**Known.** The decoder admits the 195-byte inline axis frame and the 118-, 129-, and 130-byte identity forms. An extended frame carries an origin and displacement in the same positions as the rectangular-pattern direction frame. Two 221-byte component-pattern frames carry a unit X displacement and an origin at Z = 1.92 cm. Their saved occurrence transforms are positive quarter turns about that line. A 220-byte feature-pattern frame carries a Z displacement. Its seed holes occur in symmetric pairs, so positive and negative quarter turns yield the same saved hole set. A 241-byte body-pattern frame carries an X displacement and three consecutive selection references. Its total-angle owner stores a full turn.
+**Known.** The decoder admits the 195-byte inline axis frame, the 221-byte frame with selection kind `8` as an inline axis, and the 118-, 129-, and 130-byte identity forms. An extended frame carries an origin and displacement in the same positions as the rectangular-pattern direction frame. Three body instances over a quarter turn about a 221-byte frame with a Z displacement lie at 0, 45, and 90 degrees counterclockwise about that displacement. Two 221-byte component-pattern frames carry a unit X displacement and an origin at Z = 1.92 cm. Their saved occurrence transforms are positive quarter turns about that line. A 220-byte feature-pattern frame carries a Z displacement. Its seed holes occur in symmetric pairs, so positive and negative quarter turns yield the same saved hole set. A 241-byte body-pattern frame carries an X displacement and three consecutive selection references. Its total-angle owner stores a full turn.
 
 **Need.** Bind each extended selection run to its selected entity. Compare the controls for three instances over a partial turn in each travel direction, with asymmetric seeds, for each frame form. Bind each instance to its saved BREP geometry.
 
@@ -1991,5 +2064,17 @@ when the operation transition carries no candidate for the group members?
 **Need.** The termination face of such a scope, or the stored state that makes the extent end without one.
 
 **Conflict.** The Mini AfterSherpa V6 Zodiac BMO part stores a one-sided Cut scope with a selected-face start, one start face group, a `Side1Offset` owner, no termination group, and no shape-target group.
+
+**Note.** None.
+
+### DR-361. Treated edges in executed treatment transitions
+
+**Question.** Does an executed `Fillet` or `Chamfer` transition delete every treated edge?
+
+**Known.** The two-face group rule assumes that the transition deletes every treated edge and that the treated edge set equals the transition-deleted set. The rule checks that the deleted-set size equals the member count, each member has two distinct preceding faces, each member's shared changed-edge candidates are nonempty and belong to the deleted set, the candidates cover that set, a perfect assignment pairs each member with a distinct candidate, and each resolved member edge belongs to the deleted set. A group selected by this rule charges `history.edge-selection-deleted-set-assumed`.
+
+**Need.** A treatment whose treated edge survives the transition, or proof that every treated edge is deleted.
+
+**Conflict.** None.
 
 **Note.** None.

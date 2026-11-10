@@ -16,6 +16,8 @@ use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use crate::test_support::push_marked_reference;
 
+mod circular_axis_frame;
+
 fn tested_circular_pattern_construction_with_owners(
     bytes: &[u8],
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
@@ -361,6 +363,7 @@ fn run_pattern_constructions_fixture() {
         ),
         Some(DesignCircularPatternConstruction {
             axis_separator_flag_offset: None,
+            symmetric: None,
             count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index,
             count_offset: u64_from_index(count_start + 40),
