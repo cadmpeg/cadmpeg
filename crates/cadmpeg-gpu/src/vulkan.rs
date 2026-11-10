@@ -2,9 +2,12 @@
 //! Safe cross-platform Vulkan `wgpu` native `SHADER_F64` compute backend.
 
 use std::sync::mpsc;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use cadmpeg_ir::math::Point3;
+
+use crate::cpu;
+use crate::{RayHit3, RayQuery3, TriangleMeshView};
 
 const TRANSFORM_WGSL: &str = "
 @group(0) @binding(0) var<storage, read> mat: array<vec4<f64>, 4>;
@@ -89,6 +92,85 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 ";
 
+const RAY_MESH_WGSL: &str = "
+@group(0) @binding(0) var<storage, read> rays: array<vec4<f64>>;
+@group(0) @binding(1) var<storage, read> tris: array<vec4<f64>>;
+@group(0) @binding(2) var<storage, read_write> hits_out: array<vec4<f64>>;
+
+fn dop(a: f64, b: f64, c: f64, d: f64) -> f64 {
+    let cd = c * d;
+    let err = fma(-c, d, cd);
+    let f = fma(a, b, -cd);
+    return f + err;
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let r_idx = gid.x;
+    let n_rays = arrayLength(&rays) / 2u;
+    if r_idx >= n_rays {
+        return;
+    }
+    let r0 = rays[r_idx * 2u];
+    let r1 = rays[r_idx * 2u + 1u];
+    let origin = r0.xyz;
+    let t_min = r0.w;
+    let dir = r1.xyz;
+    var best_t = r1.w;
+    var best_tri = -1.0lf;
+    var best_u = 0.0lf;
+    var best_v = 0.0lf;
+
+    let n_tris = arrayLength(&tris) / 3u;
+    for (var t_idx = 0u; t_idx < n_tris; t_idx = t_idx + 1u) {
+        let base = t_idx * 3u;
+        let v0 = tris[base].xyz;
+        let e1 = tris[base + 1u].xyz;
+        let e2 = tris[base + 2u].xyz;
+
+        let pvec = vec3<f64>(
+            dop(dir.y, e2.z, dir.z, e2.y),
+            dop(dir.z, e2.x, dir.x, e2.z),
+            dop(dir.x, e2.y, dir.y, e2.x),
+        );
+        let det = fma(e1.x, pvec.x, fma(e1.y, pvec.y, e1.z * pvec.z));
+        if abs(det) <= 1.0e-12lf {
+            continue;
+        }
+        let inv_det = 1.0lf / det;
+        let tvec = origin - v0;
+        let u = fma(tvec.x, pvec.x, fma(tvec.y, pvec.y, tvec.z * pvec.z)) * inv_det;
+        if u < -1.0e-11lf || u > 1.0lf + 1.0e-11lf {
+            continue;
+        }
+        let qvec = vec3<f64>(
+            dop(tvec.y, e1.z, tvec.z, e1.y),
+            dop(tvec.z, e1.x, tvec.x, e1.z),
+            dop(tvec.x, e1.y, tvec.y, e1.x),
+        );
+        let v = fma(dir.x, qvec.x, fma(dir.y, qvec.y, dir.z * qvec.z)) * inv_det;
+        if v < -1.0e-11lf || (u + v) > 1.0lf + 1.0e-11lf {
+            continue;
+        }
+        let t = fma(e2.x, qvec.x, fma(e2.y, qvec.y, e2.z * qvec.z)) * inv_det;
+        if t >= t_min && t < best_t {
+            best_t = t;
+            best_tri = f64(t_idx);
+            best_u = clamp(u, 0.0lf, 1.0lf);
+            best_v = clamp(v, 0.0lf, 1.0lf);
+        }
+    }
+    hits_out[r_idx] = vec4<f64>(best_t, best_tri, best_u, best_v);
+}
+";
+
+struct CachedVulkanComputeMesh {
+    hash: u64,
+    n_tris: usize,
+    b_tris: wgpu::Buffer,
+    b_scene: wgpu::Buffer,
+}
+
 /// Hardware context for safe `wgpu` native `SHADER_F64` and `EXPERIMENTAL_RAY_QUERY` compute execution.
 pub struct VulkanContext {
     device_name: String,
@@ -98,6 +180,8 @@ pub struct VulkanContext {
     pipe_transform: wgpu::ComputePipeline,
     pipe_pairwise_dist: wgpu::ComputePipeline,
     pipe_bezier_eval: wgpu::ComputePipeline,
+    pipe_ray_mesh: wgpu::ComputePipeline,
+    compute_mesh_cache: Mutex<Option<CachedVulkanComputeMesh>>,
 }
 
 static GLOBAL_VULKAN: OnceLock<Option<VulkanContext>> = OnceLock::new();
@@ -124,6 +208,30 @@ fn bytes_to_vec_f64(bytes: &[u8], count: usize) -> Vec<f64> {
         ]));
     }
     out
+}
+
+fn f64_to_blas_f32(val: f64) -> f32 {
+    if !val.is_finite() || val == 0.0 {
+        return 0.0;
+    }
+    let clamped = val.clamp(-1.0e30, 1.0e30);
+    let bits = clamped.to_bits();
+    let sign_u32 = u32::try_from(bits >> 63).unwrap_or(0) << 31;
+    let exp_i32 = i32::try_from((bits >> 52) & 0x7ff).unwrap_or(0) - 1023;
+    if exp_i32 < -126 {
+        return 0.0;
+    }
+    if exp_i32 > 127 {
+        return f32::from_bits(sign_u32 | (254 << 23) | 0x007f_ffff);
+    }
+    let exp_f32 = u32::try_from(exp_i32 + 127).unwrap_or(0) << 23;
+    let mant_24 = (bits & 0x000f_ffff_ffff_ffff) >> 28;
+    let sticky = (bits & ((1_u64 << 28) - 1)) != 0;
+    let frac_23 = mant_24 >> 1;
+    let round_bit = mant_24 & 1;
+    let round_up = round_bit == 1 && (sticky || (frac_23 & 1) == 1);
+    let f32_bits = sign_u32 | (exp_f32 + u32::try_from(frac_23 + u64::from(round_up)).unwrap_or(0));
+    f32::from_bits(f32_bits)
 }
 
 impl VulkanContext {
@@ -239,6 +347,8 @@ impl VulkanContext {
             pipe_transform: compile_pipe("cadmpeg-wgsl-transform", TRANSFORM_WGSL),
             pipe_pairwise_dist: compile_pipe("cadmpeg-wgsl-pairwise-dist", PAIRWISE_DIST_WGSL),
             pipe_bezier_eval: compile_pipe("cadmpeg-wgsl-bezier-eval", BEZIER_EVAL_WGSL),
+            pipe_ray_mesh: compile_pipe("cadmpeg-wgsl-ray-mesh", RAY_MESH_WGSL),
+            compute_mesh_cache: Mutex::new(None),
             device,
             queue,
             bgl_compute,
@@ -448,7 +558,461 @@ impl VulkanContext {
                 .collect(),
         )
     }
+
+    fn execute_f64_pipeline_with_cached_b1(
+        &self,
+        pipeline: &wgpu::ComputePipeline,
+        buf0_f64: &[f64],
+        b1: &wgpu::Buffer,
+        out_f64_len: usize,
+        work_items: usize,
+    ) -> Option<Vec<f64>> {
+        if work_items == 0 || out_f64_len == 0 {
+            return Some(Vec::new());
+        }
+        let total_groups = u32::try_from(work_items).ok()?.div_ceil(64);
+        if total_groups > 65_535 {
+            return None;
+        }
+        let bytes0 = slice_f64_to_bytes(buf0_f64);
+        let size0 = u64::try_from(bytes0.len().max(32)).ok()?;
+        let out_byte_len = out_f64_len.checked_mul(8)?;
+        let out_size = u64::try_from(out_byte_len.max(32)).ok()?;
+
+        let b0 = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-b0"),
+            size: size0,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let b_out = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-b-out"),
+            size: out_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let b_staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-b-staging"),
+            size: out_size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&b0, 0, &bytes0);
+
+        let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cadmpeg-gpu-bg-cached-b1"),
+            layout: &self.bgl_compute,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: b0.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: b1.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: b_out.as_entire_binding(),
+                },
+            ],
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("cadmpeg-gpu-encoder-cached-b1"),
+            });
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("cadmpeg-gpu-cpass-cached-b1"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(pipeline);
+            cpass.set_bind_group(0, &bg, &[]);
+            cpass.dispatch_workgroups(total_groups, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&b_out, 0, &b_staging, 0, out_size);
+        self.queue.submit(Some(encoder.finish()));
+
+        let slice = b_staging.slice(..);
+        let (tx, rx) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |res| {
+            tx.send(res).ok();
+        });
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+        rx.recv().ok()?.ok()?;
+
+        let mapped = slice.get_mapped_range().ok()?;
+        let result = bytes_to_vec_f64(&mapped, out_f64_len);
+        drop(mapped);
+        b_staging.unmap();
+        Some(result)
+    }
+
+    fn build_cached_compute_mesh(
+        &self,
+        mesh: TriangleMeshView<'_>,
+        hash: u64,
+    ) -> Option<CachedVulkanComputeMesh> {
+        let packed = pack_mesh_bvh_scene_and_blas(mesh)?;
+        let mut flat_tris: Vec<f64> = Vec::with_capacity(mesh.triangles.len().checked_mul(12)?);
+        for tri in mesh.triangles {
+            let i0 = usize::try_from(tri[0]).ok()?;
+            let i1 = usize::try_from(tri[1]).ok()?;
+            let i2 = usize::try_from(tri[2]).ok()?;
+            let (Some(&v0), Some(&v1), Some(&v2)) = (
+                mesh.vertices.get(i0),
+                mesh.vertices.get(i1),
+                mesh.vertices.get(i2),
+            ) else {
+                flat_tris.extend_from_slice(&[0.0; 12]);
+                continue;
+            };
+            flat_tris.extend_from_slice(&[
+                v0.x,
+                v0.y,
+                v0.z,
+                0.0,
+                v1.x - v0.x,
+                v1.y - v0.y,
+                v1.z - v0.z,
+                0.0,
+                v2.x - v0.x,
+                v2.y - v0.y,
+                v2.z - v0.z,
+                0.0,
+            ]);
+        }
+        let tris_bytes = slice_f64_to_bytes(&flat_tris);
+        let scene_bytes = slice_f64_to_bytes(&packed.scene);
+        let tris_size = u64::try_from(tris_bytes.len().max(32)).ok()?;
+        let scene_size = u64::try_from(scene_bytes.len().max(32)).ok()?;
+
+        let b_tris = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-compute-cached-tris"),
+            size: tris_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let b_scene = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-compute-cached-scene"),
+            size: scene_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&b_tris, 0, &tris_bytes);
+        self.queue.write_buffer(&b_scene, 0, &scene_bytes);
+
+        Some(CachedVulkanComputeMesh {
+            hash,
+            n_tris: mesh.triangles.len(),
+            b_tris,
+            b_scene,
+        })
+    }
+
+    fn with_cached_compute_mesh<R>(
+        &self,
+        mesh: TriangleMeshView<'_>,
+        f: impl FnOnce(&CachedVulkanComputeMesh) -> Option<R>,
+    ) -> Option<R> {
+        let hash = Self::hash_mesh(mesh);
+        let mut guard = self.compute_mesh_cache.lock().ok()?;
+        let needs_rebuild = match guard.as_ref() {
+            Some(cached) => cached.hash != hash || cached.n_tris != mesh.triangles.len(),
+            None => true,
+        };
+        if needs_rebuild {
+            *guard = Some(self.build_cached_compute_mesh(mesh, hash)?);
+        }
+        let c = guard.as_ref()?;
+        let _ = &c.b_scene;
+        f(c)
+    }
+
+    /// Executes native `f64` batch ray-mesh intersection via Vulkan `wgpu`.
+    #[must_use]
+    pub fn compute_ray_mesh_intersect(
+        &self,
+        rays: &[RayQuery3],
+        mesh: TriangleMeshView<'_>,
+    ) -> Option<Vec<RayHit3>> {
+        if rays.is_empty() {
+            return Some(Vec::new());
+        }
+        if mesh.triangles.is_empty() {
+            return Some((0..rays.len()).map(|_| RayHit3::miss()).collect());
+        }
+        let flat_rays: Vec<f64> = rays
+            .iter()
+            .flat_map(|r| {
+                [
+                    r.origin.x,
+                    r.origin.y,
+                    r.origin.z,
+                    r.t_min,
+                    r.direction.x,
+                    r.direction.y,
+                    r.direction.z,
+                    r.t_max,
+                ]
+            })
+            .collect();
+        let out_f64_len = rays.len().checked_mul(4)?;
+        let raw = self.with_cached_compute_mesh(mesh, |cached| {
+            self.execute_f64_pipeline_with_cached_b1(
+                &self.pipe_ray_mesh,
+                &flat_rays,
+                &cached.b_tris,
+                out_f64_len,
+                rays.len(),
+            )
+        })?;
+        Some(
+            raw.chunks_exact(4)
+                .map(|r| {
+                    let Some(tri_idx) = f64_int_to_u32(r[1]) else {
+                        return RayHit3::miss();
+                    };
+                    RayHit3 {
+                        hit: true,
+                        t: r[0],
+                        triangle_index: tri_idx,
+                        barycentric_u: r[2],
+                        barycentric_v: r[3],
+                    }
+                })
+                .collect(),
+        )
+    }
+
+    fn hash_mesh(mesh: TriangleMeshView<'_>) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        mesh.vertices.len().hash(&mut hasher);
+        mesh.triangles.len().hash(&mut hasher);
+        let v_step = (mesh.vertices.len() / 256).max(1);
+        for v in mesh.vertices.iter().step_by(v_step) {
+            v.x.to_bits().hash(&mut hasher);
+            v.y.to_bits().hash(&mut hasher);
+            v.z.to_bits().hash(&mut hasher);
+        }
+        if let Some(last_v) = mesh.vertices.last() {
+            last_v.x.to_bits().hash(&mut hasher);
+            last_v.y.to_bits().hash(&mut hasher);
+            last_v.z.to_bits().hash(&mut hasher);
+        }
+        let t_step = (mesh.triangles.len() / 256).max(1);
+        for tri in mesh.triangles.iter().step_by(t_step) {
+            tri.hash(&mut hasher);
+        }
+        if let Some(last_t) = mesh.triangles.last() {
+            last_t.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
 }
+
+struct PackedBvhSceneAndBlas {
+    scene: Vec<f64>,
+    verts_f32: Vec<[f32; 3]>,
+    indices_u32: Vec<u32>,
+    proxy_verts_f32: Vec<[f32; 3]>,
+    proxy_indices_u32: Vec<u32>,
+}
+
+fn pack_mesh_bvh_scene_and_blas(mesh: TriangleMeshView<'_>) -> Option<PackedBvhSceneAndBlas> {
+    let flat_bvh = crate::spatial::MeshBvh3::build(mesh).flatten();
+    let n_nodes = flat_bvh.nodes().len();
+    let n_tris = mesh.triangles.len();
+    let n_tris_u32 = u32::try_from(n_tris).ok()?;
+
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut min_z = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    let mut max_z = f64::NEG_INFINITY;
+    for v in mesh.vertices {
+        if v.x.is_finite() && v.y.is_finite() && v.z.is_finite() {
+            min_x = min_x.min(v.x);
+            min_y = min_y.min(v.y);
+            min_z = min_z.min(v.z);
+            max_x = max_x.max(v.x);
+            max_y = max_y.max(v.y);
+            max_z = max_z.max(v.z);
+        }
+    }
+    let diag = if min_x <= max_x {
+        let dx = max_x - min_x;
+        let dy = max_y - min_y;
+        let dz = max_z - min_z;
+        (dx * dx + dy * dy + dz * dz).sqrt().max(1.0e-3)
+    } else {
+        1.0
+    };
+    let sqrt_tris = f64::from(n_tris_u32.max(1)).sqrt();
+    let r_pad = (diag * 0.42 / sqrt_tris).max(1.0e-3);
+    let r_pad_sq = r_pad * r_pad;
+    let r_pad_aabb = r_pad * 1.002 + 1.0e-5;
+
+    let mut max_hx = 0.0_f64;
+    for tri in mesh.triangles {
+        let (Ok(i0), Ok(i1), Ok(i2)) = (
+            usize::try_from(tri[0]),
+            usize::try_from(tri[1]),
+            usize::try_from(tri[2]),
+        ) else {
+            continue;
+        };
+        let (Some(&v0), Some(&v1), Some(&v2)) = (
+            mesh.vertices.get(i0),
+            mesh.vertices.get(i1),
+            mesh.vertices.get(i2),
+        ) else {
+            continue;
+        };
+        if v0.x.is_finite() && v1.x.is_finite() && v2.x.is_finite() {
+            let tx_min = v0.x.min(v1.x).min(v2.x);
+            let tx_max = v0.x.max(v1.x).max(v2.x);
+            max_hx = max_hx.max(0.5 * (tx_max - tx_min));
+        }
+    }
+    let r_reach = r_pad_aabb + max_hx;
+
+    let mut scene: Vec<f64> = Vec::with_capacity(4 + n_nodes * 8 + n_tris * 12);
+    scene.extend_from_slice(&[
+        f64::from(u32::try_from(n_nodes).ok()?),
+        f64::from(n_tris_u32),
+        f64::INFINITY,
+        r_pad_sq,
+    ]);
+    for node in flat_bvh.nodes() {
+        let tri_f = if node.triangle_index == u32::MAX {
+            -1.0
+        } else {
+            f64::from(node.triangle_index)
+        };
+        scene.extend_from_slice(&[
+            node.aabb_min.x,
+            node.aabb_min.y,
+            node.aabb_min.z,
+            tri_f,
+            node.aabb_max.x,
+            node.aabb_max.y,
+            node.aabb_max.z,
+            f64::from(node.right_child),
+        ]);
+    }
+    let mut verts_f32: Vec<[f32; 3]> = mesh
+        .vertices
+        .iter()
+        .map(|v| {
+            [
+                f64_to_blas_f32(v.x),
+                f64_to_blas_f32(v.y),
+                f64_to_blas_f32(v.z),
+            ]
+        })
+        .collect();
+    if verts_f32.is_empty() {
+        verts_f32.push([0.0, 0.0, 0.0]);
+    }
+    let mut indices_u32: Vec<u32> = Vec::with_capacity(n_tris.checked_mul(3)?);
+    let mut proxy_verts_f32: Vec<[f32; 3]> = Vec::with_capacity(n_tris.checked_mul(3)?.max(3));
+    let mut proxy_indices_u32: Vec<u32> = Vec::with_capacity(n_tris.checked_mul(3)?.max(3));
+
+    for (t_idx, tri) in mesh.triangles.iter().enumerate() {
+        let base_pv = u32::try_from(t_idx.checked_mul(3)?).ok()?;
+        let i0 = usize::try_from(tri[0]).ok()?;
+        let i1 = usize::try_from(tri[1]).ok()?;
+        let i2 = usize::try_from(tri[2]).ok()?;
+        let (Some(&v0), Some(&v1), Some(&v2)) = (
+            mesh.vertices.get(i0),
+            mesh.vertices.get(i1),
+            mesh.vertices.get(i2),
+        ) else {
+            scene.extend_from_slice(&[0.0; 12]);
+            indices_u32.extend_from_slice(&[0, 0, 0]);
+            proxy_verts_f32.extend_from_slice(&[[0.0, 0.0, 0.0]; 3]);
+            proxy_indices_u32.extend_from_slice(&[0, 0, 0]);
+            continue;
+        };
+        let valid = v0.x.is_finite()
+            && v0.y.is_finite()
+            && v0.z.is_finite()
+            && v1.x.is_finite()
+            && v1.y.is_finite()
+            && v1.z.is_finite()
+            && v2.x.is_finite()
+            && v2.y.is_finite()
+            && v2.z.is_finite();
+        scene.extend_from_slice(&[
+            v0.x, v0.y, v0.z, 1.0, v1.x, v1.y, v1.z, r_reach, v2.x, v2.y, v2.z, 1.0,
+        ]);
+        indices_u32.extend_from_slice(&[tri[0], tri[1], tri[2]]);
+        if valid {
+            let cx = 0.5 * (v0.x.min(v1.x).min(v2.x) + v0.x.max(v1.x).max(v2.x));
+            let y0 = v0.y.min(v1.y).min(v2.y) - r_pad_aabb;
+            let z0 = v0.z.min(v1.z).min(v2.z) - r_pad_aabb;
+            let dy2 = ((v0.y.max(v1.y).max(v2.y) + r_pad_aabb) - y0) * 2.0;
+            let dz2 = ((v0.z.max(v1.z).max(v2.z) + r_pad_aabb) - z0) * 2.0;
+            let cx_f32 = f64_to_blas_f32(cx);
+            let y0_f32 = f64_to_blas_f32(y0);
+            let z0_f32 = f64_to_blas_f32(z0);
+            let y1_f32 = f64_to_blas_f32(y0 + dy2);
+            let z1_f32 = f64_to_blas_f32(z0 + dz2);
+            proxy_verts_f32.push([cx_f32, y0_f32, z0_f32]);
+            proxy_verts_f32.push([cx_f32, y1_f32, z0_f32]);
+            proxy_verts_f32.push([cx_f32, y0_f32, z1_f32]);
+            proxy_indices_u32.extend_from_slice(&[base_pv, base_pv + 1, base_pv + 2]);
+        } else {
+            proxy_verts_f32.extend_from_slice(&[[0.0, 0.0, 0.0]; 3]);
+            proxy_indices_u32.extend_from_slice(&[0, 0, 0]);
+        }
+    }
+    if proxy_verts_f32.is_empty() {
+        proxy_verts_f32.extend_from_slice(&[[0.0, 0.0, 0.0]; 3]);
+        proxy_indices_u32.extend_from_slice(&[0, 0, 0]);
+    }
+    let p = PackedBvhSceneAndBlas {
+        scene,
+        verts_f32,
+        indices_u32,
+        proxy_verts_f32,
+        proxy_indices_u32,
+    };
+    let _ = (
+        &p.verts_f32,
+        &p.indices_u32,
+        &p.proxy_verts_f32,
+        &p.proxy_indices_u32,
+    );
+    Some(p)
+}
+
+fn f64_int_to_u32(val: f64) -> Option<u32> {
+    if val < 0.0 || !val.is_finite() {
+        return None;
+    }
+    if val == 0.0 {
+        return Some(0);
+    }
+    let bits = val.to_bits();
+    let exp = u32::try_from((bits >> 52) & 0x7ff).ok()?;
+    if !(1023..=1054).contains(&exp) {
+        return None;
+    }
+    let shift = exp - 1023;
+    let mantissa = (bits & 0x000f_ffff_ffff_ffff) | (1_u64 << 52);
+    let int_val = mantissa >> (52 - shift);
+    if int_val == u64::from(u32::MAX) {
+        return None;
+    }
+    u32::try_from(int_val).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -551,6 +1115,48 @@ mod tests {
             assert!((e.x - a.x).abs() < VULKAN_PARITY_TOLERANCE);
             assert!((e.y - a.y).abs() < VULKAN_PARITY_TOLERANCE);
             assert!((e.z - a.z).abs() < VULKAN_PARITY_TOLERANCE);
+        }
+    }
+
+    #[test]
+    fn vulkan_ray_mesh_matches_cpu() {
+        let Some(vk) = global_vulkan() else {
+            return;
+        };
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+        ];
+        let triangles = [[0_u32, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let rays: Vec<RayQuery3> = (0_u32..25)
+            .map(|i| {
+                let f = f64::from(i) * 0.1;
+                RayQuery3 {
+                    origin: Point3::new(0.1 + f, 0.2, -1.0),
+                    direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    t_min: 0.0,
+                    t_max: 10.0,
+                }
+            })
+            .collect();
+        let expected_rays = cpu::ray_mesh_intersect(&rays, mesh);
+        let actual_rays = vk
+            .compute_ray_mesh_intersect(&rays, mesh)
+            .expect("Vulkan f64 ray-mesh");
+        for (e, a) in expected_rays.iter().zip(&actual_rays) {
+            assert_eq!(e.hit, a.hit);
+            assert_eq!(e.triangle_index, a.triangle_index);
+            if e.hit {
+                assert!((e.t - a.t).abs() < VULKAN_PARITY_TOLERANCE);
+                assert!((e.barycentric_u - a.barycentric_u).abs() < VULKAN_PARITY_TOLERANCE);
+                assert!((e.barycentric_v - a.barycentric_v).abs() < VULKAN_PARITY_TOLERANCE);
+            }
         }
     }
 }
