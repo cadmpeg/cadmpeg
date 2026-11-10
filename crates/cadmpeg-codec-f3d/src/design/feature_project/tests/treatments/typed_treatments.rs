@@ -139,7 +139,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             reference_type: 19,
             reference_type_offset: 99,
             tangent_point_data: Some(DesignHoleTangentPoint {
-                prefix: 0,
+                prefix: Some(0),
                 data: Located {
                     value: crate::test_support::reals([-1.0, -1.0, -1.0]),
                     offset: 104,
