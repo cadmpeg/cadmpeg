@@ -25,6 +25,7 @@ members = [
   "crates/cadmpeg-codec-step",
   "crates/cadmpeg-codec-sat",
   "crates/cadmpeg-codec-pvz",
+  "crates/cadmpeg-codec-edrawings",
   "crates/cadmpeg-codec-usd",
 ]
 # cadmpeg-fuzz is intentionally excluded: cargo-fuzz targets link libFuzzer and
@@ -64,6 +65,7 @@ cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.6.11" }
 cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.6.11" }
 cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.6.11" }
 cadmpeg-codec-pvz = { path = "crates/cadmpeg-codec-pvz", version = "0.6.11" }
+cadmpeg-codec-edrawings = { path = "crates/cadmpeg-codec-edrawings", version = "0.6.11" }
 cadmpeg-codec-usd = { path = "crates/cadmpeg-codec-usd", version = "0.6.11" }
 
 # 1.0.229 is the floor, not a preference: serde_derive gained the

@@ -22,6 +22,8 @@ use cadmpeg_codec_iges::IgesCodec;
 use cadmpeg_codec_inventor::InventorCodec;
 #[cfg(feature = "nx")]
 use cadmpeg_codec_nx::NxCodec;
+#[cfg(feature = "edrawings")]
+use cadmpeg_codec_edrawings::EdrawingsCodec;
 #[cfg(feature = "pvz")]
 use cadmpeg_codec_pvz::PvzCodec;
 #[cfg(feature = "rhino")]
@@ -98,6 +100,8 @@ fuzz_target!(|data: &[u8]| {
         Box::new(SatCodec),
         #[cfg(feature = "pvz")]
         Box::new(PvzCodec),
+        #[cfg(feature = "edrawings")]
+        Box::new(EdrawingsCodec),
         #[cfg(feature = "usd")]
         Box::new(UsdCodec),
         #[cfg(feature = "step")]

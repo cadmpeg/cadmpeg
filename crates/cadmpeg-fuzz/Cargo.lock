@@ -95,6 +95,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-edrawings"
+version = "0.6.7"
+dependencies = [
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+]
+
+[[package]]
 name = "cadmpeg-codec-f3d"
 version = "0.6.7"
 dependencies = [
@@ -281,6 +290,7 @@ dependencies = [
  "cadmpeg-asm",
  "cadmpeg-codec-catia",
  "cadmpeg-codec-creo",
+ "cadmpeg-codec-edrawings",
  "cadmpeg-codec-f3d",
  "cadmpeg-codec-freecad",
  "cadmpeg-codec-iges",
