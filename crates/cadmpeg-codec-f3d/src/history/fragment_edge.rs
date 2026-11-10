@@ -220,6 +220,7 @@ mod tests {
                     selector: 1,
                     selector_offset: ordinal * 100,
                     token: ordinal.to_string(),
+                    token_integer: 0,
                     token_offset: ordinal * 100 + 8,
                     design_reference: 50,
                     design_reference_offset: 0,
