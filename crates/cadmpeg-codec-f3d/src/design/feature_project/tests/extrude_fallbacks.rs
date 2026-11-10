@@ -74,6 +74,14 @@ pub(super) fn scope_with_extent(extent: DesignExtrudeExtent) -> DesignParameterS
 }
 
 pub(super) fn profile_group(index: u32, ordinal: u32) -> DesignConstructionOperandGroup {
+    profile_group_with_members(index, ordinal, 1)
+}
+
+pub(super) fn profile_group_with_members(
+    index: u32,
+    ordinal: u32,
+    member_count: u32,
+) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
         id: format!("f3d:Design/BulkStream.dat:operand-group#{index}"),
         scope_record_index: 12,
@@ -81,10 +89,12 @@ pub(super) fn profile_group(index: u32, ordinal: u32) -> DesignConstructionOpera
         record_index: index,
         byte_offset: 1000,
         class_tag: "332".to_owned().try_into().unwrap(),
-        members: vec![crate::records::identity::Located {
-            value: index + 100,
-            offset: 1026,
-        }],
+        members: (0..member_count)
+            .map(|member| crate::records::identity::Located {
+                value: index + 100 + member,
+                offset: 1026 + u64::from(member) * 11,
+            })
+            .collect(),
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame::try_from(
             DesignConstructionOperandGroupFrameDraft {
