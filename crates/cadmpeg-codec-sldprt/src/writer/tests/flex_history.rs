@@ -1086,13 +1086,11 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
             faces: FaceSelection::Native("face-b".into()),
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: FaceSelection::Native("face-c".into()),
-                pull: Some(cadmpeg_ir::features::DraftPull {
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        0.0, 0.0, 1.0,
-                    ))
-                    .unwrap(),
-                    plane: None,
-                }),
+                pull: Some(cadmpeg_ir::features::DraftPull::new(
+                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                        .unwrap(),
+                    None,
+                )),
             },
             angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.2).unwrap()),
             outward: Some(false),

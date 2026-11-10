@@ -2017,10 +2017,7 @@ pub(crate) fn project_draft_operands(
                     );
                     *anchor = cadmpeg_ir::features::DraftAnchor::PartingLine {
                         tool,
-                        pull: cadmpeg_ir::features::DraftPull {
-                            direction: pull_direction,
-                            plane: None,
-                        },
+                        pull: cadmpeg_ir::features::DraftPull::new(pull_direction, None),
                     };
                 }
                 _ => {}
@@ -2036,10 +2033,7 @@ pub(crate) fn project_draft_operands(
             }
             match anchor {
                 cadmpeg_ir::features::DraftAnchor::NeutralPlane { pull, .. } if pull.is_none() => {
-                    *pull = Some(cadmpeg_ir::features::DraftPull {
-                        direction: pull_direction,
-                        plane: None,
-                    });
+                    *pull = Some(cadmpeg_ir::features::DraftPull::new(pull_direction, None));
                 }
                 _ => {}
             }

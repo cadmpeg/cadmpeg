@@ -3386,6 +3386,16 @@ fn check_feature_references(
                         "draft pull plane",
                     );
                 }
+                if anchor
+                    .pull()
+                    .is_some_and(|pull| !pull.frame_matches_direction())
+                {
+                    geometry_error(
+                        findings,
+                        feature.id.as_str(),
+                        "draft pull plane frame normal is not parallel to the pull direction",
+                    );
+                }
             }
             FeatureOperation::BoundaryFill { tools, cells } => {
                 body_selections.push(tools);

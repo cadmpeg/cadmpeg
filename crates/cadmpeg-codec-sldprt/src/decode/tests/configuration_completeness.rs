@@ -49,13 +49,11 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
                 faces: faces.clone(),
                 anchor: cadmpeg_ir::features::DraftAnchor::PartingLine {
                     tool: faces,
-                    pull: cadmpeg_ir::features::DraftPull {
-                        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                            1.0, 0.0, 0.0,
-                        ))
-                        .unwrap(),
-                        plane: None,
-                    },
+                    pull: cadmpeg_ir::features::DraftPull::new(
+                        cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+                            .unwrap(),
+                        None,
+                    ),
                 },
                 angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
                 outward: None,
@@ -93,13 +91,10 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
                 "native".into(),
             )
             .unwrap(),
-            pull: Some(cadmpeg_ir::features::DraftPull {
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                    1.0, 0.0, 0.0,
-                ))
-                .unwrap(),
-                plane: None,
-            }),
+            pull: Some(cadmpeg_ir::features::DraftPull::new(
+                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+                None,
+            )),
         };
     });
     let mut neutral_plane_report = super::empty_report(true);

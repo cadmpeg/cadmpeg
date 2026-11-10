@@ -728,13 +728,11 @@ fn complete_single_body_dress_up_families_preserve_identity() {
             faces: first.clone(),
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: second.clone(),
-                pull: Some(cadmpeg_ir::features::DraftPull {
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        0.0, 0.0, 1.0,
-                    ))
-                    .unwrap(),
-                    plane: None,
-                }),
+                pull: Some(cadmpeg_ir::features::DraftPull::new(
+                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                        .unwrap(),
+                    None,
+                )),
             },
             angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
             outward: Some(false),

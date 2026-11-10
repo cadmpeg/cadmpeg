@@ -1512,6 +1512,21 @@ pub(crate) fn design_geometry_origin_plane(ordinal: usize) -> Option<HistoricalM
     })
 }
 
+/// Model-space frame of a Design Geometry origin plane: the XY, XZ, and YZ
+/// planes take u axes `+x`, `+z`, and `+y`.
+pub(crate) fn design_geometry_origin_plane_frame(
+    ordinal: usize,
+) -> Option<cadmpeg_ir::features::FeatureSupportPlaneFrame> {
+    let u_axis = match ordinal {
+        0 => cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        1 => cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        2 => cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        _ => return None,
+    };
+    let plane = design_geometry_origin_plane(ordinal)?;
+    cadmpeg_ir::features::FeatureSupportPlaneFrame::new(plane.origin, plane.normal, u_axis)
+}
+
 pub(super) fn historical_mirror_plane(
     candidate: &crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate,
     preferred_state_id: i64,
