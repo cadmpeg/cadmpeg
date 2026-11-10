@@ -92,8 +92,12 @@ fn assert_loft_sections(roles: [DesignOperandRole; 2], has_point: bool) {
 #[test]
 fn loft_projects_point_section() {
     assert_loft_sections(
-        [DesignOperandRole::ROLE_0X43, DesignOperandRole::ROLE_0X5],
+        [DesignOperandRole::ROLE_0X43, DesignOperandRole::ROLE_0X21],
         true,
+    );
+    assert_loft_sections(
+        [DesignOperandRole::ROLE_0X43, DesignOperandRole::ROLE_0X5],
+        false,
     );
 }
 
