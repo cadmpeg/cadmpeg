@@ -1144,20 +1144,23 @@ impl DesignProfileCurveSelection {
         let first = self.groups.first()?.region.first()?.entries.first()?;
         let offset = first.primary_id_offset.checked_sub(16)?;
         let relative = offset.checked_sub(self.identity_record_offset)?;
-        [
-            crate::layout::sketch_profile_region_selection_prefix::FORMAT_VERSION,
-            crate::layout::typed_reference_profile_identity_record::REGION_GROUP_COUNT,
-        ]
-        .into_iter()
-        .any(|candidate| cadmpeg_core::decode::u64_from_index(candidate) == relative)
-        .then_some(offset)
+        let count_offset = if self.compact_references() {
+            crate::layout::compact_reference_profile_identity_record::REGION_GROUP_COUNT
+        } else {
+            crate::layout::typed_reference_profile_identity_record::REGION_GROUP_COUNT
+        };
+        (cadmpeg_core::decode::u64_from_index(count_offset) == relative).then_some(offset)
     }
 
     pub(crate) fn compact_references(&self) -> bool {
-        self.region_group_count_offset()
+        self.groups
+            .first()
+            .and_then(|group| group.region.first())
+            .and_then(|loop_| loop_.entries.first())
+            .and_then(|entry| entry.primary_id_offset.checked_sub(16))
             .and_then(|offset| offset.checked_sub(self.identity_record_offset))
             == Some(cadmpeg_core::decode::u64_from_index(
-                crate::layout::sketch_profile_region_selection_prefix::FORMAT_VERSION,
+                crate::layout::compact_reference_profile_identity_record::REGION_GROUP_COUNT,
             ))
     }
 

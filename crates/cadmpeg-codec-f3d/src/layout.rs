@@ -6899,6 +6899,56 @@ pub(crate) mod typed_reference_extrude_selection_group_prefix {
     pub(crate) const MEMBER_COUNT: usize = 72;
 }
 
+/// Byte offsets for the `compact_reference_profile_selection_prefix` record.
+///
+/// Spec §3.1. Record length 36 B.
+///
+/// ```text
+/// Offsets are relative to the selection primary indexed header; the LP-UTF16 asset GUID and owner text follow.
+/// ```
+pub(crate) mod compact_reference_profile_selection_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 36;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `identity_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const IDENTITY_REFERENCE: usize = 21;
+    /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONSTANT_ONE: usize = 32;
+}
+
+/// Byte offsets for the `compact_reference_profile_chain_record` record.
+///
+/// Spec §3.1. Record length 42 B.
+///
+/// ```text
+/// Offsets are relative to the chain record indexed header.
+/// ```
+pub(crate) mod compact_reference_profile_chain_record {
+    /// Offset of `zero_run_14` (`bytes[14]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_14: usize = 11;
+    /// Offset of `chain_marker` (`bytes[6]`). Spec §3.1.
+    pub(crate) const CHAIN_MARKER: usize = 25;
+    /// Offset of `sketch_scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SKETCH_SCOPE_REFERENCE: usize = 31;
+}
+
+/// Byte offsets for the `compact_reference_profile_identity_record` record.
+///
+/// Spec §3.1. Record length 36 B.
+///
+/// ```text
+/// Offsets are relative to the identity record indexed header; the counted region groups begin at offset 32.
+/// ```
+pub(crate) mod compact_reference_profile_identity_record {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `selection_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SELECTION_REFERENCE: usize = 21;
+    /// Offset of `region_group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REGION_GROUP_COUNT: usize = 32;
+}
+
 /// Byte offsets for the `typed_reference_profile_selection_prefix` record.
 ///
 /// Spec §3.1. Record length 76 B.

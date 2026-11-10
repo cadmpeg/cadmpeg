@@ -34,6 +34,9 @@ use crate::layout::body_recipe_family_name_frame as body_recipe_end;
 use crate::layout::coil_compact_face_selection_prefix as coil_face_sel;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_sel;
 use crate::layout::coil_modern_selection_prefix as coil_modern_sel;
+use crate::layout::compact_reference_profile_chain_record as compact_profile_chain;
+use crate::layout::compact_reference_profile_identity_record as compact_profile_identity;
+use crate::layout::compact_reference_profile_selection_prefix as compact_profile_selection;
 use crate::layout::construction_operand_affine_transform_frame as trailing_affine;
 use crate::layout::construction_operand_extended_path_prefix as extended_path;
 use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
@@ -6976,17 +6979,47 @@ fn parse_profile_curve_selection_prefix(
     else {
         return None;
     };
-    let mut after_reference = start + typed_selection::IDENTITY_REFERENCE;
+    let mut after_reference = start + compact_profile_selection::IDENTITY_REFERENCE;
     let reference = take_reference(bytes, &mut after_reference)?;
     let (target, inline_type) = reference.local()?;
     let typed = inline_type.is_some();
-    let (constant_one, asset_at) = if typed {
+    let (
+        selection_zero,
+        selection_reference,
+        constant_one,
+        asset_at,
+        chain_zero,
+        chain_marker,
+        sketch_reference,
+        identity_zero,
+        selection_back_reference,
+        group_count,
+    ) = if typed {
         (
-            start + typed_selection::CONSTANT_ONE,
-            start + typed_selection::LEN,
+            typed_selection::ZERO_RUN_10,
+            typed_selection::IDENTITY_REFERENCE,
+            typed_selection::CONSTANT_ONE,
+            typed_selection::LEN,
+            typed_chain::ZERO_RUN_14,
+            typed_chain::CHAIN_MARKER,
+            typed_chain::SKETCH_SCOPE_REFERENCE,
+            typed_identity::ZERO_RUN_10,
+            typed_identity::SELECTION_REFERENCE,
+            typed_identity::REGION_GROUP_COUNT,
         )
     } else {
-        (after_reference, after_reference.checked_add(4)?)
+        (
+            compact_profile_selection::ZERO_RUN_10,
+            compact_profile_selection::IDENTITY_REFERENCE,
+            compact_profile_selection::CONSTANT_ONE,
+            compact_profile_selection::LEN,
+            compact_profile_chain::ZERO_RUN_14,
+            compact_profile_chain::CHAIN_MARKER,
+            compact_profile_chain::SKETCH_SCOPE_REFERENCE,
+            compact_profile_identity::ZERO_RUN_10,
+            compact_profile_identity::SELECTION_REFERENCE,
+            compact_profile_identity::REGION_GROUP_COUNT,
+        )
     };
     let reference_target = |at| {
         let mut end = at;
@@ -6994,43 +7027,36 @@ fn parse_profile_curve_selection_prefix(
         let (target, inline_type) = reference.local()?;
         (inline_type.is_some() == typed).then_some((u32::try_from(target).ok()?, end))
     };
-    if bytes.get(start + typed_selection::ZERO_RUN_10..start + typed_selection::IDENTITY_REFERENCE)
-        != Some(&[0; 10][..])
+    if bytes.get(start + selection_zero..start + selection_reference) != Some(&[0; 10][..])
         || target != u64::from(identity_index)
-        || after_reference != constant_one
-        || View::u32_le_at(bytes, constant_one) != Some(1)
+        || after_reference != start + constant_one
+        || View::u32_le_at(bytes, start + constant_one) != Some(1)
     {
         return None;
     }
-    let (_, after_asset) = lp_utf16_bounded(bytes, asset_at, 36..=36)?;
+    let (_, after_asset) = lp_utf16_bounded(bytes, start + asset_at, 36..=36)?;
     let (owner_text, _) = lp_utf16_bounded(bytes, after_asset, 1..=20)?;
     if !owner_text.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
     let &scope_at = records.offsets(scope_index).first()?;
-    if bytes.get(scope_at + typed_chain::ZERO_RUN_14..scope_at + typed_chain::CHAIN_MARKER)
-        != Some(&[0; 14][..])
-        || bytes.get(
-            scope_at + typed_chain::CHAIN_MARKER..scope_at + typed_chain::SKETCH_SCOPE_REFERENCE,
-        ) != Some(&TYPED_PROFILE_CHAIN_MARKER[..])
+    if bytes.get(scope_at + chain_zero..scope_at + chain_marker) != Some(&[0; 14][..])
+        || bytes.get(scope_at + chain_marker..scope_at + sketch_reference)
+            != Some(&TYPED_PROFILE_CHAIN_MARKER[..])
     {
         return None;
     }
-    let (sketch_scope_record_index, _) =
-        reference_target(scope_at + typed_chain::SKETCH_SCOPE_REFERENCE)?;
+    let (sketch_scope_record_index, _) = reference_target(scope_at + sketch_reference)?;
     let &identity_at = records.offsets(identity_index).first()?;
-    let (identity_target, groups_start) =
-        reference_target(identity_at + typed_identity::SELECTION_REFERENCE)?;
-    if bytes.get(
-        identity_at + typed_identity::ZERO_RUN_10
-            ..identity_at + typed_identity::SELECTION_REFERENCE,
-    ) != Some(&[0; 10][..])
+    let (identity_target, groups_start) = reference_target(identity_at + selection_back_reference)?;
+    if bytes.get(identity_at + identity_zero..identity_at + selection_back_reference)
+        != Some(&[0; 10][..])
         || identity_target != record_index
+        || groups_start != identity_at + group_count
     {
         return None;
     }
-    let identity_end =
-        next_indexed_record_offset(bytes, identity_at + typed_identity::ZERO_RUN_10)?;
+    let identity_end = next_indexed_record_offset(bytes, identity_at + identity_zero)?;
     if !typed && indexed_record_header_at(bytes, identity_end)?.record_index != identity_index {
         return None;
     }
@@ -7046,7 +7072,7 @@ fn parse_profile_curve_selection_prefix(
             owner_text,
             sketch_scope_record_index,
             sketch_scope_offset: cadmpeg_core::decode::u64_from_index(
-                scope_at + typed_chain::SKETCH_SCOPE_REFERENCE + 1,
+                scope_at + sketch_reference + 1,
             ),
             identity_record_offset: cadmpeg_core::decode::u64_from_index(identity_at),
             identity_end_offset: cadmpeg_core::decode::u64_from_index(identity_end),
