@@ -1272,6 +1272,7 @@ fn input_edge_geometry_names_its_own_state_members_once() {
         start: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)),
         end: FinitePoint3::new(Point3::new(0.0, 0.0, 10.0)),
         faces: DistinctMembers::try_from(vec![HistoricalFaceId::mint(face).unwrap()]).unwrap(),
+        supports: Vec::new(),
     };
     let mut ir = CadIr::empty();
     ir.model

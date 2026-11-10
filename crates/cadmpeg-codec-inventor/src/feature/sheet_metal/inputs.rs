@@ -90,6 +90,7 @@ pub(in crate::feature) fn project(
                 interior: sample.interior,
                 tangent: Some(sample.tangent),
                 faces: DistinctMembers::default(),
+                supports: Vec::new(),
             });
             edges.push(edge);
         }
