@@ -32,6 +32,10 @@ const CURVATURE_STEP: f64 = 1e-3;
 /// Ratio of a partial derivative's length to the surface size below which
 /// the parameter is singular at a point.
 const SINGULAR_RATIO: f64 = 1e-9;
+/// Minimum grid size for multi-threaded Rayon surface evaluation.
+const PARALLEL_SURFACE_THRESHOLD: usize = 1024;
+/// Minimum grid or pair count for routing carrier evaluations through `cadmpeg_gpu::global_dispatcher`.
+const GPU_SURFACE_DISPATCH_THRESHOLD: usize = 4096;
 
 /// The evaluation state shared by one face.
 pub(crate) struct Carrier<'t, 'ir> {
@@ -299,23 +303,116 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
         let Some(domain) = self.domain else {
             return Ok(None);
         };
-        let mut best: Option<(f64, Uv)> = None;
-        for i in 0..=SEED_GRID {
-            for j in 0..=SEED_GRID {
-                let fraction = |step: u8| f64::from(step) / f64::from(SEED_GRID);
-                let uv = [
-                    domain[0][0] + (domain[0][1] - domain[0][0]) * fraction(i),
-                    domain[1][0] + (domain[1][1] - domain[1][0]) * fraction(j),
-                ];
-                if let Some(on) = self.point(uv)? {
-                    let gap = distance(on, point);
-                    if best.is_none_or(|(nearest, _)| gap < nearest) {
-                        best = Some((gap, uv));
+        let capacity = (usize::from(SEED_GRID) + 1) * (usize::from(SEED_GRID) + 1);
+        let mut uvs = Vec::with_capacity(capacity);
+        let mut candidates = Vec::with_capacity(capacity);
+        let unit_params: Vec<f64> = (0..=SEED_GRID)
+            .map(|step| f64::from(step) / f64::from(SEED_GRID))
+            .collect();
+        if let Some(bezier_points) = self.eval_bicubic_bezier_grid(&unit_params, &unit_params) {
+            for (i, &u_frac) in unit_params.iter().enumerate() {
+                for (j, &v_frac) in unit_params.iter().enumerate() {
+                    let uv = [
+                        domain[0][0] + (domain[0][1] - domain[0][0]) * u_frac,
+                        domain[1][0] + (domain[1][1] - domain[1][0]) * v_frac,
+                    ];
+                    let on = bezier_points[i * unit_params.len() + j];
+                    if on.x.is_finite() && on.y.is_finite() && on.z.is_finite() {
+                        uvs.push(uv);
+                        candidates.push(on);
+                    }
+                }
+            }
+        } else {
+            for &u_frac in &unit_params {
+                for &v_frac in &unit_params {
+                    let uv = [
+                        domain[0][0] + (domain[0][1] - domain[0][0]) * u_frac,
+                        domain[1][0] + (domain[1][1] - domain[1][0]) * v_frac,
+                    ];
+                    if let Some(on) = self.point(uv)? {
+                        uvs.push(uv);
+                        candidates.push(on);
                     }
                 }
             }
         }
+        let query = std::slice::from_ref(&point);
+        let dist_sq = if candidates.len() < GPU_SURFACE_DISPATCH_THRESHOLD {
+            cadmpeg_gpu::cpu::pairwise_distance_squared(query, &candidates)
+        } else {
+            cadmpeg_gpu::pairwise_squared_distances(query, &candidates)
+        };
+        let mut best: Option<(f64, Uv)> = None;
+        for (uv, gap_sq) in uvs.into_iter().zip(dist_sq) {
+            let gap = gap_sq.sqrt();
+            if best.is_none_or(|(nearest, _)| gap < nearest) {
+                best = Some((gap, uv));
+            }
+        }
         Ok(best.map(|(_, uv)| uv))
+    }
+
+    /// Evaluates a $4 \times 4$ bicubic rational Bézier surface patch over a tensor-product
+    /// $(u, v)$ grid in $[0, 1]^2$ via `cadmpeg-gpu`, when the carrier is an unplaced 4×4
+    /// cubic NURBS patch with clamped knots on $[0, 1]^2$.
+    pub(crate) fn eval_bicubic_bezier_grid(
+        &self,
+        u_params: &[f64],
+        v_params: &[f64],
+    ) -> Option<Vec<Point3>> {
+        let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = self.solved else {
+            return None;
+        };
+        if nurbs.u_degree() != 3
+            || nurbs.v_degree() != 3
+            || nurbs.u_count() != 4
+            || nurbs.v_count() != 4
+        {
+            return None;
+        }
+        let clamped_unit_knots = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
+        if nurbs.u_knots().as_slice() != clamped_unit_knots
+            || nurbs.v_knots().as_slice() != clamped_unit_knots
+        {
+            return None;
+        }
+        let poles = nurbs.poles();
+        if poles.len() != 16 {
+            return None;
+        }
+        let weights = nurbs.pole_weights();
+        let control_points: [[[f64; 4]; 4]; 4] = std::array::from_fn(|i| {
+            std::array::from_fn(|j| {
+                let idx = i * 4 + j;
+                let p = poles[idx].get();
+                let w = weights
+                    .as_ref()
+                    .and_then(|ws| ws.get(idx))
+                    .map_or(1.0, |w| w.get());
+                [p.x, p.y, p.z, w]
+            })
+        });
+        let total = u_params.len().checked_mul(v_params.len())?;
+        if total < PARALLEL_SURFACE_THRESHOLD {
+            Some(cadmpeg_gpu::cpu::eval_bicubic_bezier_grid(
+                &control_points,
+                u_params,
+                v_params,
+            ))
+        } else if total < GPU_SURFACE_DISPATCH_THRESHOLD {
+            Some(cadmpeg_gpu::cpu::rayon_eval_bicubic_bezier_grid(
+                &control_points,
+                u_params,
+                v_params,
+            ))
+        } else {
+            Some(cadmpeg_gpu::eval_bicubic_bezier_grid(
+                &control_points,
+                u_params,
+                v_params,
+            ))
+        }
     }
 
     /// The parameters of the surface point nearest `point` by Gauss-Newton

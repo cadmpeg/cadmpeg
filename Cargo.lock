@@ -581,6 +581,7 @@ name = "cadmpeg-measure"
 version = "0.6.11"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-gpu",
  "cadmpeg-ir",
  "serde",
  "serde_json",
@@ -648,6 +649,7 @@ name = "cadmpeg-tessellate"
 version = "0.6.11"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-gpu",
  "cadmpeg-ir",
 ]
 
