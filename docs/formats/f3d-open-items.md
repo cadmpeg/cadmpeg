@@ -2058,10 +2058,22 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** Which regions of a compact profile loop group form the feature selection when the group carries an initial region and further regions that divide it?
 
-**Known.** The HexGrid Extrude 3 profile operand names Sketch entity 245. Its nested record 7385 starts with a reference to profile operand 7382 and a counted loop recipe. The first region has exterior curve identities 276, 274, 275, 277 and hole identities 120:114, 122:118, 123:119, 121:116. Two further regions divide this rectangular annulus at the rectangle with curve identities 105 through 108. Each entry has kind 3, a primary and secondary identity, three operands, and eight zero bytes. Every listed identity binds to a curve owned by Sketch 245. The neutral Sketch carries two profile loops: the inner rectangle with primary identities 120 through 123 and the central hexagon with primary identities 131 through 136. The outer rectangles' curves stay outside those two loops. The decoder retains the compact loop groups in `design_profile_curve_selections`. Its complete-loop projection admits groups with one exterior loop, zero further regions, whole-curve operands, and an exact neutral loop match.
+**Known.** The HexGrid Extrude 3 profile operand names Sketch entity 245. Its nested record 7385 starts with a reference to profile operand 7382 and a counted loop recipe. The first region has exterior curve identities 276, 274, 275, 277 and hole identities 120:114, 122:118, 123:119, 121:116. Two further regions divide this rectangular annulus at the rectangle with curve identities 105 through 108. Each entry has kind 3, a primary and secondary identity, three operands, and eight zero bytes. Every listed identity binds to a curve owned by Sketch 245. The neutral Sketch carries two profile loops: the inner rectangle with primary identities 120 through 123 and the central hexagon with primary identities 131 through 136. The outer rectangles' curves stay outside those two loops. The decoder retains the compact loop groups in `design_profile_curve_selections`. Its complete-loop projection requires an exact loop join and a complete analytic Cut-transition certificate.
 
 **Need.** A selection rule for the initial region and its further regions, with cases that select different proper subsets of the descendants. Bind the three entry operands to direction and curve portions for the compact spelling.
 
 **Conflict.** None.
 
 **Note.** Extrude 3 retains its native selection group. Existing `SketchRegions` with explicit boundary uses can represent the rectangular annulus after its selected boundaries and traversal directions are established.
+
+### DR-341. Compact complete-loop region identity across sketch arrangements
+
+**Question.** Which stored relation selects an atomic region when a compact complete-loop group names boundaries that occur in several nested or intersecting regions?
+
+**Known.** The compact group lists exterior and hole loops through persistent curve identities. An exact neutral loop join identifies each boundary. A one-sided blind Cut from the profile plane can certify its candidate set through the changed ASM planar regions and analytic lateral carriers. The decoder retains the native selection when this certificate is incomplete. A scope can have an empty face delta or an unbound history state.
+
+**Need.** The relation between the compact entry operands, the arrangement region identity, and the selected side of each boundary, including intersecting loops, nested loops, selected-face starts, and operations with an empty face delta.
+
+**Conflict.** None.
+
+**Note.** DR-340 covers the further-region program. This item covers groups whose further-region counts are zero.

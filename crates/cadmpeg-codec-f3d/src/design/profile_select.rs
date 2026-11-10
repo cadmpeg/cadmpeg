@@ -532,6 +532,8 @@ pub(crate) fn bind_extrude_profile_selections(
                     let FeatureDefinition::Operation(FeatureOperation::Extrude {
                         profile,
                         extent,
+                        start,
+                        direction,
                         op,
                         ..
                     }) = definition
@@ -920,7 +922,17 @@ pub(crate) fn bind_extrude_profile_selections(
                     }
                     if matching_groups.is_empty() {
                         if let Some(selected) = compact_profile_loops(scope, sketch, curve_resolution) {
-                            *profile = selected;
+                            *profile = ProfileRef::Planar(PlanarProfileRef::sketch_selection(
+                                sketch.id.clone(), vec![scope.id.clone()],
+                            ).unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone())));
+                            if let Some(states) = scope.history_state_id().zip(effective_previous_history_state_id) {
+                                if cap_regions::compact::selection_agrees(
+                                    sketch, scoped_resolution, &selected, states,
+                                    cap_regions::compact::Sweep { operation: op, start, direction, extent },
+                                )? {
+                                    *profile = selected;
+                                }
+                            }
                         }
                         break 'feature_edit;
                     }
