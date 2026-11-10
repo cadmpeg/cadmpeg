@@ -153,6 +153,8 @@ pub(super) fn encode_design_bulkstream(
                 histories: &native.asm_histories,
                 face_boundaries: &native.asm_face_boundaries,
                 sheet_metal_settings: &native.design_sheet_metal_settings,
+                sketch_text_extrudes: &[],
+                sketch_texts: &[],
             },
         )?
         .parameters;

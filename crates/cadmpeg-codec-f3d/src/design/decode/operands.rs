@@ -1736,12 +1736,171 @@ pub(crate) fn edge_operand_candidate_faces(
     faces
 }
 
-/// Resolve the unique sketch-profile frame named by profile-based scopes.
-pub(crate) fn bind_sketch_profiles(
+/// An Extrude whose sketch-profile operands may name sketch text.
+///
+/// The text records are decoded after profile binding, so confirmation waits
+/// until those records exist.
+#[derive(Debug)]
+pub(crate) struct SketchTextExtrudeCandidate {
+    /// Parameter scope that owns the operands.
+    pub(crate) scope_id: String,
+    /// Operand count, used when the records are not sketch text.
+    pub(crate) profile_count: usize,
+    /// Entity record indices named by the operands, in operand order.
+    pub(crate) text_records: Vec<u32>,
+}
+
+/// A confirmed extrude whose operands all name neutral sketch text.
+#[derive(Debug)]
+pub(crate) struct ConfirmedSketchTextExtrude {
+    /// Parameter scope that owns the operands.
+    pub(crate) scope_id: String,
+    /// Sketch-text record indices, in operand order.
+    pub(crate) text_records: Vec<u32>,
+}
+
+/// The entity named by the 29-byte record that follows a sketch-profile operand.
+///
+/// That record is `N+3`: ten zero bytes and one `u64` entity id. A region
+/// selection uses a longer frame, so this returns nothing for one.
+pub(crate) fn sketch_profile_text_target(
+    bytes: &[u8],
+    profile_record_index: u32,
+    paired_byte_offset: u64,
+) -> Option<u32> {
+    let paired_at = usize::try_from(paired_byte_offset).ok()?;
+    let next_header = |position: usize, expected: u32| {
+        let at = next_indexed_record_offset(bytes, position)?;
+        (indexed_record_header_at(bytes, at)?.record_index == expected).then_some(at)
+    };
+    let nested_one_at = next_header(
+        paired_at.checked_add(indexed_header::LEN)?,
+        profile_record_index.checked_add(1)?,
+    )?;
+    let nested_two_at = next_header(
+        nested_one_at.checked_add(indexed_header::LEN)?,
+        profile_record_index.checked_add(2)?,
+    )?;
+    let selection_at = next_header(
+        nested_two_at.checked_add(indexed_header::LEN)?,
+        profile_record_index.checked_add(3)?,
+    )?;
+    let payload = selection_at.checked_add(indexed_header::LEN)?;
+    let entity_at = payload.checked_add(10)?;
+    let end = entity_at.checked_add(8)?;
+    if bytes.get(payload..entity_at)? != [0; 10] {
+        return None;
+    }
+    let entity = View::u64_le_at(bytes, entity_at)?;
+    match next_indexed_record_offset(bytes, payload) {
+        Some(next) if next == end => {}
+        None if bytes.len() == end => {}
+        _ => return None,
+    }
+    u32::try_from(entity).ok()
+}
+
+fn sketch_profile_text_records(
+    bytes: &[u8],
+    profiles: &[DesignSketchProfileOperand],
+) -> Option<Vec<u32>> {
+    let mut records = Vec::with_capacity(profiles.len());
+    for profile in profiles {
+        records.push(sketch_profile_text_target(
+            bytes,
+            profile.record_index,
+            profile.paired_byte_offset(),
+        )?);
+    }
+    (!records.is_empty()).then_some(records)
+}
+
+fn unresolved_profile_group_loss(profile_count: usize) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::F3dLossCode::FeatureExtrudeProfileGroupNative.note(format!(
+        "{profile_count} Sketch-profile operands remain native because their group composition is unresolved.",
+    ))
+}
+
+fn extrude_profiles(scope: &DesignParameterScope) -> Vec<&DesignSketchProfileOperand> {
+    if let Some(profiles) = scope.extrude_native_profiles() {
+        return profiles.iter().collect();
+    }
+    scope.extrude_profile().into_iter().collect()
+}
+
+fn candidate_names_owned_text(
+    scope: &DesignParameterScope,
+    candidate: &SketchTextExtrudeCandidate,
+    texts: &[crate::records::sketch_geometry::SketchText],
+) -> bool {
+    let Some(stream) = native_stream(&scope.id) else {
+        return false;
+    };
+    let profiles = extrude_profiles(scope);
+    if profiles.is_empty() || profiles.len() != candidate.text_records.len() {
+        return false;
+    }
+    let mut owner = None;
+    for (profile, record) in profiles.iter().zip(candidate.text_records.iter()) {
+        let Some(text) = texts
+            .iter()
+            .find(|text| native_stream(&text.id) == Some(stream) && text.record_index == *record)
+        else {
+            return false;
+        };
+        if crate::design::decode::sketch::sketch_text_neutral_state(text) != Some(true) {
+            return false;
+        }
+        if u64::from(text.owner_reference) != profile.entity_id.suffix() {
+            return false;
+        }
+        if *owner.get_or_insert(text.owner_reference) != text.owner_reference {
+            return false;
+        }
+    }
+    true
+}
+
+/// Keep the extrudes whose operands all name neutral sketch text on one sketch.
+///
+/// A multi-profile group that only looked like that frame, and is not text,
+/// gets the unresolved-composition loss here. A projected cut emits no loss.
+pub(crate) fn confirm_sketch_text_extrudes(
+    scopes: &[DesignParameterScope],
+    texts: &[crate::records::sketch_geometry::SketchText],
+    candidates: &[SketchTextExtrudeCandidate],
+) -> (
+    Vec<ConfirmedSketchTextExtrude>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let mut confirmed = Vec::new();
+    let mut losses = Vec::new();
+    for candidate in candidates {
+        let Some(scope) = scopes.iter().find(|scope| scope.id == candidate.scope_id) else {
+            if candidate.profile_count > 1 {
+                losses.push(unresolved_profile_group_loss(candidate.profile_count));
+            }
+            continue;
+        };
+        if candidate_names_owned_text(scope, candidate, texts) {
+            confirmed.push(ConfirmedSketchTextExtrude {
+                scope_id: candidate.scope_id.clone(),
+                text_records: candidate.text_records.clone(),
+            });
+        } else if candidate.profile_count > 1 {
+            losses.push(unresolved_profile_group_loss(candidate.profile_count));
+        }
+    }
+    (confirmed, losses)
+}
+
+/// Resolve sketch-profile frames and record extrudes that may select sketch text.
+pub(crate) fn bind_sketch_profiles_recording(
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
     entities: &[DesignEntityHeader],
+    text_extrude_candidates: &mut Vec<SketchTextExtrudeCandidate>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let headers = indexed_operand_headers(headers);
     let mut losses = Vec::new();
@@ -1776,12 +1935,21 @@ pub(crate) fn bind_sketch_profiles(
             profiles.push(profile);
         }
         if profiles.len() > 1 {
+            let text_records = sketch_profile_text_records(bytes, &profiles);
+            let scope_id = scope.id.clone();
+            let profile_count = profiles.len();
             if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
                 scope.payload_mut()
             {
-                losses.push(crate::loss::F3dLossCode::FeatureExtrudeProfileGroupNative.note(
-                    format!("{} Sketch-profile operands remain native because their group composition is unresolved.", profiles.len()),
-                ));
+                if let Some(text_records) = text_records {
+                    text_extrude_candidates.push(SketchTextExtrudeCandidate {
+                        scope_id,
+                        profile_count,
+                        text_records,
+                    });
+                } else {
+                    losses.push(unresolved_profile_group_loss(profile_count));
+                }
                 slot.get_or_insert_with(Default::default)
                     .extrude_native_profiles = Some(profiles);
             }
@@ -1790,6 +1958,19 @@ pub(crate) fn bind_sketch_profiles(
         let Some(profile) = profiles.pop() else {
             continue;
         };
+        if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude) {
+            if let Some(record) = sketch_profile_text_target(
+                bytes,
+                profile.record_index,
+                profile.paired_byte_offset(),
+            ) {
+                text_extrude_candidates.push(SketchTextExtrudeCandidate {
+                    scope_id: scope.id.clone(),
+                    profile_count: 1,
+                    text_records: vec![record],
+                });
+            }
+        }
         losses.extend(profile.flags_assumption_loss());
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFlange {
             if let crate::records::feature::scope::DesignScopePayloadMut::BaseFlange(slot) =

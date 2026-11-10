@@ -584,11 +584,12 @@ fn native_profile_wire_round_trips_and_rejects_null() {
     let (archive, mut scope, headers, entities) =
         crate::test_support::multiple_profiles::fixture(2);
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        crate::design::decode::operands::bind_sketch_profiles(
+        crate::design::decode::operands::bind_sketch_profiles_recording(
             scan,
             std::slice::from_mut(&mut scope),
             &headers,
             &entities,
+            &mut Vec::new(),
         )
         .unwrap();
         let wire = serde_json::to_value(&scope).unwrap();
