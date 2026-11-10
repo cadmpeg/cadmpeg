@@ -739,6 +739,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     // A fillet that took the one history in which its edges resolve reads
     // its input topology and outputs from that history.
     scope_histories.extend(fillet_bindings.inferred_scope_histories);
+    crate::design::edge_resolve::fragment_fallback::apply_features(
+        &mut model.features,
+        &design.design_construction_operand_groups,
+        &design.design_edge_operands,
+        &design.design_edge_identity_operands,
+        &design.asm_face_boundaries,
+        &mut losses,
+    );
     model.feature_input_topologies = crate::history::project_feature_input_topologies(
         &model.features,
         &design.design_parameter_scopes,

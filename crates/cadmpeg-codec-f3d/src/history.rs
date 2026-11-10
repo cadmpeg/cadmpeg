@@ -26,7 +26,7 @@ pub(crate) mod face_admission;
 mod face_recipe;
 mod fallback_face;
 pub(crate) mod fillet_blends;
-mod fragment_edge;
+pub(crate) mod fragment_edge;
 mod hole_support;
 mod loop_index;
 mod move_face;
@@ -36,6 +36,7 @@ mod output_properties;
 pub(crate) mod pipe_section;
 mod recipe_index;
 mod reference_edge;
+mod reference_face;
 pub(crate) mod selection;
 mod shell_walls;
 pub(crate) mod stored_bodies;
@@ -8369,7 +8370,7 @@ fn bind_historical_edge_operand<'a>(
             )
         )
     {
-        if let Some(edge) = fragment_edge::side_one_reference_face_edge(
+        if let Some(edge) = reference_face::side_one_reference_face_edge(
             operand.recipe_structure.as_ref(),
             &operand.recipe_references,
             &operand.preceding_boundary_edge_slots,
@@ -8385,7 +8386,7 @@ fn bind_historical_edge_operand<'a>(
 
 /// The note for an edge operand whose edge the faces its recipe's first
 /// side names select alone, off the recipe's candidate faces.
-fn inferred_edge_selection_note(
+pub(crate) fn inferred_edge_selection_note(
     operand: &str,
     state: i64,
     edge: i64,

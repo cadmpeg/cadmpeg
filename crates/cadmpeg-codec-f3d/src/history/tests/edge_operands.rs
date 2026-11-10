@@ -552,7 +552,7 @@ fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_inf
     };
     let resolve = |references: &[DesignRecipeReference], candidate_edges: &[i64]| {
         let mut queries = crate::history::topology_cache::TopologyQueryCache::default();
-        crate::history::fragment_edge::side_one_reference_face_edge(
+        crate::history::reference_face::side_one_reference_face_edge(
             Some(&structure),
             references,
             candidate_edges,
@@ -572,7 +572,7 @@ fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_inf
         reference(2, Some(10)),
         reference(2, Some(20)),
     ];
-    assert_eq!(resolve(&lane, &[31]), Some((31, false)));
+    assert_eq!(resolve(&lane, &[31]), None);
     let lane = [
         reference(1, Some(10)),
         reference(2, None),

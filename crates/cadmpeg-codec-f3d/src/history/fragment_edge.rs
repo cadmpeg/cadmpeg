@@ -1,24 +1,47 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(test)]
 use super::{
     effective_faces, face_boundary_contexts_for_slots, selection, stable_ref,
     AsmHistoricalTopology, SideOneEdge, TopologyQueryCache,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(super) fn side_one_reference_face_edge<'a>(
+#[cfg(test)]
+fn side_one_reference_face_edge<'a>(
     structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
     references: &[crate::records::dimensions::DesignRecipeReference],
     candidate_boundary_edges: &[i64],
     topology: &'a AsmHistoricalTopology,
     topology_queries: &mut TopologyQueryCache<'a>,
 ) -> Option<SideOneEdge> {
+    let lanes = crate::records::dimensions::reference_lanes(references);
+    common_edge(structure, candidate_boundary_edges, |ordinal| {
+        let lane: Vec<cadmpeg_ir::ids::FaceId> = lanes
+            .get(ordinal)?
+            .iter()
+            .flat_map(|reference| effective_faces(reference).iter().cloned())
+            .collect();
+        let mut faces = selection::faces_in_topology(&lane, topology);
+        faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        faces.dedup();
+        if faces.is_empty() {
+            return None;
+        }
+        fragment_boundaries(&faces, topology, topology_queries)
+    })
+}
+
+fn common_edge(
+    structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
+    candidate_boundary_edges: &[i64],
+    mut lane: impl FnMut(usize) -> Option<BTreeMap<i64, BTreeSet<i64>>>,
+) -> Option<super::SideOneEdge> {
     let structure = structure?;
     if structure.root != 2 || structure.sides.len() != 2 {
         return None;
     }
     let side = structure.sides.first()?;
-    let lanes = crate::records::dimensions::reference_lanes(references);
     let mut ordinals = BTreeSet::new();
     for value in std::iter::once(side.header_value)
         .chain(side.scalars.iter().copied())
@@ -31,18 +54,7 @@ pub(super) fn side_one_reference_face_edge<'a>(
     }
     let mut common: Option<BTreeMap<i64, BTreeSet<i64>>> = None;
     for ordinal in ordinals {
-        let lane: Vec<cadmpeg_ir::ids::FaceId> = lanes
-            .get(ordinal)?
-            .iter()
-            .flat_map(|reference| effective_faces(reference).iter().cloned())
-            .collect();
-        let mut faces = selection::faces_in_topology(&lane, topology);
-        faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
-        faces.dedup();
-        if faces.is_empty() {
-            return None;
-        }
-        let edges = fragment_boundaries(&faces, topology, topology_queries)?;
+        let edges = lane(ordinal)?;
         match &mut common {
             Some(common) => common.retain(|edge, supports| {
                 if let Some(faces) = edges.get(edge) {
@@ -64,11 +76,11 @@ pub(super) fn side_one_reference_face_edge<'a>(
         .copied()
         .filter(|edge| candidate_boundary_edges.contains(edge));
     match (proven.next(), proven.next(), common.as_slice()) {
-        (Some(slot), None, _) => Some(SideOneEdge {
+        (Some(slot), None, _) => Some(super::SideOneEdge {
             slot,
             inferred: false,
         }),
-        (None, _, [slot]) => Some(SideOneEdge {
+        (None, _, [slot]) => Some(super::SideOneEdge {
             slot: *slot,
             inferred: true,
         }),
@@ -76,6 +88,7 @@ pub(super) fn side_one_reference_face_edge<'a>(
     }
 }
 
+#[cfg(test)]
 fn fragment_boundaries<'a>(
     faces: &[cadmpeg_ir::ids::FaceId],
     topology: &'a AsmHistoricalTopology,
@@ -106,6 +119,51 @@ fn fragment_boundaries<'a>(
         }
     }
     Some(edges)
+}
+
+pub(crate) fn context_edge(
+    operand: &crate::records::topology::edge_identity::DesignEdgeOperand,
+    boundaries: &std::collections::HashMap<
+        &str,
+        &crate::records::topology::historical_context::AsmFaceBoundary,
+    >,
+) -> Option<super::SideOneEdge> {
+    common_edge(
+        operand.recipe_structure.as_ref(),
+        &operand.preceding_boundary_edge_slots,
+        |ordinal| {
+            let context = operand.recipe_reference_contexts.get(ordinal)?;
+            if usize::try_from(context.reference_ordinal).ok()? != ordinal
+                || context.preceding_faces.is_empty()
+                || context.preceding_faces.len() != context.preceding_face_boundary_ids.len()
+            {
+                return None;
+            }
+            let mut edges: BTreeMap<i64, BTreeSet<i64>> = BTreeMap::new();
+            for (face, id) in context
+                .preceding_faces
+                .iter()
+                .zip(&context.preceding_face_boundary_ids)
+            {
+                let face = super::stable_ref(face.as_str())?;
+                let boundary = boundaries.get(id.as_str())?;
+                if boundary.face_slot != face || boundary.loops.is_empty() {
+                    return None;
+                }
+                for face_loop in &boundary.loops {
+                    let mut nonempty = false;
+                    for coedge in face_loop.boundary.coedges() {
+                        edges.entry(coedge.edge_slot).or_default().insert(face);
+                        nonempty = true;
+                    }
+                    if !nonempty {
+                        return None;
+                    }
+                }
+            }
+            Some(edges)
+        },
+    )
 }
 
 #[cfg(test)]
