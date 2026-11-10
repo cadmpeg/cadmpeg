@@ -2183,6 +2183,189 @@ L_BVH_EXIT:
     ret;
 }
 
+// 9. Ampere sm_86 Specialized KD-Tree Query with Warp-Synchronous Butterfly Reduction (shfl.sync.bfly.b32)
+.visible .entry cuda_sm86_kdtree_query_f64(
+    .param .u64 param_nodes,
+    .param .u64 param_queries,
+    .param .u64 param_warp_out,
+    .param .u32 param_n_queries,
+    .param .u32 param_n_nodes
+) {
+    .local .align 16 .b8 %stack[512];
+    .reg .pred %p<14>;
+    .reg .b32 %r<30>;
+    .reg .b64 %rd<18>;
+    .reg .f64 %fd<16>;
+
+    ld.param.u64 %rd1, [param_nodes];
+    ld.param.u64 %rd2, [param_queries];
+    ld.param.u64 %rd3, [param_warp_out];
+    ld.param.u32 %r1, [param_n_queries];
+    ld.param.u32 %r2, [param_n_nodes];
+
+    mov.u32 %r3, %ctaid.x;
+    mov.u32 %r4, %ntid.x;
+    mov.u32 %r5, %tid.x;
+    mad.lo.u32 %r6, %r3, %r4, %r5;
+
+    cvta.to.global.u64 %rd4, %rd1;
+    cvta.to.global.u64 %rd5, %rd2;
+    cvta.to.global.u64 %rd6, %rd3;
+
+    mov.f64 %fd3, 0d0000000000000000;
+    setp.ge.u32 %p0, %r6, %r1;
+    setp.eq.u32 %p1, %r2, 0;
+    or.pred %p0, %p0, %p1;
+    @%p0 bra L_SM86_KD_WARP_REDUCE;
+
+    mul.wide.u32 %rd7, %r6, 32;
+    add.u64 %rd8, %rd5, %rd7;
+    ld.global.nc.f64 %fd0, [%rd8 + 0];
+    ld.global.nc.f64 %fd1, [%rd8 + 8];
+    ld.global.nc.f64 %fd2, [%rd8 + 16];
+
+    sub.u32 %r8, %r2, 1;
+    min.u32 %r8, %r6, %r8;
+    mul.wide.u32 %rd12, %r8, 32;
+    add.u64 %rd13, %rd4, %rd12;
+    ld.global.nc.f64 %fd5, [%rd13 + 0];
+    ld.global.nc.f64 %fd6, [%rd13 + 8];
+    ld.global.nc.f64 %fd7, [%rd13 + 16];
+    sub.f64 %fd8,  %fd0, %fd5;
+    sub.f64 %fd9,  %fd1, %fd6;
+    sub.f64 %fd10, %fd2, %fd7;
+    mul.f64 %fd3, %fd10, %fd10;
+    fma.rn.f64 %fd3, %fd9, %fd9, %fd3;
+    fma.rn.f64 %fd3, %fd8, %fd8, %fd3;
+
+    mov.u64 %rd9, %stack;
+    st.local.u32 [%rd9 + 0], 0;
+    st.local.u32 [%rd9 + 4], %r2;
+    st.local.f64 [%rd9 + 8], 0d0000000000000000;
+    mov.u32 %r7, 1;
+
+L_SM86_KD_LOOP:
+    setp.eq.u32 %p2, %r7, 0;
+    @%p2 bra L_SM86_KD_WARP_REDUCE;
+
+    sub.u32 %r7, %r7, 1;
+    shl.b32 %r8, %r7, 4;
+    cvt.u64.u32 %rd10, %r8;
+    add.u64 %rd11, %rd9, %rd10;
+    ld.local.u32 %r9,  [%rd11 + 0];
+    ld.local.u32 %r10, [%rd11 + 4];
+    ld.local.f64 %fd4, [%rd11 + 8];
+
+    setp.ge.f64 %p3, %fd4, %fd3;
+    @%p3 bra L_SM86_KD_LOOP;
+
+    mul.wide.u32 %rd12, %r9, 32;
+    add.u64 %rd13, %rd4, %rd12;
+    ld.global.nc.f64 %fd5, [%rd13 + 0];
+    ld.global.nc.f64 %fd6, [%rd13 + 8];
+    ld.global.nc.f64 %fd7, [%rd13 + 16];
+    ld.global.nc.u32 %r11, [%rd13 + 24];
+    ld.global.nc.u32 %r12, [%rd13 + 28];
+
+    sub.f64 %fd8,  %fd0, %fd5;
+    sub.f64 %fd9,  %fd1, %fd6;
+    sub.f64 %fd10, %fd2, %fd7;
+
+    mul.f64 %fd11, %fd10, %fd10;
+    fma.rn.f64 %fd11, %fd9, %fd9, %fd11;
+    fma.rn.f64 %fd11, %fd8, %fd8, %fd11;
+    min.f64 %fd3, %fd3, %fd11;
+
+    setp.eq.u32 %p4, %r11, 0;
+    setp.eq.u32 %p5, %r11, 1;
+    selp.f64 %fd12, %fd9,  %fd10, %p5;
+    selp.f64 %fd12, %fd8,  %fd12, %p4;
+    mul.f64 %fd13, %fd12, %fd12;
+
+    min.u32 %r13, %r12, %r10;
+    add.u32 %r14, %r9, 1;
+
+    setp.le.f64 %p6, %fd12, 0d0000000000000000;
+    selp.u32 %r15, %r14, %r12, %p6;
+    selp.u32 %r16, %r13, %r10, %p6;
+    selp.u32 %r17, %r12, %r14, %p6;
+    selp.u32 %r18, %r10, %r13, %p6;
+
+    setp.lt.u32 %p7, %r17, %r18;
+    setp.lt.f64 %p8, %fd13, %fd3;
+    and.pred %p7, %p7, %p8;
+    setp.lt.u32 %p9, %r7, 32;
+    and.pred %p7, %p7, %p9;
+    @!%p7 bra L_SM86_KD_PUSH_NEAR;
+
+    shl.b32 %r19, %r7, 4;
+    cvt.u64.u32 %rd14, %r19;
+    add.u64 %rd15, %rd9, %rd14;
+    st.local.u32 [%rd15 + 0], %r17;
+    st.local.u32 [%rd15 + 4], %r18;
+    st.local.f64 [%rd15 + 8], %fd13;
+    add.u32 %r7, %r7, 1;
+
+L_SM86_KD_PUSH_NEAR:
+    setp.lt.u32 %p10, %r15, %r16;
+    setp.lt.u32 %p11, %r7, 32;
+    and.pred %p10, %p10, %p11;
+    @!%p10 bra L_SM86_KD_LOOP;
+
+    shl.b32 %r20, %r7, 4;
+    cvt.u64.u32 %rd16, %r20;
+    add.u64 %rd17, %rd9, %rd16;
+    st.local.u32 [%rd17 + 0], %r15;
+    st.local.u32 [%rd17 + 4], %r16;
+    st.local.f64 [%rd17 + 8], 0d0000000000000000;
+    add.u32 %r7, %r7, 1;
+    bra L_SM86_KD_LOOP;
+
+L_SM86_KD_WARP_REDUCE:
+    // 5-stage butterfly warp reduction across 32 lanes using shfl.sync.bfly.b32 on 64-bit halves
+    mov.b64 {%r21, %r22}, %fd3;
+    shfl.sync.bfly.b32 %r23, %r21, 16, 31, 0xffffffff;
+    shfl.sync.bfly.b32 %r24, %r22, 16, 31, 0xffffffff;
+    mov.b64 %fd14, {%r23, %r24};
+    max.f64 %fd3, %fd3, %fd14;
+
+    mov.b64 {%r21, %r22}, %fd3;
+    shfl.sync.bfly.b32 %r23, %r21, 8, 31, 0xffffffff;
+    shfl.sync.bfly.b32 %r24, %r22, 8, 31, 0xffffffff;
+    mov.b64 %fd14, {%r23, %r24};
+    max.f64 %fd3, %fd3, %fd14;
+
+    mov.b64 {%r21, %r22}, %fd3;
+    shfl.sync.bfly.b32 %r23, %r21, 4, 31, 0xffffffff;
+    shfl.sync.bfly.b32 %r24, %r22, 4, 31, 0xffffffff;
+    mov.b64 %fd14, {%r23, %r24};
+    max.f64 %fd3, %fd3, %fd14;
+
+    mov.b64 {%r21, %r22}, %fd3;
+    shfl.sync.bfly.b32 %r23, %r21, 2, 31, 0xffffffff;
+    shfl.sync.bfly.b32 %r24, %r22, 2, 31, 0xffffffff;
+    mov.b64 %fd14, {%r23, %r24};
+    max.f64 %fd3, %fd3, %fd14;
+
+    mov.b64 {%r21, %r22}, %fd3;
+    shfl.sync.bfly.b32 %r23, %r21, 1, 31, 0xffffffff;
+    shfl.sync.bfly.b32 %r24, %r22, 1, 31, 0xffffffff;
+    mov.b64 %fd14, {%r23, %r24};
+    max.f64 %fd3, %fd3, %fd14;
+
+    and.b32 %r25, %r5, 31;
+    setp.ne.u32 %p12, %r25, 0;
+    @%p12 bra L_SM86_KD_EXIT;
+
+    shr.u32 %r26, %r6, 5; // global_warp_id = global_tid >> 5
+    mul.wide.u32 %rd12, %r26, 8;
+    add.u64 %rd13, %rd6, %rd12;
+    st.global.f64 [%rd13], %fd3;
+
+L_SM86_KD_EXIT:
+    ret;
+}
+
 // 10. Ampere sm_86 Specialized BVH Closest-Point Query with Non-Coherent L1 Cache Loads and Fast FP64 FMA
 .visible .entry cuda_sm86_bvh_closest_point_f64(
     .param .u64 param_bvh,
@@ -4072,6 +4255,7 @@ pub struct CudaContext {
     fn_sm86_point_in_solid: CudaFunction,
     fn_simt_kdtree_query: CudaFunction,
     fn_simt_bvh_closest_point: CudaFunction,
+    fn_sm86_kdtree_query: CudaFunction,
     fn_sm86_bvh_closest_point: CudaFunction,
     compute_mesh_cache: Mutex<Option<CachedCudaMesh>>,
     compute_kd_cache: Mutex<[Option<CachedCudaKdCloud>; 2]>,
@@ -4127,6 +4311,7 @@ impl CudaContext {
             fn_simt_bvh_closest_point: module
                 .load_function("cuda_simt_bvh_closest_point_f64")
                 .ok()?,
+            fn_sm86_kdtree_query: module.load_function("cuda_sm86_kdtree_query_f64").ok()?,
             fn_sm86_bvh_closest_point: module
                 .load_function("cuda_sm86_bvh_closest_point_f64")
                 .ok()?,
@@ -4963,6 +5148,66 @@ impl CudaContext {
         mesh: TriangleMeshView<'_>,
     ) -> Option<Vec<ClosestPointResult>> {
         self.dispatch_bvh_closest_point_kernel(&self.fn_simt_bvh_closest_point, points, mesh)
+    }
+
+    fn dispatch_sm86_kdtree_warp_max_sq_cached(
+        &self,
+        stream: &Arc<CudaStream>,
+        target: &CachedCudaKdCloud,
+        queries: &CachedCudaKdCloud,
+    ) -> Option<f64> {
+        let block = 128_u32;
+        let grid = queries.n_nodes.div_ceil(block);
+        let warps_per_block = block / 32;
+        let total_warps = usize::try_from(grid.checked_mul(warps_per_block)?).ok()?;
+        let mut d_out = stream.alloc_zeros::<f64>(total_warps).ok()?;
+
+        let cfg = LaunchConfig {
+            grid_dim: (grid, 1, 1),
+            block_dim: (block, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let mut builder = stream.launch_builder(&self.fn_sm86_kdtree_query);
+        builder.arg(&target.d_nodes);
+        builder.arg(&queries.d_nodes);
+        builder.arg(&mut d_out);
+        builder.arg(&queries.n_nodes);
+        builder.arg(&target.n_nodes);
+        // Safety: kernel signature matches (u64, u64, u64, u32, u32) and buffer bounds are verified.
+        unsafe { builder.launch(cfg) }.ok()?;
+
+        let warp_maxima = stream.clone_dtoh(&d_out).ok()?;
+        let mut max_sq = 0.0_f64;
+        for &w in &warp_maxima {
+            if w > max_sq {
+                max_sq = w;
+            }
+        }
+        Some(max_sq)
+    }
+
+    /// Executes symmetric Hausdorff distance via Ampere `sm_86` PTX with non-coherent loads and warp-butterfly reduction.
+    #[must_use]
+    pub fn ptx_sm86_spatial_hausdorff(
+        &self,
+        points_a: &[Point3],
+        points_b: &[Point3],
+    ) -> Option<f64> {
+        if !self.supports_sm86() {
+            return None;
+        }
+        if points_a.is_empty() || points_b.is_empty() {
+            return Some(0.0);
+        }
+        self.ctx.bind_to_thread().ok()?;
+        let stream = self.ctx.default_stream();
+        self.with_cached_cuda_kd_pair(&stream, points_a, points_b, |cloud_a, cloud_b| {
+            let max_ab_sq =
+                self.dispatch_sm86_kdtree_warp_max_sq_cached(&stream, cloud_b, cloud_a)?;
+            let max_ba_sq =
+                self.dispatch_sm86_kdtree_warp_max_sq_cached(&stream, cloud_a, cloud_b)?;
+            Some(max_ab_sq.max(max_ba_sq).sqrt())
+        })
     }
 
     /// Executes closest-point-on-mesh queries via Ampere `sm_86` PTX BVH traversal with non-coherent read-only cache loads.
@@ -5985,6 +6230,33 @@ mod tests {
     }
 
     #[test]
+    fn cuda_sm86_spatial_hausdorff_matches_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        if !ctx.supports_sm86() {
+            return;
+        }
+        let pts_a: Vec<Point3> = (0_u32..150)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f * 0.11 - 3.0, (f * 0.25).sin(), (f * 0.17).cos())
+            })
+            .collect();
+        let pts_b: Vec<Point3> = (0_u32..113)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f * 0.11 - 2.91, (f * 0.25).sin() + 0.05, (f * 0.17).cos())
+            })
+            .collect();
+        let expected_h = crate::spatial::kd_hausdorff_distance(&pts_a, &pts_b);
+        let actual_h = ctx
+            .ptx_sm86_spatial_hausdorff(&pts_a, &pts_b)
+            .expect("PTX sm_86 spatial Hausdorff");
+        assert!((expected_h - actual_h).abs() < CUDA_PARITY_TOLERANCE);
+    }
+
+    #[test]
     fn cuda_degenerate_coincident_triangle_closest_point() {
         let Some(ctx) = global_cuda() else {
             return;
@@ -6288,6 +6560,52 @@ mod tests {
         assert_eq!(simt_out, cpu_out);
         assert_eq!(simt_out[0][0], 1.0e40);
         assert!(!simt_out[0][0].is_nan());
+    }
+
+    #[test]
+    fn cuda_hausdorff_close_points_and_infinite_closest_point_query() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let pts_a = [Point3::new(0.0, 0.0, 0.0), Point3::new(1000.0, 0.0, 0.0)];
+        let pts_b = [Point3::new(0.0, 0.0, 0.0), Point3::new(1000.0, 1.0e-6, 0.0)];
+        let simt_h = ctx
+            .simt_spatial_hausdorff(&pts_a, &pts_b)
+            .expect("SIMT Hausdorff");
+        assert!((simt_h - 1.0e-6).abs() < CUDA_PARITY_TOLERANCE);
+        if ctx.supports_sm86() {
+            let sm86_h = ctx
+                .ptx_sm86_spatial_hausdorff(&pts_a, &pts_b)
+                .expect("SM86 Hausdorff");
+            assert!((sm86_h - 1.0e-6).abs() < CUDA_PARITY_TOLERANCE);
+        }
+
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+        ];
+        let triangles = [[0_u32, 1, 2]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let inf_query = [Point3::new(f64::INFINITY, 0.0, 0.0)];
+        let cpu_cp = cpu::closest_point_mesh(&inf_query, mesh);
+        let simt_cp = ctx
+            .simt_spatial_closest_point(&inf_query, mesh)
+            .expect("SIMT closest point on inf");
+        assert!(!simt_cp[0].distance_sq.is_nan());
+        assert!(!simt_cp[0].closest_point.x.is_nan());
+        assert!(!simt_cp[0].closest_point.y.is_nan());
+        assert!(!simt_cp[0].closest_point.z.is_nan());
+        assert_eq!(simt_cp, cpu_cp);
+        if ctx.supports_sm86() {
+            let sm86_cp = ctx
+                .ptx_sm86_spatial_closest_point(&inf_query, mesh)
+                .expect("SM86 closest point on inf");
+            assert_eq!(sm86_cp, cpu_cp);
+        }
     }
 
     #[test]
