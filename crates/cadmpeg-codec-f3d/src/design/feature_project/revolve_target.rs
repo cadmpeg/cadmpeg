@@ -15,7 +15,8 @@ use cadmpeg_ir::features::{
 
 /// Replace the native target group of a projected one-sided `Revolve` with
 /// the faces it selects in the feature's input state: every face of a
-/// body-recipe target, or the face of a face-recipe target.
+/// body-recipe target, or the one face of a face-recipe target. A face
+/// recipe that resolves several faces keeps the native group.
 pub(super) fn bind_revolve_shape_target(
     definition: &mut FeatureDefinition,
     scope: &DesignParameterScope,
@@ -60,7 +61,9 @@ pub(super) fn bind_revolve_shape_target(
         crate::history::effective_scope_previous_history_state_id(scope, histories),
         group,
         face_operands,
-    ) {
+    )
+    .filter(|face| matches!(face, FaceSelection::Historical { faces, .. } if faces.len() == 1))
+    {
         *termination = AngularTermination::ToFace { face, offset: None };
     }
 }

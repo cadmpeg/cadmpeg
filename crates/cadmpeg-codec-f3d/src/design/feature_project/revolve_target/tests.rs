@@ -242,6 +242,10 @@ fn an_unresolved_target_stays_native() {
         bound(one_sided(), &[face_operand(Vec::new())], &[]),
         one_sided()
     );
+    assert_eq!(
+        bound(one_sided(), &[face_operand(vec![14, 18])], &[]),
+        one_sided()
+    );
 }
 
 #[test]
