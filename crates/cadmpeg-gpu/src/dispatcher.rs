@@ -409,7 +409,9 @@ impl GpuDispatcher {
     ) -> Option<f64> {
         match backend {
             BackendKind::RtxRtCore => None,
-            BackendKind::VulkanRtCore => None,
+            BackendKind::VulkanRtCore => {
+                global_vulkan().and_then(|vk| vk.rt_core_spatial_hausdorff(points_a, points_b))
+            }
             BackendKind::CpuParallelSpatialIndex => {
                 Some(spatial::rayon_hausdorff_distance(points_a, points_b))
             }
@@ -944,6 +946,11 @@ fn benchmark_single(
                     )
                 })
                 .collect();
+            if matches!(backend, BackendKind::VulkanRtCore) {
+                if let Some(vk) = global_vulkan() {
+                    std::hint::black_box(vk.rt_core_spatial_hausdorff(&pts_a, &pts_b));
+                }
+            }
             let t0 = Instant::now();
             match backend {
                 BackendKind::Cpu => {
@@ -968,7 +975,11 @@ fn benchmark_single(
                     let h = vk.compute_spatial_hausdorff(&pts_a, &pts_b)?;
                     std::hint::black_box(h);
                 }
-                BackendKind::VulkanRtCore => return None,
+                BackendKind::VulkanRtCore => {
+                    let vk = global_vulkan()?;
+                    let h = vk.rt_core_spatial_hausdorff(&pts_a, &pts_b)?;
+                    std::hint::black_box(h);
+                }
                 BackendKind::CudaCompute => {
                     let cu = global_cuda()?;
                     let h = cu.simt_spatial_hausdorff(&pts_a, &pts_b)?;

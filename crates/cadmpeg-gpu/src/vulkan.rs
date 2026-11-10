@@ -1314,6 +1314,128 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 ";
 
+const RT_HAUSDORFF_WGSL: &str = "
+enable wgpu_ray_query;
+
+@group(0) @binding(0) var acc_struct: acceleration_structure;
+@group(0) @binding(1) var<storage, read> nodes: array<vec4<f64>>;
+@group(0) @binding(2) var<storage, read> queries: array<vec4<f64>>;
+@group(0) @binding(3) var<storage, read_write> best_sq_out: array<f64>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let q_idx = gid.x;
+    if q_idx >= arrayLength(&queries) {
+        return;
+    }
+    let q = queries[q_idx].xyz;
+    let hdr = nodes[0];
+    let n_nodes = u32(hdr.x);
+    var best_sq = hdr.y;
+    let r_pad_f32 = clamp(f32(hdr.z), 1.0e-4, 1.0e29);
+    let r_pad_sq = hdr.w;
+
+    if n_nodes > 0u {
+        let seed_idx = min(q_idx, n_nodes - 1u);
+        let seed_diff = q - nodes[1u + seed_idx * 2u].xyz;
+        best_sq = fma(seed_diff.x, seed_diff.x, fma(seed_diff.y, seed_diff.y, seed_diff.z * seed_diff.z));
+    }
+
+    if n_nodes > 32u {
+        let qx_f32 = clamp(f32(q.x), -1.0e30, 1.0e30);
+        let qy_f32 = clamp(f32(q.y), -1.0e30, 1.0e30);
+        let qz_f32 = clamp(f32(q.z), -1.0e30, 1.0e30);
+        let orig_f32 = vec3<f32>(qx_f32 - r_pad_f32, qy_f32, qz_f32);
+        let dir_f32 = vec3<f32>(1.0, 0.0, 0.0);
+        var rq: ray_query;
+        rayQueryInitialize(&rq, acc_struct, RayDesc(0u, 0xFFu, 0.0, 2.0 * r_pad_f32, orig_f32, dir_f32));
+        while (rayQueryProceed(&rq)) {
+            let cand = rayQueryGetCandidateIntersection(&rq);
+            let p_idx = cand.primitive_index;
+            if p_idx < n_nodes {
+                let np = nodes[1u + p_idx * 2u].xyz;
+                let diff = q - np;
+                let d_sq = fma(diff.x, diff.x, fma(diff.y, diff.y, diff.z * diff.z));
+                if d_sq < best_sq {
+                    best_sq = d_sq;
+                }
+            }
+        }
+    }
+
+    if n_nodes > 0u && (n_nodes <= 32u || best_sq > r_pad_sq) {
+        var stack_node: array<u32, 32>;
+        var stack_end: array<u32, 32>;
+        var stack_lb: array<f64, 32>;
+        stack_node[0] = 0u;
+        stack_end[0] = n_nodes;
+        stack_lb[0] = 0.0lf;
+        var sp = 1u;
+
+        loop {
+            if sp == 0u {
+                break;
+            }
+            sp = sp - 1u;
+            let node_idx = stack_node[sp];
+            let subtree_end = stack_end[sp];
+            let lb = stack_lb[sp];
+            if lb >= best_sq {
+                continue;
+            }
+
+            let n0 = nodes[1u + node_idx * 2u];
+            let n1 = nodes[1u + node_idx * 2u + 1u];
+            let np = n0.xyz;
+            let split_axis = u32(n0.w);
+            let right_child = u32(n1.x);
+
+            let diff = q - np;
+            let d_sq = fma(diff.x, diff.x, fma(diff.y, diff.y, diff.z * diff.z));
+            if d_sq < best_sq {
+                best_sq = d_sq;
+            }
+
+            var axis_diff = diff.z;
+            if split_axis == 0u {
+                axis_diff = diff.x;
+            } else if split_axis == 1u {
+                axis_diff = diff.y;
+            }
+            let axis_diff_sq = axis_diff * axis_diff;
+
+            let left_idx = node_idx + 1u;
+            let left_end = min(right_child, subtree_end);
+            var near_idx = right_child;
+            var near_end = subtree_end;
+            var far_idx = left_idx;
+            var far_end = left_end;
+            if axis_diff <= 0.0lf {
+                near_idx = left_idx;
+                near_end = left_end;
+                far_idx = right_child;
+                far_end = subtree_end;
+            }
+
+            if far_idx < far_end && axis_diff_sq < best_sq && sp < 32u {
+                stack_node[sp] = far_idx;
+                stack_end[sp] = far_end;
+                stack_lb[sp] = axis_diff_sq;
+                sp = sp + 1u;
+            }
+            if near_idx < near_end && sp < 32u {
+                stack_node[sp] = near_idx;
+                stack_end[sp] = near_end;
+                stack_lb[sp] = 0.0lf;
+                sp = sp + 1u;
+            }
+        }
+    }
+
+    best_sq_out[q_idx] = best_sq;
+}
+";
+
 struct CachedVulkanRtMesh {
     hash: u64,
     n_tris: usize,
@@ -1322,6 +1444,15 @@ struct CachedVulkanRtMesh {
     _blas_proxy: wgpu::Blas,
     tlas_proxy: wgpu::Tlas,
     b_scene: wgpu::Buffer,
+}
+
+struct CachedVulkanRtCloud {
+    hash: u64,
+    n_pts: usize,
+    _blas: wgpu::Blas,
+    tlas: wgpu::Tlas,
+    b_nodes: wgpu::Buffer,
+    b_queries: wgpu::Buffer,
 }
 
 struct CachedVulkanComputeMesh {
@@ -1343,7 +1474,9 @@ struct RtPipelines {
     pipe_rt_ray_mesh: wgpu::ComputePipeline,
     pipe_rt_point_in_solid: wgpu::ComputePipeline,
     pipe_rt_closest_point: wgpu::ComputePipeline,
+    pipe_rt_hausdorff: wgpu::ComputePipeline,
     mesh_cache: Mutex<Option<CachedVulkanRtMesh>>,
+    cloud_cache: Mutex<[Option<CachedVulkanRtCloud>; 2]>,
 }
 
 /// Hardware context for safe `wgpu` native `SHADER_F64` and `EXPERIMENTAL_RAY_QUERY` compute execution.
@@ -1611,8 +1744,10 @@ impl VulkanContext {
                     "cadmpeg-rt-closest-point",
                     RT_CLOSEST_POINT_WGSL,
                 ),
+                pipe_rt_hausdorff: compile_rt_pipe("cadmpeg-rt-hausdorff", RT_HAUSDORFF_WGSL),
                 bgl_rt,
                 mesh_cache: Mutex::new(None),
+                cloud_cache: Mutex::new([None, None]),
             })
         } else {
             None
@@ -2788,6 +2923,291 @@ impl VulkanContext {
                 .collect(),
         )
     }
+
+    fn estimate_cloud_r_pad(points_a: &[Point3], points_b: &[Point3]) -> f64 {
+        let min_len = points_a.len().min(points_b.len());
+        let step_corresp = (min_len / 32).max(1);
+        let mut max_corresp_sq = 0.0_f64;
+        for idx in (0..min_len).step_by(step_corresp) {
+            let pa = points_a[idx];
+            let pb = points_b[idx];
+            let dx = pa.x - pb.x;
+            let dy = pa.y - pb.y;
+            let dz = pa.z - pb.z;
+            let d2 = dx * dx + dy * dy + dz * dz;
+            if d2.is_finite() && d2 > max_corresp_sq {
+                max_corresp_sq = d2;
+            }
+        }
+        let mut sum_adj_sq = 0.0_f64;
+        let mut adj_cnt = 0_u32;
+        if points_a.len() > 1 {
+            let step_adj = ((points_a.len() - 1) / 32).max(1);
+            for idx in (0..(points_a.len() - 1)).step_by(step_adj) {
+                let p0 = points_a[idx];
+                let p1 = points_a[idx + 1];
+                let dx = p1.x - p0.x;
+                let dy = p1.y - p0.y;
+                let dz = p1.z - p0.z;
+                let d2 = dx * dx + dy * dy + dz * dz;
+                if d2.is_finite() {
+                    sum_adj_sq += d2;
+                    adj_cnt += 1;
+                }
+            }
+        }
+        let avg_adj = if adj_cnt > 0 {
+            (sum_adj_sq / f64::from(adj_cnt)).sqrt()
+        } else {
+            0.1
+        };
+        let corresp = max_corresp_sq.sqrt();
+        if corresp > 0.0 && corresp <= avg_adj * 8.0 {
+            (corresp * 1.15).max(1.0e-4)
+        } else {
+            (avg_adj * 1.5).max(corresp.min(1.0)).max(1.0e-4)
+        }
+    }
+
+    fn build_cached_rt_cloud_from_tree(
+        &self,
+        flat_tree: &crate::spatial::FlatKdTree3,
+        r_pad: f64,
+        hash: u64,
+    ) -> Option<CachedVulkanRtCloud> {
+        let n_pts = flat_tree.nodes().len();
+        let n_pts_u32 = u32::try_from(n_pts).ok()?;
+        let r_pad_aabb = r_pad * 1.002 + 1.0e-5;
+        let r_f32 = f64_to_blas_f32(r_pad_aabb).max(1.0e-4);
+        let r3_f32 = r_f32 * 3.0;
+
+        let mut verts_f32: Vec<[f32; 3]> = Vec::with_capacity(n_pts.checked_mul(3)?);
+        let mut indices_u32: Vec<u32> = Vec::with_capacity(n_pts.checked_mul(3)?);
+        let mut flat_nodes: Vec<f64> =
+            Vec::with_capacity((n_pts.checked_mul(2)? + 1).checked_mul(4)?);
+        let mut flat_queries: Vec<f64> = Vec::with_capacity(n_pts.checked_mul(4)?);
+
+        flat_nodes.extend_from_slice(&[
+            f64::from(n_pts_u32),
+            f64::INFINITY,
+            r_pad_aabb,
+            r_pad * r_pad,
+        ]);
+
+        for (idx, n) in flat_tree.nodes().iter().enumerate() {
+            let p = n.point;
+            let base_v = u32::try_from(idx.checked_mul(3)?).ok()?;
+            let px = f64_to_blas_f32(p.x);
+            let py = f64_to_blas_f32(p.y);
+            let pz = f64_to_blas_f32(p.z);
+            verts_f32.push([px, py - r_f32, pz - r_f32]);
+            verts_f32.push([px, py + r3_f32, pz - r_f32]);
+            verts_f32.push([px, py - r_f32, pz + r3_f32]);
+            indices_u32.extend_from_slice(&[base_v, base_v + 1, base_v + 2]);
+            flat_nodes.extend_from_slice(&[
+                p.x,
+                p.y,
+                p.z,
+                f64::from(n.split_axis),
+                f64::from(n.right_child),
+                0.0,
+                0.0,
+                0.0,
+            ]);
+            flat_queries.extend_from_slice(&[p.x, p.y, p.z, 0.0]);
+        }
+
+        let (blas, tlas) = self.build_blas_tlas_pair(&verts_f32, &indices_u32, false)?;
+        let nodes_bytes = slice_f64_to_bytes(&flat_nodes);
+        let queries_bytes = slice_f64_to_bytes(&flat_queries);
+        let nodes_size = u64::try_from(nodes_bytes.len().max(32)).ok()?;
+        let queries_size = u64::try_from(queries_bytes.len().max(32)).ok()?;
+
+        let b_nodes = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-rt-cloud-nodes"),
+            size: nodes_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let b_queries = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-rt-cloud-queries"),
+            size: queries_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&b_nodes, 0, &nodes_bytes);
+        self.queue.write_buffer(&b_queries, 0, &queries_bytes);
+
+        Some(CachedVulkanRtCloud {
+            hash,
+            n_pts,
+            _blas: blas,
+            tlas,
+            b_nodes,
+            b_queries,
+        })
+    }
+
+    /// Executes hardware RT Core (`wgpu_ray_query` + `SHADER_F64`) symmetric Hausdorff distance.
+    #[must_use]
+    pub fn rt_core_spatial_hausdorff(
+        &self,
+        points_a: &[Point3],
+        points_b: &[Point3],
+    ) -> Option<f64> {
+        let rt = self.rt.as_ref()?;
+        if points_a.is_empty() || points_b.is_empty() {
+            return Some(0.0);
+        }
+        let r_pad = Self::estimate_cloud_r_pad(points_a, points_b);
+        let r_pad_bits = r_pad.to_bits();
+        let hash_a = Self::hash_point_cloud(points_a, r_pad_bits);
+        let hash_b = Self::hash_point_cloud(points_b, r_pad_bits);
+
+        let mut guard = rt.cloud_cache.lock().ok()?;
+        let rebuild_a = match guard[0].as_ref() {
+            Some(c) => c.hash != hash_a || c.n_pts != points_a.len(),
+            None => true,
+        };
+        let rebuild_b = match guard[1].as_ref() {
+            Some(c) => c.hash != hash_b || c.n_pts != points_b.len(),
+            None => true,
+        };
+        match (rebuild_a, rebuild_b) {
+            (true, true) => {
+                let (tree_a, tree_b) = rayon::join(
+                    || crate::spatial::KdTree3::build(points_a).flatten(),
+                    || crate::spatial::KdTree3::build(points_b).flatten(),
+                );
+                guard[0] = Some(self.build_cached_rt_cloud_from_tree(&tree_a, r_pad, hash_a)?);
+                guard[1] = Some(self.build_cached_rt_cloud_from_tree(&tree_b, r_pad, hash_b)?);
+            }
+            (true, false) => {
+                let tree_a = crate::spatial::KdTree3::build(points_a).flatten();
+                guard[0] = Some(self.build_cached_rt_cloud_from_tree(&tree_a, r_pad, hash_a)?);
+            }
+            (false, true) => {
+                let tree_b = crate::spatial::KdTree3::build(points_b).flatten();
+                guard[1] = Some(self.build_cached_rt_cloud_from_tree(&tree_b, r_pad, hash_b)?);
+            }
+            (false, false) => {}
+        }
+        let cloud_a = guard[0].as_ref()?;
+        let cloud_b = guard[1].as_ref()?;
+
+        let out_a_bytes = u64::try_from(points_a.len().checked_mul(8)?.max(32)).ok()?;
+        let out_b_bytes = u64::try_from(points_b.len().checked_mul(8)?.max(32)).ok()?;
+        let total_out_f64 = points_a.len().checked_add(points_b.len())?;
+        let staging_bytes = out_a_bytes.checked_add(out_b_bytes)?;
+
+        let b_out_ab = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-rt-hd-ab"),
+            size: out_a_bytes,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let b_out_ba = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-rt-hd-ba"),
+            size: out_b_bytes,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let b_staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-rt-hd-staging"),
+            size: staging_bytes,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let bg_ab = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cadmpeg-gpu-rt-hd-bg-ab"),
+            layout: &rt.bgl_rt,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: cloud_b.tlas.as_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: cloud_b.b_nodes.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: cloud_a.b_queries.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: b_out_ab.as_entire_binding(),
+                },
+            ],
+        });
+        let bg_ba = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cadmpeg-gpu-rt-hd-bg-ba"),
+            layout: &rt.bgl_rt,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: cloud_a.tlas.as_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: cloud_a.b_nodes.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: cloud_b.b_queries.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: b_out_ba.as_entire_binding(),
+                },
+            ],
+        });
+
+        let groups_ab = u32::try_from(points_a.len()).ok()?.div_ceil(64);
+        let groups_ba = u32::try_from(points_b.len()).ok()?.div_ceil(64);
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("cadmpeg-gpu-rt-hd-encoder"),
+            });
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("cadmpeg-gpu-rt-hd-cpass"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&rt.pipe_rt_hausdorff);
+            cpass.set_bind_group(0, &bg_ab, &[]);
+            cpass.dispatch_workgroups(groups_ab, 1, 1);
+            cpass.set_bind_group(0, &bg_ba, &[]);
+            cpass.dispatch_workgroups(groups_ba, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&b_out_ab, 0, &b_staging, 0, out_a_bytes);
+        encoder.copy_buffer_to_buffer(&b_out_ba, 0, &b_staging, out_a_bytes, out_b_bytes);
+        self.queue.submit(Some(encoder.finish()));
+
+        let slice = b_staging.slice(..);
+        let (tx, rx) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |res| {
+            tx.send(res).ok();
+        });
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+        rx.recv().ok()?.ok()?;
+
+        let mapped = slice.get_mapped_range().ok()?;
+        let dists = bytes_to_vec_f64(&mapped, total_out_f64);
+        drop(mapped);
+        b_staging.unmap();
+
+        let mut max_sq = 0.0_f64;
+        for &d in &dists {
+            if d > max_sq {
+                max_sq = d;
+            }
+        }
+        Some(max_sq.sqrt())
+    }
 }
 
 struct PackedBvhSceneAndBlas {
@@ -3335,5 +3755,39 @@ mod tests {
             assert!((e.closest_point.y - a.closest_point.y).abs() < VULKAN_PARITY_TOLERANCE);
             assert!((e.closest_point.z - a.closest_point.z).abs() < VULKAN_PARITY_TOLERANCE);
         }
+    }
+
+    #[test]
+    fn vulkan_rt_core_hausdorff_matches_cpu() {
+        let Some(vk) = global_vulkan() else {
+            return;
+        };
+        if !vk.supports_ray_query() {
+            return;
+        }
+        let pts_a: Vec<Point3> = (0_u32..64)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f * 0.15 - 2.0, (f * 0.3).sin(), (f * 0.2).cos())
+            })
+            .collect();
+        let pts_b: Vec<Point3> = (0_u32..53)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f * 0.15 - 1.92, (f * 0.3).sin() - 0.04, (f * 0.2).cos())
+            })
+            .collect();
+        let expected_h = crate::spatial::kd_hausdorff_distance(&pts_a, &pts_b);
+        let actual_h = vk
+            .rt_core_spatial_hausdorff(&pts_a, &pts_b)
+            .expect("RT Core spatial Hausdorff");
+        assert!((expected_h - actual_h).abs() < VULKAN_PARITY_TOLERANCE);
+
+        let close_a = [Point3::new(0.0, 0.0, 0.0), Point3::new(1000.0, 0.0, 0.0)];
+        let close_b = [Point3::new(0.0, 0.0, 0.0), Point3::new(1000.0, 1.0e-6, 0.0)];
+        let close_h = vk
+            .rt_core_spatial_hausdorff(&close_a, &close_b)
+            .expect("RT Core close-points Hausdorff");
+        assert!((close_h - 1.0e-6).abs() < VULKAN_PARITY_TOLERANCE);
     }
 }
