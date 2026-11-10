@@ -120,7 +120,7 @@ fn standard_loft_reads_marked_group_reference() {
     );
     assert_eq!(
         loss.message,
-        "Loft scope generated:loft#20 stores a non-null marked reference with target 16015 at prefix offset 33; the target and the Loft setting it selects are unresolved (DR-268), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false."
+        "Loft scope generated:loft#20 stores a non-null marked reference with target 16015 at prefix offset 33; the Loft setting it selects is unresolved (DR-268), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false."
     );
 
     let scope = DesignParameterScope::empty(
@@ -343,6 +343,26 @@ fn compact_loft_body_reads_typed_lists_without_the_selector() {
     assert_eq!(construction.operation_offset, 25);
     assert_eq!(construction.section_records, vec![29, 44]);
     assert_eq!(construction.rail_groups, vec![50]);
+}
+
+#[test]
+fn a_loft_body_that_both_readings_accept_stays_unread() {
+    let mut bytes = loft_prefix(29, true, false);
+    bytes.truncate(33);
+    bytes.push(0);
+    let second_reference = bytes.len() + 13;
+    push_loft_body(&mut bytes, false, &[40], &[29, 44], false);
+    bytes.splice(
+        second_reference..=second_reference,
+        [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+    );
+    let construction = listed_loft(&bytes, LISTED_LOFT_MEMBERS.to_vec());
+    assert!(construction.section_records.is_empty());
+    assert!(construction.rail_groups.is_empty());
+    assert_eq!(
+        loft_lists_loss(&loft_scope(), &construction).map(|loss| loss.code),
+        Some(crate::loss::F3dLossCode::FeatureLoftListsUnresolved.kind())
+    );
 }
 
 #[test]

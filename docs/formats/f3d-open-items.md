@@ -1615,11 +1615,11 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder keeps the prefix in the native occurrence frame.
 
-### DR-268. Marked reference of the standard Loft scope
+### DR-268. Loft setting of the standard Loft scope marked reference
 
-**Question.** What does the nonzero u64 target of a non-null marked reference at standard `Loft` scope offset 33 name, and which Loft setting selects a non-null reference?
+**Question.** Which Loft setting selects a non-null marked reference at standard `Loft` scope offset 33?
 
-**Known.** `f3d.md` §3.1 "The compact fixed-prefix `Loft` scope has ten zero bytes" gives the reference syntax. In each scope with a non-null reference, the scope has one role-`0x0000000500000000` rail group and the target equals the record index of that group. Scopes with rail groups or a centerline group also store a null reference. The decoder keeps the target in the Loft construction, records `feature.loft-reference-unresolved`, and projects the Loft with closed false, solid true, ruled false, and linearize false.
+**Known.** `f3d.md` §3.1 "The compact fixed-prefix `Loft` scope has ten zero bytes" gives the reference syntax, and §3.1 "A `Loft` has at least two sections" makes the group that the target names a rail. In each scope with a non-null reference, the scope has one role-`0x0000000500000000` rail group and the target equals the record index of that group. Scopes with rail groups or a centerline group also store a null reference. The decoder keeps the target in the Loft construction, records `feature.loft-reference-unresolved`, and projects the Loft with closed false, solid true, ruled false, and linearize false.
 
 **Need.** Saves of one railed `Loft` that change one rail or guide setting at a time, each recording byte 33 and the target, and a save whose target is not a record of the scope's reference table.
 
@@ -1642,9 +1642,9 @@ when the operation transition carries no candidate for the group members?
 
 ### DR-331. Fields of the Loft scope body
 
-**Question.** Which Loft settings do the head words, the three references, the selector, and the six bytes between the rail list and the third reference of the `Loft` scope body select?
+**Question.** Which Loft settings do the head words, the three references, the selector, and the six bytes between the rail list and the third reference of the `Loft` scope body select, and what does the section record `N` of a section-list entry store?
 
-**Known.** `f3d.md` §3.1 "The `Loft` scope body starts after the result-operation u32" gives the field order. The first head word is `-1` or `1`. A nonzero selector precedes a non-null second reference, which names a parameter owned by the scope. The decoder reads the rail list and the section list, keeps the other fields in the scope bytes, and projects the Loft with closed false, solid true, ruled false, and linearize false.
+**Known.** `f3d.md` §3.1 "The `Loft` scope body starts after the result-operation u32" gives the field order. The first head word is `-1` or `1`. A nonzero selector precedes a non-null second reference, which names a parameter owned by the scope. The decoder reads the rail list and the section list, takes construction-operand group `N+1` as the section group of section-list entry `N`, keeps the other fields in the scope bytes, and projects the Loft with closed false, solid true, ruled false, and linearize false.
 
 **Need.** Saves of one `Loft` that change one end condition, one guide setting, and closed, solid, ruled, and linearize one at a time, each recording the scope body.
 
@@ -1656,13 +1656,26 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** Does a rail list whose only entry is a role-`0x0000000700000000` group identify a centerline or one rail?
 
-**Known.** `f3d.md` §3.1 "A `Loft` has at least two sections" reads that list as a centerline. A rail list with two or more entries can hold role-`0x0000000700000000` groups, and those groups are rails. The decoder projects the sole role-`0x0000000700000000` entry as `LoftGuidance::Centerline` and records `feature.loft-centerline-assumed`.
+**Known.** `f3d.md` §3.1 "A `Loft` has at least two sections" gives the rail list. A rail list with two or more entries can hold role-`0x0000000700000000` groups, and those groups are rails. When the rail list has one role-`0x0000000700000000` entry and the offset-33 reference is null, the decoder projects that entry as `LoftGuidance::Centerline` and records `feature.loft-centerline-assumed`.
 
 **Need.** One save of a centerline `Loft` and one save of a one-rail `Loft` whose rail is a model edge, each recording the rail list and the group roles.
 
-**Conflict.** The specification assigns the centerline from the role of a rail-list entry, and it reads role-`0x0000000700000000` entries of longer rail lists as rails.
+**Conflict.** The decoder assigns the centerline from the role of a sole rail-list entry, and role-`0x0000000700000000` entries of longer rail lists are rails.
 
 **Note.** None.
+
+### DR-361. Point sections of a Loft section list
+
+**Question.** Which Loft section groups of role `0x0000000500000000` are point sections?
+
+**Known.** `f3d.md` §3.1 "A `Loft` has at least two sections" gives the section roles and makes a role-`0x0000002100000000` section group a point section. The decoder projects a one-member role-`0x0000000500000000` section group as a native point section when it is the first or last section, another section has role `0x0000004100000000` or `0x0000004300000000`, and its member does not resolve to one edge. It records `feature.loft-point-section-assumed` for each such group. Every other role-`0x0000000500000000` section group projects as a profile.
+
+**Need.** Saves of one `Loft` whose end section is a sketch point, a model vertex, one Sketch curve, and one model edge, each recording the section list, the group roles, and the member selection frames.
+
+**Conflict.** §3.1 "In a Loft guide or centerline group" binds a role-`0x0000000500000000` section group whose member selects curves of one planar Sketch as a Sketch-curve profile, and the decoder projects a one-member end group of that kind as a point section.
+
+**Note.** None.
+
 ### DR-313. Flag bytes of the Thicken scope frame
 
 **Question.** Which Thicken settings do the prologue flag byte of the six-byte marker-one prologue and the two flag bytes between the marked group references and the marked scalar reference of a `Thicken` scope select?

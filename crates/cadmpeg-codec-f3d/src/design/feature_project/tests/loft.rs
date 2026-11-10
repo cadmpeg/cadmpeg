@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::extrude_fallbacks::{profile_group, scope};
+use super::extrude_fallbacks::{profile_group, profile_group_with_members, scope};
 use crate::design::feature_project::project_fixed_loft;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features::DesignLoftConstruction;
@@ -478,6 +478,23 @@ fn listed_loft(
     Option<FeatureDefinition>,
     Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
+    listed_loft_groups(
+        operation,
+        &loft_groups_with_roles(groups),
+        lists,
+        entity_selection_operands,
+    )
+}
+
+fn listed_loft_groups(
+    operation: DesignExtrudeOperation,
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
+    lists: (Vec<u32>, Vec<u32>, Option<u64>),
+    entity_selection_operands: &[DesignEntitySelectionOperand],
+) -> (
+    Option<FeatureDefinition>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
     let (section_records, rail_groups, reference_target) = lists;
     let mut scope = scope();
     scope
@@ -491,13 +508,12 @@ fn listed_loft(
             }));
         })
         .unwrap();
-    let groups = loft_groups_with_roles(groups);
     let mut losses = Vec::new();
     let definition = crate::test_support::with_decode_context(|decode_ctx| {
         project_fixed_loft(
             &scope,
             &crate::design::feature_project::ProjectInputs {
-                construction_groups: &groups,
+                construction_groups: groups,
                 entity_selection_operands,
                 ..Default::default()
             },
@@ -652,7 +668,7 @@ fn a_role_0x5_end_section_is_a_point_unless_its_member_resolves_to_an_edge() {
     ];
     let lists = || (vec![499, 501], vec![503], None);
     let sections = |selections: &[DesignEntitySelectionOperand]| {
-        let (definition, _) = listed_loft(
+        let (definition, losses) = listed_loft(
             DesignExtrudeOperation::NewBody,
             &groups,
             lists(),
@@ -663,25 +679,75 @@ fn a_role_0x5_end_section_is_a_point_unless_its_member_resolves_to_an_edge() {
         else {
             panic!("Loft: {definition:?}");
         };
-        sections
+        (sections, losses)
     };
+    let (point_sections, losses) = sections(&[]);
     assert!(matches!(
-        sections(&[]).as_slice(),
+        point_sections.as_slice(),
         [
             LoftSection::Profile(_),
             LoftSection::Point(LoftPointSection::Native(point))
         ] if point.as_str() == native_group(502)
     ));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::FeatureLoftPointSectionAssumed.kind()
+    );
+    assert_eq!(
+        losses[0].message,
+        "Loft scope f3d:Design/BulkStream.dat:scope#12 projects the one-member role-0x5 end section group f3d:Design/BulkStream.dat:operand-group#502 as a point section (DR-361)."
+    );
     let end = &loft_groups_with_roles(&groups)[1];
     let mut edge = point_selection(end).into_draft();
     edge.resolved_edge_slot = Some(17);
     let edge = DesignEntitySelectionOperand::try_new(edge).unwrap();
+    let (edge_sections, losses) = sections(&[edge]);
     assert_eq!(
-        sections(&[edge])[1],
+        edge_sections[1],
         LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(native_group(
             502
         ))))
     );
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn a_middle_or_multi_member_role_0x5_section_is_a_profile() {
+    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+    let profile = |index| {
+        LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(native_group(
+            index,
+        ))))
+    };
+    let projected =
+        |groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
+         section_records: Vec<u32>| {
+            let (definition, losses) = listed_loft_groups(
+                DesignExtrudeOperation::NewBody,
+                groups,
+                (section_records, Vec::new(), None),
+                &[],
+            );
+            assert!(losses.is_empty(), "{losses:?}");
+            let Some(FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. })) =
+                definition
+            else {
+                panic!("Loft: {definition:?}");
+            };
+            sections
+        };
+    let middle = loft_groups_with_roles(&[
+        (800, DesignOperandRole::ROLE_0X43),
+        (802, DesignOperandRole::ROLE_0X5),
+        (804, DesignOperandRole::ROLE_0X43),
+    ]);
+    assert_eq!(projected(&middle, vec![799, 801, 803])[1], profile(802));
+    let mut multi_member = loft_groups_with_roles(&[(810, DesignOperandRole::ROLE_0X43)]);
+    let mut end = profile_group_with_members(812, 1, 2);
+    end.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
+    multi_member.push(end);
+    assert_eq!(projected(&multi_member, vec![809, 811])[1], profile(812));
 }
 
 #[test]

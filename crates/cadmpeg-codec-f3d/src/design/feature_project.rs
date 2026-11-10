@@ -6805,6 +6805,14 @@ pub(super) fn project_fixed_loft(
                 && (ordinal == 0 || ordinal == last)
                 && group.members().len() == 1
                 && !loft_member_resolves_to_edge(group, entity_selection_operands));
+        if point_section && group.role() == DesignOperandRole::ROLE_0X5 {
+            losses.push(
+                crate::loss::F3dLossCode::FeatureLoftPointSectionAssumed.note(format!(
+                    "Loft scope {} projects the one-member role-0x5 end section group {} as a point section (DR-361).",
+                    scope.id, group.id
+                )),
+            );
+        }
         let section = if point_section {
             LoftSection::Point(LoftPointSection::Native(or_none!(
                 cadmpeg_core::text::NonBlankString::new(group.id.clone())
