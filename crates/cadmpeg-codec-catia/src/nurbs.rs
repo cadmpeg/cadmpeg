@@ -99,6 +99,18 @@ impl LaneRefusals {
         );
     }
 
+    pub(crate) fn push_shared_boundary_reconciled(
+        &mut self,
+        [vertex, seed, retry, replaced]: [usize; 4],
+        max_gap_mm: f64,
+    ) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologySharedBoundaryReconciled.note(format!(
+                "Chose reconciled native shared-boundary readings for emitted faces with vertex repair on {vertex} faces, seed alignment on {seed} faces, and shared-edge retry on {retry} faces. Replaced shared curves on {replaced} previously admitted faces. Largest discrepancy was {max_gap_mm:.9} mm. Faces can occur in more than one path count."
+            )),
+        );
+    }
+
     pub(crate) fn push_two_edge_binding_inferred(&mut self, owner_pos: usize, singleton: bool) {
         let sense_evidence = if singleton {
             "the class-61 singleton occurrence bit"
