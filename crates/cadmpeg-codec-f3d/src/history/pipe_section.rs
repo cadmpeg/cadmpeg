@@ -167,7 +167,7 @@ fn circular_pipe_sweep(
         DesignExtrudeOperation::NewBody => SolidSweepOperation::NewBody,
         DesignExtrudeOperation::Join => SolidSweepOperation::Join,
         DesignExtrudeOperation::Cut => SolidSweepOperation::Cut,
-        DesignExtrudeOperation::Intersect => SolidSweepOperation::Intersect,
+        DesignExtrudeOperation::Intersect => return None,
     };
     let region = SweepCircularRegion::new(
         PositiveLength::new(outer_radius)?,

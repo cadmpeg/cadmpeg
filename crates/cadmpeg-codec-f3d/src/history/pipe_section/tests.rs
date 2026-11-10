@@ -524,10 +524,6 @@ fn a_boolean_pipe_projects_its_operation_with_an_assumed_circle() {
     for (operation, op) in [
         (DesignExtrudeOperation::Join, SolidSweepOperation::Join),
         (DesignExtrudeOperation::Cut, SolidSweepOperation::Cut),
-        (
-            DesignExtrudeOperation::Intersect,
-            SolidSweepOperation::Intersect,
-        ),
     ] {
         let scope = pipe_scope(operation, false);
         let (definition, losses) = bound_with_losses(
@@ -558,6 +554,16 @@ fn a_boolean_pipe_projects_its_operation_with_an_assumed_circle() {
             ]
         );
     }
+    assert!(matches!(
+        bound_with(
+            &pipe_scope(DesignExtrudeOperation::Intersect, false),
+            &owners_with_fractions([1.0, 0.0], 3.2, 0.8),
+            &groups,
+            &[cylinder(4.0)],
+            |_, _| {},
+        ),
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+    ));
 }
 
 #[test]
