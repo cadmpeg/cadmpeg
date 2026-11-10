@@ -338,7 +338,9 @@ impl GpuDispatcher {
         mesh: TriangleMeshView<'_>,
     ) -> Option<Vec<bool>> {
         match backend {
-            BackendKind::RtxRtCore => None,
+            BackendKind::RtxRtCore => {
+                global_cuda().and_then(|cu| cu.optix_rt_point_in_solid_parity(points, mesh))
+            }
             BackendKind::VulkanRtCore => {
                 global_vulkan().and_then(|vk| vk.rt_core_point_in_solid_parity(points, mesh))
             }
@@ -859,7 +861,11 @@ fn benchmark_single(
                     let out = cu.ptx_sm86_point_in_solid_parity(&pts, mesh)?;
                     std::hint::black_box(&out);
                 }
-                (OperationKind::PointInSolidParity, BackendKind::RtxRtCore) => return None,
+                (OperationKind::PointInSolidParity, BackendKind::RtxRtCore) => {
+                    let cu = global_cuda()?;
+                    let out = cu.optix_rt_point_in_solid_parity(&pts, mesh)?;
+                    std::hint::black_box(&out);
+                }
                 (OperationKind::ClosestPointMesh, BackendKind::Cpu) => {
                     let out = cpu::closest_point_mesh(&pts, mesh);
                     std::hint::black_box(&out);

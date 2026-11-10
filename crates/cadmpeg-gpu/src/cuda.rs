@@ -1688,6 +1688,199 @@ L_OPTIX_RAY_EXIT:
     ret;
 }
 
+// 12. CUDA OptiX RT Core + FP64 Point-in-Solid ray-casting parity kernel
+.visible .entry cuda_optix_point_in_solid_f64(
+    .param .u64 param_pts,
+    .param .u64 param_tris,
+    .param .u64 param_cand_prim8,
+    .param .u64 param_out,
+    .param .u32 param_n_pts,
+    .param .u32 param_n_tris
+) {
+    .local .align 8 .b8 %hit_ts[256];
+    .reg .pred %p<8>;
+    .reg .b32 %r<16>;
+    .reg .b64 %rd<20>;
+    .reg .f64 %fd<38>;
+
+    ld.param.u64 %rd1, [param_pts];
+    ld.param.u64 %rd2, [param_tris];
+    ld.param.u64 %rd16, [param_cand_prim8];
+    ld.param.u64 %rd3, [param_out];
+    ld.param.u32 %r1, [param_n_pts];
+    ld.param.u32 %r2, [param_n_tris];
+
+    mov.u32 %r3, %ctaid.x;
+    mov.u32 %r4, %ntid.x;
+    mov.u32 %r5, %tid.x;
+    mad.lo.u32 %r6, %r3, %r4, %r5;
+    setp.ge.u32 %p0, %r6, %r1;
+    @%p0 bra L_OPTIX_PIS_EXIT;
+
+    cvta.to.global.u64 %rd4, %rd1;
+    cvta.to.global.u64 %rd5, %rd2;
+    cvta.to.global.u64 %rd17, %rd16;
+    cvta.to.global.u64 %rd6, %rd3;
+    mov.u64 %rd13, %hit_ts;
+
+    mul.wide.u32 %rd7, %r6, 32;
+    add.u64 %rd8, %rd4, %rd7;
+    ld.global.nc.f64 %fd0, [%rd8 + 0];
+    ld.global.nc.f64 %fd1, [%rd8 + 8];
+    ld.global.nc.f64 %fd2, [%rd8 + 16];
+
+    mov.f64 %fd4, 0d3FE279A74590331D;
+    mov.f64 %fd5, 0d3FE11ACEE560242A;
+    mov.f64 %fd6, 0d3FE3C03650E00E03;
+
+    add.u64 %rd18, %rd17, %rd7;
+    ld.global.nc.u32 %r12, [%rd18 + 0];
+
+    mov.u32 %r7, 0;
+    setp.le.u32 %p1, %r2, 16;
+    setp.gt.u32 %p2, %r12, 7;
+    or.pred %p1, %p1, %p2;
+    @%p1 bra L_OPTIX_PIS_START_LOOP;
+
+    mov.u32 %r13, 0;
+    mov.u32 %r14, 0;
+
+L_OPTIX_PIS_CAND_LOOP:
+    setp.ge.u32 %p1, %r14, %r12;
+    @%p1 bra L_OPTIX_PIS_DONE;
+    add.u32 %r14, %r14, 1;
+    mul.wide.u32 %rd19, %r14, 4;
+    add.u64 %rd19, %rd18, %rd19;
+    ld.global.nc.u32 %r8, [%rd19];
+    setp.lt.u32 %p1, %r8, %r2;
+    @%p1 bra L_OPTIX_PIS_EVAL;
+    bra L_OPTIX_PIS_CAND_LOOP;
+
+L_OPTIX_PIS_START_LOOP:
+    mov.u32 %r13, 1;
+    mov.u32 %r8, 0;
+
+L_OPTIX_PIS_LOOP:
+    setp.ge.u32 %p1, %r8, %r2;
+    @%p1 bra L_OPTIX_PIS_DONE;
+
+L_OPTIX_PIS_EVAL:
+    mul.wide.u32 %rd9, %r8, 72;
+    add.u64 %rd10, %rd5, %rd9;
+    ld.global.nc.f64 %fd8,  [%rd10 + 0];
+    ld.global.nc.f64 %fd9,  [%rd10 + 8];
+    ld.global.nc.f64 %fd10, [%rd10 + 16];
+    ld.global.nc.f64 %fd11, [%rd10 + 24];
+    ld.global.nc.f64 %fd12, [%rd10 + 32];
+    ld.global.nc.f64 %fd13, [%rd10 + 40];
+    ld.global.nc.f64 %fd14, [%rd10 + 48];
+    ld.global.nc.f64 %fd15, [%rd10 + 56];
+    ld.global.nc.f64 %fd16, [%rd10 + 64];
+
+    mul.f64 %fd17, %fd6, %fd15;
+    neg.f64 %fd17, %fd17;
+    fma.rn.f64 %fd17, %fd5, %fd16, %fd17;
+    mul.f64 %fd18, %fd4, %fd16;
+    neg.f64 %fd18, %fd18;
+    fma.rn.f64 %fd18, %fd6, %fd14, %fd18;
+    mul.f64 %fd19, %fd5, %fd14;
+    neg.f64 %fd19, %fd19;
+    fma.rn.f64 %fd19, %fd4, %fd15, %fd19;
+
+    mul.f64 %fd20, %fd13, %fd19;
+    fma.rn.f64 %fd20, %fd12, %fd18, %fd20;
+    fma.rn.f64 %fd20, %fd11, %fd17, %fd20;
+
+    abs.f64 %fd21, %fd20;
+    setp.le.f64 %p2, %fd21, 0d3D719799812DEA11;
+    @%p2 bra L_OPTIX_PIS_AFTER_EVAL;
+
+    div.rn.f64 %fd22, 0d3FF0000000000000, %fd20;
+
+    sub.f64 %fd23, %fd0, %fd8;
+    sub.f64 %fd24, %fd1, %fd9;
+    sub.f64 %fd25, %fd2, %fd10;
+
+    mul.f64 %fd26, %fd25, %fd19;
+    fma.rn.f64 %fd26, %fd24, %fd18, %fd26;
+    fma.rn.f64 %fd26, %fd23, %fd17, %fd26;
+    mul.f64 %fd26, %fd26, %fd22;
+
+    setp.lt.f64 %p3, %fd26, 0dBDA5FD7FE1796495;
+    setp.gt.f64 %p4, %fd26, 0d3FF000000000AFEC;
+    or.pred %p3, %p3, %p4;
+    @%p3 bra L_OPTIX_PIS_AFTER_EVAL;
+
+    mul.f64 %fd27, %fd25, %fd12;
+    neg.f64 %fd27, %fd27;
+    fma.rn.f64 %fd27, %fd24, %fd13, %fd27;
+    mul.f64 %fd28, %fd23, %fd13;
+    neg.f64 %fd28, %fd28;
+    fma.rn.f64 %fd28, %fd25, %fd11, %fd28;
+    mul.f64 %fd29, %fd24, %fd11;
+    neg.f64 %fd29, %fd29;
+    fma.rn.f64 %fd29, %fd23, %fd12, %fd29;
+
+    mul.f64 %fd33, %fd6, %fd29;
+    fma.rn.f64 %fd33, %fd5, %fd28, %fd33;
+    fma.rn.f64 %fd33, %fd4, %fd27, %fd33;
+    mul.f64 %fd33, %fd33, %fd22;
+
+    add.f64 %fd34, %fd26, %fd33;
+    setp.lt.f64 %p3, %fd33, 0dBDA5FD7FE1796495;
+    setp.gt.f64 %p4, %fd34, 0d3FF000000000AFEC;
+    or.pred %p3, %p3, %p4;
+    @%p3 bra L_OPTIX_PIS_AFTER_EVAL;
+
+    mul.f64 %fd35, %fd16, %fd29;
+    fma.rn.f64 %fd35, %fd15, %fd28, %fd35;
+    fma.rn.f64 %fd35, %fd14, %fd27, %fd35;
+    mul.f64 %fd35, %fd35, %fd22;
+
+    setp.lt.f64 %p5, %fd35, 0d3E112E0BE826D695;
+    @%p5 bra L_OPTIX_PIS_AFTER_EVAL;
+
+    min.u32 %r9, %r7, 32;
+    mov.u32 %r10, 0;
+L_OPTIX_PIS_DEDUP:
+    setp.ge.u32 %p6, %r10, %r9;
+    @%p6 bra L_OPTIX_PIS_RECORD;
+    mul.wide.u32 %rd14, %r10, 8;
+    add.u64 %rd15, %rd13, %rd14;
+    ld.local.f64 %fd36, [%rd15];
+    sub.f64 %fd37, %fd35, %fd36;
+    abs.f64 %fd37, %fd37;
+    setp.le.f64 %p7, %fd37, 0d3E112E0BE826D695;
+    @%p7 bra L_OPTIX_PIS_AFTER_EVAL;
+    add.u32 %r10, %r10, 1;
+    bra L_OPTIX_PIS_DEDUP;
+
+L_OPTIX_PIS_RECORD:
+    setp.lt.u32 %p6, %r7, 32;
+    @!%p6 bra L_OPTIX_PIS_INC;
+    mul.wide.u32 %rd14, %r7, 8;
+    add.u64 %rd15, %rd13, %rd14;
+    st.local.f64 [%rd15], %fd35;
+L_OPTIX_PIS_INC:
+    add.u32 %r7, %r7, 1;
+
+L_OPTIX_PIS_AFTER_EVAL:
+    setp.eq.u32 %p1, %r13, 0;
+    @%p1 bra L_OPTIX_PIS_CAND_LOOP;
+
+    add.u32 %r8, %r8, 1;
+    bra L_OPTIX_PIS_LOOP;
+
+L_OPTIX_PIS_DONE:
+    and.b32 %r11, %r7, 1;
+    mul.wide.u32 %rd11, %r6, 4;
+    add.u64 %rd12, %rd6, %rd11;
+    st.global.u32 [%rd12], %r11;
+
+L_OPTIX_PIS_EXIT:
+    ret;
+}
+
 ";
 
 const OPTIX_PTX_MODULE: &str = "\
@@ -1774,6 +1967,99 @@ const OPTIX_PTX_MODULE: &str = "\
     ret;
 }
 
+.visible .entry __raygen__parity()
+{
+    .reg .u32 %idx, %prim, %vis, %flags, %sbt_off, %sbt_stride, %miss_idx;
+    .reg .u64 %handle, %pts_base, %out_prim_base, %off32, %pt_ptr, %row_ptr;
+    .reg .f64 %ox64, %oy64, %oz64;
+    .reg .f32 %ox, %oy, %oz, %dx, %dy, %dz, %tmin, %tmax, %rtime;
+
+    call (%idx), _optix_get_launch_index_x, ();
+    ld.const.u64 %handle, [params + 0];
+    ld.const.u64 %pts_base, [params + 8];
+    ld.const.u64 %out_prim_base, [params + 16];
+
+    mul.wide.u32 %off32, %idx, 32;
+    add.u64 %pt_ptr, %pts_base, %off32;
+    add.u64 %row_ptr, %out_prim_base, %off32;
+    st.global.u32 [%row_ptr + 0], 0;
+
+    ld.global.f64 %ox64, [%pt_ptr + 0];
+    ld.global.f64 %oy64, [%pt_ptr + 8];
+    ld.global.f64 %oz64, [%pt_ptr + 16];
+
+    cvt.rn.f32.f64 %ox, %ox64;
+    cvt.rn.f32.f64 %oy, %oy64;
+    cvt.rn.f32.f64 %oz, %oz64;
+
+    mov.f32 %dx, 0f3F13CD3A;
+    mov.f32 %dy, 0f3F08D5B7;
+    mov.f32 %dz, 0f3F1E00D2;
+    mov.f32 %tmin, 0f00000000;
+    mov.f32 %tmax, 0f7149F2CA;
+    mov.f32 %rtime, 0f00000000;
+    mov.u32 %vis, 255;
+    mov.u32 %flags, 0;
+    mov.u32 %sbt_off, 0;
+    mov.u32 %sbt_stride, 1;
+    mov.u32 %miss_idx, 0;
+    mov.u32 %prim, -1;
+
+    call (%prim), _optix_trace_1, (
+        %handle,
+        %ox, %oy, %oz,
+        %dx, %dy, %dz,
+        %tmin, %tmax, %rtime,
+        %vis, %flags, %sbt_off, %sbt_stride, %miss_idx,
+        %prim
+    );
+    ret;
+}
+
+.visible .entry __anyhit__parity()
+{
+    .reg .pred %p0, %p1;
+    .reg .u32 %idx, %prim, %cnt, %i, %existing, %cnt_next;
+    .reg .u64 %out_prim_base, %off32, %row_ptr, %off_slot, %slot_ptr;
+
+    call (%idx), _optix_get_launch_index_x, ();
+    call (%prim), _optix_read_primitive_idx, ();
+    ld.const.u64 %out_prim_base, [params + 16];
+
+    mul.wide.u32 %off32, %idx, 32;
+    add.u64 %row_ptr, %out_prim_base, %off32;
+    ld.global.u32 %cnt, [%row_ptr + 0];
+
+    mov.u32 %i, 0;
+L_AH_DEDUP:
+    setp.ge.u32 %p0, %i, %cnt;
+    @%p0 bra L_AH_INSERT;
+    setp.ge.u32 %p0, %i, 7;
+    @%p0 bra L_AH_INSERT;
+    mul.wide.u32 %off_slot, %i, 4;
+    add.u64 %slot_ptr, %row_ptr, %off_slot;
+    ld.global.u32 %existing, [%slot_ptr + 4];
+    setp.eq.u32 %p1, %existing, %prim;
+    @%p1 bra L_AH_IGNORE;
+    add.u32 %i, %i, 1;
+    bra L_AH_DEDUP;
+
+L_AH_INSERT:
+    setp.ge.u32 %p0, %cnt, 7;
+    @%p0 bra L_AH_COUNT_ONLY;
+    mul.wide.u32 %off_slot, %cnt, 4;
+    add.u64 %slot_ptr, %row_ptr, %off_slot;
+    st.global.u32 [%slot_ptr + 4], %prim;
+
+L_AH_COUNT_ONLY:
+    add.u32 %cnt_next, %cnt, 1;
+    st.global.u32 [%row_ptr + 0], %cnt_next;
+
+L_AH_IGNORE:
+    call (), _optix_ignore_intersection, ();
+    ret;
+}
+
 .visible .entry __closesthit__ch()
 {
     .reg .u32 %prim;
@@ -1832,7 +2118,10 @@ struct OptixPipelines {
     ctx: Arc<OptixContext>,
     ray_pipeline: Arc<OptixPipeline>,
     ray_sbt: OptixSbt,
+    parity_pipeline: Arc<OptixPipeline>,
+    parity_sbt: OptixSbt,
     fn_optix_ray_mesh: CudaFunction,
+    fn_optix_point_in_solid: CudaFunction,
     mesh_cache: Mutex<Option<CachedOptixMesh>>,
 }
 
@@ -1862,6 +2151,8 @@ impl OptixPipelines {
                 .ok()?;
         let rg_ray =
             OptixProgramGroup::new_raygen(&optix_ctx, &optix_module, "__raygen__candidate").ok()?;
+        let rg_parity =
+            OptixProgramGroup::new_raygen(&optix_ctx, &optix_module, "__raygen__parity").ok()?;
         let ms =
             OptixProgramGroup::new_miss(&optix_ctx, Some((&optix_module, "__miss__ms"))).ok()?;
         let hg_closest = OptixProgramGroup::new_hitgroup(
@@ -1871,17 +2162,34 @@ impl OptixPipelines {
             None,
         )
         .ok()?;
+        let hg_parity = OptixProgramGroup::new_hitgroup(
+            &optix_ctx,
+            None,
+            Some((&optix_module, "__anyhit__parity")),
+            None,
+        )
+        .ok()?;
 
         let ray_groups = [rg_ray.clone(), ms.clone(), hg_closest.clone()];
         let ray_pipeline =
             OptixPipeline::new(&optix_ctx, &pipeline_opts, &link_opts, &ray_groups, 1).ok()?;
         let ray_sbt = OptixSbt::from_groups(&stream, &rg_ray, &[&ms], &[&hg_closest]).ok()?;
 
+        let parity_groups = [rg_parity.clone(), ms.clone(), hg_parity.clone()];
+        let parity_pipeline =
+            OptixPipeline::new(&optix_ctx, &pipeline_opts, &link_opts, &parity_groups, 1).ok()?;
+        let parity_sbt = OptixSbt::from_groups(&stream, &rg_parity, &[&ms], &[&hg_parity]).ok()?;
+
         Some(Self {
             ctx: optix_ctx,
             ray_pipeline,
             ray_sbt,
+            parity_pipeline,
+            parity_sbt,
             fn_optix_ray_mesh: cuda_module.load_function("cuda_optix_ray_mesh_f64").ok()?,
+            fn_optix_point_in_solid: cuda_module
+                .load_function("cuda_optix_point_in_solid_f64")
+                .ok()?,
             mesh_cache: Mutex::new(None),
         })
     }
@@ -2917,6 +3225,66 @@ impl CudaContext {
                 .collect(),
         )
     }
+
+    /// Evaluates point-in-solid containment via `cudarc::optix` hardware RT Core anyhit triangle gathering and exact FP64 parity verification.
+    #[must_use]
+    pub fn optix_rt_point_in_solid_parity(
+        &self,
+        points: &[Point3],
+        mesh: TriangleMeshView<'_>,
+    ) -> Option<Vec<bool>> {
+        let optix = self.optix.as_ref()?;
+        if points.is_empty() {
+            return Some(Vec::new());
+        }
+        if mesh.triangles.is_empty() {
+            return Some((0..points.len()).map(|_| false).collect());
+        }
+        self.ctx.bind_to_thread().ok()?;
+        let stream = self.ctx.default_stream();
+        let n_pts = u32::try_from(points.len()).ok()?;
+
+        let flat_pts: Vec<f64> = points.iter().flat_map(|p| [p.x, p.y, p.z, 0.0]).collect();
+        let d_pts = stream.clone_htod(&flat_pts).ok()?;
+        let d_cand_prim8 = stream
+            .alloc_zeros::<u32>(points.len().checked_mul(8)?)
+            .ok()?;
+        let mut d_out = stream.alloc_zeros::<u32>(points.len()).ok()?;
+
+        Self::with_cached_optix_mesh(optix, &stream, mesh, |cached| {
+            let params_raw = {
+                let (pts_ptr, _s1) = d_pts.device_ptr(&stream);
+                let (cand_ptr, _s2) = d_cand_prim8.device_ptr(&stream);
+                [cached.blas_anyhit.handle(), pts_ptr, cand_ptr, 0_u64]
+            };
+            let d_params = stream.clone_htod(&params_raw).ok()?;
+            optix
+                .parity_pipeline
+                .launch(&stream, &d_params, &optix.parity_sbt, n_pts, 1, 1)
+                .ok()?;
+
+            let block = 128_u32;
+            let grid = n_pts.div_ceil(block);
+            let cfg = LaunchConfig {
+                grid_dim: (grid, 1, 1),
+                block_dim: (block, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let mut builder = stream.launch_builder(&optix.fn_optix_point_in_solid);
+            builder.arg(&d_pts);
+            builder.arg(&cached.d_tris_edges);
+            builder.arg(&d_cand_prim8);
+            builder.arg(&mut d_out);
+            builder.arg(&n_pts);
+            builder.arg(&cached.n_tris);
+            // Safety: kernel signature matches (u64, u64, u64, u64, u32, u32) and buffer bounds are verified.
+            unsafe { builder.launch(cfg) }.ok()?;
+            Some(())
+        })?;
+
+        let raw_out = stream.clone_dtoh(&d_out).ok()?;
+        Some(raw_out.into_iter().map(|v| v != 0).collect())
+    }
 }
 
 #[cfg(test)]
@@ -3420,5 +3788,38 @@ mod tests {
                 assert!((e.barycentric_v - a.barycentric_v).abs() < CUDA_PARITY_TOLERANCE);
             }
         }
+    }
+
+    #[test]
+    fn cuda_optix_rt_point_in_solid_matches_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        if !ctx.supports_optix_rt() {
+            return;
+        }
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+        ];
+        let triangles = [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let points = [
+            Point3::new(0.25, 0.25, 0.25),
+            Point3::new(0.4, 0.4, 0.4),
+            Point3::new(1.5, 1.5, 1.5),
+            Point3::new(-0.5, 0.2, 0.2),
+            Point3::new(0.1, 0.2, 0.3),
+        ];
+        let expected = cpu::point_in_solid_parity(&points, mesh);
+        let actual = ctx
+            .optix_rt_point_in_solid_parity(&points, mesh)
+            .expect("CUDA OptiX RT Core point-in-solid parity");
+        assert_eq!(actual, expected);
     }
 }
