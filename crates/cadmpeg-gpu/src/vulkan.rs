@@ -55,6 +55,40 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 ";
 
+const BEZIER_EVAL_WGSL: &str = "
+@group(0) @binding(0) var<storage, read> ug: array<vec4<f64>>;
+@group(0) @binding(1) var<storage, read> vb: array<vec4<f64>>;
+@group(0) @binding(2) var<storage, read_write> pts_out: array<vec4<f64>>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    let nu = arrayLength(&ug) / 4u;
+    let nv = arrayLength(&vb);
+    if idx >= nu * nv {
+        return;
+    }
+    let u_idx = idx / nv;
+    let v_idx = idx % nv;
+    let base = u_idx * 4u;
+    let c0 = ug[base + 0u];
+    let c1 = ug[base + 1u];
+    let c2 = ug[base + 2u];
+    let c3 = ug[base + 3u];
+    let bv = vb[v_idx];
+    let xw = fma(bv.x, c0.x, fma(bv.y, c1.x, fma(bv.z, c2.x, bv.w * c3.x)));
+    let yw = fma(bv.x, c0.y, fma(bv.y, c1.y, fma(bv.z, c2.y, bv.w * c3.y)));
+    let zw = fma(bv.x, c0.z, fma(bv.y, c1.z, fma(bv.z, c2.z, bv.w * c3.z)));
+    let w  = fma(bv.x, c0.w, fma(bv.y, c1.w, fma(bv.z, c2.w, bv.w * c3.w)));
+    if abs(w) > 1.0e-30lf {
+        let inv_w = 1.0lf / w;
+        pts_out[idx] = vec4<f64>(xw * inv_w, yw * inv_w, zw * inv_w, w);
+    } else {
+        pts_out[idx] = vec4<f64>(xw, yw, zw, w);
+    }
+}
+";
+
 /// Hardware context for safe `wgpu` native `SHADER_F64` and `EXPERIMENTAL_RAY_QUERY` compute execution.
 pub struct VulkanContext {
     device_name: String,
@@ -63,6 +97,7 @@ pub struct VulkanContext {
     bgl_compute: wgpu::BindGroupLayout,
     pipe_transform: wgpu::ComputePipeline,
     pipe_pairwise_dist: wgpu::ComputePipeline,
+    pipe_bezier_eval: wgpu::ComputePipeline,
 }
 
 static GLOBAL_VULKAN: OnceLock<Option<VulkanContext>> = OnceLock::new();
@@ -203,6 +238,7 @@ impl VulkanContext {
             device_name: info.name,
             pipe_transform: compile_pipe("cadmpeg-wgsl-transform", TRANSFORM_WGSL),
             pipe_pairwise_dist: compile_pipe("cadmpeg-wgsl-pairwise-dist", PAIRWISE_DIST_WGSL),
+            pipe_bezier_eval: compile_pipe("cadmpeg-wgsl-bezier-eval", BEZIER_EVAL_WGSL),
             device,
             queue,
             bgl_compute,
@@ -362,6 +398,56 @@ impl VulkanContext {
         let flat_b: Vec<f64> = points_b.iter().flat_map(|p| [p.x, p.y, p.z, 0.0]).collect();
         self.execute_f64_pipeline(&self.pipe_pairwise_dist, &flat_a, &flat_b, total, total)
     }
+
+    /// Executes native `f64` bicubic rational Bézier surface patch grid evaluation via Vulkan `wgpu`.
+    #[must_use]
+    pub fn compute_eval_bicubic_bezier_grid(
+        &self,
+        control_points: &[[[f64; 4]; 4]; 4],
+        u_params: &[f64],
+        v_params: &[f64],
+    ) -> Option<Vec<Point3>> {
+        let total = u_params.len().checked_mul(v_params.len())?;
+        if total == 0 {
+            return Some(Vec::new());
+        }
+        let u_bases: Vec<[f64; 4]> = u_params
+            .iter()
+            .map(|&u| cpu::cubic_bernstein_basis(u))
+            .collect();
+        let mut flat_ug: Vec<f64> = Vec::with_capacity(u_params.len().checked_mul(16)?);
+        for bu in &u_bases {
+            for (c0, c1, c2, c3) in control_points[0]
+                .iter()
+                .zip(&control_points[1])
+                .zip(&control_points[2])
+                .zip(&control_points[3])
+                .map(|(((a, b), c), d)| (a, b, c, d))
+            {
+                for (((&v0, &v1), &v2), &v3) in c0.iter().zip(c1).zip(c2).zip(c3) {
+                    flat_ug
+                        .push(bu[0].mul_add(v0, bu[1].mul_add(v1, bu[2].mul_add(v2, bu[3] * v3))));
+                }
+            }
+        }
+        let flat_vb: Vec<f64> = v_params
+            .iter()
+            .flat_map(|&v| cpu::cubic_bernstein_basis(v))
+            .collect();
+        let out_f64_len = total.checked_mul(4)?;
+        let raw = self.execute_f64_pipeline(
+            &self.pipe_bezier_eval,
+            &flat_ug,
+            &flat_vb,
+            out_f64_len,
+            total,
+        )?;
+        Some(
+            raw.chunks_exact(4)
+                .map(|p| Point3::new(p[0], p[1], p[2]))
+                .collect(),
+        )
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -437,6 +523,34 @@ mod tests {
         assert_eq!(expected.len(), actual.len());
         for (&e, &a) in expected.iter().zip(&actual) {
             assert!((e - a).abs() < VULKAN_PARITY_TOLERANCE);
+        }
+    }
+
+    #[test]
+    fn vulkan_bezier_eval_matches_cpu() {
+        let Some(vk) = global_vulkan() else {
+            return;
+        };
+        let mut ctrl = [[[0.0_f64; 4]; 4]; 4];
+        for (i, row) in ctrl.iter_mut().enumerate() {
+            for (j, pole) in row.iter_mut().enumerate() {
+                let u = f64::from(u32::try_from(i).unwrap_or(0));
+                let v = f64::from(u32::try_from(j).unwrap_or(0));
+                let w = 1.0 + 0.1 * (u + v);
+                *pole = [u * w, v * w, (u * u - v) * 0.25 * w, w];
+            }
+        }
+        let u_params: Vec<f64> = (0..11).map(|i| f64::from(i) / 10.0).collect();
+        let v_params: Vec<f64> = (0..9).map(|j| f64::from(j) / 8.0).collect();
+        let expected = cpu::eval_bicubic_bezier_grid(&ctrl, &u_params, &v_params);
+        let actual = vk
+            .compute_eval_bicubic_bezier_grid(&ctrl, &u_params, &v_params)
+            .expect("Vulkan f64 Bezier eval");
+        assert_eq!(expected.len(), actual.len());
+        for (e, a) in expected.iter().zip(&actual) {
+            assert!((e.x - a.x).abs() < VULKAN_PARITY_TOLERANCE);
+            assert!((e.y - a.y).abs() < VULKAN_PARITY_TOLERANCE);
+            assert!((e.z - a.z).abs() < VULKAN_PARITY_TOLERANCE);
         }
     }
 }
