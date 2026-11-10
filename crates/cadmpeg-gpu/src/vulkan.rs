@@ -485,6 +485,98 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 ";
 
+const KDTREE_HAUSDORFF_WGSL: &str = "
+@group(0) @binding(0) var<storage, read> nodes: array<vec4<f64>>;
+@group(0) @binding(1) var<storage, read> queries: array<vec4<f64>>;
+@group(0) @binding(2) var<storage, read_write> best_sq_out: array<f64>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let q_idx = gid.x;
+    if q_idx >= arrayLength(&queries) {
+        return;
+    }
+    let q = queries[q_idx].xyz;
+    let n_nodes = arrayLength(&nodes) / 2u;
+    var best_sq = nodes[1].y;
+
+    if n_nodes > 0u {
+        let seed_idx = min(q_idx, n_nodes - 1u);
+        let seed_diff = q - nodes[seed_idx * 2u].xyz;
+        best_sq = fma(seed_diff.x, seed_diff.x, fma(seed_diff.y, seed_diff.y, seed_diff.z * seed_diff.z));
+
+        var stack_node: array<u32, 32>;
+        var stack_end: array<u32, 32>;
+        var stack_lb: array<f64, 32>;
+        stack_node[0] = 0u;
+        stack_end[0] = n_nodes;
+        stack_lb[0] = 0.0lf;
+        var sp = 1u;
+
+        loop {
+            if sp == 0u {
+                break;
+            }
+            sp = sp - 1u;
+            let node_idx = stack_node[sp];
+            let subtree_end = stack_end[sp];
+            let lb = stack_lb[sp];
+            if lb >= best_sq {
+                continue;
+            }
+
+            let n0 = nodes[node_idx * 2u];
+            let n1 = nodes[node_idx * 2u + 1u];
+            let np = n0.xyz;
+            let split_axis = u32(n0.w);
+            let right_child = u32(n1.x);
+
+            let diff = q - np;
+            let d_sq = fma(diff.x, diff.x, fma(diff.y, diff.y, diff.z * diff.z));
+            if d_sq < best_sq {
+                best_sq = d_sq;
+            }
+
+            var axis_diff = diff.z;
+            if split_axis == 0u {
+                axis_diff = diff.x;
+            } else if split_axis == 1u {
+                axis_diff = diff.y;
+            }
+            let axis_diff_sq = axis_diff * axis_diff;
+
+            let left_idx = node_idx + 1u;
+            let left_end = min(right_child, subtree_end);
+            var near_idx = right_child;
+            var near_end = subtree_end;
+            var far_idx = left_idx;
+            var far_end = left_end;
+            if axis_diff <= 0.0lf {
+                near_idx = left_idx;
+                near_end = left_end;
+                far_idx = right_child;
+                far_end = subtree_end;
+            }
+
+            if far_idx < far_end && axis_diff_sq < best_sq && sp < 32u {
+                stack_node[sp] = far_idx;
+                stack_end[sp] = far_end;
+                stack_lb[sp] = axis_diff_sq;
+                sp = sp + 1u;
+            }
+            if near_idx < near_end && sp < 32u {
+                stack_node[sp] = near_idx;
+                stack_end[sp] = near_end;
+                stack_lb[sp] = 0.0lf;
+                sp = sp + 1u;
+            }
+        }
+    }
+
+    best_sq_out[q_idx] = best_sq;
+}
+";
+
 const RT_RAY_MESH_WGSL: &str = "
 enable wgpu_ray_query;
 
@@ -1239,6 +1331,13 @@ struct CachedVulkanComputeMesh {
     b_scene: wgpu::Buffer,
 }
 
+struct CachedVulkanKdCloud {
+    hash: u64,
+    n_pts: usize,
+    b_nodes: wgpu::Buffer,
+    b_queries: wgpu::Buffer,
+}
+
 struct RtPipelines {
     bgl_rt: wgpu::BindGroupLayout,
     pipe_rt_ray_mesh: wgpu::ComputePipeline,
@@ -1259,7 +1358,9 @@ pub struct VulkanContext {
     pipe_ray_mesh: wgpu::ComputePipeline,
     pipe_point_in_solid: wgpu::ComputePipeline,
     pipe_bvh_closest_point: wgpu::ComputePipeline,
+    pipe_kdtree_hausdorff: wgpu::ComputePipeline,
     compute_mesh_cache: Mutex<Option<CachedVulkanComputeMesh>>,
+    compute_kd_cache: Mutex<[Option<CachedVulkanKdCloud>; 2]>,
     rt: Option<RtPipelines>,
 }
 
@@ -1525,7 +1626,9 @@ impl VulkanContext {
             pipe_ray_mesh: compile_pipe("cadmpeg-wgsl-ray-mesh", RAY_MESH_WGSL),
             pipe_point_in_solid: compile_pipe("cadmpeg-wgsl-point-in-solid", POINT_IN_SOLID_WGSL),
             pipe_bvh_closest_point: compile_pipe("cadmpeg-wgsl-bvh-cp", BVH_CLOSEST_POINT_WGSL),
+            pipe_kdtree_hausdorff: compile_pipe("cadmpeg-wgsl-kdtree", KDTREE_HAUSDORFF_WGSL),
             compute_mesh_cache: Mutex::new(None),
+            compute_kd_cache: Mutex::new([None, None]),
             rt,
             device,
             queue,
@@ -2225,6 +2328,241 @@ impl VulkanContext {
         )
     }
 
+    fn serialize_compute_kd_cloud(flat_tree: &crate::spatial::FlatKdTree3) -> (Vec<f64>, Vec<f64>) {
+        let n = flat_tree.nodes().len();
+        let mut flat_nodes = Vec::with_capacity(n.checked_mul(8).unwrap_or(0));
+        let mut flat_queries = Vec::with_capacity(n.checked_mul(4).unwrap_or(0));
+        for node in flat_tree.nodes() {
+            flat_nodes.extend_from_slice(&[
+                node.point.x,
+                node.point.y,
+                node.point.z,
+                f64::from(node.split_axis),
+                f64::from(node.right_child),
+                f64::INFINITY,
+                0.0,
+                0.0,
+            ]);
+            flat_queries.extend_from_slice(&[node.point.x, node.point.y, node.point.z, 0.0]);
+        }
+        (flat_nodes, flat_queries)
+    }
+
+    fn upload_compute_kd_cloud(
+        &self,
+        flat_nodes: &[f64],
+        flat_queries: &[f64],
+        n_pts: usize,
+        hash: u64,
+    ) -> Option<CachedVulkanKdCloud> {
+        let nodes_bytes = slice_f64_to_bytes(flat_nodes);
+        let queries_bytes = slice_f64_to_bytes(flat_queries);
+        let nodes_size = u64::try_from(nodes_bytes.len().max(32)).ok()?;
+        let queries_size = u64::try_from(queries_bytes.len().max(32)).ok()?;
+
+        let b_nodes = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-compute-kd-nodes"),
+            size: nodes_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let b_queries = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-compute-kd-queries"),
+            size: queries_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&b_nodes, 0, &nodes_bytes);
+        self.queue.write_buffer(&b_queries, 0, &queries_bytes);
+
+        Some(CachedVulkanKdCloud {
+            hash,
+            n_pts,
+            b_nodes,
+            b_queries,
+        })
+    }
+
+    /// Executes native `f64` symmetric Hausdorff distance via Vulkan `wgpu` KD-tree traversal.
+    #[must_use]
+    pub fn compute_spatial_hausdorff(
+        &self,
+        points_a: &[Point3],
+        points_b: &[Point3],
+    ) -> Option<f64> {
+        if points_a.is_empty() || points_b.is_empty() {
+            return Some(0.0);
+        }
+        let groups_ab = u32::try_from(points_a.len()).ok()?.div_ceil(64);
+        let groups_ba = u32::try_from(points_b.len()).ok()?.div_ceil(64);
+        if groups_ab > 65_535 || groups_ba > 65_535 {
+            return None;
+        }
+
+        let hash_a = Self::hash_point_cloud(points_a, 0);
+        let hash_b = Self::hash_point_cloud(points_b, 0);
+        let mut guard = self.compute_kd_cache.lock().ok()?;
+        let rebuild_a = match guard[0].as_ref() {
+            Some(c) => c.hash != hash_a || c.n_pts != points_a.len(),
+            None => true,
+        };
+        let rebuild_b = match guard[1].as_ref() {
+            Some(c) => c.hash != hash_b || c.n_pts != points_b.len(),
+            None => true,
+        };
+        match (rebuild_a, rebuild_b) {
+            (true, true) => {
+                let ((nodes_a, queries_a), (nodes_b, queries_b)) = rayon::join(
+                    || {
+                        let tree = crate::spatial::KdTree3::build(points_a).flatten();
+                        Self::serialize_compute_kd_cloud(&tree)
+                    },
+                    || {
+                        let tree = crate::spatial::KdTree3::build(points_b).flatten();
+                        Self::serialize_compute_kd_cloud(&tree)
+                    },
+                );
+                guard[0] = Some(self.upload_compute_kd_cloud(
+                    &nodes_a,
+                    &queries_a,
+                    points_a.len(),
+                    hash_a,
+                )?);
+                guard[1] = Some(self.upload_compute_kd_cloud(
+                    &nodes_b,
+                    &queries_b,
+                    points_b.len(),
+                    hash_b,
+                )?);
+            }
+            (true, false) => {
+                let tree = crate::spatial::KdTree3::build(points_a).flatten();
+                let (nodes_a, queries_a) = Self::serialize_compute_kd_cloud(&tree);
+                guard[0] = Some(self.upload_compute_kd_cloud(
+                    &nodes_a,
+                    &queries_a,
+                    points_a.len(),
+                    hash_a,
+                )?);
+            }
+            (false, true) => {
+                let tree = crate::spatial::KdTree3::build(points_b).flatten();
+                let (nodes_b, queries_b) = Self::serialize_compute_kd_cloud(&tree);
+                guard[1] = Some(self.upload_compute_kd_cloud(
+                    &nodes_b,
+                    &queries_b,
+                    points_b.len(),
+                    hash_b,
+                )?);
+            }
+            (false, false) => {}
+        }
+        let cloud_a = guard[0].as_ref()?;
+        let cloud_b = guard[1].as_ref()?;
+
+        let out_a_bytes = u64::try_from(points_a.len().checked_mul(8)?.max(32)).ok()?;
+        let out_b_bytes = u64::try_from(points_b.len().checked_mul(8)?.max(32)).ok()?;
+        let total_out_f64 = points_a.len().checked_add(points_b.len())?;
+        let staging_bytes = out_a_bytes.checked_add(out_b_bytes)?;
+
+        let b_out_ab = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-compute-hd-ab"),
+            size: out_a_bytes,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let b_out_ba = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-compute-hd-ba"),
+            size: out_b_bytes,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let b_staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-compute-hd-staging"),
+            size: staging_bytes,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let bg_ab = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cadmpeg-gpu-compute-hd-bg-ab"),
+            layout: &self.bgl_compute,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: cloud_b.b_nodes.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: cloud_a.b_queries.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: b_out_ab.as_entire_binding(),
+                },
+            ],
+        });
+        let bg_ba = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cadmpeg-gpu-compute-hd-bg-ba"),
+            layout: &self.bgl_compute,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: cloud_a.b_nodes.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: cloud_b.b_queries.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: b_out_ba.as_entire_binding(),
+                },
+            ],
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("cadmpeg-gpu-compute-hd-encoder"),
+            });
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("cadmpeg-gpu-compute-hd-cpass"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.pipe_kdtree_hausdorff);
+            cpass.set_bind_group(0, &bg_ab, &[]);
+            cpass.dispatch_workgroups(groups_ab, 1, 1);
+            cpass.set_bind_group(0, &bg_ba, &[]);
+            cpass.dispatch_workgroups(groups_ba, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&b_out_ab, 0, &b_staging, 0, out_a_bytes);
+        encoder.copy_buffer_to_buffer(&b_out_ba, 0, &b_staging, out_a_bytes, out_b_bytes);
+        self.queue.submit(Some(encoder.finish()));
+
+        let slice = b_staging.slice(..);
+        let (tx, rx) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |res| {
+            tx.send(res).ok();
+        });
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+        rx.recv().ok()?.ok()?;
+
+        let mapped = slice.get_mapped_range().ok()?;
+        let dists = bytes_to_vec_f64(&mapped, total_out_f64);
+        drop(mapped);
+        b_staging.unmap();
+
+        let mut max_sq = 0.0_f64;
+        for &d in &dists {
+            if d > max_sq {
+                max_sq = d;
+            }
+        }
+        Some(max_sq.sqrt())
+    }
+
     fn hash_mesh(mesh: TriangleMeshView<'_>) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -2247,6 +2585,25 @@ impl VulkanContext {
         }
         if let Some(last_t) = mesh.triangles.last() {
             last_t.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    fn hash_point_cloud(points: &[Point3], r_pad_bits: u64) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        points.len().hash(&mut hasher);
+        r_pad_bits.hash(&mut hasher);
+        let step = (points.len() / 256).max(1);
+        for p in points.iter().step_by(step) {
+            p.x.to_bits().hash(&mut hasher);
+            p.y.to_bits().hash(&mut hasher);
+            p.z.to_bits().hash(&mut hasher);
+        }
+        if let Some(last_p) = points.last() {
+            last_p.x.to_bits().hash(&mut hasher);
+            last_p.y.to_bits().hash(&mut hasher);
+            last_p.z.to_bits().hash(&mut hasher);
         }
         hasher.finish()
     }
@@ -2833,6 +3190,37 @@ mod tests {
             assert!((e.closest_point.y - a.closest_point.y).abs() < VULKAN_PARITY_TOLERANCE);
             assert!((e.closest_point.z - a.closest_point.z).abs() < VULKAN_PARITY_TOLERANCE);
         }
+    }
+
+    #[test]
+    fn vulkan_spatial_hausdorff_matches_cpu() {
+        let Some(vk) = global_vulkan() else {
+            return;
+        };
+        let pts_a: Vec<Point3> = (0_u32..64)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f * 0.15 - 2.0, (f * 0.3).sin(), (f * 0.2).cos())
+            })
+            .collect();
+        let pts_b: Vec<Point3> = (0_u32..53)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f * 0.15 - 1.92, (f * 0.3).sin() - 0.04, (f * 0.2).cos())
+            })
+            .collect();
+        let expected_h = crate::spatial::kd_hausdorff_distance(&pts_a, &pts_b);
+        let actual_h = vk
+            .compute_spatial_hausdorff(&pts_a, &pts_b)
+            .expect("Vulkan f64 spatial Hausdorff");
+        assert!((expected_h - actual_h).abs() < VULKAN_PARITY_TOLERANCE);
+
+        let close_a = [Point3::new(0.0, 0.0, 0.0), Point3::new(1000.0, 0.0, 0.0)];
+        let close_b = [Point3::new(0.0, 0.0, 0.0), Point3::new(1000.0, 1.0e-6, 0.0)];
+        let close_h = vk
+            .compute_spatial_hausdorff(&close_a, &close_b)
+            .expect("Vulkan close-points Hausdorff");
+        assert!((close_h - 1.0e-6).abs() < VULKAN_PARITY_TOLERANCE);
     }
 
     #[test]

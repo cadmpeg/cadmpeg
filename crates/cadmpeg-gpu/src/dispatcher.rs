@@ -418,7 +418,9 @@ impl GpuDispatcher {
             }
             BackendKind::PtxSm86 => None,
             BackendKind::CudaCompute => None,
-            BackendKind::VulkanCompute => None,
+            BackendKind::VulkanCompute => {
+                global_vulkan().and_then(|vk| vk.compute_spatial_hausdorff(points_a, points_b))
+            }
             BackendKind::Cpu => {
                 let dist_sq = cpu::pairwise_distance_squared(points_a, points_b);
                 Some(cpu::hausdorff_from_distance_squared_matrix(
@@ -957,7 +959,11 @@ fn benchmark_single(
                     let h = spatial::rayon_hausdorff_distance(&pts_a, &pts_b);
                     std::hint::black_box(h);
                 }
-                BackendKind::VulkanCompute => return None,
+                BackendKind::VulkanCompute => {
+                    let vk = global_vulkan()?;
+                    let h = vk.compute_spatial_hausdorff(&pts_a, &pts_b)?;
+                    std::hint::black_box(h);
+                }
                 BackendKind::VulkanRtCore => return None,
                 BackendKind::CudaCompute => return None,
                 BackendKind::PtxSm86 => return None,
