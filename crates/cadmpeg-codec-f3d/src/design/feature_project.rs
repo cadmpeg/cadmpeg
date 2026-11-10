@@ -3542,7 +3542,7 @@ fn draft_pull_vector(normal: Vector3, flipped: bool) -> Vector3 {
     }
 }
 
-/// Normal of the Design Geometry origin plane that a neutral-plane member names.
+/// Ordinal and normal of the Design Geometry origin plane that a group member names.
 ///
 /// The type table identifies the origin plane. An ASM entity can share its
 /// number, and such historical candidates describe unrelated topology.
