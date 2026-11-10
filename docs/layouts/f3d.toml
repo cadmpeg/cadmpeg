@@ -3289,10 +3289,39 @@ source = "spec"
 anchor = "a marked same-segment reference to the GUID record at offset 21"
 
 [[record]]
+name = "paramesh_operation_member_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its indexed header is followed by ten zero bytes and a marked same-segment mesh-body reference at offset 21."
+size = 32
+note = "Offsets are relative to the mesh operation member's indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes and a marked same-segment mesh-body reference at offset 21."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes and a marked same-segment mesh-body reference at offset 21."
+
+[[record.field]]
+name = "body_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked same-segment mesh-body reference at offset 21"
+
+[[record]]
 name = "paramesh_guid_join_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "Its indexed header is followed by 21 zero bytes, the 36-byte LP-ASCII `fusion_uuid` at offset 32"
+anchor = "Its indexed header is followed by ten zero bytes, eleven bytes at offset 21, the 36-byte LP-ASCII `fusion_uuid` at offset 32"
 size = 83
 note = "Offsets are relative to the container-GUID record's indexed header. A type-specific tail can follow the fixed join prefix."
 
@@ -3301,14 +3330,21 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "Its indexed header is followed by 21 zero bytes"
+anchor = "Its indexed header is followed by ten zero bytes, eleven bytes at offset 21"
 
 [[record.field]]
-name = "zero_run_21"
+name = "zero_run_10"
 offset = 11
-type = "bytes[21]"
+type = "bytes[10]"
 source = "spec"
-anchor = "followed by 21 zero bytes"
+anchor = "Its indexed header is followed by ten zero bytes, eleven bytes at offset 21"
+
+[[record.field]]
+name = "opaque_run_11"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "eleven bytes at offset 21"
 
 [[record.field]]
 name = "fusion_uuid"
@@ -3323,6 +3359,126 @@ offset = 72
 type = "bytes[11]"
 source = "spec"
 anchor = "a marked same-segment backlink to the entry-name record at offset 72"
+
+[[record]]
+name = "paramesh_flagged_mesh_body_join_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A mesh body can instead store byte `01` at offset 20, in place of the last of the ten zero bytes, and a u32 at offset 21."
+size = 568
+note = "Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes."
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "in place of the last of the ten zero bytes, and a u32 at offset 21"
+
+[[record.field]]
+name = "flag"
+offset = 20
+type = "u8"
+value = 1
+source = "spec"
+anchor = "A mesh body can instead store byte `01` at offset 20"
+
+[[record.field]]
+name = "flagged_word"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "and a u32 at offset 21."
+
+[[record.field]]
+name = "body_word"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "another u32 at offset 25"
+
+[[record.gap]]
+offset = 29
+size = 16
+note = "The remaining mesh-body prologue is outside this fixed join table."
+
+[[record.field]]
+name = "first_presence"
+offset = 45
+type = "u8"
+source = "spec"
+anchor = "offset 45 in the shifted form"
+
+[[record.field]]
+name = "first_transform"
+offset = 46
+type = "f64[16]"
+source = "spec"
+anchor = "the matrices start at offsets 46 and 175"
+
+[[record.gap]]
+offset = 174
+size = 1
+note = "One structural byte separates the two transform blocks."
+
+[[record.field]]
+name = "second_transform"
+offset = 175
+type = "f64[16]"
+source = "spec"
+anchor = "the matrices start at offsets 46 and 175"
+
+[[record.gap]]
+offset = 303
+size = 209
+note = "Presentation fields occupy the span before the feature-scope reference."
+
+[[record.field]]
+name = "feature_scope_reference"
+offset = 512
+type = "bytes[11]"
+source = "spec"
+anchor = "the five references start at offsets 512, 523, 534, 545, and 557"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 523
+type = "bytes[11]"
+source = "spec"
+anchor = "the five references start at offsets 512, 523, 534, 545, and 557"
+
+[[record.field]]
+name = "body_owner_reference"
+offset = 534
+type = "bytes[11]"
+source = "spec"
+anchor = "the five references start at offsets 512, 523, 534, 545, and 557"
+
+[[record.field]]
+name = "container_guid_reference"
+offset = 545
+type = "bytes[11]"
+source = "spec"
+anchor = "the five references start at offsets 512, 523, 534, 545, and 557"
+
+[[record.gap]]
+offset = 556
+size = 1
+note = "One structural byte separates the GUID and Scene-node references."
+
+[[record.field]]
+name = "scene_node_reference"
+offset = 557
+type = "bytes[11]"
+source = "spec"
+anchor = "the five references start at offsets 512, 523, 534, 545, and 557"
 
 [[record]]
 name = "paramesh_mesh_body_join_prefix"
@@ -3346,10 +3502,24 @@ type = "bytes[10]"
 source = "spec"
 anchor = "Its indexed header is followed by ten zero bytes."
 
-[[record.gap]]
+[[record.field]]
+name = "body_word"
 offset = 21
-size = 21
+type = "u32"
+source = "spec"
+anchor = "It stores a u32 at offset 21."
+
+[[record.gap]]
+offset = 25
+size = 16
 note = "The remaining mesh-body prologue is outside this fixed join table."
+
+[[record.field]]
+name = "first_presence"
+offset = 41
+type = "u8"
+source = "spec"
+anchor = "offset 41 in the unshifted form"
 
 [[record.field]]
 name = "first_transform"
@@ -3380,28 +3550,28 @@ name = "feature_scope_reference"
 offset = 508
 type = "bytes[11]"
 source = "spec"
-anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning feature scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
 
 [[record.field]]
 name = "wrapper_reference"
 offset = 519
 type = "bytes[11]"
 source = "spec"
-anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning feature scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
 
 [[record.field]]
 name = "body_owner_reference"
 offset = 530
 type = "bytes[11]"
 source = "spec"
-anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning feature scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
 
 [[record.field]]
 name = "container_guid_reference"
 offset = 541
 type = "bytes[11]"
 source = "spec"
-anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning feature scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
 
 [[record.gap]]
 offset = 552
@@ -3413,7 +3583,7 @@ name = "scene_node_reference"
 offset = 553
 type = "bytes[11]"
 source = "spec"
-anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning feature scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
 
 [[record]]
 name = "paramesh_mesh_collection_prefix"
@@ -3609,7 +3779,7 @@ anchor = "one nonempty u32-count UTF-16LE archive-entry basename"
 name = "paramesh_body_wrapper"
 kind = "byte"
 section = "3.1"
-anchor = "It is exactly 40 bytes: its indexed header, ten zero bytes, a marked same-segment body reference at offset 21, and eight zero bytes."
+anchor = "Its 40-byte prefix holds its indexed header, ten zero bytes, a marked same-segment body reference at offset 21, and eight zero bytes."
 size = 40
 
 [[record.field]]
@@ -3644,7 +3814,7 @@ anchor = "and eight zero bytes"
 name = "paramesh_feature_scope_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "Its indexed header is followed by ten zero bytes, a u32 body count at offset 21, and that many ordered marked same-segment body references at offset 25."
+anchor = "Its unflagged indexed header is followed by ten zero bytes, a u32 body count at offset 21, and that many ordered marked same-segment body references at offset 25."
 size = 25
 note = "Offsets are relative to the `Base Mesh Feature` indexed header. The ordered body-reference list starts at offset 25."
 
@@ -3653,7 +3823,7 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "Its indexed header is followed by ten zero bytes"
+anchor = "Its unflagged indexed header is followed by ten zero bytes"
 
 [[record.field]]
 name = "zero_run_10"
@@ -3668,6 +3838,47 @@ offset = 21
 type = "u32"
 source = "spec"
 anchor = "a u32 body count at offset 21"
+
+[[record]]
+name = "paramesh_flagged_feature_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A flagged scope stores byte `01` at offset 20 and a u32 at offset 21; its body count is at offset 25 and its body references start at offset 29."
+size = 29
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "Indexed header."
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "A flagged scope stores byte `01` at offset 20"
+
+[[record.field]]
+name = "flag"
+offset = 20
+type = "u8"
+value = 1
+source = "spec"
+anchor = "A flagged scope stores byte `01` at offset 20"
+
+[[record.field]]
+name = "flagged_word"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a u32 at offset 21; its body count is at offset 25"
+
+[[record.field]]
+name = "body_count"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "its body count is at offset 25 and its body references start at offset 29"
 
 [[record]]
 name = "paramesh_feature_scope_base"
@@ -3855,7 +4066,7 @@ anchor = "the 49-byte bounds payload at offset 212"
 name = "paramesh_collection_owner_backlink_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "In version 23, its marked same-segment reference at offset 262 points back to the collection."
+anchor = "In versions 22 and 23, its marked same-segment reference at offset 262 points back to the collection."
 size = 273
 note = "Offsets are relative to the collection-owner indexed header. The record can continue after this fixed backlink prefix."
 
@@ -3876,7 +4087,34 @@ name = "collection_backlink"
 offset = 262
 type = "bytes[11]"
 source = "spec"
-anchor = "In version 23, its marked same-segment reference at offset 262 points back to the collection."
+anchor = "In versions 22 and 23, its marked same-segment reference at offset 262 points back to the collection."
+
+[[record]]
+name = "paramesh_collection_owner_v21"
+kind = "byte"
+section = "3.1"
+anchor = "Version 21 stores a u32-count UTF-16LE name at offset 25"
+size = 29
+note = "Offsets are relative to the collection-owner indexed header. The name code units follow the count, and the later fields start at the version-22 offsets plus the name length."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The owner has type GUID"
+
+[[record.gap]]
+offset = 11
+size = 14
+note = "The owner payload before the name is outside this table."
+
+[[record.field]]
+name = "name_count"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "Version 21 stores a u32-count UTF-16LE name at offset 25"
 
 [[record]]
 name = "paramesh_collection_owner_v17"
@@ -21524,7 +21762,7 @@ anchor = "The adjacent carrier has EntityTracking type GUID"
 name = "paramesh_flagged_mesh_collection_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "An empty collection can instead store byte `01` at offset 20, in place of the last of the ten zero bytes, and a u32 at offset 25 after its first body count."
+anchor = "A collection can instead store byte `01` at offset 20, in place of the last of the ten zero bytes, and a u32 at offset 25 after its first body count."
 size = 42
 note = "Offsets are relative to the mesh-collection indexed header. The nested CommonData record starts at the end of this prefix."
 
@@ -21569,14 +21807,14 @@ name = "constant_01_01"
 offset = 29
 type = "bytes[2]"
 source = "spec"
-anchor = "Its bytes `01 01`, texture-table reference, and nested record then start at offsets 29, 31, and 42"
+anchor = "bytes `01 01`, the texture-table reference, and the nested record start at offsets 29, 31, and 42"
 
 [[record.field]]
 name = "texture_table_reference"
 offset = 31
 type = "bytes[11]"
 source = "spec"
-anchor = "Its bytes `01 01`, texture-table reference, and nested record then start at offsets 29, 31, and 42"
+anchor = "bytes `01 01`, the texture-table reference, and the nested record start at offsets 29, 31, and 42"
 
 [[record]]
 name = "referenced_angle_revolve_prologue"

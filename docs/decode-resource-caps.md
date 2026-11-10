@@ -226,6 +226,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-protein`        | `src/lib.rs`                                       | `MAX_RECOVERY_VALUES`                     | `1_024`                                                 | 2    | Declared value count of one property. Excess is `Malformed`; the record goes to `rejected`.                                                                                                                                                                                  |
 | `cadmpeg-protein`        | `src/lib.rs`                                       | `MAX_INHERITED_PROPERTIES`                | `1 << 18`                                               | 4    | Property entries one `SchemaCatalog` materializes across all inherited schema closures, checked before each closure is cloned. A schema that would pass it is not resolved and its record goes to `rejected`; Inventor reports `protein.asset-rejected` and F3D a note.      |
 | `cadmpeg`                | `src/query/mod.rs`                                 | `MAX_QUERY_INPUT_BYTES`                   | `256 * 1024 * 1024`                                     | N    | CLI `query` input file size; not a decode path.                                                                                                                                                                                                                              |
+| `cadmpeg`                | `src/query/mod.rs`                                 | `MAX_COUNTS_INPUT_BYTES`                  | `1024 * 1024 * 1024`                                    | N    | CLI `query counts` streamed input file size; not a decode path.                                                                                                                                                                                                                              |
 | `cadmpeg` | `src/repro.rs` | `MAX_REPRO_INPUT_BYTES` | `256 * 1024 * 1024` | N | Reproduction report and bundle JSON input size. |
 | `cadmpeg`                | `src/inspect/numeric.rs`                           | `MAX_WIDTH`                               | `8`                                                     | N    | Widest scalar type `inspect read` decodes.                                                                                                                                                                                                                                   |
 | `cadmpeg-codec-step`     | `src/strings.rs`                                   | `MAX_STORED_STRING_OCTETS`                | `32_767`                                                | 2    | Encoded length of one string token before decoding. Excess is a `StringError` for that token.                                                                                                                                                                                |
@@ -544,7 +545,7 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 329.
+Production `MAX_*` constants: 330.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
@@ -552,14 +553,14 @@ Production `MAX_*` constants: 329.
 | 2    | Per-input bound            | 76    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 165   |
-| N    | Not a decode bound         | 46    |
-|      | Total                      | 329   |
+| N    | Not a decode bound         | 47    |
+|      | Total                      | 330   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
-`cadmpeg-protein` 3, `cadmpeg` 3, `cadmpeg-codec-step` 8,
+`cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 5,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 24,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 36,

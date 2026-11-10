@@ -22,7 +22,7 @@ use cadmpeg_ir::units::UnitVector3;
 use std::collections::HashSet;
 
 use crate::records::mesh::DesignMeshUuid;
-use cadmpeg_core::decode::index_from_u32;
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 /// Container magic.
 const MAGIC: [u8; 12] = [
@@ -105,6 +105,9 @@ const PACKED_DIRECTION_BYTES: u32 = 8;
 
 /// One mesh body's decoded geometry.
 pub(crate) struct MeshContainer {
+    pub(crate) split_streams: Vec<crate::records::mesh::DesignMeshSplitStream>,
+    pub(crate) history_streams: Vec<crate::records::mesh::DesignMeshHistoryStream>,
+    pub(crate) face_group_metadata: Option<crate::records::mesh::DesignMeshFaceGroups>,
     /// The ASCII GUID the protobuf message carries as `fusion_uuid`, which the
     /// container's Design-segment GUID record repeats.
     pub(crate) fusion_uuid: String,
@@ -1009,6 +1012,8 @@ fn message_pack_name_table(bytes: &[u8]) -> Result<UniqueStreamNames, CodecError
 /// Descriptor and decompressed bytes of one named stream.
 struct MeshStream {
     descriptor: Vec<(String, StreamDescriptorValue)>,
+    split_descriptor: Option<Vec<u8>>,
+    history_lengths: Vec<u32>,
     bytes: Vec<u8>,
 }
 
@@ -1016,11 +1021,18 @@ struct MeshStream {
 enum StreamDescriptorValue {
     Integer(u64),
     Boolean(bool),
+    Array2([u64; 2]),
+    Array3([u64; 3]),
+    Array4([u64; 4]),
 }
 
 /// Read the scalar-valued `MessagePack` descriptor map of one kind-4 chunk.
 fn stream_descriptor(bytes: &[u8]) -> Result<Vec<(String, StreamDescriptorValue)>, CodecError> {
-    fn value(bytes: &[u8], at: &mut usize) -> Result<StreamDescriptorValue, CodecError> {
+    fn value(
+        bytes: &[u8],
+        at: &mut usize,
+        allow_array: bool,
+    ) -> Result<StreamDescriptorValue, CodecError> {
         let tag = *bytes
             .get(*at)
             .ok_or_else(|| CodecError::malformed("paramesh stream descriptor is truncated"))?;
@@ -1029,6 +1041,23 @@ fn stream_descriptor(bytes: &[u8]) -> Result<Vec<(String, StreamDescriptorValue)
             0x00..=0x7f => return Ok(StreamDescriptorValue::Integer(u64::from(tag))),
             0xc2 => return Ok(StreamDescriptorValue::Boolean(false)),
             0xc3 => return Ok(StreamDescriptorValue::Boolean(true)),
+            0x92..=0x94 if allow_array => {
+                let mut values = [0; 4];
+                let count = usize::from(tag - 0x90);
+                for slot in &mut values[..count] {
+                    let StreamDescriptorValue::Integer(number) = value(bytes, at, false)? else {
+                        return Err(CodecError::malformed(
+                            "paramesh split stream size is not an integer",
+                        ));
+                    };
+                    *slot = number;
+                }
+                return Ok(match count {
+                    2 => StreamDescriptorValue::Array2([values[0], values[1]]),
+                    3 => StreamDescriptorValue::Array3([values[0], values[1], values[2]]),
+                    _ => StreamDescriptorValue::Array4(values),
+                });
+            }
             0xcc => 1,
             0xcd => 2,
             0xce => 4,
@@ -1088,7 +1117,7 @@ fn stream_descriptor(bytes: &[u8]) -> Result<Vec<(String, StreamDescriptorValue)
                 "paramesh stream descriptor repeats a key",
             ));
         }
-        let descriptor_value = value(bytes, &mut at)?;
+        let descriptor_value = value(bytes, &mut at, true)?;
         entries.push((key, descriptor_value));
     }
     if at != bytes.len() {
@@ -1102,6 +1131,14 @@ fn stream_descriptor(bytes: &[u8]) -> Result<Vec<(String, StreamDescriptorValue)
 /// Inflate one kind-4 chunk body: the descriptor map, the uncompressed byte
 /// count, the two LZMA1 property bytes, and the raw LZMA1 stream.
 fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, CodecError> {
+    inflate_stream_inner(ctx, body, true)
+}
+
+fn inflate_stream_inner(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    allow_split: bool,
+) -> Result<MeshStream, CodecError> {
     // LZMA1 uses 8 literal contexts, four 64-entry position trees, a
     // 16-entry alignment tree and two length decoders of 512 probabilities.
     // The dictionary reservation also covers its old buffer during growth.
@@ -1117,6 +1154,105 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
         body.get(2..at)
             .ok_or_else(|| CodecError::malformed("paramesh stream descriptor is truncated"))?,
     )?;
+    let split_sizes = descriptor
+        .iter()
+        .find_map(|(name, value)| match (name.as_str(), value) {
+            ("S", StreamDescriptorValue::Array2(sizes)) => Some(sizes.as_slice()),
+            ("S", StreamDescriptorValue::Array3(sizes)) => Some(sizes.as_slice()),
+            ("S", StreamDescriptorValue::Array4(sizes)) => Some(sizes.as_slice()),
+            _ => None,
+        });
+    if let Some(sizes) = split_sizes {
+        let packed = descriptor
+            .iter()
+            .any(|(name, value)| name == "U" && *value == StreamDescriptorValue::Boolean(true));
+        let dimension = if packed {
+            3
+        } else {
+            u64_from_index(sizes.len())
+        };
+        let expected = [
+            ("D", StreamDescriptorValue::Integer(dimension)),
+            ("I", StreamDescriptorValue::Boolean(true)),
+            ("T", StreamDescriptorValue::Integer(3)),
+        ];
+        if !allow_split
+            || descriptor.len() != if packed { 5 } else { 4 }
+            || (packed && sizes.len() != 2)
+            || expected.iter().any(|(name, value)| {
+                !descriptor
+                    .iter()
+                    .any(|(key, found)| key == name && found == value)
+            })
+        {
+            return Err(CodecError::malformed(
+                "paramesh split stream descriptor is invalid",
+            ));
+        }
+        let mut components = Vec::new();
+        let mut history_lengths = Vec::new();
+        let mut position = at;
+        for (ordinal, size) in sizes.iter().enumerate() {
+            let length = usize::try_from(*size).map_err(|_| {
+                CodecError::malformed("paramesh split stream size exceeds address space")
+            })?;
+            let end = position
+                .checked_add(length)
+                .filter(|end| *end <= body.len())
+                .ok_or_else(|| CodecError::malformed("paramesh split stream is truncated"))?;
+            let component = inflate_stream_inner(ctx, &body[position..end], false).map_err(
+                |error| match error {
+                    CodecError::ResourceLimit(_) => error,
+                    other => CodecError::malformed(format_args!(
+                        "paramesh split component {ordinal}: {other}"
+                    )),
+                },
+            )?;
+            if component.descriptor != [("T".to_owned(), StreamDescriptorValue::Integer(3))]
+                || component.bytes.len() % 4 != 0
+            {
+                return Err(CodecError::malformed(
+                    "paramesh split component has an invalid descriptor or length",
+                ));
+            }
+            history_lengths.extend(component.history_lengths);
+            components.push(component.bytes);
+            position = end;
+        }
+        if position != body.len()
+            || components
+                .iter()
+                .any(|component| component.len() != components[0].len())
+        {
+            return Err(CodecError::malformed(
+                "paramesh split components have incompatible lengths",
+            ));
+        }
+        let length = components[0]
+            .len()
+            .checked_mul(sizes.len())
+            .ok_or_else(|| CodecError::malformed("paramesh split stream length overflows"))?;
+        let mut bytes = ctx.alloc_filled(length, 0u8, "interleave paramesh components")?;
+        for (ordinal, component) in components.iter().enumerate() {
+            for (index, value) in component.chunks_exact(4).enumerate() {
+                let start = index * sizes.len() * 4 + ordinal * 4;
+                bytes[start..start + 4].copy_from_slice(value);
+            }
+        }
+        let mut descriptor = vec![
+            ("D".into(), StreamDescriptorValue::Integer(dimension)),
+            ("T".into(), StreamDescriptorValue::Integer(3)),
+        ];
+        if packed {
+            descriptor.push(("U".into(), StreamDescriptorValue::Boolean(true)));
+        }
+        return Ok(MeshStream {
+            descriptor,
+            split_descriptor: Some(body[2..at].to_vec()),
+            history_lengths,
+            bytes,
+        });
+    }
     let declared = View::u32_le_at(body, at)
         .ok_or_else(|| CodecError::malformed("paramesh stream chunk is truncated"))?;
     if declared > MAX_STREAM_BYTES {
@@ -1141,6 +1277,8 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
         }
         return Ok(MeshStream {
             descriptor,
+            split_descriptor: None,
+            history_lengths: Vec::new(),
             bytes: payload.to_vec(),
         });
     }
@@ -1158,7 +1296,9 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
     // dictionary exponent.
     let mut framed = Vec::new();
     framed.push(LZMA_PROPERTIES);
-    framed.extend_from_slice(&(1u32 << LZMA_DICTIONARY_LOG).to_le_bytes());
+    let nominal_window = 1u32 << LZMA_DICTIONARY_LOG;
+    let window = nominal_window.max(declared);
+    framed.extend_from_slice(&window.to_le_bytes());
     framed.extend_from_slice(payload);
 
     let mut writer = LzmaOutput {
@@ -1172,7 +1312,9 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
             unpacked_size: lzma_rs::decompress::UnpackedSize::UseProvided(Some(u64::from(
                 declared,
             ))),
-            memlimit: Some(1 << usize::from(LZMA_DICTIONARY_LOG)),
+            memlimit: Some(usize::try_from(window).map_err(|_| {
+                CodecError::malformed("paramesh history size exceeds address space")
+            })?),
             allow_incomplete: false,
         },
     )
@@ -1183,6 +1325,12 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
     })?;
     Ok(MeshStream {
         descriptor,
+        split_descriptor: None,
+        history_lengths: if window > nominal_window {
+            vec![declared]
+        } else {
+            Vec::new()
+        },
         bytes: writer.expansion.finalize_owned()?,
     })
 }
@@ -1962,9 +2110,68 @@ pub(crate) fn decode_mesh_container(
     let feature_edges =
         registry_feature_edges(message, &name_table, &streams, &triangles, vertices.len())?;
     let corner_normals = decode_corner_normals(&attributes, vertices.len(), &triangles)?;
-    let triangle_groups = registry_triangle_groups(&attributes, registry.face_group_count)?;
+    let mut triangle_groups = registry_triangle_groups(&attributes, registry.face_group_count)?;
+    let face_group_metadata = attributes
+        .iter()
+        .find(|attribute| {
+            attribute.role == 0
+                && attribute.addressing.domain() == MeshAttributeDomain::Triangle
+                && matches!(attribute.elements, MeshElements::TriangleDelta(_))
+        })
+        .and_then(|attribute| {
+            let actual = attribute.groups.len();
+            let unused = triangle_groups
+                .iter()
+                .any(|group| group.triangles.is_empty());
+            if usize::try_from(registry.face_group_count).ok() == Some(actual) && !unused {
+                return None;
+            }
+            Some(crate::records::mesh::DesignMeshFaceGroups {
+                declared_count: registry.face_group_count,
+                entries: attribute
+                    .groups
+                    .iter()
+                    .map(|(key, guid)| crate::records::mesh::DesignMeshFaceGroup {
+                        key: *key,
+                        guid: guid.to_owned(),
+                    })
+                    .collect(),
+            })
+        });
+    triangle_groups.retain(|group| !group.triangles.is_empty());
     let texture_ids = registry_texture_ids(&attributes)?;
+    let split_streams = name_table
+        .iter()
+        .zip(&streams)
+        .filter_map(|((name, _), stream)| {
+            stream.split_descriptor.as_ref().map(|descriptor| {
+                crate::records::mesh::DesignMeshSplitStream {
+                    name: name.clone(),
+                    descriptor: cadmpeg_ir::native::bytes::NativeBytes::new(descriptor.clone()),
+                }
+            })
+        })
+        .collect();
+    let history_streams = name_table
+        .iter()
+        .zip(&streams)
+        .flat_map(|((name, _), stream)| {
+            stream.history_lengths.iter().map(|length| {
+                crate::records::mesh::DesignMeshHistoryStream {
+                    name: name.clone(),
+                    encoding: cadmpeg_ir::native::bytes::NativeBytes::new([
+                        LZMA_PROPERTIES,
+                        LZMA_DICTIONARY_LOG,
+                    ]),
+                    decoded_length: *length,
+                }
+            })
+        })
+        .collect();
     Ok(MeshContainer {
+        split_streams,
+        history_streams,
+        face_group_metadata,
         fusion_uuid: registry.fusion_uuid,
         mesh_uuid: registry.mesh_uuid,
         vertices,
@@ -2200,7 +2407,6 @@ fn registry_triangle_groups(
     };
     if channel.resource_guid.is_some()
         || channel.authored_name.is_some()
-        || channel.groups.len() != declared_count
         || channel.groups.is_empty()
     {
         return Err(CodecError::malformed(
@@ -2224,11 +2430,6 @@ fn registry_triangle_groups(
         let ordinal = u32::try_from(triangle)
             .map_err(|_| CodecError::malformed("paramesh triangle ordinal is out of range"))?;
         memberships[*group_index].triangles.push(ordinal);
-    }
-    if memberships.iter().any(|group| group.triangles.is_empty()) {
-        return Err(CodecError::malformed(
-            "paramesh face-group record has no triangle membership",
-        ));
     }
     Ok(memberships)
 }
@@ -3030,13 +3231,25 @@ mod tests {
         assert_eq!(mesh.triangle_groups[0].triangles, [0]);
         assert_eq!(mesh.triangle_groups[1].triangles, [1]);
 
-        assert_malformed(decode_mesh_container(&container_with_registry_and_groups(
+        let mismatch = decode_mesh_container(&container_with_registry_and_groups(
             &TWO_TRIANGLE_VERTICES,
             &TWO_TRIANGLE_CORNERS,
             &registry,
             &[("r0", delta_descriptor(), terminal_delta_values(&[0, 1]))],
             1,
-        )));
+        ))
+        .expect("face group entries define the partition");
+        assert_eq!(mismatch.triangle_groups.len(), 2);
+        let metadata = mismatch.face_group_metadata.unwrap();
+        assert_eq!(metadata.declared_count, 1);
+        assert_eq!(
+            metadata
+                .entries
+                .iter()
+                .map(|entry| entry.key)
+                .collect::<Vec<_>>(),
+            [0, 1]
+        );
         assert_malformed(decode_mesh_container(&container_with_registry_and_groups(
             &TWO_TRIANGLE_VERTICES,
             &TWO_TRIANGLE_CORNERS,
@@ -3405,6 +3618,277 @@ mod tests {
     }
 
     #[test]
+    fn split_stream_interleaves_three_component_segments() {
+        let component_descriptor = [0x81, 0xa1, b'T', 3];
+        let component = |first: f32, second: f32| {
+            let mut payload = Vec::new();
+            payload.extend_from_slice(&first.to_le_bytes());
+            payload.extend_from_slice(&second.to_le_bytes());
+            raw_stream_body(&component_descriptor, 8, &payload)
+        };
+        let parts = [
+            component(1.0, 4.0),
+            component(2.0, 5.0),
+            component(3.0, 6.0),
+        ];
+        let descriptor = [
+            0x84, 0xa1, b'D', 3, 0xa1, b'I', 0xc3, 0xa1, b'S', 0x93, 20, 20, 20, 0xa1, b'T', 3,
+        ];
+        let mut body = Vec::new();
+        body.extend_from_slice(&u16::try_from(descriptor.len()).unwrap().to_le_bytes());
+        body.extend_from_slice(&descriptor);
+        for part in parts {
+            body.extend_from_slice(&part);
+        }
+        let stream = inflate_stream(&body).unwrap();
+        let expected = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert_eq!(stream.bytes, expected);
+        assert_eq!(stream.split_descriptor, Some(descriptor.to_vec()));
+    }
+
+    #[test]
+    fn split_stream_supports_two_and_four_float_components() {
+        for dimension in [2u8, 4] {
+            let mut descriptor = vec![
+                0x84,
+                0xa1,
+                b'D',
+                dimension,
+                0xa1,
+                b'I',
+                0xc3,
+                0xa1,
+                b'S',
+                0x90 + dimension,
+            ];
+            descriptor.extend(std::iter::repeat_n(16, usize::from(dimension)));
+            descriptor.extend_from_slice(&[0xa1, b'T', 3]);
+            let mut body = Vec::new();
+            body.extend_from_slice(&u16::try_from(descriptor.len()).unwrap().to_le_bytes());
+            body.extend_from_slice(&descriptor);
+            for value in 1..=dimension {
+                body.extend_from_slice(&raw_stream_body(
+                    &[0x81, 0xa1, b'T', 3],
+                    4,
+                    &f32::from(value).to_le_bytes(),
+                ));
+            }
+            let stream = inflate_stream(&body).unwrap();
+            let expected = (1..=dimension)
+                .flat_map(|value| f32::from(value).to_le_bytes())
+                .collect::<Vec<_>>();
+            assert_eq!(stream.bytes, expected);
+            assert_eq!(stream.split_descriptor, Some(descriptor));
+            assert!(require_version_2_descriptor(&stream).is_ok());
+        }
+    }
+
+    #[test]
+    fn split_direction_stream_interleaves_two_component_segments() {
+        let component_descriptor = [0x81, 0xa1, b'T', 3];
+        let part = |first: f32, second: f32| {
+            let mut payload = Vec::new();
+            payload.extend_from_slice(&first.to_le_bytes());
+            payload.extend_from_slice(&second.to_le_bytes());
+            raw_stream_body(&component_descriptor, 8, &payload)
+        };
+        let descriptor = [
+            0x85, 0xa1, b'D', 3, 0xa1, b'I', 0xc3, 0xa1, b'S', 0x92, 20, 20, 0xa1, b'T', 3, 0xa1,
+            b'U', 0xc3,
+        ];
+        let mut body = Vec::new();
+        body.extend_from_slice(&u16::try_from(descriptor.len()).unwrap().to_le_bytes());
+        body.extend_from_slice(&descriptor);
+        body.extend_from_slice(&part(1.0, 3.0));
+        body.extend_from_slice(&part(2.0, 4.0));
+        let stream = inflate_stream(&body).unwrap();
+        let expected = [1.0f32, 2.0, 3.0, 4.0]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert_eq!(stream.bytes, expected);
+        assert_eq!(stream.split_descriptor, Some(descriptor.to_vec()));
+        assert!(require_version_2_descriptor(&stream).is_ok());
+    }
+
+    #[test]
+    fn lzma_history_extends_to_the_declared_length_beyond_one_mebibyte() {
+        const PAYLOAD: &str = "0053a48ba682b207b0fc90f390f421bbe0454d93fbdef3696a4b6d4d92722dce9b3e68c474434892c98c07c5beb98dca44aeaba9ab2223f2882aee8b03d2f91f0db2d992bc4bd6264eb20170048e0fbb4664c8d8d61d6518c42f1d81863421753d7e9f702f114b4d2d35d5979c83aa50622bdb69839a374be1eb877da227ab52d1b16c861b74f87be1e3b043fceff052a73d3f97ecb51a94141b4e995df947fa4ee752e2920656199e449ee2d2e446f654f088752c30dbc2505491229706035fc9703b14c0323798a51501a5e8a3092aecaaff5a26ac720c1692a7be398f24e1709ea7235fec28cb85d195988a7e2a91f22775f719c006984d98fdd8afd5900fc42553f8f591363105a5b0ee6fc1704d470cd19111aaad5ffb0606e2778f2008a66bfffecd0a40";
+        let head = (0..64u32)
+            .map(|index| u8::try_from((index * 73 + 41) * 151 % 251).unwrap())
+            .collect::<Vec<_>>();
+        let mut expected = head.clone();
+        expected.resize(head.len() + (1 << 20) + 4096, 0);
+        expected.extend_from_slice(&head);
+        let payload = (0..PAYLOAD.len())
+            .step_by(2)
+            .map(|at| u8::from_str_radix(&PAYLOAD[at..at + 2], 16).unwrap())
+            .collect::<Vec<_>>();
+        let descriptor = [0x81, 0xa1, b'T', 0];
+        let mut body = Vec::new();
+        body.extend_from_slice(&u16::try_from(descriptor.len()).unwrap().to_le_bytes());
+        body.extend_from_slice(&descriptor);
+        body.extend_from_slice(&1_052_800u32.to_le_bytes());
+        body.extend_from_slice(&[LZMA_PROPERTIES, LZMA_DICTIONARY_LOG]);
+        body.extend_from_slice(&payload);
+        let stream = inflate_stream(&body).expect("history beyond one mebibyte");
+        assert_eq!(stream.bytes.len(), 1_052_800);
+        assert_eq!(stream.bytes, expected);
+        assert_eq!(stream.history_lengths, [1_052_800]);
+    }
+
+    fn split_part(payload: &[u8]) -> Vec<u8> {
+        raw_stream_body(
+            &[0x81, 0xa1, b'T', 3],
+            u32::try_from(payload.len()).unwrap(),
+            payload,
+        )
+    }
+
+    fn split_body(descriptor: &[u8], parts: &[Vec<u8>], trailing: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&u16::try_from(descriptor.len()).unwrap().to_le_bytes());
+        body.extend_from_slice(descriptor);
+        for part in parts {
+            body.extend_from_slice(part);
+        }
+        body.extend_from_slice(trailing);
+        body
+    }
+
+    fn three_way_split(dimension: u8, sizes: [u8; 3]) -> Vec<u8> {
+        vec![
+            0x84, 0xa1, b'D', dimension, 0xa1, b'I', 0xc3, 0xa1, b'S', 0x93, sizes[0], sizes[1],
+            sizes[2], 0xa1, b'T', 3,
+        ]
+    }
+
+    fn one_value_parts() -> [Vec<u8>; 3] {
+        let part = split_part(&1.0f32.to_le_bytes());
+        assert_eq!(part.len(), 16);
+        [part.clone(), part.clone(), part]
+    }
+
+    #[test]
+    fn split_stream_with_one_value_per_component_decodes() {
+        let stream = inflate_stream(&split_body(
+            &three_way_split(3, [16; 3]),
+            &one_value_parts(),
+            &[],
+        ))
+        .unwrap();
+        assert_eq!(stream.bytes, [1.0f32; 3].map(f32::to_le_bytes).concat());
+    }
+
+    #[test]
+    fn split_stream_refuses_a_dimension_that_differs_from_its_segment_count() {
+        assert!(inflate_stream(&split_body(
+            &three_way_split(2, [16; 3]),
+            &one_value_parts(),
+            &[],
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn packed_split_stream_refuses_three_segments() {
+        let packed = [
+            0x85, 0xa1, b'D', 3, 0xa1, b'I', 0xc3, 0xa1, b'S', 0x93, 16, 16, 16, 0xa1, b'T', 3,
+            0xa1, b'U', 0xc3,
+        ];
+        assert!(inflate_stream(&split_body(&packed, &one_value_parts(), &[])).is_err());
+    }
+
+    #[test]
+    fn split_stream_refuses_a_nested_split_component() {
+        let [first, second, third] = one_value_parts();
+        let nested = split_body(
+            &three_way_split(3, [16; 3]),
+            &[first, second.clone(), third.clone()],
+            &[],
+        );
+        let nested_size = u8::try_from(nested.len()).unwrap();
+        let error = inflate_stream(&split_body(
+            &three_way_split(3, [nested_size, 16, 16]),
+            &[nested, second, third],
+            &[],
+        ))
+        .err()
+        .expect("a nested split stream is refused");
+        assert_eq!(
+            error.to_string(),
+            CodecError::malformed(
+                "paramesh split component 0: malformed container: paramesh split stream descriptor is invalid"
+            )
+            .to_string()
+        );
+    }
+
+    #[test]
+    fn split_stream_refuses_components_of_unequal_length() {
+        let one = split_part(&1.0f32.to_le_bytes());
+        let two = split_part(&[1.0f32, 2.0].map(f32::to_le_bytes).concat());
+        assert!(inflate_stream(&split_body(
+            &three_way_split(3, [16, 20, 16]),
+            &[one.clone(), two, one],
+            &[],
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn split_stream_refuses_a_component_that_is_not_whole_f32_values() {
+        let odd = split_part(&[1, 2, 3]);
+        assert!(inflate_stream(&split_body(
+            &three_way_split(3, [15; 3]),
+            &[odd.clone(), odd.clone(), odd],
+            &[],
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn split_stream_refuses_bytes_after_its_last_component() {
+        assert!(inflate_stream(&split_body(
+            &three_way_split(3, [16; 3]),
+            &one_value_parts(),
+            &[0],
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn a_face_group_without_triangles_stays_in_the_metadata_only() {
+        const GROUP_A: &str = "d46db2ae-2a8b-4624-b83c-bcb6cbce247f";
+        const GROUP_B: &str = "7619477f-0f38-4b32-860e-81c9feb3d0f4";
+        let registry = face_group_channel_entry("r0", &[(0, GROUP_A), (1, GROUP_B)]);
+        let mesh = decode_mesh_container(&container_with_registry_and_groups(
+            &TWO_TRIANGLE_VERTICES,
+            &TWO_TRIANGLE_CORNERS,
+            &registry,
+            &[("r0", delta_descriptor(), terminal_delta_values(&[0, 0]))],
+            2,
+        ))
+        .expect("one face group holds both triangles");
+        assert_eq!(mesh.triangle_groups.len(), 1);
+        assert_eq!(mesh.triangle_groups[0].source_id, GROUP_A);
+        assert_eq!(mesh.triangle_groups[0].triangles, [0, 1]);
+        let metadata = mesh.face_group_metadata.expect("retained face groups");
+        assert_eq!(metadata.declared_count, 2);
+        assert_eq!(
+            metadata
+                .entries
+                .iter()
+                .map(|entry| (entry.key, entry.guid.as_str()))
+                .collect::<Vec<_>>(),
+            [(0, GROUP_A), (1, GROUP_B)]
+        );
+    }
+
+    #[test]
     fn stream_descriptor_retains_boolean_values() {
         assert_eq!(
             stream_descriptor(&[0x83, 0xa1, b'D', 3, 0xa1, b'T', 3, 0xa1, b'U', 0xc3])
@@ -3429,6 +3913,8 @@ mod tests {
         ] {
             let stream = MeshStream {
                 descriptor: stream_descriptor(&descriptor).expect("version-2 descriptor"),
+                split_descriptor: None,
+                history_lengths: Vec::new(),
                 bytes: Vec::new(),
             };
             assert!(require_version_2_descriptor(&stream).is_ok());
@@ -3440,6 +3926,8 @@ mod tests {
         ] {
             let stream = MeshStream {
                 descriptor: stream_descriptor(&descriptor).expect("scalar descriptor"),
+                split_descriptor: None,
+                history_lengths: Vec::new(),
                 bytes: Vec::new(),
             };
             assert!(matches!(

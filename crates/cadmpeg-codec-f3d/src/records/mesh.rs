@@ -8,6 +8,7 @@ use super::references::DesignClassTag;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::AssetId;
 use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::transform::Transform;
 use serde::{Deserialize, Serialize};
 
@@ -727,25 +728,37 @@ impl From<DesignMeshUuid> for String {
 pub(crate) struct DesignMeshGuid {
     record: DesignMeshRecordIdentity,
     value: DesignGuidText,
+    opaque_run: Option<[u8; 11]>,
 }
 
 impl DesignMeshGuid {
     pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         value: DesignGuidText,
+        opaque_run: Option<[u8; 11]>,
     ) -> Result<Self, String> {
         if record.frame_length() < u64_from_index(crate::layout::paramesh_guid_join_prefix::LEN) {
             return Err(
                 "guid_record.frame_length must contain the complete GUID join prefix".into(),
             );
         }
-        Ok(Self { record, value })
+        if opaque_run == Some([0; 11]) {
+            return Err("guid_opaque_bytes must be absent when all eleven bytes are zero".into());
+        }
+        Ok(Self {
+            record,
+            value,
+            opaque_run,
+        })
     }
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
     pub(crate) fn value(&self) -> &str {
         self.value.as_str()
+    }
+    pub(crate) fn opaque_run(&self) -> Option<&[u8; 11]> {
+        self.opaque_run.as_ref()
     }
     fn value_offset(&self) -> u64 {
         self.record.byte_offset()
@@ -799,24 +812,221 @@ impl DesignMeshEntryName {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MeshBodyLayout {
+    pub(crate) len: usize,
+    pub(crate) first_transform: usize,
+    pub(crate) second_transform: usize,
+    pub(crate) feature_scope_reference: usize,
+    pub(crate) wrapper_reference: usize,
+    pub(crate) body_owner_reference: usize,
+    pub(crate) container_guid_reference: usize,
+    pub(crate) scene_node_reference: usize,
+}
+
+impl MeshBodyLayout {
+    pub(crate) const fn of(flagged: bool) -> Self {
+        if flagged {
+            use crate::layout::paramesh_flagged_mesh_body_join_prefix as body;
+            Self {
+                len: body::LEN,
+                first_transform: body::FIRST_TRANSFORM,
+                second_transform: body::SECOND_TRANSFORM,
+                feature_scope_reference: body::FEATURE_SCOPE_REFERENCE,
+                wrapper_reference: body::WRAPPER_REFERENCE,
+                body_owner_reference: body::BODY_OWNER_REFERENCE,
+                container_guid_reference: body::CONTAINER_GUID_REFERENCE,
+                scene_node_reference: body::SCENE_NODE_REFERENCE,
+            }
+        } else {
+            use crate::layout::paramesh_mesh_body_join_prefix as body;
+            Self {
+                len: body::LEN,
+                first_transform: body::FIRST_TRANSFORM,
+                second_transform: body::SECOND_TRANSFORM,
+                feature_scope_reference: body::FEATURE_SCOPE_REFERENCE,
+                wrapper_reference: body::WRAPPER_REFERENCE,
+                body_owner_reference: body::BODY_OWNER_REFERENCE,
+                container_guid_reference: body::CONTAINER_GUID_REFERENCE,
+                scene_node_reference: body::SCENE_NODE_REFERENCE,
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct VariableMeshBodyLayout {
+    pub(crate) presence_offsets: [u64; 2],
+    pub(crate) reference_offsets: [u64; 5],
+}
+
 /// Mesh-body placement and the complete prefix plus terminal collection reference.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignMeshPlacement {
     record: DesignMeshRecordIdentity,
     transform: MeshAffineTransform,
+    flagged: bool,
+    body_name: Option<String>,
+    native_frame: Option<NativeBytes>,
+    variable_layout: Option<VariableMeshBodyLayout>,
 }
 
 impl DesignMeshPlacement {
     pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         transform: MeshAffineTransform,
+        flagged: bool,
     ) -> Result<Self, String> {
-        if record.frame_length()
-            < u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::LEN) + 11
-        {
+        if record.frame_length() < u64_from_index(MeshBodyLayout::of(flagged).len) + 11 {
             return Err("body_record.frame_length must contain the join prefix and final collection reference".into());
         }
-        Ok(Self { record, transform })
+        Ok(Self {
+            record,
+            transform,
+            flagged,
+            body_name: None,
+            native_frame: None,
+            variable_layout: None,
+        })
+    }
+    pub(crate) fn with_native_frame(
+        mut self,
+        body_name: String,
+        native_frame: NativeBytes,
+    ) -> Result<Self, String> {
+        if self.flagged
+            || u64::try_from(native_frame.len()).ok() != Some(self.record.frame_length())
+        {
+            return Err("native mesh-body frame must match its record extent".into());
+        }
+        let (stored_name, end) = crate::bytes::lp_utf16_bounded(
+            native_frame.as_ref(),
+            MeshBodyLayout::of(false).len,
+            0..=native_frame.len(),
+        )
+        .ok_or("native mesh-body frame must contain a body name")?;
+        if stored_name != body_name || end > native_frame.len() - 11 {
+            return Err("body_name must match the native mesh-body frame".into());
+        }
+        self.body_name = Some(body_name);
+        self.native_frame = Some(native_frame);
+        Ok(self)
+    }
+    pub(crate) fn new_variable(
+        record: DesignMeshRecordIdentity,
+        transform: MeshAffineTransform,
+        flagged: bool,
+        body_name: String,
+        native_frame: NativeBytes,
+        layout: VariableMeshBodyLayout,
+    ) -> Result<Self, String> {
+        if u64::try_from(native_frame.len()).ok() != Some(record.frame_length()) {
+            return Err("native mesh-body frame must match its record extent".into());
+        }
+        let first_presence = if flagged {
+            crate::layout::paramesh_flagged_mesh_body_join_prefix::FIRST_PRESENCE
+        } else {
+            crate::layout::paramesh_mesh_body_join_prefix::FIRST_PRESENCE
+        };
+        if layout.presence_offsets[0] != u64_from_index(first_presence) {
+            return Err("first matrix presence offset does not match its prefix".into());
+        }
+        let mut next = first_presence;
+        for offset in layout.presence_offsets {
+            if usize::try_from(offset).ok() != Some(next) {
+                return Err("matrix presence bytes must be contiguous with their payloads".into());
+            }
+            let mut view = cadmpeg_core::decode::View::over_retained(native_frame.as_ref());
+            view.seek(next)
+                .ok_or("matrix presence offset is outside the frame")?;
+            match view.u8() {
+                Some(0) => {
+                    let mut cells = [0.0; 16];
+                    for (index, cell) in cells.iter_mut().enumerate() {
+                        *cell = cadmpeg_core::decode::View::f64_le_at(
+                            native_frame.as_ref(),
+                            next + 1 + index * 8,
+                        )
+                        .ok_or("matrix payload is truncated")?;
+                    }
+                    if MeshAffineTransform::new(cells)? != transform {
+                        return Err("stored matrices must match the transform".into());
+                    }
+                    next += 1 + 16 * 8;
+                }
+                Some(1) => {
+                    if MeshAffineTransform::identity() != transform {
+                        return Err("compact matrix must use the identity reading".into());
+                    }
+                    next += 1;
+                }
+                _ => return Err("matrix presence byte is invalid".into()),
+            }
+        }
+        for (index, offset) in layout.reference_offsets.iter().enumerate() {
+            let at = usize::try_from(*offset).map_err(|_| "body reference offset exceeds usize")?;
+            if index > 0 {
+                let previous = layout.reference_offsets[index - 1];
+                let previous_end = previous
+                    .checked_add(11)
+                    .ok_or("body reference offset overflows")?;
+                let gap = offset
+                    .checked_sub(previous_end)
+                    .ok_or("body references overlap")?;
+                if gap != u64::from(index == 4) {
+                    return Err("body reference gaps are invalid".into());
+                }
+            }
+            let mut cursor = at;
+            let target = crate::bytes::take_reference(native_frame.as_ref(), &mut cursor)
+                .and_then(|value| value.local().map(|target| target.0))
+                .ok_or("body reference must be local")?;
+            if target == 0 || at.checked_add(11) != Some(cursor) {
+                return Err("body reference must be complete".into());
+            }
+        }
+        let name_at = usize::try_from(layout.reference_offsets[4])
+            .ok()
+            .and_then(|offset| offset.checked_add(11))
+            .ok_or("body name offset is invalid")?;
+        let (stored_name, end) =
+            crate::bytes::lp_utf16_bounded(native_frame.as_ref(), name_at, 0..=native_frame.len())
+                .ok_or("native mesh-body frame must contain a body name")?;
+        if stored_name != body_name
+            || end
+                > native_frame
+                    .len()
+                    .checked_sub(11)
+                    .ok_or("body frame is truncated")?
+        {
+            return Err("body_name must match the native mesh-body frame".into());
+        }
+        Ok(Self {
+            record,
+            transform,
+            flagged,
+            body_name: Some(body_name),
+            native_frame: Some(native_frame),
+            variable_layout: Some(layout),
+        })
+    }
+    pub(crate) fn identity_assumed(&self) -> bool {
+        self.variable_layout
+            .as_ref()
+            .zip(self.native_frame.as_ref())
+            .is_some_and(|(layout, frame)| {
+                layout.presence_offsets.iter().any(|offset| {
+                    let mut view = cadmpeg_core::decode::View::over_retained(frame.as_ref());
+                    usize::try_from(*offset)
+                        .ok()
+                        .and_then(|at| view.seek(at))
+                        .and_then(|()| view.u8())
+                        == Some(1)
+                })
+            })
+    }
+    pub(crate) fn native_frame(&self) -> Option<&NativeBytes> {
+        self.native_frame.as_ref()
     }
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
@@ -824,44 +1034,92 @@ impl DesignMeshPlacement {
     pub(crate) fn transform(&self) -> MeshAffineTransform {
         self.transform
     }
-    fn transform_offsets(&self) -> [u64; 2] {
-        [
-            self.record.byte_offset()
-                + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::FIRST_TRANSFORM),
-            self.record.byte_offset()
-                + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::SECOND_TRANSFORM),
-        ]
+    fn offset(&self, field: impl Fn(MeshBodyLayout) -> usize) -> u64 {
+        self.record.byte_offset() + u64_from_index(field(MeshBodyLayout::of(self.flagged)))
+    }
+    fn transform_offsets(&self) -> Option<[u64; 2]> {
+        if let (Some(layout), Some(frame)) = (&self.variable_layout, &self.native_frame) {
+            let offsets = layout.presence_offsets;
+            if offsets.iter().any(|offset| {
+                usize::try_from(*offset).ok().and_then(|at| frame.get(at)) != Some(&0)
+            }) {
+                return None;
+            }
+            return Some(offsets.map(|offset| self.record.byte_offset() + offset + 1));
+        }
+        Some([
+            self.offset(|layout| layout.first_transform),
+            self.offset(|layout| layout.second_transform),
+        ])
+    }
+    fn reference_offset(&self, index: usize, field: impl Fn(MeshBodyLayout) -> usize) -> u64 {
+        self.variable_layout.as_ref().map_or_else(
+            || self.offset(field),
+            |layout| self.record.byte_offset() + layout.reference_offsets[index],
+        )
     }
     fn scope_reference_offset(&self) -> u64 {
-        self.record.byte_offset()
-            + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::FEATURE_SCOPE_REFERENCE)
+        self.reference_offset(0, |layout| layout.feature_scope_reference)
     }
     fn wrapper_reference_offset(&self) -> u64 {
-        self.record.byte_offset()
-            + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::WRAPPER_REFERENCE)
+        self.reference_offset(1, |layout| layout.wrapper_reference)
     }
     fn owner_reference_offset(&self) -> u64 {
-        self.record.byte_offset()
-            + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::BODY_OWNER_REFERENCE)
+        self.reference_offset(2, |layout| layout.body_owner_reference)
     }
     fn guid_reference_offset(&self) -> u64 {
-        self.record.byte_offset()
-            + u64_from_index(
-                crate::layout::paramesh_mesh_body_join_prefix::CONTAINER_GUID_REFERENCE,
-            )
+        self.reference_offset(3, |layout| layout.container_guid_reference)
     }
     fn scene_node_reference_offset(&self) -> u64 {
-        self.record.byte_offset()
-            + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::SCENE_NODE_REFERENCE)
+        self.reference_offset(4, |layout| layout.scene_node_reference)
     }
     fn collection_reference_offset(&self) -> u64 {
         self.record.byte_offset() + self.record.frame_length() - 11
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "form", rename_all = "snake_case")]
+pub(crate) enum DesignMeshBodyWords {
+    Plain { body_word: u32 },
+    Flagged { flagged_word: u32, body_word: u32 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshFaceGroup {
+    pub(crate) key: u32,
+    pub(crate) guid: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshFaceGroups {
+    pub(crate) declared_count: u32,
+    pub(crate) entries: Vec<DesignMeshFaceGroup>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshHistoryStream {
+    pub(crate) name: String,
+    pub(crate) encoding: NativeBytes<[u8; 2]>,
+    pub(crate) decoded_length: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshSplitStream {
+    pub(crate) name: String,
+    pub(crate) descriptor: NativeBytes<Vec<u8>>,
+}
+
 /// One mesh body and its complete Design identity graph.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DesignMeshBodyWire")]
 pub(crate) struct DesignMeshBody {
+    pub(crate) scope_record_index: u32,
+    pub(crate) scope_body_ordinal: Option<u32>,
+    pub(crate) words: DesignMeshBodyWords,
+    pub(crate) split_streams: Vec<DesignMeshSplitStream>,
+    pub(crate) history_streams: Vec<DesignMeshHistoryStream>,
+    pub(crate) face_group_metadata: Option<DesignMeshFaceGroups>,
     /// Mesh-body record carrying placement and graph references.
     pub(crate) placement: DesignMeshPlacement,
     /// Entry-name record joining the body to one `.paramesh` archive entry.
@@ -869,7 +1127,8 @@ pub(crate) struct DesignMeshBody {
     /// GUID record joining the body to the container's `fusion_uuid`.
     pub(crate) guid: DesignMeshGuid,
     /// One-to-one `ParaMesh` wrapper around the mesh-body record.
-    pub(crate) wrapper_record: DesignMeshFixedRecord<40>,
+    pub(crate) wrapper_record: DesignMeshRecordIdentity,
+    pub(crate) wrapper_opaque_tail: Option<NativeBytes>,
     /// Fixed Scene-state record and optional bounds.
     pub(crate) scene_state: DesignMeshSceneState,
     /// Compact or placed Scene node with its optional bounds.
@@ -888,14 +1147,57 @@ pub(crate) struct DesignMeshBody {
 
 #[derive(Serialize, Deserialize)]
 struct DesignMeshBodyWire {
+    scope_record_index: u32,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_scope_body_ordinal"
+    )]
+    scope_body_ordinal: Option<u32>,
+    body_words: DesignMeshBodyWords,
+    body_words_offset: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    split_streams: Vec<DesignMeshSplitStream>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    history_streams: Vec<DesignMeshHistoryStream>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_face_group_metadata"
+    )]
+    face_group_metadata: Option<DesignMeshFaceGroups>,
     /// Mesh-body record carrying placement and graph references.
     body_record: DesignMeshRecordIdentity,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_body_name"
+    )]
+    body_name: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_body_native_frame"
+    )]
+    body_native_frame: Option<NativeBytes>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_body_variable_layout"
+    )]
+    body_variable_layout: Option<VariableMeshBodyLayout>,
     /// Entry-name record joining the body to one `.paramesh` archive entry.
     entry_name_record: DesignMeshRecordIdentity,
     /// GUID record joining the body to the container's `fusion_uuid`.
     guid_record: DesignMeshRecordIdentity,
     /// One-to-one `ParaMesh` wrapper around `body_record`.
     wrapper_record: DesignMeshRecordIdentity,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_wrapper_opaque_tail"
+    )]
+    wrapper_opaque_tail: Option<NativeBytes>,
     /// Fixed Scene-state record owned by this mesh body.
     scene_state_record: DesignMeshRecordIdentity,
     /// Finite bound carried by the Scene-state footer; absent for its unset sentinel.
@@ -939,6 +1241,12 @@ struct DesignMeshBodyWire {
     entry_name_offset: u64,
     /// Container identity stored by both Design and `.paramesh` payloads.
     fusion_uuid: DesignGuidText,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_guid_opaque_bytes"
+    )]
+    guid_opaque_bytes: Option<NativeBytes<[u8; 11]>>,
     /// Container-local version-4 mesh UUID from protobuf registry field 12,
     /// when the geometry container joined this Design body.
     #[serde(
@@ -952,7 +1260,12 @@ struct DesignMeshBodyWire {
     /// Equal row-major container-to-model-centimetre affine transform.
     transform: MeshAffineTransform,
     /// Byte offsets of the two equal serialized transform blocks.
-    transform_offsets: [u64; 2],
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform_offsets"
+    )]
+    transform_offsets: Option<[u64; 2]>,
     /// Byte offset of the body-to-feature-scope reference.
     scope_reference_offset: u64,
     /// Byte offset of the body-to-wrapper reference.
@@ -984,6 +1297,35 @@ struct DesignMeshBodyWire {
     tessellation_id: Option<String>,
 }
 
+cadmpeg_core::named_optional_field!(deserialize_scope_body_ordinal, u32, "scope_body_ordinal");
+cadmpeg_core::named_optional_field!(
+    deserialize_face_group_metadata,
+    DesignMeshFaceGroups,
+    "face_group_metadata"
+);
+cadmpeg_core::named_optional_field!(deserialize_body_name, String, "body_name");
+cadmpeg_core::named_optional_field!(
+    deserialize_body_native_frame,
+    NativeBytes,
+    "body_native_frame"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_body_variable_layout,
+    VariableMeshBodyLayout,
+    "body_variable_layout"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_wrapper_opaque_tail,
+    NativeBytes,
+    "wrapper_opaque_tail"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_guid_opaque_bytes,
+    NativeBytes<[u8; 11]>,
+    "guid_opaque_bytes"
+);
+cadmpeg_core::named_optional_field!(deserialize_transform_offsets, [u64; 2], "transform_offsets");
+
 impl From<DesignMeshBody> for DesignMeshBodyWire {
     fn from(value: DesignMeshBody) -> Self {
         let wrapper_body_reference_offset = value.wrapper_body_reference_offset();
@@ -1004,10 +1346,22 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
         let (scene_node_record, scene_node_bounds, scene_node_transform) =
             value.scene_node.into_wire();
         Self {
+            scope_record_index: value.scope_record_index,
+            scope_body_ordinal: value.scope_body_ordinal,
+            body_words_offset: value.placement.record().byte_offset()
+                + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::BODY_WORD),
+            body_words: value.words,
+            split_streams: value.split_streams,
+            history_streams: value.history_streams,
+            face_group_metadata: value.face_group_metadata,
             body_record: value.placement.record,
+            body_name: value.placement.body_name,
+            body_native_frame: value.placement.native_frame,
+            body_variable_layout: value.placement.variable_layout,
             entry_name_record: value.entry.record,
             guid_record: value.guid.record,
-            wrapper_record: value.wrapper_record.into(),
+            wrapper_record: value.wrapper_record,
+            wrapper_opaque_tail: value.wrapper_opaque_tail,
             scene_state_record,
             scene_state_bounds,
             scene_node_record,
@@ -1019,6 +1373,7 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
             entry_name: value.entry.name,
             entry_name_offset,
             fusion_uuid: value.guid.value,
+            guid_opaque_bytes: value.guid.opaque_run.map(NativeBytes::new),
             container_mesh_uuid: value.container_mesh_uuid,
             fusion_uuid_offset,
             transform: value.placement.transform,
@@ -1039,13 +1394,31 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
     }
 }
 
+impl TryFrom<DesignMeshBodyWire> for DesignMeshBody {
+    type Error = String;
+    fn try_from(value: DesignMeshBodyWire) -> Result<Self, String> {
+        Self::from_wire(value)
+    }
+}
+
 impl DesignMeshBody {
     fn wrapper_body_reference_offset(&self) -> u64 {
         self.wrapper_record.byte_offset()
             + u64_from_index(crate::layout::paramesh_body_wrapper::BODY_REFERENCE)
     }
     fn from_wire(value: DesignMeshBodyWire) -> Result<Self, String> {
-        let wrapper_record = DesignMeshFixedRecord::try_from(value.wrapper_record)?;
+        let wrapper_record = value.wrapper_record;
+        let tail_length = wrapper_record
+            .frame_length()
+            .checked_sub(u64_from_index(crate::layout::paramesh_body_wrapper::LEN))
+            .ok_or("wrapper_record must contain its prefix")?;
+        let tail_matches = match &value.wrapper_opaque_tail {
+            Some(tail) => tail_length > 0 && u64::try_from(tail.len()).ok() == Some(tail_length),
+            None => tail_length == 0,
+        };
+        if !tail_matches {
+            return Err("wrapper_opaque_tail must match the wrapper record extent".into());
+        }
         if wrapper_record.byte_offset()
             + u64_from_index(crate::layout::paramesh_body_wrapper::BODY_REFERENCE)
             != value.wrapper_body_reference_offset
@@ -1068,7 +1441,11 @@ impl DesignMeshBody {
         {
             return Err("scene_state_reference_offset/scene_auxiliary_reference_offset must match scene_node_record layout".into());
         }
-        let guid = DesignMeshGuid::new(value.guid_record, value.fusion_uuid)?;
+        let guid = DesignMeshGuid::new(
+            value.guid_record,
+            value.fusion_uuid,
+            value.guid_opaque_bytes.map(NativeBytes::into_inner),
+        )?;
         if value.fusion_uuid_offset != guid.value_offset()
             || value.guid_entry_reference_offset != guid.entry_reference_offset()
         {
@@ -1086,7 +1463,63 @@ impl DesignMeshBody {
                     .into(),
             );
         }
-        let placement = DesignMeshPlacement::new(value.body_record, value.transform)?;
+        let flagged = value.body_variable_layout.as_ref().map_or_else(
+            || {
+                value.transform_offsets.is_some_and(|offsets| {
+                    offsets[0]
+                        == value.body_record.byte_offset()
+                            + u64_from_index(MeshBodyLayout::of(true).first_transform)
+                })
+            },
+            |layout| {
+                layout.presence_offsets[0]
+                    == u64_from_index(
+                        crate::layout::paramesh_flagged_mesh_body_join_prefix::FIRST_PRESENCE,
+                    )
+            },
+        );
+        let flag_byte_set = match &value.body_native_frame {
+            Some(frame) => {
+                frame.get(crate::layout::paramesh_flagged_mesh_body_join_prefix::FLAG)
+                    == Some(&crate::layout::paramesh_flagged_mesh_body_join_prefix::FLAG_VALUE)
+            }
+            None => flagged,
+        };
+        if value.body_words_offset
+            != value.body_record.byte_offset()
+                + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::BODY_WORD)
+            || !matches!(
+                (&value.body_words, flag_byte_set),
+                (DesignMeshBodyWords::Plain { .. }, false)
+                    | (DesignMeshBodyWords::Flagged { .. }, true)
+            )
+        {
+            return Err("body_words must match the body layout".into());
+        }
+        let placement = match (
+            value.body_name,
+            value.body_native_frame,
+            value.body_variable_layout,
+        ) {
+            (Some(name), Some(frame), Some(layout)) => DesignMeshPlacement::new_variable(
+                value.body_record,
+                value.transform,
+                flagged,
+                name,
+                frame,
+                layout,
+            )?,
+            (Some(name), Some(frame), None) => {
+                DesignMeshPlacement::new(value.body_record, value.transform, flagged)?
+                    .with_native_frame(name, frame)?
+            }
+            (None, None, None) => {
+                DesignMeshPlacement::new(value.body_record, value.transform, flagged)?
+            }
+            _ => {
+                return Err("body name, native frame, and variable layout are inconsistent".into())
+            }
+        };
         if placement.transform_offsets() != value.transform_offsets {
             return Err("transform_offsets must match body_record layout".into());
         }
@@ -1109,10 +1542,17 @@ impl DesignMeshBody {
             return Err("collection_reference_offset must match body_record layout".into());
         }
         Ok(Self {
+            scope_record_index: value.scope_record_index,
+            scope_body_ordinal: value.scope_body_ordinal,
+            words: value.body_words,
+            split_streams: value.split_streams,
+            history_streams: value.history_streams,
+            face_group_metadata: value.face_group_metadata,
             placement,
             entry,
             guid,
             wrapper_record,
+            wrapper_opaque_tail: value.wrapper_opaque_tail,
             scene_state,
             scene_node,
             scene_auxiliary_record: value.scene_auxiliary_record,
@@ -1134,6 +1574,13 @@ pub(crate) struct MeshAffineTransform {
 }
 
 impl MeshAffineTransform {
+    pub(crate) fn identity() -> Self {
+        Self {
+            affine: Transform::identity(),
+            bottom: [0.0, 0.0, 0.0, 1.0],
+        }
+    }
+
     /// Check finite coefficients, an affine last row, and a nonzero finite determinant.
     pub(crate) fn new(cells: [f64; 16]) -> Result<Self, String> {
         let rows: [[f64; 4]; 4] = std::array::from_fn(|row| {
@@ -1192,6 +1639,8 @@ impl From<MeshAffineTransform> for [[f64; 4]; 4] {
     }
 }
 
+pub(crate) const MESH_COLLECTION_ENTRY_NAME: &str = "netfabb.mesh_body";
+
 /// Collection-owner record with a fixed-prefix or terminal backlink.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesignMeshCollectionOwner {
@@ -1199,22 +1648,31 @@ pub(crate) struct DesignMeshCollectionOwner {
     backlink: DesignMeshCollectionBacklink,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum DesignMeshCollectionBacklink {
     Fixed241,
     Fixed262,
     Terminal,
+    AfterName { count: u32 },
+    NamedEntry { relative: u64, frame: NativeBytes },
 }
 
 impl DesignMeshCollectionOwner {
     pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         backlink_offset: u64,
+        name_count: Option<u32>,
     ) -> Result<Self, String> {
         let relative = backlink_offset
             .checked_sub(record.byte_offset())
             .ok_or("collection_owner_backlink_offset precedes its record")?;
-        let backlink = if relative
+        let backlink = if let Some(count) = name_count {
+            if relative != Self::after_name_backlink(count) || record.frame_length() < relative + 11
+            {
+                return Err("collection_owner_backlink_offset must follow the collection_owner_name_count name".into());
+            }
+            DesignMeshCollectionBacklink::AfterName { count }
+        } else if relative
             == u64_from_index(crate::layout::paramesh_collection_owner_v17::COLLECTION_BACKLINK)
             && record.frame_length()
                 >= u64_from_index(crate::layout::paramesh_collection_owner_v17::LEN)
@@ -1235,11 +1693,51 @@ impl DesignMeshCollectionOwner {
         };
         Ok(Self { record, backlink })
     }
+    pub(crate) fn new_named(
+        record: DesignMeshRecordIdentity,
+        backlink_offset: u64,
+        frame: NativeBytes,
+    ) -> Result<Self, String> {
+        let relative = backlink_offset
+            .checked_sub(record.byte_offset())
+            .ok_or("collection owner reference precedes its frame")?;
+        let reference =
+            usize::try_from(relative).map_err(|_| "owner reference offset exceeds usize")?;
+        if u64::try_from(frame.len()).ok() != Some(record.frame_length()) {
+            return Err("collection owner frame length must match its record".into());
+        }
+        let name_bytes = MESH_COLLECTION_ENTRY_NAME.encode_utf16().count() * 2 + 4;
+        let name_at = reference
+            .checked_sub(name_bytes)
+            .ok_or("collection entry name is truncated")?;
+        let (name, end) = crate::bytes::lp_utf16_bounded(frame.as_ref(), name_at, 17..=17)
+            .ok_or("collection entry name is invalid")?;
+        if name != MESH_COLLECTION_ENTRY_NAME || end != reference {
+            return Err("collection owner reference must follow the collection entry name".into());
+        }
+        let mut cursor = reference;
+        let target = crate::bytes::take_reference(frame.as_ref(), &mut cursor)
+            .and_then(|value| value.local().map(|target| target.0))
+            .ok_or("collection owner reference must be local")?;
+        if target == 0 || cursor != reference + 11 {
+            return Err("collection owner reference must be a complete local reference".into());
+        }
+        Ok(Self {
+            record,
+            backlink: DesignMeshCollectionBacklink::NamedEntry { relative, frame },
+        })
+    }
+    pub(crate) fn native_frame(&self) -> Option<&NativeBytes> {
+        match &self.backlink {
+            DesignMeshCollectionBacklink::NamedEntry { frame, .. } => Some(frame),
+            _ => None,
+        }
+    }
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
     pub(crate) fn backlink_offset(&self) -> u64 {
-        let relative = match self.backlink {
+        let relative = match &self.backlink {
             DesignMeshCollectionBacklink::Fixed241 => {
                 u64_from_index(crate::layout::paramesh_collection_owner_v17::COLLECTION_BACKLINK)
             }
@@ -1247,8 +1745,23 @@ impl DesignMeshCollectionOwner {
                 crate::layout::paramesh_collection_owner_backlink_prefix::COLLECTION_BACKLINK,
             ),
             DesignMeshCollectionBacklink::Terminal => self.record.frame_length() - 11,
+            DesignMeshCollectionBacklink::AfterName { count } => Self::after_name_backlink(*count),
+            DesignMeshCollectionBacklink::NamedEntry { relative, .. } => *relative,
         };
         self.record.byte_offset() + relative
+    }
+    pub(crate) fn name_count(&self) -> Option<u32> {
+        match &self.backlink {
+            DesignMeshCollectionBacklink::AfterName { count } => Some(*count),
+            _ => None,
+        }
+    }
+    fn after_name_backlink(count: u32) -> u64 {
+        u64_from_index(
+            crate::layout::paramesh_collection_owner_backlink_prefix::COLLECTION_BACKLINK
+                + crate::layout::paramesh_collection_owner_v21::LEN
+                - crate::layout::paramesh_collection_owner_v21::NAME_COUNT,
+        ) + 2 * u64::from(count)
     }
 }
 
@@ -1258,6 +1771,7 @@ pub(crate) struct DesignMeshScope {
     record: DesignMeshRecordIdentity,
     base_class_tag: DesignClassTag,
     owner_record_index: std::num::NonZeroU32,
+    flagged_word: Option<u32>,
 }
 
 impl DesignMeshScope {
@@ -1265,11 +1779,15 @@ impl DesignMeshScope {
         record: DesignMeshRecordIdentity,
         base_record: DesignMeshRecordIdentity,
         owner_record_index: u32,
+        flagged_word: Option<u32>,
     ) -> Result<Self, String> {
         let base_length = u64_from_index(crate::layout::paramesh_feature_scope_base::LEN);
-        if record.frame_length()
-            < u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN) + base_length
-        {
+        let prefix_len = if flagged_word.is_some() {
+            crate::layout::paramesh_flagged_feature_scope_prefix::LEN
+        } else {
+            crate::layout::paramesh_feature_scope_prefix::LEN
+        };
+        if record.frame_length() < u64_from_index(prefix_len) + base_length {
             return Err(
                 "scope_record.frame_length() must contain the prefix and closing base".into(),
             );
@@ -1289,6 +1807,25 @@ impl DesignMeshScope {
             record,
             base_class_tag: base_record.class_tag,
             owner_record_index,
+            flagged_word,
+        })
+    }
+    pub(crate) fn flagged_word(&self) -> Option<u32> {
+        self.flagged_word
+    }
+    pub(crate) fn body_count_offset(&self) -> u64 {
+        self.record.byte_offset()
+            + u64_from_index(if self.flagged_word.is_some() {
+                crate::layout::paramesh_flagged_feature_scope_prefix::BODY_COUNT
+            } else {
+                crate::layout::paramesh_feature_scope_prefix::BODY_COUNT
+            })
+    }
+    fn prefix_len(&self) -> u64 {
+        u64_from_index(if self.flagged_word.is_some() {
+            crate::layout::paramesh_flagged_feature_scope_prefix::LEN
+        } else {
+            crate::layout::paramesh_feature_scope_prefix::LEN
         })
     }
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
@@ -1313,32 +1850,89 @@ impl DesignMeshScope {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshFlaggedEntry {
+    pub(crate) body_record_index: u32,
+    pub(crate) reference_offset: u64,
+    pub(crate) value: u32,
+    pub(crate) value_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshFlaggedCollection {
+    pub(crate) word: u32,
+    pub(crate) word_offset: u64,
+    pub(crate) entries: Vec<DesignMeshFlaggedEntry>,
+}
+
 /// Mesh collection with its same-index nested base and complete body-reference run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesignMeshCollection {
     record: DesignMeshRecordIdentity,
     base_class_tag: DesignClassTag,
+    body_count: u32,
+    flagged: bool,
+    pub(crate) flagged_data: Option<DesignMeshFlaggedCollection>,
 }
 
 impl DesignMeshCollection {
     pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         base_record: DesignMeshRecordIdentity,
+        body_count: u32,
+        flagged_data: Option<DesignMeshFlaggedCollection>,
     ) -> Result<Self, String> {
-        let prefix = u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN);
+        let plain_prefix = u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN);
+        let flagged_prefix =
+            u64_from_index(crate::layout::paramesh_flagged_mesh_collection_prefix::LEN);
+        let prefix = base_record
+            .byte_offset()
+            .checked_sub(record.byte_offset())
+            .ok_or("collection base precedes collection")?;
+        let flagged = prefix == flagged_prefix;
+        if prefix != plain_prefix && !flagged {
+            return Err("collection base offset must match its layout".into());
+        }
+        if flagged != flagged_data.is_some() {
+            return Err("flagged collection data must match the collection layout".into());
+        }
+        if let Some(data) = &flagged_data {
+            let word_offset = record.byte_offset()
+                + u64_from_index(
+                    crate::layout::paramesh_flagged_mesh_collection_prefix::FLAGGED_WORD,
+                );
+            let entry_start = record.byte_offset()
+                + prefix
+                + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN)
+                + u64::from(body_count) * 11
+                + 4;
+            if data.word_offset != word_offset
+                || (!data.entries.is_empty()
+                    && data.entries.len()
+                        != usize::try_from(body_count).map_err(|_| "body count exceeds usize")?)
+                || data.entries.iter().enumerate().any(|(ordinal, entry)| {
+                    entry.reference_offset != entry_start + u64_from_index(ordinal) * 15
+                        || entry.value_offset != entry.reference_offset + 11
+                        || entry.value != 1
+                })
+            {
+                return Err("flagged collection fields must match the collection layout".into());
+            }
+        }
         let fixed_length =
             prefix + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN) + 11;
-        let body_bytes = record.frame_length().checked_sub(fixed_length).ok_or(
-            "collection_record.frame_length must contain both prefixes and the owner reference",
-        )?;
-        if body_bytes % 11 != 0 || u32::try_from(body_bytes / 11).is_err() {
-            return Err(
-                "collection_record.frame_length must contain a u32-counted body-reference run"
-                    .into(),
-            );
+        let body_bytes = u64::from(body_count) * 11;
+        let length = fixed_length + body_bytes;
+        let valid_length = if flagged && body_count != 0 {
+            record.frame_length() == length + 4
+                || record.frame_length() == length + 4 + u64::from(body_count) * 15
+        } else {
+            record.frame_length() == length
+        };
+        if !valid_length {
+            return Err("bodies count must match collection record length and entries".into());
         }
         if base_record.record_index() != record.record_index()
-            || base_record.byte_offset() != record.byte_offset() + prefix
             || base_record.frame_length() != record.frame_length() - prefix
         {
             return Err(
@@ -1349,14 +1943,24 @@ impl DesignMeshCollection {
         Ok(Self {
             record,
             base_class_tag: base_record.class_tag,
+            body_count,
+            flagged,
+            flagged_data,
         })
+    }
+    fn prefix_len(&self) -> u64 {
+        if self.flagged {
+            u64_from_index(crate::layout::paramesh_flagged_mesh_collection_prefix::LEN)
+        } else {
+            u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN)
+        }
     }
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
     #[cfg(test)]
     fn base_record(&self) -> DesignMeshRecordIdentity {
-        let prefix = u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN);
+        let prefix = self.prefix_len();
         DesignMeshRecordIdentity {
             class_tag: self.base_class_tag.clone(),
             record_index: self.record.record_index,
@@ -1365,21 +1969,40 @@ impl DesignMeshCollection {
         }
     }
     fn body_count(&self) -> u64 {
-        (self.record.frame_length()
-            - u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN)
-            - u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN)
-            - 11)
-            / 11
+        u64::from(self.body_count)
     }
     fn texture_table_reference_offset(&self) -> u64 {
-        self.record.byte_offset()
-            + u64_from_index(
-                crate::layout::paramesh_mesh_collection_prefix::TEXTURE_TABLE_REFERENCE,
-            )
+        self.record.byte_offset() + self.prefix_len() - 11
     }
     fn owner_reference_offset(&self) -> u64 {
         self.record.byte_offset() + self.record.frame_length() - 11
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshSourceRecord {
+    pub(crate) record: DesignMeshRecordIdentity,
+    pub(crate) type_guid: DesignGuidText,
+    pub(crate) bytes: NativeBytes<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshOperationInput {
+    pub(crate) scope_reference_offset: u64,
+    pub(crate) guid: DesignMeshSourceRecord,
+    pub(crate) entry: DesignMeshSourceRecord,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshOperationBody {
+    pub(crate) scope: DesignMeshSourceRecord,
+    pub(crate) group: DesignMeshSourceRecord,
+    pub(crate) member: DesignMeshSourceRecord,
+    pub(crate) scope_group_reference_offset: u64,
+    pub(crate) group_member_reference_offset: u64,
+    pub(crate) member_body_reference_offset: u64,
+    pub(crate) inputs: Vec<DesignMeshOperationInput>,
+    pub(crate) body: DesignMeshBody,
 }
 
 /// One complete `Base Mesh Feature` Design graph.
@@ -1390,8 +2013,7 @@ pub(crate) struct DesignMeshFeature {
     clone_probe: MeshFeatureCloneProbe,
     /// Globally unique deterministic identity keyed by the feature-scope record.
     pub(crate) id: String,
-    /// Feature scope and its closing owner reference.
-    scope: DesignMeshScope,
+    scopes: Vec<DesignMeshScope>,
     /// Mesh collection and its nested base.
     collection: DesignMeshCollection,
     /// Typed `ParaMesh` texture-table record owned by the collection.
@@ -1400,6 +2022,7 @@ pub(crate) struct DesignMeshFeature {
     pub(crate) collection_owner: DesignMeshCollectionOwner,
     /// Mesh bodies in the source collection order.
     bodies: Vec<DesignMeshBody>,
+    pub(crate) operation_bodies: Vec<DesignMeshOperationBody>,
 }
 
 #[cfg(test)]
@@ -1422,7 +2045,7 @@ impl Clone for MeshFeatureCloneProbe {
 impl DesignMeshFeature {
     pub(crate) fn new(
         id: String,
-        scope: DesignMeshScope,
+        scopes: Vec<DesignMeshScope>,
         collection: DesignMeshCollection,
         texture_table: DesignMeshTextureTable,
         collection_owner: DesignMeshCollectionOwner,
@@ -1432,25 +2055,73 @@ impl DesignMeshFeature {
         if collection.body_count() != u64::from(body_count) {
             return Err("bodies count must match collection_record.frame_length".into());
         }
-        let scope_body_bytes = u64::from(body_count) * 11;
-        let scope_prefix = u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN);
-        let scope_base_length = u64_from_index(crate::layout::paramesh_feature_scope_base::LEN);
-        if scope_body_bytes > scope.record().frame_length() - scope_prefix - scope_base_length {
-            return Err("bodies reference run must end before scope_base_record".into());
+        if scopes.is_empty() {
+            return Err("a mesh collection must name at least one scope".into());
+        }
+        let mut scope_ids = std::collections::HashSet::new();
+        for owner in &scopes {
+            let index = owner.record().record_index();
+            if !scope_ids.insert(index) {
+                return Err("scope records must be unique".into());
+            }
+            let mut ordinals = bodies
+                .iter()
+                .filter(|body| body.scope_record_index == index)
+                .map(|body| {
+                    body.scope_body_ordinal
+                        .ok_or("collection body must carry a scope ordinal")
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            ordinals.sort_unstable();
+            if !ordinals
+                .iter()
+                .copied()
+                .eq(0..u32::try_from(ordinals.len())
+                    .map_err(|_| "scope body count must fit u32")?)
+            {
+                return Err("scope body ordinals must form an ordered run".into());
+            }
+            let body_bytes = u64_from_index(ordinals.len()) * 11;
+            let scope_prefix = owner.prefix_len();
+            let scope_base_length = u64_from_index(crate::layout::paramesh_feature_scope_base::LEN);
+            if body_bytes > owner.record().frame_length() - scope_prefix - scope_base_length {
+                return Err("bodies reference run must end before scope_base_record".into());
+            }
+        }
+        if let Some(data) = &collection.flagged_data {
+            let mut ids = bodies
+                .iter()
+                .map(|body| body.placement.record().record_index())
+                .collect::<std::collections::HashSet<_>>();
+            if !data.entries.is_empty()
+                && data
+                    .entries
+                    .iter()
+                    .any(|entry| !ids.remove(&entry.body_record_index))
+            {
+                return Err("flagged entries must reference distinct collection bodies".into());
+            }
+        }
+        if bodies
+            .iter()
+            .any(|body| !scope_ids.contains(&body.scope_record_index))
+        {
+            return Err("each body must name a collection scope".into());
         }
         Ok(Self {
             #[cfg(test)]
             clone_probe: MeshFeatureCloneProbe,
             id,
-            scope,
+            scopes,
             collection,
             texture_table,
             collection_owner,
             bodies,
+            operation_bodies: Vec::new(),
         })
     }
-    pub(crate) fn scope(&self) -> &DesignMeshScope {
-        &self.scope
+    pub(crate) fn scopes(&self) -> impl Iterator<Item = &DesignMeshScope> {
+        self.scopes.iter()
     }
     pub(crate) fn collection(&self) -> &DesignMeshCollection {
         &self.collection
@@ -1458,30 +2129,112 @@ impl DesignMeshFeature {
     pub(crate) fn bodies(&self) -> &[DesignMeshBody] {
         &self.bodies
     }
-    pub(crate) fn bodies_mut(&mut self) -> &mut [DesignMeshBody] {
-        &mut self.bodies
+    pub(crate) fn all_bodies(&self) -> impl Iterator<Item = &DesignMeshBody> {
+        self.bodies.iter().chain(
+            self.operation_bodies
+                .iter()
+                .map(|operation| &operation.body),
+        )
     }
-    fn body_count_offsets(&self) -> [u64; 3] {
+    pub(crate) fn body_at(&self, ordinal: usize) -> Option<&DesignMeshBody> {
+        self.bodies.get(ordinal).or_else(|| {
+            self.operation_bodies
+                .get(ordinal.checked_sub(self.bodies.len())?)
+                .map(|operation| &operation.body)
+        })
+    }
+    pub(crate) fn body_at_mut(&mut self, ordinal: usize) -> Option<&mut DesignMeshBody> {
+        if ordinal < self.bodies.len() {
+            self.bodies.get_mut(ordinal)
+        } else {
+            self.operation_bodies
+                .get_mut(ordinal - self.bodies.len())
+                .map(|operation| &mut operation.body)
+        }
+    }
+    fn body_count_offsets(&self) -> [u64; 2] {
         [
-            self.scope.record().byte_offset()
-                + u64_from_index(crate::layout::paramesh_feature_scope_prefix::BODY_COUNT),
             self.collection.record().byte_offset()
                 + u64_from_index(crate::layout::paramesh_mesh_collection_prefix::BODY_COUNT),
             self.collection.record().byte_offset()
-                + u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN)
+                + self.collection.prefix_len()
                 + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::BODY_COUNT),
         ]
     }
     fn scope_body_reference_offsets(&self) -> impl Iterator<Item = u64> + '_ {
-        let start = self.scope.record().byte_offset()
-            + u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN);
-        (0..self.collection.body_count()).map(move |ordinal| start + 11 * ordinal)
+        self.bodies.iter().filter_map(|body| {
+            let owner = self
+                .scopes()
+                .find(|scope| scope.record().record_index() == body.scope_record_index)?;
+            Some(
+                owner.record().byte_offset()
+                    + owner.prefix_len()
+                    + 11 * u64::from(body.scope_body_ordinal?),
+            )
+        })
     }
     fn collection_body_reference_offsets(&self) -> impl Iterator<Item = u64> + '_ {
         let start = self.collection.record().byte_offset()
-            + u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN)
+            + self.collection.prefix_len()
             + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN);
         (0..self.collection.body_count()).map(move |ordinal| start + 11 * ordinal)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct MeshScopeWire {
+    #[serde(rename = "scope_record")]
+    record: DesignMeshRecordIdentity,
+    #[serde(rename = "scope_base_record")]
+    base_record: DesignMeshRecordIdentity,
+    #[serde(rename = "scope_owner_record_index")]
+    owner_record_index: u32,
+    #[serde(rename = "scope_owner_reference_offset")]
+    owner_reference_offset: u64,
+    #[serde(rename = "scope_body_count_offset")]
+    body_count_offset: u64,
+    #[serde(
+        rename = "scope_flagged_word",
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_scope_flagged_word"
+    )]
+    flagged_word: Option<u32>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_scope_flagged_word, u32, "scope_flagged_word");
+
+impl TryFrom<MeshScopeWire> for DesignMeshScope {
+    type Error = String;
+    fn try_from(wire: MeshScopeWire) -> Result<Self, String> {
+        let scope = Self::new(
+            wire.record,
+            wire.base_record,
+            wire.owner_record_index,
+            wire.flagged_word,
+        )?;
+        if scope.body_count_offset() != wire.body_count_offset {
+            return Err("body_count_offset must locate the scope body count".into());
+        }
+        if scope.owner_reference_offset() != wire.owner_reference_offset {
+            return Err(
+                "owner_reference_offset must locate the closing base owner reference".into(),
+            );
+        }
+        Ok(scope)
+    }
+}
+
+impl From<DesignMeshScope> for MeshScopeWire {
+    fn from(scope: DesignMeshScope) -> Self {
+        Self {
+            record: scope.record().clone(),
+            base_record: scope.base_record(),
+            owner_record_index: scope.owner_record_index(),
+            owner_reference_offset: scope.owner_reference_offset(),
+            body_count_offset: scope.body_count_offset(),
+            flagged_word: scope.flagged_word(),
+        }
     }
 }
 
@@ -1490,18 +2243,20 @@ impl DesignMeshFeature {
 struct DesignMeshFeatureWire {
     /// Globally unique deterministic identity keyed by the feature-scope record.
     id: String,
-    /// Typed `Base Mesh Feature` scope record.
-    scope_record: DesignMeshRecordIdentity,
-    /// Paired same-index base record closing the feature scope.
-    scope_base_record: DesignMeshRecordIdentity,
+    scopes: Vec<MeshScopeWire>,
     /// Typed `ParaMesh` body-collection record.
     collection_record: DesignMeshRecordIdentity,
     /// Paired same-index base record inside the collection.
     collection_base_record: DesignMeshRecordIdentity,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_collection_flagged_data"
+    )]
+    collection_flagged_data: Option<DesignMeshFlaggedCollection>,
     /// Typed `ParaMesh` texture-table record owned by the collection.
     texture_table_record: DesignMeshRecordIdentity,
-    /// Three equal body counts: scope, collection prefix, collection base.
-    body_count_offsets: [u64; 3],
+    body_count_offsets: [u64; 2],
     /// Ordered mesh-body record identities owned by the feature.
     body_record_indices: Vec<u32>,
     /// Scope body-reference offsets parallel to `body_record_indices`.
@@ -1516,10 +2271,18 @@ struct DesignMeshFeatureWire {
     collection_owner_reference_offset: u64,
     /// Byte offset of the owner's reciprocal collection reference.
     collection_owner_backlink_offset: u64,
-    /// Design owner of the feature scope.
-    scope_owner_record_index: u32,
-    /// Byte offset of the paired scope record's owner reference.
-    scope_owner_reference_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_collection_owner_name_count"
+    )]
+    collection_owner_name_count: Option<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_collection_owner_native_frame"
+    )]
+    collection_owner_native_frame: Option<NativeBytes>,
     /// Byte offset of the texture flags-map count.
     texture_flags_count_offset: u64,
     /// Byte offset of the texture filename-map count.
@@ -1528,7 +2291,25 @@ struct DesignMeshFeatureWire {
     bodies: Vec<DesignMeshBodyWire>,
     /// Texture resources in flags-map order.
     textures: Vec<DesignMeshTextureResourceWire>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    operation_bodies: Vec<DesignMeshOperationBody>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_collection_flagged_data,
+    DesignMeshFlaggedCollection,
+    "collection_flagged_data"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_collection_owner_name_count,
+    u32,
+    "collection_owner_name_count"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_collection_owner_native_frame,
+    NativeBytes,
+    "collection_owner_native_frame"
+);
 
 impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
     type Error = String;
@@ -1558,18 +2339,12 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
         for body in wire.bodies {
             bodies.push(DesignMeshBody::from_wire(body)?);
         }
-        let scope = DesignMeshScope::new(
-            wire.scope_record,
-            wire.scope_base_record,
-            wire.scope_owner_record_index,
+        let collection = DesignMeshCollection::new(
+            wire.collection_record,
+            wire.collection_base_record,
+            u32::try_from(bodies.len()).map_err(|_| "bodies count must fit u32")?,
+            wire.collection_flagged_data,
         )?;
-        if scope.owner_reference_offset() != wire.scope_owner_reference_offset {
-            return Err(
-                "scope_owner_reference_offset must locate the closing base owner reference".into(),
-            );
-        }
-        let collection =
-            DesignMeshCollection::new(wire.collection_record, wire.collection_base_record)?;
         if collection.texture_table_reference_offset() != wire.texture_table_reference_offset {
             return Err(
                 "texture_table_reference_offset must locate the collection texture-table reference"
@@ -1579,9 +2354,12 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
         if collection.owner_reference_offset() != wire.collection_owner_reference_offset {
             return Err("collection_owner_reference_offset must locate the terminal collection owner reference".into());
         }
-        let feature = Self::new(
+        let mut feature = Self::new(
             wire.id,
-            scope,
+            wire.scopes
+                .into_iter()
+                .map(DesignMeshScope::try_from)
+                .collect::<Result<Vec<_>, _>>()?,
             collection,
             DesignMeshTextureTable::from_wire(
                 wire.texture_table_record,
@@ -1589,14 +2367,32 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
                 wire.texture_filename_count_offset,
                 wire.textures,
             )?,
-            DesignMeshCollectionOwner::new(
-                wire.collection_owner_record,
-                wire.collection_owner_backlink_offset,
-            )?,
+            match wire.collection_owner_native_frame {
+                Some(frame) if wire.collection_owner_name_count.is_none() => {
+                    DesignMeshCollectionOwner::new_named(
+                        wire.collection_owner_record,
+                        wire.collection_owner_backlink_offset,
+                        frame,
+                    )?
+                }
+                None => DesignMeshCollectionOwner::new(
+                    wire.collection_owner_record,
+                    wire.collection_owner_backlink_offset,
+                    wire.collection_owner_name_count,
+                )?,
+                Some(_) => return Err("collection owner frame and name count conflict".into()),
+            },
             bodies,
         )?;
+        feature.operation_bodies = wire.operation_bodies;
+        if feature.operation_bodies.iter().any(|operation| {
+            operation.body.scope_record_index != operation.scope.record.record_index()
+                || operation.body.scope_body_ordinal.is_some()
+        }) {
+            return Err("operation bodies must name their operation scope without a collection-scope ordinal".into());
+        }
         if wire.body_count_offsets != feature.body_count_offsets() {
-            return Err("body_count_offsets must locate the scope and collection counts".into());
+            return Err("body_count_offsets must locate the collection counts".into());
         }
         if !wire
             .scope_body_reference_offsets
@@ -1633,6 +2429,8 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             bodies.push(body.into());
         }
         let collection_owner_backlink_offset = value.collection_owner.backlink_offset();
+        let collection_owner_name_count = value.collection_owner.name_count();
+        let collection_owner_native_frame = value.collection_owner.native_frame().cloned();
         let (
             texture_table_record,
             texture_flags_count_offset,
@@ -1640,23 +2438,24 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             textures,
         ) = value.texture_table.into_wire();
         Self {
+            operation_bodies: value.operation_bodies,
             body_record_indices,
             scope_body_reference_offsets,
             collection_body_reference_offsets,
             bodies,
             id: value.id,
-            scope_record: value.scope.record().clone(),
-            scope_base_record: value.scope.base_record(),
+            scopes: value.scopes.into_iter().map(MeshScopeWire::from).collect(),
             collection_record: value.collection.record().clone(),
             collection_base_record: value.collection.base_record(),
+            collection_flagged_data: value.collection.flagged_data.clone(),
             texture_table_record,
             body_count_offsets,
             texture_table_reference_offset: value.collection.texture_table_reference_offset(),
             collection_owner_record: value.collection_owner.record,
             collection_owner_reference_offset: value.collection.owner_reference_offset(),
             collection_owner_backlink_offset,
-            scope_owner_record_index: value.scope.owner_record_index(),
-            scope_owner_reference_offset: value.scope.owner_reference_offset(),
+            collection_owner_name_count,
+            collection_owner_native_frame,
             texture_flags_count_offset,
             texture_filename_count_offset,
             textures,
@@ -1724,7 +2523,7 @@ impl DesignMeshRecordIdentity {
     pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
-    fn frame_length(&self) -> u64 {
+    pub(crate) fn frame_length(&self) -> u64 {
         self.frame_length
     }
 }
