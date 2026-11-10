@@ -6367,6 +6367,15 @@ fn mirror_operand_recipe_admitted(
 /// Whether a Revolve axis operand uses an admitted face-recipe spelling. The
 /// axis face is selected either by its whole-face recipe or by a bounded-face
 /// recipe.
+/// Whether a `Revolve` group with this role holds face operands: the axis
+/// group and a to-object target group.
+fn revolve_face_group_role_admitted(role: DesignOperandRole) -> bool {
+    matches!(
+        role,
+        DesignOperandRole::ROLE_0X21 | DesignOperandRole::ROLE_0X5
+    )
+}
+
 fn revolve_axis_recipe_kind_admitted(kind: records::recipes::ConstructionRecipeKind) -> bool {
     matches!(
         kind,
@@ -8138,7 +8147,7 @@ fn validate_face_operands<'a>(
                             }
                             Some(design::DesignFeatureFamily::Revolve) => {
                                 group.is_some_and(|group| {
-                                    group.role() == DesignOperandRole::ROLE_0X21
+                                    revolve_face_group_role_admitted(group.role())
                                 }) && revolve_axis_recipe_kind_admitted(operand.recipe_kind)
                             }
                             Some(
