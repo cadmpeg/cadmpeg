@@ -566,6 +566,18 @@ pub(crate) mod rolling_ball_tail_unmapped_suffix {
     pub(crate) const MAXIMAL_U: usize = 6;
 }
 
+/// Byte offsets for the `consolidated_wide_face_roster_prefix` record.
+///
+/// Spec §6.4. Record length 3 B.
+pub(crate) mod consolidated_wide_face_roster_prefix {
+    /// Record length in bytes. Spec §6.4.
+    pub(crate) const LEN: usize = 3;
+    /// Offset of `marker` (`u8`). Spec §6.4.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `face_count` (`u16`, little-endian). Spec §6.4.
+    pub(crate) const FACE_COUNT: usize = 1;
+}
+
 /// Byte offsets for the `b5_plane_payload` record.
 ///
 /// Spec §6.7. Record length 121 B.

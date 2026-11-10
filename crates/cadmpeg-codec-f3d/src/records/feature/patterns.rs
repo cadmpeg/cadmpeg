@@ -52,7 +52,20 @@ pub(crate) struct DesignCircularPatternConstruction {
     pub(crate) axis_record_index: u32,
     /// Referenced persistent selection operand.
     pub(crate) selection_record_index: u32,
+    /// Byte offset of the `u8 1` separator of a 130-byte axis record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_axis_separator_flag_offset"
+    )]
+    pub(crate) axis_separator_flag_offset: Option<u64>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_axis_separator_flag_offset,
+    u64,
+    "axis_separator_flag_offset"
+);
 
 /// Proven origin and unit direction.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1355,3 +1368,32 @@ mod tests {
 }
 
 mod identity_rewrite;
+
+/// Type GUID and version of the `PathPattern` settings record.
+pub(crate) const PATH_PATTERN_SETTINGS_TYPE: (&str, u32) =
+    ("BE1FB171-D98A-4A4D-99C2-3738627CF79C", 4);
+/// Type GUID and version of the `PathPattern` path-start record.
+pub(crate) const PATH_PATTERN_START_TYPE: (&str, u32) = ("69EE2FA7-BCC7-449E-9CA9-976CEFDFED44", 3);
+
+/// Fixed settings of a `PathPattern` scope, from its settings record and its
+/// path-start record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignPathPatternSettings {
+    /// Settings record named by the scope prefix.
+    pub(crate) settings_record_index: u32,
+    /// Byte offset of the settings record header.
+    pub(crate) settings_byte_offset: u64,
+    /// The distance parameter is the total extent; otherwise it is the
+    /// spacing between adjacent instances.
+    pub(crate) total_extent: Located<bool>,
+    /// The instances run against the path direction.
+    pub(crate) flipped: Located<bool>,
+    /// Each instance follows the path direction.
+    pub(crate) path_oriented: Located<bool>,
+    /// Path group named by the settings record.
+    pub(crate) path_group_record_index: u32,
+    /// Path-start record in the scope reference table.
+    pub(crate) start_record_index: u32,
+    /// Path parameter of the pattern start point.
+    pub(crate) start_parameter: Located<FiniteReal>,
+}

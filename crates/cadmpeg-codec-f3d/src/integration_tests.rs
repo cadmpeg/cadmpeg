@@ -6,8 +6,10 @@ mod align;
 mod archive_session;
 mod attribute_colors;
 mod body_reference_tails;
+mod cc0_controller;
 mod configuration_parameters;
 mod design_containment;
+mod design_parameters;
 mod emboss_operands;
 mod external_placement;
 mod history_deltas;
@@ -23,6 +25,7 @@ mod profile_region_selection;
 mod reference_rows;
 mod scene;
 mod sketch_regions;
+mod tracking_path_headers;
 mod work_planes;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};

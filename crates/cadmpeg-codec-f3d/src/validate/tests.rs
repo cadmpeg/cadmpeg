@@ -75,6 +75,7 @@ fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
+        operand_offset: None,
     }
 }
 
@@ -1495,6 +1496,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             entity_id: crate::records::identity::DesignEntityId::try_from("0_10".to_owned())
                 .expect("valid entity identity"),
             entity_reference_offset: 250,
+            compact_tail_flags: None,
             region_selection: None,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "260".to_owned(),
@@ -1539,6 +1541,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             )),
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 220,
+            label: None,
             history_state_id: None,
 
             previous_history_state_id: None,
@@ -1551,7 +1554,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             )
             .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            deleted_sketch_members: Vec::new(),
+            deleted_members: None,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )
@@ -1826,7 +1829,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
 }
 
 #[test]
-fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
+fn validation_accepts_marked_sketch_curve_entity_selection_frame() {
     use crate::records::{
         decal::DesignRecordHeader,
         topology::{
@@ -1907,6 +1910,8 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
             )
             .unwrap(),
             context_id_offset: 1_100,
+            serialization_form:
+                crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
             identity_record_index: 203,
             identity_record_offset: 2_000,
             primary_identity: 949,
@@ -1951,6 +1956,9 @@ mod face_recipe_lengths;
 mod rigid_alignment;
 
 mod work_plane;
+
+mod loft_roles;
+mod sketch_point_frames;
 
 #[test]
 fn loft_accepts_either_body_group_role() {

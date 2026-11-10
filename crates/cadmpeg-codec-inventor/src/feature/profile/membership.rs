@@ -7,6 +7,27 @@ use cadmpeg_ir::sketches::Sketch;
 use super::ProfileIndex;
 
 impl ProfileIndex<'_> {
+    /// Every associative curve name of `sketch` that `profile` selects,
+    /// ascending.
+    pub(in crate::feature) fn curve_names(
+        &self,
+        token: &str,
+        ordinal: u32,
+        sketch: &Sketch,
+        profile: &PlanarProfileRef,
+    ) -> Vec<i64> {
+        let mut names = self
+            .curves
+            .keys()
+            .filter(|(key_token, key_ordinal, _)| *key_token == token && *key_ordinal == ordinal)
+            .map(|(_, _, name)| *name)
+            .filter(|name| self.contains_curve_name(token, ordinal, sketch, profile, *name))
+            .collect::<Vec<_>>();
+        names.sort_unstable();
+        names.dedup();
+        names
+    }
+
     pub(in crate::feature) fn contains_curve_name(
         &self,
         token: &str,

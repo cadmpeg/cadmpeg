@@ -183,22 +183,23 @@ use super::parasolid::{
     parasolid_chart_records, parasolid_deltas_events_from_records,
     parasolid_entity_51_numeric_uses, parasolid_entity_51_records, parasolid_entity_51_string_uses,
     parasolid_entity_51_structured_uses, parasolid_entity_value_records,
-    parasolid_field_names_records, parasolid_groups, parasolid_support_uv_records,
-    parasolid_term_use_records, parasolid_topology_attribute_class_uses,
+    parasolid_field_names_records, parasolid_groups, parasolid_omitted_entity_51_xmts,
+    parasolid_support_uv_records, parasolid_term_use_records,
+    parasolid_topology_attribute_class_uses,
     parasolid_topology_attribute_fields_have_untransferred_values,
-    parasolid_topology_attribute_list_references, per_parasolid_stream, resolve_group_members,
-    ParasolidAttributeClassUse, ParasolidAttributeDefinition, ParasolidAttributeFieldNames,
-    ParasolidAttributeFieldUse, ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord,
-    ParasolidChartRecord, ParasolidDeltasPartitionPrefix, ParasolidDeltasRecord,
-    ParasolidDeltasResidualSpan, ParasolidDeltasTransmitHeader, ParasolidEntity51NumericUse,
-    ParasolidEntity51Record, ParasolidEntity51StringUse, ParasolidEntity51StructuredUse,
-    ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord, ParasolidEntity54StringRecord,
-    ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord,
-    ParasolidEntityVectorRecord, ParasolidFieldNamesRecord, ParasolidGroupMember,
-    ParasolidGroupRecord, ParasolidIntersectionRecord, ParasolidOffsetSurfaceRecord,
-    ParasolidSupportUvRecord, ParasolidSurfaceCurveRecord, ParasolidTermUseRecord,
-    ParasolidTopologyAttributeClassUse, ParasolidTopologyAttributeListReference,
-    ParasolidTrimmedCurveRecord,
+    parasolid_topology_attribute_list_references, parasolid_unresolved_topology_attribute_lists,
+    per_parasolid_stream, resolve_group_members, ParasolidAttributeClassUse,
+    ParasolidAttributeDefinition, ParasolidAttributeFieldNames, ParasolidAttributeFieldUse,
+    ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord, ParasolidChartRecord,
+    ParasolidDeltasPartitionPrefix, ParasolidDeltasRecord, ParasolidDeltasResidualSpan,
+    ParasolidDeltasTransmitHeader, ParasolidEntity51NumericUse, ParasolidEntity51Record,
+    ParasolidEntity51StringUse, ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord,
+    ParasolidEntity53DoubleRecord, ParasolidEntity54StringRecord, ParasolidEntity57AxisRecord,
+    ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord,
+    ParasolidFieldNamesRecord, ParasolidGroupMember, ParasolidGroupRecord,
+    ParasolidIntersectionRecord, ParasolidOffsetSurfaceRecord, ParasolidSupportUvRecord,
+    ParasolidSurfaceCurveRecord, ParasolidTermUseRecord, ParasolidTopologyAttributeClassUse,
+    ParasolidTopologyAttributeListReference, ParasolidTrimmedCurveRecord,
 };
 use super::rmfastload_storage::RmFastLoadStorage;
 use super::segments::{
@@ -347,6 +348,8 @@ pub(in crate::native) struct ParasolidRecords {
     pub(super) attribute_field_uses: Vec<ParasolidAttributeFieldUse>,
     pub(super) topology_attribute_list_references: Vec<ParasolidTopologyAttributeListReference>,
     pub(super) topology_attribute_class_uses: Vec<ParasolidTopologyAttributeClassUse>,
+    /// Topology attribute-list references whose attributes did not transfer.
+    pub(super) unresolved_topology_attribute_lists: usize,
 }
 
 /// Records extracted from the `segments` domain.
@@ -647,51 +650,6 @@ pub(crate) fn extract_segment_lineage(
     })
 }
 
-/// Drop cached-body images when a selected body comes from a partition: a run
-/// of cached images leads up to its partition, which holds the current state.
-pub(crate) fn without_images_before_partition(
-    selected: BTreeSet<BodyId>,
-    bindings: &[SegmentBodyBinding],
-) -> BTreeSet<BodyId> {
-    let partition = selected
-        .iter()
-        .filter(|body| {
-            bindings.iter().any(|binding| {
-                binding.stream_kind == crate::parasolid::StreamKind::Partition
-                    && body
-                        .as_str()
-                        .starts_with(&format!("nx:s{}:", binding.stream_ordinal))
-            })
-        })
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    if partition.is_empty() {
-        selected
-    } else {
-        partition
-    }
-}
-
-/// The emitted bodies that come from a partition stream, identified by the kind of the stream a
-/// body identity names. Legacy containers have no segment bindings to name the partition.
-pub(crate) fn partition_bodies(
-    emitted: &BTreeSet<BodyId>,
-    kinds: &[crate::parasolid::StreamKind],
-) -> BTreeSet<BodyId> {
-    emitted
-        .iter()
-        .filter(|body| {
-            body.as_str()
-                .strip_prefix("nx:s")
-                .and_then(|text| text.split_once(':'))
-                .and_then(|(ordinal, _)| ordinal.parse::<usize>().ok())
-                .and_then(|ordinal| kinds.get(ordinal))
-                == Some(&crate::parasolid::StreamKind::Partition)
-        })
-        .cloned()
-        .collect()
-}
-
 /// Select emitted body images whose complete segment binding has a terminal
 /// status. The mapping must cover every emitted body image before selection is
 /// admitted; a partial mapping is not a body-selection proof.
@@ -737,6 +695,10 @@ impl NativeModel {
             &self.parasolid.attribute_field_uses,
             &self.parasolid.topology_attribute_class_uses,
         )
+    }
+
+    pub(crate) fn unresolved_parasolid_topology_attribute_lists(&self) -> usize {
+        self.parasolid.unresolved_topology_attribute_lists
     }
 
     /// Runs the extraction dependency DAG. Ordering is load-bearing: later
@@ -851,6 +813,13 @@ impl NativeModel {
             &parasolid_entity_51_records,
             &parasolid_attribute_class_uses,
         );
+        let parasolid_unresolved_topology_attribute_lists =
+            parasolid_unresolved_topology_attribute_lists(
+                &parasolid_topology_attribute_list_references,
+                &parasolid_entity_51_records,
+                &parasolid_attribute_class_uses,
+                &parasolid_omitted_entity_51_xmts(streams)?,
+            );
         let om_record_areas = om_record_areas(container)?;
         let audit_trail_rows = audit_trail_rows(container)?;
         let operation_state_journal_groups = operation_state_journal_groups(container)?;
@@ -1423,7 +1392,8 @@ impl NativeModel {
             &object_uuid_values,
         )?;
         let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(container);
-        let assembly_placements = assembly_placements(container)?;
+        let mut assembly_placements = assembly_placements(container)?;
+        super::assembly_placement::bind_object_records(&mut assembly_placements, &object_records);
         let ParasolidDeltasEvents {
             transmit_headers: deltas_transmit_headers,
             records: deltas_records,
@@ -1503,6 +1473,7 @@ impl NativeModel {
                 attribute_field_uses: parasolid_attribute_field_uses,
                 topology_attribute_list_references: parasolid_topology_attribute_list_references,
                 topology_attribute_class_uses: parasolid_topology_attribute_class_uses,
+                unresolved_topology_attribute_lists: parasolid_unresolved_topology_attribute_lists,
             },
             segments: SegmentRecords {
                 index_rows: segment_index_rows,

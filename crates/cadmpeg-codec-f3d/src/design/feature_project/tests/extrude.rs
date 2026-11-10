@@ -229,7 +229,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                                 )
                                 .expect("valid entity identity"),
                                 entity_reference_offset: 420,
-                                region_selection: None,
+                                compact_tail_flags: None,
+            region_selection: None,
                                 paired_class_tag:
                                     crate::records::references::DesignClassTag::try_from(
                                         "259".to_owned(),
@@ -245,6 +246,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             )),
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: None,
 
             previous_history_state_id: None,
@@ -257,7 +259,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             )
             .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            deleted_sketch_members: Vec::new(),
+            deleted_members: None,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )

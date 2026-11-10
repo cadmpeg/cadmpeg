@@ -31,8 +31,10 @@ use super::support_uv::{
 use super::{report_untransferred_streams, Counts, Scan};
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
+use crate::geometry::SurfaceRefusal;
 use crate::grouping::group_pairs;
 use crate::loss::NxLossCode;
+use crate::parasolid::StreamKind;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::dialect::DialectLayers;
@@ -55,6 +57,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
+use cadmpeg_parasolid::geometry::Refusal;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn ordered_point_candidates(graph: &Graph) -> Vec<(FinitePoint3, &Node)> {
@@ -81,6 +84,37 @@ pub(super) fn ordered_curve_candidates(graph: &Graph) -> Vec<(CurveGeometry, &No
         [NodeKind::Line, NodeKind::Circle, NodeKind::Ellipse],
         Node::curve_geometry,
     )
+}
+
+/// One loss for each graph-owned CONE or TORUS record whose otherwise valid
+/// fields state a form that has no surface.
+fn surface_refusals(si: usize, graph: &Graph) -> Vec<LossNote> {
+    [(NodeKind::Cone, "CONE"), (NodeKind::Torus, "TORUS")]
+        .into_iter()
+        .flat_map(|(kind, name)| graph.of_kind(kind).map(move |node| (name, node)))
+        .filter_map(|(name, node)| {
+            let (code, cause) = match node.surface_refusal()? {
+                SurfaceRefusal::Analytic(Refusal::ConeHalfAngleSign) => (
+                    NxLossCode::CarrierConeHalfAngleSignUnresolved,
+                    "stores a negative half-angle sine or cosine",
+                ),
+                SurfaceRefusal::Analytic(Refusal::ConeHalfAngleIdentity) => (
+                    NxLossCode::CarrierConeHalfAngleIdentityRefused,
+                    "stores a half-angle sine and cosine whose squared sum differs from one \
+                     by more than 1e-9",
+                ),
+                SurfaceRefusal::NegativeMajorRadius => (
+                    NxLossCode::CarrierTorusNegativeMajorUnresolved,
+                    "stores a negative major radius",
+                ),
+                SurfaceRefusal::Analytic(Refusal::Fields) => return None,
+            };
+            Some(code.note(format!(
+                "parasolid#{si} {name} at byte {} {cause}; the surface is not emitted.",
+                node.pos()
+            )))
+        })
+        .collect()
 }
 
 fn ordered_fixed_candidates<T>(
@@ -126,7 +160,7 @@ pub(super) fn try_decode_geometry(
     let mut body_node_ids = BTreeMap::new();
     let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
     let mut carrier_refusals: Vec<LossNote> = Vec::new();
-    let mut topology_losses = parsed.primary_edge_losses();
+    let mut topology_losses = parsed.primary_losses();
     let mut native_losses: Vec<LossNote> = Vec::new();
     let rmfastload_ids = scan
         .container
@@ -147,13 +181,8 @@ pub(super) fn try_decode_geometry(
         && !rmfastload_selected.is_empty()
         && rmfastload_selected.len() < body_node_ids.len()
     {
-        rmfastload_stream_indices(&rmfastload_selected).map(|streams| {
-            (
-                rmfastload_selected,
-                streams,
-                "rmfastload_object_id_membership",
-            )
-        })
+        rmfastload_stream_indices(&rmfastload_selected)
+            .map(|streams| (rmfastload_selected, streams, RMFASTLOAD_MEMBERSHIP_SELECTOR))
     } else {
         None
     };
@@ -183,7 +212,11 @@ pub(super) fn try_decode_geometry(
         }),
         None => None,
     };
-    let preselection = rmfastload_preselection.or(terminal_preselection);
+    let preselection = body_preselection(
+        rmfastload_preselection,
+        terminal_preselection,
+        has_plain_beside_partition_streams(scan.streams.iter().map(crate::parasolid::Stream::kind)),
+    );
     let (chart_count, geometry_record_count) = scan
         .streams
         .iter()
@@ -277,14 +310,17 @@ pub(super) fn try_decode_geometry(
             curves: nurbs_curves,
             pcurves: nurbs_pcurves,
             refusals: nurbs_refusals,
+            unresolved_controls,
         } = parsed.parse_nurbs(si);
-        for refusal in nurbs_refusals {
-            carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(format!(
-                "parasolid#{si} {} at byte {} states no carrier: {}",
-                refusal.family, refusal.pos, refusal.error
+        carrier_refusals.extend(nurbs_refusals.iter().map(|refusal| refusal.loss(si)));
+        for carrier in unresolved_controls {
+            carrier_refusals.push(NxLossCode::CarrierControlsUnresolved.note(format!(
+                "parasolid#{si} {} at byte {} names no control values that resolve to it",
+                carrier.family, carrier.pos
             )));
         }
         let view = parsed.stream(si);
+        carrier_refusals.extend(surface_refusals(si, &view.graph));
         let stream_name = format!("nx:parasolid#{si}:{}", stream.kind().label());
         let source_stream = StreamHandle::new(
             cadmpeg_ir::StreamName::try_from(stream_name).map_err(CodecError::malformed)?,
@@ -294,6 +330,7 @@ pub(super) fn try_decode_geometry(
         let graph = &view.graph;
         let mut points_by_xmt = BTreeMap::new();
         let mut surfaces_by_xmt = BTreeMap::new();
+        let mut reversed_analytic_surfaces = BTreeSet::new();
         let mut curves_by_xmt = BTreeMap::new();
         let mut pcurves_by_xmt = BTreeMap::new();
         let mut pcurve_supports_by_xmt: BTreeMap<u32, SurfaceId> = BTreeMap::new();
@@ -353,6 +390,12 @@ pub(super) fn try_decode_geometry(
             }
             let id: SurfaceId =
                 scope.id_from_display(&cadmpeg_ir::identity_component!("surf"), fi)?;
+            if node
+                .common_header()
+                .is_some_and(|(sense, _)| sense == cadmpeg_ir::topology::Sense::Reversed)
+            {
+                reversed_analytic_surfaces.insert(id.clone());
+            }
             annotate_node(
                 &mut annotations,
                 id.as_str(),
@@ -1092,6 +1135,13 @@ pub(super) fn try_decode_geometry(
                         None,
                     ),
                 )?;
+                if graph
+                    .get(NodeKind::SweptSurface, swept.xmt)
+                    .and_then(Node::common_header)
+                    .is_some_and(|(sense, _)| sense == cadmpeg_ir::topology::Sense::Reversed)
+                {
+                    reversed_analytic_surfaces.insert(surface_id.clone());
+                }
                 surfaces_by_xmt.insert(swept.xmt, surface_id);
             }
             let mapped = curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len();
@@ -1227,6 +1277,7 @@ pub(super) fn try_decode_geometry(
                 graph,
                 points: &points_by_xmt,
                 surfaces: &surfaces_by_xmt,
+                reversed_analytic_surfaces: &reversed_analytic_surfaces,
                 curves: &curves_by_xmt,
                 pcurves: &pcurves_by_xmt,
                 pcurve_supports: &pcurve_supports_by_xmt,
@@ -1375,40 +1426,34 @@ pub(super) fn try_decode_geometry(
         &mut parsed,
         terminal_lineage,
     )?;
-    let mut active_body_selection = if let Some((selected, _, source)) = &preselection {
+    let (mut active_body_selection, membership_selection) = if let Some((selected, _, source)) =
+        &preselection
+    {
         let selected_hits = selected
             .iter()
             .filter_map(|body| body_node_ids.get(body))
             .map(BTreeSet::len)
             .sum::<usize>();
-        apply_preselected_active_body_selection(&mut ir, selected, source, Some(selected_hits))
+        let applied =
+            apply_preselected_active_body_selection(&mut ir, selected, source, Some(selected_hits));
+        (
+            applied,
+            applied && *source == RMFASTLOAD_MEMBERSHIP_SELECTOR,
+        )
     } else {
-        select_active_body(&mut ir, &body_node_ids, rmfastload_ids)
+        let applied = select_active_body(&mut ir, &body_node_ids, rmfastload_ids);
+        (applied, applied)
     };
+    if !membership_selection {
+        let withheld = withhold_plain_history_images(&mut ir, &scan.streams);
+        if withheld != 0 {
+            native_losses.push(NxLossCode::PlainHistoryImagesWithheld.note(format!(
+                "Withheld {withheld} body image(s) of plain cached-body streams because the part also has partition-stream bodies and RMFastLoad membership selects no body. The plain streams remain retained source records."
+            )));
+        }
+    }
     if !active_body_selection {
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
-    }
-    if !active_body_selection && model.segments.body_bindings.is_empty() {
-        let emitted = ir
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<BTreeSet<_>>();
-        let kinds = scan
-            .streams
-            .iter()
-            .map(crate::parasolid::Stream::kind)
-            .collect::<Vec<_>>();
-        let partition = crate::native::model::partition_bodies(&emitted, &kinds);
-        if !partition.is_empty() && partition.len() < emitted.len() {
-            active_body_selection = apply_preselected_active_body_selection(
-                &mut ir,
-                &partition,
-                "partition_over_cached_images",
-                None,
-            );
-        }
     }
     classify_body_kinds(&mut ir)?;
     crate::native::attach_annotations(
@@ -1811,20 +1856,90 @@ pub(super) fn rmfastload_allows_terminal_lineage(
     body_count > 1 && rmfastload_selected.is_empty()
 }
 
+const RMFASTLOAD_MEMBERSHIP_SELECTOR: &str = "rmfastload_object_id_membership";
+
+fn body_stream_index(body: &BodyId) -> Option<usize> {
+    body.as_str()
+        .strip_prefix("nx:s")
+        .and_then(|text| text.split_once(':'))
+        .and_then(|(text, _)| text.parse().ok())
+}
+
 /// Return the stream ordinals that can contain selected body images. A
 /// malformed body identity disables preselection rather than guessing a
 /// stream owner.
 pub(super) fn rmfastload_stream_indices(selected: &BTreeSet<BodyId>) -> Option<BTreeSet<usize>> {
     let mut streams = BTreeSet::new();
     for body in selected {
-        let index = body
-            .as_str()
-            .strip_prefix("nx:s")
-            .and_then(|text| text.split_once(':'))
-            .and_then(|(text, _)| text.parse().ok())?;
-        streams.insert(index);
+        streams.insert(body_stream_index(body)?);
     }
     Some(streams)
+}
+
+/// Whether a part has both partition streams and plain cached-body streams.
+fn has_plain_beside_partition_streams(kinds: impl IntoIterator<Item = StreamKind>) -> bool {
+    let (mut partition, mut plain) = (false, false);
+    for kind in kinds {
+        match kind {
+            StreamKind::Partition => partition = true,
+            StreamKind::Plain => plain = true,
+            StreamKind::Deltas | StreamKind::Preview => {}
+        }
+    }
+    partition && plain
+}
+
+/// The stream-level preselection. Plain history images beside partition
+/// streams are withheld before terminal lineage selects, so terminal-lineage
+/// preselection runs only for a part without them.
+fn body_preselection<T>(
+    membership: Option<T>,
+    terminal_lineage: Option<T>,
+    plain_beside_partition: bool,
+) -> Option<T> {
+    if plain_beside_partition {
+        membership
+    } else {
+        membership.or(terminal_lineage)
+    }
+}
+
+/// The plain-stream bodies of a part that also has partition-stream bodies.
+/// A body identity without a known stream withholds nothing.
+fn plain_history_images<'a>(
+    stream_kind: impl Fn(usize) -> Option<StreamKind>,
+    bodies: impl IntoIterator<Item = &'a BodyId>,
+) -> Option<BTreeSet<BodyId>> {
+    let mut plain = BTreeSet::new();
+    let mut partition = false;
+    for body in bodies {
+        match stream_kind(body_stream_index(body)?)? {
+            StreamKind::Partition => partition = true,
+            StreamKind::Plain => {
+                plain.insert(body.clone());
+            }
+            StreamKind::Deltas | StreamKind::Preview => {}
+        }
+    }
+    (partition && !plain.is_empty()).then_some(plain)
+}
+
+/// Remove plain-stream history images and return their count.
+fn withhold_plain_history_images(ir: &mut CadIr, streams: &[crate::parasolid::Stream]) -> usize {
+    let Some(images) = plain_history_images(
+        |index| streams.get(index).map(crate::parasolid::Stream::kind),
+        ir.model.bodies.iter().map(|body| &body.id),
+    ) else {
+        return 0;
+    };
+    let mut kept = BTreeSet::new();
+    for body in &ir.model.bodies {
+        if !images.contains(&body.id) {
+            kept.insert(body.id.clone());
+        }
+    }
+    prune_inactive_topology(ir, &kept);
+    images.len()
 }
 
 fn apply_preselected_active_body_selection(
@@ -1851,7 +1966,7 @@ fn apply_preselected_active_body_selection(
             selector,
         );
         let (hit_attribute, count_attribute) = match selector {
-            "rmfastload_object_id_membership" => (
+            RMFASTLOAD_MEMBERSHIP_SELECTOR => (
                 Some(cadmpeg_core::nonblank_literal!("rmfastload_hits")),
                 cadmpeg_core::nonblank_literal!("rmfastload_active_body_count"),
             ),
@@ -1897,7 +2012,7 @@ pub(super) fn select_active_body(
     apply_preselected_active_body_selection(
         ir,
         &selected,
-        "rmfastload_object_id_membership",
+        RMFASTLOAD_MEMBERSHIP_SELECTOR,
         Some(selected_hits),
     )
 }
@@ -1921,22 +2036,8 @@ fn select_terminal_feature_bodies(
         &model.segments.body_bindings,
         &model.segments.body_lineage_statuses,
     ) else {
-        let current = crate::native::model::without_images_before_partition(
-            emitted.clone(),
-            &model.segments.body_bindings,
-        );
-        return current != emitted
-            && apply_preselected_active_body_selection(
-                ir,
-                &current,
-                "partition_over_cached_images",
-                None,
-            );
+        return false;
     };
-    let selected = crate::native::model::without_images_before_partition(
-        selected,
-        &model.segments.body_bindings,
-    );
     apply_preselected_active_body_selection(ir, &selected, "terminal_feature_body_lineage", None)
 }
 

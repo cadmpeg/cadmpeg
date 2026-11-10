@@ -20,7 +20,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::pmi::{
     DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition,
-    PmiQuantity, PmiTarget,
+    PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::presentation::PresentationItem;
 use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
@@ -44,39 +44,6 @@ mod representations;
 mod wire;
 
 const EPS_IDENTITY: f64 = 1.0e-12;
-/// End-pole gap, as a fraction of the polygon's length, below which a control polygon is closed.
-const CLOSED_POLYGON_GAP: f64 = 1.0e-6;
-
-/// The distance along a control polygon of the polygon point nearest to `point`.
-fn polygon_position(
-    poles: &[cadmpeg_ir::math::Point3],
-    point: cadmpeg_ir::math::Point3,
-) -> Option<f64> {
-    let mut walked = 0.0;
-    let mut nearest: Option<(f64, f64)> = None;
-    for pair in poles.windows(2) {
-        let (a, b) = (pair[0], pair[1]);
-        let span = cadmpeg_ir::math::Vector3::new(b.x - a.x, b.y - a.y, b.z - a.z);
-        let arm = cadmpeg_ir::math::Vector3::new(point.x - a.x, point.y - a.y, point.z - a.z);
-        let length = span.norm();
-        let along = if length > 0.0 {
-            (arm.dot(span) / (length * length)).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        let foot = cadmpeg_ir::math::Point3::new(
-            a.x + span.x * along,
-            a.y + span.y * along,
-            a.z + span.z * along,
-        );
-        let distance = foot.distance(point);
-        if nearest.is_none_or(|(best, _)| distance < best) {
-            nearest = Some((distance, walked + length * along));
-        }
-        walked += length;
-    }
-    nearest.map(|(_, position)| position)
-}
 
 /// Serializes an IR document as an ISO 10303-21 STEP Part 21 file declaring
 /// `schema`.
@@ -1444,10 +1411,55 @@ impl<'a> Builder<'a> {
             .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
             .filter_map(|occurrence| occurrence_products.get(&occurrence.id))
             .collect::<BTreeSet<_>>();
+        let root_product_count = root_products.len();
         let root_product = match root_products.len() {
             1 => root_products.pop_first(),
             _ => None,
         };
+        let emitted_product_definitions = products
+            .iter()
+            .map(|product| product.id.clone())
+            .collect::<HashSet<_>>();
+        let mut root_definition_counts = BTreeMap::<ProductDefinitionId, usize>::new();
+        for occurrence in occurrences
+            .iter()
+            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+        {
+            if let Some(definition) = occurrence_products
+                .get(&occurrence.id)
+                .filter(|definition| emitted_product_definitions.contains(*definition))
+            {
+                *root_definition_counts
+                    .entry(definition.clone())
+                    .or_default() += 1;
+            }
+        }
+        let repeated_root_occurrence_ids = occurrences
+            .iter()
+            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+            .filter_map(|occurrence| {
+                let definition = occurrence_products.get(&occurrence.id)?;
+                (root_definition_counts
+                    .get(definition)
+                    .copied()
+                    .unwrap_or_default()
+                    > 1)
+                .then(|| occurrence.id.clone())
+            })
+            .collect::<HashSet<_>>();
+        let repeated_root_definition_has_children = occurrences.iter().any(|occurrence| {
+            matches!(
+                &occurrence.parent,
+                OccurrenceParent::Occurrence { occurrence: parent }
+                    if repeated_root_occurrence_ids.contains(parent)
+            ) && occurrence_products
+                .get(&occurrence.id)
+                .is_some_and(|definition| emitted_product_definitions.contains(definition))
+                && occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) == [1.0; 3]
+                && occurrence
+                    .effective_transform()
+                    .is_ok_and(|transform| transform.is_proper_rigid())
+        });
         // A rigid root placement of a local product needs a parent product to carry it.
         let placed_root = |occurrence: &cadmpeg_ir::products::Occurrence| {
             matches!(occurrence.parent, OccurrenceParent::Root {})
@@ -1457,12 +1469,21 @@ impl<'a> Builder<'a> {
                     .effective_transform()
                     .is_ok_and(|transform| transform.is_proper_rigid())
         };
-        let assembly_root = occurrences.iter().any(|occurrence| {
-            placed_root(occurrence)
-                && occurrence
-                    .effective_transform()
-                    .is_ok_and(|transform| !is_identity(&transform.rows()))
-        });
+        let mut has_placed_root = false;
+        let mut has_non_identity_placed_root = false;
+        for occurrence in occurrences
+            .iter()
+            .filter(|occurrence| placed_root(occurrence))
+        {
+            has_placed_root = true;
+            has_non_identity_placed_root |= occurrence
+                .effective_transform()
+                .is_ok_and(|transform| !is_identity(&transform.rows()));
+        }
+        let assembly_root = has_non_identity_placed_root
+            || (has_placed_root
+                && root_product_count > 1
+                && !repeated_root_definition_has_children);
         let product_names = distinct_names(
             &products
                 .iter()
@@ -1635,7 +1656,12 @@ impl<'a> Builder<'a> {
             });
         self.emit_unclaimed_body_representation(context, root_representation);
 
-        for (occurrence, &occurrence_name) in occurrences.iter().zip(&occurrence_names) {
+        let mut emission_order = occurrences
+            .iter()
+            .zip(&occurrence_names)
+            .collect::<Vec<_>>();
+        emission_order.sort_by_key(|(occurrence, _)| occurrence.ordinal);
+        for (occurrence, &occurrence_name) in emission_order {
             let parent = match (&occurrence.parent, assembly_root) {
                 (OccurrenceParent::Occurrence { occurrence: parent }, _) => {
                     let Some(parent_occurrence) = graph.occurrence(parent) else {
@@ -3688,15 +3714,12 @@ impl<'a> Builder<'a> {
             );
             return None;
         };
-        let replaces_chart = self.approximations.replaces_stored_chart(curve_id.as_str());
         let mut pcurve_refs = Vec::new();
         for use_ in associated {
             let pcurve_id = use_.use_.pcurve.as_str();
             let surface_id = use_.surface;
             let face_id = use_.face;
-            if replaces_chart {
-                self.unwritten_pcurve_carriers.insert(pcurve_id.to_string());
-            } else if let Some(pcurve) = self.emit_pcurve(use_, edge) {
+            if let Some(pcurve) = self.emit_pcurve(use_, edge) {
                 pcurve_refs.push(pcurve);
             } else if self.surface_is_fitted_helix(surface_id) {
                 self.fitted_surface_pcurves.insert(pcurve_id.to_string());
@@ -3720,70 +3743,11 @@ impl<'a> Builder<'a> {
             )
         };
         // same_sense = .T.: the edge runs start→end along the curve's own
-        // parameterization, the convention IR curves follow. A decoder can only
-        // orient an edge that has a parameter range, so a spline edge without one
-        // can still run from the end of its curve to the start.
-        let same_sense = if self.spline_edge_runs_against_curve(edge, curve_id.as_str()) {
-            ".F."
-        } else {
-            ".T."
-        };
-        Some(self.emitter.emit(
-            "EDGE_CURVE",
-            &format!("'',{v1},{v2},{curve_ref},{same_sense}"),
-        ))
-    }
-
-    /// Whether the vertices of an open edge without a parameter range sit on its open spline in
-    /// the reverse order. The control polygon stays close to the spline, and the position of a
-    /// vertex along the polygon needs no evaluation of the curve.
-    fn spline_edge_runs_against_curve(&mut self, edge: &Edge, curve_id: &str) -> bool {
-        if edge.start == edge.end || edge.param_range().is_some() {
-            return false;
-        }
-        let position = |exporter: &Self, vertex: &str| {
-            let vertex = exporter.vertices.get(vertex)?;
-            exporter
-                .points
-                .get(vertex.point.as_str())
-                .map(|point| point.position().get())
-        };
-        let (Some(start), Some(end)) = (
-            position(self, edge.start.as_str()),
-            position(self, edge.end.as_str()),
-        ) else {
-            return false;
-        };
-        let geometry = match self
-            .curves
-            .get(curve_id)
-            .and_then(|curve| curve.geometry.solved())
-        {
-            Some(solved) => Some(solved.clone()),
-            None => self.approximations.curve(curve_id),
-        };
-        let Some(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
-            return false;
-        };
-        let poles = nurbs.pole_rows().raw_points();
-        let (Some(first), Some(last)) = (poles.first(), poles.last()) else {
-            return false;
-        };
-        let length = poles
-            .windows(2)
-            .map(|pair| pair[0].distance(pair[1]))
-            .sum::<f64>();
-        // A curve that closes on itself has a seam, so the order of two positions says nothing.
-        if first.distance(*last) <= length * CLOSED_POLYGON_GAP {
-            return false;
-        }
-        let (Some(from), Some(to)) = (
-            polygon_position(&poles, start),
-            polygon_position(&poles, end),
-        ) else {
-            return false;
-        };
-        to < from
+        // parameterization, the convention IR curves follow.
+        Some(
+            self.emitter
+                .emit("EDGE_CURVE", &format!("'',{v1},{v2},{curve_ref},.T.")),
+        )
     }
 
     fn emit_pcurve(&mut self, use_: PcurveUse<'a>, edge: &Edge) -> Option<Ref> {
@@ -3823,6 +3787,20 @@ impl<'a> Builder<'a> {
                 edge,
             )?),
         };
+        let active_trim = if range.is_some()
+            && (matches!(aligned, std::borrow::Cow::Owned(_)) || pcurves::ranges_match(range, edge))
+            && edge.tolerance.is_some_and(|edge_tolerance| {
+                [&edge.start, &edge.end].into_iter().any(|id| {
+                    self.vertices
+                        .get(id.as_str())
+                        .and_then(|vertex| vertex.tolerance)
+                        .is_some_and(|tolerance| tolerance > edge_tolerance)
+                })
+            }) {
+            pcurves::bounded_spline_use(aligned.as_ref(), edge)
+        } else {
+            None
+        };
         let shift = self
             .pcurve_period_shifts
             .get(use_.coedge)
@@ -3835,6 +3813,18 @@ impl<'a> Builder<'a> {
         let curve = match self.surface_chart(surface_id) {
             Some(chart) => geometry::pcurve_in_chart(&mut self.emitter, chart, &aligned)?,
             None => geometry::pcurve(&mut self.emitter, &aligned)?,
+        };
+        let curve = if let Some([start, end]) = active_trim {
+            self.emitter.emit(
+                "TRIMMED_CURVE",
+                &format!(
+                    "'',{curve},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.",
+                    self.emitter.real(start),
+                    self.emitter.real(end),
+                ),
+            )
+        } else {
+            curve
         };
         let context = self.pcurve_context();
         let representation = self.emitter.emit(
@@ -4584,7 +4574,16 @@ impl<'a> Builder<'a> {
             }
         }
         for annotation in &annotations {
-            for target in &annotation.targets {
+            let zone_targets = match &annotation.definition {
+                PmiDefinition::GeometricTolerance { constraints, .. } => constraints
+                    .zones
+                    .iter()
+                    .flat_map(|zone| &zone.projections)
+                    .flat_map(cadmpeg_ir::pmi::zones::ToleranceProjection::targets)
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            };
+            for target in annotation.targets.iter().chain(zone_targets) {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     continue;
                 };
@@ -4830,14 +4829,17 @@ impl<'a> Builder<'a> {
                         // DIMENSIONAL_SIZE whose name identifies the size
                         // category; DIAMETER_SIZE and RADIUS_SIZE are not
                         // entity types.
-                        DimensionKind::Diameter | DimensionKind::Radius => {
-                            ("DIMENSIONAL_SIZE", true)
-                        }
+                        DimensionKind::Diameter
+                        | DimensionKind::Radius
+                        | DimensionKind::SphericalDiameter
+                        | DimensionKind::SphericalRadius => ("DIMENSIONAL_SIZE", true),
                         DimensionKind::Other(_) => ("DIMENSIONAL_SIZE", false),
                     };
                     let characteristic_name = match dimension {
                         DimensionKind::Diameter => "diameter",
                         DimensionKind::Radius => "radius",
+                        DimensionKind::SphericalDiameter => "spherical diameter",
+                        DimensionKind::SphericalRadius => "spherical radius",
                         _ => name,
                     };
                     let parameters = match dimension {
@@ -4850,7 +4852,8 @@ impl<'a> Builder<'a> {
                         _ => format!("{aspect},{}", string(characteristic_name)),
                     };
                     let characteristic = self.emitter.emit(entity, &parameters);
-                    let items = if let Some(DimensionTolerance::Limits { lower, upper }) = tolerance
+                    let mut items = if let Some(DimensionTolerance::Limits { lower, upper }) =
+                        tolerance
                     {
                         let mut items = Vec::new();
                         if let Some(value) = nominal {
@@ -4869,6 +4872,24 @@ impl<'a> Builder<'a> {
                             .into_iter()
                             .collect()
                     };
+                    let mut secondary_modifiers = Vec::new();
+                    for modifier in relation.modifiers() {
+                        let item = self.emitter.emit(
+                            "DESCRIPTIVE_REPRESENTATION_ITEM",
+                            &format!("'dimensional note',{}", string(modifier)),
+                        );
+                        if matches!(modifier.as_str(), "auxiliary" | "theoretical") {
+                            items.push(item);
+                        } else {
+                            secondary_modifiers.push(item);
+                        }
+                    }
+                    if !secondary_modifiers.is_empty() {
+                        items.push(self.emitter.emit(
+                            "COMPOUND_REPRESENTATION_ITEM",
+                            &format!("'dimensional note',{}", refs(&secondary_modifiers)),
+                        ));
+                    }
                     if !items.is_empty() {
                         let representation = self.emitter.emit(
                             "SHAPE_DIMENSION_REPRESENTATION",
@@ -4923,7 +4944,14 @@ impl<'a> Builder<'a> {
                     defined_area_second_unit,
                     datum_system,
                     modifiers,
+                    constraints,
                 } => {
+                    if constraints.zones.iter().flat_map(|zone| &zone.projections)
+                        .flat_map(cadmpeg_ir::pmi::zones::ToleranceProjection::targets)
+                        .any(|target| !matches!(target, PmiTarget::ShapeAspect { source_id } if aspects.contains_key(source_id.as_str())))
+                    {
+                        continue;
+                    }
                     let kind_exact = !matches!(tolerance, GeometricToleranceKind::Other(value) if value != "geometric_tolerance");
                     let entity = match tolerance {
                         GeometricToleranceKind::Straightness => "STRAIGHTNESS_TOLERANCE",
@@ -4966,6 +4994,8 @@ impl<'a> Builder<'a> {
                         && modifiers.is_empty()
                         && defined_unit.is_none()
                         && area_unit.is_none()
+                        && constraints.displacement.is_none()
+                        && constraints.maximum.is_none()
                     {
                         self.emitter.emit(
                             entity,
@@ -5007,11 +5037,71 @@ impl<'a> Builder<'a> {
                             parts
                                 .push(format!("GEOMETRIC_TOLERANCE_WITH_MODIFIERS(({modifiers}))"));
                         }
+                        if let Some(displacement) = constraints.displacement {
+                            let value = self.emit_pmi_measure(PmiValue::from_parts(
+                                displacement.magnitude(),
+                                PmiQuantity::Length,
+                            ));
+                            parts.push(format!("UNEQUALLY_DISPOSED_GEOMETRIC_TOLERANCE({value})"));
+                        }
+                        if let Some(maximum) = constraints.maximum {
+                            let value = self.emit_pmi_measure(PmiValue::from_parts(
+                                maximum.magnitude(),
+                                PmiQuantity::Length,
+                            ));
+                            parts.push(format!(
+                                "GEOMETRIC_TOLERANCE_WITH_MAXIMUM_TOLERANCE({value})"
+                            ));
+                        }
                         parts.push(format!("{entity}()"));
+                        parts.sort();
                         self.emitter
                             .emit_raw("GEOMETRIC_TOLERANCE", &format!("({})", parts.join(" ")))
                     };
                     annotation_refs.insert(annotation.id.clone(), tolerance_ref);
+                    for zone in &constraints.zones {
+                        let form = self
+                            .emitter
+                            .emit("TOLERANCE_ZONE_FORM", &string(zone.form.as_str()));
+                        let zone_ref = self.emitter.emit(
+                            "TOLERANCE_ZONE",
+                            &format!("'','',{pds},.F.,({tolerance_ref}),{form}"),
+                        );
+                        for projection in &zone.projections {
+                            let aspect = |target: &PmiTarget| match target {
+                                PmiTarget::ShapeAspect { source_id } => {
+                                    aspects.get(source_id.as_str()).copied()
+                                }
+                                _ => None,
+                            };
+                            let Some(end) = aspect(&projection.end) else {
+                                continue;
+                            };
+                            let boundaries = projection
+                                .boundaries
+                                .iter()
+                                .filter_map(aspect)
+                                .collect::<Vec<_>>();
+                            let length = self.emit_pmi_measure(PmiValue::from_parts(
+                                projection.length.magnitude(),
+                                PmiQuantity::Length,
+                            ));
+                            let mut args =
+                                format!("{zone_ref},{},{end},{length}", refs(&boundaries));
+                            let entity = if let Some(offset) = projection.offset {
+                                let offset = self.emit_pmi_measure(PmiValue::from_parts(
+                                    offset.magnitude(),
+                                    PmiQuantity::Length,
+                                ));
+                                args.push(',');
+                                args.push_str(&offset.to_string());
+                                "PROJECTED_ZONE_DEFINITION_WITH_OFFSET"
+                            } else {
+                                "PROJECTED_ZONE_DEFINITION"
+                            };
+                            self.emitter.emit(entity, &args);
+                        }
+                    }
                     self.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
                 }
                 PmiDefinition::Datum { .. }

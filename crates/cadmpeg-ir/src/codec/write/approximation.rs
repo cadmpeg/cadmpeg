@@ -251,26 +251,6 @@ impl<'a> Approximator<'a> {
         fitted
     }
 
-    /// Whether the written carrier of `curve` departs from its stored chart. The
-    /// curve's pcurves follow the stored chart, so they would contradict such a
-    /// carrier.
-    pub fn replaces_stored_chart(&mut self, curve: &str) -> bool {
-        if self.exact_intersection(curve).is_some() {
-            return true;
-        }
-        let Some(moved) = self.chart_on_edge_vertices(curve) else {
-            return false;
-        };
-        let ir = self.ir;
-        let index = &*self
-            .index
-            .get_or_insert_with(|| ModelIndex::new_model_only(ir));
-        index
-            .curves(curve, StandardIndex)
-            .and_then(|owner| owner.geometry.solved())
-            .is_some_and(|stored| *stored != moved)
-    }
-
     /// A degree-one intersection chart with its ends on the vertices of its edges,
     /// for a curve with no exact carrier.
     pub fn chart_on_edge_vertices(&mut self, curve: &str) -> Option<SolvedCurveGeometry> {
@@ -601,24 +581,69 @@ fn isocurve_of_spline_surface(
         return None;
     };
     let domain = |knots: &[f64]| Some((*knots.first()?, *knots.last()?));
-    let spans = |domain: (f64, f64), a: f64, b: f64| a.min(b) == domain.0 && a.max(b) == domain.1;
-    let (axis, at) = if first.v == last.v
-        && spans(domain(surface.u_knots().as_slice())?, first.u, last.u)
-    {
-        (crate::geometry::nurbs::SurfaceParameterAxis::V, first.v)
-    } else if first.u == last.u && spans(domain(surface.v_knots().as_slice())?, first.v, last.v) {
-        (crate::geometry::nurbs::SurfaceParameterAxis::U, first.u)
-    } else {
-        return None;
+    // The isocurve keeps the surface's own knots, so it has the parameters of this line only
+    // when the line covers the same parameter interval. A line that runs backward takes the
+    // reversed isocurve.
+    let line_domain = domain(nurbs.knots().as_slice())?;
+    let crossing = |domain: (f64, f64), a: f64, b: f64| {
+        (line_domain == domain)
+            .then(|| LineCrossing::between(domain, a, b))
+            .flatten()
     };
+    let u_domain = domain(surface.u_knots().as_slice())?;
+    let v_domain = domain(surface.v_knots().as_slice())?;
+    let (axis, at, crossing) =
+        if let Some(crossing) = crossing(u_domain, first.u, last.u).filter(|_| first.v == last.v) {
+            (
+                crate::geometry::nurbs::SurfaceParameterAxis::V,
+                first.v,
+                crossing,
+            )
+        } else {
+            (
+                crate::geometry::nurbs::SurfaceParameterAxis::U,
+                first.u,
+                crossing(v_domain, first.v, last.v).filter(|_| first.u == last.u)?,
+            )
+        };
     match crate::eval::nurbs_surface_isocurve(EvaluationAdmission::Standard, surface, axis, at) {
-        Ok(curve) => curve,
+        Ok(curve) => crossing.orient(curve?, line_domain),
         Err(limit) => {
             if evaluation.refusal.get().is_none() {
                 evaluation.refusal.set(Some(limit));
             }
             None
         }
+    }
+}
+
+/// The direction in which a straight parameter-space line crosses a whole parameter interval.
+#[derive(Clone, Copy)]
+enum LineCrossing {
+    Forward,
+    Backward,
+}
+
+impl LineCrossing {
+    fn between(domain: (f64, f64), from: f64, to: f64) -> Option<Self> {
+        if from == domain.0 && to == domain.1 {
+            Some(Self::Forward)
+        } else if from == domain.1 && to == domain.0 {
+            Some(Self::Backward)
+        } else {
+            None
+        }
+    }
+
+    /// `curve` in the direction of the line, over the same parameter interval.
+    fn orient(self, mut curve: NurbsCurve, domain: (f64, f64)) -> Option<NurbsCurve> {
+        if matches!(self, Self::Backward) {
+            curve.reverse_parameterization_in_range(
+                crate::scalar::FiniteReal::new(domain.0)?,
+                crate::scalar::FiniteReal::new(domain.1)?,
+            )?;
+        }
+        Some(curve)
     }
 }
 
@@ -662,11 +687,15 @@ fn isocurve_of_linear_sweep(
         return None;
     };
     let knots = directrix.knots().as_slice();
-    let spans_directrix =
-        first.u.min(last.u) == *knots.first()? && first.u.max(last.u) == *knots.last()?;
-    if first.v != last.v || !spans_directrix {
+    let line_knots = nurbs.knots().as_slice();
+    // The moved directrix keeps its own knots, so it has the parameters of this line only when
+    // the line covers the same parameter interval. A line that runs backward takes the reversed
+    // directrix.
+    let domain = (*knots.first()?, *knots.last()?);
+    if first.v != last.v || (*line_knots.first()?, *line_knots.last()?) != domain {
         return None;
     }
+    let crossing = LineCrossing::between(domain, first.u, last.u)?;
     let direction = sweep.direction().get();
     let points = directrix
         .pole_rows()
@@ -688,6 +717,7 @@ fn isocurve_of_linear_sweep(
         directrix.periodic(),
     )
     .ok()
+    .and_then(|moved| crossing.orient(moved, domain))
 }
 
 fn keep_refusal<T, R>(

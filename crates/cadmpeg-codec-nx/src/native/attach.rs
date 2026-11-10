@@ -38,6 +38,7 @@ use cadmpeg_ir::{
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
+mod assembly_occurrences;
 pub(super) mod body_selection;
 pub(super) mod expressions;
 pub(super) mod feature_projection;
@@ -385,6 +386,7 @@ fn attach_records(
     #[cfg(test)]
     super::attach_failure::check(super::attach_failure::Point::Entry)?;
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
+    assembly_occurrences::attach(ctx, ir, model, losses)?;
     for section in &model.om.object_record_identity_bounded_sections {
         losses.push(NxLossCode::ObjectRecordIdentityBounded.note(format!(
             "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \

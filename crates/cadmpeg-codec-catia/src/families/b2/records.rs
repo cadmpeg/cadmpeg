@@ -47,7 +47,7 @@ use crate::wire::records::{
 const EPS_B2_RECORD_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_B2_RECORD_EXACT_GEOMETRY: f64 = 1.0e-12;
 const EPS_PARAMETER_LINE: f64 = 1.0e-12;
-const B2_SINGLE_CHILD_ALLOCATION_PAYLOAD: &[u8; 4] = &[0x81, 0x03, 0x05, 0x0d];
+pub(crate) const B2_SINGLE_CHILD_ALLOCATION_PAYLOAD: &[u8; 4] = &[0x81, 0x03, 0x05, 0x0d];
 
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
 /// kind-`0x01` `b2 03 30` construction-use record.
@@ -78,6 +78,33 @@ pub(crate) struct B2ParameterPoint {
     pub(crate) control: u8,
     /// Layout-specific finite scalar lane.
     pub(crate) payload: B2ParameterPointPayload,
+}
+
+impl B2ParameterPoint {
+    pub(in crate::families) fn axis_line(&self) -> Option<[[f64; 2]; 2]> {
+        let axis = self.control & 3;
+        if self.control >= 0x20 || !matches!(axis, 1 | 2) {
+            return None;
+        }
+        let (scalars, count) = self.payload.scalars();
+        let mut values = scalars.get(..count)?.iter().copied();
+        let [fixed, first, last] = [0x10, 0x04, 0x08].map(|mask| {
+            if self.control & mask == 0 {
+                values.next()
+            } else {
+                Some(0.0)
+            }
+        });
+        let (fixed, first, last) = (fixed?, first?, last?);
+        if first == last {
+            return None;
+        }
+        Some(if axis == 1 {
+            [[fixed, first], [fixed, last]]
+        } else {
+            [[first, fixed], [last, fixed]]
+        })
+    }
 }
 
 /// Layout-specific scalar lane of a class-`0x18` parameter-space record.
@@ -161,13 +188,15 @@ pub(crate) enum B2PlaneCarrierLayout {
     ImplicitY,
     /// Point, stored U-Y component, and bounds; U-X is zero.
     DirectionY,
+    /// Origin XYZ and bounds; U is implicit +Y.
+    SpatialImplicitY,
 }
 
 impl B2PlaneCarrierLayout {
     pub(crate) const fn scalar_count(self) -> usize {
         match self {
             Self::ImplicitX | Self::ImplicitY => 6,
-            Self::DirectionX | Self::DirectionY => 7,
+            Self::DirectionX | Self::DirectionY | Self::SpatialImplicitY => 7,
             Self::DirectionXY => 8,
         }
     }
@@ -176,7 +205,7 @@ impl B2PlaneCarrierLayout {
         z == 0.0
             && match self {
                 Self::ImplicitX => x == 1.0 && y == 0.0,
-                Self::ImplicitY => x == 0.0 && y == 1.0,
+                Self::ImplicitY | Self::SpatialImplicitY => x == 0.0 && y == 1.0,
                 Self::DirectionX => y == 0.0,
                 Self::DirectionY => x == 0.0,
                 Self::DirectionXY => true,
@@ -192,6 +221,7 @@ impl From<B2PlaneCarrierLayout> for u8 {
             B2PlaneCarrierLayout::DirectionXY => 0xc4,
             B2PlaneCarrierLayout::ImplicitY => 0xdc,
             B2PlaneCarrierLayout::DirectionY => 0xd4,
+            B2PlaneCarrierLayout::SpatialImplicitY => 0xd8,
         }
     }
 }
@@ -206,6 +236,7 @@ impl TryFrom<u8> for B2PlaneCarrierLayout {
             0xc4 => Ok(Self::DirectionXY),
             0xdc => Ok(Self::ImplicitY),
             0xd4 => Ok(Self::DirectionY),
+            0xd8 => Ok(Self::SpatialImplicitY),
             other => Err(format!("unknown plane selector {other:#04x}")),
         }
     }
@@ -219,7 +250,7 @@ pub(crate) enum B2PlaneCarrierPayload {
     Plane {
         /// Source scalar layout; omitted direction components are implicit.
         layout: B2PlaneCarrierLayout,
-        /// Stored XY point; model-space Z is zero.
+        /// Stored XY point; model-space Z is zero for planar XY layouts.
         point: FiniteVector<2>,
         /// Stored or implicit horizontal U direction.
         direction: ExactHypotUnitVector3,
@@ -227,6 +258,9 @@ pub(crate) enum B2PlaneCarrierPayload {
         u_range: IncreasingParameterInterval,
         /// Stored V bounds; V is global +Z.
         v_range: IncreasingParameterInterval,
+        /// Stored origin Z coordinate when present on the selector.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin_z: Option<FiniteReal>,
     },
     /// Complete finite lane for an unassigned selector.
     ScalarLane {
@@ -249,8 +283,17 @@ impl B2PlaneCarrierPayload {
     pub(crate) fn valid_plane(&self) -> bool {
         match self {
             Self::Plane {
-                layout, direction, ..
-            } => layout.admits_direction(direction.get()),
+                layout,
+                direction,
+                origin_z,
+                ..
+            } => {
+                if *layout == B2PlaneCarrierLayout::SpatialImplicitY {
+                    origin_z.is_some() && layout.admits_direction(direction.get())
+                } else {
+                    origin_z.is_none() && layout.admits_direction(direction.get())
+                }
+            }
             Self::ScalarLane { .. } => false,
         }
     }
@@ -379,6 +422,20 @@ pub(crate) enum B2OwnerChartBridge {
     },
 }
 
+/// A rolling-ball construction whose five source-local references resolve to
+/// its carrier, support surfaces, and support pcurves.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct B2RollingBallConstruction {
+    pub(crate) pos: usize,
+    pub(crate) source_index: usize,
+    pub(crate) carrier_pos: usize,
+    pub(crate) support_surface_positions: [usize; 2],
+    pub(crate) support_pcurve_positions: [usize; 2],
+    pub(crate) middle_controls: [CatiaOwnerChartMiddleControl; 2],
+    pub(crate) terminal_control: CatiaOwnerChartTerminalControl,
+    pub(crate) construction_radius: PositiveLength,
+}
+
 /// One source-closed carrier chart terminated by a fixed-nine owner packet.
 ///
 /// The relation is admitted only when the four ordered class-`0x18` records
@@ -464,6 +521,8 @@ pub(crate) struct B2Class5b5cRecord {
 pub(crate) enum B2FaceNode5fTargetEncoding {
     /// Width-coded compact target.
     Compact,
+    /// Zero-based ordinal in the face node's owned allocation.
+    OwnedChild,
     /// Strong persistent target encoded as `0x0a <u16le>`.
     TaggedU16Strong,
 }
@@ -700,6 +759,21 @@ pub(crate) fn b2_edge_nodes_from_records<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
 ) -> impl Iterator<Item = B2EdgeNode> + 'a {
+    edge_nodes(data, records, false)
+}
+
+pub(in crate::families) fn owned_edge_nodes<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2EdgeNode> + 'a {
+    edge_nodes(data, records, true)
+}
+
+fn edge_nodes<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+    owned: bool,
+) -> impl Iterator<Item = B2EdgeNode> + 'a {
     family_frames_from_records(records, ConsolidatedFamily::B, 0x5e).filter_map(move |frame| {
         let token_start = frame.pos.checked_add(4)?;
         let mut token_end = token_start;
@@ -707,6 +781,8 @@ pub(crate) fn b2_edge_nodes_from_records<'a>(
         let canonical_token_width = match header_value {
             0..=0x3f => 1,
             0x40..=0xff => 2,
+            0x100..=0xffff => 3,
+            _ if owned => 4,
             _ => 3,
         };
         if token_end != frame.payload
@@ -730,13 +806,17 @@ pub(crate) fn b2_edge_nodes_from_records<'a>(
         let terminal = allocation_reference(data, &mut at)?;
         let terminal_allowed = at == frame.end
             && at == terminal_at + 1
-            && matches!(
+            && (matches!(
                 (terminal.encoding, terminal.value),
                 (
                     AllocationReferenceEncoding::BackwardDistance,
                     0 | 8 | 9 | 10
                 ) | (AllocationReferenceEncoding::Selector2, 0 | 8 | 10)
-            );
+            ) || owned
+                && matches!(
+                    (terminal.encoding, terminal.value),
+                    (AllocationReferenceEncoding::Selector2, 4 | 6)
+                ));
         terminal_allowed.then_some(B2EdgeNode {
             pos: frame.pos,
             header_token: frame.header_token,
@@ -751,6 +831,53 @@ pub(crate) fn b2_edge_nodes_from_records<'a>(
             tail,
         })
     })
+}
+
+pub(crate) fn b2_two_edge_owner_relation(
+    data: &[u8],
+    owner: &ConsolidatedRecord,
+    edges: &[B2EdgeNode],
+) -> Option<bool> {
+    let [first, second] = edges else { return None };
+    if owner.family() != ConsolidatedFamily::B || owner.class() != 0x62 {
+        return None;
+    }
+    let payload = owner.payload()?;
+    let mut view = View::over_retained(data).child(payload.start, payload.end)?;
+    view.skip(4)?;
+    let token = view.u8()?;
+    if token & 3 != 3 {
+        return None;
+    }
+    for edge in edges {
+        for encoding in &edge.reference_encodings[1..3] {
+            if !matches!(
+                encoding,
+                AllocationReferenceEncoding::BackwardDistance
+                    | AllocationReferenceEncoding::OwnedChild
+            ) {
+                return None;
+            }
+        }
+    }
+    let complement = u32::from(token >> 2).checked_sub(1)?;
+    two_edge_complement_relation(
+        complement,
+        [first.start_vertex_ref, first.end_vertex_ref],
+        [second.start_vertex_ref, second.end_vertex_ref],
+    )
+}
+
+fn two_edge_complement_relation(
+    complement: u32,
+    first: [u32; 2],
+    second: [u32; 2],
+) -> Option<bool> {
+    let same = first[0].checked_add(second[0]) == Some(complement)
+        && first[1].checked_add(second[1]) == Some(complement);
+    let opposite = first[0].checked_add(second[1]) == Some(complement)
+        && first[1].checked_add(second[0]) == Some(complement);
+    (same != opposite).then_some(same)
 }
 
 /// Decode `b2/b3/b4 03 37` compact reference lists with their unit tail.
@@ -1205,6 +1332,88 @@ fn owner_chart_bridge(
     }
 }
 
+pub(crate) fn b2_rolling_ball_constructions_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2RollingBallConstruction> {
+    let mut constructions = Vec::new();
+    for (index, record) in records.iter().enumerate() {
+        let candidate = (|| {
+            if record.family() != ConsolidatedFamily::B
+                || record.class() != 0x37
+                || record.header_token() != 5
+            {
+                return None;
+            }
+            let payload = record.payload()?;
+            if payload.len() != 28 || data.get(payload.start) != Some(&0x85) {
+                return None;
+            }
+            let mut at = payload.start + 1;
+            let references = [
+                allocation_reference(data, &mut at)?,
+                allocation_reference(data, &mut at)?,
+                allocation_reference(data, &mut at)?,
+                allocation_reference(data, &mut at)?,
+                allocation_reference(data, &mut at)?,
+            ];
+            if references.iter().any(|reference| {
+                reference.encoding != AllocationReferenceEncoding::BackwardDistance
+                    || reference.value == 0
+            }) {
+                return None;
+            }
+            if data.get(at..at + 2) != Some(&[0x11, 0x05][..])
+                || data.get(at + 12..at + 20) != Some(&[0; 8][..])
+                || data.get(at + 20..at + 22) != Some(&[0x01, 0x05][..])
+                || at + 22 != payload.end
+            {
+                return None;
+            }
+            let construction_radius = PositiveLength::new(f64_le(data, at + 2)?.get())?;
+            let middle_controls = [
+                CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 10)?)?,
+                CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 11)?)?,
+            ];
+            let terminal_control = CatiaOwnerChartTerminalControl::from_byte(*data.get(at + 20)?)?;
+            let target = |slot: usize, family: ConsolidatedFamily, class: u8| {
+                let distance = usize::try_from(references[slot].value).ok()?;
+                let target_index = index.checked_sub(distance)?;
+                let target = records.get(target_index)?;
+                (target.family() == family
+                    && target.class() == class
+                    && target.source_index() == record.source_index()
+                    && records_are_contiguous(records.get(target_index..=index)?))
+                .then_some(target.byte_offset())
+            };
+            Some(B2RollingBallConstruction {
+                pos: record.byte_offset(),
+                source_index: record.source_index(),
+                carrier_pos: target(0, ConsolidatedFamily::A, 0x32)?,
+                support_surface_positions: [
+                    target(1, ConsolidatedFamily::B, 0x30)
+                        .or_else(|| target(1, ConsolidatedFamily::B, 0x2e))?,
+                    target(2, ConsolidatedFamily::B, 0x30)
+                        .or_else(|| target(2, ConsolidatedFamily::B, 0x2e))?,
+                ],
+                support_pcurve_positions: [
+                    target(3, ConsolidatedFamily::B, 0x20)
+                        .or_else(|| target(3, ConsolidatedFamily::A, 0x20))?,
+                    target(4, ConsolidatedFamily::B, 0x20)
+                        .or_else(|| target(4, ConsolidatedFamily::A, 0x20))?,
+                ],
+                middle_controls,
+                terminal_control,
+                construction_radius,
+            })
+        })();
+        if let Some(construction) = candidate {
+            constructions.push(construction);
+        }
+    }
+    constructions
+}
+
 fn owner_chart_bounds_match(
     carrier: B2OwnerChartCarrier,
     points: &[&B2ParameterPoint; 4],
@@ -1441,6 +1650,9 @@ pub(in crate::families) fn b2_face_nodes_5f_from_records<'a>(
                 B2FaceNode5fTargetEncoding::TaggedU16Strong,
                 persistent_ref(data, &mut at)?,
             )
+        } else if data.get(at).is_some_and(|byte| byte % 4 == 3) {
+            let reference = allocation_reference(data, &mut at)?;
+            (B2FaceNode5fTargetEncoding::OwnedChild, reference.value)
         } else {
             (
                 B2FaceNode5fTargetEncoding::Compact,
@@ -1525,43 +1737,92 @@ pub(crate) fn b2_adjacent_face_counted_owners_from_records(
     records: &[ConsolidatedRecord],
 ) -> Vec<B2AdjacentFaceCountedOwner> {
     let mut nodes = BTreeMap::new();
-    for record in records {
-        for value in b2_face_nodes_5f_from_records(data, std::slice::from_ref(record))
-            .filter(|value| value.terminal == [0x03, 0x05])
-        {
-            nodes.insert((record.source_index(), value.pos), value);
+    for (record_index, record) in records.iter().enumerate() {
+        for value in b2_face_nodes_5f_from_records(data, std::slice::from_ref(record)) {
+            nodes.insert(
+                (record.source_index(), record.byte_offset()),
+                (record_index, value),
+            );
         }
     }
     let mut owners = BTreeMap::new();
-    for value in b2_counted_owners_from_records(data, records) {
-        owners.insert((value.source_index, value.pos), value);
+    for (record_index, record) in records.iter().enumerate() {
+        for value in b2_counted_owners_from_records(data, std::slice::from_ref(record)) {
+            owners.insert((value.source_index, value.pos), (record_index, value));
+        }
     }
     let mut adjacent = Vec::new();
-    for window in records.windows(2) {
-        if !records_are_contiguous(window) {
-            continue;
+    for (&(source_index, _), &(face_index, face_node)) in &nodes {
+        if let Some(next_record) = records.get(face_index + 1) {
+            if next_record.source_index() == source_index
+                && records_are_contiguous(&records[face_index..=face_index + 1])
+            {
+                let owner_pos = (source_index, next_record.byte_offset());
+                if let Some((_, owner)) = owners.get(&owner_pos) {
+                    if (face_node.terminal == [0x03, 0x05]
+                        || face_node.terminal == [0x03, 0x03]
+                            && face_node.target_encoding == B2FaceNode5fTargetEncoding::Compact
+                            && owner.reference_encodings.last()
+                                == Some(&AllocationReferenceEncoding::WidthCoded))
+                        && face_node.target.checked_add(1) == owner.references.last().copied()
+                    {
+                        if let Some((_, owner)) = owners.remove(&owner_pos) {
+                            adjacent.push(B2AdjacentFaceCountedOwner { face_node, owner });
+                            continue;
+                        }
+                    }
+                }
+            }
         }
-        let [link_record, owner_record] = window else {
-            continue;
-        };
-        let Some(face_node) = nodes.get(&(link_record.source_index(), link_record.byte_offset()))
-        else {
-            continue;
-        };
-        let owner_pos = (owner_record.source_index(), owner_record.byte_offset());
-        let Some(owner) = owners.get(&owner_pos) else {
-            continue;
-        };
-        if face_node.target.checked_add(1) != owner.references.last().copied() {
-            continue;
+        if face_node.target_encoding == B2FaceNode5fTargetEncoding::OwnedChild
+            && face_node.terminal[0] % 4 == 3
+            && face_node.terminal[1] == 0x03
+        {
+            let loop_ordinal = usize::from(face_node.terminal[0] >> 2);
+            if let Some(target_loop_idx) = face_index.checked_add(1 + loop_ordinal) {
+                if let Some(target_record) = records.get(target_loop_idx) {
+                    let owner_pos = (source_index, target_record.byte_offset());
+                    if target_record.source_index() != source_index
+                        || target_record.family() != ConsolidatedFamily::B
+                        || target_record.class() != 0x62
+                        || !records_are_contiguous(&records[face_index..=target_loop_idx])
+                    {
+                        continue;
+                    }
+                    if let Some((_, owner)) = owners.get(&owner_pos) {
+                        if owner.reference_encodings.last()
+                            != Some(&AllocationReferenceEncoding::BackwardDistance)
+                        {
+                            continue;
+                        }
+                        let surf_ordinal = usize::try_from(face_node.target).ok();
+                        let target_surf_idx =
+                            surf_ordinal.and_then(|ordinal| face_index.checked_add(1 + ordinal));
+                        let owner_surf_dist = owner
+                            .references
+                            .last()
+                            .copied()
+                            .and_then(|dist| usize::try_from(dist).ok());
+                        let owner_surf_idx =
+                            owner_surf_dist.and_then(|dist| target_loop_idx.checked_sub(dist));
+                        if target_surf_idx.is_some()
+                            && target_surf_idx == owner_surf_idx
+                            && target_surf_idx.is_some_and(|index| {
+                                records.get(index).is_some_and(|record| {
+                                    record.source_index() == source_index
+                                        && record.family() == ConsolidatedFamily::B
+                                        && record.class() == 0x37
+                                })
+                            })
+                        {
+                            if let Some((_, owner)) = owners.remove(&owner_pos) {
+                                adjacent.push(B2AdjacentFaceCountedOwner { face_node, owner });
+                            }
+                        }
+                    }
+                }
+            }
         }
-        let Some(owner) = owners.remove(&owner_pos) else {
-            continue;
-        };
-        adjacent.push(B2AdjacentFaceCountedOwner {
-            face_node: *face_node,
-            owner,
-        });
     }
     adjacent
 }
@@ -1578,8 +1839,23 @@ pub(crate) fn b2_parameter_points_from_records<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
 ) -> impl Iterator<Item = B2ParameterPoint> + 'a {
-    family_frames_from_records(records, ConsolidatedFamily::B, 0x18).filter_map(|frame| {
-        if frame.header_token != 5 {
+    parameter_points(data, records, false)
+}
+
+pub(in crate::families) fn owned_parameter_points<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2ParameterPoint> + 'a {
+    parameter_points(data, records, true)
+}
+
+fn parameter_points<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+    owned: bool,
+) -> impl Iterator<Item = B2ParameterPoint> + 'a {
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x18).filter_map(move |frame| {
+        if frame.header_token != 5 && !owned {
             return None;
         }
         let bytes = data.get(frame.payload..frame.end)?;
@@ -1662,6 +1938,7 @@ pub(crate) fn b2_plane_carriers_from_records(
                         };
                         (
                             [values[0], values[1]],
+                            None,
                             direction,
                             [values[2], values[3], values[4], values[5]],
                         )
@@ -1676,6 +1953,7 @@ pub(crate) fn b2_plane_carriers_from_records(
                         };
                         (
                             [values[0], values[1]],
+                            None,
                             direction,
                             [values[3], values[4], values[5], values[6]],
                         )
@@ -1684,12 +1962,23 @@ pub(crate) fn b2_plane_carriers_from_records(
                 B2PlaneCarrierLayout::DirectionXY => read_f64_array::<8>(lane, 0).map(|values| {
                     (
                         [values[0], values[1]],
+                        None,
                         [values[2].get(), values[3].get(), 0.0],
                         [values[4], values[5], values[6], values[7]],
                     )
                 }),
+                B2PlaneCarrierLayout::SpatialImplicitY => {
+                    read_f64_array::<7>(lane, 0).map(|values| {
+                        (
+                            [values[0], values[1]],
+                            Some(values[2]),
+                            [0.0, 1.0, 0.0],
+                            [values[3], values[4], values[5], values[6]],
+                        )
+                    })
+                }
             };
-            let Some((point, direction, bounds)) = parsed else {
+            let Some((point, origin_z, direction, bounds)) = parsed else {
                 continue;
             };
             let (Some(direction), Some(u_range), Some(v_range)) = (
@@ -1705,6 +1994,7 @@ pub(crate) fn b2_plane_carriers_from_records(
                 direction,
                 u_range,
                 v_range,
+                origin_z,
             }
         } else {
             let Some(values) = finite_f64_lane(lane) else {
@@ -1734,7 +2024,10 @@ pub(crate) fn b2_plane_carriers_from_records(
 /// horizontal direction, V is global +Z, and the normal is `unit(U × V)`.
 pub(in crate::families) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option<SurfaceGeometry> {
     let B2PlaneCarrierPayload::Plane {
-        point, direction, ..
+        point,
+        direction,
+        origin_z,
+        ..
     } = &carrier.payload
     else {
         return None;
@@ -1742,7 +2035,8 @@ pub(in crate::families) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option
     if !carrier.payload.valid_plane() {
         return None;
     }
-    let origin = FinitePoint3::new(Point3::new(point[0], point[1], 0.0))?;
+    let z = origin_z.map_or(0.0, FiniteReal::get);
+    let origin = FinitePoint3::new(Point3::new(point[0], point[1], z))?;
     let frame = OrthonormalFrame3::about_horizontal_normal((*direction).into())?;
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
@@ -2338,6 +2632,21 @@ pub(crate) fn b2_cones_from_records<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
 ) -> impl Iterator<Item = B2Cone> + 'a {
+    cone_charts(data, records, false).map(|(cone, _)| cone)
+}
+
+pub(in crate::families) fn owned_cone_charts<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = (B2Cone, bool)> + 'a {
+    cone_charts(data, records, true)
+}
+
+fn cone_charts<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+    owned: bool,
+) -> impl Iterator<Item = (B2Cone, bool)> + 'a {
     let mut frames = family_frames_from_records(records, ConsolidatedFamily::B, 0x29);
     std::iter::from_fn(move || loop {
         let frame = frames.next()?;
@@ -2373,15 +2682,26 @@ pub(crate) fn b2_cones_from_records<'a>(
         ) else {
             continue;
         };
-        let (Some(frame), Some(slant_start)) = (
-            UnitFrame3::right_handed(axis, t1, t2),
-            NonNegativeLength::new(slant_range.lower()),
-        ) else {
+        let frame = UnitFrame3::right_handed(axis, t1, t2)
+            .map(|f| (f, false))
+            .or_else(|| {
+                if !owned {
+                    return None;
+                }
+                let flipped = unit(t2.get().map(|value| -value))?;
+                Some((UnitFrame3::right_handed(axis, t1, flipped)?, true))
+            });
+        let Some((frame, reversed)) = frame else {
             continue;
         };
         if !(0.0 < half_angle.get()
             && half_angle.get() < std::f64::consts::FRAC_PI_2
-            && periodic_angular_range_is_valid(angular_range, angular_domain)
+            && (periodic_angular_range_is_valid(angular_range, angular_domain)
+                || owned
+                    && periodic_angular_range_is_valid(angular_domain, angular_domain)
+                    && angular_domain[0] <= angular_range[0]
+                    && angular_range[0] < angular_range[1]
+                    && angular_range[1] <= angular_domain[1])
             && values[19] == 1.0
             && values[20] == 0.0)
         {
@@ -2395,7 +2715,24 @@ pub(crate) fn b2_cones_from_records<'a>(
         ) else {
             continue;
         };
-        let axial = slant_start.get() * half_angle.get().cos();
+        let (axial, radius, axis_angle) = if owned {
+            let angle = Angle::new(std::f64::consts::FRAC_PI_2 - half_angle.get())?;
+            let slant_start = slant_range.lower();
+            let axial = slant_start * half_angle.get().sin();
+            let radius = NonNegativeLength::new(
+                slant_start.mul_add(half_angle.get().cos(), reference_radius.get()),
+            )?;
+            (axial, radius, angle)
+        } else {
+            let Some(slant_start) = NonNegativeLength::new(slant_range.lower()) else {
+                continue;
+            };
+            (
+                slant_start.get() * half_angle.get().cos(),
+                slant_start.scaled_by_sine(half_angle),
+                half_angle,
+            )
+        };
         let (apex_point, axis) = (apex.get(), axis.get());
         let Some(origin) = FinitePoint3::new(Point3::new(
             apex_point.x + axial * axis[0],
@@ -2404,25 +2741,28 @@ pub(crate) fn b2_cones_from_records<'a>(
         )) else {
             continue;
         };
-        return Some(B2Cone {
-            pos,
-            apex,
-            frame,
-            t2,
-            half_angle,
-            reference_radius,
-            angular_range,
-            slant_range,
-            angular_scale,
-            angular_domain,
-            surface: ConeSurface::new(
-                origin,
-                frame.into(),
-                slant_start.scaled_by_sine(half_angle),
-                PositiveReal::ONE,
+        return Some((
+            B2Cone {
+                pos,
+                apex,
+                frame,
+                t2,
                 half_angle,
-            ),
-        });
+                reference_radius,
+                angular_range,
+                slant_range,
+                angular_scale,
+                angular_domain,
+                surface: ConeSurface::new(
+                    origin,
+                    frame.into(),
+                    radius,
+                    PositiveReal::ONE,
+                    axis_angle,
+                ),
+            },
+            reversed,
+        ));
     })
 }
 
@@ -2601,6 +2941,21 @@ pub(crate) fn b2_tori_from_records<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
 ) -> impl Iterator<Item = B2Torus> + 'a {
+    torus_charts(data, records, false).map(|(torus, _)| torus)
+}
+
+pub(in crate::families) fn owned_torus_charts<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = (B2Torus, bool)> + 'a {
+    torus_charts(data, records, true)
+}
+
+fn torus_charts<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+    allow_reversed: bool,
+) -> impl Iterator<Item = (B2Torus, bool)> + 'a {
     family_frames_from_records(records, ConsolidatedFamily::B, 0x2b).filter_map(move |frame| {
         let p = frame.payload;
         (frame.end.checked_sub(p) == Some(200)).then_some(())?;
@@ -2621,7 +2976,15 @@ pub(crate) fn b2_tori_from_records<'a>(
         let direction_x = ExactUnitVector3::new(direction_x)?;
         let direction_y = ExactUnitVector3::new(direction_y)?;
         let axis = ExactUnitVector3::new(axis)?;
-        let axis_frame = UnitFrame3::right_handed(axis, direction_x, direction_y)?;
+        let (axis_frame, reversed) = UnitFrame3::right_handed(axis, direction_x, direction_y)
+            .map(|frame| (frame, false))
+            .or_else(|| {
+                if !allow_reversed {
+                    return None;
+                }
+                let flipped = ExactUnitVector3::new(direction_y.get().map(|value| -value))?;
+                Some((UnitFrame3::right_handed(axis, direction_x, flipped)?, true))
+            })?;
         let major_radius = PositiveLength::new(major_radius)?;
         let minor_radius = PositiveLength::new(minor_radius)?;
         let major_scale = PositiveReal::new(major_scale)?;
@@ -2632,20 +2995,23 @@ pub(crate) fn b2_tori_from_records<'a>(
             .then_some(())?;
         // Each angular check admits a strictly increasing range inside a
         // strictly increasing full-turn domain.
-        Some(B2Torus {
-            pos: frame.pos,
-            center,
-            frame: axis_frame,
-            direction_y,
-            major_radius,
-            minor_radius,
-            major_angular_range: IncreasingParameterInterval::new(major_angular_range)?,
-            major_angular_domain: IncreasingParameterInterval::new(major_angular_domain)?,
-            minor_angular_range: IncreasingParameterInterval::new(minor_angular_range)?,
-            minor_angular_domain: IncreasingParameterInterval::new(minor_angular_domain)?,
-            major_scale,
-            minor_scale,
-        })
+        Some((
+            B2Torus {
+                pos: frame.pos,
+                center,
+                frame: axis_frame,
+                direction_y,
+                major_radius,
+                minor_radius,
+                major_angular_range: IncreasingParameterInterval::new(major_angular_range)?,
+                major_angular_domain: IncreasingParameterInterval::new(major_angular_domain)?,
+                minor_angular_range: IncreasingParameterInterval::new(minor_angular_range)?,
+                minor_angular_domain: IncreasingParameterInterval::new(minor_angular_domain)?,
+                major_scale,
+                minor_scale,
+            },
+            reversed,
+        ))
     })
 }
 

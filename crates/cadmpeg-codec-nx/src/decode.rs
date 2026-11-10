@@ -278,7 +278,7 @@ fn build_metadata_ir(
         )?;
     } else {
         let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
-        losses.extend(parsed.primary_edge_losses());
+        losses.extend(parsed.primary_losses());
         let model = crate::native::model::NativeModel::extract(
             ctx,
             &scan.container,
@@ -309,9 +309,7 @@ fn build_container_body(
     let loss = if assembly {
         NxLossCode::AssemblyComponentsExternal.note(
             "No inline Parasolid geometry: this is an assembly .prt. Component geometry \
-                      lives in external child .prt files named in EXTREFSTREAM, and the assembled \
-                      solid's inputs (child partitions + constraint solve) are absent from this \
-                      file. This is an external-dependency boundary, not a decode gap.",
+             lives in external child .prt files named in EXTREFSTREAM.",
         )
     } else {
         NxLossCode::GeometryNotTransferred.note(

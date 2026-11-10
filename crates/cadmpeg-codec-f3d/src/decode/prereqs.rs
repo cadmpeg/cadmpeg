@@ -29,6 +29,14 @@ pub(super) struct ProductPrereqs {
     /// Per-stream counts of typed parameter frames that match no parameter
     /// grammar; the session reports them as losses.
     pub(super) design_parameter_unparsed: Vec<UnparsedParameterRecords>,
+    /// Per-stream counts of decoded parameters whose compact expression
+    /// trailer sets byte 3; the session reports them as losses.
+    pub(super) design_parameter_trailer_flags:
+        Vec<crate::design::decode::parameters::StreamParameterCount>,
+    /// Per-stream counts of decoded compact null-owner parameters; the
+    /// session reports them as losses.
+    pub(super) design_parameter_null_owners:
+        Vec<crate::design::decode::parameters::StreamParameterCount>,
     /// Native parameter identities retained without an interpreted owner frame.
     pub(super) design_parameter_owner_unparsed: Vec<String>,
     /// Non-equivalent duplicate scope envelopes superseded by the
@@ -53,6 +61,7 @@ pub(super) struct ProductPrereqs {
     /// binding.
     pub(super) design_parameter_scopes: Vec<DesignParameterScope>,
     pub(super) design_parameter_scope_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(super) design_work_plane_inferred_axes: std::collections::HashMap<String, (u64, [u8; 2])>,
     /// Freedoms and limits of the joints whose motion records carry them.
     pub(super) design_joint_motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
     /// Authored feature order, which tells top-level `Component Insert`
@@ -100,6 +109,8 @@ impl ProductPrereqs {
             design_types,
             design_parameters,
             design_parameter_unparsed: _,
+            design_parameter_trailer_flags: _,
+            design_parameter_null_owners: _,
             design_parameter_owner_unparsed: _,
             design_superseded_scope_envelopes: _,
             design_entity_headers,
@@ -113,6 +124,7 @@ impl ProductPrereqs {
             design_component_occurrence_losses: _,
             design_parameter_scopes,
             design_parameter_scope_losses: _,
+            design_work_plane_inferred_axes: _,
             design_joint_motions,
             design_feature_timelines,
             design_component_naming_spaces,
@@ -169,6 +181,8 @@ pub(super) fn decode(
     let crate::design::decode::parameters::DecodedParameters {
         parameters: design_parameters,
         unparsed: design_parameter_unparsed,
+        trailer_flags: design_parameter_trailer_flags,
+        null_owners: design_parameter_null_owners,
     } = crate::design::decode::parameters::decode_parameters(scan)?;
     let design_entity_headers = crate::design::decode::sketch::decode_entity_headers(scan)?;
     let design_record_headers =
@@ -196,6 +210,7 @@ pub(super) fn decode(
     let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
         scopes: mut design_parameter_scopes,
         losses: design_parameter_scope_losses,
+        work_plane_inferred_axes: design_work_plane_inferred_axes,
     } = crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
         ctx,
         scan,
@@ -241,6 +256,8 @@ pub(super) fn decode(
         design_types,
         design_parameters,
         design_parameter_unparsed,
+        design_parameter_trailer_flags,
+        design_parameter_null_owners,
         design_parameter_owner_unparsed,
         design_superseded_scope_envelopes,
         design_entity_headers,
@@ -254,6 +271,7 @@ pub(super) fn decode(
         design_component_occurrence_losses,
         design_parameter_scopes,
         design_parameter_scope_losses,
+        design_work_plane_inferred_axes,
         design_joint_motions,
         design_feature_timelines,
         design_component_naming_spaces,

@@ -56,14 +56,6 @@ fn chart_snapping_moves_only_an_end_pole_within_the_fit_tolerance() {
 }
 
 #[test]
-fn a_curve_without_a_chart_keeps_the_pcurves_of_its_stored_carrier() {
-    let ir = crate::examples::unit_cube().unwrap();
-    let curve = ir.model.edges[0].curve().unwrap().as_str().to_owned();
-    let mut approximator = Approximator::new(&ir);
-    assert!(!approximator.replaces_stored_chart(&curve));
-}
-
-#[test]
 fn a_cornered_curve_on_a_spline_surface_is_fitted_with_a_pole_on_the_corner() {
     use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use crate::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
@@ -273,8 +265,15 @@ fn a_constant_parameter_curve_across_a_spline_surface_becomes_the_exact_isocurve
     };
 
     assert_eq!(exact.degree(), 2);
-    assert_eq!(exact.knots().as_slice(), u_knots.as_slice());
-    assert_eq!(exact.pole_rows().raw_points(), far_row);
+    // The line runs from u = 1 to u = 0, so the isocurve is reversed over the same interval.
+    assert_eq!(
+        exact.knots().as_slice(),
+        [0.0, 0.0, 0.0, 0.75, 1.0, 1.0, 1.0]
+    );
+    assert_eq!(
+        exact.pole_rows().raw_points(),
+        far_row.iter().rev().copied().collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -378,11 +377,14 @@ fn a_constant_parameter_curve_across_a_linear_sweep_becomes_the_moved_directrix(
     };
 
     assert_eq!(exact.degree(), 2);
-    assert_eq!(exact.knots().as_slice(), knots.as_slice());
+    // The line runs from u = 1 to u = 0, so the directrix is reversed over the same interval.
+    let mut moved = poles.map(|pole| Point3::new(pole.x, pole.y, 1.0));
+    moved.reverse();
     assert_eq!(
-        exact.pole_rows().raw_points(),
-        poles.map(|pole| Point3::new(pole.x, pole.y, 1.0))
+        exact.knots().as_slice(),
+        [0.0, 0.0, 0.0, 0.75, 1.0, 1.0, 1.0]
     );
+    assert_eq!(exact.pole_rows().raw_points(), moved);
 }
 
 #[test]

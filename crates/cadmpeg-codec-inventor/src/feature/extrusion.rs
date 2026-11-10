@@ -50,6 +50,48 @@ pub(super) fn project(
     projected
 }
 
+pub(super) fn project_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Option<
+    Result<
+        (
+            cadmpeg_ir::features::Feature,
+            cadmpeg_ir::features::FeatureResultTopology,
+        ),
+        cadmpeg_core::CodecError,
+    >,
+> {
+    let projected = super::project_surface_extrusion(ctx, source, label, index);
+    if let Some(Ok((feature, _))) = &projected {
+        losses.push(crate::loss::InventorLossCode::FeatureExtrusionProfileNative.note(
+            "Surface extrusion retains its boundary-patch profile selection; the selected curves have no resolved neutral profile.",
+        ));
+        for _ in 0..native_face_targets(feature.evaluation.definition()) {
+            losses.push(crate::loss::InventorLossCode::FeatureExtrusionTargetFaceNative.note(
+                "Extrusion target retains its stored planar face geometry; its body-face identity remains unresolved.",
+            ));
+        }
+        losses.push(crate::loss::InventorLossCode::FeatureSurfaceExtrusionPolarityAssumed.note(
+            "Surface extrusion direction assumes the Boolean slot 3 polarity of the solid extrusion form: true reverses the stored direction, and false keeps it.",
+        ));
+        if source
+            .properties
+            .references()
+            .get(14)
+            .is_some_and(|slot| slot.index() != 0)
+        {
+            losses.push(crate::loss::InventorLossCode::FeatureSurfaceExtrusionSolidBoundAssumed.note(
+                "Surface extrusion reads its neutral through-all extent as bounded by the selected solid body; the neutral extent names no body.",
+            ));
+        }
+    }
+    projected
+}
+
 pub(super) fn native_face_targets(definition: &cadmpeg_ir::features::FeatureDefinition) -> usize {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlaneTargetSource};
     let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) = definition
@@ -77,12 +119,22 @@ pub(super) fn native_face_targets(definition: &cadmpeg_ir::features::FeatureDefi
     }
 }
 
+/// The body kind that an extrusion produces.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Output {
+    Solid,
+    Surface,
+}
+
 pub(super) struct Operands {
     pub(super) op: BooleanOp,
     pub(super) direction: UnitVector3,
     pub(super) start: ExtrudeStart,
     pub(super) extent: ExtrudeExtent,
 }
+
+/// Part-operation value of a surface feature. It creates a new surface body.
+const SURFACE_OPERATION: u16 = 5;
 
 /// Largest departure of the travel direction from the profile-plane normal,
 /// as a cosine deficit, that still counts as perpendicular to the profile plane.
@@ -140,17 +192,103 @@ pub(super) fn work_point_plane(
     })
 }
 
+/// The wrapper records that new-body solid extrusions store in their result
+/// collections, each with the history position of its extrusion.
+pub(super) fn solid_result_wrappers<'a>(
+    features: &'a [PmDcFeature],
+    is_extrusion: impl Fn(&PmDcFeature) -> bool,
+    properties: &std::collections::HashMap<(&'a str, u32), Option<&'a super::PmDcFeatureProperty>>,
+    positions: &std::collections::HashMap<(&'a str, u32), u64>,
+) -> std::collections::HashMap<(&'a str, u32), u64> {
+    let mut wrappers = std::collections::HashMap::new();
+    for feature in features.iter().filter(|feature| is_extrusion(feature)) {
+        let token = feature.identity.segment_token.as_str();
+        let Some(&position) = positions.get(&(token, feature.identity.record_ordinal)) else {
+            continue;
+        };
+        let property = |slot: usize| {
+            let ordinal = feature
+                .properties
+                .references()
+                .get(slot)?
+                .record_ordinal()?;
+            properties.get(&(token, ordinal))?.as_ref().copied()
+        };
+        let new_body = property(0).is_some_and(|operation| {
+            operation.identity.type_id.as_str()
+                == crate::pmdc::type_id_string(super::PART_OPERATION_TYPE)
+                && matches!(
+                    operation.kind,
+                    PmDcFeaturePropertyKind::Enumeration {
+                        family: PmDcFeatureEnumFamily::PartOperation,
+                        type_value: 5,
+                        value: 1,
+                    }
+                )
+        });
+        let Some(PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::ObjectCollection,
+            items,
+        }) = property(26).map(|collection| &collection.kind)
+        else {
+            continue;
+        };
+        if new_body {
+            wrappers.extend(
+                items
+                    .references()
+                    .iter()
+                    .filter_map(|reference| Some(((token, reference.record_ordinal()?), position))),
+            );
+        }
+    }
+    wrappers
+}
+
+/// Whether slot 14 of a surface extrusion is null or selects the surface-body
+/// wrapper of a solid body that a new-body solid extrusion at an earlier
+/// history position created. The wrapper differs from the slot-16 result
+/// wrapper.
+pub(super) fn surface_input_is_solid(source: &PmDcFeature, index: &ProjectionIndex<'_>) -> bool {
+    let slots = source.properties.references();
+    let Some(input) = slots.get(14).filter(|slot| slot.index() != 0) else {
+        return true;
+    };
+    let token = source.identity.segment_token.as_str();
+    let (Some(ordinal), Some(result)) = (
+        input.record_ordinal(),
+        slots.get(16).and_then(|slot| slot.record_ordinal()),
+    ) else {
+        return false;
+    };
+    let Some(&position) = index
+        .positions
+        .get(&(token, source.identity.record_ordinal))
+    else {
+        return false;
+    };
+    ordinal != result
+        && index
+            .solid_wrappers
+            .get(&(token, ordinal))
+            .is_some_and(|&created| created < position)
+        && super::resolve_property(token, input.index(), index).is_some_and(|wrapper| {
+            matches!(wrapper.kind, PmDcFeaturePropertyKind::SurfaceBody { .. })
+        })
+}
+
 pub(super) fn indexed_operands(
     source: &PmDcFeature,
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
+    output: Output,
 ) -> Option<Operands> {
     let operation = enum16(source, 0, PmDcFeatureEnumFamily::PartOperation, index)?;
-    let op = match operation {
-        1 => BooleanOp::NewBody,
-        2 => BooleanOp::Cut,
-        3 => BooleanOp::Join,
-        4 => BooleanOp::Intersect,
+    let op = match (output, operation) {
+        (Output::Solid, 1) | (Output::Surface, SURFACE_OPERATION) => BooleanOp::NewBody,
+        (Output::Solid, 2) => BooleanOp::Cut,
+        (Output::Solid, 3) => BooleanOp::Join,
+        (Output::Solid, 4) => BooleanOp::Intersect,
         _ => return None,
     };
     let direction_record = resolve_direction(source, 2, index)?;
@@ -216,12 +354,55 @@ pub(super) fn indexed_operands(
         }
         (_, false, false) => ExtrudeExtent::OneSided { side: first },
     };
+    if output == Output::Surface && !surface_extent(&start, &extent) {
+        return None;
+    }
+    // The solid body of slot 14 bounds a through-all extent; no other extent
+    // reads it.
+    if output == Output::Surface
+        && source
+            .properties
+            .references()
+            .get(14)
+            .is_some_and(|slot| slot.index() != 0)
+        && !matches!(
+            &extent,
+            ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: LinearTermination::ThroughAll {},
+                    ..
+                },
+            }
+        )
+    {
+        return None;
+    }
     Some(Operands {
         op,
         direction,
         start,
         extent,
     })
+}
+
+/// The surface extrusion extents that the format model defines: one side from
+/// the profile plane, through all or to a plane face.
+fn surface_extent(start: &ExtrudeStart, extent: &ExtrudeExtent) -> bool {
+    use cadmpeg_ir::features::PlaneTargetSource;
+    matches!(start, ExtrudeStart::ProfilePlane {})
+        && matches!(
+            extent,
+            ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: LinearTermination::ThroughAll {}
+                        | LinearTermination::ToPlane {
+                            source: Some(PlaneTargetSource::FaceSurface),
+                            ..
+                        },
+                    ..
+                },
+            }
+        )
 }
 
 pub(super) fn native_profile(
@@ -321,6 +502,8 @@ pub(super) fn operand_loss() -> cadmpeg_ir::report::loss::LossNote {
 }
 
 pub(crate) struct ValidationRecords<'a> {
+    pub(crate) features: &'a [PmDcFeature],
+    pub(crate) labels: &'a [PmDcFeatureLabel],
     pub(crate) properties: &'a [super::PmDcFeatureProperty],
     pub(crate) parameters: &'a [crate::design::PmDcParameter],
     pub(crate) sketches: &'a [crate::sketch::PmDcSketch],
@@ -330,6 +513,8 @@ pub(crate) struct ValidationRecords<'a> {
     pub(crate) entity_links: &'a [super::PmDcEntityStyleLink],
     pub(crate) kernel_links: &'a [super::PmDcKernelEntityLink],
     pub(crate) model: &'a cadmpeg_ir::document::Model,
+    /// History position of each feature record.
+    pub(crate) positions: &'a std::collections::HashMap<(&'a str, u32), u64>,
 }
 
 pub(crate) struct ValidationIndex<'a>(ProjectionIndex<'a>);
@@ -340,8 +525,38 @@ impl<'a> ValidationIndex<'a> {
         let key = |identity: &'a crate::record_identity::RecordIdentity| {
             (identity.segment_token.as_str(), identity.record_ordinal)
         };
+        let properties = unique_index(records.properties.iter().map(|r| (key(&r.identity), r)));
+        let extrusions = records
+            .labels
+            .iter()
+            .filter(|label| {
+                matches!(
+                    super::FeatureFamily::from_class_id(label.class_id()),
+                    Some(super::FeatureFamily::Extrusion)
+                )
+            })
+            .filter_map(|label| {
+                Some((
+                    label.identity.segment_token.as_str(),
+                    label.header.owner.record_ordinal()?,
+                ))
+            })
+            .collect::<HashSet<_>>();
+        let solid_wrappers = solid_result_wrappers(
+            records.features,
+            |feature| {
+                extrusions.contains(&(
+                    feature.identity.segment_token.as_str(),
+                    feature.identity.record_ordinal,
+                ))
+            },
+            &properties,
+            records.positions,
+        );
         Self(ProjectionIndex {
-            properties: unique_index(records.properties.iter().map(|r| (key(&r.identity), r))),
+            solid_wrappers,
+            positions: records.positions.clone(),
+            properties,
             parameters: unique_index(records.parameters.iter().map(|r| (key(&r.identity), r))),
             parameter_values: unique_index(
                 records
@@ -395,7 +610,7 @@ pub(super) fn matches(
         start,
         extent,
         op,
-        solid: Some(true),
+        solid: Some(solid),
         face_maker: None,
         inner_wire_taper: None,
         length_along_profile_normal: None,
@@ -404,7 +619,12 @@ pub(super) fn matches(
     else {
         return false;
     };
-    let Some(expected) = indexed_operands(source, label, index) else {
+    let output = if *solid {
+        Output::Solid
+    } else {
+        Output::Surface
+    };
+    let Some(expected) = indexed_operands(source, label, index, output) else {
         return false;
     };
     let expected_direction = ExtrudeDirection::Explicit {
@@ -417,6 +637,10 @@ pub(super) fn matches(
         || *op != expected.op
     {
         return false;
+    }
+    if output == Output::Surface {
+        return super::surface_extrusion_profile(source, label, index)
+            .is_some_and(|expected| *profile == ProfileRef::Planar(expected));
     }
     if matches!(profile, ProfileRef::Planar(PlanarProfileRef::Native(_))) {
         return native_profile(source, label, index)

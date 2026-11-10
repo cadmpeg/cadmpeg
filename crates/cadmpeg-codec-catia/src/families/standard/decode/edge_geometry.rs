@@ -3,6 +3,9 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+pub(super) mod arc_bounds;
+pub(super) mod cylindrical_arcs;
+
 use super::{
     annotate, cgm_source, circle_parameter_range_from_surface_branch, face_surface, ordered_range,
     point_on_nurbs_surface, rational_pcurve_arc, standard_id,
@@ -118,14 +121,25 @@ pub(super) fn standard_pcurve_geometry(
         let Some(center_uv) = analytic_surface_uv(surface, center) else {
             return Ok(None);
         };
-        let range = if start == end {
+        let (range, reversed) = if start == end {
             let angle = (uv[0].v - center_uv.v).atan2(uv[0].u - center_uv.u);
-            [angle, angle + std::f64::consts::TAU]
+            ([angle, angle + std::f64::consts::TAU], false)
         } else {
             let range = uv.map(|point| (point.v - center_uv.v).atan2(point.u - center_uv.u));
-            ordered_range([range[0], unwrap_angle(range[1], range[0])])
+            let short_end = unwrap_angle(range[1], range[0]);
+            let end = witness
+                .and_then(|point| analytic_surface_uv(surface, point.get()))
+                .and_then(|point| {
+                    let angle = (point.v - center_uv.v).atan2(point.u - center_uv.u);
+                    witness_arc_end(range[0], short_end, angle)
+                })
+                .unwrap_or(short_end);
+            (
+                ordered_range([range[0], end]),
+                witness.is_some() && end < range[0],
+            )
         };
-        let Some(geometry) = rational_pcurve_arc(
+        let Some(mut geometry) = rational_pcurve_arc(
             [center_uv.u, center_uv.v],
             radius,
             range,
@@ -134,6 +148,17 @@ pub(super) fn standard_pcurve_geometry(
         ) else {
             return Ok(None);
         };
+        if reversed {
+            let Some(reoriented) = crate::nurbs::reverse_pcurve_geometry(
+                &geometry,
+                range,
+                refusal,
+                "standard arc pcurve derived from its support",
+            ) else {
+                return Ok(None);
+            };
+            geometry = reoriented;
+        }
         return Ok(Some((geometry, range)));
     }
 
@@ -1073,6 +1098,8 @@ pub(super) struct BuildStandardEdgeCurveInputs<
     pub(super) bindings: &'input2 [(SurfaceId, bool, usize)],
     pub(super) surface_indices: &'input3 HashMap<SurfaceId, usize>,
     pub(super) brep: &'input4 [u8],
+    pub(super) face_bounds:
+        &'input4 [Option<crate::families::standard::records::StandardFaceBounds>],
     pub(super) support: &'input5 crate::families::standard::records::StandardCurveSupport,
     pub(super) points: [usize; 2],
     pub(super) native_support: Option<&'input6 StandardEdgeSupport>,
@@ -1105,6 +1132,7 @@ pub(super) fn build_standard_edge_curve(
         bindings,
         surface_indices,
         brep,
+        face_bounds,
         support,
         points,
         native_support,
@@ -1203,48 +1231,62 @@ pub(super) fn build_standard_edge_curve(
                     }
                 }
                 Some(axis) => {
-                    let mut selected = None;
-                    let mut ambiguous = false;
-                    for candidate_axis in [axis, axis.reversed()] {
-                        let reference = cadmpeg_ir::geometry::derive_reference_direction(
-                            *candidate_axis.as_raw(),
-                        );
-                        let mut range = standard_circle_param_range(
-                            ctx,
-                            StandardCircleParamRangeInputs {
-                                ir,
-                                bindings,
-                                surface_indices,
-                                brep,
-                                support,
+                    let mut selected = native_support
+                        .is_none()
+                        .then(|| {
+                            arc_bounds::bounded_circle_branch(
                                 center,
                                 radius,
-                                axis: *candidate_axis.as_raw(),
-                                ref_direction: reference,
-                                start,
-                                end,
-                                refusal,
-                            },
-                        )?;
-                        if range.is_none() {
-                            if let Some(native) = native_support {
-                                range = native_support_circle_param_range(
-                                    ctx,
-                                    native,
+                                axis,
+                                [start, end],
+                                &arc_bounds::support_bounds(face_bounds, support),
+                            )
+                        })
+                        .flatten();
+                    let mut ambiguous = false;
+                    if selected.is_none() {
+                        for candidate_axis in [axis, axis.reversed()] {
+                            let reference = cadmpeg_ir::geometry::derive_reference_direction(
+                                *candidate_axis.as_raw(),
+                            );
+                            let mut range = standard_circle_param_range(
+                                ctx,
+                                StandardCircleParamRangeInputs {
+                                    ir,
+                                    bindings,
+                                    surface_indices,
+                                    brep,
+                                    support,
                                     center,
                                     radius,
-                                    *candidate_axis.as_raw(),
-                                    reference,
-                                    [start, end],
-                                )?;
+                                    axis: *candidate_axis.as_raw(),
+                                    ref_direction: reference,
+                                    start,
+                                    end,
+                                    refusal,
+                                },
+                            )?;
+                            if range.is_none() {
+                                if let Some(native) = native_support {
+                                    range = native_support_circle_param_range(
+                                        ctx,
+                                        native,
+                                        center,
+                                        radius,
+                                        *candidate_axis.as_raw(),
+                                        reference,
+                                        [start, end],
+                                    )?;
+                                }
                             }
-                        }
-                        if let Some(range) = range.and_then(crate::nurbs::canonical_periodic_range)
-                        {
-                            if selected.is_some() {
-                                ambiguous = true;
-                            } else {
-                                selected = Some((candidate_axis, reference, range));
+                            if let Some(range) =
+                                range.and_then(crate::nurbs::canonical_periodic_range)
+                            {
+                                if selected.is_some() {
+                                    ambiguous = true;
+                                } else {
+                                    selected = Some((candidate_axis, reference, range));
+                                }
                             }
                         }
                     }

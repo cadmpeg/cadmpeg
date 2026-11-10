@@ -36,6 +36,8 @@ pub(crate) enum SldprtLossCode {
     MetadataDefaultAliasAmbiguous,
     /// Saved property has no represented usable scalar value.
     MetadataDefaultValueUnsupported,
+    /// Saved configuration mass properties cannot be compared to active geometry.
+    MetadataMassPropertiesNotCompared,
     /// Configuration-property namespace has multiple physical owners.
     MetadataConfigurationPropertyOwnerAmbiguous,
     /// Configuration-property XML has no complete unambiguous reading.
@@ -78,6 +80,22 @@ pub(crate) enum SldprtLossCode {
     /// A SWIFT feature walk met a feature only past its depth or work bound;
     /// the targets or nominal values it feeds stay unresolved.
     PmiSwiftFeatureWalkCapped,
+    /// A SWIFT diameter has an omitted nominal and no resolved implicit value.
+    PmiSwiftImplicitNominalUnresolved,
+    /// A SWIFT position retains a source `ShapeAspect` when its target is unresolved.
+    PmiSwiftPositionTargetUnresolved,
+    /// Counted spherical-diameter text selects a second sphere by equal radius.
+    PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed,
+    /// A counted spherical-diameter display has no unique resolved sphere target set.
+    PmiSwiftSphericalDiameterTargetUnresolved,
+    /// A SWIFT geometric-tolerance display has no established semantic annotation.
+    PmiSwiftPresentationUnresolved,
+    /// A SWIFT presentation archive declares displays that its framing discards.
+    PmiSwiftPresentationUnframed,
+    /// A SWIFT display selects faces through a one- or two-string in-place document.
+    PmiSwiftFaceDocumentLayoutAssumed,
+    /// A SWIFT display selects faces through an in-place document whose tail length the file's `swVersion` does not establish.
+    PmiSwiftFaceDocumentTailAssumed,
     /// Feature history record has duplicate identity or unresolved references.
     HistoryIncompleteReferences,
     /// Feature record has missing, repeated, or non-preceding tree edges.
@@ -138,6 +156,17 @@ pub(crate) enum SldprtLossCode {
     GeometrySurfaceSolverWorkCapped,
     /// A spline carrier's pole and weight lanes do not pair.
     GeometrySplineLanesUnpaired,
+    /// A spline carrier stores a control-point weight that is zero or
+    /// negative.
+    GeometrySplineWeightNonpositive,
+    /// A spline carrier's dimension, counts, or multiplicities contradict
+    /// each other or its arrays.
+    GeometrySplineFieldsInconsistent,
+    /// A CONE node stores a negative sine or cosine of its half-angle, whose
+    /// surface is unresolved (`GC-49`).
+    GeometryConeHalfAngleSignUnresolved,
+    /// A CONE node's stored sine and cosine break the unit identity.
+    GeometryConeHalfAngleIdentityRefused,
     /// The stream's INTERSECTION declaration states no node layout that
     /// frames, so its intersection curves are not read.
     GeometryIntersectionLayoutUnknown,
@@ -174,6 +203,12 @@ pub(crate) enum SldprtLossCode {
     /// Vertexless ring FINs fail strict reciprocal-circle single-loop
     /// admission, so no vertex is invented for them.
     TopologyRingEdgeWithheld,
+    /// A vertex loop names no resolved vertex, so its face and surface are
+    /// withheld.
+    TopologyVertexLoopWithheld,
+    /// A loop of a face holds an ambiguous FIN, so the face and its surface
+    /// are withheld.
+    TopologyAmbiguousFinFaceWithheld,
     /// Referenced LOOP records have conflicting complete frames.
     TopologyLoopRecordAmbiguous,
     /// Referenced VERTEX records lack a complete owner-verified frame or IR-supported tolerance.
@@ -268,6 +303,7 @@ impl SldprtLossCode {
         Self::MetadataDefaultOwnerAmbiguous,
         Self::MetadataDefaultAliasAmbiguous,
         Self::MetadataDefaultValueUnsupported,
+        Self::MetadataMassPropertiesNotCompared,
         Self::MetadataConfigurationPropertyOwnerAmbiguous,
         Self::MetadataConfigurationPropertyCarrierUnsupported,
         Self::MetadataConfigurationPropertyValueUnsupported,
@@ -287,6 +323,14 @@ impl SldprtLossCode {
         Self::PmiSemanticParseCapped,
         Self::PmiSwiftAnnotationUnsupported,
         Self::PmiSwiftFeatureWalkCapped,
+        Self::PmiSwiftImplicitNominalUnresolved,
+        Self::PmiSwiftPositionTargetUnresolved,
+        Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed,
+        Self::PmiSwiftSphericalDiameterTargetUnresolved,
+        Self::PmiSwiftPresentationUnresolved,
+        Self::PmiSwiftPresentationUnframed,
+        Self::PmiSwiftFaceDocumentLayoutAssumed,
+        Self::PmiSwiftFaceDocumentTailAssumed,
         Self::HistoryIncompleteReferences,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
@@ -316,6 +360,10 @@ impl SldprtLossCode {
         Self::GeometryPcurveAmbiguous,
         Self::GeometrySurfaceSolverWorkCapped,
         Self::GeometrySplineLanesUnpaired,
+        Self::GeometrySplineWeightNonpositive,
+        Self::GeometrySplineFieldsInconsistent,
+        Self::GeometryConeHalfAngleSignUnresolved,
+        Self::GeometryConeHalfAngleIdentityRefused,
         Self::GeometryIntersectionLayoutUnknown,
         Self::AppearanceFaceColorUnresolved,
         Self::AppearanceAssignmentUnresolved,
@@ -331,6 +379,8 @@ impl SldprtLossCode {
         Self::TopologyFinPartnerUnresolved,
         Self::TopologyFinLinkUnresolved,
         Self::TopologyRingEdgeWithheld,
+        Self::TopologyVertexLoopWithheld,
+        Self::TopologyAmbiguousFinFaceWithheld,
         Self::TopologyLoopRecordAmbiguous,
         Self::TopologyVertexRecordUnresolved,
         Self::TopologyPcurveCarrierOffSurface,
@@ -386,6 +436,18 @@ impl SldprtLossCode {
             Self::PmiSemanticParseCapped => "pmi.semantic-parse-capped",
             Self::PmiSwiftAnnotationUnsupported => "pmi.swift-annotation-unsupported",
             Self::PmiSwiftFeatureWalkCapped => "pmi.swift-feature-walk-capped",
+            Self::PmiSwiftImplicitNominalUnresolved => "pmi.swift-implicit-nominal-unresolved",
+            Self::PmiSwiftPositionTargetUnresolved => "pmi.swift-position-target-unresolved",
+            Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed => {
+                "pmi.swift-spherical-diameter-count-text-equal-radius-assumed"
+            }
+            Self::PmiSwiftSphericalDiameterTargetUnresolved => {
+                "pmi.swift-spherical-diameter-target-unresolved"
+            }
+            Self::PmiSwiftPresentationUnresolved => "pmi.swift-presentation-unresolved",
+            Self::PmiSwiftPresentationUnframed => "pmi.swift-presentation-unframed",
+            Self::PmiSwiftFaceDocumentLayoutAssumed => "pmi.swift-face-document-layout-assumed",
+            Self::PmiSwiftFaceDocumentTailAssumed => "pmi.swift-face-document-tail-assumed",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
@@ -415,6 +477,12 @@ impl SldprtLossCode {
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::GeometrySurfaceSolverWorkCapped => "geometry.surface-solver-work-capped",
             Self::GeometrySplineLanesUnpaired => "geometry.spline-lanes-unpaired",
+            Self::GeometrySplineWeightNonpositive => "geometry.spline-weight-nonpositive",
+            Self::GeometrySplineFieldsInconsistent => "geometry.spline-fields-inconsistent",
+            Self::GeometryConeHalfAngleSignUnresolved => "geometry.cone-half-angle-sign-unresolved",
+            Self::GeometryConeHalfAngleIdentityRefused => {
+                "geometry.cone-half-angle-identity-refused"
+            }
             Self::GeometryIntersectionLayoutUnknown => "geometry.intersection-layout-unknown",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
             Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
@@ -430,6 +498,8 @@ impl SldprtLossCode {
             Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
             Self::TopologyFinLinkUnresolved => "topology.fin-link-unresolved",
             Self::TopologyRingEdgeWithheld => "topology.ring-edge-withheld",
+            Self::TopologyVertexLoopWithheld => "topology.vertex-loop-withheld",
+            Self::TopologyAmbiguousFinFaceWithheld => "topology.ambiguous-fin-face-withheld",
             Self::TopologyLoopRecordAmbiguous => "topology.loop-record-ambiguous",
             Self::TopologyVertexRecordUnresolved => "topology.vertex-record-unresolved",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
@@ -464,6 +534,7 @@ impl SldprtLossCode {
             Self::MetadataDefaultOwnerAmbiguous => "metadata.default-owner-ambiguous",
             Self::MetadataDefaultAliasAmbiguous => "metadata.default-alias-ambiguous",
             Self::MetadataDefaultValueUnsupported => "metadata.default-value-unsupported",
+            Self::MetadataMassPropertiesNotCompared => "metadata.mass-properties-not-compared",
             Self::MetadataConfigurationPropertyOwnerAmbiguous => {
                 "metadata.configuration-property-owner-ambiguous"
             }
@@ -523,6 +594,14 @@ impl SldprtLossCode {
             | Self::PmiSemanticParseCapped
             | Self::PmiSwiftAnnotationUnsupported
             | Self::PmiSwiftFeatureWalkCapped
+            | Self::PmiSwiftImplicitNominalUnresolved
+            | Self::PmiSwiftPositionTargetUnresolved
+            | Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed
+            | Self::PmiSwiftSphericalDiameterTargetUnresolved
+            | Self::PmiSwiftPresentationUnresolved
+            | Self::PmiSwiftPresentationUnframed
+            | Self::PmiSwiftFaceDocumentLayoutAssumed
+            | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryIncompleteReferences
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
@@ -552,6 +631,10 @@ impl SldprtLossCode {
             | Self::GeometryPcurveAmbiguous
             | Self::GeometrySurfaceSolverWorkCapped
             | Self::GeometrySplineLanesUnpaired
+            | Self::GeometrySplineWeightNonpositive
+            | Self::GeometrySplineFieldsInconsistent
+            | Self::GeometryConeHalfAngleSignUnresolved
+            | Self::GeometryConeHalfAngleIdentityRefused
             | Self::GeometryIntersectionLayoutUnknown
             | Self::AppearanceFaceColorUnresolved
             | Self::AppearanceAssignmentUnresolved
@@ -567,6 +650,8 @@ impl SldprtLossCode {
             | Self::TopologyFinPartnerUnresolved
             | Self::TopologyFinLinkUnresolved
             | Self::TopologyRingEdgeWithheld
+            | Self::TopologyVertexLoopWithheld
+            | Self::TopologyAmbiguousFinFaceWithheld
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved
             | Self::TopologyPcurveCarrierOffSurface
@@ -587,6 +672,7 @@ impl SldprtLossCode {
             | Self::MetadataConfigurationPropertyCarrierUnsupported
             | Self::MetadataConfigurationPropertyValueUnsupported
             | Self::MetadataDefaultValueUnsupported => Severity::Warning,
+            Self::MetadataMassPropertiesNotCompared => Severity::Warning,
             Self::AssemblyMatesNotTransferred
             | Self::AssemblyVirtualComponentsNotTransferred
             | Self::AssemblyEmbeddedDocumentsNotTransferred => Severity::Warning,
@@ -626,6 +712,7 @@ impl SldprtLossCode {
             | Self::MetadataConfigurationPropertyCarrierUnsupported
             | Self::MetadataConfigurationPropertyValueUnsupported
             | Self::MetadataDefaultValueUnsupported => LossTaxonomy::AttributesNotTransferred,
+            Self::MetadataMassPropertiesNotCompared => LossTaxonomy::AttributesNotTransferred,
             Self::AssemblyComponentsExternal
             | Self::AssemblyVirtualComponentsNotTransferred
             | Self::AssemblyEmbeddedDocumentsNotTransferred => {
@@ -646,6 +733,8 @@ impl SldprtLossCode {
             | Self::TopologyFinPartnerUnresolved
             | Self::TopologyFinLinkUnresolved
             | Self::TopologyRingEdgeWithheld
+            | Self::TopologyVertexLoopWithheld
+            | Self::TopologyAmbiguousFinFaceWithheld
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
@@ -658,6 +747,10 @@ impl SldprtLossCode {
             | Self::GeometryPointRecordAmbiguous
             | Self::GeometryCurveMarkerConflict
             | Self::GeometrySplineLanesUnpaired
+            | Self::GeometrySplineWeightNonpositive
+            | Self::GeometrySplineFieldsInconsistent
+            | Self::GeometryConeHalfAngleSignUnresolved
+            | Self::GeometryConeHalfAngleIdentityRefused
             | Self::GeometryIntersectionLayoutUnknown
             | Self::GeometryParasolidNotTransferred
             | Self::ContainerAuxiliaryParasolidRefused
@@ -674,6 +767,14 @@ impl SldprtLossCode {
             | Self::TessellationReusedTagAmbiguous
             | Self::TessellationDisplayWithoutGeometry => LossTaxonomy::ReferenceGraphNotClosed,
             Self::MaterialMetadataNotTransferred => LossTaxonomy::MaterialNotTransferred,
+            Self::PmiSwiftImplicitNominalUnresolved
+            | Self::PmiSwiftPositionTargetUnresolved
+            | Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed
+            | Self::PmiSwiftSphericalDiameterTargetUnresolved
+            | Self::PmiSwiftPresentationUnresolved
+            | Self::PmiSwiftPresentationUnframed
+            | Self::PmiSwiftFaceDocumentLayoutAssumed
+            | Self::PmiSwiftFaceDocumentTailAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -796,9 +897,34 @@ pub(crate) fn spline_lane_refusal(record: impl std::fmt::Display) -> LossNote {
     SldprtLossCode::GeometrySplineLanesUnpaired.note(message)
 }
 
+/// One refused spline carrier, named by `record`, with the loss code and
+/// message of its refusal.
+pub(crate) fn spline_refusal(
+    record: impl std::fmt::Display,
+    refusal: &cadmpeg_parasolid::geometry::nurbs::Refusal,
+) -> LossNote {
+    use cadmpeg_parasolid::geometry::nurbs::Refusal;
+    let (code, cause) = match refusal {
+        Refusal::Lanes(error) => return spline_lane_refusal(format_args!("{record}: {error}")),
+        Refusal::NonpositiveWeight => (
+            SldprtLossCode::GeometrySplineWeightNonpositive,
+            "stores a control-point weight that is zero or negative",
+        ),
+        Refusal::Fields => (
+            SldprtLossCode::GeometrySplineFieldsInconsistent,
+            "stores a dimension, count, or multiplicity that contradicts its fields or arrays",
+        ),
+    };
+    code.note(format!(
+        "{record} {cause}; the carrier is not emitted and the entities that reference it fall \
+         back to an untyped support."
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
+    use cadmpeg_ir::report::Severity;
 
     use super::SldprtLossCode;
     use std::collections::BTreeSet;
@@ -856,6 +982,7 @@ mod tests {
                 "metadata.default-owner-ambiguous",
                 "metadata.default-alias-ambiguous",
                 "metadata.default-value-unsupported",
+                "metadata.mass-properties-not-compared",
                 "metadata.configuration-property-owner-ambiguous",
                 "metadata.configuration-property-carrier-unsupported",
                 "metadata.configuration-property-value-unsupported",
@@ -875,6 +1002,14 @@ mod tests {
                 "pmi.semantic-parse-capped",
                 "pmi.swift-annotation-unsupported",
                 "pmi.swift-feature-walk-capped",
+                "pmi.swift-implicit-nominal-unresolved",
+                "pmi.swift-position-target-unresolved",
+                "pmi.swift-spherical-diameter-count-text-equal-radius-assumed",
+                "pmi.swift-spherical-diameter-target-unresolved",
+                "pmi.swift-presentation-unresolved",
+                "pmi.swift-presentation-unframed",
+                "pmi.swift-face-document-layout-assumed",
+                "pmi.swift-face-document-tail-assumed",
                 "history.incomplete-references",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
@@ -904,6 +1039,10 @@ mod tests {
                 "geometry.pcurve-ambiguous",
                 "geometry.surface-solver-work-capped",
                 "geometry.spline-lanes-unpaired",
+                "geometry.spline-weight-nonpositive",
+                "geometry.spline-fields-inconsistent",
+                "geometry.cone-half-angle-sign-unresolved",
+                "geometry.cone-half-angle-identity-refused",
                 "geometry.intersection-layout-unknown",
                 "appearance.face-color-unresolved",
                 "appearance.assignment-unresolved",
@@ -919,6 +1058,8 @@ mod tests {
                 "topology.fin-partner-unresolved",
                 "topology.fin-link-unresolved",
                 "topology.ring-edge-withheld",
+                "topology.vertex-loop-withheld",
+                "topology.ambiguous-fin-face-withheld",
                 "topology.loop-record-ambiguous",
                 "topology.vertex-record-unresolved",
                 "topology.pcurve-carrier-off-surface",
@@ -982,6 +1123,22 @@ mod tests {
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());
         }
+    }
+
+    #[test]
+    fn implicit_swift_nominal_is_a_tolerable_decode_diagnostic() {
+        let note = SldprtLossCode::PmiSwiftImplicitNominalUnresolved.note("unresolved");
+        assert_eq!(note.severity, Severity::Warning);
+        assert_eq!(note.code.taxonomy(), LossTaxonomy::DecodeDiagnostic);
+        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+    }
+
+    #[test]
+    fn unresolved_position_target_is_a_tolerable_decode_diagnostic() {
+        let note = SldprtLossCode::PmiSwiftPositionTargetUnresolved.note("unresolved");
+        assert_eq!(note.severity, Severity::Warning);
+        assert_eq!(note.code.taxonomy(), LossTaxonomy::DecodeDiagnostic);
+        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
     }
 
     #[test]

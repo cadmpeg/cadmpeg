@@ -43,6 +43,8 @@ use cadmpeg_ir::{
     scalar::{FiniteReal, Length, NonZeroReal, PositiveLength, PositiveReal},
 };
 
+use crate::layout::fillet_edge_item;
+
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
@@ -73,6 +75,12 @@ macro_rules! required {
 pub(crate) struct DesignObjects<'a> {
     pub(crate) objects: &'a [ObjectRecord],
     pub(crate) extensions: &'a [crate::native::ExtensionRecord],
+}
+
+#[derive(Clone, Copy)]
+struct DesignReferenceGraph<'a> {
+    objects: &'a [ObjectRecord],
+    properties_by_owner: &'a HashMap<&'a str, Vec<&'a PropertyRecord>>,
 }
 
 pub(crate) fn transfer(
@@ -108,6 +116,10 @@ pub(crate) fn transfer(
             owned.push(property);
         }
     }
+    let reference_graph = DesignReferenceGraph {
+        objects,
+        properties_by_owner: &properties_by_owner,
+    };
     let expression_objects = ExpressionObjects::new(objects, &properties_by_owner);
     let mut feature_ids = HashMap::new();
     for object in objects
@@ -156,6 +168,18 @@ pub(crate) fn transfer(
     {
         ordinal_by_feature.insert(feature_id(object)?, feature_ordinals[object.id().as_str()]);
     }
+    let profile_dependencies = preceding_profile_feature_dependencies(
+        objects,
+        &properties_by_owner,
+        payloads,
+        &ir.model.bodies,
+        ProfileFeatureOrder {
+            feature_ids: &feature_ids,
+            ordinals: &feature_ordinals,
+        },
+        &cycle_affected,
+        &attachment_owners,
+    );
 
     for object in objects {
         if !is_design_object(&object.type_name) {
@@ -250,12 +274,26 @@ pub(crate) fn transfer(
                 })
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_loft(&object.type_name) {
-            loft_definition(ctx, &object.type_name, &owned, &sketch_ids)?
-                .or_else(|| cached_shape_definition(&owned))
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            loft_definition(
+                ctx,
+                &object.type_name,
+                object.id(),
+                &owned,
+                &sketch_ids,
+                &profile_dependencies,
+            )?
+            .or_else(|| cached_shape_definition(&owned))
+            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_sweep(&object.type_name) {
-            sweep_definition(ctx, &object.type_name, &owned, &sketch_ids)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            sweep_definition(
+                ctx,
+                &object.type_name,
+                object.id(),
+                &owned,
+                &sketch_ids,
+                &profile_dependencies,
+            )?
+            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_helical_sweep(&object.type_name) {
             helical_sweep_definition(
                 ctx,
@@ -263,8 +301,8 @@ pub(crate) fn transfer(
                 object.id(),
                 &owned,
                 &sketch_ids,
-                objects,
-                &properties_by_owner,
+                &profile_dependencies,
+                reference_graph,
             )?
             .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if matches!(object.type_name.as_str(), "Part::Helix" | "Part::Spiral") {
@@ -296,13 +334,14 @@ pub(crate) fn transfer(
                 object.id(),
                 &owned,
                 &sketch_ids,
-                objects,
-                &properties_by_owner,
+                &profile_dependencies,
+                reference_graph,
                 program_version,
             )?
             .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_extrusion(&object.type_name) {
-            let profile = match profile_ref(object.id(), &owned, &sketch_ids) {
+            let profile = match profile_ref(object.id(), &owned, &sketch_ids, &profile_dependencies)
+            {
                 ProfileRef::Planar(PlanarProfileRef::Unresolved(_)) => {
                     ["Profile", "Sketch", "Base", "Source"]
                         .iter()
@@ -342,8 +381,15 @@ pub(crate) fn transfer(
             )?
             .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_revolution(&object.type_name) {
-            revolution_definition(ctx, &object.type_name, object.id(), &owned, &sketch_ids)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            revolution_definition(
+                ctx,
+                &object.type_name,
+                object.id(),
+                &owned,
+                &sketch_ids,
+                &profile_dependencies,
+            )?
+            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if matches!(
             object.type_name.as_str(),
             "PartDesign::Thickness" | "Part::Thickness"
@@ -399,10 +445,11 @@ pub(crate) fn transfer(
         let definition = post_processed_definition(ctx, definition, &object.type_name, &owned)?;
         append_operation_parameters(ctx, &mut ir.model.parameters, object, &owned)?;
         let mut outputs = Vec::new();
-        for payload in payloads
-            .iter()
-            .filter(|payload| owned.iter().any(|property| property.id == payload.property))
-        {
+        for payload in payloads.iter().filter(|payload| {
+            owned
+                .iter()
+                .any(|property| property.name == "Shape" && property.id == payload.property)
+        }) {
             let prefix = crate::native::model_id("body", &payload.id, "");
             for body in body_ids
                 .iter()
@@ -483,6 +530,11 @@ pub(crate) fn transfer(
     {
         initial_cycle_affected_features.insert(feature_id(object)?);
     }
+    append_placement_expression_parameters(
+        &mut ir.model.parameters,
+        objects,
+        &properties_by_owner,
+    )?;
     let parameter_cycle_features = bind_parameter_dependencies(
         &mut ir.model.parameters,
         objects,
@@ -2949,6 +3001,204 @@ fn expression_binding(properties: &[&PropertyRecord], path: &str) -> Option<(Str
     Some((engine.id.clone(), expression.to_owned()))
 }
 
+struct PlacementExpressionParameter<'a> {
+    object: &'a ObjectRecord,
+    axis: &'static str,
+    expression: Option<(String, String)>,
+}
+
+fn append_placement_expression_parameters(
+    parameters: &mut Vec<DesignParameter>,
+    objects: &[ObjectRecord],
+    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+) -> Result<(), CodecError> {
+    let objects_by_name = objects
+        .iter()
+        .filter(|object| is_design_object(&object.type_name))
+        .map(|object| (object.name().as_str(), object))
+        .collect::<HashMap<_, _>>();
+    let mut needs = Vec::<PlacementExpressionParameter<'_>>::new();
+    let mut positions = HashMap::<(&str, &'static str), usize>::new();
+
+    for object in objects
+        .iter()
+        .filter(|object| is_design_object(&object.type_name))
+    {
+        let owned = properties_by_owner
+            .get(object.id().as_str())
+            .map_or(&[][..], Vec::as_slice);
+        let Some(engine) = property(owned, "ExpressionEngine") else {
+            continue;
+        };
+        for value in engine
+            .values()
+            .iter()
+            .filter(|value| value.tag == "Expression")
+        {
+            let (Some(path), Some(expression)) = (
+                value.attributes.get("path"),
+                value.attributes.get("expression"),
+            ) else {
+                continue;
+            };
+            if let Some(axis) = path
+                .strip_prefix(".Placement.Base.")
+                .and_then(|axis| match axis {
+                    "x" => Some("x"),
+                    "y" => Some("y"),
+                    "z" => Some("z"),
+                    _ => None,
+                })
+            {
+                request_placement_expression_parameter(
+                    &mut needs,
+                    &mut positions,
+                    object,
+                    axis,
+                    Some((engine.id.as_str(), expression)),
+                );
+            }
+            for (object_name, axis) in placement_component_references(expression) {
+                let Some(referenced_object) = objects_by_name.get(object_name).copied() else {
+                    continue;
+                };
+                request_placement_expression_parameter(
+                    &mut needs,
+                    &mut positions,
+                    referenced_object,
+                    axis,
+                    None,
+                );
+            }
+        }
+    }
+
+    let mut last_ordinals = HashMap::<FeatureId, u32>::new();
+    let mut existing_parameters = HashSet::<(FeatureId, String)>::new();
+    for parameter in parameters.iter() {
+        let Some(owner) = parameter.owner.as_ref() else {
+            continue;
+        };
+        last_ordinals
+            .entry(owner.clone())
+            .and_modify(|ordinal| *ordinal = (*ordinal).max(parameter.ordinal))
+            .or_insert(parameter.ordinal);
+        if parameter.name.starts_with("Placement.Base.") {
+            existing_parameters.insert((owner.clone(), parameter.name.clone()));
+        }
+    }
+    for need in needs {
+        let object = need.object;
+        let owner = feature_id(object)?;
+        let name = format!("Placement.Base.{}", need.axis);
+        if !existing_parameters.insert((owner.clone(), name.clone())) {
+            continue;
+        }
+        let Some(owned) = properties_by_owner.get(object.id().as_str()) else {
+            continue;
+        };
+        let Some(placement) = property(owned, "Placement") else {
+            continue;
+        };
+        let Some(frame) = crate::placement::placement_matrix_unreported(placement) else {
+            continue;
+        };
+        let component = match need.axis {
+            "x" => 0,
+            "y" => 1,
+            "z" => 2,
+            _ => return Err(CodecError::malformed("unknown placement expression axis")),
+        };
+        let raw_name = ["Px", "Py", "Pz"][component];
+        let Some(raw_value) = placement
+            .values()
+            .first()
+            .and_then(|value| value.attributes.get(raw_name))
+        else {
+            continue;
+        };
+        let Some(value) = Length::new(frame.rows()[component][3]) else {
+            continue;
+        };
+        let ordinal = last_ordinals
+            .get(&owner)
+            .map_or(Some(0), |ordinal| ordinal.checked_add(1))
+            .ok_or_else(|| CodecError::malformed("FreeCAD parameter ordinal overflow"))?;
+        last_ordinals.insert(owner.clone(), ordinal);
+        let mut retained = BTreeMap::new();
+        if let Some((native_ref, _)) = &need.expression {
+            retained.insert(
+                cadmpeg_core::nonblank_literal!("expression_native_ref"),
+                native_ref.clone(),
+            );
+        }
+        parameters.push(DesignParameter {
+            product_definition: None,
+            id: ParameterId::mint(design_identity_text(
+                "parameter",
+                object,
+                format_args!(":{}", cadmpeg_ir::ids::IdentityKey::encode_segment(&name)),
+            ))
+            .map_err(CodecError::malformed)?,
+            owner: Some(owner),
+            ordinal,
+            name,
+            expression: need
+                .expression
+                .map_or_else(|| raw_value.clone(), |(_, expression)| expression),
+            display: None,
+            value: Some(ParameterValue::Length(value)),
+            dependencies: DistinctMembers::default(),
+            properties: retained,
+            pmi: None,
+            native_ref: Some(placement.id.clone()),
+        });
+    }
+    Ok(())
+}
+
+fn request_placement_expression_parameter<'a>(
+    needs: &mut Vec<PlacementExpressionParameter<'a>>,
+    positions: &mut HashMap<(&'a str, &'static str), usize>,
+    object: &'a ObjectRecord,
+    axis: &'static str,
+    expression: Option<(&str, &str)>,
+) {
+    let key = (object.id().as_str(), axis);
+    if let Some(index) = positions.get(&key).copied() {
+        if let Some((native_ref, expression)) = expression {
+            if needs[index].expression.is_none() {
+                needs[index].expression = Some((native_ref.to_owned(), expression.to_owned()));
+            }
+        }
+        return;
+    }
+    let expression =
+        expression.map(|(native_ref, expression)| (native_ref.to_owned(), expression.to_owned()));
+    positions.insert(key, needs.len());
+    needs.push(PlacementExpressionParameter {
+        object,
+        axis,
+        expression,
+    });
+}
+
+fn placement_component_references(
+    expression: &str,
+) -> impl Iterator<Item = (&str, &'static str)> + '_ {
+    expression_identifiers(expression)
+        .into_iter()
+        .filter_map(|identifier| {
+            [
+                ("x", ".Placement.Base.x"),
+                ("y", ".Placement.Base.y"),
+                ("z", ".Placement.Base.z"),
+            ]
+            .into_iter()
+            .find_map(|(axis, suffix)| identifier.strip_suffix(suffix).map(|object| (object, axis)))
+        })
+}
+
 fn bind_parameter_dependencies(
     parameters: &mut Vec<DesignParameter>,
     objects: &[ObjectRecord],
@@ -3035,7 +3285,7 @@ fn bind_parameter_dependencies(
         }
     }
     for parameter in parameters.iter_mut() {
-        let mut dependencies = BTreeSet::new();
+        let mut dependencies = Vec::new();
         // A spreadsheet cell without a leading `=` is a literal and names nothing.
         let literal_cell = parameter.properties.contains_key("address")
             && parameter
@@ -3043,7 +3293,10 @@ fn bind_parameter_dependencies(
                 .as_deref()
                 .is_some_and(|native| native.ends_with(":cells"))
             && !parameter.expression.starts_with('=');
-        for identifier in expression_identifiers(&parameter.expression).filter(|_| !literal_cell) {
+        for identifier in expression_identifiers(&parameter.expression)
+            .into_iter()
+            .filter(|_| !literal_cell)
+        {
             let dependency = if let Some(qualified) = qualified.get(identifier) {
                 Some(qualified)
             } else if let Some(owner) = parameter.owner.as_ref() {
@@ -3053,7 +3306,7 @@ fn bind_parameter_dependencies(
             };
             if let Some(dependency) = dependency.filter(|id| **id != parameter.id) {
                 if !dependencies.contains(dependency) {
-                    dependencies.insert(dependency.clone());
+                    dependencies.push(dependency.clone());
                 }
             }
         }
@@ -3067,9 +3320,7 @@ fn bind_parameter_dependencies(
             // a history that FreeCAD itself could not topologically sort.
             DistinctMembers::default()
         } else {
-            let mut members = Vec::new();
-            members.extend(dependencies);
-            DistinctMembers::try_from(members).map_err(CodecError::from)?
+            DistinctMembers::try_from(dependencies).map_err(CodecError::from)?
         };
     }
     let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();
@@ -3178,12 +3429,62 @@ fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BT
     cycle_features
 }
 
-fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
-    expression
-        .split(|character: char| {
-            !character.is_ascii_alphanumeric() && character != '_' && character != '.'
-        })
-        .filter(|identifier| !identifier.is_empty())
+fn expression_identifiers(expression: &str) -> Vec<&str> {
+    let bytes = expression.as_bytes();
+    let mut identifiers = Vec::new();
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        if matches!(bytes[cursor], b'\'' | b'"') {
+            let quote = bytes[cursor];
+            cursor += 1;
+            while cursor < bytes.len() {
+                if bytes[cursor] == b'\\' {
+                    cursor += 1;
+                    if cursor < bytes.len() {
+                        cursor += 1;
+                    }
+                } else if bytes[cursor] == quote {
+                    cursor += 1;
+                    break;
+                } else {
+                    cursor += 1;
+                }
+            }
+            continue;
+        }
+        if bytes[cursor..].starts_with(b"<<") {
+            let Some(end) = expression[cursor + 2..]
+                .find(">>")
+                .map(|offset| cursor + 2 + offset)
+            else {
+                break;
+            };
+            cursor = end + 2;
+            if bytes.get(cursor) == Some(&b'.') {
+                cursor += 1;
+                while cursor < bytes.len()
+                    && (bytes[cursor].is_ascii_alphanumeric()
+                        || matches!(bytes[cursor], b'_' | b'.'))
+                {
+                    cursor += 1;
+                }
+            }
+            continue;
+        }
+        if bytes[cursor].is_ascii_alphabetic() || bytes[cursor] == b'_' {
+            let start = cursor;
+            cursor += 1;
+            while cursor < bytes.len()
+                && (bytes[cursor].is_ascii_alphanumeric() || matches!(bytes[cursor], b'_' | b'.'))
+            {
+                cursor += 1;
+            }
+            identifiers.push(&expression[start..cursor]);
+            continue;
+        }
+        cursor += 1;
+    }
+    identifiers
 }
 
 fn neutral_constraint(
@@ -4137,18 +4438,179 @@ fn has_profile_endpoints(entity: &SketchEntity) -> bool {
     }
 }
 
+#[derive(Clone, Copy)]
+struct ProfileFeatureOrder<'a> {
+    feature_ids: &'a HashMap<&'a str, FeatureId>,
+    ordinals: &'a HashMap<&'a str, u64>,
+}
+
+fn preceding_profile_feature_dependencies<'a>(
+    objects: &'a [ObjectRecord],
+    properties_by_owner: &HashMap<&'a str, Vec<&'a PropertyRecord>>,
+    payloads: &[ShapePayloadRecord],
+    bodies: &[cadmpeg_ir::topology::Body],
+    feature_order: ProfileFeatureOrder<'a>,
+    cycle_affected: &BTreeSet<String>,
+    attachment_owners: &HashSet<&str>,
+) -> HashMap<(&'a str, &'a str), FeatureId> {
+    #[derive(Clone, Copy)]
+    struct WireProfileOutput {
+        roots: Option<usize>,
+        bodies: usize,
+        all_wires: bool,
+    }
+
+    let mut payload_states = payloads
+        .iter()
+        .map(|payload| WireProfileOutput {
+            roots: crate::brep::Tables::from_payload(payload).map(|tables| tables.roots.len()),
+            bodies: 0,
+            all_wires: true,
+        })
+        .collect::<Vec<_>>();
+    let mut payload_by_property = HashMap::<&str, Option<usize>>::with_capacity(payloads.len());
+    let mut payload_by_body_prefix =
+        HashMap::<String, Option<usize>>::with_capacity(payloads.len());
+    for (index, payload) in payloads.iter().enumerate() {
+        match payload_by_property.entry(payload.property.as_str()) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(index));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert(None);
+            }
+        }
+        let prefix = crate::native::model_id("body", &payload.id, "");
+        match payload_by_body_prefix.entry(prefix) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(index));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert(None);
+            }
+        }
+    }
+    for body in bodies {
+        let body_id = body.id.as_str();
+        let Some(separator) = body_id.rfind(':') else {
+            continue;
+        };
+        let prefix = &body_id[..=separator];
+        let Some(Some(index)) = payload_by_body_prefix.get(prefix) else {
+            continue;
+        };
+        let state = &mut payload_states[*index];
+        state.bodies += 1;
+        state.all_wires &= body.kind == cadmpeg_ir::topology::BodyKind::Wire;
+    }
+
+    let mut shape_property_by_owner = HashMap::with_capacity(properties_by_owner.len());
+    for (owner, properties) in properties_by_owner {
+        let mut selected = None;
+        let mut duplicate = false;
+        for property in properties
+            .iter()
+            .filter(|property| property.name == "Shape")
+        {
+            if selected.is_some() {
+                duplicate = true;
+                break;
+            }
+            selected = Some(*property);
+        }
+        if !duplicate {
+            if let Some(property) = selected {
+                shape_property_by_owner.insert(*owner, property);
+            }
+        }
+    }
+
+    let mut wire_features = HashMap::with_capacity(feature_order.feature_ids.len());
+    for object in objects {
+        let Some(feature) = feature_order.feature_ids.get(object.id().as_str()) else {
+            continue;
+        };
+        let owner = object.id().as_str();
+        let Some(shape) = shape_property_by_owner.get(owner) else {
+            continue;
+        };
+        let Some(Some(payload_index)) = payload_by_property.get(shape.id.as_str()) else {
+            continue;
+        };
+        let state = payload_states[*payload_index];
+        let Some(root_count) = state.roots else {
+            continue;
+        };
+        if root_count > 0 && state.bodies == root_count && state.all_wires {
+            wire_features.insert(object.id().as_str(), feature.clone());
+        }
+    }
+    let mut result = HashMap::with_capacity(objects.len());
+    for object in objects {
+        let owner = object.id().as_str();
+        if cycle_affected.contains(owner) {
+            continue;
+        }
+        let Some(owner_ordinal) = feature_order.ordinals.get(owner) else {
+            continue;
+        };
+        {
+            let mut add_target = |target: &'a str| {
+                let Some(feature) = wire_features.get(target) else {
+                    return;
+                };
+                if cycle_affected.contains(target)
+                    || feature_order
+                        .ordinals
+                        .get(target)
+                        .is_none_or(|target_ordinal| target_ordinal >= owner_ordinal)
+                {
+                    return;
+                }
+                result
+                    .entry((owner, target))
+                    .or_insert_with(|| feature.clone());
+            };
+            for target in object.dependencies.iter().map(String::as_str) {
+                add_target(target);
+            }
+            if let Some(properties) = properties_by_owner.get(owner) {
+                for property in properties
+                    .iter()
+                    .filter(|property| dependency_link(object, property, attachment_owners))
+                {
+                    for target in property
+                        .links()
+                        .iter()
+                        .flatten()
+                        .filter_map(|link| link.object())
+                    {
+                        add_target(target);
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
 fn profile_ref(
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
+    dependencies: &HashMap<(&str, &str), FeatureId>,
 ) -> ProfileRef {
     let Some((property, target)) = profile_target(properties) else {
         return ProfileRef::Planar(PlanarProfileRef::Unresolved(owner.to_owned()));
     };
-    ProfileRef::Planar(match sketches.get(target) {
-        Some(sketch) => PlanarProfileRef::Sketch(sketch.clone()),
-        None => PlanarProfileRef::Native(property.id.clone()),
-    })
+    let profile = if let Some(sketch) = sketches.get(target) {
+        PlanarProfileRef::Sketch(sketch.clone())
+    } else if let Some(feature) = dependencies.get(&(owner, target)) {
+        PlanarProfileRef::Feature(feature.clone())
+    } else {
+        PlanarProfileRef::Native(property.id.clone())
+    };
+    ProfileRef::Planar(profile)
 }
 
 fn profile_target<'a>(properties: &'a [&PropertyRecord]) -> Option<(&'a PropertyRecord, &'a str)> {
@@ -4195,6 +4657,7 @@ fn revolution_definition(
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
+    profile_dependencies: &HashMap<(&str, &str), FeatureId>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let face_maker_class = if kind == "Part::Revolution" {
         match property(properties, "FaceMakerClass") {
@@ -4204,7 +4667,7 @@ fn revolution_definition(
     } else {
         None
     };
-    let profile = match profile_ref(owner, properties, sketches) {
+    let profile = match profile_ref(owner, properties, sketches, profile_dependencies) {
         ProfileRef::Planar(PlanarProfileRef::Unresolved(_)) => None,
         profile => Some(profile),
     };
@@ -5229,22 +5692,154 @@ fn extrusion_shape(
     )))
 }
 
-/// Resolve native face and edge selections whose every operand names indexed
-/// subelements (`Face6`, `Edge3`) of a linked object's stored `Shape`. A
-/// selection with any operand that does not name exactly one transferred
-/// face or edge stays native.
-pub(crate) fn resolve_subelement_selections(
+pub(crate) fn resolve_operation_selections(
+    ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     properties: &[PropertyRecord],
+    entries: &[EntryRecord],
     occurrences: &[crate::topology_transfer::TopologyOccurrence],
-) {
+    cycle_affected: &BTreeSet<String>,
+) -> Result<(), CodecError> {
+    let mut dress_up_bases = HashSet::new();
+    let mut face_selection = false;
+    let mut body_selection = false;
+    let mut path_selection = false;
+    for feature in &ir.model.features {
+        let (FeatureDefinition::Operation(operation)
+        | FeatureDefinition::PostProcess { operation, .. }) = feature.evaluation.definition();
+        match operation {
+            FeatureOperation::Shell { removed_faces, .. }
+            | FeatureOperation::Draft {
+                faces: removed_faces,
+                ..
+            } => {
+                face_selection |= matches!(
+                    removed_faces,
+                    cadmpeg_ir::features::FaceSelection::Native(_)
+                );
+            }
+            FeatureOperation::MirrorShape { source, .. } => {
+                body_selection |= matches!(source, BodySelection::Native(_));
+            }
+            FeatureOperation::Sweep {
+                path, orientation, ..
+            } => {
+                path_selection |= matches!(path, Some(PathRef::Native(_)))
+                    || matches!(
+                        orientation,
+                        Some(SweepOrientation::Auxiliary {
+                            path: PathRef::Native(_),
+                            ..
+                        })
+                    );
+            }
+            FeatureOperation::Fillet { groups } => {
+                for group in groups.as_slice() {
+                    if let EdgeSelection::Native(native) = &group.edges {
+                        dress_up_bases.insert(native.clone());
+                    }
+                }
+            }
+            FeatureOperation::Chamfer { groups, .. } => {
+                for group in groups.as_slice() {
+                    if let EdgeSelection::Native(native) = &group.edges {
+                        dress_up_bases.insert(native.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if dress_up_bases.is_empty() && !face_selection && !body_selection && !path_selection {
+        return Ok(());
+    }
+    let features_by_native = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            feature.native_ref.as_deref().map(|native| {
+                (
+                    native.to_owned(),
+                    (
+                        feature.id.clone(),
+                        feature.ordinal,
+                        feature.evaluation.outputs().clone(),
+                        feature.dependencies.iter().cloned().collect::<Vec<_>>(),
+                    ),
+                )
+            })
+        })
+        .collect::<HashMap<_, _>>();
+    let precedes = |owner: &str, target: &str| {
+        if cycle_affected.contains(owner) || cycle_affected.contains(target) {
+            return false;
+        }
+        let Some(owner_feature) = features_by_native.get(owner) else {
+            return false;
+        };
+        let Some(target_feature) = features_by_native.get(target) else {
+            return false;
+        };
+        target_feature.1 < owner_feature.1
+            && owner_feature
+                .3
+                .iter()
+                .any(|dependency| dependency == &target_feature.0)
+    };
+    let occurrence_index = index_occurrences(occurrences);
+    let mut bases = HashMap::new();
+    for base in properties.iter().filter(|property| property.name == "Base") {
+        match bases.entry(base.owner.as_str()) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(base));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert(None);
+            }
+        }
+    }
+    let mut part_indices = HashMap::new();
+    for property in properties.iter().filter(|property| {
+        property.name == "Edges" && property.type_name == "Part::PropertyFilletEdges"
+    }) {
+        if !bases
+            .get(property.owner.as_str())
+            .copied()
+            .flatten()
+            .is_some_and(|base| dress_up_bases.contains(&base.id))
+        {
+            continue;
+        }
+        let indices = part_fillet_edge_values(ctx, &[property], entries)?.and_then(|values| {
+            let distinct = values
+                .iter()
+                .map(|value| value.index)
+                .collect::<BTreeSet<_>>();
+            (!values.is_empty()
+                && distinct.len() == values.len()
+                && values.iter().all(|value| value.index > 0))
+            .then_some(values)
+        });
+        match part_indices.entry(property.owner.as_str()) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(indices);
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert(None);
+            }
+        }
+    }
     let resolve = |native: &str, indexed_name: &str| -> Option<Vec<String>> {
         let selection = properties.iter().find(|property| property.id == native)?;
         let mut ids = Vec::new();
         for link in selection.links() {
             let link = link.as_ref()?;
             let object = link.object()?;
-            if link.document().is_some() || link.subelements().is_empty() {
+            if link.document().is_some()
+                || link.subelements().is_empty()
+                || !precedes(selection.owner.as_str(), object)
+            {
                 return None;
             }
             let shape = properties
@@ -5254,20 +5849,12 @@ pub(crate) fn resolve_subelement_selections(
                 // A mapped name ends with its indexed name after the last `.`.
                 let indexed = subelement.rsplit('.').next()?;
                 let index = indexed.strip_prefix(indexed_name)?.parse::<usize>().ok()?;
-                // An edge or vertex is listed once per use; its identity is shared.
-                let matches = occurrences
-                    .iter()
-                    .filter(|occurrence| {
-                        occurrence.property == shape.id
-                            && occurrence.indexed_name == indexed_name
-                            && occurrence.source_index == index
-                    })
-                    .map(|occurrence| occurrence.topology_id.as_str())
-                    .collect::<BTreeSet<_>>();
-                let [id] = matches.into_iter().collect::<Vec<_>>()[..] else {
-                    return None;
-                };
-                ids.push(id.to_owned());
+                ids.push(
+                    occurrence_index
+                        .get(&(shape.id.as_str(), indexed_name, index))?
+                        .as_ref()?
+                        .to_string(),
+                );
             }
         }
         (!ids.is_empty()).then_some(ids)
@@ -5307,7 +5894,39 @@ pub(crate) fn resolve_subelement_selections(
         let EdgeSelection::Native(native) = selection else {
             return;
         };
+        let part_edges = || -> Option<Vec<String>> {
+            let base = properties.iter().find(|property| property.id == *native)?;
+            if base.name != "Base" || base.type_name != "App::PropertyLink" {
+                return None;
+            }
+            let indices = part_indices.get(base.owner.as_str())?.as_ref()?;
+            let [Some(link)] = base.links() else {
+                return None;
+            };
+            let target = link.object()?;
+            if link.document().is_some()
+                || !link.subelements().is_empty()
+                || !precedes(base.owner.as_str(), target)
+            {
+                return None;
+            }
+            let shape = crate::native::unique_property(properties.iter(), |property| {
+                Some(property.owner.as_str()) == Some(target) && property.name == "Shape"
+            })
+            .ok()
+            .flatten()?;
+            indices
+                .iter()
+                .map(|edge| {
+                    occurrence_index
+                        .get(&(shape.id.as_str(), "Edge", usize::try_from(edge.index).ok()?))?
+                        .as_ref()
+                        .map(ToString::to_string)
+                })
+                .collect()
+        };
         let Some(edges) = resolve(native, "Edge")
+            .or_else(part_edges)
             .filter(|ids| ids.iter().all(|id| edge_ids.contains(id)))
             .and_then(|ids| {
                 ids.into_iter()
@@ -5322,7 +5941,70 @@ pub(crate) fn resolve_subelement_selections(
             native: native.clone(),
         };
     };
+    let body_ids = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.as_str())
+        .collect::<HashSet<_>>();
+    let bodies = |selection: &mut BodySelection, owner: &str| {
+        let BodySelection::Native(native) = selection else {
+            return;
+        };
+        let Some(property) = properties
+            .iter()
+            .find(|property| property.id == *native && property.owner.as_str() == owner)
+        else {
+            return;
+        };
+        let mut resolved = Vec::new();
+        for link in property.links() {
+            let Some(link) = link.as_ref() else {
+                return;
+            };
+            let Some(target) = link.object() else {
+                return;
+            };
+            if link.document().is_some()
+                || !link.subelements().is_empty()
+                || !precedes(owner, target)
+            {
+                return;
+            }
+            let Some((_, _, outputs, _)) = features_by_native.get(target) else {
+                return;
+            };
+            if outputs.is_empty() || outputs.iter().any(|body| !body_ids.contains(body.as_str())) {
+                return;
+            }
+            resolved.extend(outputs.iter().cloned());
+        }
+        let Ok(bodies) = DistinctMembers::try_from(resolved) else {
+            return;
+        };
+        *selection = BodySelection::Resolved {
+            bodies,
+            native: native.clone(),
+        };
+    };
+    let paths = |path: &mut PathRef| {
+        let PathRef::Native(native) = path else {
+            return;
+        };
+        let Some(edges) = resolve(native, "Edge")
+            .filter(|ids| ids.iter().all(|id| edge_ids.contains(id)))
+            .and_then(|ids| {
+                ids.into_iter()
+                    .map(|id| cadmpeg_ir::ids::EdgeId::mint(id).ok())
+                    .collect::<Option<Vec<_>>>()
+            })
+        else {
+            return;
+        };
+        *path = PathRef::Edges(edges);
+    };
     for feature in &mut ir.model.features {
+        let owner = feature.native_ref.clone();
         feature.evaluation.edit(|definition, _| {
             let operation = match definition {
                 FeatureDefinition::PostProcess { operation, .. }
@@ -5345,10 +6027,50 @@ pub(crate) fn resolve_subelement_selections(
                         group
                     });
                 }
+                FeatureOperation::Sweep {
+                    path, orientation, ..
+                } => {
+                    if let Some(path) = path {
+                        paths(path);
+                    }
+                    if let Some(SweepOrientation::Auxiliary { path, .. }) = orientation {
+                        paths(path);
+                    }
+                }
+                FeatureOperation::MirrorShape { source, .. } => {
+                    if let Some(owner) = owner.as_deref() {
+                        bodies(source, owner);
+                    }
+                }
                 _ => {}
             }
         });
     }
+    Ok(())
+}
+
+fn index_occurrences(
+    occurrences: &[crate::topology_transfer::TopologyOccurrence],
+) -> HashMap<(&str, &str, usize), Option<&str>> {
+    let mut index = HashMap::new();
+    for occurrence in occurrences {
+        let key = (
+            occurrence.property.as_str(),
+            occurrence.indexed_name,
+            occurrence.source_index,
+        );
+        let id = occurrence.topology_id.as_str();
+        match index.entry(key) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(id));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) if *entry.get() != Some(id) => {
+                entry.insert(None);
+            }
+            std::collections::hash_map::Entry::Occupied(_) => {}
+        }
+    }
+    index
 }
 
 fn dress_up_edge_selection(
@@ -5426,18 +6148,18 @@ fn fillet_definition(
         return Ok(None);
     }
     let part_values = if kind == "Part::Fillet" {
-        part_fillet_edge_values(properties, entries)?
+        part_fillet_edge_values(ctx, properties, entries)?
     } else {
         None
     };
     let radius = if kind == "Part::Fillet" {
         let values = required!(part_values);
         let radius = required!(cadmpeg_ir::scalar::PositiveLength::new(
-            required!(values.first())[0]
+            required!(values.first()).values[0]
         ));
         required!(values
             .iter()
-            .all(|[first, second]| *first == radius.get() && *second == radius.get())
+            .all(|edge| edge.values[0] == radius.get() && edge.values[1] == radius.get())
             .then_some(()));
         radius
     } else {
@@ -5472,18 +6194,19 @@ fn chamfer_definition(
         return Ok(None);
     }
     let part_values = if kind == "Part::Chamfer" {
-        part_fillet_edge_values(properties, entries)?
+        part_fillet_edge_values(ctx, properties, entries)?
     } else {
         None
     };
     let spec = if kind == "Part::Chamfer" {
         let values = required!(part_values);
-        let [first_raw, second_raw] = *required!(values.first());
+        let [first_raw, second_raw] = required!(values.first()).values;
         let first = required!(cadmpeg_ir::scalar::PositiveLength::new(first_raw));
         let second = required!(cadmpeg_ir::scalar::PositiveLength::new(second_raw));
-        if !values.iter().all(|[candidate_first, candidate_second]| {
-            *candidate_first == first.get() && *candidate_second == second.get()
-        }) {
+        if !values
+            .iter()
+            .all(|edge| edge.values[0] == first.get() && edge.values[1] == second.get())
+        {
             return Ok(None);
         }
         if first == second {
@@ -5520,10 +6243,17 @@ fn chamfer_definition(
     )))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PartFilletEdge {
+    index: i32,
+    values: [f64; 2],
+}
+
 fn part_fillet_edge_values(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
-) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
+) -> Result<Option<Vec<PartFilletEdge>>, CodecError> {
     let Some(property) = property(properties, "Edges") else {
         return Ok(None);
     };
@@ -5541,23 +6271,35 @@ fn part_fillet_edge_values(
     let Some(count) = view.u32_le() else {
         return Ok(None);
     };
-    if usize::try_from(count)
-        .map_err(|_| CodecError::malformed(format_args!("FreeCAD count {count} exceeds usize")))?
-        > MAX_SKETCH_RECORDS
+    let count_usize = usize::try_from(count)
+        .map_err(|_| CodecError::malformed(format_args!("FreeCAD count {count} exceeds usize")))?;
+    if count_usize > MAX_SKETCH_RECORDS {
+        return Ok(None);
+    }
+    if view
+        .counted(u64::from(count), fillet_edge_item::LEN)
+        .is_none()
     {
         return Ok(None);
     }
-    if view.counted(u64::from(count), 20).is_none() {
-        return Ok(None);
-    }
-    let mut values = Vec::new();
-    for _ in 0..count {
-        let Some((_, first, second)) =
-            (|| Some((view.u32_le()?, view.f64_le()?, view.f64_le()?)))()
+    let mut values = ctx.alloc_filled(
+        count_usize,
+        PartFilletEdge {
+            index: 0,
+            values: [0.0; 2],
+        },
+        "freecad fillet edges",
+    )?;
+    for value in &mut values {
+        let Some((index, first, second)) =
+            (|| Some((view.i32_le()?, view.f64_le()?, view.f64_le()?)))()
         else {
             return Ok(None);
         };
-        values.push([first, second]);
+        *value = PartFilletEdge {
+            index,
+            values: [first, second],
+        };
     }
     Ok(view.is_empty().then_some(values))
 }
@@ -6432,24 +7174,15 @@ fn boolean_definition(
 fn loft_definition(
     ctx: &DecodeContext<'_>,
     kind: &str,
+    owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
+    profile_dependencies: &HashMap<(&str, &str), FeatureId>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let linked_objects = || {
-        property(properties, "Profile")
-            .into_iter()
-            .chain(property(properties, "Sections"))
-            .flat_map(PropertyRecord::links)
-            .filter_map(|link| link.as_ref()?.object())
-    };
-    let mut profiles = Vec::new();
-    for object in linked_objects() {
-        let profile = match sketches.get(object) {
-            Some(sketch) => PlanarProfileRef::Sketch(sketch.clone()),
-            None => PlanarProfileRef::Native(object.to_owned()),
-        };
-        profiles.push(ProfileRef::Planar(profile));
-    }
+    let profiles = linked_planar_profiles(owner, properties, sketches, profile_dependencies)
+        .into_iter()
+        .map(ProfileRef::Planar)
+        .collect::<Vec<_>>();
     if profiles.len() < 2 {
         return Ok(None);
     }
@@ -6517,24 +7250,15 @@ fn loft_definition(
 fn sweep_definition(
     ctx: &DecodeContext<'_>,
     kind: &str,
+    owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
+    profile_dependencies: &HashMap<(&str, &str), FeatureId>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let linked_objects = || {
-        property(properties, "Profile")
-            .into_iter()
-            .chain(property(properties, "Sections"))
-            .flat_map(PropertyRecord::links)
-            .filter_map(|link| link.as_ref()?.object())
-    };
-    let mut profiles = Vec::new();
-    for object in linked_objects() {
-        let profile = match sketches.get(object) {
-            Some(sketch) => PlanarProfileRef::Sketch(sketch.clone()),
-            None => PlanarProfileRef::Native(object.to_owned()),
-        };
-        profiles.push(ProfileRef::Planar(profile));
-    }
+    let mut profiles = linked_planar_profiles(owner, properties, sketches, profile_dependencies)
+        .into_iter()
+        .map(ProfileRef::Planar)
+        .collect::<Vec<_>>();
     profiles.dedup();
     if profiles.is_empty() {
         return Ok(None);
@@ -6701,16 +7425,49 @@ fn sweep_definition(
     )))
 }
 
+fn linked_planar_profiles(
+    owner: &str,
+    properties: &[&PropertyRecord],
+    sketches: &HashMap<&str, SketchId>,
+    profile_dependencies: &HashMap<(&str, &str), FeatureId>,
+) -> Vec<PlanarProfileRef> {
+    let mut profiles = Vec::new();
+    for property in property(properties, "Profile")
+        .into_iter()
+        .chain(property(properties, "Sections"))
+    {
+        for link in property.links().iter().flatten() {
+            if link.document().is_some() {
+                profiles.push(PlanarProfileRef::Native(property.id.clone()));
+                continue;
+            }
+            let Some(object) = link.object() else {
+                continue;
+            };
+            let profile = match (
+                sketches.get(object),
+                profile_dependencies.get(&(owner, object)),
+            ) {
+                (Some(sketch), _) => PlanarProfileRef::Sketch(sketch.clone()),
+                (None, Some(feature)) => PlanarProfileRef::Feature(feature.clone()),
+                (None, None) => PlanarProfileRef::Native(object.to_owned()),
+            };
+            profiles.push(profile);
+        }
+    }
+    profiles
+}
+
 fn hole_definition(
     ctx: &DecodeContext<'_>,
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    profile_dependencies: &HashMap<(&str, &str), FeatureId>,
+    references: DesignReferenceGraph<'_>,
     program_version: Option<&str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let profile = profile_ref(owner, properties, sketches);
+    let profile = profile_ref(owner, properties, sketches, profile_dependencies);
     let (designation_label, class_label, fit_label) = if enumeration_selector(
         ctx,
         properties,
@@ -6918,16 +7675,21 @@ fn hole_definition(
     // A hole drills against its profile's normal, into the support; `Reversed`
     // drills along the normal.
     let reversed = required!(bool_selector(ctx, properties, "Reversed", false)?);
-    let direction = axis_reference(ctx, properties, "Profile", objects, properties_by_owner)?.map(
-        |(_, direction)| {
-            let normal = cadmpeg_ir::features::FeatureDirection3::from(direction);
-            if reversed {
-                normal
-            } else {
-                normal.reversed()
-            }
-        },
-    );
+    let direction = axis_reference(
+        ctx,
+        properties,
+        "Profile",
+        references.objects,
+        references.properties_by_owner,
+    )?
+    .map(|(_, direction)| {
+        let normal = cadmpeg_ir::features::FeatureDirection3::from(direction);
+        if reversed {
+            normal
+        } else {
+            normal.reversed()
+        }
+    });
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: Some(planar_profile),
         profile_filter: Some(profile_filter),
@@ -6993,8 +7755,8 @@ fn helical_sweep_definition(
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    profile_dependencies: &HashMap<(&str, &str), FeatureId>,
+    references: DesignReferenceGraph<'_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some((law, axis_origin, axis_direction)) = (|| -> Result<_, CodecError> {
         let law = match required!(enumeration_selector(ctx, properties, "Mode", 0)?) {
@@ -7015,8 +7777,8 @@ fn helical_sweep_definition(
                 ctx,
                 properties,
                 "ReferenceAxis",
-                objects,
-                properties_by_owner
+                references.objects,
+                references.properties_by_owner
             )?),
         };
         Ok(Some((law, axis_origin, axis_direction)))
@@ -7024,7 +7786,7 @@ fn helical_sweep_definition(
     else {
         return Ok(None);
     };
-    let profile = profile_ref(owner, properties, sketches);
+    let profile = profile_ref(owner, properties, sketches, profile_dependencies);
     let ProfileRef::Planar(planar_profile) = profile else {
         return Ok(None);
     };

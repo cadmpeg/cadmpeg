@@ -322,6 +322,42 @@ fn attachment_directions_admit_either_u_sign_without_a_side_flip() {
 }
 
 #[test]
+fn second_direction_is_antiparallel_to_v_only_with_a_reversed_first_direction() {
+    use cadmpeg_ir::units::UnitVector3;
+    let fixture = Fixture::new();
+    // Normal Z and U axis X give V = Y.
+    let run = |plate_slot: UnitVector3, first: UnitVector3, second: UnitVector3| {
+        plate(
+            &fixture.plate,
+            Some(&fixture.style),
+            |r| fixture.property(r),
+            Fixture::length,
+            |r| match r.index() {
+                2 => Some(plate_slot),
+                33 => Some(first),
+                34 => Some(second),
+                _ => Fixture::direction(r),
+            },
+            UnitVector3::Z_AXIS,
+            UnitVector3::X_AXIS,
+        )
+    };
+    let (x, y) = (UnitVector3::X_AXIS, UnitVector3::Y_AXIS);
+    let reversed_frame = run(x, x.reversed(), y.reversed()).expect("rotated frame");
+    assert_eq!(reversed_frame.side, SheetMetalThicknessSide::Forward);
+    assert!(run(x.reversed(), x, y).is_ok());
+    assert!(run(x, x.reversed(), y).is_ok());
+    assert_eq!(
+        run(x.reversed(), x, y.reversed()).expect_err("mirrored frame"),
+        PlateRefusal::SecondDirection
+    );
+    assert_eq!(
+        run(x, x.reversed(), UnitVector3::Z_AXIS).expect_err("oblique"),
+        PlateRefusal::SecondDirection
+    );
+}
+
+#[test]
 fn construction_wire_edge_collection_and_corner_controls_are_gated() {
     use crate::test_support::sheet_metal::list;
     assert!(projected(&Fixture::new()).is_ok());

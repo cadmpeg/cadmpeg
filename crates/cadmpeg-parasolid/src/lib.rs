@@ -20,6 +20,7 @@ pub mod pointer;
 include!("registry_ids.rs");
 
 pub mod deltas;
+pub mod geometry;
 pub mod records;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
@@ -309,6 +310,13 @@ pub fn push_extras(
             Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(rejected)) => {
                 collisions.push(format!(
                     "the container produced a duplicate {} dialect layer at carrier {carrier}; \
+                     the later classification was omitted",
+                    rejected.format()
+                ));
+            }
+            Err(cadmpeg_core::dialect::DialectLayerError::MissingInstance(rejected)) => {
+                collisions.push(format!(
+                    "the container produced an untagged {} dialect layer at carrier {carrier}; \
                      the later classification was omitted",
                     rejected.format()
                 ));

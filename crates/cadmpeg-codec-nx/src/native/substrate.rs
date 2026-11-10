@@ -141,7 +141,7 @@ pub(crate) struct ParsedStreams<'a> {
 }
 
 impl<'a> ParsedStreams<'a> {
-    pub(crate) fn primary_edge_losses(&self) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    pub(crate) fn primary_losses(&self) -> Vec<cadmpeg_ir::report::loss::LossNote> {
         self.streams
             .iter()
             .enumerate()
@@ -152,6 +152,11 @@ impl<'a> ParsedStreams<'a> {
                         "Primary EDGE in stream #{ordinal} at byte {offset} has no typed projection under its declared field contract and source identity; exact Source bytes remain retained."
                     ))
                 })
+                .chain(graph.primary_node_refusals().iter().map(move |(kind, offset)| {
+                    crate::loss::NxLossCode::PrimaryNodeUnresolved.note(format!(
+                        "Primary {kind:?} node in stream #{ordinal} at byte {offset} has no typed projection under its declared field contract and source identity; exact Source bytes remain retained."
+                    ))
+                }))
                 .chain(graph.primary_unread_from().map(move |offset| {
                     crate::loss::NxLossCode::PrimaryEdgeUnresolved.note(format!(
                         "Primary framing in stream #{ordinal} stops at byte {offset}; EDGE records in the unread bytes have no typed projection, and exact Source bytes remain retained."

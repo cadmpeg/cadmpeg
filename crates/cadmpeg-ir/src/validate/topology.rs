@@ -2633,9 +2633,9 @@ fn check_feature_references(
         });
         if configuration.active {
             for feature in &ir.model.features {
-                if feature.suppressed.is_some_and(|suppressed| {
-                    suppressed_features.contains(feature.id.as_str()) != suppressed
-                }) {
+                if suppressed_features.contains(feature.id.as_str())
+                    != feature.suppressed.unwrap_or(false)
+                {
                     super::record_finding(
                         findings,
                         Check::ReferentialIntegrity,
@@ -3323,6 +3323,7 @@ fn check_feature_references(
             FeatureOperation::FilledSurface {
                 boundary,
                 support_faces,
+                interior_constraints,
                 ..
             } => {
                 match boundary {
@@ -3332,6 +3333,7 @@ fn check_feature_references(
                     crate::features::SurfaceBoundary::Path(path) => paths.push(path),
                 }
                 face_selections.push(support_faces);
+                paths.extend(interior_constraints);
             }
             FeatureOperation::TrimSurface { faces, tool, .. } => {
                 face_selections.push(faces);
@@ -3465,6 +3467,16 @@ fn check_feature_references(
             FeatureOperation::TrimBodies { operands, .. } => {
                 body_selections.push(operands.targets());
                 body_selections.push(operands.tools());
+            }
+            FeatureOperation::TrimBodiesAtPlane { targets, plane, .. } => {
+                body_selections.push(targets);
+                check_plane_feature_reference(
+                    findings,
+                    feature,
+                    plane,
+                    &feature_records,
+                    "trim-bodies tool plane",
+                );
             }
             FeatureOperation::DeleteBody { bodies, .. } => {
                 body_selections.push(bodies);

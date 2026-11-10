@@ -1,64 +1,8 @@
-use super::{partition_bodies, terminal_feature_body_ids, without_images_before_partition};
+use super::terminal_feature_body_ids;
 use crate::native::segments::{SegmentBodyBinding, SegmentBodyLineageStatus};
 use crate::parasolid::StreamKind;
 use cadmpeg_ir::ids::BodyId;
 use std::collections::BTreeSet;
-
-#[test]
-fn a_partition_body_replaces_cached_images_only_when_it_is_selected() {
-    let binding = |ordinal: u32, stream_kind| SegmentBodyBinding {
-        id: format!("binding#{ordinal}"),
-        stream_link: format!("link#{ordinal}"),
-        stream_ordinal: ordinal,
-        stream_kind,
-        body_object_index: 10,
-        body_alias_object_index: 20,
-        stream_role: 0,
-        source_offset: 0,
-    };
-    let bodies = |ids: &[&str]| {
-        ids.iter()
-            .map(|id| BodyId::mint(*id).unwrap())
-            .collect::<BTreeSet<_>>()
-    };
-    let bindings = [
-        binding(0, StreamKind::Plain),
-        binding(1, StreamKind::Partition),
-    ];
-
-    assert_eq!(
-        without_images_before_partition(bodies(&["nx:s0:body#0", "nx:s1:body#0"]), &bindings),
-        bodies(&["nx:s1:body#0"])
-    );
-    assert_eq!(
-        without_images_before_partition(bodies(&["nx:s0:body#0"]), &bindings),
-        bodies(&["nx:s0:body#0"])
-    );
-}
-
-#[test]
-fn a_part_without_segment_bindings_keeps_only_its_partition_bodies() {
-    let bodies = |ids: &[&str]| {
-        ids.iter()
-            .map(|id| BodyId::mint(*id).unwrap())
-            .collect::<BTreeSet<_>>()
-    };
-    let kinds = [
-        StreamKind::Partition,
-        StreamKind::Deltas,
-        StreamKind::Plain,
-        StreamKind::Plain,
-    ];
-
-    assert_eq!(
-        partition_bodies(
-            &bodies(&["nx:s0:body#3", "nx:s2:body#2", "nx:s3:body#2"]),
-            &kinds
-        ),
-        bodies(&["nx:s0:body#3"])
-    );
-    assert!(partition_bodies(&bodies(&["nx:s2:body#2", "nx:s3:body#2"]), &kinds).is_empty());
-}
 
 #[test]
 fn terminal_body_selection_joins_statuses_by_binding_identity() {

@@ -138,6 +138,8 @@ fn surface_stitch_fixture() -> StitchFixture {
                 )
                 .unwrap(),
                 context_id_offset: 0,
+                serialization_form:
+                    crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
                 identity_record_index: record_index + 3,
                 identity_record_offset: 0,
                 primary_identity: u64::try_from(face_slot)
@@ -277,6 +279,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             entity_operands: &operands,
             body_recipe_operands: &[],
             histories: std::slice::from_mut(&mut history),
+            scope_histories: &std::collections::HashMap::new(),
         },
     );
 
@@ -317,6 +320,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             entity_operands: &ambiguous_operands,
             body_recipe_operands: &[],
             histories: std::slice::from_mut(&mut history),
+            scope_histories: &std::collections::HashMap::new(),
         },
     );
     assert!(matches!(
@@ -385,6 +389,7 @@ fn a_selection_other_than_move_face_reads_one_transition() {
             entity_operands: &operands,
             body_recipe_operands: &[],
             histories: std::slice::from_mut(&mut chained),
+            scope_histories: &std::collections::HashMap::new(),
         },
     );
     assert!(matches!(

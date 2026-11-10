@@ -3553,6 +3553,16 @@ pub enum FeatureOperation {
             deserialize_with = "deserialize_merge_result"
         )]
         merge_result: Option<bool>,
+        #[doc = "Curves and points inside the boundary that constrain the patch, in source order."]
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        interior_constraints: Vec<PathRef>,
+        #[doc = "Whether the generated patch normal is reversed, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_reverse_normal"
+        )]
+        reverse_normal: Option<bool>,
     },
     /// Restricts selected surface faces to one side of a trimming path.
     TrimSurface {
@@ -3667,6 +3677,17 @@ pub enum FeatureOperation {
         /// Disjoint operand selections and their operation arity.
         operands: TrimBodyOperands,
         /// Side retained by the trim.
+        keep: BodyTrimSide,
+    },
+    /// Removes one side of selected bodies at a datum plane. The selected
+    /// bodies keep their identity and retain the side named by `keep`.
+    TrimBodiesAtPlane {
+        /// Bodies trimmed by the operation.
+        targets: BodySelection,
+        /// Earlier datum-plane feature supplying the trimming plane.
+        plane: FeatureId,
+        /// Side retained: `Forward` keeps the side that the plane normal
+        /// points into, `Reverse` keeps the opposite side.
         keep: BodyTrimSide,
     },
     /// Partitions selected bodies with surface faces or a datum plane while
@@ -4108,7 +4129,7 @@ impl FeatureOperation {
             Self::FaceBlend { .. } => Some("face blend"),
             Self::Shell { .. } => Some("shell"),
             Self::SewBodies { .. } => Some("sew bodies"),
-            Self::TrimBodies { .. } => Some("trim bodies"),
+            Self::TrimBodies { .. } | Self::TrimBodiesAtPlane { .. } => Some("trim bodies"),
             Self::Extrude { .. } => Some("extrude"),
             Self::Revolve { .. } => Some("revolve"),
             Self::Sweep { .. } => Some("sweep"),
@@ -8290,6 +8311,9 @@ pub struct SketchProfileBoundaryUse {
     /// Sketch entity supplying the curve geometry.
     pub entity: crate::sketches::SketchEntityId,
     /// Parameter endpoints on the source curve, ordered in the entity's stored direction.
+    /// A line is parameterized from `0` at its start point to `1` at its end point; an arc
+    /// or circle by its angle in radians; an ellipse by its eccentric angle in radians; a
+    /// NURBS curve by its knot-domain coordinate.
     #[serde(deserialize_with = "deserialize_profile_parameter_range")]
     pub parameter_range: crate::geometry::DirectedParameterRange,
     /// Whether boundary traversal opposes the interval's stored direction.
@@ -9486,6 +9510,7 @@ cadmpeg_core::named_optional_field!(
     "gap_tolerance"
 );
 cadmpeg_core::named_optional_field!(deserialize_merge_result, bool, "merge_result");
+cadmpeg_core::named_optional_field!(deserialize_reverse_normal, bool, "reverse_normal");
 cadmpeg_core::named_optional_field!(deserialize_angle, Angle, "angle");
 cadmpeg_core::named_optional_field!(deserialize_alternate_face, bool, "alternate_face");
 cadmpeg_core::named_optional_field!(deserialize_corner, RuledSurfaceCorner, "corner");

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! History-module unit tests.
 
+mod body_bounds;
+mod body_centers;
 mod body_incidence;
 mod body_recipe;
 mod body_recipe_selections;
@@ -11,6 +13,7 @@ mod delete_face;
 mod draft;
 mod edge_operands;
 mod face_boundaries;
+mod fallback_faces;
 mod feature_inputs;
 mod feature_outputs;
 mod header_index;

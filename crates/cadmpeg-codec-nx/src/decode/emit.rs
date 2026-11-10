@@ -64,6 +64,7 @@ pub(super) struct TopologyStream<'inputs> {
     pub(super) graph: &'inputs Graph,
     pub(super) points: &'inputs BTreeMap<u32, PointId>,
     pub(super) surfaces: &'inputs BTreeMap<u32, SurfaceId>,
+    pub(super) reversed_analytic_surfaces: &'inputs BTreeSet<SurfaceId>,
     pub(super) curves: &'inputs BTreeMap<u32, CurveId>,
     pub(super) pcurves: &'inputs BTreeMap<u32, PcurveId>,
     pub(super) pcurve_supports: &'inputs BTreeMap<u32, SurfaceId>,
@@ -105,6 +106,7 @@ pub(super) fn emit_topology(
         graph,
         points,
         surfaces,
+        reversed_analytic_surfaces,
         curves,
         pcurves,
         pcurve_supports,
@@ -646,6 +648,26 @@ pub(super) fn emit_topology(
                 }
             }
         }
+        // The stored senses order an edge without a range only relative to its curve record, so
+        // its vertices can still sit on an open spline in the reverse order.
+        if param_range.is_none() && start != end {
+            let runs_against_curve = curve
+                .as_ref()
+                .and_then(|carrier| curve_indices.get(carrier).copied())
+                .zip(vertex_positions.get(&start).copied())
+                .zip(vertex_positions.get(&end).copied())
+                .is_some_and(|((curve_index, (start_position, _)), (end_position, _))| {
+                    open_spline_runs_from_end_to_start(
+                        &ir.model.curves[curve_index].geometry,
+                        start_position,
+                        end_position,
+                    )
+                });
+            if runs_against_curve {
+                std::mem::swap(&mut start, &mut end);
+                against_source = !against_source;
+            }
+        }
 
         ir.model.edges.push(Edge {
             id: id.clone(),
@@ -696,14 +718,16 @@ pub(super) fn emit_topology(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
 
-        let sense = if fields
-            .surface
-            .and_then(|target| analytic_surface_sense(graph, u32::from(target)))
-            == Some(cadmpeg_ir::topology::Sense::Reversed)
-        {
-            reversed(fields.sense)
-        } else {
-            fields.sense
+        let reversed_surface = reversed_analytic_surfaces.contains(surface_ref);
+        if reversed_surface {
+            annotations.derived(&id, "sense")?;
+        }
+        let sense = match (fields.sense, reversed_surface) {
+            (cadmpeg_ir::topology::Sense::Forward, true)
+            | (cadmpeg_ir::topology::Sense::Reversed, false) => {
+                cadmpeg_ir::topology::Sense::Reversed
+            }
+            _ => cadmpeg_ir::topology::Sense::Forward,
         };
         pending_faces.push(PendingFace {
             xmt: node.xmt(),
@@ -1642,20 +1666,66 @@ fn curve_sense(graph: &Graph, xmt: u32) -> Option<cadmpeg_ir::topology::Sense> {
     .map(|(sense, _)| sense)
 }
 
-/// Sense of an analytic surface carrier's common header relative to its neutral normal.
-fn analytic_surface_sense(graph: &Graph, xmt: u32) -> Option<cadmpeg_ir::topology::Sense> {
-    [
-        NodeKind::Plane,
-        NodeKind::Cylinder,
-        NodeKind::Cone,
-        NodeKind::Sphere,
-        NodeKind::Torus,
-        NodeKind::SweptSurface,
-    ]
-    .into_iter()
-    .find_map(|kind| graph.get(kind, xmt))
-    .and_then(Node::common_header)
-    .map(|(sense, _)| sense)
+/// End-pole gap, as a fraction of the polygon's length, below which a control polygon is closed.
+const CLOSED_POLYGON_GAP: f64 = 1.0e-6;
+
+/// Whether `start` lies after `end` along an open spline. The control polygon stays close to the
+/// spline, and the position of a point along the polygon needs no evaluation of the curve.
+fn open_spline_runs_from_end_to_start(
+    geometry: &CurveGeometry,
+    start: Point3,
+    end: Point3,
+) -> bool {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = geometry.solved() else {
+        return false;
+    };
+    let poles = nurbs.pole_rows().raw_points();
+    let (Some(first), Some(last)) = (poles.first(), poles.last()) else {
+        return false;
+    };
+    let length = poles
+        .windows(2)
+        .map(|pair| pair[0].distance(pair[1]))
+        .sum::<f64>();
+    // A curve that closes on itself has a seam, so the order of two positions says nothing.
+    if first.distance(*last) <= length * CLOSED_POLYGON_GAP {
+        return false;
+    }
+    match (
+        polygon_position(&poles, start),
+        polygon_position(&poles, end),
+    ) {
+        (Some(from), Some(to)) => to < from,
+        _ => false,
+    }
+}
+
+/// The distance along a control polygon of the polygon point nearest to `point`.
+fn polygon_position(poles: &[Point3], point: Point3) -> Option<f64> {
+    let mut walked = 0.0;
+    let mut nearest: Option<(f64, f64)> = None;
+    for pair in poles.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let span = cadmpeg_ir::math::Vector3::new(b.x - a.x, b.y - a.y, b.z - a.z);
+        let arm = cadmpeg_ir::math::Vector3::new(point.x - a.x, point.y - a.y, point.z - a.z);
+        let length = span.norm();
+        let along = if length > 0.0 {
+            (arm.dot(span) / (length * length)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let foot = Point3::new(
+            a.x + span.x * along,
+            a.y + span.y * along,
+            a.z + span.z * along,
+        );
+        let distance = foot.distance(point);
+        if nearest.is_none_or(|(best, _)| distance < best) {
+            nearest = Some((distance, walked + length * along));
+        }
+        walked += length;
+    }
+    nearest.map(|(_, position)| position)
 }
 
 fn reversed(sense: cadmpeg_ir::topology::Sense) -> cadmpeg_ir::topology::Sense {
@@ -2021,6 +2091,44 @@ mod tests {
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::ids::CurveId;
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn an_edge_whose_vertices_sit_in_reverse_order_on_an_open_spline_runs_against_it() {
+        let spline = |poles: Vec<Point3>| {
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    poles,
+                    None,
+                    false,
+                )
+                .unwrap(),
+            ))
+        };
+        let open = spline(vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(5.0, 4.0, 0.0),
+            Point3::new(10.0, 0.0, 0.0),
+        ]);
+        let (near_start, near_end) = (Point3::new(2.0, 1.5, 0.0), Point3::new(8.0, 1.5, 0.0));
+
+        assert!(!super::open_spline_runs_from_end_to_start(
+            &open, near_start, near_end
+        ));
+        assert!(super::open_spline_runs_from_end_to_start(
+            &open, near_end, near_start
+        ));
+
+        let closed = spline(vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(5.0, 4.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+        ]);
+        assert!(!super::open_spline_runs_from_end_to_start(
+            &closed, near_end, near_start
+        ));
+    }
 
     fn empty_source_scan() -> Scan<'static> {
         Scan {

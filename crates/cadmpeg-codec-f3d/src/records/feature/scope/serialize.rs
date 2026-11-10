@@ -135,6 +135,7 @@ impl Serialize for DesignParameterScope {
 
         emit!("feature_ordinal", self.feature_ordinal.get());
         emit!("feature_ordinal_offset", self.feature_ordinal_offset);
+        emit_opt!("label", self.label.as_ref());
         emit_opt!("history_state_id", self.history_state_id);
         emit!("history_state_id_offset", self.history_state_id_offset());
         emit_opt!("previous_history_state_id", self.previous_history_state_id);
@@ -180,6 +181,8 @@ impl Serialize for DesignParameterScope {
         emit_opt!("align_envelope", self.align_envelope());
         emit_opt!("move_operation", self.move_operation());
         emit_opt!("scale_operation", self.scale_operation());
+        emit_opt!("reverse_normal_operation", self.reverse_normal_operation());
+        emit_opt!("path_pattern_settings", self.path_pattern_settings());
         emit_opt!("surface_stitch_operation", self.surface_stitch_operation());
         emit_opt!("surface_extend_operation", self.surface_extend_operation());
         emit_opt!("surface_offset_operation", self.surface_offset_operation());
@@ -199,6 +202,7 @@ impl Serialize for DesignParameterScope {
                 emit!("surface_patch_boundaries", &patch.boundaries);
             }
             emit_opt!("surface_patch_normal", patch.normal.as_ref());
+            emit_opt!("surface_patch_selection", patch.selection.as_ref());
         }
         emit_opt!("edge_flange_operation", self.edge_flange_operation());
         emit_opt!("hem_operation", self.hem_operation());
@@ -309,8 +313,8 @@ impl Serialize for DesignParameterScope {
                 &self.unclosed_construction_operand_groups
             );
         }
-        if !self.deleted_sketch_members.is_empty() {
-            emit!("deleted_sketch_members", &self.deleted_sketch_members);
+        if let Some(deleted_members) = &self.deleted_members {
+            emit!("deleted_members", deleted_members);
         }
         emit_opt!("hole_construction", self.hole_construction());
         emit_opt!("hole_extent", self.hole_extent());

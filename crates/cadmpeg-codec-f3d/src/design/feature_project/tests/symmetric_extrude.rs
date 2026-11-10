@@ -82,7 +82,8 @@ fn dual_lane_symmetric_extrude_doubles_whole_travel() {
                                 )
                                 .expect("valid entity identity"),
                                 entity_reference_offset: 420,
-                                region_selection: None,
+                                compact_tail_flags: None,
+            region_selection: None,
                                 paired_class_tag:
                                     crate::records::references::DesignClassTag::try_from(
                                         "259".to_owned(),
@@ -98,6 +99,7 @@ fn dual_lane_symmetric_extrude_doubles_whole_travel() {
             )),
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: None,
 
             previous_history_state_id: None,
@@ -110,7 +112,7 @@ fn dual_lane_symmetric_extrude_doubles_whole_travel() {
             )
             .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            deleted_sketch_members: Vec::new(),
+            deleted_members: None,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )

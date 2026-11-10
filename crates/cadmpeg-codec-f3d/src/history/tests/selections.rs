@@ -178,6 +178,8 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
             .try_into()
             .unwrap(),
         context_id_offset: 0,
+        serialization_form:
+            crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
         identity_record_index: 103,
         identity_record_offset: 0,
         primary_identity: 18044,
@@ -938,7 +940,7 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
         transition: None,
     };
 
-    bind_snapshot_revision_ids(std::slice::from_mut(&mut state)).unwrap();
+    bind_snapshot_revision_ids(std::slice::from_mut(&mut state));
 
     assert_eq!(
         state

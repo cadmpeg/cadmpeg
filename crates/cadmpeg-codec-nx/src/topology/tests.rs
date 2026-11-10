@@ -998,6 +998,24 @@ fn topology_retains_non_overlapping_ownership_records() {
 }
 
 #[test]
+fn topology_rejects_ownership_records_inside_counted_lanes() {
+    // The 12-value surface lane count ends in `00 0c`, and the lane's node
+    // identity 22 follows it.
+    let mut stream = crate::test_support::test_deltas::bspline_partition_stream();
+    assert_eq!(Graph::parse(&stream).kind_count(NodeKind::Body), 0);
+
+    let mut body = record(12, 24);
+    put_ref(&mut body, 2, 22);
+    stream.extend(body);
+    let graph = Graph::parse(&stream);
+    assert_eq!(graph.kind_count(NodeKind::Body), 1);
+    assert_eq!(
+        graph.get(NodeKind::Body, 22).map(super::Node::pos),
+        Some(stream.len() - 24)
+    );
+}
+
+#[test]
 fn topology_resolves_overlap_before_duplicate_identity() {
     let stream = vec![0; 40];
     let outer = NodeCandidate {

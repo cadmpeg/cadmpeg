@@ -1313,6 +1313,7 @@ fn standard_emission_reverses_face_pcurve_range() {
                     annotations: &mut annotations,
                     bindings: &bindings,
                     brep: &[],
+                    face_bounds: &[],
                     surface_indices: &surface_indices,
                     supports: &supports,
                     edge_vertices: &[[0, 1]],
@@ -1364,6 +1365,119 @@ fn standard_emission_reverses_face_pcurve_range() {
             reversed.then_some([1.0, 0.0])
         );
     }
+}
+
+#[test]
+fn standard_planar_solid_emission_preserves_native_face_sense() {
+    use crate::families::standard::topology::{
+        admitted::StandardTopology, BoundaryDraft, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
+        FaceTopologyDraft, StandardTopologyDraft,
+    };
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::{Body, BodyKind};
+    let mut ir = CadIr::empty();
+    let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    for (index, [x, y, z]) in points.into_iter().enumerate() {
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("catia:test:point#{index}")).expect("fixture point id"),
+            FinitePoint3::new(Point3::new(x, y, z)).expect("finite fixture point"),
+            None,
+        ));
+    }
+    let surface_id = SurfaceId::mint("catia:test:surface#0").expect("fixture surface id");
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("fixture plane"),
+        )),
+        source_object: None,
+    });
+    ir.model.bodies.push(Body {
+        id: BodyId::mint("catia:test:body#0").expect("fixture body id"),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.faces.push(Face {
+        id: FaceId::mint("catia:standard:face#0").expect("fixture face id"),
+        shell: ShellId::mint("catia:test:shell#0").expect("fixture shell id"),
+        surface: surface_id.clone(),
+        sense: Sense::Reversed,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    let edge_vertices = [[0, 1], [1, 2], [2, 0]];
+    let supports = [1, 2, 3].map(|tag| StandardCurveSupport {
+        pos: 0,
+        tag,
+        faces: [0, 0],
+        geometry: StandardCurveGeometry::Line,
+    });
+    let topology = StandardTopology::new(StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
+            boundaries: vec![BoundaryDraft::new(
+                edge_vertices
+                    .into_iter()
+                    .enumerate()
+                    .map(|(edge_row, [start_vertex, end_vertex])| CoedgeUse {
+                        edge_row,
+                        reversed: false,
+                        start_vertex,
+                        end_vertex,
+                    })
+                    .collect(),
+            )
+            .expect("closed triangular boundary")],
+        }],
+        edge_rows: [[1, 2], [2, 3], [3, 1]]
+            .map(|handles| {
+                EdgeRow::new(1, handles.to_vec(), EdgeBoundaryLayout::CompleteBoundaryRun)
+                    .expect("fixture edge row")
+            })
+            .to_vec(),
+        vertex_points: points.to_vec(),
+        logical_vertex_count: points.len(),
+    })
+    .expect("admitted fixture topology");
+    crate::test_support::with_service_context(|ctx| {
+        emit_standard_topology(
+            ctx,
+            super::super::EmitStandardTopologyInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &[(surface_id.clone(), false, 0)],
+                brep: &[],
+                face_bounds: &[],
+                surface_indices: &HashMap::from([(surface_id, 0)]),
+                supports: &supports,
+                edge_vertices: &edge_vertices,
+                point_assignment: &[0, 1, 2],
+                topology: &topology,
+                native_edge_supports: &[None; 3],
+                limit_curve_bindings: &[None; 3],
+                limit_curves: &[],
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut crate::families::FamilyEntityAdmission::new(ctx),
+            },
+        )
+    })
+    .expect("emit planar solid face");
+
+    assert_eq!(ir.model.faces[0].sense, Sense::Reversed);
+    assert_eq!(
+        ir.model.faces[0].loops.role(&ir.model.loops[0].id),
+        cadmpeg_ir::topology::LoopBoundaryRole::Outer
+    );
 }
 
 #[test]
@@ -1503,6 +1617,7 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
 }
 
 mod curve_bindings;
+mod cylindrical_arcs;
 
 #[test]
 fn owner_carrier_helper_preserves_session_depth_refusal() {
@@ -1572,13 +1687,13 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
     let mut bytes = crate::test_support::test_a5a8::a5_surface_stream();
     bytes.extend(crate::test_support::test_b2::b2_all_compact_owner_packet_stream());
     let records = crate::wire::records::consolidated_records(&bytes);
-    assert!(!crate::families::a5a8::records::a5_surfaces_from_records(
+    let carriers = crate::families::a5a8::records::a5_surfaces_from_records(
         &bytes,
         &records,
-        &mut crate::nurbs::LaneRefusals::new()
+        &mut crate::nurbs::LaneRefusals::new(),
     )
-    .expect("decode the A5 surfaces")
-    .is_empty());
+    .expect("decode the A5 surfaces");
+    assert!(!carriers.is_empty());
     assert!(
         !crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
             .collect::<Vec<_>>()
@@ -1614,7 +1729,7 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
                 source,
                 &[],
                 &cadmpeg_core::decode::WorkBudget::new(100),
-                &mut crate::nurbs::LaneRefusals::new(),
+                &carriers,
             )
         })
         .expect("bind standard A5 owner surfaces"),

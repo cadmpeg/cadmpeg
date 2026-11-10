@@ -373,6 +373,8 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
                         )
                         .unwrap(),
                         context_id_offset: 2,
+                        serialization_form:
+                            crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
                         identity_record_index: record_index + 3,
                         identity_record_offset: 3,
                         primary_identity: u64::from(work_plane_scope_record_index - 1),
@@ -707,6 +709,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                     )
                     .expect("valid entity identity"),
                     entity_reference_offset: 80,
+                    compact_tail_flags: None,
                     region_selection: None,
                     paired_class_tag: crate::records::references::DesignClassTag::try_from(
                         "264".to_owned(),
@@ -1227,6 +1230,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
                 std::slice::from_ref(&scope),
                 &mut features,
                 &cages,
+                &mut Vec::new(),
             )
         })
     })
@@ -1370,6 +1374,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
                     std::slice::from_ref(&scope),
                     &mut features,
                     &cages,
+                    &mut Vec::new(),
                 )
             })
         })

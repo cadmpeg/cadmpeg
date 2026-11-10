@@ -502,6 +502,18 @@ pub(crate) mod offset_surf_payload {
     pub(crate) const LEN: usize = 31;
 }
 
+/// Byte offsets for the `swept_surf_payload` record.
+///
+/// Spec §6.2.1. Record length 53 B.
+///
+/// ```text
+/// A large-index section-curve reference shifts every later field by two bytes.
+/// ```
+pub(crate) mod swept_surf_payload {
+    /// Record length in bytes. Spec §6.2.1.
+    pub(crate) const LEN: usize = 53;
+}
+
 /// Byte offsets for the `trimmed_curve_payload` record.
 ///
 /// Spec §6.4. Record length 85 B.

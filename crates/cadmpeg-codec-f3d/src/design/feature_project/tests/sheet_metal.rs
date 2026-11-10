@@ -760,6 +760,8 @@ fn edge_flange_to_object_fixture(
                 )
                 .unwrap(),
                 context_id_offset: 0,
+                serialization_form:
+                    crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
                 identity_record_index: 427,
                 identity_record_offset: 0,
                 primary_identity: 319,
@@ -986,7 +988,11 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
     };
     let uniform_continuity = |scope: &DesignParameterScope| {
         cadmpeg_ir::features::NonEmptyMembers::try_from(crate::test_support::with_decode_context(
-            |_decode_ctx| crate::design::feature_project::surface_patch_boundary_conditions(scope),
+            |_decode_ctx| {
+                crate::design::feature_project::surface_patch::surface_patch_boundary_conditions(
+                    scope,
+                )
+            },
         ))
         .ok()
         .map(|conditions| cadmpeg_ir::features::FilledSurfaceContinuity { conditions })
@@ -1014,7 +1020,7 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
     ]);
     assert_eq!(
         crate::test_support::with_decode_context(|_decode_ctx| {
-            crate::design::feature_project::surface_patch_boundary_conditions(&mixed)
+            crate::design::feature_project::surface_patch::surface_patch_boundary_conditions(&mixed)
         }),
         vec![
             cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Tangent {
@@ -1032,9 +1038,9 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         .is_none()
     );
     assert!(crate::test_support::with_decode_context(|_decode_ctx| {
-        crate::design::feature_project::surface_patch_boundary_conditions(&scope_with(vec![
-            boundary(DesignPatchContinuity::Unknown(9)),
-        ]))
+        crate::design::feature_project::surface_patch::surface_patch_boundary_conditions(
+            &scope_with(vec![boundary(DesignPatchContinuity::Unknown(9))]),
+        )
     })
     .is_empty());
 }
@@ -1074,7 +1080,7 @@ fn surface_patch_weights_preserve_source_encoding_and_boundary_order() {
     }
     let source = serde_json::to_value(&scope).unwrap();
     let conditions = crate::test_support::with_decode_context(|_ctx| {
-        crate::design::feature_project::surface_patch_boundary_conditions(&scope)
+        crate::design::feature_project::surface_patch::surface_patch_boundary_conditions(&scope)
     });
     assert_eq!(
         conditions,
@@ -1126,7 +1132,9 @@ fn surface_patch_abstains_on_unsupported_active_weights() {
                 }];
             }
             assert!(crate::test_support::with_decode_context(|_ctx| {
-                crate::design::feature_project::surface_patch_boundary_conditions(&scope)
+                crate::design::feature_project::surface_patch::surface_patch_boundary_conditions(
+                    &scope,
+                )
             })
             .is_empty());
             assert_eq!(
@@ -1251,7 +1259,7 @@ fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
     };
     let shifted_groups = [group(100, 1, 101), group(110, 4, 111), group(120, 7, 121)];
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &scope, &shifted_groups, &[], &[], &[])).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::surface_patch::project_surface_patch(decode_ctx, &scope, &shifted_groups, &[], &[], &[], &mut Vec::new())).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
@@ -1286,7 +1294,7 @@ fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
     }
     let endpoint_groups = [group(100, 0, 101), group(110, 3, 111), group(120, 6, 121)];
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &scope, &endpoint_groups, &[], &[], &[])).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::surface_patch::project_surface_patch(decode_ctx, &scope, &endpoint_groups, &[], &[], &[], &mut Vec::new())).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..

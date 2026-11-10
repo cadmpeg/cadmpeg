@@ -298,19 +298,28 @@ fn link_scales_precede_the_linked_prototype_placement() {
 }
 
 #[test]
-fn element_list_suppresses_only_owned_link_element_runtimes() {
+fn element_list_membership_controls_link_element_occurrence_roots() {
     for runtime in ["App::Link", "App::LinkElement"] {
-        for owner in [None, Some(0), Some(17), Some(99)] {
+        for owner in [None, Some(0), Some(3), Some(17), Some(99)] {
             for expanded in [true, false] {
                 let owner_property = owner.map_or(String::new(), |owner| format!(r#"<Property name="_LinkOwner" type="App::PropertyInteger"><Integer value="{owner}"/></Property>"#));
-                let count = 1 + usize::from(owner.is_some());
+                let member_property_count = 4 + usize::from(owner.is_some());
                 let document = format!(
                     r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="3"><Object type="Part::Feature" name="Prototype" id="1"/><Object type="{runtime}" name="Member" id="2"/><Object type="App::Link" name="Array" id="17"/></Objects>
-<ObjectData Count="3"><Object name="Prototype"><Properties Count="0"/></Object>
-<Object name="Member"><Properties Count="{count}"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>{owner_property}</Properties></Object>
-<Object name="Array"><Properties Count="4">
+<Objects Count="4"><Object type="Part::Feature" name="Prototype" id="1"/><Object type="{runtime}" name="Member" id="2"/><Object type="App::FeaturePython" name="Owner" id="3"/><Object type="App::Link" name="Array" id="17"/></Objects>
+<ObjectData Count="4"><Object name="Prototype"><Properties Count="0"/></Object>
+<Object name="Member"><Properties Count="{member_property_count}">
 <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="11" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+<Property name="Scale" type="App::PropertyFloat"><Float value="3"/></Property>
+<Property name="ScaleVector" type="App::PropertyVector"><PropertyVector valueX="3" valueY="3" valueZ="3"/></Property>{owner_property}</Properties></Object>
+<Object name="Owner"><Properties Count="0"/></Object>
+<Object name="Array"><Properties Count="8">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="100" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+<Property name="Scale" type="App::PropertyFloat"><Float value="2"/></Property>
+<Property name="ScaleVector" type="App::PropertyVector"><PropertyVector valueX="2" valueY="2" valueZ="2"/></Property>
 <Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="0"/></Property>
 <Property name="ShowElement" type="App::PropertyBool"><Bool value="{expanded}"/></Property>
 <Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property>
@@ -322,8 +331,8 @@ fn element_list_suppresses_only_owned_link_element_runtimes() {
                         &DecodeOptions::default(),
                     )
                     .unwrap();
-                let owned = runtime == "App::LinkElement" && owner != Some(99);
-                let expected_count = if owned { 1 } else { 2 };
+                let is_link_element_member = runtime == "App::LinkElement";
+                let expected_count = if is_link_element_member { 1 } else { 2 };
                 assert_eq!(
                     decoded.ir().model.occurrences.len(),
                     expected_count,
@@ -337,8 +346,53 @@ fn element_list_suppresses_only_owned_link_element_runtimes() {
                         .iter()
                         .any(|occurrence| occurrence.native_ref.as_deref()
                             == Some("fcstd:native:object#Member")),
-                    !owned
+                    !is_link_element_member
                 );
+                let array = decoded
+                    .ir()
+                    .model
+                    .occurrences
+                    .iter()
+                    .find(|occurrence| {
+                        occurrence.native_ref.as_deref() == Some("fcstd:native:object#Array")
+                    })
+                    .unwrap();
+                if is_link_element_member {
+                    let rows = array.effective_transform().unwrap().rows();
+                    let expected_x = if expanded { 122.0 } else { 100.0 };
+                    let expected_scale = if expanded { 6.0 } else { 2.0 };
+                    assert!(
+                        (rows[0][3] - expected_x).abs() < 1e-12,
+                        "{runtime}: owner={owner:?}, expanded={expanded}, transform={rows:?}"
+                    );
+                    assert!(
+                        (rows[0][0] - expected_scale).abs() < 1e-12,
+                        "{runtime}: owner={owner:?}, expanded={expanded}, transform={rows:?}"
+                    );
+                    assert!(
+                        (rows[1][1] - expected_scale).abs() < 1e-12,
+                        "{runtime}: owner={owner:?}, expanded={expanded}, transform={rows:?}"
+                    );
+                    assert!(
+                        (rows[2][2] - expected_scale).abs() < 1e-12,
+                        "{runtime}: owner={owner:?}, expanded={expanded}, transform={rows:?}"
+                    );
+                }
+                if !is_link_element_member {
+                    let member = decoded
+                        .ir()
+                        .model
+                        .occurrences
+                        .iter()
+                        .find(|occurrence| {
+                            occurrence.native_ref.as_deref() == Some("fcstd:native:object#Member")
+                        })
+                        .unwrap();
+                    assert!(matches!(
+                        member.parent,
+                        cadmpeg_ir::products::OccurrenceParent::Root {}
+                    ));
+                }
                 let namespace = decoded.ir().native.namespace("fcstd").unwrap();
                 let records = namespace
                     .arena_as::<native::ProductNodeRecord>("product_nodes")
@@ -357,6 +411,140 @@ fn element_list_suppresses_only_owned_link_element_runtimes() {
             }
         }
     }
+}
+
+#[test]
+fn unlisted_link_element_with_live_owner_remains_an_occurrence() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="Part::Feature" name="Prototype" id="1"/><Object type="App::LinkElement" name="Member" id="2"/><Object type="App::Part" name="Owner" id="3"/></Objects>
+<ObjectData Count="3">
+<Object name="Prototype"><Properties Count="0"/></Object>
+<Object name="Member"><Properties Count="2"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property><Property name="_LinkOwner" type="App::PropertyInteger"><Integer value="3"/></Property></Properties></Object>
+<Object name="Owner"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let member = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.native_ref.as_deref() == Some("fcstd:native:object#Member"))
+        .unwrap();
+    assert!(matches!(
+        member.parent,
+        cadmpeg_ir::products::OccurrenceParent::Root {}
+    ));
+    assert_valid_document(decoded.ir());
+}
+
+#[test]
+fn each_link_array_uses_its_own_membership_for_a_shared_element() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="5"><Object type="Part::Feature" name="Prototype" id="1"/><Object type="App::LinkElement" name="Member" id="2"/><Object type="App::Link" name="FirstArray" id="3"/><Object type="App::Link" name="SecondArray" id="4"/><Object type="App::Part" name="Assembly" id="5"/></Objects>
+<ObjectData Count="5">
+<Object name="Prototype"><Properties Count="0"/></Object>
+<Object name="Member"><Properties Count="5">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="11" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+<Property name="Scale" type="App::PropertyFloat"><Float value="2"/></Property>
+<Property name="ScaleVector" type="App::PropertyVector"><PropertyVector valueX="2" valueY="2" valueZ="2"/></Property>
+<Property name="_LinkOwner" type="App::PropertyInteger"><Integer value="99"/></Property>
+</Properties></Object>
+<Object name="FirstArray"><Properties Count="6">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="100" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+<Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="0"/></Property>
+<Property name="ShowElement" type="App::PropertyBool"><Bool value="true"/></Property>
+<Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property>
+</Properties></Object>
+<Object name="SecondArray"><Properties Count="6">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="200" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+<Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="0"/></Property>
+<Property name="ShowElement" type="App::PropertyBool"><Bool value="true"/></Property>
+<Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property>
+</Properties></Object>
+<Object name="Assembly"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="FirstArray"/><Link value="SecondArray"/></LinkList></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let occurrences = &decoded.ir().model.occurrences;
+    let actual = occurrences
+        .iter()
+        .map(|occurrence| {
+            (
+                occurrence.native_ref.as_deref(),
+                &occurrence.parent,
+                occurrence.transform.rows(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(occurrences.len(), 3, "actual occurrences: {actual:?}");
+    let assembly = occurrences
+        .iter()
+        .find(|occurrence| occurrence.native_ref.as_deref() == Some("fcstd:native:object#Assembly"))
+        .unwrap();
+    assert!(matches!(
+        assembly.parent,
+        cadmpeg_ir::products::OccurrenceParent::Root {}
+    ));
+    let first = occurrences
+        .iter()
+        .find(|occurrence| {
+            occurrence.native_ref.as_deref() == Some("fcstd:native:object#FirstArray")
+        })
+        .unwrap();
+    let second = occurrences
+        .iter()
+        .find(|occurrence| {
+            occurrence.native_ref.as_deref() == Some("fcstd:native:object#SecondArray")
+        })
+        .unwrap();
+    for array in [first, second] {
+        assert!(matches!(
+            &array.parent,
+            cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence }
+                if occurrence == &assembly.id
+        ));
+    }
+    for (occurrence, expected_x) in [(first, 111.0), (second, 211.0)] {
+        let rows = occurrence.effective_transform().unwrap().rows();
+        assert!(
+            (rows[0][3] - expected_x).abs() < 1e-12,
+            "{}: transform={rows:?}",
+            occurrence.native_ref.as_deref().unwrap_or_default()
+        );
+        assert!(
+            (rows[0][0] - 2.0).abs() < 1e-12,
+            "{}: transform={rows:?}",
+            occurrence.native_ref.as_deref().unwrap_or_default()
+        );
+        assert!(
+            (rows[1][1] - 2.0).abs() < 1e-12,
+            "{}: transform={rows:?}",
+            occurrence.native_ref.as_deref().unwrap_or_default()
+        );
+        assert!(
+            (rows[2][2] - 2.0).abs() < 1e-12,
+            "{}: transform={rows:?}",
+            occurrence.native_ref.as_deref().unwrap_or_default()
+        );
+    }
+    assert!(occurrences
+        .iter()
+        .all(|occurrence| occurrence.native_ref.as_deref() != Some("fcstd:native:object#Member")));
+    assert_valid_document(decoded.ir());
 }
 
 #[test]

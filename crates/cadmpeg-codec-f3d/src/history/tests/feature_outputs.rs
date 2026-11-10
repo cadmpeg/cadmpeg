@@ -10,7 +10,7 @@ fn active_body() -> cadmpeg_ir::topology::Body {
     body
 }
 
-fn base_feature() -> cadmpeg_ir::features::Feature {
+pub(super) fn base_feature() -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::{
         BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
     };
@@ -40,7 +40,7 @@ fn base_feature() -> cadmpeg_ir::features::Feature {
     }
 }
 
-fn state(
+pub(super) fn state(
     state_id: i64,
     node_index: i64,
     next_ref: Option<i64>,
@@ -68,7 +68,7 @@ fn state(
     )
 }
 
-fn scope_between(
+pub(super) fn scope_between(
     state_id: i64,
     previous_state_id: i64,
 ) -> crate::records::feature::scope::DesignParameterScope {
@@ -1674,139 +1674,6 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
 }
 
 #[test]
-fn split_plane_only_emitted_for_split_body() {
-    use crate::history_records::{
-        AsmHistoricalCarrierBinding, AsmHistoricalPlane, AsmHistoricalTopology,
-    };
-    use cadmpeg_ir::features::{
-        DistinctMembers, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    };
-    use cadmpeg_ir::math::{Point3, Vector3};
-
-    let scope = scope_between(1, 0);
-
-    let state1_topo = AsmHistoricalTopology {
-        faces: vec![10],
-        face_surfaces: vec![AsmHistoricalCarrierBinding {
-            entity: 10,
-            carrier: 20,
-        }],
-        surface_planes: vec![AsmHistoricalPlane {
-            surface: 20,
-            origin: Point3::new(1.0, 2.0, 3.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-        }],
-        ..AsmHistoricalTopology::default()
-    };
-
-    let history = crate::test_support::history::history(
-        "f3d:asm-history#1".into(),
-        0,
-        None,
-        false,
-        vec![
-            state(1, 1, Some(0), state1_topo),
-            state(0, 0, None, AsmHistoricalTopology::default()),
-        ],
-    );
-
-    // 1. SplitBody: emits split_plane
-    let mut feature_split = Feature {
-        id: FeatureId::mint("test:model:feature#split").unwrap(),
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
-        source_tag: Some("Split Body".into()),
-        source_text: None,
-        source_content: Default::default(),
-        evaluation: FeatureEvaluation::new(
-            FeatureDefinition::Operation(FeatureOperation::SplitBody {
-                targets: cadmpeg_ir::features::BodySelection::Unresolved,
-                tool: cadmpeg_ir::features::SplitBodyTool::Faces(
-                    cadmpeg_ir::features::FaceSelection::Faces(vec![]),
-                ),
-            }),
-            DistinctMembers::try_from(vec![]).unwrap(),
-        ),
-        native_ref: Some(scope.id.clone()),
-        product_definition: None,
-    };
-
-    super::super::bind_feature_outputs(
-        std::slice::from_mut(&mut feature_split),
-        std::slice::from_ref(&scope),
-        &mut [history.clone()],
-        &[],
-        &Default::default(),
-        None,
-    )
-    .unwrap();
-
-    assert_eq!(
-        feature_split
-            .source_properties
-            .get(&cadmpeg_core::nonblank_literal!("split_plane")),
-        Some(&"1,2,3;0,0,1".to_string())
-    );
-
-    // 2. Extrude: does NOT emit split_plane
-    let mut feature_extrude = Feature {
-        id: FeatureId::mint("test:model:feature#extrude").unwrap(),
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
-        source_tag: Some("Extrude".into()),
-        source_text: None,
-        source_content: Default::default(),
-        evaluation: FeatureEvaluation::new(
-            FeatureDefinition::Operation(FeatureOperation::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::Native("scope".into()),
-                ),
-                direction: cadmpeg_ir::features::ExtrudeDirection::default(),
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
-                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                    side: cadmpeg_ir::features::ExtrudeSide {
-                        termination: cadmpeg_ir::features::LinearTermination::ThroughAll {},
-                        draft: None,
-                    },
-                },
-                op: cadmpeg_ir::features::BooleanOp::NewBody,
-                solid: None,
-                face_maker: None,
-                inner_wire_taper: None,
-                length_along_profile_normal: Some(false),
-                allow_multi_profile_faces: Some(false),
-            }),
-            DistinctMembers::try_from(vec![]).unwrap(),
-        ),
-        native_ref: Some(scope.id.clone()),
-        product_definition: None,
-    };
-
-    super::super::bind_feature_outputs(
-        std::slice::from_mut(&mut feature_extrude),
-        std::slice::from_ref(&scope),
-        &mut [history],
-        &[],
-        &Default::default(),
-        None,
-    )
-    .unwrap();
-
-    assert_eq!(
-        feature_extrude
-            .source_properties
-            .get(&cadmpeg_core::nonblank_literal!("split_plane")),
-        None
-    );
-}
-
-#[test]
 fn feature_outputs_include_bodies_changed_before_the_terminal_scope_state() {
     use crate::history_records::AsmHistoricalTopology;
     let (mut feature, _, _, body) = native_base_feature();
@@ -1997,4 +1864,5 @@ fn feature_output_equal_endpoints_preserve_an_existing_output_proof() {
 
 mod edge_midpoints;
 mod saved_edges;
+mod split_plane;
 mod stored_results;

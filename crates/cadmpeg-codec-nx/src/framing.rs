@@ -32,6 +32,7 @@ use crate::layout::point_node as point;
 use crate::layout::shell_node as shell;
 use crate::layout::sp_curve_payload as sp_curve;
 use crate::layout::sphere_payload as sphere;
+use crate::layout::swept_surf_payload as swept_surf;
 use crate::layout::torus_payload as torus;
 use crate::layout::trimmed_curve_payload as trimmed;
 use crate::layout::vertex_node as vertex;
@@ -418,7 +419,7 @@ pub(crate) fn fixed_len(kind: NodeKind) -> usize {
         NodeKind::Torus => torus::LEN,
         NodeKind::BlendSurface => 66,
         NodeKind::OffsetSurface => offset_surf::LEN,
-        NodeKind::SweptSurface => 53,
+        NodeKind::SweptSurface => swept_surf::LEN,
         NodeKind::BSurface | NodeKind::BCurve => 23,
         NodeKind::TrimmedCurve => trimmed::LEN,
         NodeKind::SpCurve => sp_curve::LEN,

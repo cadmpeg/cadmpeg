@@ -299,7 +299,7 @@ Spec §2.3 · layout: byte offsets · size: 12 B
 
 Spec §7.1 · layout: byte offsets · size: 14 B
 
-Signature-relative. `section_end = signature_offset + 16 + payload_size`, so bytes +14..+16 belong to the header but the spec names no field for them.
+Signature-relative. `section_end = signature_offset + 16 + payload_size`. An ID-bounded entity index in a standard size-framed part section uses signature offset +14 as its offset base.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -714,6 +714,22 @@ Unstated regions:
 
 - `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
 
+## `swept_surf_payload`
+
+Spec §6.2.1 · layout: byte offsets · size: 53 B
+
+A large-index section-curve reference shifts every later field by two bytes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 19 | 2 | `section` | `xmt_ref` | big | spec | section curve ref `+19` (large-index capable) |
+| 21 | 24 | `sweep` | `f64[3]` | big | spec | unit `sweep` vector `+21` |
+| 45 | 8 | `scale` | `f64` | big | spec | `scale:f64 +45` |
+
+Unstated regions:
+
+- `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
+
 ## `trimmed_curve_payload`
 
 Spec §6.4 · layout: byte offsets · size: 85 B
@@ -967,13 +983,12 @@ Closes the enclosing leading, map, or PMARK section. In the exact final position
 
 Spec §4.2 · layout: byte offsets · size: 6 B
 
-Relative to the endpoint of the variable-width nonnull XMT/kind pairs. The terminal word is below 0x8000 and does not frame nodes or select a state.
+Relative to the endpoint of the variable-width nonnull XMT/kind pairs.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 2 | `null_xmt` | `u16` | big | spec | XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the · value `1` |
-| 2 | 2 | `zero` | `u16` | big | spec | XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the · value `0` |
-| 4 | 2 | `terminal_word` | `u16` | big | spec | XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the |
+| 0 | 2 | `null_xmt` | `u16` | big | spec | at `+0` and the terminal bytes at `+2`, relative to the end of the entry pairs. · value `1` |
+| 2 | 4 | `terminal_bytes` | `bytes[4]` | big | spec | at `+0` and the terminal bytes at `+2`, relative to the end of the entry pairs. |
 
 ## Not tabulated
 
@@ -982,4 +997,4 @@ Relative to the endpoint of the variable-width nonnull XMT/kind pairs. The termi
 | OM record grammars (§7.1) | §3.3 | About sixty fixed-literal token grammars with sequential field positions but no stated absolute offsets. They are slot layouts over a variable-width compact-index lane, so no byte arithmetic closes. |
 | Deltas physical record grammars (§4.2) | §4.2 | Effective schema plans determine ordinary-node field order and variable extents. Status-free PARTITION/PMARK prefixes and enclosing sections have distinct grammars; one fixed layout does not describe these productions. |
 | Int32 Compressed Data Packet Mk. 2 (§2.3) | §2.3 | A most-significant-bit-first bit stream with `u6` and `u3` sub-fields; there are no byte offsets to state. |
-| B_SURFACE and B_CURVE counted payload and reference tails (§6.2) | §6.2 | Types 125-128 and 135-136 carry counted arrays and variable-width reference tails whose element counts and XMT widths drive every later position. The fixed descriptor prefixes are tabulated above. |
+| B_SURFACE and B_CURVE counted payload and reference tails (§6.2) | §6.2 | Types 45, 125-128, and 135-136 carry counted arrays and variable-width reference tails whose element counts and XMT widths drive every later position. The fixed descriptor prefixes are tabulated above. |

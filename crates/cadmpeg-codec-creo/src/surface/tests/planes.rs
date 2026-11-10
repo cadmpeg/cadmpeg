@@ -1814,3 +1814,59 @@ fn reference_terminated_plane_envelope_keeps_its_signed_coordinate_stream() {
     payload.insert(payload.len() - 3, 0x18);
     assert!(plane_envelopes(&payload).is_empty());
 }
+
+#[test]
+fn ambiguous_rotation_assignments_withhold_the_frame_and_record_loss() {
+    let envelope = [0x10, 0x10, 0x0f, 0x0f, 0x10, 0x10, 0x18, 0x0f, 0x0f, 0x18];
+    let mut body = vec![0x41];
+    body.extend_from_slice(&1.0_f64.to_be_bytes()[1..]);
+    body.extend_from_slice(&[0x18, 0x18, 0x18, 0x41]);
+    body.extend_from_slice(&1.0_f64.to_be_bytes()[1..]);
+    body.extend_from_slice(&[0x18, 0x18, 0x18, 0x0f, 0x18, 0x18, 0x18]);
+    let mut losses = Vec::new();
+    let result = crate::surface::plane_frame_by_envelope(
+        None,
+        &envelope,
+        &body,
+        (7, 0),
+        &scalar::ScalarCache::default(),
+        &mut losses,
+    );
+    assert!(result.is_none());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.kind()
+    );
+}
+
+#[test]
+fn plane_local_system_withholds_symmetric_ambiguous_rotation() {
+    let mut payload = vec![7, 0x22, 4, 0x01, 0, 0];
+    payload.extend_from_slice(&[
+        0x10, 0x10, 0x0f, 0x0f, 0x10, 0x10, 0x18, 0x0f, 0x0f, 0x18, 0xe3,
+    ]);
+    payload.extend_from_slice(&[0x41]);
+    payload.extend_from_slice(&1.0_f64.to_be_bytes()[1..]);
+    payload.extend_from_slice(&[0x18, 0x18, 0x18, 0x41]);
+    payload.extend_from_slice(&1.0_f64.to_be_bytes()[1..]);
+    payload.extend_from_slice(&[0x18, 0x18, 0x18, 0x0f, 0x18, 0x18, 0x18, 0xe3]);
+
+    let mut losses = Vec::new();
+    let systems = super::with_decode_ctx(&payload, |ctx| {
+        crate::surface::plane_local_systems(ctx, &payload, &mut losses)
+    });
+
+    assert_eq!(systems.len(), 1);
+    assert_eq!(systems[0].layout, None);
+    assert_eq!(systems[0].slots, [None; 12]);
+    assert_eq!(systems[0].frame().normal(), None);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.kind()
+    );
+    assert!(losses[0]
+        .message
+        .contains("multiple angular rotation sign assignments reproduce the envelope extrema"));
+}

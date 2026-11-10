@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::test_support::test_bytes::encoded_xmt;
 use crate::test_support::test_bytes::put_f64;
 use crate::test_support::test_bytes::put_ref;
 use crate::test_support::test_bytes::record;
@@ -154,7 +155,8 @@ fn shared_nurbs_parse_matches_each_standalone_family_decoder() {
         .windows(4)
         .position(|window| window == [0, 136, 0, 40])
         .expect("curve descriptor");
-    put_ref(&mut pcurve_stream, descriptor + 10, 2);
+    put_ref(&mut pcurve_stream, descriptor + 10, 3);
+    pcurve_stream[descriptor + 19] = 1;
     let payload = pcurve_stream
         .windows(4)
         .position(|window| window == [0, 135, 0, 41])
@@ -187,7 +189,8 @@ fn nurbs_carriers_reject_nonfinite_millimeter_control_points() {
         .windows(4)
         .position(|window| window == [0, 136, 0, 40])
         .expect("curve descriptor");
-    put_ref(&mut curve, descriptor + 10, 2);
+    put_ref(&mut curve, descriptor + 10, 3);
+    curve[descriptor + 19] = 1;
     put_f64(&mut curve, payload + 15, f64::MAX);
     put_f64(&mut curve, payload + 31, f64::MIN_POSITIVE);
     assert!(crate::nurbs::pcurves(&curve).0.is_empty());
@@ -267,7 +270,8 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
         .windows(4)
         .position(|window| window == [0, 136, 0, 40])
         .expect("pcurve descriptor");
-    put_ref(&mut pcurve, pcurve_descriptor + 10, 2);
+    put_ref(&mut pcurve, pcurve_descriptor + 10, 3);
+    pcurve[pcurve_descriptor + 19] = 1;
     pcurve[pcurve_descriptor + 16] = 6;
     pcurve[pcurve_descriptor + 17] = 0;
     let payload = pcurve
@@ -347,7 +351,8 @@ fn nurbs_knot_type_values_do_not_select_periodicity_or_rationality() {
             .windows(4)
             .position(|window| window == [0, 136, 0, 40])
             .expect("curve descriptor");
-        put_ref(&mut pcurve, pcurve_descriptor + 10, 2);
+        put_ref(&mut pcurve, pcurve_descriptor + 10, 3);
+        pcurve[pcurve_descriptor + 19] = 1;
         pcurve[pcurve_descriptor + 16] = knot_type;
         let payload = pcurve
             .windows(4)
@@ -418,7 +423,7 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         put_ref(&mut wrapper, 21, 41);
         stream.extend(wrapper);
 
-        let mut descriptor = record(136, 27);
+        let mut descriptor = record(136, 30);
         put_ref(&mut descriptor, 2, 40);
         put_ref(&mut descriptor, 4, degree);
         put_ref(&mut descriptor, 8, poles);
@@ -430,8 +435,9 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         );
         descriptor[16] = 2;
         descriptor[20] = 2;
-        put_ref(&mut descriptor, 23, 42);
-        put_ref(&mut descriptor, 25, 43);
+        for (index, reference) in [44, 42, 43].into_iter().enumerate() {
+            put_ref(&mut descriptor, 21 + index * 3, reference);
+        }
         stream.extend(descriptor);
 
         let value_count = usize::from(poles) * 3;
@@ -440,7 +446,7 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         payload[9..13].copy_from_slice(
             &(u32::try_from(value_count).expect("fixture value fits u32")).to_be_bytes(),
         );
-        put_ref(&mut payload, 13, 1);
+        put_ref(&mut payload, 13, 44);
         for pole in 0..usize::from(poles) {
             let at = 15 + pole * 24;
             put_f64(
@@ -497,7 +503,7 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         put_ref(&mut wrapper, 21, 21);
         stream.extend(wrapper);
 
-        let mut descriptor = record(126, 48);
+        let mut descriptor = record(126, 49);
         put_ref(&mut descriptor, 2, 20);
         put_ref(&mut descriptor, 6, u_degree);
         put_ref(&mut descriptor, 8, v_degree);
@@ -511,12 +517,10 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         descriptor[24..28].copy_from_slice(
             &(u32::try_from(v_distinct).expect("fixture value fits u32")).to_be_bytes(),
         );
-        put_ref(&mut descriptor, 36, 30);
-        put_ref(&mut descriptor, 38, 31);
-        put_ref(&mut descriptor, 40, 32);
-        put_ref(&mut descriptor, 42, 33);
-        put_ref(&mut descriptor, 44, 125);
-        put_ref(&mut descriptor, 46, 21);
+        put_ref(&mut descriptor, 32, 3);
+        for (index, reference) in [22, 30, 31, 32, 33].into_iter().enumerate() {
+            put_ref(&mut descriptor, 34 + index * 3, reference);
+        }
         stream.extend(descriptor);
 
         let value_count = poles * 3;
@@ -526,7 +530,7 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         payload[91..95].copy_from_slice(
             &(u32::try_from(value_count).expect("fixture value fits u32")).to_be_bytes(),
         );
-        put_ref(&mut payload, 95, 1);
+        put_ref(&mut payload, 95, 22);
         for v in 0..usize::from(v_poles) {
             for u in 0..usize::from(u_poles) {
                 let at = 97 + (v * usize::from(u_poles) + u) * 24;
@@ -663,7 +667,8 @@ fn nurbs_carriers_reject_invalid_basis_cardinality() {
     put_ref(&mut curve, descriptor + 4, 2);
     assert!(crate::nurbs::curves(&curve).0.is_empty());
 
-    put_ref(&mut curve, descriptor + 10, 2);
+    put_ref(&mut curve, descriptor + 10, 3);
+    curve[descriptor + 19] = 1;
     assert!(crate::nurbs::pcurves(&curve).0.is_empty());
 
     let mut short_knots = bspline_partition_stream();
@@ -677,12 +682,17 @@ fn nurbs_carriers_reject_invalid_basis_cardinality() {
 
 #[test]
 fn nurbs_surface_rejects_mismatched_descriptor_payload_reference() {
-    let mut stream = bspline_partition_stream();
-    let descriptor = stream
-        .windows(4)
-        .position(|window| window == [0, 126, 0, 20])
-        .expect("surface descriptor");
-    put_ref(&mut stream, descriptor + 46, 22);
+    let mut stream = extended_bspline_surface_stream();
+    assert_eq!(crate::nurbs::surfaces(&stream).0.len(), 1);
+    let payload = encoded_xmt(40_001);
+    let mut marked = 125u16.to_be_bytes().to_vec();
+    marked.extend(&payload);
+    let at = stream
+        .windows(marked.len())
+        .position(|window| window == marked)
+        .expect("descriptor payload reference")
+        + 2;
+    stream.splice(at..at + payload.len(), encoded_xmt(40_002));
     assert!(crate::nurbs::surfaces(&stream).0.is_empty());
 }
 
@@ -700,7 +710,7 @@ fn nurbs_carriers_reject_duplicate_support_identities() {
     }
 
     for (tag, xmt_offset, xmt, len) in [
-        (126, 2, 20, 48),
+        (126, 2, 20, 49),
         (125, 2, 21, 193),
         (127, 6, 30, 12),
         (128, 6, 32, 24),
@@ -714,7 +724,7 @@ fn nurbs_carriers_reject_duplicate_support_identities() {
     }
 
     for (tag, xmt_offset, xmt, len) in [
-        (136, 2, 40, 27),
+        (136, 2, 40, 30),
         (135, 2, 41, 63),
         (127, 6, 42, 12),
         (128, 6, 43, 24),
@@ -740,11 +750,11 @@ fn nurbs_decodes_descriptors_at_the_stream_boundary() {
     }
 
     let mut surface = bspline_partition_stream();
-    move_record_to_end(&mut surface, 126, 20, 48);
+    move_record_to_end(&mut surface, 126, 20, 49);
     assert_eq!(crate::nurbs::surfaces(&surface).0.len(), 1);
 
     let mut curve = bspline_partition_stream();
-    move_record_to_end(&mut curve, 136, 40, 27);
+    move_record_to_end(&mut curve, 136, 40, 30);
     assert_eq!(crate::nurbs::curves(&curve).0.len(), 1);
 }
 
@@ -784,24 +794,7 @@ fn nurbs_decodes_escaped_surface_payload_envelope() {
 #[test]
 fn nurbs_mixed_surface_layouts_do_not_prove_coalescence() {
     let mut stream = bspline_partition_stream();
-    let mut descriptor = record(126, 49);
-    put_ref(&mut descriptor, 2, 20);
-    put_ref(&mut descriptor, 6, 1);
-    put_ref(&mut descriptor, 8, 1);
-    put_ref(&mut descriptor, 12, 2);
-    put_ref(&mut descriptor, 16, 2);
-    descriptor[18] = 5;
-    descriptor[19] = 5;
-    descriptor[20..24].copy_from_slice(&2u32.to_be_bytes());
-    descriptor[24..28].copy_from_slice(&2u32.to_be_bytes());
-    let mut at = 34;
-    for reference in [9, 30, 31, 32, 33] {
-        put_ref(&mut descriptor, at, reference);
-        at += 2;
-        descriptor[at] = 0;
-        at += 1;
-    }
-    stream.extend(descriptor);
+    stream.extend(short_surface_descriptor());
 
     let surfaces = crate::nurbs::surfaces(&stream).0;
     assert!(surfaces.is_empty());
@@ -810,106 +803,10 @@ fn nurbs_mixed_surface_layouts_do_not_prove_coalescence() {
 #[test]
 fn nurbs_mixed_curve_layouts_do_not_prove_coalescence() {
     let mut stream = bspline_partition_stream();
-    let mut descriptor = record(136, 30);
-    put_ref(&mut descriptor, 2, 40);
-    put_ref(&mut descriptor, 4, 1);
-    put_ref(&mut descriptor, 8, 2);
-    put_ref(&mut descriptor, 10, 3);
-    put_ref(&mut descriptor, 14, 2);
-    descriptor[16] = 5;
-    descriptor[20] = 1;
-    let mut at = 21;
-    for reference in [41, 42, 43] {
-        put_ref(&mut descriptor, at, reference);
-        at += 2;
-        descriptor[at] = 0;
-        at += 1;
-    }
-    stream.extend(descriptor);
+    stream.extend(compact_curve_descriptor([0, 0, 0, 0]));
 
     let curves = crate::nurbs::curves(&stream).0;
     assert!(curves.is_empty());
-}
-
-/// Replaces a payload's inline control values with a form record and a separate vertex array.
-fn move_controls_behind_a_form_record(
-    stream: &mut Vec<u8>,
-    payload_head: [u8; 4],
-    tag_offset: usize,
-    form_tag: u8,
-    values: &[f64],
-    vertices: u16,
-) {
-    let payload = stream
-        .windows(4)
-        .position(|window| window == payload_head)
-        .expect("payload");
-    let tag = payload + tag_offset;
-    let end = tag + 8 + values.len() * 8;
-    let mut moved = vec![0, form_tag, 0x04, 0xe5];
-    moved.extend_from_slice(&[0; 64]);
-    moved.extend_from_slice(&[0, 45]);
-    moved.extend_from_slice(&u32::try_from(values.len()).unwrap().to_be_bytes());
-    moved.extend_from_slice(&vertices.to_be_bytes());
-    for value in values {
-        moved.extend_from_slice(&value.to_be_bytes());
-    }
-    stream.splice(tag..end, moved);
-}
-
-#[test]
-fn surface_controls_behind_a_helical_form_resolve_through_the_descriptor() {
-    let mut stream = bspline_partition_stream();
-    let descriptor = stream
-        .windows(4)
-        .position(|window| window == [0, 126, 0, 20])
-        .expect("surface descriptor");
-    stream[descriptor + 34..descriptor + 36].copy_from_slice(&22u16.to_be_bytes());
-    move_controls_behind_a_form_record(
-        &mut stream,
-        [0, 125, 0, 21],
-        89,
-        163,
-        &[
-            0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.01, 0.0, 0.0, 0.01, 0.02, 0.0,
-        ],
-        22,
-    );
-
-    let surfaces = crate::nurbs::surfaces(&stream).0;
-    assert_eq!(surfaces.len(), 1);
-    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surfaces[0].geometry.solved() else {
-        panic!("expected NURBS surface");
-    };
-    let poles = surface.poles();
-    assert_eq!(poles.len(), 4);
-    assert_eq!(poles[3].y, 20.0);
-}
-
-#[test]
-fn curve_controls_behind_a_helical_form_resolve_through_the_descriptor() {
-    let mut stream = bspline_partition_stream();
-    let descriptor = stream
-        .windows(4)
-        .position(|window| window == [0, 136, 0, 40])
-        .expect("curve descriptor");
-    stream[descriptor + 21..descriptor + 23].copy_from_slice(&44u16.to_be_bytes());
-    move_controls_behind_a_form_record(
-        &mut stream,
-        [0, 135, 0, 41],
-        7,
-        184,
-        &[0.0, 0.0, 0.0, 0.02, 0.0, 0.0],
-        44,
-    );
-
-    let curves = crate::nurbs::curves(&stream).0;
-    assert_eq!(curves.len(), 1);
-    let Some(SolvedCurveGeometry::Nurbs(curve)) = curves[0].geometry.solved() else {
-        panic!("expected NURBS curve");
-    };
-    assert_eq!(curve.control_points().len(), 2);
-    assert_eq!(curve.control_points()[1].x, 20.0);
 }
 
 #[test]
@@ -938,14 +835,118 @@ fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
 
 #[test]
 fn nurbs_compact_curve_descriptor_survives_a_status_prefix_collision() {
+    let stream = replace_descriptor(
+        [0, 136, 0, 40],
+        30,
+        &[compact_curve_descriptor([0, 0, 0, 1])],
+    );
+    let descriptor = stream
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    let (_, parsed, _) = super::curve_descriptor_at(&stream, descriptor, true).unwrap();
+    assert!(matches!(
+        parsed.references,
+        super::CurveDescriptorReferences::Compact(_)
+    ));
+}
+
+#[test]
+fn compact_and_short_control_references_leave_carriers_unresolved() {
+    let surface = replace_descriptor([0, 126, 0, 20], 49, &[short_surface_descriptor()]);
+    assert!(crate::nurbs::surfaces(&surface).0.is_empty());
+    assert_eq!(unresolved_families(&surface), ["B_SURFACE"]);
+
+    let curve = replace_descriptor(
+        [0, 136, 0, 40],
+        30,
+        &[compact_curve_descriptor([0, 0, 0, 0])],
+    );
+    assert!(crate::nurbs::curves(&curve).0.is_empty());
+    assert!(crate::nurbs::pcurves(&curve).0.is_empty());
+    assert_eq!(unresolved_families(&curve), ["B_CURVE"]);
+}
+
+/// The short type-126 layout: two-byte references at `+34` and a type-125
+/// payload reference.
+fn short_surface_descriptor() -> Vec<u8> {
+    let mut descriptor = record(126, 48);
+    put_ref(&mut descriptor, 2, 20);
+    put_ref(&mut descriptor, 6, 1);
+    put_ref(&mut descriptor, 8, 1);
+    put_ref(&mut descriptor, 12, 2);
+    put_ref(&mut descriptor, 16, 2);
+    descriptor[18] = 5;
+    descriptor[19] = 5;
+    descriptor[20..24].copy_from_slice(&2u32.to_be_bytes());
+    descriptor[24..28].copy_from_slice(&2u32.to_be_bytes());
+    for (index, reference) in [22, 30, 31, 32, 33, 125, 21].into_iter().enumerate() {
+        put_ref(&mut descriptor, 34 + index * 2, reference);
+    }
+    descriptor
+}
+
+/// The compact type-136 layout with the flag bytes `flags`: two-byte
+/// references at `+21`.
+fn compact_curve_descriptor(flags: [u8; 4]) -> Vec<u8> {
+    let mut descriptor = record(136, 27);
+    put_ref(&mut descriptor, 2, 40);
+    put_ref(&mut descriptor, 4, 1);
+    put_ref(&mut descriptor, 8, 2);
+    put_ref(&mut descriptor, 10, 3);
+    put_ref(&mut descriptor, 14, 2);
+    descriptor[16] = 5;
+    descriptor[17..21].copy_from_slice(&flags);
+    for (index, reference) in [44, 42, 43].into_iter().enumerate() {
+        put_ref(&mut descriptor, 21 + index * 2, reference);
+    }
+    descriptor
+}
+
+fn dimension_four_rational_curve_stream(weights: [f64; 2]) -> Vec<u8> {
     let mut stream = bspline_partition_stream();
     let descriptor = stream
         .windows(4)
         .position(|window| window == [0, 136, 0, 40])
         .expect("curve descriptor");
-    stream[descriptor + 17..descriptor + 21].copy_from_slice(&[0, 0, 0, 1]);
+    put_ref(&mut stream, descriptor + 10, 4);
+    stream[descriptor + 19] = 1;
+    let payload = stream
+        .windows(4)
+        .position(|window| window == [0, 135, 0, 41])
+        .expect("curve payload");
+    let old_payload_len = 15 + 6 * 8;
+    let mut rational_payload = record(135, 15 + 8 * 8);
+    put_ref(&mut rational_payload, 2, 41);
+    rational_payload[9..13].copy_from_slice(&8u32.to_be_bytes());
+    put_ref(&mut rational_payload, 13, 44);
+    let [first, second] = weights;
+    for (index, value) in [0.0, 0.0, 0.0, first, 0.02 * second, 0.0, 0.0, second]
+        .into_iter()
+        .enumerate()
+    {
+        put_f64(&mut rational_payload, 15 + index * 8, value);
+    }
+    stream.splice(payload..payload + old_payload_len, rational_payload);
+    stream
+}
 
-    assert_eq!(crate::nurbs::curves(&stream).0.len(), 1);
+#[test]
+fn a_curve_with_a_negative_weight_is_omitted_with_one_loss() {
+    let (curves, refusals) =
+        crate::nurbs::curves(&dimension_four_rational_curve_stream([1.0, 2.0]));
+    assert_eq!(curves.len(), 1);
+    assert!(refusals.is_empty());
+    let (curves, refusals) =
+        crate::nurbs::curves(&dimension_four_rational_curve_stream([1.0, -2.0]));
+    assert!(curves.is_empty());
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal, got {refusals:?}");
+    };
+    assert_eq!(
+        refusal.loss(0).code,
+        crate::loss::NxLossCode::CarrierSplineWeightNonpositive.kind()
+    );
 }
 
 #[test]
@@ -956,6 +957,7 @@ fn nurbs_decodes_dimension_four_rational_curve() {
         .position(|window| window == [0, 136, 0, 40])
         .expect("curve descriptor");
     put_ref(&mut stream, descriptor + 10, 4);
+    stream[descriptor + 19] = 1;
 
     let payload = stream
         .windows(4)
@@ -965,6 +967,7 @@ fn nurbs_decodes_dimension_four_rational_curve() {
     let mut rational_payload = record(135, 15 + 8 * 8);
     put_ref(&mut rational_payload, 2, 41);
     rational_payload[9..13].copy_from_slice(&8u32.to_be_bytes());
+    put_ref(&mut rational_payload, 13, 44);
     for (index, value) in [0.0, 0.0, 0.0, 1.0, 0.04, 0.0, 0.0, 2.0]
         .into_iter()
         .enumerate()
@@ -1005,7 +1008,10 @@ fn a_refused_curve_carrier_is_stated_not_dropped() {
     };
     assert_eq!(refusal.family, "B_CURVE");
     assert!(
-        !refusal.error.to_string().is_empty(),
+        matches!(
+            &refusal.refusal,
+            cadmpeg_parasolid::geometry::nurbs::Refusal::Lanes(error) if !error.to_string().is_empty()
+        ),
         "the refusal carries the carrier's own text"
     );
 }
@@ -1039,7 +1045,7 @@ fn nurbs_low_nonnull_identities_resolve_owned_carriers() {
     };
     let surface = find(&bytes, 124, 10);
     let surface_desc = find(&bytes, 126, 20);
-    let surface_data = surface_desc + 48;
+    let surface_data = surface_desc + 49;
     assert_eq!(&bytes[surface_data..surface_data + 4], &[0, 125, 0, 21]);
     let curve = find(&bytes, 134, 50);
     let curve_desc = find(&bytes, 136, 40);
@@ -1047,7 +1053,6 @@ fn nurbs_low_nonnull_identities_resolve_owned_carriers() {
     put_ref(&mut bytes, surface + 19, 2);
     put_ref(&mut bytes, surface + 21, 3);
     put_ref(&mut bytes, surface_desc + 2, 2);
-    put_ref(&mut bytes, surface_desc + 46, 3);
     put_ref(&mut bytes, surface_data + 2, 3);
     put_ref(&mut bytes, curve + 19, 4);
     put_ref(&mut bytes, curve + 21, 5);
@@ -1064,8 +1069,8 @@ fn nurbs_low_nonnull_identities_resolve_owned_carriers() {
     let knot = find_array(128, 43);
     put_ref(&mut bytes, mult + 6, 6);
     put_ref(&mut bytes, knot + 6, 7);
-    put_ref(&mut bytes, curve_desc + 23, 6);
-    put_ref(&mut bytes, curve_desc + 25, 7);
+    put_ref(&mut bytes, curve_desc + 24, 6);
+    put_ref(&mut bytes, curve_desc + 27, 7);
     assert!(super::surface_payload_at(&bytes, surface_data).is_some());
     assert!(super::surface_descriptor_at(&bytes, surface_desc).is_some());
     assert!(super::curve_payload_at(&bytes, curve_data).is_some());
@@ -1087,11 +1092,11 @@ fn nurbs_curve_payloads_admit_every_low_nonnull_identity() {
     };
     for identity in 2..=10_u16 {
         let bytes = payload_for(identity);
-        let (xmt, payload, end) =
+        let (xmt, payload, lanes) =
             super::curve_payload_at(&bytes, 0).expect("a low non-null identity is admitted");
         assert_eq!(xmt, u32::from(identity));
         assert_eq!(payload.value_count(), 1);
-        assert_eq!(end, bytes.len());
+        assert_eq!(lanes.end, bytes.len());
     }
     for identity in [0_u16, 1] {
         assert!(super::curve_payload_at(&payload_for(identity), 0).is_none());
@@ -1126,7 +1131,7 @@ fn nurbs_surface_payloads_admit_low_nonnull_identity() {
         bytes.extend_from_slice(&1_u32.to_be_bytes());
         bytes.extend_from_slice(&1_u16.to_be_bytes());
         bytes.extend_from_slice(&0.0_f64.to_be_bytes());
-        let result = super::surface_payload_at(&bytes, 0).map(|(xmt, _, end)| (xmt, end));
+        let result = super::surface_payload_at(&bytes, 0).map(|(xmt, _, lanes)| (xmt, lanes.end));
         assert_eq!(
             result,
             (identity > 1).then_some((u32::from(identity), bytes.len()))
@@ -1231,8 +1236,10 @@ fn declared_curve_dimension_rational_and_count_must_agree() {
     let xyz = declared_curve(3, false, &[0.0, 0.0, 0.0, 0.02, 0.0, 0.0]);
     assert_eq!(crate::nurbs::curves(&xyz).0.len(), 1);
     assert!(crate::nurbs::pcurves(&xyz).0.is_empty());
+    let homogeneous = declared_curve(4, false, &[0.0, 0.0, 0.0, 1.0, 0.02, 0.0, 0.0, 1.0]);
+    assert_eq!(crate::nurbs::curves(&homogeneous).0.len(), 1);
+    assert!(crate::nurbs::pcurves(&homogeneous).0.is_empty());
     for (dimension, rational, values) in [
-        (4, false, vec![0.0, 0.0, 0.0, 1.0, 0.02, 0.0, 0.0, 1.0]),
         (4, true, vec![0.0, 0.0, 1.0, 0.02, 0.0, 1.0]),
         (3, true, vec![0.0, 0.0, -1.0, 0.02, 0.0, 1.0]),
         (3, true, vec![0.0, 0.0, 0.0, 0.02, 0.0, 1.0]),
@@ -1241,6 +1248,16 @@ fn declared_curve_dimension_rational_and_count_must_agree() {
         assert!(crate::nurbs::curves(&stream).0.is_empty());
         assert!(crate::nurbs::pcurves(&stream).0.is_empty());
     }
+}
+
+#[test]
+fn a_refused_model_space_curve_is_refused_once() {
+    let stream = declared_curve(3, false, &[f64::MAX, 0.0, 0.0, 0.02, 0.0, 0.0]);
+    let (curves, curve_refusals) = crate::nurbs::curves(&stream);
+    let (pcurves, pcurve_refusals) = crate::nurbs::pcurves(&stream);
+    assert!(curves.is_empty() && pcurves.is_empty());
+    assert_eq!(curve_refusals.len(), 1);
+    assert!(pcurve_refusals.is_empty());
 }
 
 fn declared_curve(dimension: u16, rational: bool, values: &[f64]) -> Vec<u8> {
@@ -1254,11 +1271,11 @@ fn declared_curve(dimension: u16, rational: bool, values: &[f64]) -> Vec<u8> {
     descriptor.extend_from_slice(&dimension.to_be_bytes());
     descriptor.extend_from_slice(&2u32.to_be_bytes());
     descriptor.extend_from_slice(&[5, 0, 0, u8::from(rational), 1]);
-    for reference in [41u16, 42, 43] {
+    for reference in [44u16, 42, 43] {
         descriptor.extend_from_slice(&reference.to_be_bytes());
         descriptor.push(0);
     }
-    stream.splice(at..at + 27, descriptor);
+    stream.splice(at..at + 30, descriptor);
     let at = stream
         .windows(4)
         .position(|w| w == [0, 135, 0, 41])
@@ -1266,6 +1283,7 @@ fn declared_curve(dimension: u16, rational: bool, values: &[f64]) -> Vec<u8> {
     let mut payload = record(135, 15 + values.len() * 8);
     put_ref(&mut payload, 2, 41);
     payload[9..13].copy_from_slice(&u32::try_from(values.len()).unwrap().to_be_bytes());
+    put_ref(&mut payload, 13, 44);
     for (index, value) in values.iter().enumerate() {
         put_f64(&mut payload, 15 + index * 8, *value);
     }
@@ -1342,11 +1360,11 @@ fn declared_surface(dimension: u16, rational: bool, values: &[f64]) -> Vec<u8> {
     descriptor.extend_from_slice(&2u32.to_be_bytes());
     descriptor.extend_from_slice(&[u8::from(rational), 0, 0, 1]);
     descriptor.extend_from_slice(&dimension.to_be_bytes());
-    for reference in [21u16, 30, 31, 32, 33] {
+    for reference in [22u16, 30, 31, 32, 33] {
         descriptor.extend_from_slice(&reference.to_be_bytes());
         descriptor.push(0);
     }
-    stream.splice(at..at + 48, descriptor);
+    stream.splice(at..at + 49, descriptor);
     let at = stream
         .windows(4)
         .position(|w| w == [0, 125, 0, 21])
@@ -1355,9 +1373,126 @@ fn declared_surface(dimension: u16, rational: bool, values: &[f64]) -> Vec<u8> {
     put_ref(&mut payload, 2, 21);
     payload[90] = b'+';
     payload[91..95].copy_from_slice(&u32::try_from(values.len()).unwrap().to_be_bytes());
+    put_ref(&mut payload, 95, 22);
     for (index, value) in values.iter().enumerate() {
         put_f64(&mut payload, 97 + index * 8, *value);
     }
     stream.splice(at..at + 97 + 12 * 8, payload);
     stream
+}
+
+fn unresolved_families(stream: &[u8]) -> Vec<&'static str> {
+    let graph = crate::topology::Graph::parse(stream);
+    crate::nurbs::parse_with_graph(stream, &graph)
+        .unresolved_controls
+        .iter()
+        .map(|carrier| carrier.family)
+        .collect()
+}
+
+#[test]
+fn scanned_control_values_require_the_descriptor_reference() {
+    let mut surface = bspline_partition_stream();
+    let payload = surface
+        .windows(4)
+        .rposition(|window| window == [0, 125, 0, 21])
+        .expect("surface payload");
+    put_ref(&mut surface, payload + 95, 99);
+    assert!(crate::nurbs::surfaces(&surface).0.is_empty());
+    assert_eq!(unresolved_families(&surface), ["B_SURFACE"]);
+
+    let mut curve = bspline_partition_stream();
+    let payload = curve
+        .windows(4)
+        .position(|window| window == [0, 135, 0, 41])
+        .expect("curve payload");
+    put_ref(&mut curve, payload + 13, 99);
+    assert!(crate::nurbs::curves(&curve).0.is_empty());
+    assert_eq!(unresolved_families(&curve), ["B_CURVE"]);
+}
+
+#[test]
+fn scanned_control_values_skip_an_intervening_unrelated_node() {
+    let mut stream = bspline_partition_stream();
+    let payload = stream
+        .windows(4)
+        .rposition(|window| window == [0, 125, 0, 21])
+        .expect("surface payload");
+    let mut unrelated = vec![0, 45];
+    unrelated.extend_from_slice(&12u32.to_be_bytes());
+    unrelated.extend_from_slice(&99u16.to_be_bytes());
+    for value in [
+        0.0, 0.0, 0.0, 0.0, 0.05, 0.0, 0.05, 0.0, 0.0, 0.05, 0.05, 0.0,
+    ] {
+        unrelated.extend_from_slice(&f64::to_be_bytes(value));
+    }
+    stream.splice(payload + 89..payload + 89, unrelated);
+    assert!(crate::nurbs::surfaces(&stream).0.is_empty());
+    assert_eq!(unresolved_families(&stream), ["B_SURFACE"]);
+}
+
+fn status_surface_descriptor(vertices: u16) -> Vec<u8> {
+    let mut descriptor = record(126, 49);
+    put_ref(&mut descriptor, 2, 20);
+    put_ref(&mut descriptor, 6, 1);
+    put_ref(&mut descriptor, 8, 1);
+    put_ref(&mut descriptor, 12, 2);
+    put_ref(&mut descriptor, 16, 2);
+    descriptor[18] = 5;
+    descriptor[19] = 5;
+    descriptor[20..24].copy_from_slice(&2u32.to_be_bytes());
+    descriptor[24..28].copy_from_slice(&2u32.to_be_bytes());
+    put_ref(&mut descriptor, 32, 3);
+    for (index, reference) in [vertices, 30, 31, 32, 33].into_iter().enumerate() {
+        put_ref(&mut descriptor, 34 + index * 3, reference);
+    }
+    descriptor
+}
+
+fn status_curve_descriptor(vertices: u16) -> Vec<u8> {
+    let mut descriptor = record(136, 30);
+    put_ref(&mut descriptor, 2, 40);
+    put_ref(&mut descriptor, 4, 1);
+    put_ref(&mut descriptor, 8, 2);
+    put_ref(&mut descriptor, 10, 3);
+    put_ref(&mut descriptor, 14, 2);
+    descriptor[16] = 5;
+    for (index, reference) in [vertices, 42, 43].into_iter().enumerate() {
+        put_ref(&mut descriptor, 21 + index * 3, reference);
+    }
+    descriptor
+}
+
+/// The partition stream with one descriptor replaced by `replacements`.
+fn replace_descriptor(prefix: [u8; 4], len: usize, replacements: &[Vec<u8>]) -> Vec<u8> {
+    let mut stream = bspline_partition_stream();
+    let at = stream
+        .windows(4)
+        .position(|window| window == prefix)
+        .expect("descriptor");
+    stream.splice(at..at + len, replacements.concat());
+    stream
+}
+
+#[test]
+fn duplicate_descriptors_differing_in_control_reference_reject() {
+    let surface = [0, 126, 0, 20];
+    let single = replace_descriptor(surface, 49, &[status_surface_descriptor(22)]);
+    assert_eq!(crate::nurbs::surfaces(&single).0.len(), 1);
+    let pair = replace_descriptor(
+        surface,
+        49,
+        &[status_surface_descriptor(22), status_surface_descriptor(23)],
+    );
+    assert!(crate::nurbs::surfaces(&pair).0.is_empty());
+
+    let curve = [0, 136, 0, 40];
+    let single = replace_descriptor(curve, 30, &[status_curve_descriptor(44)]);
+    assert_eq!(crate::nurbs::curves(&single).0.len(), 1);
+    let pair = replace_descriptor(
+        curve,
+        30,
+        &[status_curve_descriptor(44), status_curve_descriptor(45)],
+    );
+    assert!(crate::nurbs::curves(&pair).0.is_empty());
 }

@@ -673,8 +673,9 @@ a null `srf_flip_dat`, then `list_id` as a compact integer, a three-byte
 row's owner and `list_id` is the owner's identifier. `list_type = 62` is the
 `type` of a `body_array` entry, and `list_id` is its `body_id`.
 `list_type = 39` is the `data_type` of a `qlt_array` entry, and `list_id` is
-its `quilt_id`. A null `list_id` with `list_type = f6` names no owner. Any other
-tail leaves the row's owner unresolved.
+its `quilt_id`. A null `list_id` with `list_type = f6` names no owner; the
+surface does not bound a body's material region. Any other tail leaves the
+row's owner unresolved.
 A `geom_type = 22`, `boundary_type = 01`, `next_geom_ptr = 0` row is an
 unbounded feature plane. When it is the unique plane row carrying its
 `feat_id`, its placed carrier is the datum-plane definition for that feature.
@@ -1164,8 +1165,12 @@ An `e3` closes a positional envelope. Twelve finite scalar slots follow in
 row-major order: a right-handed orthonormal rotation matrix and three origin
 coordinates. The matrix columns are the radial reference, transverse
 direction, and signed axis. The direction and origin slots share the compact
-scalar stream; repetition carries across their boundary. One positive radius
-and `e3` complete the body.
+scalar stream; repetition carries across their boundary. The finite stored
+components of the transverse direction can differ from exact orthogonality
+by floating-point roundoff. One positive radius
+and `e3` complete the body. In this radius slot, `2d <tail7>` reconstructs
+IEEE-754 bytes `40 <tail7>`. A second radius slot may repeat the same value
+before the closing `e3`.
 
 An active-datum first cylinder stores the envelope before its named cylinder
 prototype. The unique prototype between that row header and the next row
@@ -1864,6 +1869,15 @@ unique.
 
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.
 
+A bounded inline cone stores angular and axial limits `u0, v0, u1, v1`,
+two XYZ extent corners, an optional `f7 <reference_ci>`, `e3`, a complete
+rotation frame, a positive half-angle, and `e3`. The angular interval spans
+at most one turn and the axial interval is non-negative. The frame columns
+define the radial reference, transverse direction, and axis. The final three
+frame slots define the apex. For parameter `v`, the section radius is
+`v * tan(half_angle)`. The extent corners lie within the parameter rectangle's
+model-space bounds and match its axial extrema.
+
 A positional `geom_type = 25` body can terminate with one positive-DICT
 `half_angle` scalar immediately followed by the structural body-close byte.
 The scalar has precedence over scalar candidates beginning inside its payload;
@@ -2319,8 +2333,9 @@ An angular-stream plane rotation stores nine row-major direction slots and
 three origin slots through the angular stream defined in §4.1.1. At least one
 direction literal uses `00` or a scalar opener in `19..df`. A direction
 repeat ends within the nine direction slots. Origin repeats inherit the
-preceding direction or origin scalar. One matrix column agrees component by component
-with a signed model-X or model-Z basis vector within `1e-9`. For columns
+preceding direction or origin scalar. A rotation without an envelope witness
+has one matrix column that agrees component by component with a signed model-X
+or model-Z basis vector within `1e-9`. For columns
 `U`, `V`, and `N`, each squared norm differs from one by at most `1e-9`,
 each pairwise dot product has magnitude at most `1e-9`, and
 `(U × V) · N` differs from one by at most `1e-9`. Column zero defines the
@@ -2338,11 +2353,7 @@ have exactly the stored XYZ minima and maxima, each within `1e-9` scaled by
 column one; for a production, `first` is its first parameter direction and
 `second` is the plane normal crossed with `first`. When a production admits the
 body and the rotation reproduces the envelope while the production's chart does
-not, the rotation replaces the production's reading if the two origins differ
-by more than `1e-9` scaled by the larger of one and the two components'
-magnitudes. When the origins agree, only the matrix
-orientation is disputed: the production's reading is kept and the
-`geometry.plane-angular-frame-unresolved` loss is recorded. When both charts
+not, the rotation replaces the production's reading. When both charts
 reproduce the envelope with different origin, first direction, or normal
 (components within the same scaled `1e-9`), neither is chosen: the plane keeps
 no local-system frame and one loss is recorded; the generic
@@ -2636,6 +2647,32 @@ its first and last chart points through that face's placed chart yields the
 two solved points in exactly one order. The chart paths are the faces' pcurve
 endpoint pairs and two-chart pcurve rows. Coincident solved points, points off
 one generator, or no such path leave the edge unresolved.
+
+An edge between two placed cone charts has a straight generator carrier when
+each chart supplies a unique constant-angle path with distinct axial endpoints,
+both paths map their endpoints to the solved edge vertices in one order, and
+their mapped midpoints agree with the midpoint of those vertices.
+
+Two perpendicular cylinders with radii `R > r` and axis separation `R - r`
+have a rational quartic intersection. A complete two-chart path selects a
+bounded branch when both charts map each sample to the same point, the samples
+follow one monotone branch, and the first and last samples match the solved
+edge endpoints in one order. The corresponding cylindrical pcurves are polar
+projections of the quartic on each placed cylinder.
+
+Two equal-radius cylinders with intersecting, nonparallel axes meet on two
+ellipses in planes through their common axis intersection. A complete
+two-chart path selects a bounded elliptic arc when both charts map each
+sample to the same point, the samples select one ellipse and progress
+monotonically through less than half a turn, and the first and last samples
+match the solved edge endpoints in one order. A rational quadratic represents
+the selected arc; its cylindrical pcurves are polar projections.
+
+The two cylinder parameter envelopes also select an elliptic arc when each
+angular interval spans less than half a turn, both solved edge endpoints lie
+on both bounded cylinders, and exactly one arc shorter than half a turn stays
+within both angular and axial intervals. The axial interval contains the arc's
+endpoints and every interior axial extremum.
 
 When a plane is parallel to a placed cylinder axis and cuts the cylinder
 strictly inside its radius, their intersection is two generator lines parallel
@@ -2991,7 +3028,9 @@ a literal. In complete direct, replay, and counted pcurve bodies, explicit
 The other explicit coordinates use the signed first-coordinate lane, except
 that in the legacy two-chart production a second-coordinate
 `4f <tail6>`, `50 <tail6>`, or `57 <tail6>` reconstructs `3f c1 <tail6>`,
-`3f c2 <tail6>`, or `3f ca <tail6>`. In these bodies and in the legacy and
+`3f c2 <tail6>`, or `3f ca <tail6>`. In a legacy two-chart production,
+`53 <tail6>` in the first chart's first coordinate reconstructs
+`3f c5 <tail6>`. In these bodies and in the legacy and
 angular two-chart productions, `41 <tail7>` gives `bf <tail7>`, and
 `58 <tail6>`, `59 <tail6>`, and `5a <tail6>` give `3f cc <tail6>`,
 `3f cd <tail6>`, and `3f cf <tail6>` in every chart-coordinate slot.
@@ -3224,7 +3263,7 @@ semantics.
 
 ## 5. Topology and section records
 
-A planar face can have one strictly convex polygon perimeter of typed line
+A planar face region can have a strictly convex polygon perimeter of typed line
 edges and disjoint two-edge circular hole loops. Each circle loop has two
 distinct circle carriers with one center, radius, and axis parallel to the
 plane normal. Its closed native pcurve paths have diametrically opposite
@@ -3266,12 +3305,14 @@ an admitted face loop remain wire topology. Components without admitted faces
 or solved edges remain Native. Body cardinality and the independently proved
 grouping must agree before neutral body/region ownership is assigned.
 
-In an ND layout, the surface-row owners give the body grouping when the
-selected count does not equal the admitted component count or a component has
-no admitted face or solved edge. A component is owned by a body when each of
-its faces has one visible row and every such row names that body. A component
-is unowned when none of its faces has a visible row; it is not a body, and its
-references remain native. Owned components that name one body form that body.
+In an ND layout, faces whose surface rows have a null owner are outside material
+body boundaries. The remaining surface-row owners give the body grouping when
+the selected count does not equal the admitted component count or a component
+has no admitted face or solved edge. A component is owned by a body when each
+of its remaining faces has one visible row and every such row names that body.
+A component is unowned when none of its faces has a visible row; it is not a
+body, and its references remain native. Owned components that name one body
+form that body.
 The grouping requires at least one owning body, no more owning bodies than the
 selected count, and an admitted face or solved edge in each body. A component
 that is neither owned nor unowned leaves body ownership unresolved.
@@ -4070,10 +4111,11 @@ A directed ring follows same-face successors and returns to its first side.
 Each ring uses each of its sides once. Boundary ownership, a surface carrier,
 chart, endpoint geometry, and face-surface sense are separate bindings.
 
-For a native planar face with multiple closed loops, exactly one loop must
-strictly contain every other loop. That containing loop is the outer boundary;
-every contained loop is an inner boundary. A planar face with one closed loop,
-and a non-planar face admitted under the one-loop rule, has one outer boundary.
+A native planar face can have multiple disjoint outer cycles. An outer cycle
+can contain lines and circular arcs, including arcs whose stored interval
+exceeds a half-turn. Each inner cycle lies inside one outer cycle. A planar face
+region has one outer boundary and zero or more inner boundaries. A planar face with one closed loop, and a
+non-planar face admitted under the one-loop rule, has one outer boundary.
 
 A generated-table identifier that occurs as a `crv_array` face side binds
 that face-reference identity and its edge uses. An unresolved surface row
@@ -6702,6 +6744,126 @@ equal integers alone do not establish a bounded face, an occurrence, or a
 display-to-model placement. Unmatched objects remain in the display namespace.
 PGL display data does not replace analytical body topology or establish its
 absence ([PTC, Introduction to pgl2pv](https://support.ptc.com/help/creo/view/r13.0/it/creo_view/adapter_install_config_guide/Config-PGL-Files/CVAdapterPGLIntro/Introduction_to_pgl2pv.html)).
+
+### 8.9 Neutral geometric-tolerance attributes
+
+The `NeuPrtSld` `attributes` field stores an object array. Its header has
+`f4 05 f8 <count> f7 <class> fb`. The first row labels `name`, `value`,
+`ref_id`, `ref_type`, `ref_name`, `unit`, and `designated`. Later rows store
+those fields in that order without the labels. A value has an `e2` compound
+and a type: `32` is a real, `33` is a null-terminated byte string, `34` is an
+integer, and `35` is a logical value. A named value prototype can introduce a
+value class that later rows reference with `f7`. `ref_id` and `ref_type`
+identify the attribute owner.
+
+In the attribute real lane, the single-byte tokens `09`, `0a`, `0b`, `0c`,
+`0d`, `0e`, and `0f` encode 0.005, 0.01, 0.06, 0.1, 0.25, 0.5, and 1.0.
+Tokens `00`, `01`, and `02` select a constant and replace its low one, two,
+or three IEEE bytes. Other real tokens follow the scalar grammar in §9.1.
+
+The `BasFullData` or `FullMData` `annot_elems` array stores annotation-element
+identities. Each row has an `AE_Id`, `AE_Type`, `Annot_Id`, and `Annot_Type`.
+`Annot_Type` 32 identifies a geometric tolerance. The `AE_Id` and `AE_Type`
+pair selects neutral attributes with matching `ref_id` and `ref_type`.
+`PTC_GTOL_TYPE` states the tolerance characteristic and
+`PTC_GTOL_PRIMARY_TOL` states its magnitude in the model length unit.
+`PTC_GTOL_1_DTM_PRIM_STRING`, `PTC_GTOL_1_DTM_SEC_STRING`, and
+`PTC_GTOL_1_DTM_TERT_STRING` state the primary, secondary, and tertiary
+datum-reference labels of the first tolerance segment. The corresponding
+`PTC_GTOL_2_DTM_*` fields state the second segment's labels. A hyphen joins
+labels in one common-datum compartment. A circled M or L after a label states
+its maximum- or least-material requirement. `PTC_GTOL_2_TOL_STRING` carries
+the displayed second-segment magnitude and its tolerance-zone symbols.
+
+`Annot_Type` 8 identifies a dimension. Its neutral attributes include
+`PTC_DIM_TYPE`, `PTC_DIM_NOMINAL_VAL`, and `PTC_TOLERANCE_MODE`. `Limits`
+stores absolute bounds in `PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT`.
+`+- Symmetric` stores a deviation magnitude in `PTC_DIM_TOL_VALUE`.
+`Plus-Minus` stores deviation magnitudes in `PTC_DIM_LOWER_TOL_VALUE` and
+`PTC_DIM_UPPER_TOL_VALUE`; the lower deviation is negative. Length values use
+the model length unit. Angular numeric values use radians; the
+`PTC_DIM_ANGULARDIM_UNIT` field selects the display unit.
+
+A geometric tolerance's type-1 `gtol_place_ptr.id` selects a zero-based
+`dim_array` slot. That dimension's `gtol_ids` includes the tolerance's
+zero-based `geom_tol_array` slot. A dimension can reference several tolerances.
+A type-2 placement can contain an attachment of type `25`; its `attach_id`
+selects a surface.
+
+The `geom_tol_array` header is `f8 <count> f7 <class> fb`, and `e1` fills each
+leading empty slot. The first occupied slot stores a named prototype:
+
+```text
+e3 e0 00 dtl_named_item\0 e2 e0 00 dtl_item\0 e2 e0 0a name\0 [f1] <name>
+e0 01 tol_type\0 [f1] <tol_type> e0 01 tol_class\0 <tol_class>
+e0 01 feat_id\0 <feat_id> e0 0a value_string\0 f8 <count> <value>\0 ...
+e0 00 tol_text\0 f8 01 f7 <class> fb e3 ... e0 01 owner_id\0 <slot> ...
+e0 00 gtol_place_ptr\0 <placement>
+```
+
+`<name>` is `e1` or a NUL-terminated string, and `<feat_id>` is `f6` or a
+compact integer. A later occupied slot stores the same leading fields
+positionally:
+
+```text
+e3 [f7 <class>] e2 e2 <name> <tol_type> <tol_class> <feat_id> <values>
+f8 <lines> f7 <class> fb <text> ... <text> <placement>
+```
+
+`<values>` stores one NUL-terminated `<value>` for each frame segment. It is
+`f8 <count>` and `<count>` values, or values without a count that continue to
+the `f8` of the `tol_text` header. `<value>` is the displayed magnitude text.
+An `e8` byte can precede its UTF-8 characters. The `tol_text` array stores
+`<lines>` text elements:
+
+```text
+[f1] [f7 <class>] e3 [f7 <class>] <db_type> <text_type> <text_value>\0
+[f5] <txt_attrib> <txt_attrib2> <slot> <height> <width_factor>
+e2 <thickness> <vertical_extent_start> <vertical_extent_end>
+```
+
+The first element starts at its `[f7 <class>]` or `e3`. `<txt_attrib>` is a
+compact integer or `eb` and four bytes. All elements of a row store the same
+`<slot>`. `<slot>` is the row's zero-based `geom_tol_array` slot and equals the
+`Annot_Id` of its annotation element.
+
+A named placement is `[f1|f2|f3] [f7 <class>] e3 e0 01 type\0 [f1] <type>
+e0 01 id\0 [f1] <id> e0 01 attribute\0 [f1] <attribute> e0 02 coord\0 f8 03
+<coord> e0 00 gtol_attach_pnt\0 <attachment>`; a positional placement is
+`e3 <type> <id> <attribute> <coord> <attachment>`. `<coord>` stores three
+scalars in the frame-slot lane of §9.1. `e4`, `e5`, and `e6` repeat the
+preceding coordinate one, two, and three times.
+`<attachment>` is `e1` when the placement has no attachment. The first
+attachment of a section is named:
+`e3 e0 01 type\0 [f0] <type> e0 01 attach_id\0 [f1] <id> e0 00 att_offsets\0
+[f7 <class>] f8 <count> ...`. A later attachment stores the same fields
+positionally: `e3 [f0] [f7 <class>] <type> <id> [f7 <class>] f8 <count> ...`.
+A type-2 placement and its type-`25` attachment store the same surface
+identifier.
+
+An annotation dimension's `dim_array` element stores `p_sld_info` as
+`e3 [f7 <class>] <ref_type> <ref_id> ...`; the named form labels the two
+fields `ref_type` and `ref_id`. `ref_id` and `ref_type` equal the `AE_Id` and
+`AE_Type` of the dimension's annotation element. The `attach_ptr` chain
+follows. Each link stores the attachment fields of a tolerance placement,
+and `next_attach_ptr` stores the next link. An annotation dimension stores two
+links. Attachment type `25` selects a surface and type `1` selects an edge.
+A type-`25` `attach_id` names a `VisibGeom` surface or an `ActDatums`
+surface.
+
+The `set_datum_tag_xar` named prototype stores a datum label in
+`p_datum_tag_name` and a zero-based `gtol_datum_def_xar` slot in `dtm_def_id`.
+A later tag row starts `e3 <attributes> <dtm_def_id> e3 [f7 <class>]
+<ref_type> <ref_id>`; `<attributes>` and `<dtm_def_id>` are compact integers,
+and the second compound is the positional `p_sld_info`.
+
+The `gtol_datum_def_xar` prototype labels `datum_type`, `datum_id`, `feat_id`,
+`gtol_id`, and `p_ldr`; `p_ldr` labels `ldr_attrib` and `note_att`. A later
+definition row starts `e3 <datum_type> <datum_id> <feat_id> <gtol_id>
+e3 <ldr_attrib> <note_att>`, where the three identifiers are `f6` or compact
+integers. `note_att` stores the attachment fields of a tolerance placement:
+named in its first occurrence, then `e3 [f0] [f7 <class>] <type> <attach_id>`.
+Attachment type `25` selects a surface. Type `5` selects a `dim_array` slot.
 
 ## 9. Assembly component table
 

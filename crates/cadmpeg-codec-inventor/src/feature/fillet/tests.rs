@@ -289,6 +289,152 @@ fn fillet_fifth_reference_and_continuity_require_the_exact_controls() {
     assert!(read(&source, &properties, 2.0, true).is_ok());
 }
 
+/// Fixture with a second edge set. Its collection holds one item for each given
+/// index-reference list.
+fn two_set_fixture(second_items: &[Vec<u32>]) -> (PmDcFeature, Vec<PmDcFeatureProperty>) {
+    let (source, mut properties) = fixture();
+    change(&mut properties[1], |kind| {
+        if let PmDcFeaturePropertyKind::References { items, .. } = kind {
+            *items = reference_list(&[4, 9]);
+        }
+    });
+    let mut second = properties[2].clone();
+    second.identity.record_ordinal = 8;
+    change(&mut second, |kind| {
+        if let PmDcFeaturePropertyKind::FilletEdgeSet { radius, edges, .. } = kind {
+            *radius = reference(51);
+            *edges = reference(10);
+        }
+    });
+    properties.push(second);
+    let members = (0..second_items.len())
+        .map(|n| u32::try_from(12 + n).expect("small"))
+        .collect::<Vec<_>>();
+    properties.push(test_property(
+        9,
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::EdgeCollection,
+            items: reference_list(&members),
+        },
+    ));
+    for (n, values) in second_items.iter().enumerate() {
+        properties.push(test_property(
+            u32::try_from(11 + n).expect("small"),
+            PmDcFeaturePropertyKind::EdgeItem {
+                index_references: PmDcU32List::new(
+                    2,
+                    if values.is_empty() {
+                        None
+                    } else {
+                        Some(crate::pmdc::PmDcListMetadata::U32([1, 0]))
+                    },
+                    values.clone(),
+                )
+                .expect("index list"),
+                index_reference_value: -1,
+                value: 0,
+            },
+        ));
+    }
+    (source, properties)
+}
+
+fn read_two<'a>(
+    source: &PmDcFeature,
+    properties: &'a [PmDcFeatureProperty],
+) -> Result<Vec<Operand<'a>>, NativeReason> {
+    operands(
+        source,
+        false,
+        |r| {
+            properties
+                .iter()
+                .find(|p| Some(p.identity.record_ordinal) == r.record_ordinal())
+        },
+        |r| Length::new(if r.index() == 50 { 2.0 } else { 3.0 }),
+    )
+}
+
+fn property_at<'a>(
+    properties: &'a [PmDcFeatureProperty],
+) -> impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty> {
+    move |r| {
+        properties
+            .iter()
+            .find(|p| Some(p.identity.record_ordinal) == r.record_ordinal())
+    }
+}
+
+#[test]
+fn fillet_operands_omit_an_edge_set_whose_items_are_all_empty() {
+    let (source, properties) = two_set_fixture(&[vec![], vec![]]);
+    let read = read_two(&source, &properties).expect("the first set closes the fillet");
+    assert_eq!(read.len(), 1);
+    assert_eq!(read[0].radius.get(), 2.0);
+    assert_eq!(empty_sets(&source, property_at(&properties)), 1);
+    let groups = [FilletGroup {
+        edges: cadmpeg_ir::features::EdgeSelection::Native(read[0].collection.id()),
+        radius: RadiusSpec::Constant {
+            radius: read[0].radius,
+        },
+        tangency_weight: None,
+    }];
+    assert!(matches(&read, &groups));
+}
+
+#[test]
+fn fillet_operands_keep_an_edge_set_with_listed_items() {
+    let (source, properties) = two_set_fixture(&[vec![9]]);
+    let read = read_two(&source, &properties).expect("two listed sets");
+    assert_eq!(read.len(), 2);
+    assert_eq!(empty_sets(&source, property_at(&properties)), 0);
+}
+
+#[test]
+fn fillet_operands_refuse_a_partly_empty_set_and_a_fillet_without_listed_edges() {
+    // One empty and one listed item in the same set.
+    let (source, properties) = two_set_fixture(&[vec![9], vec![]]);
+    assert_eq!(
+        read_two(&source, &properties).err(),
+        Some(NativeReason::EmptyItems)
+    );
+    assert_eq!(empty_sets(&source, property_at(&properties)), 0);
+    // Every set is empty.
+    let (source, mut properties) = two_set_fixture(&[vec![]]);
+    change(&mut properties[6], |kind| {
+        if let PmDcFeaturePropertyKind::EdgeItem {
+            index_references, ..
+        } = kind
+        {
+            *index_references = PmDcU32List::new(2, None, vec![]).expect("empty list");
+        }
+    });
+    assert_eq!(
+        read_two(&source, &properties).err(),
+        Some(NativeReason::EmptyItems)
+    );
+    assert_eq!(empty_sets(&source, property_at(&properties)), 2);
+}
+
+#[test]
+fn fillet_empty_edge_set_keeps_the_selection_and_radius_checks() {
+    let (source, mut properties) = two_set_fixture(&[vec![]]);
+    change(&mut properties[7], |kind| {
+        if let PmDcFeaturePropertyKind::FilletEdgeSet { selection, .. } = kind {
+            *selection = reference(8);
+        }
+    });
+    assert_eq!(
+        read_two(&source, &properties).err(),
+        Some(NativeReason::Selection)
+    );
+    let (source, properties) = two_set_fixture(&[vec![]]);
+    let zero = operands(&source, false, property_at(&properties), |r| {
+        Length::new(if r.index() == 50 { 2.0 } else { 0.0 })
+    });
+    assert_eq!(zero.err(), Some(NativeReason::Radius));
+}
+
 fn change(property: &mut PmDcFeatureProperty, edit: impl FnOnce(&mut PmDcFeaturePropertyKind)) {
     let mut kind = property.kind.clone();
     edit(&mut kind);
@@ -337,6 +483,23 @@ pub(crate) fn project_native_fixture(
     properties: Vec<PmDcFeatureProperty>,
     chamfer: bool,
 ) -> crate::feature::FeatureProjection {
+    let inventory = crate::feature::FeatureInventory {
+        features: vec![source],
+        properties,
+        labels: vec![label(chamfer)],
+        ..Default::default()
+    };
+    project_inventory_fixture(inventory, Vec::new(), &[])
+}
+
+/// Projects an inventory through the whole feature projection. The raw
+/// parameters join the document, and the neutral parameters carry their values.
+pub(crate) fn project_inventory_fixture(
+    mut inventory: crate::feature::FeatureInventory,
+    raw_parameters: Vec<crate::design::PmDcParameter>,
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+) -> crate::feature::FeatureProjection {
+    let source = inventory.features[0].clone();
     let root = crate::record_identity::Located::new(
         crate::design::scope::PmDcModelRootPayload {
             save_version_major: 19,
@@ -358,22 +521,14 @@ pub(crate) fn project_native_fixture(
         source.identity.segment_token.clone(),
         0,
     );
-    let inventory = crate::feature::FeatureInventory {
-        features: vec![source],
-        properties,
-        labels: vec![
-            label(chamfer),
-            crate::feature::tests::test_label(
-                0,
-                0,
-                crate::feature::ClassId::try_from("0".repeat(32)).expect("root class"),
-                &[101],
-            ),
-        ],
-        ..Default::default()
-    };
+    inventory.labels.push(crate::feature::tests::test_label(
+        0,
+        0,
+        crate::feature::ClassId::try_from("0".repeat(32)).expect("root class"),
+        &[101],
+    ));
     let design = crate::design::DesignInventory {
-        parameters: Vec::new(),
+        parameters: raw_parameters,
         expressions: Vec::new(),
         units: Vec::new(),
         parameter_tables: Vec::new(),
@@ -383,6 +538,7 @@ pub(crate) fn project_native_fixture(
             role: crate::design::scope::BrepSegmentRole::Document,
         }],
         issues: Vec::new(),
+        opaque_base_units: std::collections::HashMap::default(),
     };
     let sketch = crate::sketch::SketchInventory {
         sketches: Vec::new(),
@@ -390,6 +546,7 @@ pub(crate) fn project_native_fixture(
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
+        text_members: Vec::new(),
         issues: Vec::new(),
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -404,7 +561,7 @@ pub(crate) fn project_native_fixture(
         &inventory,
         &design,
         &sketch,
-        &[],
+        parameters,
         &crate::feature::ProjectedSketches {
             sketches: &[],
             entities: &[],

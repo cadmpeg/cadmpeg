@@ -432,8 +432,20 @@ that gate.
   whose axial center coordinate agrees with the repeated `fc 14` held
   world-coordinate token.
 - The complete physical `NeuPrtSld` section is retained byte-exact as opaque
-  metadata. It does not create typed appearances or material bindings. Failed
-  compressed expansions retain their existing unresolved classification.
+  metadata. Its counted neutral attributes can also provide geometric-tolerance
+  types, magnitudes, and ordered datum-reference labels through their
+  annotation-element owners. The same owner join transfers dimensional
+  characteristics, values, and supported tolerance modes. Shared datum
+  identities are inferred from equal labels. A uniquely bounded datum-leader
+  surface of the prototype or of a later definition row can select a datum face,
+  and a leader attached to a dimension uses that dimension's targets. A type-2 tolerance placement with a surface
+  attachment selects the unique bounded face of that surface for every
+  tolerance segment. An annotation dimension's two attachment links select the
+  faces of their surfaces, or for two edges each edge's face that the other
+  edge does not bound; a tolerance attached to that dimension uses the same
+  faces. Other datum-feature and geometric-target associations and tolerance
+  modifiers remain unresolved. Failed compressed
+  expansions retain their existing unresolved classification.
 - Count-selected curve frames retain their exact parameter bodies and literal
   topology references. When count evidence is necessary to fix a boundary, the
   generic Native scalar view exposes only literal zero slots as numeric tokens.

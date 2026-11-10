@@ -1832,6 +1832,13 @@ source = "spec"
 anchor = "dimension"
 
 [[record.field]]
+name = "knot_count"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "knot_count"
+
+[[record.field]]
 name = "periodic"
 offset = 15
 type = "u8"
@@ -1867,9 +1874,9 @@ source = "spec"
 anchor = "control/multiplicity/knot array attrs"
 
 [[record.gap]]
-offset = 10
-size = 5
-note = "`knot_count`, `subtype` and the flags before `periodic`; the reader takes no field here."
+offset = 14
+size = 1
+note = "`subtype`; the reader takes no field here."
 
 [[record.gap]]
 offset = 16
@@ -11998,6 +12005,141 @@ area = "Compound File Binary directory entry (§1)"
 reason = "The spec states the 128-byte entry size and names the fields but states no offset for any of them; the layout is the external CFB specification, not a cadmpeg finding."
 section = "1"
 anchor = "Directory entries are 128 bytes and carry a NUL-terminated UTF-16LE name"
+
+[[record]]
+name = "swift_gtol_display_head"
+kind = "byte"
+section = "2.1"
+anchor = "each later item opens with that class's tag"
+size = 10
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/swift/presentation.rs"
+note = "Opening bytes of each SWIFT geometric-tolerance display after the first, which declares moDisplayGtol_c."
+
+[[record.field]]
+name = "display_tag"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "u16 LE geometric-tolerance display tag `0x8008`"
+value = 0x8008
+
+[[record.field]]
+name = "display_word"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "u16 LE display word"
+
+[[record.field]]
+name = "body_word"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "u32 LE display body word `6`"
+value = 6
+
+[[record.field]]
+name = "compound_tag"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "u16 LE compound geometric-tolerance tag `0x800a`"
+value = 0x800a
+
+[[record]]
+name = "swift_feature_reference"
+kind = "byte"
+section = "2.1"
+anchor = "A `moSwiftFR_c` object references one presentation object"
+size = 10
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/swift/presentation.rs"
+note = "A tagged moSwiftFR_c object; the declared form writes the class declaration in place of the tag."
+
+[[record.field]]
+name = "class_tag"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "u16 LE `moSwiftFR_c` class tag"
+
+[[record.field]]
+name = "object_id"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "u32 LE referenced presentation object identifier"
+
+[[record.field]]
+name = "stamp"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "u32 LE reference timestamp"
+
+[[record]]
+name = "identity_reference_header"
+kind = "byte"
+section = "2.3"
+anchor = "A `moFaceRef_c` or `moEdgeRef_c` object writes a 38-byte header"
+size = 38
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/swift/presentation/faces.rs"
+note = "Header of a face or edge identity reference; the hop entries follow at +38."
+
+[[record.field]]
+name = "form"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "a 38-byte header: little-endian u32 `1`"
+value = 1
+
+[[record.field]]
+name = "zero_word"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "u32 `0`, u32 count *c*"
+value = 0
+
+[[record.field]]
+name = "hop_count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "u32 count *c*"
+
+[[record.field]]
+name = "selector"
+offset = 12
+type = "bytes[4]"
+source = "spec"
+anchor = "a four-byte selector"
+
+[[record.field]]
+name = "record_id"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "a little-endian u32 record identifier"
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "bytes[16]"
+source = "spec"
+anchor = "the 16 bytes `7d c3 94 25 ad 49 b2 54 7d c3 94 25 ad 49 b2 54`"
+value = [0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54]
+
+[[record.field]]
+name = "zero_tail"
+offset = 36
+type = "u16"
+source = "spec"
+anchor = "and u16 `0`"
+value = 0
 
 [[record]]
 name = "named_object_header"

@@ -10,23 +10,20 @@
 
 use crate::framing::node_kind::NodeKind;
 use std::collections::BTreeMap;
+use std::ops::Range;
 
 use crate::framing::read_xmt_width as read_xmt;
 use cadmpeg_parasolid::xmt::NonNullXmt;
 pub(crate) mod curve_references;
+mod nodes;
 use crate::layout::nurbs_curve_descriptor_prefix as curve_desc;
 use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;
 use crate::topology::Graph;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis},
-    pcurve::PcurveGeometry,
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
-use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::scalar::NonZeroReal;
-use cadmpeg_ir::units::FinitePoint2;
 use curve_references::CurveDescriptorReferences;
 
 /// A decoded NURBS surface and its source descriptor offset.
@@ -62,12 +59,16 @@ pub(crate) struct Pcurve {
 /// knots, dimensions, control points, and weights are skipped.
 #[cfg(test)]
 pub(crate) fn surfaces(bytes: &[u8]) -> (Vec<Surface>, Vec<CarrierRefusal>) {
-    let arrays = arrays(bytes);
-    let payloads = surface_payloads(bytes);
-    let descriptors = surface_descriptors(bytes);
     let graph = Graph::parse(bytes);
+    let lanes = scanned_lanes(bytes, &graph);
     let mut refusals = Vec::new();
-    let surfaces = decode_surfaces(&graph, &arrays, &payloads, &descriptors, &mut refusals);
+    let surfaces = decode_surfaces(
+        &graph,
+        &lanes.arrays,
+        &lanes.surface_payloads,
+        &lanes.surface_descriptors,
+        &mut refusals,
+    );
     (surfaces, refusals)
 }
 
@@ -78,6 +79,7 @@ fn decode_surfaces(
     descriptors: &BTreeMap<u32, Option<SurfaceDescriptor>>,
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Vec<Surface> {
+    use cadmpeg_parasolid::geometry::nurbs::{b_surface, Knots, SurfaceFields};
     let mut records = Vec::new();
     for node in graph.of_kind(NodeKind::BSurface) {
         let candidate = (|| {
@@ -87,123 +89,64 @@ fn decode_surfaces(
                 .payload
                 .is_none_or(|payload| payload == refs[1])
                 .then_some(())?;
-            let payload = arrays.controls(descriptor.vertices, payloads.get(&refs[1]))?;
+            let payload = payloads.get(&refs[1])?.as_ref()?;
             let poles = descriptor.u_count.checked_mul(descriptor.v_count)?;
-            let value_count = payload.value_count();
-            let stride = value_count.checked_div(poles)?;
-            let expected_values = poles.checked_mul(stride)?;
-            let compatible = descriptor.vertex_layout.map_or(
-                stride == 3 || stride == 4,
-                |(dimension, rational)| {
-                    matches!((dimension, stride, rational), (3, 3, false) | (4, 4, true))
-                },
-            );
-            if !compatible || value_count != expected_values {
-                return None;
-            }
+            let (vertex_dim, rational) = match descriptor.vertex_layout {
+                Some((dimension, rational)) => (usize::from(dimension), rational),
+                None => stride_layout(payload.value_count(), poles, 3)?,
+            };
             let u_mult = arrays
                 .u16s
                 .get(&descriptor.u_mult)?
                 .as_ref()?
-                .u16_prefix(descriptor.u_distinct)?;
+                .u16_values()?;
             let v_mult = arrays
                 .u16s
                 .get(&descriptor.v_mult)?
                 .as_ref()?
-                .u16_prefix(descriptor.v_distinct)?;
+                .u16_values()?;
             let u_knots = arrays
                 .f64s
                 .get(&descriptor.u_knots)?
                 .as_ref()?
-                .f64_prefix(descriptor.u_distinct)?;
+                .f64_values()?;
             let v_knots = arrays
                 .f64s
                 .get(&descriptor.v_knots)?
                 .as_ref()?
-                .f64_prefix(descriptor.v_distinct)?;
-            let full_u = expand_knots(
-                &u_knots,
-                &u_mult,
-                required_knot_count(descriptor.u_degree, descriptor.u_count)?,
-            )?;
-            let full_v = expand_knots(
-                &v_knots,
-                &v_mult,
-                required_knot_count(descriptor.v_degree, descriptor.v_count)?,
-            )?;
-            valid_basis(descriptor.u_degree, descriptor.u_count, &full_u)?;
-            valid_basis(descriptor.v_degree, descriptor.v_count, &full_v)?;
-            let pole_at = |index: usize| {
-                let base = index.checked_mul(stride)?;
-                let weight = NonZeroReal::new(if stride == 4 {
-                    payload.value_at(base.checked_add(3)?)?
-                } else {
-                    1.0
-                })?;
-                if descriptor
-                    .vertex_layout
-                    .is_some_and(|(_, rational)| rational)
-                    && weight.get() <= 0.0
-                {
-                    return None;
-                }
-                let point = weighted_mm_point(
-                    [
-                        payload.value_at(base)?,
-                        payload.value_at(base.checked_add(1)?)?,
-                        payload.value_at(base.checked_add(2)?)?,
-                    ],
-                    weight,
-                )?;
-                Some((point, weight))
-            };
-            let poles = if stride == 4 {
-                let mut rows = Vec::new();
-                for row in 0..descriptor.u_count {
-                    let mut points = Vec::new();
-                    for column in 0..descriptor.v_count {
-                        let (point, weight) =
-                            pole_at(row.checked_mul(descriptor.v_count)?.checked_add(column)?)?;
-                        points.push(cadmpeg_ir::geometry::nurbs::WeightedPole3 { point, weight });
-                    }
-                    rows.push(points);
-                }
-                NurbsPoleGrid::Rational { rows }
-            } else {
-                let mut rows = Vec::new();
-                for row in 0..descriptor.u_count {
-                    let mut points = Vec::new();
-                    for column in 0..descriptor.v_count {
-                        points.push(
-                            pole_at(row.checked_mul(descriptor.v_count)?.checked_add(column)?)?.0,
-                        );
-                    }
-                    rows.push(points);
-                }
-                NurbsPoleGrid::Polynomial { rows }
+                .f64_values()?;
+            let vertices = payload.values()?;
+            let fields = SurfaceFields {
+                degrees: [
+                    u32::from(descriptor.u_degree),
+                    u32::from(descriptor.v_degree),
+                ],
+                vertex_counts: [descriptor.u_count, descriptor.v_count],
+                vertex_dim,
+                rational,
+                periodic: [descriptor.u_periodic, descriptor.v_periodic],
+                vertices: &vertices,
+                knots: [
+                    Knots {
+                        count: descriptor.u_distinct,
+                        multiplicities: &u_mult,
+                        values: &u_knots,
+                    },
+                    Knots {
+                        count: descriptor.v_distinct,
+                        multiplicities: &v_mult,
+                        values: &v_knots,
+                    },
+                ],
             };
             let normal_reversed = node.common_header()?.0 == cadmpeg_ir::topology::Sense::Reversed;
-            let surface = NurbsSurface::new(
-                NurbsSurfaceAxis::new(
-                    u32::from(descriptor.u_degree),
-                    full_u,
-                    descriptor.u_periodic,
-                ),
-                NurbsSurfaceAxis::new(
-                    u32::from(descriptor.v_degree),
-                    full_v,
-                    descriptor.v_periodic,
-                ),
-                poles,
-                normal_reversed,
-            );
-            let surface = match surface {
+            let surface = match b_surface(&fields, normal_reversed) {
                 Ok(surface) => surface,
-                Err(error) => {
+                Err(refusal) => {
                     refusals.push(CarrierRefusal {
                         pos: node.pos(),
                         family: "B_SURFACE",
-                        error,
+                        refusal,
                     });
                     return None;
                 }
@@ -220,15 +163,82 @@ fn decode_surfaces(
     records
 }
 
+/// The vertex dimension and rational flag of control values with `poles`
+/// control points when the descriptor states neither: `base` values per
+/// point are polynomial, `base + 1` are homogeneous.
+fn stride_layout(value_count: usize, poles: usize, base: usize) -> Option<(usize, bool)> {
+    let stride = value_count.checked_div(poles)?;
+    (stride.checked_mul(poles)? == value_count).then_some(())?;
+    if stride == base {
+        Some((base, false))
+    } else if stride == base + 1 {
+        Some((base + 1, true))
+    } else {
+        None
+    }
+}
+
+/// The shared B-curve geometry of `descriptor` over the lanes it names. A
+/// compact descriptor states the space dimension without a rational flag;
+/// the control values then add one weight per point when rational.
+fn b_curve_geometry(
+    arrays: &Arrays<'_>,
+    controls: &BTreeMap<u32, Option<Payload<'_>>>,
+    descriptor: &CurveDescriptor,
+    control_ref: u32,
+    planar: bool,
+) -> Option<
+    Result<cadmpeg_parasolid::geometry::nurbs::BCurve, cadmpeg_parasolid::geometry::nurbs::Refusal>,
+> {
+    use cadmpeg_parasolid::geometry::nurbs::{b_curve, CurveFields, Knots};
+    let control = controls.get(&control_ref)?.as_ref()?;
+    let (vertex_dim, rational) = match descriptor.basis.rational {
+        Some(rational) => (usize::from(descriptor.basis.dimension), rational),
+        None => {
+            let space = if planar { 2 } else { 3 };
+            let layout = stride_layout(control.value_count(), descriptor.basis.poles, space)?;
+            (usize::from(descriptor.basis.dimension) == space || layout.0 == 4).then_some(layout)?
+        }
+    };
+    let multiplicities = arrays
+        .u16s
+        .get(&descriptor.references.multiplicities())?
+        .as_ref()?
+        .u16_values()?;
+    let values = arrays
+        .f64s
+        .get(&descriptor.references.knots())?
+        .as_ref()?
+        .f64_values()?;
+    let vertices = control.values()?;
+    Some(b_curve(&CurveFields {
+        degree: u32::from(descriptor.basis.degree),
+        vertex_count: descriptor.basis.poles,
+        vertex_dim,
+        rational,
+        periodic: descriptor.basis.periodic,
+        vertices: &vertices,
+        knots: Knots {
+            count: descriptor.basis.distinct,
+            multiplicities: &multiplicities,
+            values: &values,
+        },
+    }))
+}
+
 /// Decode dimension-2 `B_CURVE` families as surface parameter-space curves.
 #[cfg(test)]
 pub(crate) fn pcurves(bytes: &[u8]) -> (Vec<Pcurve>, Vec<CarrierRefusal>) {
-    let arrays = arrays(bytes);
-    let controls = curve_payloads(bytes);
-    let descriptors = curve_descriptors(bytes);
     let graph = Graph::parse(bytes);
+    let lanes = scanned_lanes(bytes, &graph);
     let mut refusals = Vec::new();
-    let pcurves = decode_pcurves(&graph, &arrays, &controls, &descriptors, &mut refusals);
+    let pcurves = decode_pcurves(
+        &graph,
+        &lanes.arrays,
+        &lanes.curve_payloads,
+        &lanes.curve_descriptors,
+        &mut refusals,
+    );
     (pcurves, refusals)
 }
 
@@ -239,6 +249,7 @@ fn decode_pcurves(
     descriptors: &BTreeMap<u32, Option<CurveDescriptor>>,
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Vec<Pcurve> {
+    use cadmpeg_parasolid::geometry::nurbs::BCurve;
     let mut records = Vec::new();
     for node in graph.of_kind(NodeKind::BCurve) {
         let candidate = (|| {
@@ -246,90 +257,24 @@ fn decode_pcurves(
             let descriptor = descriptors.get(&refs[0])?.as_ref()?;
             matches!(
                 (descriptor.basis.dimension, descriptor.basis.rational),
-                (2, None | Some(false)) | (3, Some(true))
+                (2, _) | (3, Some(true))
             )
             .then_some(())?;
-            let control = arrays.controls(descriptor.vertices, controls.get(&refs[1]))?;
-            let value_count = control.value_count();
-            let stride = value_count.checked_div(descriptor.basis.poles)?;
-            let expected_values = descriptor.basis.poles.checked_mul(stride)?;
-            if !(stride == 2 || stride == 3)
-                || value_count != expected_values
-                || (descriptor.basis.rational.is_some()
-                    && stride != usize::from(descriptor.basis.dimension))
-            {
-                return None;
-            }
-            let mult = arrays
-                .u16s
-                .get(&descriptor.references.multiplicities())?
-                .as_ref()?
-                .u16_prefix(descriptor.basis.distinct)?;
-            let distinct = arrays
-                .f64s
-                .get(&descriptor.references.knots())?
-                .as_ref()?
-                .f64_prefix(descriptor.basis.distinct)?;
-            let knots = expand_knots(
-                &distinct,
-                &mult,
-                required_knot_count(descriptor.basis.degree, descriptor.basis.poles)?,
-            )?;
-            valid_basis(descriptor.basis.degree, descriptor.basis.poles, &knots)?;
-            let pole_at = |index: usize| {
-                let base = index.checked_mul(stride)?;
-                let weight = NonZeroReal::new(if stride == 3 {
-                    control.value_at(base.checked_add(2)?)?
-                } else {
-                    1.0
-                })?;
-                if descriptor.basis.rational == Some(true) && weight.get() <= 0.0 {
-                    return None;
-                }
-                let point = weighted_point2(
-                    [
-                        control.value_at(base)?,
-                        control.value_at(base.checked_add(1)?)?,
-                    ],
-                    weight,
-                )?;
-                Some((point, weight))
-            };
-            let poles = if stride == 3 {
-                let mut points = Vec::new();
-                for index in 0..descriptor.basis.poles {
-                    let (point, weight) = pole_at(index)?;
-                    points.push(cadmpeg_ir::geometry::pcurve::WeightedPole2 { point, weight });
-                }
-                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points }
-            } else {
-                let mut points = Vec::new();
-                for index in 0..descriptor.basis.poles {
-                    points.push(pole_at(index)?.0);
-                }
-                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points }
-            };
-            let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
-                u32::from(descriptor.basis.degree),
-                knots,
-                poles,
-                descriptor.basis.periodic,
-            );
-            let nurbs = match nurbs {
-                Ok(nurbs) => nurbs,
-                Err(error) => {
+            match b_curve_geometry(arrays, controls, descriptor, refs[1], true)? {
+                Ok(BCurve::Planar(nurbs)) => Some(Pcurve {
+                    pos: node.pos(),
+                    geometry: PcurveGeometry::Nurbs { nurbs },
+                }),
+                Ok(BCurve::Spatial(_)) => None,
+                Err(refusal) => {
                     refusals.push(CarrierRefusal {
                         pos: node.pos(),
                         family: "B_CURVE pcurve",
-                        error,
+                        refusal,
                     });
-                    return None;
+                    None
                 }
-            };
-            Some(Pcurve {
-                pos: node.pos(),
-                geometry: PcurveGeometry::Nurbs { nurbs },
-            })
+            }
         })();
         if let Some(record) = candidate {
             records.push(record);
@@ -344,12 +289,16 @@ fn decode_pcurves(
 /// knots, dimensions, control points, and weights are skipped.
 #[cfg(test)]
 pub(crate) fn curves(bytes: &[u8]) -> (Vec<Curve>, Vec<CarrierRefusal>) {
-    let arrays = arrays(bytes);
-    let controls = curve_payloads(bytes);
-    let descriptors = curve_descriptors(bytes);
     let graph = Graph::parse(bytes);
+    let lanes = scanned_lanes(bytes, &graph);
     let mut refusals = Vec::new();
-    let curves = decode_curves(&graph, &arrays, &controls, &descriptors, &mut refusals);
+    let curves = decode_curves(
+        &graph,
+        &lanes.arrays,
+        &lanes.curve_payloads,
+        &lanes.curve_descriptors,
+        &mut refusals,
+    );
     (curves, refusals)
 }
 
@@ -360,97 +309,32 @@ fn decode_curves(
     descriptors: &BTreeMap<u32, Option<CurveDescriptor>>,
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Vec<Curve> {
+    use cadmpeg_parasolid::geometry::nurbs::BCurve;
     let mut records = Vec::new();
     for node in graph.of_kind(NodeKind::BCurve) {
         let candidate = (|| {
             let refs = node.compact_tail_references::<2>()?;
             let descriptor = descriptors.get(&refs[0])?.as_ref()?;
-            matches!(descriptor.basis.dimension, 3 | 4).then_some(())?;
-            let control = arrays.controls(descriptor.vertices, controls.get(&refs[1]))?;
-            let value_count = control.value_count();
-            let stride = value_count.checked_div(descriptor.basis.poles)?;
-            let expected_values = descriptor.basis.poles.checked_mul(stride)?;
-            let compatible = match descriptor.basis.rational {
-                Some(rational) => matches!(
-                    (descriptor.basis.dimension, stride, rational),
-                    (3, 3, false) | (4, 4, true)
-                ),
-                None => matches!((descriptor.basis.dimension, stride), (3, 3 | 4) | (4, 4)),
-            };
-            if !compatible || value_count != expected_values {
-                return None;
-            }
-            let mult = arrays
-                .u16s
-                .get(&descriptor.references.multiplicities())?
-                .as_ref()?
-                .u16_prefix(descriptor.basis.distinct)?;
-            let distinct = arrays
-                .f64s
-                .get(&descriptor.references.knots())?
-                .as_ref()?
-                .f64_prefix(descriptor.basis.distinct)?;
-            let knots = expand_knots(
-                &distinct,
-                &mult,
-                required_knot_count(descriptor.basis.degree, descriptor.basis.poles)?,
-            )?;
-            valid_basis(descriptor.basis.degree, descriptor.basis.poles, &knots)?;
-            let pole_at = |index: usize| {
-                let base = index.checked_mul(stride)?;
-                let weight = NonZeroReal::new(if stride == 4 {
-                    control.value_at(base.checked_add(3)?)?
-                } else {
-                    1.0
-                })?;
-                if descriptor.basis.rational == Some(true) && weight.get() <= 0.0 {
-                    return None;
-                }
-                let point = weighted_mm_point(
-                    [
-                        control.value_at(base)?,
-                        control.value_at(base.checked_add(1)?)?,
-                        control.value_at(base.checked_add(2)?)?,
-                    ],
-                    weight,
-                )?;
-                Some((point, weight))
-            };
-            let poles = if stride == 4 {
-                let mut points = Vec::new();
-                for index in 0..descriptor.basis.poles {
-                    let (point, weight) = pole_at(index)?;
-                    points.push(cadmpeg_ir::geometry::nurbs::WeightedPole3 { point, weight });
-                }
-                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points }
-            } else {
-                let mut points = Vec::new();
-                for index in 0..descriptor.basis.poles {
-                    points.push(pole_at(index)?.0);
-                }
-                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points }
-            };
-            let curve = NurbsCurve::new(
-                u32::from(descriptor.basis.degree),
-                knots,
-                poles,
-                descriptor.basis.periodic,
-            );
-            let curve = match curve {
-                Ok(curve) => curve,
-                Err(error) => {
+            matches!(
+                (descriptor.basis.dimension, descriptor.basis.rational),
+                (3, None | Some(false)) | (4, _)
+            )
+            .then_some(())?;
+            match b_curve_geometry(arrays, controls, descriptor, refs[1], false)? {
+                Ok(BCurve::Spatial(curve)) => Some(Curve {
+                    pos: node.pos(),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                }),
+                Ok(BCurve::Planar(_)) => None,
+                Err(refusal) => {
                     refusals.push(CarrierRefusal {
                         pos: node.pos(),
                         family: "B_CURVE",
-                        error,
+                        refusal,
                     });
-                    return None;
+                    None
                 }
-            };
-            Some(Curve {
-                pos: node.pos(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-            })
+            }
         })();
         if let Some(record) = candidate {
             records.push(record);
@@ -469,11 +353,22 @@ pub(crate) struct Parsed {
     pub(crate) surfaces: Vec<Surface>,
     pub(crate) curves: Vec<Curve>,
     pub(crate) pcurves: Vec<Pcurve>,
-    /// Records of the right family whose lanes the IR carrier refused.
+    /// Records of the right family that state no carrier.
     pub(crate) refusals: Vec<CarrierRefusal>,
+    /// Carriers whose control values do not resolve by reference.
+    pub(crate) unresolved_controls: Vec<UnresolvedControls>,
 }
 
-/// A carrier record of the right family whose lanes the IR carrier refused.
+/// A `B_SURFACE` or `B_CURVE` whose control values do not resolve by reference.
+#[derive(Debug, Clone)]
+pub(crate) struct UnresolvedControls {
+    /// Byte offset of the carrier record within the stream.
+    pub(crate) pos: usize,
+    /// Carrier family the record states.
+    pub(crate) family: &'static str,
+}
+
+/// A carrier record of the right family that states no carrier.
 #[derive(Debug, Clone)]
 pub(crate) struct CarrierRefusal {
     /// Byte offset of the descriptor record within the stream.
@@ -481,54 +376,159 @@ pub(crate) struct CarrierRefusal {
     /// Carrier family the record states.
     pub(crate) family: &'static str,
     /// The carrier's refusal.
-    pub(crate) error: NurbsError,
+    pub(crate) refusal: cadmpeg_parasolid::geometry::nurbs::Refusal,
+}
+
+impl CarrierRefusal {
+    /// The loss of this record in Parasolid stream `si`.
+    pub(crate) fn loss(&self, si: usize) -> cadmpeg_ir::report::loss::LossNote {
+        use crate::loss::NxLossCode;
+        use cadmpeg_parasolid::geometry::nurbs::Refusal;
+        let record = format!("parasolid#{si} {} at byte {}", self.family, self.pos);
+        let (code, cause) = match &self.refusal {
+            Refusal::Lanes(error) => {
+                return NxLossCode::CarrierLanesUnpaired
+                    .note(format!("{record} states no carrier: {error}"))
+            }
+            Refusal::NonpositiveWeight => (
+                NxLossCode::CarrierSplineWeightNonpositive,
+                "stores a control-point weight that is zero or negative",
+            ),
+            Refusal::Fields => (
+                NxLossCode::CarrierSplineFieldsInconsistent,
+                "stores a dimension, count, or multiplicity that contradicts its fields or arrays",
+            ),
+        };
+        code.note(format!("{record} {cause}; the carrier is not emitted."))
+    }
 }
 
 pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
-    let arrays = arrays(bytes);
-    let surface_payloads = surface_payloads(bytes);
-    let curve_payloads = curve_payloads(bytes);
-    let surface_descriptors = surface_descriptors(bytes);
-    let curve_descriptors = curve_descriptors(bytes);
+    let lanes = cadmpeg_parasolid::records::PrimaryRecords::read(bytes)
+        .ok()
+        .flatten()
+        .filter(|primary| primary.is_terminated() && nodes::has_lane_fields(primary))
+        .map_or_else(
+            || scanned_lanes(bytes, graph),
+            |primary| nodes::lanes(bytes, &primary),
+        );
     let mut refusals = Vec::new();
     Parsed {
         surfaces: decode_surfaces(
             graph,
-            &arrays,
-            &surface_payloads,
-            &surface_descriptors,
+            &lanes.arrays,
+            &lanes.surface_payloads,
+            &lanes.surface_descriptors,
             &mut refusals,
         ),
         curves: decode_curves(
             graph,
-            &arrays,
-            &curve_payloads,
-            &curve_descriptors,
+            &lanes.arrays,
+            &lanes.curve_payloads,
+            &lanes.curve_descriptors,
             &mut refusals,
         ),
         pcurves: decode_pcurves(
             graph,
-            &arrays,
-            &curve_payloads,
-            &curve_descriptors,
+            &lanes.arrays,
+            &lanes.curve_payloads,
+            &lanes.curve_descriptors,
             &mut refusals,
         ),
         refusals,
+        unresolved_controls: unresolved_controls(graph, &lanes),
     }
 }
 
-/// The Euclidean pole of a homogeneous pole in millimetres, absent when a
-/// coordinate is not finite.
-fn weighted_mm_point(pole: [f64; 3], weight: NonZeroReal) -> Option<FinitePoint3> {
-    let [x, y, z] = pole.map(|value| value / weight.get() * 1000.0);
-    FinitePoint3::new(Point3::new(x, y, z))
+fn unresolved_controls(graph: &Graph, lanes: &Lanes<'_>) -> Vec<UnresolvedControls> {
+    [
+        (NodeKind::BSurface, "B_SURFACE", &lanes.surface_payloads),
+        (NodeKind::BCurve, "B_CURVE", &lanes.curve_payloads),
+    ]
+    .into_iter()
+    .flat_map(|(kind, family, payloads)| {
+        graph.of_kind(kind).filter_map(move |node| {
+            let [_, data] = node.compact_tail_references::<2>()?;
+            matches!(payloads.get(&data), Some(None)).then(|| UnresolvedControls {
+                pos: node.pos(),
+                family,
+            })
+        })
+    })
+    .collect()
 }
 
-/// The Euclidean parameter-space pole of a homogeneous pole, absent when a
-/// coordinate is not finite.
-fn weighted_point2(pole: [f64; 2], weight: NonZeroReal) -> Option<FinitePoint2> {
-    let [u, v] = pole.map(|value| value / weight.get());
-    FinitePoint2::new(Point2::new(u, v))
+/// The record lanes the NURBS decoders join.
+struct Lanes<'a> {
+    arrays: Arrays<'a>,
+    surface_payloads: RecordIndex<Payload<'a>>,
+    curve_payloads: RecordIndex<Payload<'a>>,
+    surface_descriptors: RecordIndex<SurfaceDescriptor>,
+    curve_descriptors: RecordIndex<CurveDescriptor>,
+}
+
+fn scanned_lanes<'a>(bytes: &'a [u8], graph: &Graph) -> Lanes<'a> {
+    let surface_descriptors = surface_descriptors(bytes);
+    let curve_descriptors = curve_descriptors(bytes);
+    Lanes {
+        arrays: arrays(bytes),
+        surface_payloads: referenced_payloads(
+            graph,
+            NodeKind::BSurface,
+            &surface_payloads(bytes),
+            |nurbs| surface_descriptors.get(&nurbs)?.as_ref()?.vertices,
+        ),
+        curve_payloads: referenced_payloads(
+            graph,
+            NodeKind::BCurve,
+            &curve_payloads(bytes),
+            |nurbs| curve_descriptors.get(&nurbs)?.as_ref()?.vertices,
+        ),
+        surface_descriptors,
+        curve_descriptors,
+    }
+}
+
+/// Keep a scanned payload for each carrier whose descriptor names the
+/// payload's control-value node.
+fn referenced_payloads<'a>(
+    graph: &Graph,
+    kind: NodeKind,
+    scanned: &RecordIndex<Payload<'a>>,
+    vertices: impl Fn(u32) -> Option<u32>,
+) -> RecordIndex<Payload<'a>> {
+    carrier_payloads(graph.of_kind(kind).filter_map(|node| {
+        let [nurbs, data] = node.compact_tail_references::<2>()?;
+        let payload = vertices(nurbs).and_then(|vertices| {
+            NonNullXmt::try_from(vertices).ok()?;
+            scanned
+                .get(&data)?
+                .filter(|payload| payload.vertices == vertices)
+        });
+        Some((data, payload))
+    }))
+}
+
+/// Index control values by carrier `data` identity. An identity is ambiguous
+/// when one of its carriers resolves no payload or a different payload.
+fn carrier_payloads<'a>(
+    carriers: impl IntoIterator<Item = (u32, Option<Payload<'a>>)>,
+) -> RecordIndex<Payload<'a>> {
+    let mut index = RecordIndex::new();
+    for (data, payload) in carriers {
+        index
+            .entry(data)
+            .and_modify(|entry: &mut Option<Payload<'a>>| {
+                if entry
+                    .zip(payload)
+                    .is_none_or(|(current, payload)| current.raw != payload.raw)
+                {
+                    *entry = None;
+                }
+            })
+            .or_insert(payload);
+    }
+    index
 }
 
 type RecordIndex<T> = BTreeMap<u32, Option<T>>;
@@ -547,24 +547,6 @@ fn insert_if_vacant<T>(records: &mut RecordIndex<T>, reference: u32, value: Opti
 struct Arrays<'bytes> {
     u16s: RecordIndex<ArrayValues<'bytes>>,
     f64s: RecordIndex<ArrayValues<'bytes>>,
-    vertices: RecordIndex<Payload<'bytes>>,
-}
-
-impl<'bytes> Arrays<'bytes> {
-    /// A descriptor's vertex array when it can be identified, otherwise the values at the
-    /// payload's fixed position. A form record between the payload and its vertex array moves
-    /// the values away from that position.
-    fn controls(
-        &self,
-        vertices: u32,
-        payload: Option<&Option<Payload<'bytes>>>,
-    ) -> Option<Payload<'bytes>> {
-        self.vertices
-            .get(&vertices)
-            .copied()
-            .flatten()
-            .or_else(|| payload.copied().flatten())
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -576,9 +558,23 @@ enum ArrayValues<'a> {
 struct ArrayRecord<'a> {
     reference: u32,
     values: ArrayValues<'a>,
+    /// The record from its type to its last value.
+    extent: Range<usize>,
 }
 
 impl ArrayValues<'_> {
+    fn u16_values(&self) -> Option<Vec<u16>> {
+        let ArrayValues::U16(raw) = self else {
+            return None;
+        };
+        self.u16_prefix(raw.len() / 2)
+    }
+    fn f64_values(&self) -> Option<Vec<f64>> {
+        let ArrayValues::F64(raw) = self else {
+            return None;
+        };
+        self.f64_prefix(raw.len() / 8)
+    }
     fn u16_prefix(&self, count: usize) -> Option<Vec<u16>> {
         let ArrayValues::U16(raw) = self else {
             return None;
@@ -626,34 +622,7 @@ fn arrays(bytes: &[u8]) -> Arrays<'_> {
             }
         }
     }
-    Arrays {
-        u16s,
-        f64s,
-        vertices: vertex_arrays(bytes),
-    }
-}
-
-fn vertex_arrays(bytes: &[u8]) -> RecordIndex<Payload<'_>> {
-    let records = bytes
-        .len()
-        .checked_sub(7)
-        .into_iter()
-        .flat_map(|last| 0..last)
-        .map(|pos| vertex_array_at(bytes, pos));
-    unique_records(records)
-}
-
-fn vertex_array_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>)> {
-    (bytes.get(pos..pos + 2) == Some(&[0, 45])).then_some(())?;
-    let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
-    let count = usize::try_from(View::u32_be_at(bytes, pos + 2 + escape)?).ok()?;
-    (count > 0).then_some(())?;
-    let (reference, reference_len) = read_xmt(bytes, pos + 6 + escape)?;
-    NonNullXmt::try_from(reference).ok()?;
-    let data = pos + 6 + escape + reference_len;
-    let raw = bytes.get(data..data.checked_add(count.checked_mul(8)?)?)?;
-    finite_f64_bytes(raw)?;
-    Some((reference, Payload { raw }))
+    Arrays { u16s, f64s }
 }
 
 fn array_record_at(bytes: &[u8], pos: usize) -> Option<ArrayRecord<'_>> {
@@ -678,13 +647,19 @@ fn array_record_at(bytes: &[u8], pos: usize) -> Option<ArrayRecord<'_>> {
             finite_f64_bytes(raw)?;
             ArrayValues::F64(raw)
         };
-        Some(ArrayRecord { reference, values })
+        Some(ArrayRecord {
+            reference,
+            values,
+            extent: pos..end,
+        })
     }
 }
 
 #[derive(Clone, Copy)]
 struct Payload<'a> {
     raw: &'a [u8],
+    /// The identity of the type-45 node that holds the values.
+    vertices: u32,
 }
 
 impl Payload<'_> {
@@ -695,6 +670,26 @@ impl Payload<'_> {
     fn value_at(self, index: usize) -> Option<f64> {
         View::f64_be_at(self.raw, index.checked_mul(8)?)
     }
+
+    fn values(self) -> Option<Vec<f64>> {
+        (0..self.value_count())
+            .map(|index| self.value_at(index))
+            .collect()
+    }
+}
+
+/// The extents of the counted lanes the unframed scan reads: each type-127
+/// and type-128 array from its type, and each type-45 lane after a type-125
+/// or type-135 node from its count.
+pub(crate) fn counted_lane_extents(bytes: &[u8]) -> Vec<Range<usize>> {
+    (0..bytes.len())
+        .filter_map(|pos| {
+            array_record_at(bytes, pos)
+                .map(|record| record.extent)
+                .or_else(|| surface_payload_at(bytes, pos).map(|(_, _, lanes)| lanes))
+                .or_else(|| curve_payload_at(bytes, pos).map(|(_, _, lanes)| lanes))
+        })
+        .collect()
 }
 
 fn surface_payloads(bytes: &[u8]) -> RecordIndex<Payload<'_>> {
@@ -707,7 +702,7 @@ fn surface_payloads(bytes: &[u8]) -> RecordIndex<Payload<'_>> {
     unique_records(records)
 }
 
-fn surface_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>, usize)> {
+fn surface_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>, Range<usize>)> {
     {
         (bytes.get(pos..pos + 2) == Some(&[0, 125])).then_some(())?;
         let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
@@ -727,12 +722,12 @@ fn surface_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>, usi
         (!nested_same_record).then_some(())?;
         let count = usize::try_from(View::u32_be_at(bytes, count_at)?).ok()?;
         (count > 0).then_some(())?;
-        let (_, first_len) = read_xmt(bytes, count_at + 4)?;
+        let (vertices, first_len) = read_xmt(bytes, count_at + 4)?;
         let data = count_at + 4 + first_len;
         let end = data.checked_add(count.checked_mul(8)?)?;
         let raw = bytes.get(data..end)?;
         finite_f64_bytes(raw)?;
-        Some((xmt, Payload { raw }, end))
+        Some((xmt, Payload { raw, vertices }, count_at..end))
     }
 }
 
@@ -746,7 +741,7 @@ fn curve_payloads(bytes: &[u8]) -> RecordIndex<Payload<'_>> {
     unique_records(records)
 }
 
-fn curve_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>, usize)> {
+fn curve_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>, Range<usize>)> {
     {
         (bytes.get(pos..pos + 2) == Some(&[0, 135])).then_some(())?;
         let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
@@ -757,12 +752,12 @@ fn curve_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>, usize
         let count_at = pos + 9 + shift + count_escape;
         let count = usize::try_from(View::u32_be_at(bytes, count_at)?).ok()?;
         (count > 0).then_some(())?;
-        let (_, control_ref_len) = read_xmt(bytes, count_at + 4)?;
+        let (vertices, control_ref_len) = read_xmt(bytes, count_at + 4)?;
         let data = count_at + 4 + control_ref_len;
         let end = data.checked_add(count.checked_mul(8)?)?;
         let raw = bytes.get(data..end)?;
         finite_f64_bytes(raw)?;
-        Some((xmt, Payload { raw }, end))
+        Some((xmt, Payload { raw, vertices }, count_at..end))
     }
 }
 
@@ -794,9 +789,11 @@ struct SurfaceDescriptor {
     v_mult: u32,
     u_knots: u32,
     v_knots: u32,
+    /// The identity of the type-45 control-value node; absent in the short
+    /// layout, whose `bspline_vertices` encoding is unestablished.
+    vertices: Option<u32>,
     payload: Option<u32>,
     vertex_layout: Option<(u16, bool)>,
-    vertices: u32,
 }
 
 fn surface_descriptors(bytes: &[u8]) -> RecordIndex<SurfaceDescriptor> {
@@ -807,7 +804,7 @@ fn surface_descriptors(bytes: &[u8]) -> RecordIndex<SurfaceDescriptor> {
         .into_iter()
         .flat_map(|last| 0..last)
     {
-        let Some((xmt, mut descriptor, _)) = surface_descriptor_at(bytes, pos) else {
+        let Some((xmt, descriptor, _)) = surface_descriptor_at(bytes, pos) else {
             continue;
         };
 
@@ -815,7 +812,6 @@ fn surface_descriptors(bytes: &[u8]) -> RecordIndex<SurfaceDescriptor> {
             let Some(current) = state.take() else {
                 continue;
             };
-            descriptor.vertices = current.vertices;
 
             *state = if current == descriptor {
                 None
@@ -890,7 +886,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
         let (payload, payload_len) = read_enveloped_xmt(bytes, payload_at)?;
         (payload > 1).then_some(())?;
         (
-            u32::from(View::u16_be_at(bytes, pos + 34 + shift)?),
+            None,
             u32::from(View::u16_be_at(bytes, pos + 36 + shift)?),
             u32::from(View::u16_be_at(bytes, pos + 38 + shift)?),
             u32::from(View::u16_be_at(bytes, pos + 40 + shift)?),
@@ -911,7 +907,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
             let (payload, payload_len) = read_enveloped_xmt(bytes, payload_at)?;
             (payload > 1).then_some(())?;
             (
-                refs[0],
+                Some(refs[0]),
                 refs[1],
                 refs[2],
                 refs[3],
@@ -933,7 +929,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
                 View::u16_be_at(bytes, pos + surf_desc::DIMENSION + shift)?,
                 logical_at(bytes, pos + surf_desc::RATIONAL + shift)?,
             ));
-            (refs[0], refs[1], refs[2], refs[3], refs[4], None, at)
+            (Some(refs[0]), refs[1], refs[2], refs[3], refs[4], None, at)
         }
     };
     Some((
@@ -953,9 +949,9 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
             v_mult,
             u_knots,
             v_knots,
+            vertices,
             payload,
             vertex_layout,
-            vertices,
         },
         end,
     ))
@@ -964,8 +960,10 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
 #[derive(Clone, PartialEq, Eq)]
 struct CurveDescriptor {
     basis: CurveBasis,
+    /// The identity of the type-45 control-value node; absent in the compact
+    /// layout, whose `bspline_vertices` encoding is unestablished.
+    vertices: Option<u32>,
     references: CurveDescriptorReferences,
-    vertices: u32,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -987,7 +985,7 @@ fn curve_descriptors(bytes: &[u8]) -> RecordIndex<CurveDescriptor> {
         .into_iter()
         .flat_map(|last| 0..last)
     {
-        let Some((xmt, mut descriptor, _)) = curve_descriptor_at(bytes, pos, true) else {
+        let Some((xmt, descriptor, _)) = curve_descriptor_at(bytes, pos, true) else {
             continue;
         };
 
@@ -995,11 +993,11 @@ fn curve_descriptors(bytes: &[u8]) -> RecordIndex<CurveDescriptor> {
             let Some(current) = state.take() else {
                 continue;
             };
-            descriptor.vertices = current.vertices;
 
             *state = if current == descriptor {
                 None
             } else if current.basis == descriptor.basis
+                && current.vertices == descriptor.vertices
                 && current.references.multiplicities() == descriptor.references.multiplicities()
                 && current.references.knots() == descriptor.references.knots()
             {
@@ -1070,8 +1068,8 @@ fn curve_descriptor_at(
                         knot_type,
                         periodic,
                     },
+                    vertices: Some(references[0].into()),
                     references: CurveDescriptorReferences::Status(references),
-                    vertices: references[0].into(),
                 },
                 at,
             ));
@@ -1094,8 +1092,8 @@ fn curve_descriptor_at(
                 knot_type,
                 periodic,
             },
+            vertices: None,
             references: CurveDescriptorReferences::Compact([mult, knots]),
-            vertices: u32::from(View::u16_be_at(bytes, pos + 21 + shift)?),
         },
         pos + 23 + shift + mult_len + knots_len,
     ))
@@ -1129,44 +1127,6 @@ fn logical_at(bytes: &[u8], at: usize) -> Option<bool> {
 
 fn valid_knot_type(value: u8) -> bool {
     (1..=6).contains(&value)
-}
-
-fn required_knot_count(degree: u16, control_count: usize) -> Option<usize> {
-    control_count
-        .checked_add(usize::from(degree))?
-        .checked_add(1)
-}
-
-fn expand_knots(
-    distinct: &[f64],
-    multiplicities: &[u16],
-    required_count: usize,
-) -> Option<Vec<f64>> {
-    if distinct.len() != multiplicities.len() {
-        return None;
-    }
-
-    let count = multiplicities.iter().try_fold(0usize, |total, &count| {
-        (count > 0).then_some(())?;
-        total.checked_add(usize::from(count))
-    })?;
-    if count != required_count {
-        return None;
-    }
-
-    let mut out = Vec::new();
-    for (&value, &count) in distinct.iter().zip(multiplicities) {
-        for _ in 0..usize::from(count) {
-            out.push(value);
-        }
-    }
-    Some(out)
-}
-
-fn valid_basis(degree: u16, control_count: usize, knots: &[f64]) -> Option<()> {
-    let degree = usize::from(degree);
-    let required_knots = control_count.checked_add(degree)?.checked_add(1)?;
-    (control_count > degree && knots.len() == required_knots).then_some(())
 }
 
 #[cfg(test)]

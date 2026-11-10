@@ -16,6 +16,7 @@ use cadmpeg_core::{
 use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
 use std::collections::{HashMap, HashSet};
 
+mod adjacency;
 mod archive;
 pub(in crate::feature) mod geometry;
 pub(crate) mod historical;
@@ -27,6 +28,7 @@ pub(super) struct EdgeInventory {
     pub(super) generated_sources: Option<HashMap<u32, SourceNames>>,
     pub(super) generated_sources_complete: bool,
     pub(super) historical: HashMap<(String, u32), historical::SelectedEdge>,
+    pub(super) faces: HashMap<(String, u32), super::face_selection::SelectedFace>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -110,7 +112,7 @@ fn generated_candidate(record: &Record) -> bool {
 
 /// The leading class of an `NMx` naming attribute in a schema-38, 40, or 42
 /// carrier, for an active record or an `End-of-ASM-History-Section` snapshot.
-fn legacy_family(record: &Record) -> Option<&str> {
+pub(super) fn legacy_family(record: &Record) -> Option<&str> {
     if record.name == "End-of-ASM-History-Section" {
         match record.tokens.first()? {
             Token::SubIdent(family) => Some(family.as_str()),
@@ -127,7 +129,11 @@ pub(super) const fn legacy_schema(schema: u32) -> bool {
     matches!(schema, 38 | 40 | 42)
 }
 
-fn source_names(record: &Record, fields: &[&Token], schema: u32) -> Option<(i64, HashSet<u32>)> {
+pub(super) fn source_names(
+    record: &Record,
+    fields: &[&Token],
+    schema: u32,
+) -> Option<(i64, HashSet<u32>)> {
     let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), rest @ ..] =
         fields
     else {
@@ -187,6 +193,18 @@ fn source_names(record: &Record, fields: &[&Token], schema: u32) -> Option<(i64,
     Some((*owner, sources))
 }
 
+/// The family of a generated-name attribute that `source_names` admits.
+pub(super) fn generated_family<'a>(record: &'a Record, fields: &[&'a Token]) -> Option<&'a str> {
+    if custom(record) {
+        match fields.get(5)? {
+            Token::Str(family) => Some(family.as_str()),
+            _ => None,
+        }
+    } else {
+        legacy_family(record)
+    }
+}
+
 const SELECTOR_TYPE: [u8; 16] = crate::pmdc::inventor_id(0x9087_4d53);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -198,12 +216,9 @@ struct Selector {
 
 /// Whether the direct edge selector of a `PmDc` segment major version stores
 /// the qualifier word between its topology and naming-form words.
-const fn selector_has_qualifier(version: u8) -> bool {
-    version != SELECTOR_WITHOUT_QUALIFIER
+pub(super) const fn selector_has_qualifier(version: u8) -> bool {
+    !matches!(version, 19..=21)
 }
-
-/// The `PmDc` segment major version whose direct edge selector has no qualifier word.
-const SELECTOR_WITHOUT_QUALIFIER: u8 = 19;
 
 #[cfg(test)]
 fn selector(
@@ -218,7 +233,8 @@ fn selector(
     )?;
     Ok(
         historical::parse(&ctx, payload, version)?.and_then(|stored| {
-            let [generator] = stored.generators.as_slice() else {
+            let ([generator], []) = (stored.generators.as_slice(), stored.secondary.as_slice())
+            else {
                 return None;
             };
             Some(Selector {
@@ -238,7 +254,7 @@ pub(super) struct EdgeName {
     role: i64,
 }
 
-fn values(record: &Record) -> Vec<&Token> {
+pub(super) fn values(record: &Record) -> Vec<&Token> {
     record.chunks().collect()
 }
 
@@ -249,13 +265,22 @@ fn custom(record: &Record) -> bool {
                 if family == "ATTRIB_CUSTOM" && base == "attrib"))
 }
 
-fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
+/// Whether a carrier schema stores the matching attribute `NMx_Matched_Entity`
+/// in the class-chain form. Schema 43 stores it in the form of schemas 38,
+/// 40, and 42, with its own schema number as the stored schema.
+pub(super) const fn class_chain_matched_schema(schema: u32) -> bool {
+    legacy_schema(schema) || schema == 43
+}
+
+/// A matching attribute with its qualifier. Qualifier 0 identifies an edge and
+/// qualifier 1 identifies a face.
+pub(super) fn matched_qualified(record: &Record, schema: u32) -> Option<(u32, u32, i64, i64)> {
     let fields = values(record);
-    let (owner, source, key) = if legacy_schema(schema) {
+    let (owner, source, key, qualifier) = if class_chain_matched_schema(schema) {
         if legacy_family(record)? != "NMx_Matched_Entity" {
             return None;
         }
-        let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Long(stored_schema), Token::Long(1), Token::Long(source), Token::Long(-1), Token::Long(key), Token::Long(0)] =
+        let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Long(stored_schema), Token::Long(1), Token::Long(source), Token::Long(-1), Token::Long(key), Token::Long(qualifier)] =
             fields.as_slice()
         else {
             return None;
@@ -263,12 +288,12 @@ fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
         if *stored_schema != i64::from(schema) {
             return None;
         }
-        (owner, source, key)
+        (owner, source, key, qualifier)
     } else {
         if !custom(record) {
             return None;
         }
-        let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Str(family), Token::Long(1), Token::Long(44), Token::Long(1), Token::Long(source), Token::Long(-1), Token::Long(key), Token::Long(0)] =
+        let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Str(family), Token::Long(1), Token::Long(44), Token::Long(1), Token::Long(source), Token::Long(-1), Token::Long(key), Token::Long(qualifier)] =
             fields.as_slice()
         else {
             return None;
@@ -276,7 +301,7 @@ fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
         if family != "INV_NMX_MATCHED_ATTRIB" {
             return None;
         }
-        (owner, source, key)
+        (owner, source, key, qualifier)
     };
     if *owner < 0 {
         return None;
@@ -285,7 +310,13 @@ fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
         u32::try_from(*source).ok()?,
         u32::try_from(*key).ok()?,
         *owner,
+        *qualifier,
     ))
+}
+
+fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
+    let (source, key, owner, qualifier) = matched_qualified(record, schema)?;
+    (qualifier == 0).then_some((source, key, owner))
 }
 
 fn generated(record: &Record, schema: u32) -> Option<(i64, EdgeName)> {
@@ -430,6 +461,7 @@ pub(super) fn inventory(
     }
     let mut selectors = Vec::new();
     let mut stored_selectors = Vec::new();
+    let mut face_selectors = Vec::new();
     let mut sample_geometry = false;
     let mut has_flange = false;
     let mut tokens = HashSet::new();
@@ -457,11 +489,63 @@ pub(super) fn inventory(
                 .map(|record| (record.ordinal, record.type_id)),
         );
         let mut selector_sources = HashMap::<u32, usize>::new();
+        let mut record_sources = HashSet::<u32>::new();
         let stored_start = stored_selectors.len();
+        let face_start = face_selectors.len();
+        let body_sources = unique_index(
+            table
+                .records
+                .iter()
+                .filter(|record| record.type_id == super::face_selection::BODY_TYPE)
+                .filter_map(|record| {
+                    Some((
+                        record.ordinal,
+                        historical::source(record.payload, version).ok()?,
+                    ))
+                }),
+        );
+        let mut face_sources = HashMap::<u32, usize>::new();
         for record in &table.records {
             has_flange |= record.type_id == super::sheet_metal::flange::TYPE;
             sample_geometry |= record.type_id == super::sheet_metal::flange::TYPE
                 && super::sheet_metal::style::prefix_len(version).is_some();
+            if matches!(
+                record.type_id,
+                super::FEATURE_TYPE
+                    | super::RECTANGULAR_PATTERN_FEATURE_TYPE
+                    | super::MIRROR_FEATURE_TYPE
+            ) {
+                if let Ok(source) = historical::source(record.payload, version) {
+                    record_sources.insert(source);
+                }
+            }
+            if matches!(
+                record.type_id,
+                super::face_selection::SELECTOR_TYPE | super::face_selection::DIRECT_SELECTOR_TYPE
+            ) {
+                if let Ok(source) = historical::source(record.payload, version) {
+                    *face_sources.entry(source).or_default() += 1;
+                }
+                let parsed = if record.type_id == super::face_selection::DIRECT_SELECTOR_TYPE {
+                    super::face_selection::parse_direct(ctx, record.payload, version)
+                } else {
+                    super::face_selection::parse(ctx, record.payload, version)
+                };
+                match parsed {
+                    Ok(Some(face)) => {
+                        if super::face_selection::links(
+                            &face,
+                            |ordinal| record_types.get(&ordinal).copied().flatten(),
+                            |ordinal| body_sources.get(&ordinal).copied().flatten(),
+                        ) {
+                            face_selectors.push(face);
+                        }
+                    }
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Ok(None) | Err(_) => {}
+                }
+                continue;
+            }
             if record.type_id != SELECTOR_TYPE {
                 continue;
             }
@@ -474,24 +558,35 @@ pub(super) fn inventory(
                 Err(_) => None,
             };
             if let Some(stored) = stored {
-                if let [generator] = stored.generators.as_slice() {
+                if let ([generator], []) =
+                    (stored.generators.as_slice(), stored.secondary.as_slice())
+                {
                     selectors.push(Selector {
                         source: stored.source,
                         generator: *generator,
                         key: stored.key,
                     });
                 }
-                if historical::links(&stored, |ordinal| {
-                    record_types.get(&ordinal).copied().flatten()
-                }) {
+                if historical::links(
+                    &stored,
+                    |ordinal| record_types.get(&ordinal).copied().flatten(),
+                    |ordinal| body_sources.get(&ordinal).copied().flatten(),
+                ) {
                     stored_selectors.push(stored);
                 }
             }
         }
+        let mut face_position = 0;
+        face_selectors.retain(|face: &super::face_selection::FaceSelector| {
+            let keep = face_position < face_start || face_sources.get(&face.source) == Some(&1);
+            face_position += 1;
+            keep
+        });
         let mut position = 0;
         stored_selectors.retain(|selector| {
-            let keep =
-                position < stored_start || selector_sources.get(&selector.source) == Some(&1);
+            let keep = position < stored_start
+                || (selector_sources.get(&selector.source) == Some(&1)
+                    && historical::secondary_names_known(selector, &record_sources));
             position += 1;
             keep
         });
@@ -499,6 +594,7 @@ pub(super) fn inventory(
     let name_corners = has_flange && matches!(carrier.schema, 38 | 40 | 42 | 44);
     if tokens.len() != 1
         || (stored_selectors.is_empty()
+            && face_selectors.is_empty()
             && (selectors.is_empty() || !names_joined(carrier.schema, has_flange))
             && !name_corners)
     {
@@ -513,9 +609,17 @@ pub(super) fn inventory(
         return Ok(EdgeInventory::default());
     };
     let historical = if archive_complete {
-        historical::selected(&records, &stored_selectors, carrier.schema)
+        historical::selected(ctx, &records, &stored_selectors, carrier.schema)?
             .into_iter()
             .map(|(source, edge)| ((token.clone(), source), edge))
+            .collect()
+    } else {
+        HashMap::new()
+    };
+    let faces = if archive_complete {
+        super::face_selection::selected(&records, &face_selectors, carrier.schema)
+            .into_iter()
+            .map(|(source, face)| ((token.clone(), source), face))
             .collect()
     } else {
         HashMap::new()
@@ -531,6 +635,7 @@ pub(super) fn inventory(
             generated_sources,
             generated_sources_complete,
             historical,
+            faces,
             ..EdgeInventory::default()
         });
     }
@@ -545,6 +650,7 @@ pub(super) fn inventory(
     };
     Ok(EdgeInventory {
         historical,
+        faces,
         generated_sources,
         generated_sources_complete,
         names: names
@@ -752,6 +858,29 @@ pub(crate) fn check_items<'a>(
     Ok(())
 }
 
+/// Whether an edge collection lists items and every item stores an empty
+/// index-reference list.
+pub(crate) fn all_items_empty<'a>(
+    collection: &PmDcFeatureProperty,
+    property: &impl Fn(crate::pmdc::PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+) -> bool {
+    let PmDcFeaturePropertyKind::References {
+        family: super::PmDcFeatureReferenceFamily::EdgeCollection,
+        items,
+    } = &collection.kind
+    else {
+        return false;
+    };
+    !items.references().is_empty()
+        && items.references().iter().all(|reference| {
+            matches!(
+                property(*reference).map(|p| &p.kind),
+                Some(PmDcFeaturePropertyKind::EdgeItem { index_references, .. })
+                    if index_references.values().is_empty()
+            )
+        })
+}
+
 pub(crate) fn matches_selection(
     selection: &cadmpeg_ir::features::EdgeSelection,
     native: &str,
@@ -774,7 +903,10 @@ pub(crate) fn native_losses(
     features: &[cadmpeg_ir::features::Feature],
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let mut losses = empty_item_losses(inventory, features);
+    losses.extend(empty_set_losses(inventory, features));
     losses.extend(historical::native_losses(features));
+    losses.extend(historical::ambiguous_owner_losses(inventory, features));
+    losses.extend(historical::generator_losses(inventory, features));
     losses
 }
 
@@ -902,6 +1034,60 @@ fn empty_item_losses(
     } else {
         vec![crate::loss::InventorLossCode::FeatureEdgeSelectionEmptyItemsNative.note(format!(
             "Retained {count} edge-treatment feature(s) with empty edge-item index-reference lists; their input-edge naming joins are unresolved."
+        ))]
+    }
+}
+
+/// Reports the projected fillets that omit an edge set with only empty items.
+fn empty_set_losses(
+    inventory: &super::FeatureInventory,
+    features: &[cadmpeg_ir::features::Feature],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    let projected: HashSet<&str> = features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
+            )
+        })
+        .filter_map(|feature| feature.native_ref.as_deref())
+        .collect();
+    if projected.is_empty() {
+        return Vec::new();
+    }
+    let properties = unique_index(inventory.properties.iter().map(|property| {
+        (
+            (
+                property.identity.segment_token.as_str(),
+                property.identity.record_ordinal,
+            ),
+            property,
+        )
+    }));
+    let count = inventory
+        .features
+        .iter()
+        .filter(|source| projected.contains(source.id().as_str()))
+        .filter(|source| {
+            super::fillet::empty_sets(source, |reference| {
+                properties
+                    .get(&(
+                        source.identity.segment_token.as_str(),
+                        reference.record_ordinal()?,
+                    ))?
+                    .as_ref()
+                    .copied()
+            }) > 0
+        })
+        .count();
+    if count == 0 {
+        Vec::new()
+    } else {
+        vec![crate::loss::InventorLossCode::FeatureFilletEmptyEdgeSetsOmitted.note(format!(
+            "{count} fillet feature(s) omit an edge set whose items all store empty index-reference lists; the set selects no edge."
         ))]
     }
 }
