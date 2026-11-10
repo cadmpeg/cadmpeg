@@ -579,40 +579,52 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::CircularPattern) {
             return None;
         }
-        let mut axis_candidates = Vec::new();
+        let mut solved_candidates = Vec::new();
+        let mut extended_candidates = Vec::new();
         for (record_index, selection_record_index) in scope
             .reference_members()
             .values()
             .zip(scope.reference_members().values().skip(1))
         {
             for (start, paired_at) in records.frames(*record_index) {
-                if let Some(axis) = exact_circular_pattern_axis(
+                let arguments = (
                     bytes,
                     start,
                     paired_at,
                     *record_index,
                     *selection_record_index,
                     scope.record_index,
-                )
-                .or_else(|| {
-                    exact_extended_circular_pattern_axis(
-                        bytes,
-                        start,
-                        paired_at,
-                        *record_index,
-                        *selection_record_index,
-                        scope.record_index,
-                    )
-                }) {
-                    axis_candidates.push(CircularPatternAxisCandidate {
-                        axis,
-                        axis_record_index: *record_index,
-                        selection_record_index: *selection_record_index,
-                        separator_flag_offset: None,
-                    });
-                }
+                );
+                let (axis, candidates) = if let Some(axis) = exact_circular_pattern_axis(
+                    arguments.0,
+                    arguments.1,
+                    arguments.2,
+                    arguments.3,
+                    arguments.4,
+                    arguments.5,
+                ) {
+                    (axis, &mut solved_candidates)
+                } else if let Some(axis) = exact_extended_circular_pattern_axis(
+                    arguments.0,
+                    arguments.1,
+                    arguments.2,
+                    arguments.3,
+                    arguments.4,
+                    arguments.5,
+                ) {
+                    (axis, &mut extended_candidates)
+                } else {
+                    continue;
+                };
+                candidates.push(CircularPatternAxisCandidate {
+                    axis,
+                    axis_record_index: *record_index,
+                    selection_record_index: *selection_record_index,
+                    separator_flag_offset: None,
+                });
             }
         }
+        let mut axis_candidates = inline_axis_candidates(solved_candidates, extended_candidates);
         for record_index in scope.reference_members().values() {
             for (start, paired_at) in records.frames(*record_index) {
                 let candidate = match exact_legacy_circular_pattern_axis(
@@ -751,6 +763,19 @@ struct CircularPatternAxisCandidate {
     axis_record_index: u32,
     selection_record_index: u32,
     separator_flag_offset: Option<usize>,
+}
+
+/// The inline axis candidates of a scope: its 195-byte records, or its
+/// 221-byte frames when it holds no 195-byte record.
+fn inline_axis_candidates(
+    solved: Vec<CircularPatternAxisCandidate>,
+    extended: Vec<CircularPatternAxisCandidate>,
+) -> Vec<CircularPatternAxisCandidate> {
+    if solved.is_empty() {
+        extended
+    } else {
+        solved
+    }
 }
 
 /// Select one circular-pattern axis, preferring the explicit solved carrier.

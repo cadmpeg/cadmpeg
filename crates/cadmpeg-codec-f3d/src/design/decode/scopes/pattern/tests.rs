@@ -184,6 +184,36 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
     assert!(select_circular_pattern_axis(&duplicate_historical).is_none());
 }
 
+#[test]
+fn a_solved_axis_record_takes_precedence_over_an_extended_frame() {
+    use crate::design::decode::scopes::pattern::CircularPatternAxisCandidate;
+    use crate::records::feature::patterns::DesignCircularPatternAxis;
+
+    let candidate = |axis_record_index| CircularPatternAxisCandidate {
+        separator_flag_offset: None,
+        axis: DesignCircularPatternAxis::Inline {
+            origin: crate::test_support::reals([1.0, 2.0, 3.0]),
+            origin_offset: 29,
+            direction: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            direction_offset: 53,
+        },
+        axis_record_index,
+        selection_record_index: axis_record_index + 3,
+    };
+    let selected = |solved: Vec<u32>, extended: Vec<u32>| {
+        let candidates = super::inline_axis_candidates(
+            solved.into_iter().map(candidate).collect(),
+            extended.into_iter().map(candidate).collect(),
+        );
+        select_circular_pattern_axis(&candidates).map(|index| candidates[index].axis_record_index)
+    };
+    assert_eq!(selected(vec![10], vec![20]), Some(10));
+    assert_eq!(selected(vec![10], vec![20, 30]), Some(10));
+    assert_eq!(selected(Vec::new(), vec![20]), Some(20));
+    assert_eq!(selected(Vec::new(), vec![20, 30]), None);
+    assert_eq!(selected(vec![10, 11], vec![20]), None);
+}
+
 fn append_header(bytes: &mut Vec<u8>, record_index: u32) {
     bytes.extend_from_slice(&3_u32.to_le_bytes());
     bytes.extend_from_slice(b"999");
