@@ -25,6 +25,7 @@ use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
 
 mod comment_field;
+mod compact_null_owner;
 mod expression_flags;
 mod registered_tail;
 mod tail_forms;

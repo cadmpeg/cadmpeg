@@ -11,6 +11,23 @@ use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::report::check::Check;
 use cadmpeg_ir::report::check::Finding;
 
+/// True for a one-sided face target whose stored face-group roles equal
+/// `expected` with its termination role removed (DR-360).
+pub(super) fn one_sided_face_target_lacks_only_its_termination(
+    extent: records::feature::extrude::DesignExtrudeExtent,
+    expected: &[records::topology::extrude_selection::DesignExtrudeFaceRole],
+    stored: impl Iterator<Item = Option<records::topology::extrude_selection::DesignExtrudeFaceRole>>,
+) -> bool {
+    use records::topology::extrude_selection::DesignExtrudeFaceRole::Termination;
+    extent == records::feature::extrude::DesignExtrudeExtent::OneSidedToFace
+        && expected.contains(&Termination)
+        && stored.eq(expected
+            .iter()
+            .copied()
+            .filter(|role| *role != Termination)
+            .map(Some))
+}
+
 /// Validate Extrude profile, operation, start, and extent operand agreement.
 /// The body operands are design-intent records, so the operation is checked
 /// against them only in a document that holds them.
@@ -485,11 +502,19 @@ pub(super) fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<
                         group.extrude_face_role()
                             == Some(records::topology::extrude_selection::DesignExtrudeFaceRole::Termination)
                     })));
+            // DR-360: a one-sided face target whose roster stores every
+            // expected group except its termination group.
+            let termination_missing = one_sided_face_target_lacks_only_its_termination(
+                extrude_extent,
+                &expected_face_roles,
+                face_groups.iter().map(|group| group.extrude_face_role()),
+            );
             if ctx.holds_design_intent()
                 && !invalid_face_groups_hide_extent_conflict
                 && (!extent_matches_operands
                     || !start_matches_operands
                     || (!selected_start_without_group
+                        && !termination_missing
                         && (Some(face_operand_group_count) != expected_face_group_count
                             || face_groups
                                 .iter()
