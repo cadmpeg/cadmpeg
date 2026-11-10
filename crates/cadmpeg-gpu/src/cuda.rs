@@ -1186,6 +1186,169 @@ L_SM86_RAY_EXIT:
     ret;
 }
 
+// 6c. Standard CUDA SIMT Point-in-Solid ray-casting parity kernel (FP64)
+.visible .entry cuda_simt_point_in_solid_f64(
+    .param .u64 param_pts,
+    .param .u64 param_tris,
+    .param .u64 param_out,
+    .param .u32 param_n_pts,
+    .param .u32 param_n_tris
+) {
+    .local .align 8 .b8 %hit_ts[256];
+    .reg .pred %p<8>;
+    .reg .b32 %r<14>;
+    .reg .b64 %rd<16>;
+    .reg .f64 %fd<38>;
+
+    ld.param.u64 %rd1, [param_pts];
+    ld.param.u64 %rd2, [param_tris];
+    ld.param.u64 %rd3, [param_out];
+    ld.param.u32 %r1, [param_n_pts];
+    ld.param.u32 %r2, [param_n_tris];
+
+    mov.u32 %r3, %ctaid.x;
+    mov.u32 %r4, %ntid.x;
+    mov.u32 %r5, %tid.x;
+    mad.lo.u32 %r6, %r3, %r4, %r5;
+    setp.ge.u32 %p0, %r6, %r1;
+    @%p0 bra L_SIMT_PIS_EXIT;
+
+    cvta.to.global.u64 %rd4, %rd1;
+    cvta.to.global.u64 %rd5, %rd2;
+    cvta.to.global.u64 %rd6, %rd3;
+    mov.u64 %rd13, %hit_ts;
+
+    mul.wide.u32 %rd7, %r6, 32;
+    add.u64 %rd8, %rd4, %rd7;
+    ld.global.f64 %fd0, [%rd8 + 0];  // ox
+    ld.global.f64 %fd1, [%rd8 + 8];  // oy
+    ld.global.f64 %fd2, [%rd8 + 16]; // oz
+
+    // PARITY_RAY_DIRECTION
+    mov.f64 %fd4, 0d3FE279A74590331D; // dx = 0.5773502691896258
+    mov.f64 %fd5, 0d3FE11ACEE560242A; // dy = 0.5345224838248488
+    mov.f64 %fd6, 0d3FE3C03650E00E03; // dz = 0.6172133998483676
+
+    mov.u32 %r7, 0; // hits
+    mov.u32 %r8, 0; // tri_idx
+L_SIMT_PIS_LOOP:
+    setp.ge.u32 %p1, %r8, %r2;
+    @%p1 bra L_SIMT_PIS_DONE;
+
+    mul.wide.u32 %rd9, %r8, 72;
+    add.u64 %rd10, %rd5, %rd9;
+    ld.global.f64 %fd8,  [%rd10 + 0];
+    ld.global.f64 %fd9,  [%rd10 + 8];
+    ld.global.f64 %fd10, [%rd10 + 16];
+    ld.global.f64 %fd11, [%rd10 + 24];
+    ld.global.f64 %fd12, [%rd10 + 32];
+    ld.global.f64 %fd13, [%rd10 + 40];
+    ld.global.f64 %fd14, [%rd10 + 48];
+    ld.global.f64 %fd15, [%rd10 + 56];
+    ld.global.f64 %fd16, [%rd10 + 64];
+
+    mul.f64 %fd17, %fd6, %fd15;
+    neg.f64 %fd17, %fd17;
+    fma.rn.f64 %fd17, %fd5, %fd16, %fd17;
+    mul.f64 %fd18, %fd4, %fd16;
+    neg.f64 %fd18, %fd18;
+    fma.rn.f64 %fd18, %fd6, %fd14, %fd18;
+    mul.f64 %fd19, %fd5, %fd14;
+    neg.f64 %fd19, %fd19;
+    fma.rn.f64 %fd19, %fd4, %fd15, %fd19;
+
+    mul.f64 %fd20, %fd13, %fd19;
+    fma.rn.f64 %fd20, %fd12, %fd18, %fd20;
+    fma.rn.f64 %fd20, %fd11, %fd17, %fd20;
+
+    abs.f64 %fd21, %fd20;
+    setp.le.f64 %p2, %fd21, 0d3D719799812DEA11;
+    @%p2 bra L_SIMT_PIS_NEXT;
+
+    div.rn.f64 %fd22, 0d3FF0000000000000, %fd20;
+
+    sub.f64 %fd23, %fd0, %fd8;
+    sub.f64 %fd24, %fd1, %fd9;
+    sub.f64 %fd25, %fd2, %fd10;
+
+    mul.f64 %fd26, %fd25, %fd19;
+    fma.rn.f64 %fd26, %fd24, %fd18, %fd26;
+    fma.rn.f64 %fd26, %fd23, %fd17, %fd26;
+    mul.f64 %fd26, %fd26, %fd22;
+
+    setp.lt.f64 %p3, %fd26, 0dBDA5FD7FE1796495;
+    setp.gt.f64 %p4, %fd26, 0d3FF000000000AFEC;
+    or.pred %p3, %p3, %p4;
+    @%p3 bra L_SIMT_PIS_NEXT;
+
+    mul.f64 %fd27, %fd25, %fd12;
+    neg.f64 %fd27, %fd27;
+    fma.rn.f64 %fd27, %fd24, %fd13, %fd27;
+    mul.f64 %fd28, %fd23, %fd13;
+    neg.f64 %fd28, %fd28;
+    fma.rn.f64 %fd28, %fd25, %fd11, %fd28;
+    mul.f64 %fd29, %fd24, %fd11;
+    neg.f64 %fd29, %fd29;
+    fma.rn.f64 %fd29, %fd23, %fd12, %fd29;
+
+    mul.f64 %fd33, %fd6, %fd29;
+    fma.rn.f64 %fd33, %fd5, %fd28, %fd33;
+    fma.rn.f64 %fd33, %fd4, %fd27, %fd33;
+    mul.f64 %fd33, %fd33, %fd22;
+
+    add.f64 %fd34, %fd26, %fd33;
+    setp.lt.f64 %p3, %fd33, 0dBDA5FD7FE1796495;
+    setp.gt.f64 %p4, %fd34, 0d3FF000000000AFEC;
+    or.pred %p3, %p3, %p4;
+    @%p3 bra L_SIMT_PIS_NEXT;
+
+    mul.f64 %fd35, %fd16, %fd29;
+    fma.rn.f64 %fd35, %fd15, %fd28, %fd35;
+    fma.rn.f64 %fd35, %fd14, %fd27, %fd35;
+    mul.f64 %fd35, %fd35, %fd22;
+
+    setp.lt.f64 %p5, %fd35, 0d3E112E0BE826D695; // 1.0e-9
+    @%p5 bra L_SIMT_PIS_NEXT;
+
+    // Deduplicate against up to 32 previous hits within 1.0e-9
+    min.u32 %r9, %r7, 32;
+    mov.u32 %r10, 0;
+L_SIMT_PIS_DEDUP:
+    setp.ge.u32 %p6, %r10, %r9;
+    @%p6 bra L_SIMT_PIS_RECORD;
+    mul.wide.u32 %rd14, %r10, 8;
+    add.u64 %rd15, %rd13, %rd14;
+    ld.local.f64 %fd36, [%rd15];
+    sub.f64 %fd37, %fd35, %fd36;
+    abs.f64 %fd37, %fd37;
+    setp.le.f64 %p7, %fd37, 0d3E112E0BE826D695;
+    @%p7 bra L_SIMT_PIS_NEXT;
+    add.u32 %r10, %r10, 1;
+    bra L_SIMT_PIS_DEDUP;
+
+L_SIMT_PIS_RECORD:
+    setp.lt.u32 %p6, %r7, 32;
+    @!%p6 bra L_SIMT_PIS_INC;
+    mul.wide.u32 %rd14, %r7, 8;
+    add.u64 %rd15, %rd13, %rd14;
+    st.local.f64 [%rd15], %fd35;
+L_SIMT_PIS_INC:
+    add.u32 %r7, %r7, 1;
+
+L_SIMT_PIS_NEXT:
+    add.u32 %r8, %r8, 1;
+    bra L_SIMT_PIS_LOOP;
+
+L_SIMT_PIS_DONE:
+    and.b32 %r11, %r7, 1;
+    mul.wide.u32 %rd11, %r6, 4;
+    add.u64 %rd12, %rd6, %rd11;
+    st.global.u32 [%rd12], %r11;
+
+L_SIMT_PIS_EXIT:
+    ret;
+}
+
 // 11. CUDA OptiX RT Core + FP64 Ray-Mesh intersection refinement kernel
 .visible .entry cuda_optix_ray_mesh_f64(
     .param .u64 param_rays,
@@ -1587,6 +1750,7 @@ pub struct CudaContext {
     fn_tc_bezier_eval: CudaFunction,
     fn_simt_ray_mesh: CudaFunction,
     fn_sm86_ray_mesh: CudaFunction,
+    fn_simt_point_in_solid: CudaFunction,
     compute_mesh_cache: Mutex<Option<CachedCudaMesh>>,
     optix: Option<OptixPipelines>,
 }
@@ -1634,6 +1798,7 @@ impl CudaContext {
             fn_tc_bezier_eval: module.load_function("rtx_tc_bezier_eval_f64").ok()?,
             fn_simt_ray_mesh: module.load_function("cuda_simt_ray_mesh_f64").ok()?,
             fn_sm86_ray_mesh: module.load_function("cuda_sm86_ray_mesh_f64").ok()?,
+            fn_simt_point_in_solid: module.load_function("cuda_simt_point_in_solid_f64").ok()?,
             compute_mesh_cache: Mutex::new(None),
             optix,
             device_name,
@@ -2197,6 +2362,59 @@ impl CudaContext {
             return None;
         }
         self.dispatch_ray_mesh_kernel(&self.fn_sm86_ray_mesh, rays, mesh)
+    }
+
+    fn dispatch_point_in_solid_kernel(
+        &self,
+        func: &CudaFunction,
+        points: &[Point3],
+        mesh: TriangleMeshView<'_>,
+    ) -> Option<Vec<bool>> {
+        if points.is_empty() {
+            return Some(Vec::new());
+        }
+        if mesh.triangles.is_empty() {
+            return Some((0..points.len()).map(|_| false).collect());
+        }
+        self.ctx.bind_to_thread().ok()?;
+        let stream = self.ctx.default_stream();
+        let n_pts = u32::try_from(points.len()).ok()?;
+        let flat_pts: Vec<f64> = points.iter().flat_map(|p| [p.x, p.y, p.z, 0.0]).collect();
+
+        let d_pts = stream.clone_htod(&flat_pts).ok()?;
+        let mut d_out = stream.alloc_zeros::<u32>(points.len()).ok()?;
+
+        self.with_cached_cuda_mesh(&stream, mesh, |cached| {
+            let block = 128_u32;
+            let grid = n_pts.div_ceil(block);
+            let cfg = LaunchConfig {
+                grid_dim: (grid, 1, 1),
+                block_dim: (block, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let mut builder = stream.launch_builder(func);
+            builder.arg(&d_pts);
+            builder.arg(&cached.d_tris_edges);
+            builder.arg(&mut d_out);
+            builder.arg(&n_pts);
+            builder.arg(&cached.n_tris);
+            // Safety: kernel signature matches (u64, u64, u64, u32, u32) and buffer bounds are verified.
+            unsafe { builder.launch(cfg) }.ok()?;
+            Some(())
+        })?;
+
+        let raw_out = stream.clone_dtoh(&d_out).ok()?;
+        Some(raw_out.into_iter().map(|v| v != 0).collect())
+    }
+
+    /// Evaluates point-in-solid containment via standard CUDA SIMT ray-casting parity.
+    #[must_use]
+    pub fn simt_point_in_solid_parity(
+        &self,
+        points: &[Point3],
+        mesh: TriangleMeshView<'_>,
+    ) -> Option<Vec<bool>> {
+        self.dispatch_point_in_solid_kernel(&self.fn_simt_point_in_solid, points, mesh)
     }
 
     /// Whether the active GPU supports NVIDIA `OptiX` hardware RT Core acceleration.
@@ -2890,6 +3108,35 @@ mod tests {
         } else {
             assert!(ctx.ptx_sm86_ray_mesh_intersect(&rays, mesh).is_none());
         }
+    }
+
+    #[test]
+    fn cuda_simt_point_in_solid_matches_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+        ];
+        let triangles = [[0_u32, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let points = [
+            Point3::new(0.25, 0.25, 0.25),
+            Point3::new(1.5, 1.5, 1.5),
+            Point3::new(-0.5, 0.2, 0.2),
+            Point3::new(0.1, 0.1, 0.1),
+        ];
+        let expected = cpu::point_in_solid_parity(&points, mesh);
+        let actual = ctx
+            .simt_point_in_solid_parity(&points, mesh)
+            .expect("SIMT point-in-solid parity");
+        assert_eq!(actual, expected);
     }
 
     #[test]
