@@ -2921,6 +2921,546 @@ L_OPTIX_PIS_EXIT:
     ret;
 }
 
+// 14. CUDA OptiX RT Core AABB-Certified Closest-Point Query with Resident VRAM BVH Fallback
+.visible .entry cuda_optix_bvh_closest_point_f64(
+    .param .u64 param_bvh,
+    .param .u64 param_tris,
+    .param .u64 param_queries,
+    .param .u64 param_cand_prim16,
+    .param .u64 param_out,
+    .param .f64 param_r_pad_sq,
+    .param .u32 param_n_queries,
+    .param .u32 param_n_nodes,
+    .param .u32 param_n_tris
+) {
+    .local .align 16 .b8 %stack[1024];
+    .reg .pred %p<16>;
+    .reg .b32 %r<24>;
+    .reg .b64 %rd<22>;
+    .reg .f64 %fd<52>;
+
+    ld.param.u64 %rd1, [param_bvh];
+    ld.param.u64 %rd2, [param_tris];
+    ld.param.u64 %rd3, [param_queries];
+    ld.param.u64 %rd20, [param_cand_prim16];
+    ld.param.u64 %rd4, [param_out];
+    ld.param.f64 %fd51, [param_r_pad_sq];
+    ld.param.u32 %r1, [param_n_queries];
+    ld.param.u32 %r2, [param_n_nodes];
+    ld.param.u32 %r19, [param_n_tris];
+
+    mov.u32 %r3, %ctaid.x;
+    mov.u32 %r4, %ntid.x;
+    mov.u32 %r5, %tid.x;
+    mad.lo.u32 %r6, %r3, %r4, %r5;
+    setp.ge.u32 %p0, %r6, %r1;
+    @%p0 bra L_OPTIX_BVH_EXIT;
+
+    cvta.to.global.u64 %rd5, %rd1;
+    cvta.to.global.u64 %rd6, %rd2;
+    cvta.to.global.u64 %rd7, %rd3;
+    cvta.to.global.u64 %rd21, %rd20;
+    cvta.to.global.u64 %rd8, %rd4;
+
+    mul.wide.u32 %rd9, %r6, 32;
+    add.u64 %rd10, %rd7, %rd9;
+    ld.global.nc.f64 %fd0, [%rd10 + 0];
+    ld.global.nc.f64 %fd1, [%rd10 + 8];
+    ld.global.nc.f64 %fd2, [%rd10 + 16];
+
+    mov.f64 %fd3, 0d7FF0000000000000;
+    mov.f64 %fd4, 0d0000000000000000;
+    mov.f64 %fd5, 0d0000000000000000;
+    mov.f64 %fd6, 0d0000000000000000;
+    mov.u32 %r7, 0xffffffff;
+
+    setp.eq.u32 %p1, %r2, 0;
+    @%p1 bra L_OPTIX_BVH_STORE;
+
+    mul.wide.u32 %rd9, %r6, 64;
+    add.u64 %rd20, %rd21, %rd9;
+    ld.global.nc.u32 %r20, [%rd20 + 0];
+    min.u32 %r21, %r20, 15;
+    mov.u32 %r18, 0;
+
+    mov.u64 %rd11, %stack;
+    st.local.u32 [%rd11 + 0], 0;
+    st.local.u32 [%rd11 + 4], 0;
+    st.local.f64 [%rd11 + 8], 0d0000000000000000;
+    mov.u32 %r8, 1;
+
+L_OPTIX_BVH_LOOP:
+    setp.ge.u32 %p2, %r18, %r21;
+    @%p2 bra L_OPTIX_BVH_CHECK_CERT;
+    add.u32 %r18, %r18, 1;
+    mul.wide.u32 %rd12, %r18, 4;
+    add.u64 %rd13, %rd20, %rd12;
+    ld.global.nc.u32 %r11, [%rd13];
+    setp.lt.u32 %p2, %r11, %r19;
+    @%p2 bra L_OPTIX_BVH_LEAF;
+    bra L_OPTIX_BVH_LOOP;
+
+L_OPTIX_BVH_CHECK_CERT:
+    setp.gt.u32 %p2, %r19, 16;
+    setp.le.u32 %p3, %r20, 15;
+    and.pred %p2, %p2, %p3;
+    setp.lt.f64 %p3, %fd3, %fd51;
+    and.pred %p2, %p2, %p3;
+    @%p2 bra L_OPTIX_BVH_STORE;
+
+L_OPTIX_BVH_POP:
+    setp.eq.u32 %p2, %r8, 0;
+    @%p2 bra L_OPTIX_BVH_STORE;
+
+    sub.u32 %r8, %r8, 1;
+    shl.b32 %r9, %r8, 4;
+    cvt.u64.u32 %rd12, %r9;
+    add.u64 %rd13, %rd11, %rd12;
+    ld.local.u32 %r10, [%rd13 + 0];
+    ld.local.f64 %fd7, [%rd13 + 8];
+
+    setp.ge.f64 %p3, %fd7, %fd3;
+    setp.ne.u32 %p4, %r7, 0xffffffff;
+    and.pred %p3, %p3, %p4;
+    @%p3 bra L_OPTIX_BVH_LOOP;
+
+    mul.wide.u32 %rd14, %r10, 64;
+    add.u64 %rd15, %rd5, %rd14;
+    ld.global.nc.u32 %r11, [%rd15 + 48];
+    ld.global.nc.u32 %r12, [%rd15 + 52];
+
+    setp.eq.u32 %p5, %r11, 0xffffffff;
+    @!%p5 bra L_OPTIX_BVH_LEAF;
+
+    add.u32 %r13, %r10, 1;
+    mov.f64 %fd8, 0d7FF0000000000000;
+    setp.lt.u32 %p6, %r13, %r2;
+    @!%p6 bra L_OPTIX_BVH_SKIP_LEFT;
+
+    mul.wide.u32 %rd16, %r13, 64;
+    add.u64 %rd17, %rd5, %rd16;
+    ld.global.nc.f64 %fd10, [%rd17 + 0];
+    ld.global.nc.f64 %fd11, [%rd17 + 8];
+    ld.global.nc.f64 %fd12, [%rd17 + 16];
+    ld.global.nc.f64 %fd13, [%rd17 + 24];
+    ld.global.nc.f64 %fd14, [%rd17 + 32];
+    ld.global.nc.f64 %fd15, [%rd17 + 40];
+    sub.f64 %fd16, %fd10, %fd0;
+    sub.f64 %fd17, %fd0, %fd13;
+    max.f64 %fd16, %fd16, %fd17;
+    max.f64 %fd16, %fd16, 0d0000000000000000;
+    sub.f64 %fd18, %fd11, %fd1;
+    sub.f64 %fd19, %fd1, %fd14;
+    max.f64 %fd18, %fd18, %fd19;
+    max.f64 %fd18, %fd18, 0d0000000000000000;
+    sub.f64 %fd20, %fd12, %fd2;
+    sub.f64 %fd21, %fd2, %fd15;
+    max.f64 %fd20, %fd20, %fd21;
+    max.f64 %fd20, %fd20, 0d0000000000000000;
+    mul.f64 %fd8, %fd20, %fd20;
+    fma.rn.f64 %fd8, %fd18, %fd18, %fd8;
+    fma.rn.f64 %fd8, %fd16, %fd16, %fd8;
+
+L_OPTIX_BVH_SKIP_LEFT:
+    mov.f64 %fd9, 0d7FF0000000000000;
+    setp.lt.u32 %p7, %r12, %r2;
+    @!%p7 bra L_OPTIX_BVH_SKIP_RIGHT;
+
+    mul.wide.u32 %rd16, %r12, 64;
+    add.u64 %rd17, %rd5, %rd16;
+    ld.global.nc.f64 %fd10, [%rd17 + 0];
+    ld.global.nc.f64 %fd11, [%rd17 + 8];
+    ld.global.nc.f64 %fd12, [%rd17 + 16];
+    ld.global.nc.f64 %fd13, [%rd17 + 24];
+    ld.global.nc.f64 %fd14, [%rd17 + 32];
+    ld.global.nc.f64 %fd15, [%rd17 + 40];
+    sub.f64 %fd16, %fd10, %fd0;
+    sub.f64 %fd17, %fd0, %fd13;
+    max.f64 %fd16, %fd16, %fd17;
+    max.f64 %fd16, %fd16, 0d0000000000000000;
+    sub.f64 %fd18, %fd11, %fd1;
+    sub.f64 %fd19, %fd1, %fd14;
+    max.f64 %fd18, %fd18, %fd19;
+    max.f64 %fd18, %fd18, 0d0000000000000000;
+    sub.f64 %fd20, %fd12, %fd2;
+    sub.f64 %fd21, %fd2, %fd15;
+    max.f64 %fd20, %fd20, %fd21;
+    max.f64 %fd20, %fd20, 0d0000000000000000;
+    mul.f64 %fd9, %fd20, %fd20;
+    fma.rn.f64 %fd9, %fd18, %fd18, %fd9;
+    fma.rn.f64 %fd9, %fd16, %fd16, %fd9;
+
+L_OPTIX_BVH_SKIP_RIGHT:
+    setp.lt.f64 %p8, %fd8, %fd9;
+    selp.u32 %r14, %r13, %r12, %p8;
+    selp.f64 %fd22, %fd8, %fd9, %p8;
+    selp.u32 %r15, %r12, %r13, %p8;
+    selp.f64 %fd23, %fd9, %fd8, %p8;
+
+    setp.lt.u32 %p9, %r15, %r2;
+    setp.lt.f64 %p10, %fd23, %fd3;
+    and.pred %p9, %p9, %p10;
+    setp.lt.u32 %p12, %r8, 64;
+    and.pred %p9, %p9, %p12;
+    @!%p9 bra L_OPTIX_BVH_PUSH_NEAR;
+
+    shl.b32 %r16, %r8, 4;
+    cvt.u64.u32 %rd18, %r16;
+    add.u64 %rd19, %rd11, %rd18;
+    st.local.u32 [%rd19 + 0], %r15;
+    st.local.u32 [%rd19 + 4], 0;
+    st.local.f64 [%rd19 + 8], %fd23;
+    add.u32 %r8, %r8, 1;
+
+L_OPTIX_BVH_PUSH_NEAR:
+    setp.lt.u32 %p9, %r14, %r2;
+    setp.lt.f64 %p10, %fd22, %fd3;
+    and.pred %p9, %p9, %p10;
+    setp.lt.u32 %p12, %r8, 64;
+    and.pred %p9, %p9, %p12;
+    @!%p9 bra L_OPTIX_BVH_LOOP;
+
+    shl.b32 %r16, %r8, 4;
+    cvt.u64.u32 %rd18, %r16;
+    add.u64 %rd19, %rd11, %rd18;
+    st.local.u32 [%rd19 + 0], %r14;
+    st.local.u32 [%rd19 + 4], 0;
+    st.local.f64 [%rd19 + 8], %fd22;
+    add.u32 %r8, %r8, 1;
+    bra L_OPTIX_BVH_LOOP;
+
+L_OPTIX_BVH_LEAF:
+    mul.wide.u32 %rd16, %r11, 72;
+    add.u64 %rd17, %rd6, %rd16;
+    ld.global.nc.f64 %fd10, [%rd17 + 0];
+    ld.global.nc.f64 %fd11, [%rd17 + 8];
+    ld.global.nc.f64 %fd12, [%rd17 + 16];
+    ld.global.nc.f64 %fd13, [%rd17 + 24];
+    ld.global.nc.f64 %fd14, [%rd17 + 32];
+    ld.global.nc.f64 %fd15, [%rd17 + 40];
+    ld.global.nc.f64 %fd16, [%rd17 + 48];
+    ld.global.nc.f64 %fd17, [%rd17 + 56];
+    ld.global.nc.f64 %fd18, [%rd17 + 64];
+
+    sub.f64 %fd19, %fd13, %fd10;
+    sub.f64 %fd20, %fd14, %fd11;
+    sub.f64 %fd21, %fd15, %fd12;
+    sub.f64 %fd22, %fd16, %fd10;
+    sub.f64 %fd23, %fd17, %fd11;
+    sub.f64 %fd24, %fd18, %fd12;
+    sub.f64 %fd25, %fd0,  %fd10;
+    sub.f64 %fd26, %fd1,  %fd11;
+    sub.f64 %fd27, %fd2,  %fd12;
+
+    mul.f64 %fd28, %fd21, %fd27;
+    fma.rn.f64 %fd28, %fd20, %fd26, %fd28;
+    fma.rn.f64 %fd28, %fd19, %fd25, %fd28;
+    mul.f64 %fd29, %fd24, %fd27;
+    fma.rn.f64 %fd29, %fd23, %fd26, %fd29;
+    fma.rn.f64 %fd29, %fd22, %fd25, %fd29;
+
+    mul.rn.f64 %fd32, %fd21, %fd23;
+    neg.f64 %fd35, %fd21;
+    fma.rn.f64 %fd35, %fd35, %fd23, %fd32;
+    neg.f64 %fd32, %fd32;
+    fma.rn.f64 %fd32, %fd20, %fd24, %fd32;
+    add.f64 %fd32, %fd32, %fd35;
+    mul.rn.f64 %fd33, %fd19, %fd24;
+    neg.f64 %fd35, %fd19;
+    fma.rn.f64 %fd35, %fd35, %fd24, %fd33;
+    neg.f64 %fd33, %fd33;
+    fma.rn.f64 %fd33, %fd21, %fd22, %fd33;
+    add.f64 %fd33, %fd33, %fd35;
+    mul.rn.f64 %fd34, %fd20, %fd22;
+    neg.f64 %fd35, %fd20;
+    fma.rn.f64 %fd35, %fd35, %fd22, %fd34;
+    neg.f64 %fd34, %fd34;
+    fma.rn.f64 %fd34, %fd19, %fd23, %fd34;
+    add.f64 %fd34, %fd34, %fd35;
+    mul.f64 %fd35, %fd34, %fd34;
+    fma.rn.f64 %fd35, %fd33, %fd33, %fd35;
+    fma.rn.f64 %fd35, %fd32, %fd32, %fd35;
+    mul.f64 %fd36, %fd21, %fd21;
+    fma.rn.f64 %fd36, %fd20, %fd20, %fd36;
+    fma.rn.f64 %fd36, %fd19, %fd19, %fd36;
+    mul.f64 %fd37, %fd24, %fd24;
+    fma.rn.f64 %fd37, %fd23, %fd23, %fd37;
+    fma.rn.f64 %fd37, %fd22, %fd22, %fd37;
+    mul.f64 %fd38, %fd36, %fd37;
+    mul.f64 %fd38, %fd38, 0d3CB0000000000000;
+    setp.le.f64 %p6, %fd35, %fd38;
+    @%p6 bra L_OPTIX_TRI_DEGENERATE;
+
+    setp.le.f64 %p6, %fd28, 0d0000000000000000;
+    setp.le.f64 %p7, %fd29, 0d0000000000000000;
+    and.pred %p6, %p6, %p7;
+    @!%p6 bra L_OPTIX_TRI_CHECK_B;
+    mov.f64 %fd40, %fd10;
+    mov.f64 %fd41, %fd11;
+    mov.f64 %fd42, %fd12;
+    bra L_OPTIX_TRI_EVAL_DIST;
+
+L_OPTIX_TRI_CHECK_B:
+    sub.f64 %fd25, %fd0, %fd13;
+    sub.f64 %fd26, %fd1, %fd14;
+    sub.f64 %fd27, %fd2, %fd15;
+    mul.f64 %fd30, %fd21, %fd27;
+    fma.rn.f64 %fd30, %fd20, %fd26, %fd30;
+    fma.rn.f64 %fd30, %fd19, %fd25, %fd30;
+    mul.f64 %fd31, %fd24, %fd27;
+    fma.rn.f64 %fd31, %fd23, %fd26, %fd31;
+    fma.rn.f64 %fd31, %fd22, %fd25, %fd31;
+
+    setp.ge.f64 %p6, %fd30, 0d0000000000000000;
+    setp.le.f64 %p7, %fd31, %fd30;
+    and.pred %p6, %p6, %p7;
+    @!%p6 bra L_OPTIX_TRI_CHECK_AB;
+    mov.f64 %fd40, %fd13;
+    mov.f64 %fd41, %fd14;
+    mov.f64 %fd42, %fd15;
+    bra L_OPTIX_TRI_EVAL_DIST;
+
+L_OPTIX_TRI_CHECK_AB:
+    mul.f64 %fd32, %fd30, %fd29;
+    neg.f64 %fd32, %fd32;
+    fma.rn.f64 %fd32, %fd28, %fd31, %fd32;
+
+    setp.le.f64 %p6, %fd32, 0d0000000000000000;
+    setp.ge.f64 %p7, %fd28, 0d0000000000000000;
+    setp.le.f64 %p8, %fd30, 0d0000000000000000;
+    and.pred %p6, %p6, %p7;
+    and.pred %p6, %p6, %p8;
+    @!%p6 bra L_OPTIX_TRI_CHECK_C;
+    sub.f64 %fd33, %fd28, %fd30;
+    setp.gt.f64 %p12, %fd33, 0d0000000000000000;
+    @!%p12 bra L_OPTIX_TRI_CHECK_C;
+    div.rn.f64 %fd34, %fd28, %fd33;
+    fma.rn.f64 %fd40, %fd34, %fd19, %fd10;
+    fma.rn.f64 %fd41, %fd34, %fd20, %fd11;
+    fma.rn.f64 %fd42, %fd34, %fd21, %fd12;
+    bra L_OPTIX_TRI_EVAL_DIST;
+
+L_OPTIX_TRI_CHECK_C:
+    sub.f64 %fd25, %fd0, %fd16;
+    sub.f64 %fd26, %fd1, %fd17;
+    sub.f64 %fd27, %fd2, %fd18;
+    mul.f64 %fd33, %fd21, %fd27;
+    fma.rn.f64 %fd33, %fd20, %fd26, %fd33;
+    fma.rn.f64 %fd33, %fd19, %fd25, %fd33;
+    mul.f64 %fd34, %fd24, %fd27;
+    fma.rn.f64 %fd34, %fd23, %fd26, %fd34;
+    fma.rn.f64 %fd34, %fd22, %fd25, %fd34;
+
+    setp.ge.f64 %p6, %fd34, 0d0000000000000000;
+    setp.le.f64 %p7, %fd33, %fd34;
+    and.pred %p6, %p6, %p7;
+    @!%p6 bra L_OPTIX_TRI_CHECK_AC;
+    mov.f64 %fd40, %fd16;
+    mov.f64 %fd41, %fd17;
+    mov.f64 %fd42, %fd18;
+    bra L_OPTIX_TRI_EVAL_DIST;
+
+L_OPTIX_TRI_CHECK_AC:
+    mul.f64 %fd35, %fd28, %fd34;
+    neg.f64 %fd35, %fd35;
+    fma.rn.f64 %fd35, %fd33, %fd29, %fd35;
+
+    setp.le.f64 %p6, %fd35, 0d0000000000000000;
+    setp.ge.f64 %p7, %fd29, 0d0000000000000000;
+    setp.le.f64 %p8, %fd34, 0d0000000000000000;
+    and.pred %p6, %p6, %p7;
+    and.pred %p6, %p6, %p8;
+    @!%p6 bra L_OPTIX_TRI_CHECK_BC;
+    sub.f64 %fd36, %fd29, %fd34;
+    setp.gt.f64 %p12, %fd36, 0d0000000000000000;
+    @!%p12 bra L_OPTIX_TRI_CHECK_BC;
+    div.rn.f64 %fd37, %fd29, %fd36;
+    fma.rn.f64 %fd40, %fd37, %fd22, %fd10;
+    fma.rn.f64 %fd41, %fd37, %fd23, %fd11;
+    fma.rn.f64 %fd42, %fd37, %fd24, %fd12;
+    bra L_OPTIX_TRI_EVAL_DIST;
+
+L_OPTIX_TRI_CHECK_BC:
+    mul.f64 %fd36, %fd33, %fd31;
+    neg.f64 %fd36, %fd36;
+    fma.rn.f64 %fd36, %fd30, %fd34, %fd36;
+
+    sub.f64 %fd37, %fd31, %fd30;
+    sub.f64 %fd38, %fd33, %fd34;
+    setp.le.f64 %p6, %fd36, 0d0000000000000000;
+    setp.ge.f64 %p7, %fd37, 0d0000000000000000;
+    setp.ge.f64 %p8, %fd38, 0d0000000000000000;
+    and.pred %p6, %p6, %p7;
+    and.pred %p6, %p6, %p8;
+    @!%p6 bra L_OPTIX_TRI_FACE;
+    add.f64 %fd39, %fd37, %fd38;
+    setp.gt.f64 %p12, %fd39, 0d0000000000000000;
+    @!%p12 bra L_OPTIX_TRI_FACE;
+    div.rn.f64 %fd39, %fd37, %fd39;
+    sub.f64 %fd43, %fd16, %fd13;
+    sub.f64 %fd44, %fd17, %fd14;
+    sub.f64 %fd45, %fd18, %fd15;
+    fma.rn.f64 %fd40, %fd39, %fd43, %fd13;
+    fma.rn.f64 %fd41, %fd39, %fd44, %fd14;
+    fma.rn.f64 %fd42, %fd39, %fd45, %fd15;
+    bra L_OPTIX_TRI_EVAL_DIST;
+
+L_OPTIX_TRI_FACE:
+    mul.rn.f64 %fd32, %fd21, %fd23;
+    neg.f64 %fd35, %fd21;
+    fma.rn.f64 %fd35, %fd35, %fd23, %fd32;
+    neg.f64 %fd32, %fd32;
+    fma.rn.f64 %fd32, %fd20, %fd24, %fd32;
+    add.f64 %fd32, %fd32, %fd35;
+    mul.rn.f64 %fd33, %fd19, %fd24;
+    neg.f64 %fd35, %fd19;
+    fma.rn.f64 %fd35, %fd35, %fd24, %fd33;
+    neg.f64 %fd33, %fd33;
+    fma.rn.f64 %fd33, %fd21, %fd22, %fd33;
+    add.f64 %fd33, %fd33, %fd35;
+    mul.rn.f64 %fd34, %fd20, %fd22;
+    neg.f64 %fd35, %fd20;
+    fma.rn.f64 %fd35, %fd35, %fd22, %fd34;
+    neg.f64 %fd34, %fd34;
+    fma.rn.f64 %fd34, %fd19, %fd23, %fd34;
+    add.f64 %fd34, %fd34, %fd35;
+    mul.f64 %fd35, %fd34, %fd34;
+    fma.rn.f64 %fd35, %fd33, %fd33, %fd35;
+    fma.rn.f64 %fd35, %fd32, %fd32, %fd35;
+
+    setp.gt.f64 %p12, %fd35, 0d0000000000000000;
+    @!%p12 bra L_OPTIX_TRI_FACE_ZERO;
+
+    sub.f64 %fd36, %fd0, %fd10;
+    sub.f64 %fd37, %fd1, %fd11;
+    sub.f64 %fd38, %fd2, %fd12;
+    mul.f64 %fd39, %fd38, %fd34;
+    fma.rn.f64 %fd39, %fd37, %fd33, %fd39;
+    fma.rn.f64 %fd39, %fd36, %fd32, %fd39;
+    div.rn.f64 %fd39, %fd39, %fd35;
+    neg.f64 %fd39, %fd39;
+    fma.rn.f64 %fd40, %fd39, %fd32, %fd0;
+    fma.rn.f64 %fd41, %fd39, %fd33, %fd1;
+    fma.rn.f64 %fd42, %fd39, %fd34, %fd2;
+    bra L_OPTIX_TRI_EVAL_DIST;
+L_OPTIX_TRI_FACE_ZERO:
+    mov.f64 %fd40, %fd10;
+    mov.f64 %fd41, %fd11;
+    mov.f64 %fd42, %fd12;
+    bra L_OPTIX_TRI_EVAL_DIST;
+
+L_OPTIX_TRI_DEGENERATE:
+    setp.gt.f64 %p7, %fd36, 0d0000000000000000;
+    div.rn.f64 %fd30, %fd28, %fd36;
+    max.f64 %fd30, %fd30, 0d0000000000000000;
+    min.f64 %fd30, %fd30, 0d3FF0000000000000;
+    selp.f64 %fd30, %fd30, 0d0000000000000000, %p7;
+    fma.rn.f64 %fd40, %fd30, %fd19, %fd10;
+    fma.rn.f64 %fd41, %fd30, %fd20, %fd11;
+    fma.rn.f64 %fd42, %fd30, %fd21, %fd12;
+    sub.f64 %fd31, %fd0, %fd40;
+    sub.f64 %fd32, %fd1, %fd41;
+    sub.f64 %fd33, %fd2, %fd42;
+    mul.f64 %fd47, %fd33, %fd33;
+    fma.rn.f64 %fd47, %fd32, %fd32, %fd47;
+    fma.rn.f64 %fd47, %fd31, %fd31, %fd47;
+
+    sub.f64 %fd30, %fd16, %fd13;
+    sub.f64 %fd31, %fd17, %fd14;
+    sub.f64 %fd32, %fd18, %fd15;
+    mul.f64 %fd33, %fd32, %fd32;
+    fma.rn.f64 %fd33, %fd31, %fd31, %fd33;
+    fma.rn.f64 %fd33, %fd30, %fd30, %fd33;
+    sub.f64 %fd34, %fd0, %fd13;
+    sub.f64 %fd35, %fd1, %fd14;
+    sub.f64 %fd36, %fd2, %fd15;
+    mul.f64 %fd37, %fd32, %fd36;
+    fma.rn.f64 %fd37, %fd31, %fd35, %fd37;
+    fma.rn.f64 %fd37, %fd30, %fd34, %fd37;
+    setp.gt.f64 %p7, %fd33, 0d0000000000000000;
+    div.rn.f64 %fd38, %fd37, %fd33;
+    max.f64 %fd38, %fd38, 0d0000000000000000;
+    min.f64 %fd38, %fd38, 0d3FF0000000000000;
+    selp.f64 %fd38, %fd38, 0d0000000000000000, %p7;
+    fma.rn.f64 %fd34, %fd38, %fd30, %fd13;
+    fma.rn.f64 %fd35, %fd38, %fd31, %fd14;
+    fma.rn.f64 %fd36, %fd38, %fd32, %fd15;
+    sub.f64 %fd37, %fd0, %fd34;
+    sub.f64 %fd38, %fd1, %fd35;
+    sub.f64 %fd39, %fd2, %fd36;
+    mul.f64 %fd43, %fd39, %fd39;
+    fma.rn.f64 %fd43, %fd38, %fd38, %fd43;
+    fma.rn.f64 %fd43, %fd37, %fd37, %fd43;
+    setp.lt.f64 %p8, %fd43, %fd47;
+    selp.f64 %fd40, %fd34, %fd40, %p8;
+    selp.f64 %fd41, %fd35, %fd41, %p8;
+    selp.f64 %fd42, %fd36, %fd42, %p8;
+    selp.f64 %fd47, %fd43, %fd47, %p8;
+
+    sub.f64 %fd30, %fd10, %fd16;
+    sub.f64 %fd31, %fd11, %fd17;
+    sub.f64 %fd32, %fd12, %fd18;
+    mul.f64 %fd33, %fd32, %fd32;
+    fma.rn.f64 %fd33, %fd31, %fd31, %fd33;
+    fma.rn.f64 %fd33, %fd30, %fd30, %fd33;
+    sub.f64 %fd34, %fd0, %fd16;
+    sub.f64 %fd35, %fd1, %fd17;
+    sub.f64 %fd36, %fd2, %fd18;
+    mul.f64 %fd37, %fd32, %fd36;
+    fma.rn.f64 %fd37, %fd31, %fd35, %fd37;
+    fma.rn.f64 %fd37, %fd30, %fd34, %fd37;
+    setp.gt.f64 %p7, %fd33, 0d0000000000000000;
+    div.rn.f64 %fd38, %fd37, %fd33;
+    max.f64 %fd38, %fd38, 0d0000000000000000;
+    min.f64 %fd38, %fd38, 0d3FF0000000000000;
+    selp.f64 %fd38, %fd38, 0d0000000000000000, %p7;
+    fma.rn.f64 %fd34, %fd38, %fd30, %fd16;
+    fma.rn.f64 %fd35, %fd38, %fd31, %fd17;
+    fma.rn.f64 %fd36, %fd38, %fd32, %fd18;
+    sub.f64 %fd37, %fd0, %fd34;
+    sub.f64 %fd38, %fd1, %fd35;
+    sub.f64 %fd39, %fd2, %fd36;
+    mul.f64 %fd43, %fd39, %fd39;
+    fma.rn.f64 %fd43, %fd38, %fd38, %fd43;
+    fma.rn.f64 %fd43, %fd37, %fd37, %fd43;
+    setp.lt.f64 %p8, %fd43, %fd47;
+    selp.f64 %fd40, %fd34, %fd40, %p8;
+    selp.f64 %fd41, %fd35, %fd41, %p8;
+    selp.f64 %fd42, %fd36, %fd42, %p8;
+    bra L_OPTIX_TRI_EVAL_DIST;
+
+L_OPTIX_TRI_EVAL_DIST:
+    sub.f64 %fd43, %fd0, %fd40;
+    sub.f64 %fd44, %fd1, %fd41;
+    sub.f64 %fd45, %fd2, %fd42;
+    mul.f64 %fd46, %fd45, %fd45;
+    fma.rn.f64 %fd46, %fd44, %fd44, %fd46;
+    fma.rn.f64 %fd46, %fd43, %fd43, %fd46;
+
+    setp.lt.f64 %p9, %fd46, %fd3;
+    @!%p9 bra L_OPTIX_BVH_LOOP;
+
+    mov.f64 %fd3, %fd46;
+    mov.f64 %fd4, %fd40;
+    mov.f64 %fd5, %fd41;
+    mov.f64 %fd6, %fd42;
+    mov.u32 %r7, %r11;
+    bra L_OPTIX_BVH_LOOP;
+
+L_OPTIX_BVH_STORE:
+    mul.wide.u32 %rd16, %r6, 40;
+    add.u64 %rd17, %rd8, %rd16;
+    cvt.u64.u32 %rd18, %r7;
+    mov.b64 %fd47, %rd18;
+    st.global.f64 [%rd17 + 0],  %fd4;
+    st.global.f64 [%rd17 + 8],  %fd5;
+    st.global.f64 [%rd17 + 16], %fd6;
+    st.global.f64 [%rd17 + 24], %fd3;
+    st.global.f64 [%rd17 + 32], %fd47;
+
+L_OPTIX_BVH_EXIT:
+    ret;
+}
 ";
 
 const OPTIX_PTX_MODULE: &str = "\
@@ -3100,6 +3640,99 @@ L_AH_IGNORE:
     ret;
 }
 
+.visible .entry __raygen__aabb_gather()
+{
+    .reg .u32 %idx, %prim, %vis, %flags, %sbt_off, %sbt_stride, %miss_idx;
+    .reg .u64 %handle, %pts_base, %out_prim_base, %off32, %off64, %pt_ptr, %row_ptr;
+    .reg .f64 %ox64, %oy64, %oz64;
+    .reg .f32 %ox, %oy, %oz, %dx, %dy, %dz, %tmin, %tmax, %rtime;
+
+    call (%idx), _optix_get_launch_index_x, ();
+    ld.const.u64 %handle, [params + 0];
+    ld.const.u64 %pts_base, [params + 8];
+    ld.const.u64 %out_prim_base, [params + 16];
+
+    mul.wide.u32 %off32, %idx, 32;
+    add.u64 %pt_ptr, %pts_base, %off32;
+    mul.wide.u32 %off64, %idx, 64;
+    add.u64 %row_ptr, %out_prim_base, %off64;
+    st.global.u32 [%row_ptr + 0], 0;
+
+    ld.global.f64 %ox64, [%pt_ptr + 0];
+    ld.global.f64 %oy64, [%pt_ptr + 8];
+    ld.global.f64 %oz64, [%pt_ptr + 16];
+
+    cvt.rn.f32.f64 %ox, %ox64;
+    cvt.rn.f32.f64 %oy, %oy64;
+    cvt.rn.f32.f64 %oz, %oz64;
+
+    mov.f32 %dx, 0f3F800000;
+    mov.f32 %dy, 0f00000000;
+    mov.f32 %dz, 0f00000000;
+    mov.f32 %tmin, 0f00000000;
+    mov.f32 %tmax, 0f33D6BF95;
+    mov.f32 %rtime, 0f00000000;
+    mov.u32 %vis, 255;
+    mov.u32 %flags, 0;
+    mov.u32 %sbt_off, 0;
+    mov.u32 %sbt_stride, 1;
+    mov.u32 %miss_idx, 0;
+    mov.u32 %prim, -1;
+
+    call (%prim), _optix_trace_1, (
+        %handle,
+        %ox, %oy, %oz,
+        %dx, %dy, %dz,
+        %tmin, %tmax, %rtime,
+        %vis, %flags, %sbt_off, %sbt_stride, %miss_idx,
+        %prim
+    );
+    ret;
+}
+
+.visible .entry __intersection__aabb_gather()
+{
+    .reg .pred %p0, %p1;
+    .reg .u32 %idx, %prim, %cnt, %i, %existing, %cnt_next;
+    .reg .u64 %out_prim_base, %off64, %row_ptr, %off_slot, %slot_ptr;
+
+    call (%idx), _optix_get_launch_index_x, ();
+    call (%prim), _optix_read_primitive_idx, ();
+    ld.const.u64 %out_prim_base, [params + 16];
+
+    mul.wide.u32 %off64, %idx, 64;
+    add.u64 %row_ptr, %out_prim_base, %off64;
+    ld.global.u32 %cnt, [%row_ptr + 0];
+
+    mov.u32 %i, 0;
+L_IS_DEDUP:
+    setp.ge.u32 %p0, %i, %cnt;
+    @%p0 bra L_IS_INSERT;
+    setp.ge.u32 %p0, %i, 15;
+    @%p0 bra L_IS_INSERT;
+    mul.wide.u32 %off_slot, %i, 4;
+    add.u64 %slot_ptr, %row_ptr, %off_slot;
+    ld.global.u32 %existing, [%slot_ptr + 4];
+    setp.eq.u32 %p1, %existing, %prim;
+    @%p1 bra L_IS_DONE;
+    add.u32 %i, %i, 1;
+    bra L_IS_DEDUP;
+
+L_IS_INSERT:
+    setp.ge.u32 %p0, %cnt, 15;
+    @%p0 bra L_IS_COUNT_ONLY;
+    mul.wide.u32 %off_slot, %cnt, 4;
+    add.u64 %slot_ptr, %row_ptr, %off_slot;
+    st.global.u32 [%slot_ptr + 4], %prim;
+
+L_IS_COUNT_ONLY:
+    add.u32 %cnt_next, %cnt, 1;
+    st.global.u32 [%row_ptr + 0], %cnt_next;
+
+L_IS_DONE:
+    ret;
+}
+
 .visible .entry __closesthit__ch()
 {
     .reg .u32 %prim;
@@ -3160,8 +3793,11 @@ struct OptixPipelines {
     ray_sbt: OptixSbt,
     parity_pipeline: Arc<OptixPipeline>,
     parity_sbt: OptixSbt,
+    aabb_gather_pipeline: Arc<OptixPipeline>,
+    aabb_gather_sbt: OptixSbt,
     fn_optix_ray_mesh: CudaFunction,
     fn_optix_point_in_solid: CudaFunction,
+    fn_optix_bvh_closest_point: CudaFunction,
     mesh_cache: Mutex<Option<CachedOptixMesh>>,
 }
 
@@ -3193,6 +3829,9 @@ impl OptixPipelines {
             OptixProgramGroup::new_raygen(&optix_ctx, &optix_module, "__raygen__candidate").ok()?;
         let rg_parity =
             OptixProgramGroup::new_raygen(&optix_ctx, &optix_module, "__raygen__parity").ok()?;
+        let rg_aabb =
+            OptixProgramGroup::new_raygen(&optix_ctx, &optix_module, "__raygen__aabb_gather")
+                .ok()?;
         let ms =
             OptixProgramGroup::new_miss(&optix_ctx, Some((&optix_module, "__miss__ms"))).ok()?;
         let hg_closest = OptixProgramGroup::new_hitgroup(
@@ -3209,6 +3848,13 @@ impl OptixPipelines {
             None,
         )
         .ok()?;
+        let hg_aabb = OptixProgramGroup::new_hitgroup(
+            &optix_ctx,
+            None,
+            None,
+            Some((&optix_module, "__intersection__aabb_gather")),
+        )
+        .ok()?;
 
         let ray_groups = [rg_ray.clone(), ms.clone(), hg_closest.clone()];
         let ray_pipeline =
@@ -3220,15 +3866,25 @@ impl OptixPipelines {
             OptixPipeline::new(&optix_ctx, &pipeline_opts, &link_opts, &parity_groups, 1).ok()?;
         let parity_sbt = OptixSbt::from_groups(&stream, &rg_parity, &[&ms], &[&hg_parity]).ok()?;
 
+        let aabb_groups = [rg_aabb.clone(), ms.clone(), hg_aabb.clone()];
+        let aabb_gather_pipeline =
+            OptixPipeline::new(&optix_ctx, &pipeline_opts, &link_opts, &aabb_groups, 1).ok()?;
+        let aabb_gather_sbt = OptixSbt::from_groups(&stream, &rg_aabb, &[&ms], &[&hg_aabb]).ok()?;
+
         Some(Self {
             ctx: optix_ctx,
             ray_pipeline,
             ray_sbt,
             parity_pipeline,
             parity_sbt,
+            aabb_gather_pipeline,
+            aabb_gather_sbt,
             fn_optix_ray_mesh: cuda_module.load_function("cuda_optix_ray_mesh_f64").ok()?,
             fn_optix_point_in_solid: cuda_module
                 .load_function("cuda_optix_point_in_solid_f64")
+                .ok()?,
+            fn_optix_bvh_closest_point: cuda_module
+                .load_function("cuda_optix_bvh_closest_point_f64")
                 .ok()?,
             mesh_cache: Mutex::new(None),
         })
@@ -4253,16 +4909,7 @@ impl CudaContext {
         if needs_rebuild {
             *guard = Some(Self::build_cached_optix_mesh(optix, stream, mesh, hash)?);
         }
-        let c = guard.as_ref()?;
-        let _ = (
-            c.n_nodes,
-            c.r_pad_sq,
-            &c.blas_anyhit,
-            &c.blas_aabb,
-            &c.d_tris_verts,
-            &c.d_bvh,
-        );
-        f(c)
+        f(guard.as_ref()?)
     }
 
     /// Executes hardware RT Core ray-mesh intersection via `cudarc::optix` (`OptixAccel` + `OptixPipeline::launch`) and exact FP64 Möller-Trumbore refinement.
@@ -4416,6 +5063,88 @@ impl CudaContext {
 
         let raw_out = stream.clone_dtoh(&d_out).ok()?;
         Some(raw_out.into_iter().map(|v| v != 0).collect())
+    }
+
+    /// Executes closest-point-on-mesh queries via `cudarc::optix` hardware RT Core custom-AABB candidate gathering and exact FP64 distance certification.
+    #[must_use]
+    pub fn optix_rt_closest_point_mesh(
+        &self,
+        points: &[Point3],
+        mesh: TriangleMeshView<'_>,
+    ) -> Option<Vec<ClosestPointResult>> {
+        let optix = self.optix.as_ref()?;
+        if points.is_empty() {
+            return Some(Vec::new());
+        }
+        if mesh.triangles.is_empty() {
+            return Some(cpu::closest_point_mesh(points, mesh));
+        }
+        self.ctx.bind_to_thread().ok()?;
+        let stream = self.ctx.default_stream();
+        let n_queries = u32::try_from(points.len()).ok()?;
+
+        let flat_queries: Vec<f64> = points.iter().flat_map(|q| [q.x, q.y, q.z, 0.0]).collect();
+        let d_queries = stream.clone_htod(&flat_queries).ok()?;
+        let d_cand_prim16 = stream
+            .alloc_zeros::<u32>(points.len().checked_mul(16)?)
+            .ok()?;
+        let out_f64_len = points.len().checked_mul(5)?;
+        let mut d_out = stream.alloc_zeros::<f64>(out_f64_len).ok()?;
+
+        Self::with_cached_optix_mesh(optix, &stream, mesh, |cached| {
+            let params_raw = {
+                let (q_ptr, _s1) = d_queries.device_ptr(&stream);
+                let (cand_ptr, _s2) = d_cand_prim16.device_ptr(&stream);
+                [cached.blas_aabb.handle(), q_ptr, cand_ptr, 0_u64]
+            };
+            let d_params = stream.clone_htod(&params_raw).ok()?;
+            optix
+                .aabb_gather_pipeline
+                .launch(&stream, &d_params, &optix.aabb_gather_sbt, n_queries, 1, 1)
+                .ok()?;
+
+            let block = 128_u32;
+            let grid = n_queries.div_ceil(block);
+            let cfg = LaunchConfig {
+                grid_dim: (grid, 1, 1),
+                block_dim: (block, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let mut builder = stream.launch_builder(&optix.fn_optix_bvh_closest_point);
+            builder.arg(&cached.d_bvh);
+            builder.arg(&cached.d_tris_verts);
+            builder.arg(&d_queries);
+            builder.arg(&d_cand_prim16);
+            builder.arg(&mut d_out);
+            builder.arg(&cached.r_pad_sq);
+            builder.arg(&n_queries);
+            builder.arg(&cached.n_nodes);
+            builder.arg(&cached.n_tris);
+            // Safety: kernel signature matches (u64, u64, u64, u64, u64, f64, u32, u32, u32) and buffer bounds are verified.
+            unsafe { builder.launch(cfg) }.ok()?;
+            Some(())
+        })?;
+
+        let raw_out = stream.clone_dtoh(&d_out).ok()?;
+        Some(
+            raw_out
+                .chunks_exact(5)
+                .map(|r| {
+                    let Ok(tri_idx) = u32::try_from(r[4].to_bits()) else {
+                        return ClosestPointResult {
+                            closest_point: Point3::new(r[0], r[1], r[2]),
+                            distance_sq: r[3],
+                            triangle_index: u32::MAX,
+                        };
+                    };
+                    ClosestPointResult {
+                        closest_point: Point3::new(r[0], r[1], r[2]),
+                        distance_sq: r[3],
+                        triangle_index: tri_idx,
+                    }
+                })
+                .collect(),
+        )
     }
 }
 
@@ -5305,5 +6034,43 @@ mod tests {
             .optix_rt_point_in_solid_parity(&points, mesh)
             .expect("CUDA OptiX RT Core point-in-solid parity");
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn cuda_optix_rt_closest_point_matches_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        if !ctx.supports_optix_rt() {
+            return;
+        }
+        let pts_a: Vec<Point3> = (0_u32..96)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f * 0.12 - 2.5, (f * 0.27).sin(), (f * 0.19).cos())
+            })
+            .collect();
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+        ];
+        let triangles = [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let expected_cp = cpu::closest_point_mesh(&pts_a, mesh);
+        let actual_cp = ctx
+            .optix_rt_closest_point_mesh(&pts_a, mesh)
+            .expect("CUDA OptiX RT Core closest point");
+        for (e, a) in expected_cp.iter().zip(&actual_cp) {
+            assert!((e.distance_sq - a.distance_sq).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((e.closest_point.x - a.closest_point.x).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((e.closest_point.y - a.closest_point.y).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((e.closest_point.z - a.closest_point.z).abs() < CUDA_PARITY_TOLERANCE);
+            assert!(a.triangle_index < 4);
+        }
     }
 }

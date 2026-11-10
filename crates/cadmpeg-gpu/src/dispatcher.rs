@@ -373,7 +373,9 @@ impl GpuDispatcher {
         mesh: TriangleMeshView<'_>,
     ) -> Option<Vec<ClosestPointResult>> {
         match backend {
-            BackendKind::RtxRtCore => None,
+            BackendKind::RtxRtCore => {
+                global_cuda().and_then(|cu| cu.optix_rt_closest_point_mesh(points, mesh))
+            }
             BackendKind::VulkanRtCore => {
                 global_vulkan().and_then(|vk| vk.rt_core_closest_point_mesh(points, mesh))
             }
@@ -906,7 +908,11 @@ fn benchmark_single(
                     let out = cu.ptx_sm86_spatial_closest_point(&pts, mesh)?;
                     std::hint::black_box(&out);
                 }
-                (OperationKind::ClosestPointMesh, BackendKind::RtxRtCore) => return None,
+                (OperationKind::ClosestPointMesh, BackendKind::RtxRtCore) => {
+                    let cu = global_cuda()?;
+                    let out = cu.optix_rt_closest_point_mesh(&pts, mesh)?;
+                    std::hint::black_box(&out);
+                }
                 _ => return None,
             }
             u64::try_from(t0.elapsed().as_nanos()).ok()
