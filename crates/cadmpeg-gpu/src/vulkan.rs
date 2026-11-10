@@ -7,7 +7,7 @@ use std::sync::{Mutex, OnceLock};
 use cadmpeg_ir::math::Point3;
 
 use crate::cpu;
-use crate::{RayHit3, RayQuery3, TriangleMeshView};
+use crate::{ClosestPointResult, RayHit3, RayQuery3, TriangleMeshView};
 
 const TRANSFORM_WGSL: &str = "
 @group(0) @binding(0) var<storage, read> mat: array<vec4<f64>, 4>;
@@ -240,6 +240,248 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     } else {
         parity_out[p_idx] = 0.0lf;
     }
+}
+";
+
+const BVH_CLOSEST_POINT_WGSL: &str = "
+@group(0) @binding(0) var<storage, read> queries: array<vec4<f64>>;
+@group(0) @binding(1) var<storage, read> scene: array<vec4<f64>>;
+@group(0) @binding(2) var<storage, read_write> cp_out: array<vec4<f64>>;
+
+fn dop(a: f64, b: f64, c: f64, d: f64) -> f64 {
+    let cd = c * d;
+    let err = fma(-c, d, cd);
+    let f = fma(a, b, -cd);
+    return f + err;
+}
+
+fn vec_dot(a: vec3<f64>, b: vec3<f64>) -> f64 {
+    return fma(a.x, b.x, fma(a.y, b.y, a.z * b.z));
+}
+
+fn dist_sq3(a: vec3<f64>, b: vec3<f64>) -> f64 {
+    let d = a - b;
+    return fma(d.x, d.x, fma(d.y, d.y, d.z * d.z));
+}
+
+fn aabb_dist_sq(p: vec3<f64>, bmin: vec3<f64>, bmax: vec3<f64>) -> f64 {
+    let cx = clamp(p.x, bmin.x, bmax.x);
+    let cy = clamp(p.y, bmin.y, bmax.y);
+    let cz = clamp(p.z, bmin.z, bmax.z);
+    return dist_sq3(p, vec3<f64>(cx, cy, cz));
+}
+
+fn closest_on_segment(p: vec3<f64>, a: vec3<f64>, b: vec3<f64>) -> vec3<f64> {
+    let ab = b - a;
+    let ab_sq = vec_dot(ab, ab);
+    if ab_sq <= 0.0lf {
+        return a;
+    }
+    let t = clamp(vec_dot(p - a, ab) / ab_sq, 0.0lf, 1.0lf);
+    return fma(vec3<f64>(t, t, t), ab, a);
+}
+
+fn closest_point_on_triangle(p: vec3<f64>, a: vec3<f64>, b: vec3<f64>, c: vec3<f64>) -> vec3<f64> {
+    let ab = b - a;
+    let ac = c - a;
+    let n = vec3<f64>(
+        dop(ab.y, ac.z, ab.z, ac.y),
+        dop(ab.z, ac.x, ab.x, ac.z),
+        dop(ab.x, ac.y, ab.y, ac.x),
+    );
+    let area_sq = vec_dot(n, n);
+    let ab_sq = vec_dot(ab, ab);
+    let ac_sq = vec_dot(ac, ac);
+    if area_sq <= 2.220446049250313e-16lf * ab_sq * ac_sq {
+        let p1 = closest_on_segment(p, a, b);
+        let p2 = closest_on_segment(p, b, c);
+        let p3 = closest_on_segment(p, c, a);
+        let d1 = dist_sq3(p, p1);
+        let d2 = dist_sq3(p, p2);
+        let d3 = dist_sq3(p, p3);
+        var best_p = p1;
+        var best_d = d1;
+        if d2 < best_d {
+            best_d = d2;
+            best_p = p2;
+        }
+        if d3 < best_d {
+            best_p = p3;
+        }
+        return best_p;
+    }
+
+    let ap = p - a;
+    let d1 = vec_dot(ab, ap);
+    let d2 = vec_dot(ac, ap);
+    if d1 <= 0.0lf && d2 <= 0.0lf {
+        return a;
+    }
+
+    let bp = p - b;
+    let d3 = vec_dot(ab, bp);
+    let d4 = vec_dot(ac, bp);
+    if d3 >= 0.0lf && d4 <= d3 {
+        return b;
+    }
+
+    let vc = dop(d1, d4, d3, d2);
+    if vc <= 0.0lf && d1 >= 0.0lf && d3 <= 0.0lf {
+        let denom = d1 - d3;
+        let v = select(0.0lf, clamp(d1 / denom, 0.0lf, 1.0lf), denom > 0.0lf);
+        return fma(vec3<f64>(v, v, v), ab, a);
+    }
+
+    let cp = p - c;
+    let d5 = vec_dot(ab, cp);
+    let d6 = vec_dot(ac, cp);
+    if d6 >= 0.0lf && d5 <= d6 {
+        return c;
+    }
+
+    let vb = dop(d5, d2, d1, d6);
+    if vb <= 0.0lf && d2 >= 0.0lf && d6 <= 0.0lf {
+        let denom = d2 - d6;
+        let w = select(0.0lf, clamp(d2 / denom, 0.0lf, 1.0lf), denom > 0.0lf);
+        return fma(vec3<f64>(w, w, w), ac, a);
+    }
+
+    let va = dop(d3, d6, d5, d4);
+    if va <= 0.0lf && (d4 - d3) >= 0.0lf && (d5 - d6) >= 0.0lf {
+        let denom = (d4 - d3) + (d5 - d6);
+        let w = select(0.0lf, clamp((d4 - d3) / denom, 0.0lf, 1.0lf), denom > 0.0lf);
+        let bc = c - b;
+        return fma(vec3<f64>(w, w, w), bc, b);
+    }
+
+    let t = vec_dot(ap, n) / area_sq;
+    return fma(vec3<f64>(-t, -t, -t), n, p);
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let q_idx = gid.x;
+    if q_idx >= arrayLength(&queries) {
+        return;
+    }
+    let q = queries[q_idx].xyz;
+    let hdr = scene[0];
+    let n_nodes = u32(hdr.x);
+    let tri_base = 1u + n_nodes * 2u;
+
+    var best_sq = hdr.z;
+    var best_pt = vec3<f64>(0.0lf, 0.0lf, 0.0lf);
+    var best_tri = -1.0lf;
+
+    if n_nodes > 0u {
+        var stack_node: array<u32, 64>;
+        var stack_end: array<u32, 64>;
+        var stack_lb: array<f64, 64>;
+        stack_node[0] = 0u;
+        stack_end[0] = n_nodes;
+        stack_lb[0] = 0.0lf;
+        var sp = 1u;
+
+        loop {
+            if sp == 0u {
+                break;
+            }
+            sp = sp - 1u;
+            let node_idx = stack_node[sp];
+            let subtree_end = stack_end[sp];
+            let lb = stack_lb[sp];
+            if lb >= best_sq {
+                continue;
+            }
+
+            let n0 = scene[1u + node_idx * 2u];
+            let n1 = scene[1u + node_idx * 2u + 1u];
+            let tri_f = n0.w;
+            let right_child = u32(n1.w);
+
+            if tri_f >= 0.0lf {
+                let t_idx = u32(tri_f);
+                let tb = tri_base + t_idx * 3u;
+                let tv0 = scene[tb];
+                if tv0.w > 0.0lf {
+                    let v0 = tv0.xyz;
+                    let v1 = scene[tb + 1u].xyz;
+                    let v2 = scene[tb + 2u].xyz;
+                    let cand = closest_point_on_triangle(q, v0, v1, v2);
+                    let d_sq = dist_sq3(q, cand);
+                    if d_sq < best_sq {
+                        best_sq = d_sq;
+                        best_pt = cand;
+                        best_tri = tri_f;
+                    }
+                }
+            } else {
+                let left_idx = node_idx + 1u;
+                let left_end = min(right_child, subtree_end);
+                let has_left = left_idx < left_end;
+                let has_right = right_child < subtree_end;
+
+                if has_left && has_right {
+                    let l0 = scene[1u + left_idx * 2u].xyz;
+                    let l1 = scene[1u + left_idx * 2u + 1u].xyz;
+                    let r0 = scene[1u + right_child * 2u].xyz;
+                    let r1 = scene[1u + right_child * 2u + 1u].xyz;
+                    let dl = aabb_dist_sq(q, l0, l1);
+                    let dr = aabb_dist_sq(q, r0, r1);
+                    if dl <= dr {
+                        if dr < best_sq && sp < 64u {
+                            stack_node[sp] = right_child;
+                            stack_end[sp] = subtree_end;
+                            stack_lb[sp] = dr;
+                            sp = sp + 1u;
+                        }
+                        if dl < best_sq && sp < 64u {
+                            stack_node[sp] = left_idx;
+                            stack_end[sp] = left_end;
+                            stack_lb[sp] = dl;
+                            sp = sp + 1u;
+                        }
+                    } else {
+                        if dl < best_sq && sp < 64u {
+                            stack_node[sp] = left_idx;
+                            stack_end[sp] = left_end;
+                            stack_lb[sp] = dl;
+                            sp = sp + 1u;
+                        }
+                        if dr < best_sq && sp < 64u {
+                            stack_node[sp] = right_child;
+                            stack_end[sp] = subtree_end;
+                            stack_lb[sp] = dr;
+                            sp = sp + 1u;
+                        }
+                    }
+                } else if has_left {
+                    let l0 = scene[1u + left_idx * 2u].xyz;
+                    let l1 = scene[1u + left_idx * 2u + 1u].xyz;
+                    let dl = aabb_dist_sq(q, l0, l1);
+                    if dl < best_sq && sp < 64u {
+                        stack_node[sp] = left_idx;
+                        stack_end[sp] = left_end;
+                        stack_lb[sp] = dl;
+                        sp = sp + 1u;
+                    }
+                } else if has_right {
+                    let r0 = scene[1u + right_child * 2u].xyz;
+                    let r1 = scene[1u + right_child * 2u + 1u].xyz;
+                    let dr = aabb_dist_sq(q, r0, r1);
+                    if dr < best_sq && sp < 64u {
+                        stack_node[sp] = right_child;
+                        stack_end[sp] = subtree_end;
+                        stack_lb[sp] = dr;
+                        sp = sp + 1u;
+                    }
+                }
+            }
+        }
+    }
+
+    cp_out[q_idx * 2u] = vec4<f64>(best_pt.x, best_pt.y, best_pt.z, best_sq);
+    cp_out[q_idx * 2u + 1u] = vec4<f64>(best_tri, 0.0lf, 0.0lf, 0.0lf);
 }
 ";
 
@@ -737,6 +979,7 @@ pub struct VulkanContext {
     pipe_bezier_eval: wgpu::ComputePipeline,
     pipe_ray_mesh: wgpu::ComputePipeline,
     pipe_point_in_solid: wgpu::ComputePipeline,
+    pipe_bvh_closest_point: wgpu::ComputePipeline,
     compute_mesh_cache: Mutex<Option<CachedVulkanComputeMesh>>,
     rt: Option<RtPipelines>,
 }
@@ -998,6 +1241,7 @@ impl VulkanContext {
             pipe_bezier_eval: compile_pipe("cadmpeg-wgsl-bezier-eval", BEZIER_EVAL_WGSL),
             pipe_ray_mesh: compile_pipe("cadmpeg-wgsl-ray-mesh", RAY_MESH_WGSL),
             pipe_point_in_solid: compile_pipe("cadmpeg-wgsl-point-in-solid", POINT_IN_SOLID_WGSL),
+            pipe_bvh_closest_point: compile_pipe("cadmpeg-wgsl-bvh-cp", BVH_CLOSEST_POINT_WGSL),
             compute_mesh_cache: Mutex::new(None),
             rt,
             device,
@@ -1569,9 +1813,7 @@ impl VulkanContext {
         if needs_rebuild {
             *guard = Some(self.build_cached_compute_mesh(mesh, hash)?);
         }
-        let c = guard.as_ref()?;
-        let _ = &c.b_scene;
-        f(c)
+        f(guard.as_ref()?)
     }
 
     /// Executes native `f64` batch ray-mesh intersection via Vulkan `wgpu`.
@@ -1654,6 +1896,50 @@ impl VulkanContext {
             )
         })?;
         Some(raw.into_iter().map(|v| v > 0.5).collect())
+    }
+
+    /// Executes native `f64` closest-point-on-mesh queries via Vulkan `wgpu` flattened BVH traversal.
+    #[must_use]
+    pub fn compute_spatial_closest_point(
+        &self,
+        points: &[Point3],
+        mesh: TriangleMeshView<'_>,
+    ) -> Option<Vec<ClosestPointResult>> {
+        if points.is_empty() {
+            return Some(Vec::new());
+        }
+        if mesh.triangles.is_empty() {
+            return Some(cpu::closest_point_mesh(points, mesh));
+        }
+        let flat_queries: Vec<f64> = points.iter().flat_map(|q| [q.x, q.y, q.z, 0.0]).collect();
+        let out_f64_len = points.len().checked_mul(8)?;
+        let raw = self.with_cached_compute_mesh(mesh, |cached| {
+            self.execute_f64_pipeline_with_cached_b1(
+                &self.pipe_bvh_closest_point,
+                &flat_queries,
+                &cached.b_scene,
+                out_f64_len,
+                points.len(),
+            )
+        })?;
+        Some(
+            raw.chunks_exact(8)
+                .map(|r| {
+                    let Some(tri_idx) = f64_int_to_u32(r[4]) else {
+                        return ClosestPointResult {
+                            closest_point: Point3::new(r[0], r[1], r[2]),
+                            distance_sq: r[3],
+                            triangle_index: u32::MAX,
+                        };
+                    };
+                    ClosestPointResult {
+                        closest_point: Point3::new(r[0], r[1], r[2]),
+                        distance_sq: r[3],
+                        triangle_index: tri_idx,
+                    }
+                })
+                .collect(),
+        )
     }
 
     fn hash_mesh(mesh: TriangleMeshView<'_>) -> u64 {
@@ -2186,6 +2472,40 @@ mod tests {
             .compute_point_in_solid_parity(&pts, mesh)
             .expect("Vulkan f64 point-in-solid");
         assert_eq!(expected_parity, actual_parity);
+    }
+
+    #[test]
+    fn vulkan_spatial_closest_point_matches_cpu() {
+        let Some(vk) = global_vulkan() else {
+            return;
+        };
+        let pts_a: Vec<Point3> = (0_u32..64)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f * 0.15 - 2.0, (f * 0.3).sin(), (f * 0.2).cos())
+            })
+            .collect();
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+        ];
+        let triangles = [[0_u32, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let expected_cp = cpu::closest_point_mesh(&pts_a, mesh);
+        let actual_cp = vk
+            .compute_spatial_closest_point(&pts_a, mesh)
+            .expect("Vulkan f64 spatial closest point");
+        for (e, a) in expected_cp.iter().zip(&actual_cp) {
+            assert!((e.distance_sq - a.distance_sq).abs() < VULKAN_PARITY_TOLERANCE);
+            assert!((e.closest_point.x - a.closest_point.x).abs() < VULKAN_PARITY_TOLERANCE);
+            assert!((e.closest_point.y - a.closest_point.y).abs() < VULKAN_PARITY_TOLERANCE);
+            assert!((e.closest_point.z - a.closest_point.z).abs() < VULKAN_PARITY_TOLERANCE);
+        }
     }
 
     #[test]
