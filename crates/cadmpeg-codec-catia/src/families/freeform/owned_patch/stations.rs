@@ -16,7 +16,7 @@ const STATION_TOLERANCE: f64 = 1.0e-9;
 #[derive(Clone, Copy)]
 pub(super) struct Domain<'a> {
     pub(super) range: [f64; 2],
-    pub(super) knots: Option<(&'a [f64], usize)>,
+    pub(super) knots: Option<(&'a [f64], usize, usize)>,
     pub(super) line: bool,
 }
 
@@ -125,7 +125,7 @@ pub(super) fn mapped_station(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
     [vertex, map, curve, incidence]: [usize; 4],
-    line: bool,
+    allow_spline_companion: bool,
     resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
 ) -> Option<(f64, bool)> {
     let mapping = map_record(bytes, records.get(map)?)?;
@@ -160,16 +160,21 @@ pub(super) fn mapped_station(
             knots: None,
             line: true,
         }
-    } else if line {
+    } else if allow_spline_companion
+        && matches!(record.family(), Family::A | Family::B)
+        && record.class() == 0x20
+    {
         let spline = owned_pcurve_from_record(bytes, record)?;
         knots = spline
             .sites
             .iter()
             .map(|site| site.knot.get())
             .collect::<Vec<_>>();
+        let first_arc = spline_first_arc(payload(bytes, record)?, &knots)?;
+        let extrapolation_sites = leading_extrapolation_sites(&knots, spline.extrapolation_sites);
         Domain {
             range: spline.range.endpoints(),
-            knots: Some((&knots, spline_first_arc(payload(bytes, record)?, &knots)?)),
+            knots: Some((&knots, first_arc, extrapolation_sites)),
             line: false,
         }
     } else {
@@ -239,12 +244,9 @@ fn map_station(
         .iter()
         .map(|site| site.knot.get())
         .collect::<Vec<_>>();
-    arc_parameter(
-        local,
-        tail[9],
-        &knots,
-        spline_first_arc(payload(bytes, record)?, &knots)?,
-    )
+    let first_arc = spline_first_arc(payload(bytes, record)?, &knots)?;
+    let extrapolation_sites = leading_extrapolation_sites(&knots, spline.extrapolation_sites);
+    arc_parameter(local, tail[9], &knots, first_arc, extrapolation_sites)
 }
 
 /// Resolve a circle endpoint through the edge selector's affine chart map.
@@ -348,6 +350,7 @@ pub(super) fn mapped_spline_parameter(
     } else {
         1
     };
+    let extrapolation_sites = leading_extrapolation_sites(&knots, companion.extrapolation_sites);
     let t = parameter(
         bytes,
         records,
@@ -355,7 +358,7 @@ pub(super) fn mapped_spline_parameter(
         basis,
         Domain {
             range: from.endpoints(),
-            knots: Some((&knots, first_arc)),
+            knots: Some((&knots, first_arc, extrapolation_sites)),
             line: false,
         },
         resolve,
@@ -379,8 +382,36 @@ pub(super) fn spline_first_arc(bytes: &[u8], knots: &[f64]) -> Option<usize> {
     })
 }
 
-fn arc_parameter(t: f64, code: u8, knots: &[f64], first_arc: usize) -> Option<f64> {
-    let arc = usize::from(code.checked_sub(1)? / 4).checked_sub(first_arc)?;
+pub(super) fn leading_extrapolation_sites(knots: &[f64], encoded: u32) -> usize {
+    let count = knots
+        .iter()
+        .take_while(|&&k| k < -STATION_TOLERANCE)
+        .count();
+    if u32::try_from(count).ok() == Some(encoded)
+        && knots
+            .get(count)
+            .is_some_and(|k| k.abs() <= STATION_TOLERANCE)
+    {
+        count
+    } else {
+        0
+    }
+}
+
+fn arc_parameter(
+    t: f64,
+    code: u8,
+    knots: &[f64],
+    first_arc: usize,
+    extrapolation_sites: usize,
+) -> Option<f64> {
+    let arc = usize::from(code.checked_sub(1)? / 4)
+        .checked_sub(first_arc)?
+        .checked_add(extrapolation_sites)?;
+    parameter_on_arc(t, knots, arc)
+}
+
+fn parameter_on_arc(t: f64, knots: &[f64], arc: usize) -> Option<f64> {
     let a = *knots.get(arc)?;
     let b = *knots.get(arc + 1)?;
     if !t.is_finite() || t < -STATION_TOLERANCE || t > (b - a) + STATION_TOLERANCE {
@@ -417,16 +448,15 @@ fn incidence_parameter(
     }
     let lane = lane?;
     let tail = bytes.get(at..)?;
-    let scalar = |at: usize, tagged| {
+    let scalar = |at: usize, tagged: bool| {
         let t = View::f64_le_at(tail, at)?;
-        let code = if tagged {
-            tail.get(at + 8).copied()
-        } else {
-            None
-        };
-        match (knots, code) {
-            (Some((knots, first_arc)), Some(code)) if code > 1 => {
-                arc_parameter(t, code, knots, first_arc)
+        let tag = tagged.then(|| tail.get(at + 8..)).flatten();
+        match (knots, tag) {
+            (Some((knots, _, _)), Some([0x04, code, ..])) => {
+                parameter_on_arc(t, knots, usize::from(code.checked_sub(0x44)?))
+            }
+            (Some((knots, first_arc, extrapolation_sites)), Some([code, ..])) if *code > 1 => {
+                arc_parameter(t, *code, knots, first_arc, extrapolation_sites)
             }
             _ => Some(t),
         }
@@ -441,6 +471,7 @@ fn incidence_parameter(
         },
         (2, 1, [0x80, ..]) if tail.len() == 9 => scalar(1, false)?,
         (2, 1, [0x80, ..]) if tail.len() == 10 && tail[9] % 4 == 1 => scalar(1, true)?,
+        (2, 1, [0x80, ..]) if tail.len() == 11 && tail[9] == 0x04 => scalar(1, true)?,
         (2, _, [0, ..]) if tail.len() == 19 && tail[9] % 4 == 1 && tail[18] % 4 == 1 => {
             scalar(1 + 9 * lane, true)?
         }
@@ -456,8 +487,14 @@ fn incidence_parameter(
         (3, _, [0, ..]) if tail.len() == 27 && tail[9] % 4 == 1 && tail[26] % 4 == 1 => {
             scalar([1, 10, 18][lane], lane != 1)?
         }
-        (3, 1 | 2, [0x10 | 0x80, ..]) if tail.len() == 18 && tail[9] % 4 == 1 => {
+        (3, _, [0, ..]) if tail.len() == 29 && tail[9] == 0x04 && tail[27] == 0x04 => {
+            scalar([1, 11, 19][lane], lane != 1)?
+        }
+        (3, 1 | 2, [0x10, ..]) if tail.len() == 18 && tail[9] % 4 == 1 => {
             scalar(if lane == 1 { 1 } else { 10 }, lane == 1)?
+        }
+        (3, 1 | 2, [0x80, ..]) if tail.len() == 18 && tail[17] % 4 == 1 => {
+            scalar(if lane == 1 { 1 } else { 9 }, lane == 2)?
         }
         (3, 1, [0x11 | 0x22, ..]) | (3, 2, [0x05, ..]) if tail.len() == 10 && tail[9] % 4 == 1 => {
             scalar(1, true)?
@@ -468,15 +505,18 @@ fn incidence_parameter(
         (3, 1 | 2, [0x80, ..]) if tail.len() == 19 && tail[9] % 4 == 1 && tail[18] % 4 == 1 => {
             scalar(1 + 9 * (lane - 1), true)?
         }
+        (3, 1, [0x80, ..]) if tail.len() == 19 && tail[9] == 0x04 => scalar(1, true)?,
+        (3, 2, [0x80, ..]) if tail.len() == 19 && tail[9] == 0x04 => scalar(11, false)?,
         (3, 2, [0x80, ..]) if line && tail.len() == 18 && tail[9] % 2 == 1 => scalar(10, false)?,
         (3, 2, [0x88, ..]) if line && tail.len() == 9 => scalar(1, false)?,
         (3, 1, [0x81, ..]) | (3, 2, [0x82, ..]) if tail.len() == 9 => scalar(1, false)?,
         (3, 1, [0x81, ..]) | (3, 2, [0x82, ..]) if tail.len() == 10 && tail[9] % 4 == 1 => {
             scalar(1, true)?
         }
+        (3, 1, [0x81, ..]) if tail.len() == 11 && tail[9] == 0x04 => scalar(1, true)?,
         _ => return None,
     };
-    let [min, max] = if let Some((knots, _)) = knots {
+    let [min, max] = if let Some((knots, _, _)) = knots {
         [*knots.first()?, *knots.last()?]
     } else {
         [lo.min(hi), lo.max(hi)]
@@ -486,13 +526,16 @@ fn incidence_parameter(
     }
     let arc_station = count == 2
         && knots.is_some()
-        && matches!(tail, [0x80, _, _, _, _, _, _, _, _, code] if *code > 1);
+        && (matches!(tail, [0x80, _, _, _, _, _, _, _, _, code] if *code > 1)
+            || matches!(tail, [0x80, _, _, _, _, _, _, _, _, 0x04, _]));
     Some((if line { t } else { t.clamp(min, max) }, arc_station))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod fixtures;
 
     fn station_value(
         bytes: &[u8],
@@ -502,6 +545,15 @@ mod tests {
         resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
     ) -> Option<f64> {
         incidence_parameter(bytes, record, curve, domain, resolve).map(|(t, _)| t)
+    }
+
+    #[test]
+    fn arc_local_stations_skip_encoded_leading_extrapolation() {
+        let knots = [-2.0, -0.5, 0.0, 1.5];
+        let count = leading_extrapolation_sites(&knots, 2);
+        assert_eq!(arc_parameter(0.25, 0x05, &knots, 1, count), Some(0.25));
+        assert_eq!(leading_extrapolation_sites(&knots, 0), 0);
+        assert_eq!(leading_extrapolation_sites(&[-2.0, -0.5, 1.0, 1.5], 2), 0);
     }
 
     #[test]
@@ -522,7 +574,7 @@ mod tests {
                 1,
                 Domain {
                     range: [2.0, 7.0],
-                    knots: Some((&knots, first_arc)),
+                    knots: Some((&knots, first_arc, 0)),
                     line: false
                 },
                 &resolve
@@ -627,7 +679,7 @@ mod tests {
                 1,
                 Domain {
                     range: [0.0, 4.0],
-                    knots: Some((&knots, 1)),
+                    knots: Some((&knots, 1, 0)),
                     line: false
                 },
                 &resolve
@@ -642,12 +694,33 @@ mod tests {
                 1,
                 Domain {
                     range: [0.0, 4.0],
-                    knots: Some((&knots, 1)),
+                    knots: Some((&knots, 1, 0)),
                     line: false
                 },
                 &resolve
             ),
             None
         );
+    }
+
+    #[test]
+    fn extended_endpoint_tag_selects_an_absolute_knot_span() {
+        let resolve =
+            |_: usize, reference: AllocationReference| usize::try_from(reference.value).ok();
+        let mut bytes = vec![0x82, 3, 7, 0x80];
+        bytes.extend(0.5_f64.to_le_bytes());
+        bytes.extend([0x04, 0x45]);
+        let knots = [-1.0, 2.0, 4.0];
+        let domain = Domain {
+            range: [-1.0, 4.0],
+            knots: Some((&knots, 1, 1)),
+            line: false,
+        };
+        assert_eq!(
+            incidence_parameter(&bytes, 0, 1, domain, &resolve),
+            Some((2.5, true))
+        );
+        bytes[13] = 0x46;
+        assert_eq!(incidence_parameter(&bytes, 0, 1, domain, &resolve), None);
     }
 }
