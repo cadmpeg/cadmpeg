@@ -64,7 +64,16 @@ pub(crate) struct DesignCircularPatternConstruction {
         deserialize_with = "deserialize_axis_separator_flag_offset"
     )]
     pub(crate) axis_separator_flag_offset: Option<u64>,
+    /// Symmetric byte of the pattern payload: the instances lie on both sides of the seed.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_symmetric"
+    )]
+    pub(crate) symmetric: Option<Located<bool>>,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_symmetric, Located<bool>, "symmetric");
 
 cadmpeg_core::named_optional_field!(
     deserialize_axis_separator_flag_offset,

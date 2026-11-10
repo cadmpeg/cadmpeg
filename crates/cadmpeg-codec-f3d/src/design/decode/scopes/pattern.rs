@@ -682,30 +682,52 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::CircularPattern) {
             return None;
         }
-        let mut axis_candidates = Vec::new();
+        let mut solved_candidates = Vec::new();
+        let mut extended_candidates = Vec::new();
         for (record_index, selection_record_index) in scope
             .reference_members()
             .values()
             .zip(scope.reference_members().values().skip(1))
         {
             for (start, paired_at) in records.frames(*record_index) {
-                if let Some(axis) = exact_circular_pattern_axis(
+                let arguments = (
                     bytes,
                     start,
                     paired_at,
                     *record_index,
                     *selection_record_index,
                     scope.record_index,
+                );
+                let (axis, candidates) = if let Some(axis) = exact_circular_pattern_axis(
+                    arguments.0,
+                    arguments.1,
+                    arguments.2,
+                    arguments.3,
+                    arguments.4,
+                    arguments.5,
                 ) {
-                    axis_candidates.push(CircularPatternAxisCandidate {
-                        axis,
-                        axis_record_index: *record_index,
-                        selection_record_index: *selection_record_index,
-                        separator_flag_offset: None,
-                    });
-                }
+                    (axis, &mut solved_candidates)
+                } else if let Some(axis) = exact_extended_circular_pattern_axis(
+                    arguments.0,
+                    arguments.1,
+                    arguments.2,
+                    arguments.3,
+                    arguments.4,
+                    arguments.5,
+                ) {
+                    (axis, &mut extended_candidates)
+                } else {
+                    continue;
+                };
+                candidates.push(CircularPatternAxisCandidate {
+                    axis,
+                    axis_record_index: *record_index,
+                    selection_record_index: *selection_record_index,
+                    separator_flag_offset: None,
+                });
             }
         }
+        let mut axis_candidates = inline_axis_candidates(solved_candidates, extended_candidates);
         for record_index in scope.reference_members().values() {
             for (start, paired_at) in records.frames(*record_index) {
                 let candidate = match exact_legacy_circular_pattern_axis(
@@ -811,7 +833,15 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         let [(angle, angle_record_index, angle_offset)] = angle_candidates.as_slice() else {
             return None;
         };
+        let symmetric = exact_circular_pattern_symmetric(
+            bytes,
+            records,
+            scope,
+            [*count_record_index, *angle_record_index, axis_record_index],
+            *count,
+        );
         Some(Ok(DesignCircularPatternConstruction {
+            symmetric,
             count: std::num::NonZeroU32::new(*count)?,
             count_record_index: *count_record_index,
             count_offset: *count_offset,
@@ -836,6 +866,19 @@ struct CircularPatternAxisCandidate {
     axis_record_index: u32,
     selection_record_index: u32,
     separator_flag_offset: Option<usize>,
+}
+
+/// The inline axis candidates of a scope: its 195-byte records, or its
+/// 221-byte frames when it holds no 195-byte record.
+fn inline_axis_candidates(
+    solved: Vec<CircularPatternAxisCandidate>,
+    extended: Vec<CircularPatternAxisCandidate>,
+) -> Vec<CircularPatternAxisCandidate> {
+    if solved.is_empty() {
+        extended
+    } else {
+        solved
+    }
 }
 
 /// Select one circular-pattern axis, preferring the explicit solved carrier.
@@ -1123,6 +1166,121 @@ fn exact_circular_pattern_axis(
         displacement,
         u64::try_from(start.checked_add(49)?).ok()?,
     )
+}
+
+/// The 221-byte axis frame, which has the layout of the rectangular-pattern
+/// spacing direction record with selection kind `8`.
+fn exact_extended_circular_pattern_axis(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    record_index: u32,
+    selection_record_index: u32,
+    scope_record_index: u32,
+) -> Option<patterns::DesignCircularPatternAxis> {
+    use crate::layout::rectangular_pattern_spacing_direction_record as spacing;
+
+    if paired_at.checked_sub(start) != Some(spacing::LEN) {
+        return None;
+    }
+    let record = exact_rectangular_pattern_direction(
+        bytes,
+        start,
+        paired_at,
+        record_index,
+        selection_record_index,
+        scope_record_index,
+    )
+    .filter(|record| record.selection_kind == 8)?;
+    patterns::DesignCircularPatternAxis::inline(
+        record.origin,
+        record.origin_offset,
+        record.displacement.map(FiniteReal::get),
+        record.displacement_offset,
+    )
+}
+
+/// The symmetric byte of the one pattern payload that names the count owner,
+/// the total-angle owner, and the axis record of `scope`. The payload reads
+/// only when its reference, entry, and instance runs end at the suffix.
+fn exact_circular_pattern_symmetric(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    [count_owner, angle_owner, axis]: [u32; 3],
+    count: u32,
+) -> Option<crate::records::identity::Located<bool>> {
+    use crate::layout::circular_pattern_payload_distribution as block;
+    use crate::layout::circular_pattern_payload_prefix as prefix;
+    use crate::layout::rectangular_pattern_payload_suffix as suffix;
+    const ENTRY_LEN: usize = 16;
+    const MARKED_REFERENCE_LEN: usize = 11;
+
+    let mut found = None;
+    for (_, offsets) in records.records() {
+        for &start in offsets {
+            if bytes.get(start + prefix::ZERO_RUN..start + prefix::SYMMETRIC) != Some(&[0; 10])
+                || marked_record_reference(bytes, start + prefix::ANGLE_OWNER) != Some(angle_owner)
+                || marked_record_reference(bytes, start + prefix::AXIS) != Some(axis)
+            {
+                continue;
+            }
+            let symmetric = match bytes.get(start + prefix::SYMMETRIC) {
+                Some(0) => false,
+                Some(1) => true,
+                _ => continue,
+            };
+            let parsed = (|| {
+                let references =
+                    usize::try_from(View::u32_le_at(bytes, start + prefix::LEN)?).ok()?;
+                let at = references
+                    .checked_mul(MARKED_REFERENCE_LEN)?
+                    .checked_add(start + prefix::LEN + 4)?;
+                if bytes.get(at + block::ZERO_RUN..at + block::FIXED_TWO) != Some(&[0; 8])
+                    || View::u32_le_at(bytes, at + block::FIXED_TWO) != Some(block::FIXED_TWO_VALUE)
+                    || View::u32_le_at(bytes, at + block::SENTINEL) != Some(u32::MAX)
+                    || bytes.get(at + block::FIXED_ONE) != Some(&block::FIXED_ONE_VALUE)
+                {
+                    return None;
+                }
+                let entries =
+                    usize::try_from(View::u32_le_at(bytes, at + block::ENTRY_COUNT)?).ok()?;
+                let instance_count_at = entries
+                    .checked_mul(ENTRY_LEN)?
+                    .checked_add(at + block::LEN)?;
+                if View::u32_le_at(bytes, instance_count_at) != Some(count) {
+                    return None;
+                }
+                let tail = usize::try_from(count)
+                    .ok()?
+                    .checked_mul(MARKED_REFERENCE_LEN)?
+                    .checked_add(instance_count_at + 4)?;
+                let end = tail.checked_add(suffix::LEN)?;
+                let seed_group = marked_record_reference(bytes, tail + suffix::SEED_GROUP)?;
+                (marked_record_reference(bytes, tail + suffix::U_COUNT) == Some(count_owner)
+                    && marked_record_reference(bytes, tail + suffix::SCOPE)
+                        == Some(scope.record_index)
+                    && scope
+                        .reference_members()
+                        .values()
+                        .any(|index| *index == seed_group)
+                    && bytes.get(tail + suffix::ZERO_TAIL..end) == Some(&[0; 4])
+                    && next_indexed_record_offset(bytes, start + prefix::LEN) == Some(end))
+                .then_some(())
+            })();
+            if parsed.is_none() {
+                continue;
+            }
+            let candidate = crate::records::identity::Located {
+                value: symmetric,
+                offset: u64::try_from(start + prefix::SYMMETRIC).ok()?,
+            };
+            if found.replace(candidate).is_some() {
+                return None;
+            }
+        }
+    }
+    found
 }
 
 fn exact_fixed_pattern_count(

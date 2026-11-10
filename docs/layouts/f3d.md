@@ -7453,6 +7453,39 @@ Parsed by:
 | 209 | 1 | `scope_separator` | `u8` | little | spec | The 221-byte spacing direction form |
 | 210 | 11 | `scope_reference` | `bytes[11]` | little | spec | The 221-byte spacing direction form |
 
+## `circular_pattern_payload_prefix`
+
+Spec §Assembly operands · layout: byte offsets · size: 44 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After the indexed header and ten zero bytes, payload offset 21 stores the symmetric byte |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | After the indexed header and ten zero bytes, payload offset 21 stores the symmetric byte |
+| 21 | 1 | `symmetric` | `u8` | little | spec | After the indexed header and ten zero bytes, payload offset 21 stores the symmetric byte |
+| 22 | 11 | `angle_owner` | `bytes[11]` | little | spec | Marked references to the total-angle owner and the axis record start at offsets 22 and 33. |
+| 33 | 11 | `axis` | `bytes[11]` | little | spec | Marked references to the total-angle owner and the axis record start at offsets 22 and 33. |
+
+## `circular_pattern_payload_distribution`
+
+Spec §Assembly operands · layout: byte offsets · size: 25 B
+
+Offsets are relative to the byte after the counted reference run.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `zero_run` | `bytes[8]` | little | spec | The circular distribution block comes next |
+| 8 | 4 | `fixed_two` | `u32` | little | spec | The circular distribution block comes next · value `2` |
+| 12 | 4 | `seed_kind` | `u32` | little | spec | The circular distribution block comes next |
+| 16 | 4 | `sentinel` | `u32` | little | spec | The circular distribution block comes next |
+| 20 | 1 | `fixed_one` | `u8` | little | spec | The circular distribution block comes next · value `1` |
+| 21 | 4 | `entry_count` | `u32` | little | spec | A u32 entry count, that many sixteen-byte entries, a u32 instance count equal to the pattern count |
+
 ## `rectangular_pattern_payload_prefix`
 
 Spec §Assembly operands · layout: byte offsets · size: 133 B

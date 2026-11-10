@@ -7378,6 +7378,48 @@ pub(crate) mod rectangular_pattern_spacing_direction_record {
     pub(crate) const SPACING_FLAG: usize = 93;
 }
 
+/// Byte offsets for the `circular_pattern_payload_prefix` record.
+///
+/// Spec §Assembly operands. Record length 44 B.
+pub(crate) mod circular_pattern_payload_prefix {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 44;
+    /// Offset of `zero_run` (`bytes[10]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `symmetric` (`u8`). Spec §Assembly operands.
+    pub(crate) const SYMMETRIC: usize = 21;
+    /// Offset of `angle_owner` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const ANGLE_OWNER: usize = 22;
+    /// Offset of `axis` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const AXIS: usize = 33;
+}
+
+/// Byte offsets for the `circular_pattern_payload_distribution` record.
+///
+/// Spec §Assembly operands. Record length 25 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the counted reference run.
+/// ```
+pub(crate) mod circular_pattern_payload_distribution {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 25;
+    /// Offset of `zero_run` (`bytes[8]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN: usize = 0;
+    /// Offset of `fixed_two` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const FIXED_TWO: usize = 8;
+    /// Stated value of `fixed_two` (`u32`). Spec §Assembly operands.
+    pub(crate) const FIXED_TWO_VALUE: u32 = 0x0000_0002;
+    /// Offset of `sentinel` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SENTINEL: usize = 16;
+    /// Offset of `fixed_one` (`u8`). Spec §Assembly operands.
+    pub(crate) const FIXED_ONE: usize = 20;
+    /// Stated value of `fixed_one` (`u8`). Spec §Assembly operands.
+    pub(crate) const FIXED_ONE_VALUE: u8 = 1;
+    /// Offset of `entry_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const ENTRY_COUNT: usize = 21;
+}
+
 /// Byte offsets for the `rectangular_pattern_payload_prefix` record.
 ///
 /// Spec §Assembly operands. Record length 133 B.
