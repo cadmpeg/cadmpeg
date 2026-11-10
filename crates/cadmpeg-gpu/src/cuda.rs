@@ -3251,6 +3251,291 @@ L_OPTIX_PIS_EXIT:
     ret;
 }
 
+// 12b. GPU point-cloud AABB builder for OptiX custom-primitive BVH
+.visible .entry cuda_build_point_aabbs_f64(
+    .param .u64 param_pts,
+    .param .u64 param_aabbs,
+    .param .f32 param_r_pad,
+    .param .u32 param_n_pts
+) {
+    .reg .pred %p0;
+    .reg .b32 %r<6>;
+    .reg .b64 %rd<8>;
+    .reg .f64 %fd<3>;
+    .reg .f32 %f<10>;
+
+    ld.param.u64 %rd1, [param_pts];
+    ld.param.u64 %rd2, [param_aabbs];
+    ld.param.f32 %f0, [param_r_pad];
+    ld.param.u32 %r1, [param_n_pts];
+
+    mov.u32 %r2, %ctaid.x;
+    mov.u32 %r3, %ntid.x;
+    mov.u32 %r4, %tid.x;
+    mad.lo.u32 %r5, %r2, %r3, %r4;
+    setp.ge.u32 %p0, %r5, %r1;
+    @%p0 bra L_BUILD_AABB_EXIT;
+
+    cvta.to.global.u64 %rd3, %rd1;
+    cvta.to.global.u64 %rd4, %rd2;
+
+    mul.wide.u32 %rd5, %r5, 32;
+    add.u64 %rd6, %rd3, %rd5;
+    ld.global.nc.f64 %fd0, [%rd6 + 0];
+    ld.global.nc.f64 %fd1, [%rd6 + 8];
+    ld.global.nc.f64 %fd2, [%rd6 + 16];
+
+    cvt.rn.f32.f64 %f1, %fd0;
+    cvt.rn.f32.f64 %f2, %fd1;
+    cvt.rn.f32.f64 %f3, %fd2;
+
+    sub.f32 %f4, %f1, %f0;
+    sub.f32 %f5, %f2, %f0;
+    sub.f32 %f6, %f3, %f0;
+    add.f32 %f7, %f1, %f0;
+    add.f32 %f8, %f2, %f0;
+    add.f32 %f9, %f3, %f0;
+
+    mul.wide.u32 %rd5, %r5, 24;
+    add.u64 %rd7, %rd4, %rd5;
+    st.global.f32 [%rd7 + 0],  %f4;
+    st.global.f32 [%rd7 + 4],  %f5;
+    st.global.f32 [%rd7 + 8],  %f6;
+    st.global.f32 [%rd7 + 12], %f7;
+    st.global.f32 [%rd7 + 16], %f8;
+    st.global.f32 [%rd7 + 20], %f9;
+
+L_BUILD_AABB_EXIT:
+    ret;
+}
+
+// 13. CUDA OptiX RT Core AABB-Certified Nearest-Neighbor + Warp-Butterfly Max Reduction
+.visible .entry cuda_optix_kdtree_query_f64(
+    .param .u64 param_targets,
+    .param .u64 param_queries,
+    .param .u64 param_cand_prim16,
+    .param .u64 param_warp_out,
+    .param .f64 param_r_pad_sq,
+    .param .u32 param_n_queries,
+    .param .u32 param_n_targets
+) {
+    .local .align 8 .b8 %stack[512];
+    .reg .pred %p<12>;
+    .reg .b32 %r<28>;
+    .reg .b64 %rd<20>;
+    .reg .f64 %fd<16>;
+
+    ld.param.u64 %rd1, [param_targets];
+    ld.param.u64 %rd2, [param_queries];
+    ld.param.u64 %rd18, [param_cand_prim16];
+    ld.param.u64 %rd3, [param_warp_out];
+    ld.param.f64 %fd15, [param_r_pad_sq];
+    ld.param.u32 %r1, [param_n_queries];
+    ld.param.u32 %r2, [param_n_targets];
+
+    mov.u32 %r3, %ctaid.x;
+    mov.u32 %r4, %ntid.x;
+    mov.u32 %r5, %tid.x;
+    mad.lo.u32 %r6, %r3, %r4, %r5;
+
+    cvta.to.global.u64 %rd4, %rd1;
+    cvta.to.global.u64 %rd5, %rd2;
+    cvta.to.global.u64 %rd19, %rd18;
+    cvta.to.global.u64 %rd6, %rd3;
+
+    mov.f64 %fd3, 0d0000000000000000;
+    setp.ge.u32 %p0, %r6, %r1;
+    setp.eq.u32 %p1, %r2, 0;
+    or.pred %p0, %p0, %p1;
+    @%p0 bra L_OPTIX_KD_WARP_REDUCE;
+
+    mul.wide.u32 %rd7, %r6, 32;
+    add.u64 %rd8, %rd5, %rd7;
+    ld.global.nc.f64 %fd0, [%rd8 + 0];
+    ld.global.nc.f64 %fd1, [%rd8 + 8];
+    ld.global.nc.f64 %fd2, [%rd8 + 16];
+
+    sub.u32 %r8, %r2, 1;
+    min.u32 %r8, %r6, %r8;
+    mul.wide.u32 %rd12, %r8, 32;
+    add.u64 %rd13, %rd4, %rd12;
+    ld.global.nc.f64 %fd5, [%rd13 + 0];
+    ld.global.nc.f64 %fd6, [%rd13 + 8];
+    ld.global.nc.f64 %fd7, [%rd13 + 16];
+    sub.f64 %fd8,  %fd0, %fd5;
+    sub.f64 %fd9,  %fd1, %fd6;
+    sub.f64 %fd10, %fd2, %fd7;
+    mul.f64 %fd3, %fd10, %fd10;
+    fma.rn.f64 %fd3, %fd9, %fd9, %fd3;
+    fma.rn.f64 %fd3, %fd8, %fd8, %fd3;
+
+    setp.le.u32 %p1, %r2, 32;
+    @%p1 bra L_OPTIX_KD_FALLBACK_START;
+
+    mul.wide.u32 %rd7, %r6, 64;
+    add.u64 %rd8, %rd19, %rd7;
+    ld.global.nc.u32 %r20, [%rd8 + 0];
+    min.u32 %r19, %r20, 15;
+    mov.u32 %r21, 0;
+
+L_OPTIX_KD_CAND_LOOP:
+    setp.ge.u32 %p1, %r21, %r19;
+    @%p1 bra L_OPTIX_KD_CAND_DONE;
+    add.u32 %r21, %r21, 1;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.u64 %rd11, %rd8, %rd10;
+    ld.global.nc.u32 %r9, [%rd11];
+    setp.ge.u32 %p1, %r9, %r2;
+    @%p1 bra L_OPTIX_KD_CAND_LOOP;
+
+    mul.wide.u32 %rd12, %r9, 32;
+    add.u64 %rd13, %rd4, %rd12;
+    ld.global.nc.f64 %fd5, [%rd13 + 0];
+    ld.global.nc.f64 %fd6, [%rd13 + 8];
+    ld.global.nc.f64 %fd7, [%rd13 + 16];
+    sub.f64 %fd8,  %fd0, %fd5;
+    sub.f64 %fd9,  %fd1, %fd6;
+    sub.f64 %fd10, %fd2, %fd7;
+    mul.f64 %fd11, %fd10, %fd10;
+    fma.rn.f64 %fd11, %fd9, %fd9, %fd11;
+    fma.rn.f64 %fd11, %fd8, %fd8, %fd11;
+    min.f64 %fd3, %fd3, %fd11;
+    bra L_OPTIX_KD_CAND_LOOP;
+
+L_OPTIX_KD_CAND_DONE:
+    setp.le.u32 %p2, %r20, 15;
+    setp.le.f64 %p3, %fd3, %fd15;
+    and.pred %p2, %p2, %p3;
+    @%p2 bra L_OPTIX_KD_WARP_REDUCE;
+
+L_OPTIX_KD_FALLBACK_START:
+    mov.u64 %rd9, %stack;
+    st.local.u32 [%rd9 + 0], 0;
+    st.local.u32 [%rd9 + 4], %r2;
+    st.local.f64 [%rd9 + 8], 0d0000000000000000;
+    mov.u32 %r7, 1;
+
+L_OPTIX_KD_FALLBACK_LOOP:
+    setp.eq.u32 %p2, %r7, 0;
+    @%p2 bra L_OPTIX_KD_WARP_REDUCE;
+
+    sub.u32 %r7, %r7, 1;
+    shl.b32 %r8, %r7, 4;
+    cvt.u64.u32 %rd10, %r8;
+    add.u64 %rd11, %rd9, %rd10;
+    ld.local.u32 %r9,  [%rd11 + 0];
+    ld.local.u32 %r10, [%rd11 + 4];
+    ld.local.f64 %fd4, [%rd11 + 8];
+
+    setp.ge.f64 %p3, %fd4, %fd3;
+    @%p3 bra L_OPTIX_KD_FALLBACK_LOOP;
+
+    mul.wide.u32 %rd12, %r9, 32;
+    add.u64 %rd13, %rd4, %rd12;
+    ld.global.nc.f64 %fd5, [%rd13 + 0];
+    ld.global.nc.f64 %fd6, [%rd13 + 8];
+    ld.global.nc.f64 %fd7, [%rd13 + 16];
+    ld.global.nc.u32 %r11, [%rd13 + 24];
+    ld.global.nc.u32 %r12, [%rd13 + 28];
+
+    sub.f64 %fd8,  %fd0, %fd5;
+    sub.f64 %fd9,  %fd1, %fd6;
+    sub.f64 %fd10, %fd2, %fd7;
+
+    mul.f64 %fd11, %fd10, %fd10;
+    fma.rn.f64 %fd11, %fd9, %fd9, %fd11;
+    fma.rn.f64 %fd11, %fd8, %fd8, %fd11;
+    min.f64 %fd3, %fd3, %fd11;
+
+    setp.eq.u32 %p4, %r11, 0;
+    setp.eq.u32 %p5, %r11, 1;
+    selp.f64 %fd12, %fd9,  %fd10, %p5;
+    selp.f64 %fd12, %fd8,  %fd12, %p4;
+    mul.f64 %fd13, %fd12, %fd12;
+
+    min.u32 %r13, %r12, %r10;
+    add.u32 %r14, %r9, 1;
+
+    setp.le.f64 %p6, %fd12, 0d0000000000000000;
+    selp.u32 %r15, %r14, %r12, %p6;
+    selp.u32 %r16, %r13, %r10, %p6;
+    selp.u32 %r17, %r12, %r14, %p6;
+    selp.u32 %r18, %r10, %r13, %p6;
+
+    setp.lt.u32 %p7, %r17, %r18;
+    setp.lt.f64 %p8, %fd13, %fd3;
+    and.pred %p7, %p7, %p8;
+    setp.lt.u32 %p9, %r7, 32;
+    and.pred %p7, %p7, %p9;
+    @!%p7 bra L_OPTIX_KD_PUSH_NEAR;
+
+    shl.b32 %r19, %r7, 4;
+    cvt.u64.u32 %rd14, %r19;
+    add.u64 %rd15, %rd9, %rd14;
+    st.local.u32 [%rd15 + 0], %r17;
+    st.local.u32 [%rd15 + 4], %r18;
+    st.local.f64 [%rd15 + 8], %fd13;
+    add.u32 %r7, %r7, 1;
+
+L_OPTIX_KD_PUSH_NEAR:
+    setp.lt.u32 %p10, %r15, %r16;
+    setp.lt.u32 %p11, %r7, 32;
+    and.pred %p10, %p10, %p11;
+    @!%p10 bra L_OPTIX_KD_FALLBACK_LOOP;
+
+    shl.b32 %r20, %r7, 4;
+    cvt.u64.u32 %rd16, %r20;
+    add.u64 %rd17, %rd9, %rd16;
+    st.local.u32 [%rd17 + 0], %r15;
+    st.local.u32 [%rd17 + 4], %r16;
+    st.local.f64 [%rd17 + 8], 0d0000000000000000;
+    add.u32 %r7, %r7, 1;
+    bra L_OPTIX_KD_FALLBACK_LOOP;
+
+L_OPTIX_KD_WARP_REDUCE:
+    mov.b64 {%r21, %r22}, %fd3;
+    shfl.sync.bfly.b32 %r23, %r21, 16, 31, 0xffffffff;
+    shfl.sync.bfly.b32 %r24, %r22, 16, 31, 0xffffffff;
+    mov.b64 %fd14, {%r23, %r24};
+    max.f64 %fd3, %fd3, %fd14;
+
+    mov.b64 {%r21, %r22}, %fd3;
+    shfl.sync.bfly.b32 %r23, %r21, 8, 31, 0xffffffff;
+    shfl.sync.bfly.b32 %r24, %r22, 8, 31, 0xffffffff;
+    mov.b64 %fd14, {%r23, %r24};
+    max.f64 %fd3, %fd3, %fd14;
+
+    mov.b64 {%r21, %r22}, %fd3;
+    shfl.sync.bfly.b32 %r23, %r21, 4, 31, 0xffffffff;
+    shfl.sync.bfly.b32 %r24, %r22, 4, 31, 0xffffffff;
+    mov.b64 %fd14, {%r23, %r24};
+    max.f64 %fd3, %fd3, %fd14;
+
+    mov.b64 {%r21, %r22}, %fd3;
+    shfl.sync.bfly.b32 %r23, %r21, 2, 31, 0xffffffff;
+    shfl.sync.bfly.b32 %r24, %r22, 2, 31, 0xffffffff;
+    mov.b64 %fd14, {%r23, %r24};
+    max.f64 %fd3, %fd3, %fd14;
+
+    mov.b64 {%r21, %r22}, %fd3;
+    shfl.sync.bfly.b32 %r23, %r21, 1, 31, 0xffffffff;
+    shfl.sync.bfly.b32 %r24, %r22, 1, 31, 0xffffffff;
+    mov.b64 %fd14, {%r23, %r24};
+    max.f64 %fd3, %fd3, %fd14;
+
+    and.b32 %r25, %r5, 31;
+    setp.ne.u32 %p5, %r25, 0;
+    @%p5 bra L_OPTIX_KD_EXIT;
+
+    shr.u32 %r26, %r6, 5;
+    mul.wide.u32 %rd12, %r26, 8;
+    add.u64 %rd13, %rd6, %rd12;
+    st.global.f64 [%rd13], %fd3;
+
+L_OPTIX_KD_EXIT:
+    ret;
+}
+
 // 14. CUDA OptiX RT Core AABB-Certified Closest-Point Query with Resident VRAM BVH Fallback
 .visible .entry cuda_optix_bvh_closest_point_f64(
     .param .u64 param_bvh,
@@ -4117,6 +4402,14 @@ struct CachedOptixMesh {
     d_bvh: CudaSlice<f64>,
 }
 
+struct CachedOptixCloud {
+    hash: u64,
+    n_pts: u32,
+    r_pad_sq: f64,
+    blas_aabb: OptixAccel,
+    d_pts: CudaSlice<f64>,
+}
+
 struct OptixPipelines {
     ctx: Arc<OptixContext>,
     ray_pipeline: Arc<OptixPipeline>,
@@ -4125,10 +4418,13 @@ struct OptixPipelines {
     parity_sbt: OptixSbt,
     aabb_gather_pipeline: Arc<OptixPipeline>,
     aabb_gather_sbt: OptixSbt,
+    fn_build_point_aabbs: CudaFunction,
     fn_optix_ray_mesh: CudaFunction,
     fn_optix_point_in_solid: CudaFunction,
+    fn_optix_kdtree_query: CudaFunction,
     fn_optix_bvh_closest_point: CudaFunction,
     mesh_cache: Mutex<Option<CachedOptixMesh>>,
+    cloud_cache: Mutex<[Option<CachedOptixCloud>; 2]>,
 }
 
 impl OptixPipelines {
@@ -4209,14 +4505,21 @@ impl OptixPipelines {
             parity_sbt,
             aabb_gather_pipeline,
             aabb_gather_sbt,
+            fn_build_point_aabbs: cuda_module
+                .load_function("cuda_build_point_aabbs_f64")
+                .ok()?,
             fn_optix_ray_mesh: cuda_module.load_function("cuda_optix_ray_mesh_f64").ok()?,
             fn_optix_point_in_solid: cuda_module
                 .load_function("cuda_optix_point_in_solid_f64")
+                .ok()?,
+            fn_optix_kdtree_query: cuda_module
+                .load_function("cuda_optix_kdtree_query_f64")
                 .ok()?,
             fn_optix_bvh_closest_point: cuda_module
                 .load_function("cuda_optix_bvh_closest_point_f64")
                 .ok()?,
             mesh_cache: Mutex::new(None),
+            cloud_cache: Mutex::new([None, None]),
         })
     }
 }
@@ -5699,6 +6002,236 @@ impl CudaContext {
                 .collect(),
         )
     }
+
+    fn estimate_cloud_r_pad(points_a: &[Point3], points_b: &[Point3]) -> f64 {
+        let min_len = points_a.len().min(points_b.len());
+        let step_corresp = (min_len / 32).max(1);
+        let mut max_corresp_sq = 0.0_f64;
+        for idx in (0..min_len).step_by(step_corresp) {
+            let pa = points_a[idx];
+            let pb = points_b[idx];
+            let dx = pa.x - pb.x;
+            let dy = pa.y - pb.y;
+            let dz = pa.z - pb.z;
+            let d2 = dx * dx + dy * dy + dz * dz;
+            if d2.is_finite() && d2 > max_corresp_sq {
+                max_corresp_sq = d2;
+            }
+        }
+        let mut sum_adj_sq = 0.0_f64;
+        let mut adj_cnt = 0_u32;
+        if points_a.len() > 1 {
+            let step_adj = ((points_a.len() - 1) / 32).max(1);
+            for idx in (0..(points_a.len() - 1)).step_by(step_adj) {
+                let p0 = points_a[idx];
+                let p1 = points_a[idx + 1];
+                let dx = p1.x - p0.x;
+                let dy = p1.y - p0.y;
+                let dz = p1.z - p0.z;
+                let d2 = dx * dx + dy * dy + dz * dz;
+                if d2.is_finite() {
+                    sum_adj_sq += d2;
+                    adj_cnt += 1;
+                }
+            }
+        }
+        let avg_adj = if adj_cnt > 0 {
+            (sum_adj_sq / f64::from(adj_cnt)).sqrt()
+        } else {
+            0.1
+        };
+        let corresp = max_corresp_sq.sqrt();
+        if corresp > 0.0 && corresp <= avg_adj * 8.0 {
+            (corresp * 1.15).max(1.0e-4)
+        } else {
+            (avg_adj * 1.5).max(corresp.min(1.0)).max(1.0e-4)
+        }
+    }
+
+    fn build_cached_optix_cloud(
+        optix: &OptixPipelines,
+        stream: &Arc<CudaStream>,
+        flat_pts: &[f64],
+        n_pts: u32,
+        r_pad: f64,
+        hash: u64,
+    ) -> Option<CachedOptixCloud> {
+        let len = usize::try_from(n_pts).ok()?;
+        let d_pts = stream.clone_htod(flat_pts).ok()?;
+        let mut d_aabbs = stream.alloc_zeros::<optix_sys::OptixAabb>(len).ok()?;
+
+        let r_pad_aabb = f64_to_blas_f32(r_pad * 1.002 + 1.0e-5);
+        let block = 128_u32;
+        let grid = n_pts.div_ceil(block);
+        let cfg = LaunchConfig {
+            grid_dim: (grid, 1, 1),
+            block_dim: (block, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let mut builder = stream.launch_builder(&optix.fn_build_point_aabbs);
+        builder.arg(&d_pts);
+        builder.arg(&mut d_aabbs);
+        builder.arg(&r_pad_aabb);
+        builder.arg(&n_pts);
+        // Safety: kernel signature matches (u64, u64, f32, u32) and buffer bounds are verified.
+        unsafe { builder.launch(cfg) }.ok()?;
+
+        let blas_aabb = OptixAccel::build_aabbs(
+            &optix.ctx,
+            stream,
+            &d_aabbs,
+            OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT_U32,
+            None,
+        )
+        .ok()?;
+
+        Some(CachedOptixCloud {
+            hash,
+            n_pts,
+            r_pad_sq: r_pad * r_pad,
+            blas_aabb,
+            d_pts,
+        })
+    }
+
+    fn dispatch_optix_cloud_directed_max_sq(
+        optix: &OptixPipelines,
+        stream: &Arc<CudaStream>,
+        target: &CachedOptixCloud,
+        d_queries: &CudaSlice<f64>,
+        n_queries: u32,
+    ) -> Option<f64> {
+        let q_len = usize::try_from(n_queries).ok()?;
+        let d_cand_prim16 = stream.alloc_zeros::<u32>(q_len.checked_mul(16)?).ok()?;
+        let params_raw = {
+            let (q_ptr, _s1) = d_queries.device_ptr(stream);
+            let (cand_ptr, _s2) = d_cand_prim16.device_ptr(stream);
+            [target.blas_aabb.handle(), q_ptr, cand_ptr, 0_u64]
+        };
+        let d_params = stream.clone_htod(&params_raw).ok()?;
+        optix
+            .aabb_gather_pipeline
+            .launch(stream, &d_params, &optix.aabb_gather_sbt, n_queries, 1, 1)
+            .ok()?;
+
+        let block = 128_u32;
+        let grid = n_queries.div_ceil(block);
+        let warps_per_block = block / 32;
+        let total_warps = usize::try_from(grid.checked_mul(warps_per_block)?).ok()?;
+        let mut d_out = stream.alloc_zeros::<f64>(total_warps).ok()?;
+
+        let cfg = LaunchConfig {
+            grid_dim: (grid, 1, 1),
+            block_dim: (block, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let mut builder = stream.launch_builder(&optix.fn_optix_kdtree_query);
+        builder.arg(&target.d_pts);
+        builder.arg(d_queries);
+        builder.arg(&d_cand_prim16);
+        builder.arg(&mut d_out);
+        builder.arg(&target.r_pad_sq);
+        builder.arg(&n_queries);
+        builder.arg(&target.n_pts);
+        // Safety: kernel signature matches (u64, u64, u64, u64, f64, u32, u32) and buffer bounds are verified.
+        unsafe { builder.launch(cfg) }.ok()?;
+
+        let warp_maxima = stream.clone_dtoh(&d_out).ok()?;
+        let mut max_sq = 0.0_f64;
+        for &w in &warp_maxima {
+            if w > max_sq {
+                max_sq = w;
+            }
+        }
+        Some(max_sq)
+    }
+
+    /// Executes symmetric Hausdorff distance via `cudarc::optix` hardware RT Core custom-AABB spatial acceleration and warp-butterfly FP64 reduction.
+    #[must_use]
+    pub fn optix_rt_spatial_hausdorff(
+        &self,
+        points_a: &[Point3],
+        points_b: &[Point3],
+    ) -> Option<f64> {
+        let optix = self.optix.as_ref()?;
+        if points_a.is_empty() || points_b.is_empty() {
+            return Some(0.0);
+        }
+        self.ctx.bind_to_thread().ok()?;
+        let stream = self.ctx.default_stream();
+
+        let r_pad = Self::estimate_cloud_r_pad(points_a, points_b);
+        let r_pad_bits = r_pad.to_bits();
+        let hash_a = Self::hash_point_cloud(points_a, r_pad_bits);
+        let hash_b = Self::hash_point_cloud(points_b, r_pad_bits);
+
+        let mut guard = optix.cloud_cache.lock().ok()?;
+        let rebuild_a = match guard[0].as_ref() {
+            Some(c) => c.hash != hash_a || usize::try_from(c.n_pts).ok()? != points_a.len(),
+            None => true,
+        };
+        let rebuild_b = match guard[1].as_ref() {
+            Some(c) => c.hash != hash_b || usize::try_from(c.n_pts).ok()? != points_b.len(),
+            None => true,
+        };
+        match (rebuild_a, rebuild_b) {
+            (true, true) => {
+                let (flat_a, flat_b) = rayon::join(
+                    || {
+                        let tree = crate::spatial::KdTree3::build(points_a).flatten();
+                        Self::serialize_flat_kdtree(&tree)
+                    },
+                    || {
+                        let tree = crate::spatial::KdTree3::build(points_b).flatten();
+                        Self::serialize_flat_kdtree(&tree)
+                    },
+                );
+                let n_a = u32::try_from(points_a.len()).ok()?;
+                let n_b = u32::try_from(points_b.len()).ok()?;
+                guard[0] = Some(Self::build_cached_optix_cloud(
+                    optix, &stream, &flat_a, n_a, r_pad, hash_a,
+                )?);
+                guard[1] = Some(Self::build_cached_optix_cloud(
+                    optix, &stream, &flat_b, n_b, r_pad, hash_b,
+                )?);
+            }
+            (true, false) => {
+                let tree = crate::spatial::KdTree3::build(points_a).flatten();
+                let flat_a = Self::serialize_flat_kdtree(&tree);
+                let n_a = u32::try_from(points_a.len()).ok()?;
+                guard[0] = Some(Self::build_cached_optix_cloud(
+                    optix, &stream, &flat_a, n_a, r_pad, hash_a,
+                )?);
+            }
+            (false, true) => {
+                let tree = crate::spatial::KdTree3::build(points_b).flatten();
+                let flat_b = Self::serialize_flat_kdtree(&tree);
+                let n_b = u32::try_from(points_b.len()).ok()?;
+                guard[1] = Some(Self::build_cached_optix_cloud(
+                    optix, &stream, &flat_b, n_b, r_pad, hash_b,
+                )?);
+            }
+            (false, false) => {}
+        }
+        let cloud_a = guard[0].as_ref()?;
+        let cloud_b = guard[1].as_ref()?;
+
+        let max_ab_sq = Self::dispatch_optix_cloud_directed_max_sq(
+            optix,
+            &stream,
+            cloud_b,
+            &cloud_a.d_pts,
+            cloud_a.n_pts,
+        )?;
+        let max_ba_sq = Self::dispatch_optix_cloud_directed_max_sq(
+            optix,
+            &stream,
+            cloud_a,
+            &cloud_b.d_pts,
+            cloud_b.n_pts,
+        )?;
+        Some(max_ab_sq.max(max_ba_sq).sqrt())
+    }
 }
 
 #[cfg(test)]
@@ -6606,6 +7139,16 @@ mod tests {
                 .expect("SM86 closest point on inf");
             assert_eq!(sm86_cp, cpu_cp);
         }
+        if ctx.supports_optix_rt() {
+            let optix_h = ctx
+                .optix_rt_spatial_hausdorff(&pts_a, &pts_b)
+                .expect("OptiX RT Hausdorff");
+            assert!((optix_h - 1.0e-6).abs() < CUDA_PARITY_TOLERANCE);
+            let optix_cp = ctx
+                .optix_rt_closest_point_mesh(&inf_query, mesh)
+                .expect("OptiX RT closest point on inf");
+            assert_eq!(optix_cp, cpu_cp);
+        }
     }
 
     #[test]
@@ -6722,5 +7265,32 @@ mod tests {
             assert!((e.closest_point.z - a.closest_point.z).abs() < CUDA_PARITY_TOLERANCE);
             assert!(a.triangle_index < 4);
         }
+    }
+
+    #[test]
+    fn cuda_optix_rt_hausdorff_matches_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        if !ctx.supports_optix_rt() {
+            return;
+        }
+        let pts_a: Vec<Point3> = (0_u32..96)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f * 0.12 - 2.5, (f * 0.27).sin(), (f * 0.19).cos())
+            })
+            .collect();
+        let pts_b: Vec<Point3> = (0_u32..80)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f * 0.12 - 2.41, (f * 0.27).sin() + 0.04, (f * 0.19).cos())
+            })
+            .collect();
+        let expected_h = crate::spatial::kd_hausdorff_distance(&pts_a, &pts_b);
+        let actual_h = ctx
+            .optix_rt_spatial_hausdorff(&pts_a, &pts_b)
+            .expect("CUDA OptiX RT Core Hausdorff");
+        assert!((expected_h - actual_h).abs() < CUDA_PARITY_TOLERANCE);
     }
 }

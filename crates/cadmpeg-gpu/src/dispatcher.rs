@@ -408,7 +408,9 @@ impl GpuDispatcher {
         points_b: &[Point3],
     ) -> Option<f64> {
         match backend {
-            BackendKind::RtxRtCore => None,
+            BackendKind::RtxRtCore => {
+                global_cuda().and_then(|cu| cu.optix_rt_spatial_hausdorff(points_a, points_b))
+            }
             BackendKind::VulkanRtCore => {
                 global_vulkan().and_then(|vk| vk.rt_core_spatial_hausdorff(points_a, points_b))
             }
@@ -946,10 +948,18 @@ fn benchmark_single(
                     )
                 })
                 .collect();
-            if matches!(backend, BackendKind::VulkanRtCore) {
-                if let Some(vk) = global_vulkan() {
-                    std::hint::black_box(vk.rt_core_spatial_hausdorff(&pts_a, &pts_b));
+            match backend {
+                BackendKind::VulkanRtCore => {
+                    if let Some(vk) = global_vulkan() {
+                        std::hint::black_box(vk.rt_core_spatial_hausdorff(&pts_a, &pts_b));
+                    }
                 }
+                BackendKind::RtxRtCore => {
+                    if let Some(cu) = global_cuda() {
+                        std::hint::black_box(cu.optix_rt_spatial_hausdorff(&pts_a, &pts_b));
+                    }
+                }
+                _ => {}
             }
             let t0 = Instant::now();
             match backend {
@@ -990,7 +1000,11 @@ fn benchmark_single(
                     let h = cu.ptx_sm86_spatial_hausdorff(&pts_a, &pts_b)?;
                     std::hint::black_box(h);
                 }
-                BackendKind::RtxRtCore => return None,
+                BackendKind::RtxRtCore => {
+                    let cu = global_cuda()?;
+                    let h = cu.optix_rt_spatial_hausdorff(&pts_a, &pts_b)?;
+                    std::hint::black_box(h);
+                }
                 BackendKind::RtxTensorCore => return None,
             }
             u64::try_from(t0.elapsed().as_nanos()).ok()
