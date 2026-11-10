@@ -193,7 +193,6 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             side_extent_discriminators: [1, 0],
             side_extent_discriminator_offsets: [77, 90],
             first_side_target_ordinal: None,
-            seventh_slot_record_index: None,
             distance_tail: None,
             extent: DesignExtrudeExtent::OneSidedDistance,
             direction_face_extend_offsets: [32, 36],
@@ -236,7 +235,6 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             side_extent_discriminators: [1, 1],
             side_extent_discriminator_offsets: [87, 100],
             first_side_target_ordinal: None,
-            seventh_slot_record_index: None,
             distance_tail: Some(
                 crate::records::feature::extrude::DesignExtrudeDistanceTail {
                     target_option: 0,
@@ -1225,7 +1223,6 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
                     u64_from_index(layout::SECOND_SIDE_EXTENT),
                 ],
                 first_side_target_ordinal: None,
-                seventh_slot_record_index: None,
                 distance_tail: None,
                 extent: DesignExtrudeExtent::SymmetricDistance,
                 direction_face_extend_offsets: [

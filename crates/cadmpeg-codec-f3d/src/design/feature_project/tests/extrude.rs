@@ -211,7 +211,6 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                         side_extent_discriminators: [1, 0],
                         side_extent_discriminator_offsets: [177, 190],
                         first_side_target_ordinal: None,
-                        seventh_slot_record_index: None,
                         distance_tail: None,
                         extent: DesignExtrudeExtent::OneSidedDistance,
                         direction_face_extend_offsets: [132, 136],
@@ -1372,7 +1371,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             };
         let mut ordered_faces = [face_group.clone(), face_group.clone()];
         set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
-        assign_extrude_face_roles(&scope, &mut ordered_faces);
+        assign_extrude_face_roles(&scope, &mut ordered_faces, None);
         assert_eq!(
             ordered_faces.map(|group| group.extrude_face_role()),
             [

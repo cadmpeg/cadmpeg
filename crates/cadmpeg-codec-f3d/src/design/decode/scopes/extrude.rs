@@ -227,6 +227,55 @@ pub(super) fn exact_extrude_prologue(
     .or_else(|| exact_slotted_extrude_prologue(bytes, start, reference_count_at, reference_members))
 }
 
+pub(crate) fn extrude_seventh_slot_record_index(
+    bytes: &[u8],
+    prologue: DesignExtrudePrologue,
+) -> Option<u32> {
+    let (operation_offset, first_side_extent_offset) = match prologue {
+        DesignExtrudePrologue::ReferenceAware {
+            operation_offset,
+            side_extent_discriminator_offsets: [first_side_extent_offset, _],
+            ..
+        }
+        | DesignExtrudePrologue::ShiftedReferenceAware {
+            operation_offset,
+            side_extent_discriminator_offsets: [first_side_extent_offset, _],
+            ..
+        }
+        | DesignExtrudePrologue::LegacyShifted {
+            operation_offset,
+            side_extent_discriminator_offsets: [first_side_extent_offset, _],
+            ..
+        } => (
+            usize::try_from(operation_offset).ok()?,
+            usize::try_from(first_side_extent_offset).ok()?,
+        ),
+        DesignExtrudePrologue::LegacyDistance { .. } => return None,
+    };
+    let mut cursor = operation_offset
+        .checked_add(extrude_fields::PROFILE_NORMAL)?
+        .checked_add(24)?;
+    let mut seventh = None;
+    for ordinal in 0..7 {
+        match bytes.get(cursor)? {
+            0 => cursor = cursor.checked_add(1)?,
+            1 => {
+                let record_index = marked_record_reference(bytes, cursor)?;
+                if ordinal == 6 {
+                    seventh = Some(record_index);
+                }
+                cursor = cursor.checked_add(11)?;
+            }
+            _ => return None,
+        }
+    }
+    if cursor == first_side_extent_offset {
+        seventh
+    } else {
+        None
+    }
+}
+
 pub(crate) fn is_class_296_one_sided_to_face_layout(
     frame_length: u64,
     reference_count_delta: u64,
@@ -1534,7 +1583,6 @@ fn exact_current_extrude_prologue_with(
             u64_from_index(second_side_extent_offset),
         ],
         first_side_target_ordinal,
-        seventh_slot_record_index: final_slot_reference,
         distance_tail,
         extent,
         direction_face_extend_offsets: [

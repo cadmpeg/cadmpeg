@@ -251,7 +251,6 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 side_extent_discriminators: [1, 0],
                 side_extent_discriminator_offsets: [1077, 1090],
                 first_side_target_ordinal: None,
-                seventh_slot_record_index: None,
                 distance_tail: None,
                 extent: DesignExtrudeExtent::OneSidedDistance,
                 direction_face_extend_offsets: [1032, 1036],
@@ -276,6 +275,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     crate::design::decode::operands::assign_extrude_face_roles(
         &from_face_scope,
         std::slice::from_mut(&mut start_face),
+        None,
     );
     assert_eq!(
         start_face.extrude_role(),
@@ -297,7 +297,6 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 side_extent_discriminators: [2, 0],
                 side_extent_discriminator_offsets: [1077, 1090],
                 first_side_target_ordinal: None,
-                seventh_slot_record_index: None,
                 distance_tail: None,
                 extent: DesignExtrudeExtent::OneSidedToFace,
                 direction_face_extend_offsets: [1032, 1036],
@@ -326,6 +325,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     crate::design::decode::operands::assign_extrude_face_roles(
         &to_face_scope,
         std::slice::from_mut(&mut legacy_to_face),
+        None,
     );
     assert_eq!(
         legacy_to_face.extrude_role(),
@@ -348,7 +348,6 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                     side_extent_discriminators: [2, 0],
                     side_extent_discriminator_offsets: [1077, 1090],
                     first_side_target_ordinal: None,
-                    seventh_slot_record_index,
                     distance_tail: None,
                     extent: DesignExtrudeExtent::OneSidedToFace,
                     direction_face_extend_offsets: [1032, 1036],
@@ -371,6 +370,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         crate::design::decode::operands::assign_extrude_face_roles(
             &scope,
             std::slice::from_mut(&mut group),
+            seventh_slot_record_index,
         );
         group.extrude_role()
     };
@@ -554,6 +554,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     crate::design::decode::operands::assign_extrude_face_roles(
         &scope,
         std::slice::from_mut(&mut auxiliary),
+        None,
     );
     assert_eq!(
         auxiliary.extrude_role(),

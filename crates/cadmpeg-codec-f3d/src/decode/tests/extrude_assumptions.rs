@@ -74,7 +74,6 @@ fn scope_with(
                     side_extent_discriminators: sides,
                     side_extent_discriminator_offsets: [177, 190],
                     first_side_target_ordinal: None,
-                    seventh_slot_record_index: None,
                     distance_tail: None,
                     extent,
                     direction_face_extend_offsets: [132, 136],

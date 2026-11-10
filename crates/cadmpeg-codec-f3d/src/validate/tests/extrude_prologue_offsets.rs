@@ -55,7 +55,6 @@ fn plain_one_sided_scope(operation_offset: u64) -> DesignParameterScope {
                     side_extent_discriminators: [1, 0],
                     side_extent_discriminator_offsets: [first_side, first_side + 13],
                     first_side_target_ordinal: None,
-                    seventh_slot_record_index: None,
                     distance_tail: None,
                     extent: DesignExtrudeExtent::OneSidedDistance,
                     direction_face_extend_offsets: [operation_offset + 4, operation_offset + 8],

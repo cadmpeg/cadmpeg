@@ -341,3 +341,61 @@ fn slotted_prologue_reads_two_face_targets_outside_the_dedicated_shifted_frame()
             .is_none()
     );
 }
+
+#[test]
+fn seventh_slot_record_is_read_when_the_slot_run_ends_at_the_first_side_extent() {
+    use super::super::extrude_seventh_slot_record_index;
+    use crate::layout::current_extrude_operation_fields as extrude_fields;
+    const OPERATION: usize = 26;
+    let slots_at = OPERATION + extrude_fields::PROFILE_NORMAL + 24;
+    let build = |presence: [bool; 7]| {
+        let mut bytes = vec![0; 200];
+        let mut cursor = slots_at;
+        for (ordinal, present) in presence.into_iter().enumerate() {
+            if present {
+                bytes[cursor] = 1;
+                bytes[cursor + 1..cursor + 5]
+                    .copy_from_slice(&(7_000 + u32::try_from(ordinal).unwrap()).to_le_bytes());
+                cursor += 11;
+            } else {
+                cursor += 1;
+            }
+        }
+        bytes[cursor..cursor + 4].copy_from_slice(&2u32.to_le_bytes());
+        (bytes, cursor)
+    };
+    let prologue = |first_side_extent_offset: usize| DesignExtrudePrologue::LegacyShifted {
+        operation_prefix_marker_offset: None,
+        operation: DesignExtrudeOperation::Cut,
+        operation_offset: u64::try_from(OPERATION).unwrap(),
+        direction_face_extend_values: [1, 1],
+        side_extent_discriminators: [2, 0],
+        side_extent_discriminator_offsets: [u64::try_from(first_side_extent_offset).unwrap(), 180],
+        extent: Some(DesignExtrudeExtent::OneSidedToFace),
+        direction_face_extend_offsets: [30, 34],
+        direction_reversed: false,
+        direction_reversed_offset: 38,
+        solid_operation: true,
+        solid_operation_offset: 39,
+        start: DesignExtrudeStart::FromFace,
+        start_offset: 40,
+    };
+
+    let (bytes, extent_at) = build([true, false, false, true, false, true, true]);
+    assert_eq!(
+        extrude_seventh_slot_record_index(&bytes, prologue(extent_at)),
+        Some(7_006)
+    );
+
+    let (bytes, extent_at) = build([true, false, false, true, false, true, false]);
+    assert_eq!(
+        extrude_seventh_slot_record_index(&bytes, prologue(extent_at)),
+        None
+    );
+
+    let (bytes, extent_at) = build([true, false, false, true, false, true, true]);
+    assert_eq!(
+        extrude_seventh_slot_record_index(&bytes, prologue(extent_at + 5)),
+        None
+    );
+}
