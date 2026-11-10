@@ -113,6 +113,8 @@ pub(crate) enum CatiaLossCode {
     TopologyOwnedPatchSubset,
     /// Non-rolling-ball face sense uses inferred roster and chart parity.
     TopologyOwnedPatchSenseInferred,
+    /// Disagreeing native shared boundaries were reconciled for sheet transfer.
+    TopologySharedBoundaryReconciled,
     /// Two-edge pcurve binding and face sense use inferred relations.
     TopologyTwoEdgeBindingInferred,
     /// A bounded sheet search skipped later candidates.
@@ -184,6 +186,7 @@ impl CatiaLossCode {
         Self::TopologyB5GraphUnclosed,
         Self::TopologyOwnedPatchSubset,
         Self::TopologyOwnedPatchSenseInferred,
+        Self::TopologySharedBoundaryReconciled,
         Self::TopologyTwoEdgeBindingInferred,
         Self::TopologySheetPatchSearchBounded,
         Self::TopologyB5FacesWithheld,
@@ -241,6 +244,7 @@ impl CatiaLossCode {
             Self::TopologyB5GraphUnclosed => "topology.b5-graph-unclosed",
             Self::TopologyOwnedPatchSubset => "topology.owned-patch-subset",
             Self::TopologyOwnedPatchSenseInferred => "topology.owned-patch-sense-inferred",
+            Self::TopologySharedBoundaryReconciled => "topology.shared-boundary-reconciled",
             Self::TopologyTwoEdgeBindingInferred => "topology.two-edge-binding-inferred",
             Self::TopologySheetPatchSearchBounded => "topology.sheet-patch-search-bounded",
             Self::TopologyB5FacesWithheld => "topology.b5-faces-withheld",
@@ -329,6 +333,7 @@ impl CatiaLossCode {
             | Self::TopologyZeroEntityFaceUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyZeroEntityGaugeSubstituted
             | Self::TopologyOwnedPatchSenseInferred
+            | Self::TopologySharedBoundaryReconciled
             | Self::TopologyTwoEdgeBindingInferred => LossTaxonomy::TopologyGaugeSubstituted,
             Self::AttributesMaterialsMetadataNotTransferred
             | Self::AttributesDimensionQuantityUnresolved
@@ -408,6 +413,7 @@ mod tests {
                 "topology.b5-graph-unclosed",
                 "topology.owned-patch-subset",
                 "topology.owned-patch-sense-inferred",
+                "topology.shared-boundary-reconciled",
                 "topology.two-edge-binding-inferred",
                 "topology.sheet-patch-search-bounded",
                 "topology.b5-faces-withheld",
