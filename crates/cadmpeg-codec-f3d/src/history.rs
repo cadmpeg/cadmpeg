@@ -5336,6 +5336,7 @@ pub(crate) fn bind_scope_histories(
         }
     }
     let mut resolved = HashMap::<String, String>::new();
+    let mut inferred_scopes = HashSet::<String>::new();
     for (scope, candidates) in &candidates {
         if candidates.len() == 1 {
             insert_scope_history_binding(&mut resolved, &scope.id, &candidates[0].id);
@@ -5391,6 +5392,7 @@ pub(crate) fn bind_scope_histories(
         }
         if let Some(history) = edge_recipe_scope::select(scope, edge_recipes, candidates) {
             insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
+            inferred_scopes.insert(scope.id.clone());
             losses.push(crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.note(format!(
                 "scope {}: its state pair occurs in several histories; it reads {}, whose BREP blob agrees with every qualified edge-recipe face candidate.",
                 scope.id, history.id
@@ -5471,6 +5473,17 @@ pub(crate) fn bind_scope_histories(
                     .filter(|history| !assigned.contains(history.id.as_str()));
                 if let Some(history) = remaining.next().filter(|_| remaining.next().is_none()) {
                     insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
+                    let rests_on_inference = members.iter().any(|other| {
+                        let other = &candidates[*other].0.id;
+                        other != &scope.id && inferred_scopes.contains(other)
+                    });
+                    if rests_on_inference {
+                        inferred_scopes.insert(scope.id.clone());
+                        losses.push(crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.note(format!(
+                            "scope {}: it reads {}, the only candidate history that no other scope with its state pair holds, and one of those scopes reads its history through edge-recipe face candidates.",
+                            scope.id, history.id
+                        )));
+                    }
                     progress = true;
                 }
             }

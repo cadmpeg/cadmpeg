@@ -1790,6 +1790,33 @@ fn edge_recipe_scope_binding(
     std::collections::HashMap<String, String>,
     Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
+    edge_recipe_scope_binding_with_peer(sources, false)
+}
+
+/// A scope with the same state pair and no edge recipes of its own.
+fn state_pair_peer() -> crate::records::feature::scope::DesignParameterScope {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    let mut peer = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#99",
+        DesignFeatureKind::BaseFeature,
+        2,
+    );
+    peer.try_edit(|draft| {
+        draft.history_state_id = Some(3);
+        draft.previous_history_state_id = Some(2);
+        draft.layout_fixture_tail();
+    })
+    .unwrap();
+    peer
+}
+
+fn edge_recipe_scope_binding_with_peer(
+    sources: &[&str],
+    with_peer: bool,
+) -> (
+    std::collections::HashMap<String, String>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
     let scope = super::feature_outputs::scope_between(3, 2);
     let histories = ["first", "second"].map(|source| {
         let id = format!("f3d:Breps.BlobParts/BREP.{source}.smbh:asm-history#1");
@@ -1869,8 +1896,13 @@ fn edge_recipe_scope_binding(
         })
         .collect::<Vec<_>>();
     let mut notes = Vec::new();
+    let scopes = if with_peer {
+        vec![scope, state_pair_peer()]
+    } else {
+        vec![scope]
+    };
     let bindings = bind_scope_histories(
-        &[scope],
+        &scopes,
         &[],
         &[],
         crate::history::edge_recipe_scope::Sources {
@@ -1911,4 +1943,18 @@ fn edge_recipe_faces_must_all_agree_with_one_history() {
     let (bindings, notes) = edge_recipe_scope_binding(&["first", "second"]);
     assert!(bindings.is_empty());
     assert!(notes.is_empty());
+}
+
+#[test]
+fn elimination_after_an_edge_recipe_binding_reports_the_inference() {
+    let (bindings, notes) = edge_recipe_scope_binding_with_peer(&["second", "second"], true);
+    assert_eq!(bindings.len(), 2);
+    assert_eq!(
+        bindings["f3d:Design/BulkStream.dat:design-parameter-scope#99"],
+        "f3d:Breps.BlobParts/BREP.first.smbh:asm-history#1"
+    );
+    assert_eq!(notes.len(), 2);
+    assert!(notes.iter().all(|note| {
+        note.code == crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.kind()
+    }));
 }
