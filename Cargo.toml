@@ -6,6 +6,7 @@ members = [
   "crates/cadmpeg-asm",
   "crates/cadmpeg-core",
   "crates/cadmpeg-container",
+  "crates/cadmpeg-gpu",
   "crates/cadmpeg-ir",
   "crates/cadmpeg-measure",
   "crates/cadmpeg-parasolid",
@@ -45,6 +46,7 @@ rust-version = "1.88"
 cadmpeg-asm = { path = "crates/cadmpeg-asm", version = "0.6.11" }
 cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.6.11" }
 cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.6.11" }
+cadmpeg-gpu = { path = "crates/cadmpeg-gpu", version = "0.6.11" }
 cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.6.11" }
 cadmpeg-measure = { path = "crates/cadmpeg-measure", version = "0.6.11" }
 cadmpeg-parasolid = { path = "crates/cadmpeg-parasolid", version = "0.6.11" }
@@ -83,6 +85,10 @@ sha1 = "0.11"
 memchr = "2"
 # Elementary functions in Rust, so that a result does not depend on the C library.
 libm = "0.2"
+rayon = "1.10"
+wgpu = "30.0.1"
+cudarc = { path = "/home/deece/src/cudarc", version = "0.19.10", default-features = false, features = ["std", "cuda-12000", "driver", "nvrtc", "optix", "fallback-dynamic-loading"] }
+pollster = "1.0.1"
 # XID_Start and XID_Continue classes for USDA identifiers.
 unicode-ident = "1"
 base64 = "0.23"

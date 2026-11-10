@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-gpu"
+description = "Multi-backend GPU compute and RTX Tensor Core acceleration with init-time autotuning dispatcher."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["cad", "gpu", "cuda", "vulkan", "rtx"]
+categories = ["graphics", "mathematics", "hardware-support"]
+
+[dependencies]
+cadmpeg-ir.workspace = true
+cudarc.workspace = true
+pollster.workspace = true
+rayon.workspace = true
+wgpu.workspace = true
+
+[lints]
+workspace = true
