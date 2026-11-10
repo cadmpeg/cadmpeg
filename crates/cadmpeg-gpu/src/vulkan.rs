@@ -478,6 +478,230 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 ";
 
+const RT_POINT_IN_SOLID_WGSL: &str = "
+enable wgpu_ray_query;
+
+@group(0) @binding(0) var acc_struct: acceleration_structure;
+@group(0) @binding(1) var<storage, read> points: array<vec4<f64>>;
+@group(0) @binding(2) var<storage, read> scene: array<vec4<f64>>;
+@group(0) @binding(3) var<storage, read_write> parity_out: array<f64>;
+
+fn dop(a: f64, b: f64, c: f64, d: f64) -> f64 {
+    let cd = c * d;
+    let err = fma(-c, d, cd);
+    let f = fma(a, b, -cd);
+    return f + err;
+}
+
+fn ray_aabb_hit(
+    origin: vec3<f64>,
+    dir: vec3<f64>,
+    bmin: vec3<f64>,
+    bmax: vec3<f64>,
+) -> bool {
+    var t_near = 0.0lf;
+    var t_far = 1.0e300lf;
+
+    let inv_x = 1.0lf / dir.x;
+    let tx0 = (bmin.x - 1.0e-9lf - origin.x) * inv_x;
+    let tx1 = (bmax.x + 1.0e-9lf - origin.x) * inv_x;
+    t_near = max(t_near, min(tx0, tx1));
+    t_far = min(t_far, max(tx0, tx1));
+    if t_near > t_far {
+        return false;
+    }
+
+    let inv_y = 1.0lf / dir.y;
+    let ty0 = (bmin.y - 1.0e-9lf - origin.y) * inv_y;
+    let ty1 = (bmax.y + 1.0e-9lf - origin.y) * inv_y;
+    t_near = max(t_near, min(ty0, ty1));
+    t_far = min(t_far, max(ty0, ty1));
+    if t_near > t_far {
+        return false;
+    }
+
+    let inv_z = 1.0lf / dir.z;
+    let tz0 = (bmin.z - 1.0e-9lf - origin.z) * inv_z;
+    let tz1 = (bmax.z + 1.0e-9lf - origin.z) * inv_z;
+    t_near = max(t_near, min(tz0, tz1));
+    t_far = min(t_far, max(tz0, tz1));
+    return t_near <= t_far;
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let p_idx = gid.x;
+    if p_idx >= arrayLength(&points) {
+        return;
+    }
+    let origin = points[p_idx].xyz;
+    let dir = vec3<f64>(0.5773502691896258lf, 0.5345224838248488lf, 0.6172133998483676lf);
+    let hdr = scene[0];
+    let n_nodes = u32(hdr.x);
+    let n_tris = u32(hdr.y);
+    let tri_base = 1u + n_nodes * 2u;
+
+    var hits = 0u;
+    var hit_ts: array<f64, 32>;
+
+    let orig_f32 = vec3<f32>(
+        clamp(f32(origin.x), -1.0e30, 1.0e30),
+        clamp(f32(origin.y), -1.0e30, 1.0e30),
+        clamp(f32(origin.z), -1.0e30, 1.0e30),
+    );
+    let dir_f32 = vec3<f32>(0.57735026, 0.5345225, 0.6172134);
+
+    var rq: ray_query;
+    rayQueryInitialize(&rq, acc_struct, RayDesc(0u, 0xFFu, 0.0, 1.0e30, orig_f32, dir_f32));
+    while (rayQueryProceed(&rq)) {
+        let cand = rayQueryGetCandidateIntersection(&rq);
+        let t_idx = cand.primitive_index;
+        if t_idx < n_tris {
+            let tb = tri_base + t_idx * 3u;
+            let tv0 = scene[tb];
+            if tv0.w > 0.0lf {
+                let v0 = tv0.xyz;
+                let v1 = scene[tb + 1u].xyz;
+                let v2 = scene[tb + 2u].xyz;
+                let e1 = v1 - v0;
+                let e2 = v2 - v0;
+                let pvec = vec3<f64>(
+                    dop(dir.y, e2.z, dir.z, e2.y),
+                    dop(dir.z, e2.x, dir.x, e2.z),
+                    dop(dir.x, e2.y, dir.y, e2.x),
+                );
+                let det = fma(e1.x, pvec.x, fma(e1.y, pvec.y, e1.z * pvec.z));
+                if abs(det) > 1.0e-12lf {
+                    let inv_det = 1.0lf / det;
+                    let tvec = origin - v0;
+                    let u = fma(tvec.x, pvec.x, fma(tvec.y, pvec.y, tvec.z * pvec.z)) * inv_det;
+                    if u >= -1.0e-11lf && u <= 1.0lf + 1.0e-11lf {
+                        let qvec = vec3<f64>(
+                            dop(tvec.y, e1.z, tvec.z, e1.y),
+                            dop(tvec.z, e1.x, tvec.x, e1.z),
+                            dop(tvec.x, e1.y, tvec.y, e1.x),
+                        );
+                        let v = fma(dir.x, qvec.x, fma(dir.y, qvec.y, dir.z * qvec.z)) * inv_det;
+                        if v >= -1.0e-11lf && (u + v) <= 1.0lf + 1.0e-11lf {
+                            let t = fma(e2.x, qvec.x, fma(e2.y, qvec.y, e2.z * qvec.z)) * inv_det;
+                            if t >= 1.0e-9lf {
+                                var dup = false;
+                                let tracked = min(hits, 32u);
+                                for (var k = 0u; k < tracked; k = k + 1u) {
+                                    if abs(t - hit_ts[k]) <= 1.0e-9lf {
+                                        dup = true;
+                                        break;
+                                    }
+                                }
+                                if !dup {
+                                    if hits < 32u {
+                                        hit_ts[hits] = t;
+                                    }
+                                    hits = hits + 1u;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if n_nodes > 0u && n_tris <= 16u {
+        var stack_node: array<u32, 64>;
+        var stack_end: array<u32, 64>;
+        stack_node[0] = 0u;
+        stack_end[0] = n_nodes;
+        var sp = 1u;
+
+        loop {
+            if sp == 0u {
+                break;
+            }
+            sp = sp - 1u;
+            let node_idx = stack_node[sp];
+            let subtree_end = stack_end[sp];
+            let n0 = scene[1u + node_idx * 2u];
+            let n1 = scene[1u + node_idx * 2u + 1u];
+            if !ray_aabb_hit(origin, dir, n0.xyz, n1.xyz) {
+                continue;
+            }
+            let tri_f = n0.w;
+            let right_child = u32(n1.w);
+            if tri_f >= 0.0lf {
+                let t_idx = u32(tri_f);
+                let tb = tri_base + t_idx * 3u;
+                let tv0 = scene[tb];
+                if tv0.w > 0.0lf {
+                    let v0 = tv0.xyz;
+                    let v1 = scene[tb + 1u].xyz;
+                    let v2 = scene[tb + 2u].xyz;
+                    let e1 = v1 - v0;
+                    let e2 = v2 - v0;
+                    let pvec = vec3<f64>(
+                        dop(dir.y, e2.z, dir.z, e2.y),
+                        dop(dir.z, e2.x, dir.x, e2.z),
+                        dop(dir.x, e2.y, dir.y, e2.x),
+                    );
+                    let det = fma(e1.x, pvec.x, fma(e1.y, pvec.y, e1.z * pvec.z));
+                    if abs(det) > 1.0e-12lf {
+                        let inv_det = 1.0lf / det;
+                        let tvec = origin - v0;
+                        let u = fma(tvec.x, pvec.x, fma(tvec.y, pvec.y, tvec.z * pvec.z)) * inv_det;
+                        if u >= -1.0e-11lf && u <= 1.0lf + 1.0e-11lf {
+                            let qvec = vec3<f64>(
+                                dop(tvec.y, e1.z, tvec.z, e1.y),
+                                dop(tvec.z, e1.x, tvec.x, e1.z),
+                                dop(tvec.x, e1.y, tvec.y, e1.x),
+                            );
+                            let v = fma(dir.x, qvec.x, fma(dir.y, qvec.y, dir.z * qvec.z)) * inv_det;
+                            if v >= -1.0e-11lf && (u + v) <= 1.0lf + 1.0e-11lf {
+                                let t = fma(e2.x, qvec.x, fma(e2.y, qvec.y, e2.z * qvec.z)) * inv_det;
+                                if t >= 1.0e-9lf {
+                                    var dup = false;
+                                    let tracked = min(hits, 32u);
+                                    for (var k = 0u; k < tracked; k = k + 1u) {
+                                        if abs(t - hit_ts[k]) <= 1.0e-9lf {
+                                            dup = true;
+                                            break;
+                                        }
+                                    }
+                                    if !dup {
+                                        if hits < 32u {
+                                            hit_ts[hits] = t;
+                                        }
+                                        hits = hits + 1u;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                let left_idx = node_idx + 1u;
+                let left_end = min(right_child, subtree_end);
+                if right_child < subtree_end && sp < 64u {
+                    stack_node[sp] = right_child;
+                    stack_end[sp] = subtree_end;
+                    sp = sp + 1u;
+                }
+                if left_idx < left_end && sp < 64u {
+                    stack_node[sp] = left_idx;
+                    stack_end[sp] = left_end;
+                    sp = sp + 1u;
+                }
+            }
+        }
+    }
+
+    if (hits & 1u) == 1u {
+        parity_out[p_idx] = 1.0lf;
+    } else {
+        parity_out[p_idx] = 0.0lf;
+    }
+}
+";
+
 struct CachedVulkanRtMesh {
     hash: u64,
     n_tris: usize,
@@ -498,6 +722,7 @@ struct CachedVulkanComputeMesh {
 struct RtPipelines {
     bgl_rt: wgpu::BindGroupLayout,
     pipe_rt_ray_mesh: wgpu::ComputePipeline,
+    pipe_rt_point_in_solid: wgpu::ComputePipeline,
     mesh_cache: Mutex<Option<CachedVulkanRtMesh>>,
 }
 
@@ -755,6 +980,10 @@ impl VulkanContext {
             };
             Some(RtPipelines {
                 pipe_rt_ray_mesh: compile_rt_pipe("cadmpeg-rt-ray-mesh", RT_RAY_MESH_WGSL),
+                pipe_rt_point_in_solid: compile_rt_pipe(
+                    "cadmpeg-rt-point-in-solid",
+                    RT_POINT_IN_SOLID_WGSL,
+                ),
                 bgl_rt,
                 mesh_cache: Mutex::new(None),
             })
@@ -1561,6 +1790,34 @@ impl VulkanContext {
                 .collect(),
         )
     }
+
+    /// Executes hardware RT Core (`wgpu_ray_query` + `SHADER_F64`) point-in-solid parity containment.
+    #[must_use]
+    pub fn rt_core_point_in_solid_parity(
+        &self,
+        points: &[Point3],
+        mesh: TriangleMeshView<'_>,
+    ) -> Option<Vec<bool>> {
+        let rt = self.rt.as_ref()?;
+        if points.is_empty() {
+            return Some(Vec::new());
+        }
+        if mesh.triangles.is_empty() || mesh.vertices.is_empty() {
+            return Some(vec![false; points.len()]);
+        }
+        let flat_pts: Vec<f64> = points.iter().flat_map(|p| [p.x, p.y, p.z, 0.0]).collect();
+        let raw = self.with_cached_rt_mesh(rt, mesh, |cached| {
+            self.execute_cached_rt_pipeline(
+                &rt.pipe_rt_point_in_solid,
+                &cached.tlas_surface,
+                &cached.b_scene,
+                &flat_pts,
+                points.len(),
+                points.len(),
+            )
+        })?;
+        Some(raw.into_iter().map(|v| v > 0.5).collect())
+    }
 }
 
 struct PackedBvhSceneAndBlas {
@@ -1974,5 +2231,37 @@ mod tests {
                 assert!((e.barycentric_v - a.barycentric_v).abs() < VULKAN_PARITY_TOLERANCE);
             }
         }
+    }
+
+    #[test]
+    fn vulkan_rt_core_point_in_solid_matches_cpu() {
+        let Some(vk) = global_vulkan() else {
+            return;
+        };
+        if !vk.supports_ray_query() {
+            return;
+        }
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+        ];
+        let triangles = [[0_u32, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let pts = [
+            Point3::new(0.25, 0.25, 0.25),
+            Point3::new(0.1, 0.1, 0.1),
+            Point3::new(1.5, 1.5, 1.5),
+            Point3::new(-0.5, 0.2, 0.2),
+        ];
+        let expected_parity = cpu::point_in_solid_parity(&pts, mesh);
+        let actual_parity = vk
+            .rt_core_point_in_solid_parity(&pts, mesh)
+            .expect("RT Core point-in-solid");
+        assert_eq!(expected_parity, actual_parity);
     }
 }
