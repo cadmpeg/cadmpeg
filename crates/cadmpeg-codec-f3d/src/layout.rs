@@ -4575,14 +4575,14 @@ pub(crate) mod class_296_261_two_sided_to_faces_extrude_prefix {
     pub(crate) const REFERENCE_COUNT: usize = 291;
 }
 
-/// Byte offsets for the `class_296_261_legacy_extrude_prefix_scalar_at_54` record.
+/// Byte offsets for the `class_296_261_legacy_extrude_prefix` record.
 ///
 /// Spec §3.1. Record length 129 B.
 ///
 /// ```text
-/// Offsets are relative to the class-296 primary indexed header. This prefix is shared by the 515-byte one-sided-to-face and 483-byte one-sided-distance legacy envelopes; the scalar lane is at +54 in this variant.
+/// Offsets are relative to the class-296 primary indexed header. The 515-byte one-sided-to-face and 483-byte one-sided-distance legacy envelopes share this prefix.
 /// ```
-pub(crate) mod class_296_261_legacy_extrude_prefix_scalar_at_54 {
+pub(crate) mod class_296_261_legacy_extrude_prefix {
     /// Offset of `prefix_constant` (`u32`, little-endian). Spec §3.1.
     pub(crate) const PREFIX_CONSTANT: usize = 20;
     /// Offset of `zero_before_reference` (`u8`). Spec §3.1.
@@ -4603,26 +4603,13 @@ pub(crate) mod class_296_261_legacy_extrude_prefix_scalar_at_54 {
     pub(crate) const START_SUPPORT: usize = 50;
     /// Offset of `zero_after_start` (`bytes[3]`). Spec §3.1.
     pub(crate) const ZERO_AFTER_START: usize = 51;
-    /// Offset of `profile_scalar_at_54` (`f64`, little-endian). Spec §3.1.
-    pub(crate) const PROFILE_SCALAR_AT_54: usize = 54;
+    /// Offset of `profile_normal` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const PROFILE_NORMAL: usize = 54;
     /// Offset of `reference_slots` (`bytes[47]`). Spec §3.1.
     #[cfg(test)]
     pub(crate) const REFERENCE_SLOTS: usize = 78;
     /// Offset of `first_side_extent` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FIRST_SIDE_EXTENT: usize = 125;
-}
-
-/// Byte offsets for the `class_296_261_legacy_extrude_prefix_scalar_at_70` record.
-///
-/// Spec §3.1. Record length 129 B.
-///
-/// ```text
-/// Offsets are relative to the class-296 primary indexed header. This prefix uses the alternate scalar lane at +70 and is admitted only with the exact legacy class, frame, and reference-count tuple.
-/// ```
-pub(crate) mod class_296_261_legacy_extrude_prefix_scalar_at_70 {
-    /// Offset of `profile_scalar_at_70` (`f64`, little-endian). Spec §3.1.
-    #[cfg(test)]
-    pub(crate) const PROFILE_SCALAR_AT_70: usize = 70;
 }
 
 /// Byte offsets for the `class_296_261_legacy_one_sided_to_face_tail` record.

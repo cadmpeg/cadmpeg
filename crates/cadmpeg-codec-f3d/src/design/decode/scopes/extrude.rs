@@ -11,7 +11,7 @@ use super::shared_frames::extrude_operation_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
 use crate::design::decode::text::fixed_guid_end;
-use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_54 as class_296_legacy_scalar_54;
+use crate::layout::class_296_261_legacy_extrude_prefix as class_296_legacy_prefix;
 use crate::layout::class_296_261_legacy_one_sided_distance_tail as class_296_legacy_distance;
 use crate::layout::class_296_261_legacy_one_sided_to_face_tail as class_296_legacy_to_face;
 use crate::layout::class_296_261_one_sided_to_face_extrude_prefix as class_296_to_face;
@@ -807,30 +807,30 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
     };
     if View::u32_le_at(
         bytes,
-        start.checked_add(class_296_legacy_scalar_54::PREFIX_CONSTANT)?,
+        start.checked_add(class_296_legacy_prefix::PREFIX_CONSTANT)?,
     )? != 1
         || bytes.get(
-            start.checked_add(class_296_legacy_scalar_54::ZERO_BEFORE_REFERENCE)?
-                ..start.checked_add(class_296_legacy_scalar_54::REFERENCE)?,
+            start.checked_add(class_296_legacy_prefix::ZERO_BEFORE_REFERENCE)?
+                ..start.checked_add(class_296_legacy_prefix::REFERENCE)?,
         )? != [0]
         || !reference_members.contains(&marked_record_reference(
             bytes,
-            start.checked_add(class_296_legacy_scalar_54::REFERENCE)?,
+            start.checked_add(class_296_legacy_prefix::REFERENCE)?,
         )?)
         || bytes.get(
             start
-                .checked_add(class_296_legacy_scalar_54::REFERENCE)?
+                .checked_add(class_296_legacy_prefix::REFERENCE)?
                 .checked_add(5)?
-                ..start.checked_add(class_296_legacy_scalar_54::OPERATION)?,
+                ..start.checked_add(class_296_legacy_prefix::OPERATION)?,
         )? != [0; 6]
     {
         return None;
     }
-    let operation_offset = start.checked_add(class_296_legacy_scalar_54::OPERATION)?;
+    let operation_offset = start.checked_add(class_296_legacy_prefix::OPERATION)?;
     let operation = extrude_operation_at(bytes, operation_offset)?;
     let direction_face_extend_offsets = [
-        start.checked_add(class_296_legacy_scalar_54::DIRECTION)?,
-        start.checked_add(class_296_legacy_scalar_54::FACE_EXTEND)?,
+        start.checked_add(class_296_legacy_prefix::DIRECTION)?,
+        start.checked_add(class_296_legacy_prefix::FACE_EXTEND)?,
     ];
     let direction_face_extend_values = [
         View::u32_le_at(bytes, direction_face_extend_offsets[0])?,
@@ -840,15 +840,15 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
         return None;
     }
     let direction_reversed_offset =
-        start.checked_add(class_296_legacy_scalar_54::DIRECTION_REVERSED)?;
+        start.checked_add(class_296_legacy_prefix::DIRECTION_REVERSED)?;
     let direction_reversed = flag_byte_at(bytes, direction_reversed_offset)?;
-    let solid_operation_offset = start.checked_add(class_296_legacy_scalar_54::GEOMETRY_KIND)?;
+    let solid_operation_offset = start.checked_add(class_296_legacy_prefix::GEOMETRY_KIND)?;
     let solid_operation = flag_byte_at(bytes, solid_operation_offset)?;
-    let start_offset = start.checked_add(class_296_legacy_scalar_54::START_SUPPORT)?;
+    let start_offset = start.checked_add(class_296_legacy_prefix::START_SUPPORT)?;
     let start_support = extrude_start_at(bytes, start_offset)?;
     if bytes.get(
-        start.checked_add(class_296_legacy_scalar_54::ZERO_AFTER_START)?
-            ..start.checked_add(class_296_legacy_scalar_54::PROFILE_SCALAR_AT_54)?,
+        start.checked_add(class_296_legacy_prefix::ZERO_AFTER_START)?
+            ..start.checked_add(class_296_legacy_prefix::PROFILE_NORMAL)?,
     )? != [0; 3]
     {
         return None;
@@ -889,8 +889,7 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
             slot_offset = slot_offset.checked_add(1)?;
         }
     }
-    let first_side_extent_offset =
-        start.checked_add(class_296_legacy_scalar_54::FIRST_SIDE_EXTENT)?;
+    let first_side_extent_offset = start.checked_add(class_296_legacy_prefix::FIRST_SIDE_EXTENT)?;
     if slot_offset != first_side_extent_offset
         || View::u32_le_at(bytes, first_side_extent_offset)? != first_extent
     {
