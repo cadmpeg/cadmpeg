@@ -24262,6 +24262,102 @@ source = "spec"
 anchor = "The 221-byte spacing direction form"
 
 [[record]]
+name = "circular_pattern_payload_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A circular-pattern scope can store an indexed circular-pattern payload."
+size = 44
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "After the indexed header and ten zero bytes, payload offset 21 stores the symmetric byte"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "After the indexed header and ten zero bytes, payload offset 21 stores the symmetric byte"
+
+[[record.field]]
+name = "symmetric"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "After the indexed header and ten zero bytes, payload offset 21 stores the symmetric byte"
+
+[[record.field]]
+name = "angle_owner"
+offset = 22
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references to the total-angle owner and the axis record start at offsets 22 and 33."
+
+[[record.field]]
+name = "axis"
+offset = 33
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references to the total-angle owner and the axis record start at offsets 22 and 33."
+
+[[record]]
+name = "circular_pattern_payload_distribution"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The circular distribution block comes next"
+size = 25
+note = "Offsets are relative to the byte after the counted reference run."
+
+[[record.field]]
+name = "zero_run"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "The circular distribution block comes next"
+
+[[record.field]]
+name = "fixed_two"
+offset = 8
+type = "u32"
+value = 2
+source = "spec"
+anchor = "The circular distribution block comes next"
+
+[[record.field]]
+name = "seed_kind"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "The circular distribution block comes next"
+
+[[record.field]]
+name = "sentinel"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "The circular distribution block comes next"
+
+[[record.field]]
+name = "fixed_one"
+offset = 20
+type = "u8"
+value = 1
+source = "spec"
+anchor = "The circular distribution block comes next"
+
+[[record.field]]
+name = "entry_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "A u32 entry count, that many sixteen-byte entries, a u32 instance count equal to the pattern count"
+
+[[record]]
 name = "rectangular_pattern_payload_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
 kind = "byte"
