@@ -534,6 +534,12 @@ fn ray_mesh_and_containment_degenerate_cases() {
     assert!(!cpu_hit[0].hit);
     let disp_hit = intersect_rays_mesh(&eps_ray, single_tri_mesh);
     assert!(!disp_hit[0].hit);
+    if let Some(cuda) = crate::cuda::global_cuda() {
+        let cuda_hit = cuda
+            .simt_ray_mesh_intersect(&eps_ray, single_tri_mesh)
+            .expect("cuda ray hit");
+        assert!(!cuda_hit[0].hit);
+    }
 }
 
 #[test]

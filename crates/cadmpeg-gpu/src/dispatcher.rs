@@ -310,7 +310,9 @@ impl GpuDispatcher {
             }
             BackendKind::CpuSpatialIndex => Some(spatial::intersect_rays_mesh(rays, mesh)),
             BackendKind::PtxSm86 => None,
-            BackendKind::CudaCompute => None,
+            BackendKind::CudaCompute => {
+                global_cuda().and_then(|cu| cu.simt_ray_mesh_intersect(rays, mesh))
+            }
             BackendKind::VulkanCompute => {
                 global_vulkan().and_then(|vk| vk.compute_ray_mesh_intersect(rays, mesh))
             }
@@ -778,7 +780,11 @@ fn benchmark_single(
                     std::hint::black_box(&out);
                 }
                 (OperationKind::RayMeshIntersection, BackendKind::VulkanRtCore) => return None,
-                (OperationKind::RayMeshIntersection, BackendKind::CudaCompute) => return None,
+                (OperationKind::RayMeshIntersection, BackendKind::CudaCompute) => {
+                    let cu = global_cuda()?;
+                    let out = cu.simt_ray_mesh_intersect(&rays, mesh)?;
+                    std::hint::black_box(&out);
+                }
                 (OperationKind::RayMeshIntersection, BackendKind::PtxSm86) => return None,
                 (OperationKind::RayMeshIntersection, BackendKind::RtxRtCore) => return None,
                 (OperationKind::PointInSolidParity, BackendKind::Cpu) => {
