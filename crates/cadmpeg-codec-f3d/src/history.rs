@@ -3509,12 +3509,12 @@ pub(crate) fn bind_feature_face_selections(
                         feature_id,
                         scope,
                         groups,
-                        previous_state_id,
-                        transition,
-                        history
-                            .states()
-                            .get(selection_previous)
-                            .and_then(|state| history.topology(state)),
+                        &delete_face::DeleteFaceStates {
+                            histories,
+                            history,
+                            state: selection_state_row,
+                            previous: selection_previous_row,
+                        },
                     );
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -3651,6 +3651,7 @@ fn face_selection_state<'a>(
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::MoveFace { .. }
+                | cadmpeg_ir::features::FeatureOperation::DeleteFace { heal: true, .. }
         )
     );
     if !spans_transitions && state.transition.as_ref()?.previous_state_id != Some(previous_state_id)

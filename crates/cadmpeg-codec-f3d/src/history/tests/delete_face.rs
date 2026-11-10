@@ -108,6 +108,16 @@ fn bind_groups(
     initial: FaceSelection,
     history: AsmHistory,
 ) -> FaceSelection {
+    bind_groups_with_scope(groups, heal, initial, history, scope())
+}
+
+fn bind_groups_with_scope(
+    groups: &[DesignConstructionOperandGroup],
+    heal: bool,
+    initial: FaceSelection,
+    history: AsmHistory,
+    scope: DesignParameterScope,
+) -> FaceSelection {
     let feature_id = FeatureId::mint("f3d:test:feature#42").expect("identity grammar");
     let mut feature = Feature {
         product_definition: None,
@@ -142,7 +152,7 @@ fn bind_groups(
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
         crate::history::FeatureFaceSelectionInputs {
-            scopes: &[scope()],
+            scopes: &[scope],
             groups,
             operands: &[],
             entity_operands: &[],
@@ -157,6 +167,60 @@ fn bind_groups(
         panic!("DeleteFace definition");
     };
     faces.clone()
+}
+
+#[test]
+fn healed_delete_face_binds_across_intermediate_history_states() {
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(4, vec![20], Some(3)),
+            state(3, vec![10, 20], Some(2)),
+            state(2, vec![10, 20], Some(1)),
+            state(1, vec![10, 20], None),
+        ],
+    );
+    let mut scope = scope();
+    scope
+        .try_edit(|draft| draft.history_state_id = Some(4))
+        .unwrap();
+    let bound = bind_groups_with_scope(&[group(42, &[100])], true, native(), history, scope);
+    let FaceSelection::Historical { state, faces, .. } = bound else {
+        panic!("historical face selection");
+    };
+    let feature_id = FeatureId::mint("f3d:test:feature#42").unwrap();
+    let prefix = crate::ids::feature_input_prefix(&feature_id, 1);
+    assert_eq!(state, crate::ids::history_input_state_id(&prefix));
+    assert_eq!(
+        faces.as_slice(),
+        [crate::ids::history_input_face_id(&prefix, 10)]
+    );
+}
+
+#[test]
+fn an_intermediate_healing_deletion_prevents_the_member_count_proof() {
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(3, vec![30], Some(2)),
+            state(2, vec![10, 30], Some(1)),
+            state(1, vec![10, 20, 30], None),
+        ],
+    );
+    let mut scope = scope();
+    scope
+        .try_edit(|draft| draft.history_state_id = Some(3))
+        .unwrap();
+    assert_eq!(
+        bind_groups_with_scope(&[group(42, &[100])], true, native(), history, scope),
+        native(),
+    );
 }
 
 fn native() -> FaceSelection {
