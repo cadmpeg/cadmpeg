@@ -344,7 +344,9 @@ impl GpuDispatcher {
                 Some(spatial::rayon_points_in_solid_parity(points, mesh))
             }
             BackendKind::CpuSpatialIndex => Some(spatial::points_in_solid_parity(points, mesh)),
-            BackendKind::PtxSm86 => None,
+            BackendKind::PtxSm86 => {
+                global_cuda().and_then(|cu| cu.ptx_sm86_point_in_solid_parity(points, mesh))
+            }
             BackendKind::CudaCompute => {
                 global_cuda().and_then(|cu| cu.simt_point_in_solid_parity(points, mesh))
             }
@@ -846,7 +848,11 @@ fn benchmark_single(
                     let out = cu.simt_point_in_solid_parity(&pts, mesh)?;
                     std::hint::black_box(&out);
                 }
-                (OperationKind::PointInSolidParity, BackendKind::PtxSm86) => return None,
+                (OperationKind::PointInSolidParity, BackendKind::PtxSm86) => {
+                    let cu = global_cuda()?;
+                    let out = cu.ptx_sm86_point_in_solid_parity(&pts, mesh)?;
+                    std::hint::black_box(&out);
+                }
                 (OperationKind::PointInSolidParity, BackendKind::RtxRtCore) => return None,
                 (OperationKind::ClosestPointMesh, BackendKind::Cpu) => {
                     let out = cpu::closest_point_mesh(&pts, mesh);
