@@ -77,6 +77,10 @@ A matching incident edge can corroborate a shared vertex repair. Endpoint
 and boundary retry seeds admit discrepancies up to 0.005 mm. Alignment and
 reprojection check the recovered pcurve's lift against the selected 3D edge
 at 0.001 mm. A repaired outer boundary must contain each inner loop.
+The report records these choices with `topology.shared-boundary-reconciled`.
+It counts emitted faces admitted by vertex repair, seed alignment, and shared-edge
+retry, and prior faces whose shared curves were replaced. These counts can
+overlap. The note gives the largest vertex movement or sampled edge discrepancy.
 
 ## Sheet surface transfer
 

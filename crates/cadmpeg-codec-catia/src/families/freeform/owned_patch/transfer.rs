@@ -40,6 +40,37 @@ const MAX_SHARED_EDGE_SEED_GAP_MM: f64 = 0.005;
 const MAX_CORROBORATED_VERTEX_GAP_MM: f64 = 0.005;
 type AdmittedEdges = BTreeMap<usize, (usize, usize, usize)>;
 
+#[derive(Clone, Copy, Default)]
+struct Reconciliation {
+    vertex_repair: Option<f64>,
+    seed_alignment: Option<f64>,
+    retry: Option<f64>,
+    replaced_edge: Option<f64>,
+}
+
+fn edge_discrepancy(a: &Use, b: &Use) -> f64 {
+    let Some(same) = edge_alignment::edge_relation(a, b) else {
+        return 0.0;
+    };
+    (0..=EDGE_SAMPLES)
+        .filter_map(|step| {
+            let fraction = f64::from(step) / f64::from(EDGE_SAMPLES);
+            let a = curve_point(
+                &a.curve,
+                interval_parameter(a.curve.full_knot_endpoints().endpoints(), fraction),
+            )?;
+            let b = curve_point(
+                &b.curve,
+                interval_parameter(
+                    b.curve.full_knot_endpoints().endpoints(),
+                    if same { fraction } else { 1.0 - fraction },
+                ),
+            )?;
+            Some(a.distance(b))
+        })
+        .fold(0.0, f64::max)
+}
+
 fn matches_edge(a: &Use, b: &Use) -> Option<bool> {
     matches_edge_within(a, b, GAP_MM)
 }
@@ -74,11 +105,14 @@ pub(super) fn append(
     }
     let mut count = 0;
     let mut inferred_senses = 0;
+    let mut reconciled = [0; 4];
+    let mut max_discrepancy_mm = 0.0_f64;
     let (mut rolling_ball, mut offset, mut ruled, mut extrusion) = (0, 0, 0, 0);
     let (mut adjusted, mut max_shift_mm) = (0, 0.0_f64);
     for ((source, body), mut patches) in by_body {
         patches.sort_by_key(|patch| patch.priority);
-        let selected = compatible_patches(&mut patches);
+        let mut reconciliations = BTreeMap::new();
+        let selected = compatible_patches(&mut patches, &mut reconciliations);
         let mut by_edge = BTreeMap::<_, Vec<_>>::new();
         for &index in &selected {
             for side in &patches[index].sides {
@@ -103,6 +137,21 @@ pub(super) fn append(
             let patches = component.iter().map(|&i| &patches[i]).collect::<Vec<_>>();
             if append_component(ir, annotations, source, body, &patches, admission)? {
                 count += patches.len();
+                for index in &component {
+                    if let Some(record) = reconciliations.get(index) {
+                        for (count, gap) in reconciled.iter_mut().zip([
+                            record.vertex_repair,
+                            record.seed_alignment,
+                            record.retry,
+                            record.replaced_edge,
+                        ]) {
+                            if let Some(gap) = gap {
+                                *count += 1;
+                                max_discrepancy_mm = max_discrepancy_mm.max(gap);
+                            }
+                        }
+                    }
+                }
                 inferred_senses += patches.iter().filter(|patch| patch.sense_inferred).count();
                 for fit in patches.iter().filter_map(|patch| patch.surface_fit) {
                     match fit {
@@ -118,6 +167,9 @@ pub(super) fn append(
                 }
             }
         }
+    }
+    if reconciled.iter().any(|&count| count != 0) {
+        refusal.push_shared_boundary_reconciled(reconciled, max_discrepancy_mm);
     }
     if inferred_senses != 0 {
         refusal.push_owned_patch_sense_inferred(inferred_senses);
@@ -143,7 +195,7 @@ fn repair_corroborated_vertices(
     vertices: &BTreeMap<usize, Point3>,
     edges: &AdmittedEdges,
     retry: bool,
-) -> bool {
+) -> f64 {
     let mut repairs = BTreeMap::new();
     for side in &patch.sides {
         for &(vertex, point) in &side.vertices {
@@ -183,16 +235,19 @@ fn repair_corroborated_vertices(
             }
         }
     }
+    let mut max_gap_mm = 0.0_f64;
     for side in &mut patch.sides {
         for (vertex, point) in &mut side.vertices {
             if let Some(&anchor) = repairs.get(vertex) {
-                if point.distance(anchor) <= MAX_CORROBORATED_VERTEX_GAP_MM {
+                let gap = point.distance(anchor);
+                if gap <= MAX_CORROBORATED_VERTEX_GAP_MM {
+                    max_gap_mm = max_gap_mm.max(gap);
                     *point = anchor;
                 }
             }
         }
     }
-    !repairs.is_empty()
+    max_gap_mm
 }
 
 struct TrimEndpoint {
@@ -245,7 +300,10 @@ fn has_trim_witnesses(
         })
 }
 
-fn compatible_patches(patches: &mut Vec<Patch>) -> BTreeSet<usize> {
+fn compatible_patches(
+    patches: &mut Vec<Patch>,
+    reconciliations: &mut BTreeMap<usize, Reconciliation>,
+) -> BTreeSet<usize> {
     let mut admitted = BTreeSet::<usize>::new();
     let mut vertices = BTreeMap::<usize, Point3>::new();
     let mut edges = AdmittedEdges::new();
@@ -258,8 +316,11 @@ fn compatible_patches(patches: &mut Vec<Patch>) -> BTreeSet<usize> {
         if rolling_boundary_retry && admitted.iter().any(|&i| prior[i].face == patch.face) {
             continue;
         }
-        let repaired_vertices =
-            repair_corroborated_vertices(patch, prior, &vertices, &edges, false);
+        let vertex_gap = repair_corroborated_vertices(patch, prior, &vertices, &edges, false);
+        let repaired_vertices = vertex_gap > 0.0;
+        if repaired_vertices {
+            reconciliations.entry(index).or_default().vertex_repair = Some(vertex_gap);
+        }
         let mut local = BTreeMap::<usize, Point3>::new();
         let mut replacements = Vec::new();
         if !patch.sides.iter_mut().all(|side| {
@@ -280,12 +341,18 @@ fn compatible_patches(patches: &mut Vec<Patch>) -> BTreeSet<usize> {
                     } else {
                         let mut aligned = first.clone();
                         let surface = &prior[face].surface;
-                        let closed = edge_alignment::align(side, &mut aligned, surface).is_some()
-                            || (has_trim_witnesses(patch.face, side, &witnesses)
-                                && edge_alignment::align_seed(side, &mut aligned, surface)
-                                    .is_some());
+                        let ordinary = edge_alignment::align(side, &mut aligned, surface).is_some();
+                        let seeded = !ordinary
+                            && has_trim_witnesses(patch.face, side, &witnesses)
+                            && edge_alignment::align_seed(side, &mut aligned, surface).is_some();
+                        let closed = ordinary || seeded;
                         if closed {
-                            replacements.push((face, side_index, aligned));
+                            replacements.push((
+                                face,
+                                side_index,
+                                aligned,
+                                seeded.then(|| edge_discrepancy(first, side)),
+                            ));
                         }
                         closed
                     }
@@ -296,8 +363,14 @@ fn compatible_patches(patches: &mut Vec<Patch>) -> BTreeSet<usize> {
         }) {
             continue;
         }
-        for (face, side, aligned) in replacements {
+        for (face, side, aligned, gap) in replacements {
             prior[face].sides[side] = aligned;
+            if let Some(gap) = gap {
+                let admission = reconciliations.entry(index).or_default();
+                admission.seed_alignment = Some(admission.seed_alignment.unwrap_or(0.0).max(gap));
+                let changed = reconciliations.entry(face).or_default();
+                changed.replaced_edge = Some(changed.replaced_edge.unwrap_or(0.0).max(gap));
+            }
         }
         admitted.insert(index);
         vertices.extend(local);
@@ -319,10 +392,20 @@ fn compatible_patches(patches: &mut Vec<Patch>) -> BTreeSet<usize> {
             if admitted_faces.contains(&patch.face) {
                 continue;
             }
-            let Some(retry) = retry_shared_boundary(patch, patches, &vertices, &edges) else {
+            let Some((retry, mut record)) =
+                retry_shared_boundary(patch, patches, &vertices, &edges)
+            else {
                 continue;
             };
+            if let Some(gap) = reconciliations
+                .get(&index)
+                .and_then(|record| record.vertex_repair)
+            {
+                record.vertex_repair = Some(record.vertex_repair.unwrap_or(0.0).max(gap));
+                record.retry = Some(record.retry.unwrap_or(0.0).max(gap));
+            }
             let index = patches.len();
+            reconciliations.insert(index, record);
             for (side_index, side) in retry.sides.iter().enumerate() {
                 for &(id, point) in &side.vertices {
                     vertices.entry(id).or_insert(point);
@@ -348,21 +431,27 @@ fn retry_shared_boundary(
     admitted: &[Patch],
     vertices: &BTreeMap<usize, Point3>,
     edges: &AdmittedEdges,
-) -> Option<Patch> {
+) -> Option<(Patch, Reconciliation)> {
     let mut retry = Patch {
         sides: patch.sides.clone(),
         inner_starts: patch.inner_starts.clone(),
         surface: patch.surface.clone(),
         ..*patch
     };
-    let repaired = repair_corroborated_vertices(&mut retry, admitted, vertices, edges, true);
-    let mut modified = repaired;
+    let vertex_gap = repair_corroborated_vertices(&mut retry, admitted, vertices, edges, true);
+    let mut record = Reconciliation {
+        vertex_repair: (vertex_gap > 0.0).then_some(vertex_gap),
+        ..Reconciliation::default()
+    };
+    let mut max_gap_mm = vertex_gap;
+    let mut modified = vertex_gap > 0.0;
     let mut local = BTreeMap::new();
     for side in &mut retry.sides {
         match edges.get(&side.edge) {
             Some(&(1, face, edge)) => {
                 let prior = &admitted[face].sides[edge];
                 if matches_edge(prior, side).is_none() {
+                    max_gap_mm = max_gap_mm.max(edge_discrepancy(prior, side));
                     if edge_alignment::align(prior, side, &retry.surface).is_none() {
                         matches_edge_within(prior, side, MAX_SHARED_EDGE_SEED_GAP_MM)?;
                         *side = edge_alignment::reproject(prior, side, &retry.surface)?;
@@ -385,7 +474,8 @@ fn retry_shared_boundary(
     if !modified {
         return None;
     }
-    trimmed_face::holes_are_contained(&retry)?.then_some(retry)
+    record.retry = Some(max_gap_mm);
+    trimmed_face::holes_are_contained(&retry)?.then_some((retry, record))
 }
 
 fn append_component(
