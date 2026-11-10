@@ -8,6 +8,7 @@ mod completeness;
 mod container;
 mod curves;
 mod depth;
+mod extrude_assumptions;
 mod face_materials;
 mod header_recovery;
 mod pcurves;
