@@ -204,6 +204,10 @@ pub(crate) enum F3dLossCode {
     /// A Mirror plane is read from the `WorkPlane` scope after its plane
     /// selection identity.
     FeatureMirrorPlaneWorkPlaneAssumed,
+    /// A circular pattern's symmetric distribution has no circular pattern field.
+    FeatureCircularPatternPlacementNotTransferred,
+    /// A partial-turn circular pattern without a readable symmetric byte is read as one-sided.
+    FeatureCircularPatternDistributionAssumed,
     /// A feature scope has no complete unique ASM output transition interval.
     FeatureOutputStateChainUnbound,
     /// An affected body slot has no unique active body in the selected BREP.
@@ -214,6 +218,10 @@ pub(crate) enum F3dLossCode {
     FeaturePipeCircularSectionInferred,
     /// A Pipe whose fractions both equal one is assumed to sweep its whole path group.
     FeaturePipeWholePathExtentAssumed,
+    /// A Pipe section without an unchanged new-body result is assumed to be a circle.
+    FeaturePipeCircularSectionAssumed,
+    /// A Pipe with one unit and one zero fraction is assumed to start its section at a path end.
+    FeaturePipePathEndSectionAssumed,
     SurfacePatchInteriorConstraintAssumed,
     SurfacePatchUnnamedGroupsAssumedInactive,
     SurfacePatchUnorderedReferenceRunsAssumed,
@@ -245,6 +253,7 @@ pub(crate) enum F3dLossCode {
     FeatureScopePayloadUninterpreted,
     /// Emboss controls, native pairs, and selected contours have no neutral mapping.
     EmbossControlsNative,
+    FeatureShellAuxiliaryReferencesNative,
     /// An Emboss prefix matches no admitted native construction form.
     EmbossPrefixUnparsed,
     /// A non-equivalent duplicate scope envelope was superseded by the
@@ -282,6 +291,9 @@ pub(crate) enum F3dLossCode {
     HistoricalFilletEdgeInferred,
     /// An edge-treatment edge is read from the faces its recipe names; it bounds no candidate face.
     HistoricalEdgeSelectionInferred,
+    /// A two-face treatment group takes the edges its transition deletes; the
+    /// treated set is assumed to equal the deleted set.
+    HistoricalEdgeSelectionDeletedSetAssumed,
     /// A fillet with no bound history takes the one history, among several
     /// that hold its state pair, in which every edge group resolves.
     HistoricalEdgeHistoryInferred,
@@ -424,6 +436,12 @@ pub(crate) enum F3dLossCode {
     FeatureLoftReferenceUnresolved,
     /// A three-flag `Loft` scope stores flag bytes whose Loft settings are unresolved.
     FeatureLoftSettingsAssumed,
+    /// A `Loft` scope body has no unique reading of its section and rail lists, and the scope stays native.
+    FeatureLoftListsUnresolved,
+    /// The section and rail lists of a `Loft` scope do not assign its construction-operand groups, and the scope stays native.
+    FeatureLoftGroupsUnassigned,
+    /// A `Loft` projects the one role-`0x7` group of its rail list as a centerline.
+    FeatureLoftCenterlineAssumed,
     /// A `SurfaceExtend` scope projects with an unresolved extension method.
     FeatureSurfaceExtendMethodUnresolved,
     /// A `SurfaceExtend` scope stores a nonpositive extension distance and stays native.
@@ -435,6 +453,10 @@ pub(crate) enum F3dLossCode {
     FeatureRectangularPatternPlacementNotTransferred,
     /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
     FeatureThickenFlagsAssumed,
+    /// A `Shell` reference table stores references outside its face-group members.
+    FeatureShellTableMembersAssumed,
+    /// A compact, marked, or counted `Shell` prefix stores an offset-21 Boolean whose Shell option is unresolved.
+    FeatureShellPrefixFlagAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
     /// `SurfaceTrim` cell tables outside the removal reading retain native entries.
@@ -717,11 +739,15 @@ impl F3dLossCode {
         Self::FeatureTimelineOwnerUnpaired,
         Self::FeaturePasteCopyPlacementAssumed,
         Self::FeatureMirrorPlaneWorkPlaneAssumed,
+        Self::FeatureCircularPatternPlacementNotTransferred,
+        Self::FeatureCircularPatternDistributionAssumed,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
         Self::FeatureDerivedBaseUnresolved,
         Self::FeaturePipeCircularSectionInferred,
         Self::FeaturePipeWholePathExtentAssumed,
+        Self::FeaturePipeCircularSectionAssumed,
+        Self::FeaturePipePathEndSectionAssumed,
         Self::SurfacePatchInteriorConstraintAssumed,
         Self::SurfacePatchUnnamedGroupsAssumedInactive,
         Self::SurfacePatchUnorderedReferenceRunsAssumed,
@@ -738,6 +764,7 @@ impl F3dLossCode {
         Self::AlignConstructionUnparsed,
         Self::FeatureScopePayloadUninterpreted,
         Self::EmbossControlsNative,
+        Self::FeatureShellAuxiliaryReferencesNative,
         Self::EmbossPrefixUnparsed,
         Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
@@ -756,6 +783,7 @@ impl F3dLossCode {
         Self::HistoricalEdgeMidpointsUnresolved,
         Self::HistoricalFilletEdgeInferred,
         Self::HistoricalEdgeSelectionInferred,
+        Self::HistoricalEdgeSelectionDeletedSetAssumed,
         Self::HistoricalEdgeHistoryInferred,
         Self::HistoricalOutputBlobHistoryInferred,
         Self::HistoricalFilletEdgeAmbiguous,
@@ -822,12 +850,17 @@ impl F3dLossCode {
         Self::FeatureMoveTransformAssumed,
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
+        Self::FeatureLoftListsUnresolved,
+        Self::FeatureLoftGroupsUnassigned,
+        Self::FeatureLoftCenterlineAssumed,
         Self::FeatureSurfaceExtendMethodUnresolved,
         Self::FeatureSurfaceExtendDistanceNonpositive,
         Self::FeatureSurfaceBoundaryFlagRecordAssumed,
         Self::FeaturePathPatternPlacementNotTransferred,
         Self::FeatureRectangularPatternPlacementNotTransferred,
         Self::FeatureThickenFlagsAssumed,
+        Self::FeatureShellTableMembersAssumed,
+        Self::FeatureShellPrefixFlagAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureTrimCellTableNative,
         Self::FeatureTrimMemberTypeAssumed,
@@ -1025,11 +1058,19 @@ impl F3dLossCode {
             Self::FeatureTimelineOwnerUnpaired => "feature.timeline-owner-unpaired",
             Self::FeaturePasteCopyPlacementAssumed => "feature.paste-copy-placement-assumed",
             Self::FeatureMirrorPlaneWorkPlaneAssumed => "feature.mirror-plane-work-plane-assumed",
+            Self::FeatureCircularPatternPlacementNotTransferred => {
+                "feature.circular-pattern-placement-not-transferred"
+            }
+            Self::FeatureCircularPatternDistributionAssumed => {
+                "feature.circular-pattern-distribution-assumed"
+            }
             Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
             Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
             Self::FeatureDerivedBaseUnresolved => "feature.derived-base-unresolved",
             Self::FeaturePipeCircularSectionInferred => "feature.pipe-circular-section-inferred",
             Self::FeaturePipeWholePathExtentAssumed => "feature.pipe-whole-path-extent-assumed",
+            Self::FeaturePipeCircularSectionAssumed => "feature.pipe-circular-section-assumed",
+            Self::FeaturePipePathEndSectionAssumed => "feature.pipe-path-end-section-assumed",
             Self::SurfacePatchInteriorConstraintAssumed => {
                 "feature.surface-patch-interior-constraint-assumed"
             }
@@ -1044,6 +1085,9 @@ impl F3dLossCode {
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
+            Self::FeatureShellAuxiliaryReferencesNative => {
+                "feature.shell-auxiliary-references-native"
+            }
             Self::EmbossPrefixUnparsed => "feature.emboss-prefix-unparsed",
             Self::AlignOperandsUnresolved => "feature.align-operands-unresolved",
             Self::AlignEnvelopeUnparsed => "feature.align-envelope-unparsed",
@@ -1071,6 +1115,9 @@ impl F3dLossCode {
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
             Self::HistoricalFilletEdgeInferred => "history.fillet-edge-inferred",
             Self::HistoricalEdgeSelectionInferred => "history.edge-selection-inferred",
+            Self::HistoricalEdgeSelectionDeletedSetAssumed => {
+                "history.edge-selection-deleted-set-assumed"
+            }
             Self::HistoricalEdgeHistoryInferred => "history.edge-history-inferred",
             Self::HistoricalOutputBlobHistoryInferred => "history.output-blob-history-inferred",
             Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
@@ -1158,6 +1205,9 @@ impl F3dLossCode {
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
+            Self::FeatureLoftListsUnresolved => "feature.loft-lists-unresolved",
+            Self::FeatureLoftGroupsUnassigned => "feature.loft-groups-unassigned",
+            Self::FeatureLoftCenterlineAssumed => "feature.loft-centerline-assumed",
             Self::FeatureSurfaceExtendMethodUnresolved => {
                 "feature.surface-extend-method-unresolved"
             }
@@ -1174,6 +1224,8 @@ impl F3dLossCode {
                 "feature.rectangular-pattern-placement-not-transferred"
             }
             Self::FeatureThickenFlagsAssumed => "feature.thicken-flags-assumed",
+            Self::FeatureShellTableMembersAssumed => "feature.shell-table-members-assumed",
+            Self::FeatureShellPrefixFlagAssumed => "feature.shell-prefix-flag-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
             Self::FeatureTrimMemberTypeAssumed => "feature.trim-member-type-assumed",
@@ -1400,9 +1452,13 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureMirrorPlaneWorkPlaneAssumed
+            | Self::FeatureCircularPatternPlacementNotTransferred
+            | Self::FeatureCircularPatternDistributionAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
+            | Self::FeaturePipeCircularSectionAssumed
+            | Self::FeaturePipePathEndSectionAssumed
             | Self::SurfacePatchInteriorConstraintAssumed
             | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
@@ -1415,6 +1471,7 @@ impl F3dLossCode {
             | Self::HoleReferenceDimensionsNative
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
+            | Self::FeatureShellAuxiliaryReferencesNative
             | Self::EmbossPrefixUnparsed
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
@@ -1438,6 +1495,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
             | Self::HistoricalEdgeSelectionInferred
+            | Self::HistoricalEdgeSelectionDeletedSetAssumed
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
@@ -1504,12 +1562,17 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureLoftListsUnresolved
+            | Self::FeatureLoftGroupsUnassigned
+            | Self::FeatureLoftCenterlineAssumed
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSurfaceExtendDistanceNonpositive
             | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
+            | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
@@ -1663,9 +1726,13 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureMirrorPlaneWorkPlaneAssumed
+            | Self::FeatureCircularPatternPlacementNotTransferred
+            | Self::FeatureCircularPatternDistributionAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
+            | Self::FeaturePipeCircularSectionAssumed
+            | Self::FeaturePipePathEndSectionAssumed
             | Self::SurfacePatchInteriorConstraintAssumed
             | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
@@ -1682,6 +1749,7 @@ impl F3dLossCode {
             | Self::HoleReferenceDimensionsNative
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
+            | Self::FeatureShellAuxiliaryReferencesNative
             | Self::EmbossPrefixUnparsed
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
@@ -1701,6 +1769,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
             | Self::HistoricalEdgeSelectionInferred
+            | Self::HistoricalEdgeSelectionDeletedSetAssumed
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
@@ -1767,12 +1836,17 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureLoftListsUnresolved
+            | Self::FeatureLoftGroupsUnassigned
+            | Self::FeatureLoftCenterlineAssumed
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSurfaceExtendDistanceNonpositive
             | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
+            | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
@@ -2004,11 +2078,15 @@ mod tests {
                 "feature.timeline-owner-unpaired",
                 "feature.paste-copy-placement-assumed",
                 "feature.mirror-plane-work-plane-assumed",
+                "feature.circular-pattern-placement-not-transferred",
+                "feature.circular-pattern-distribution-assumed",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
                 "feature.derived-base-unresolved",
                 "feature.pipe-circular-section-inferred",
                 "feature.pipe-whole-path-extent-assumed",
+                "feature.pipe-circular-section-assumed",
+                "feature.pipe-path-end-section-assumed",
                 "feature.surface-patch-interior-constraint-assumed",
                 "feature.surface-patch-unnamed-groups-assumed-inactive",
                 "feature.surface-patch-unordered-reference-runs-assumed",
@@ -2025,6 +2103,7 @@ mod tests {
                 "feature.align-construction-unparsed",
                 "feature.scope-payload-uninterpreted",
                 "feature.emboss-controls-native",
+                "feature.shell-auxiliary-references-native",
                 "feature.emboss-prefix-unparsed",
                 "feature.scope-envelope-superseded",
                 "parameter.unprojected",
@@ -2043,6 +2122,7 @@ mod tests {
                 "history.edge-midpoints-unresolved",
                 "history.fillet-edge-inferred",
                 "history.edge-selection-inferred",
+                "history.edge-selection-deleted-set-assumed",
                 "history.edge-history-inferred",
                 "history.output-blob-history-inferred",
                 "history.fillet-edge-ambiguous",
@@ -2109,12 +2189,17 @@ mod tests {
                 "feature.move-transform-assumed",
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
+                "feature.loft-lists-unresolved",
+                "feature.loft-groups-unassigned",
+                "feature.loft-centerline-assumed",
                 "feature.surface-extend-method-unresolved",
                 "feature.surface-extend-distance-nonpositive",
                 "feature.surface-boundary-flag-record-assumed",
                 "feature.path-pattern-placement-not-transferred",
                 "feature.rectangular-pattern-placement-not-transferred",
                 "feature.thicken-flags-assumed",
+                "feature.shell-table-members-assumed",
+                "feature.shell-prefix-flag-assumed",
                 "feature.face-operand-unresolved",
                 "feature.trim-cell-table-native",
                 "feature.trim-member-type-assumed",

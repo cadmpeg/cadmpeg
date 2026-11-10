@@ -64,7 +64,16 @@ pub(crate) struct DesignCircularPatternConstruction {
         deserialize_with = "deserialize_axis_separator_flag_offset"
     )]
     pub(crate) axis_separator_flag_offset: Option<u64>,
+    /// Symmetric byte of the pattern payload: the instances lie on both sides of the seed.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_symmetric"
+    )]
+    pub(crate) symmetric: Option<Located<bool>>,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_symmetric, Located<bool>, "symmetric");
 
 cadmpeg_core::named_optional_field!(
     deserialize_axis_separator_flag_offset,
@@ -771,10 +780,8 @@ impl DesignRectangularPatternConstruction {
         &mut self,
         directions: Vec<DesignRectangularPatternDirection>,
     ) -> Result<(), &'static str> {
-        if self.secondary_direction.is_some()
-            && (directions.len() != 1 || directions[0].distance_type != 7)
-        {
-            return Err("payload V direction requires one spacing direction record");
+        if self.secondary_direction.is_some() && directions.len() != 1 {
+            return Err("payload V direction requires one U direction record");
         }
         if directions
             .windows(2)
@@ -1428,7 +1435,6 @@ mod tests {
         for (field, value) in [
             ("distance_type", 6),
             ("selection_kind", 9),
-            ("distance_type", 8),
             ("selection_kind", 16),
         ] {
             let mut corrupt = encoded.clone();
@@ -1437,6 +1443,11 @@ mod tests {
                 serde_json::from_value::<DesignRectangularPatternConstruction>(corrupt).is_err()
             );
         }
+        let mut span = encoded.clone();
+        span["directions"][0]["distance_type"] = 8.into();
+        span["directions"][0]["selection_kind"] = 16.into();
+        span["directions"][0]["displacement"] = serde_json::json!([0.0, 0.0, 1.0]);
+        assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(span).is_ok());
         let mut zero = encoded.clone();
         zero["secondary_direction"]["value"] = serde_json::json!([0.0, 0.0, 0.0]);
         assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(zero).is_err());

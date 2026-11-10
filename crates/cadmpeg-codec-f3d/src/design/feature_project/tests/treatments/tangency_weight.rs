@@ -51,6 +51,7 @@ fn indexed_tangency_weight_with_a_unit_retains_the_native_feature(
                 &scope,
                 &[(0, &parameters[0]), (1, &parameters[1])],
                 "f3d:native/BulkStream.dat",
+                &mut Vec::new(),
             )
         })?;
         let FeatureDefinition::Operation(FeatureOperation::Native {

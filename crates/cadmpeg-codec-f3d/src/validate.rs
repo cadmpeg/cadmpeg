@@ -3052,16 +3052,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 let relation =
                     records_by_index.get(&(native_stream, construction.relation_record_index));
                 let frame_matches_transform = match (
-                    scope.frame_length(),
+                    scope.canonical_name_frame_length().unwrap_or_default(),
                     scope.paired_class_tag.as_str(),
                     construction.placement.as_ref(),
                 ) {
-                    (272, "262", None) if scope.class_tag.as_str() == "357" => true,
-                    (276, "262", None)
-                        if matches!(scope.class_tag.as_str(), "357" | "360" | "362") =>
-                    {
-                        true
-                    }
+                    (272 | 276, _, None) => true,
                     (261, "263", None) if scope.class_tag.as_str() == "296" => true,
                     (261, "261", None) if scope.class_tag.as_str() == "410" => true,
                     (261, "258", None) if scope.class_tag.as_str() == "426" => true,
@@ -3075,10 +3070,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             .is_some_and(|expected_offset| matrix.scope.offset == expected_offset)
                             && matrix.carrier_offset.is_none()
                     }
-                    (404, _, Some(matrix)) => {
+                    (frame_length @ (400 | 404), _, Some(matrix)) => {
                         scope
                             .byte_offset()
-                            .checked_add(54)
+                            .checked_add(if frame_length == 400 { 50 } else { 54 })
                             .is_some_and(|expected_offset| matrix.scope.offset == expected_offset)
                             && matrix
                                 .carrier_offset
@@ -5447,88 +5442,6 @@ fn is_path_seed_group(
         && group.frame.trailing_records().len() == 1
 }
 
-/// Validate path-feature operand roles against the scope construction.
-///
-/// The role grammar is shared with the fixed Loft projector, though the
-/// projector additionally gates admission on scope member count, group
-/// ordinals, and legacy carrier pairing (this validator remains role-only and
-/// reports valid for shapes the projector leaves Native). Keeping the
-/// predicate independent of native byte offsets lets validation reject a
-/// malformed role combination without rejecting a valid section/guide mix.
-pub(crate) fn loft_operand_roles_are_valid(
-    operation: records::feature::extrude::DesignExtrudeOperation,
-    groups: &[(DesignOperandRole, usize)],
-) -> bool {
-    const SECTION: DesignOperandRole = DesignOperandRole::PROFILE;
-    const FACE_SECTION: DesignOperandRole = DesignOperandRole::ROLE_0X43;
-    const GUIDE: DesignOperandRole = DesignOperandRole::ROLE_0X5;
-    const CENTERLINE: DesignOperandRole = DesignOperandRole::ROLE_0X7;
-    const POINT: DesignOperandRole = DesignOperandRole::ROLE_0X21;
-    let is_body = |role: DesignOperandRole| {
-        matches!(
-            role,
-            DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-        )
-    };
-
-    let body_count = groups.iter().filter(|(role, _)| is_body(*role)).count();
-    let expected_body_count =
-        usize::from(operation != records::feature::extrude::DesignExtrudeOperation::NewBody);
-    if body_count != expected_body_count {
-        return false;
-    }
-    let operands = || groups.iter().filter(|(role, _)| !is_body(*role));
-    let section_count = operands()
-        .filter(|(role, _)| matches!(*role, SECTION | FACE_SECTION))
-        .count();
-    let guide_count = operands().filter(|(role, _)| *role == GUIDE).count();
-    let centerline_count = operands().filter(|(role, _)| *role == CENTERLINE).count();
-
-    if section_count >= 2 {
-        let roles_are_known = operands()
-            .all(|(role, _)| matches!(*role, SECTION | FACE_SECTION | GUIDE | CENTERLINE));
-        return roles_are_known
-            && centerline_count <= 1
-            && !(guide_count > 0 && centerline_count > 0)
-            && operands().count() == section_count + guide_count + centerline_count;
-    }
-
-    if operation != records::feature::extrude::DesignExtrudeOperation::NewBody {
-        return false;
-    }
-
-    if operands().any(|(role, _)| *role == POINT) {
-        return operands().count() == 2
-            && operands().filter(|(role, _)| *role == SECTION).count() == 1
-            && operands().any(|(role, member_count)| *role == POINT && *member_count == 1);
-    }
-
-    if section_count == 1 && operands().all(|(role, _)| matches!(*role, FACE_SECTION | GUIDE)) {
-        let mut point_ordinals = operands()
-            .enumerate()
-            .filter(|(_, (role, member_count))| *role == GUIDE && *member_count == 1)
-            .map(|(ordinal, _)| ordinal);
-        let Some(point_ordinal) = point_ordinals.next() else {
-            return false;
-        };
-        return point_ordinals.next().is_none()
-            && (point_ordinal == 0 || point_ordinal + 1 == operands().count())
-            && operands()
-                .enumerate()
-                .all(|(ordinal, (role, member_count))| {
-                    ordinal == point_ordinal || *role != GUIDE || *member_count != 1
-                });
-    }
-
-    if section_count == 0 && operands().count() >= 2 {
-        let all_sections = operands().all(|(role, _)| *role == SECTION);
-        let all_guides = operands().all(|(role, _)| *role == GUIDE);
-        return all_sections || all_guides;
-    }
-
-    false
-}
-
 /// Validate the operand-group roles of path-feature scopes. The groups are
 /// design-intent records, so a document without them has nothing to check.
 fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
@@ -5552,10 +5465,6 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             })
             .collect::<Vec<_>>();
         let role_count = |role| groups.iter().filter(|group| group.role() == role).count();
-        let group_roles = groups
-            .iter()
-            .map(|group| (group.role(), group.members().len()))
-            .collect::<Vec<_>>();
         let valid = match &scope.payload() {
             records::feature::scope::DesignScopePayload::Revolve(Some(
                 crate::records::feature::path_features::DesignRevolveConstruction {
@@ -5609,11 +5518,10 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && role_count(DesignOperandRole::PROFILE) == 1
                     && body_count == expected_body_count
             }
-            records::feature::scope::DesignScopePayload::Loft(Some(
-                crate::records::feature::path_features::DesignLoftConstruction {
-                    operation, ..
-                },
-            )) => loft_operand_roles_are_valid(*operation, &group_roles),
+            records::feature::scope::DesignScopePayload::Loft(Some(construction)) => {
+                construction.section_records.is_empty()
+                    || design::feature_project::loft_groups(construction, &groups).is_ok()
+            }
             records::feature::scope::DesignScopePayload::Sweep(Some(
                 records::feature::scope::DesignSweepScope {
                     construction:

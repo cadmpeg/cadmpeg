@@ -36,8 +36,8 @@ use super::fixed_parameters::exact_fixed_extrude_parameters;
 use super::fixed_parameters::exact_fixed_fillet_parameters;
 use super::hole::exact_hole_construction;
 use super::path_feature::{
-    exact_path_feature_construction, loft_reference_loss, marker_one_revolve_assumed_length,
-    three_flag_loft_settings_loss,
+    exact_path_feature_construction, loft_lists_loss, loft_reference_loss,
+    marker_one_revolve_assumed_length, three_flag_loft_settings_loss,
 };
 use super::pattern::exact_circular_pattern_construction_with_owners;
 use super::pattern::exact_rectangular_pattern_construction;
@@ -362,7 +362,9 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_direct_face_operation(bytes, &records, &scope);
+                let construction =
+                    exact_direct_face_operation(bytes, &records, &scope, &mut losses);
+                let scope_offset = scope.byte_offset();
                 match (scope.payload_mut(), construction) {
                     (
                         scope::DesignScopePayloadMut::OffsetFaces(slot),
@@ -371,7 +373,20 @@ pub(crate) fn decode_parameter_scopes(
                     (
                         scope::DesignScopePayloadMut::Shell(slot),
                         Some(direct_face::DesignDirectFaceOperation::Shell(value)),
-                    ) => *slot = Some(value),
+                    ) => {
+                        if !value.auxiliary_references.is_empty() {
+                            losses.push(
+                                crate::loss::F3dLossCode::FeatureShellAuxiliaryReferencesNative
+                                    .note(format!(
+                                        "Shell scope at {} in {} projects from its wall slot and face group; its auxiliary references {:?} have no neutral form.",
+                                        scope_offset,
+                                        entry.name,
+                                        value.auxiliary_references
+                                    )),
+                            );
+                        }
+                        *slot = Some(value);
+                    }
                     _ => {}
                 }
             }
@@ -491,6 +506,7 @@ pub(crate) fn decode_parameter_scopes(
                 {
                     losses.extend(loft_reference_loss(&scope, value));
                     losses.extend(three_flag_loft_settings_loss(bytes, &scope, value));
+                    losses.extend(loft_lists_loss(&scope, value));
                 }
                 match (scope.payload_mut(), construction) {
                     (

@@ -14,6 +14,7 @@ struct Corner {
 
 pub(super) struct FaceRecipeIndex {
     boundaries: HashMap<i64, Vec<i64>>,
+    loops: HashMap<i64, Vec<std::ops::Range<usize>>>,
     edge_faces: HashMap<i64, Vec<i64>>,
     endpoints: HashMap<i64, Option<[i64; 2]>>,
     corners: HashMap<i64, Vec<Corner>>,
@@ -23,6 +24,7 @@ impl FaceRecipeIndex {
     pub(super) fn new(topology: &AsmHistoricalTopology) -> Self {
         let endpoints = super::topology_cache::endpoint_index(topology);
         let mut boundaries = HashMap::new();
+        let mut face_loops = HashMap::new();
         let mut edge_faces = HashMap::<_, Vec<_>>::new();
         let mut corners = HashMap::<_, Vec<_>>::new();
         let mut coedge_rows = HashMap::new();
@@ -37,6 +39,7 @@ impl FaceRecipeIndex {
                 continue;
             };
             let mut boundary = Vec::new();
+            let mut loop_boundaries = Vec::new();
             let mut face_corners = Vec::new();
             let complete = loops.iter().all(|&loop_| {
                 let Some(coedges) = super::relation_members(&topology.loop_coedges, loop_) else {
@@ -84,7 +87,9 @@ impl FaceRecipeIndex {
                         ));
                     }
                 }
+                let start = boundary.len();
                 boundary.extend(edges);
+                loop_boundaries.push(start..boundary.len());
                 true
             });
             if complete && !boundary.is_empty() {
@@ -95,10 +100,12 @@ impl FaceRecipeIndex {
                     corners.entry(vertex).or_default().push(corner);
                 }
                 boundaries.insert(face, boundary);
+                face_loops.insert(face, loop_boundaries);
             }
         }
         Self {
             boundaries,
+            loops: face_loops,
             edge_faces,
             endpoints,
             corners,
@@ -180,6 +187,14 @@ impl FaceRecipeIndex {
     }
 
     pub(super) fn resolve(&self, operand: &DesignFaceOperand) -> Option<i64> {
+        self.resolve_boundary(operand, false)
+    }
+
+    pub(super) fn resolve_loop(&self, operand: &DesignFaceOperand) -> Option<i64> {
+        self.resolve_boundary(operand, true)
+    }
+
+    fn resolve_boundary(&self, operand: &DesignFaceOperand, single_loop: bool) -> Option<i64> {
         use crate::design::decode::operands::{face_recipe_program_kind, FaceRecipeProgramKind};
         if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace {
             return None;
@@ -233,27 +248,36 @@ impl FaceRecipeIndex {
         let mut resolved = None;
         for face in candidates? {
             let boundary = self.boundaries.get(&face)?;
-            if boundary.len() != nodes.len()
-                || boundary.iter().collect::<HashSet<_>>().len() != boundary.len()
-            {
-                continue;
-            }
-            let mut covered = HashSet::new();
-            let complete = nodes.iter().all(|node| {
-                let mut matches = boundary
-                    .iter()
-                    .copied()
-                    .filter(|edge| self.node_matches(node, *edge, &lanes));
-                let Some(edge) = matches.next() else {
-                    return false;
-                };
-                matches.next().is_none() && covered.insert(edge)
-            });
-            if complete && covered.len() == boundary.len() {
-                if resolved.is_some() {
-                    return None;
+            let whole = 0..boundary.len();
+            let ranges = if single_loop {
+                self.loops.get(&face)?.as_slice()
+            } else {
+                std::slice::from_ref(&whole)
+            };
+            for range in ranges {
+                let boundary = &boundary[range.clone()];
+                if boundary.len() != nodes.len()
+                    || boundary.iter().collect::<HashSet<_>>().len() != boundary.len()
+                {
+                    continue;
                 }
-                resolved = Some(face);
+                let mut covered = HashSet::new();
+                let complete = nodes.iter().all(|node| {
+                    let mut matches = boundary
+                        .iter()
+                        .copied()
+                        .filter(|edge| self.node_matches(node, *edge, &lanes));
+                    let Some(edge) = matches.next() else {
+                        return false;
+                    };
+                    matches.next().is_none() && covered.insert(edge)
+                });
+                if complete && covered.len() == boundary.len() {
+                    if resolved.is_some_and(|previous| previous != face) {
+                        return None;
+                    }
+                    resolved = Some(face);
+                }
             }
         }
         resolved

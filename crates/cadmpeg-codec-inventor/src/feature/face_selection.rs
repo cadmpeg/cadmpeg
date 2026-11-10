@@ -49,9 +49,7 @@ const CONTEXT_TYPE: [u8; 16] = [
 /// Qualifier of the matching attribute that identifies a selected face.
 const FACE_QUALIFIER: i64 = 1;
 
-/// The second stored `state` word of a face naming selector. A Thicken
-/// operand joins it through the feature tag of the owner under the rule of
-/// `project`; other operands refuse it.
+/// Stored state value for the feature-tag operand join.
 pub(crate) const NAMING_STATE_MODIFIED: i32 = 2;
 
 #[derive(Debug)]
@@ -108,6 +106,7 @@ pub(in crate::feature) enum SelectorForm {
 /// A face revision that a selector selects.
 #[derive(Debug)]
 pub(in crate::feature) struct SelectedFace {
+    pub(super) schema: u32,
     /// Entity index of the matched face revision.
     pub(super) owner: i64,
     /// Entity indexes of every matched owner, ascending.
@@ -424,9 +423,7 @@ pub(super) fn selected(
     selectors: &[FaceSelector],
     schema: u32,
 ) -> HashMap<u32, SelectedFace> {
-    // The generated names of a schema-43 owner have no defined grammar, so the
-    // generator check cannot run.
-    if schema == 43 {
+    if !super::edge_selection::historical::supported_schema(schema) {
         return HashMap::new();
     }
     let by_index = unique_index(
@@ -533,6 +530,7 @@ pub(super) fn selected(
         faces.push((
             selector.source,
             SelectedFace {
+                schema,
                 owner: ids[0],
                 owners: ids.clone(),
                 generators: selector.generators.len(),
@@ -565,12 +563,12 @@ pub(super) fn selected(
 }
 
 /// The owner and the feature source indexes of an `NMx_Brep_Feature_tag` or
-/// `NMx_tweak_reblend_tag` attribute in a schema-38, schema-40, or schema-42
-/// carrier. After the five common fields the attribute stores the schema, a
+/// `NMx_tweak_reblend_tag` attribute in a class-chain naming carrier.
+/// After the five common fields the attribute stores the schema, a
 /// positive pair count, and that many `(feature_source_index, name_value)`
 /// pairs of integers.
 fn feature_tag_sources(record: &Record, fields: &[&Token], schema: u32) -> Option<(i64, Vec<u32>)> {
-    if !super::edge_selection::legacy_schema(schema) {
+    if !super::edge_selection::class_chain_matched_schema(schema) {
         return None;
     }
     let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Long(stored_schema), Token::Long(count), values @ ..] =
@@ -920,14 +918,15 @@ pub(crate) fn project(
 }
 
 /// Whether the selector state of a joined face admits the feature kind. A
-/// state-0 selector joins every kind. A state-2 selector joins a Thicken
-/// operand when its one matched owner, without a repeated attribute, carries a
-/// feature tag with the Thicken's own `source_index`.
+/// state-0 selector joins every kind. A state-2 selector joins schema-42 Move
+/// Face or either Thicken form through one owner with a feature tag for the
+/// selecting source and one matching attribute.
 fn state_admitted(kind: Kind, face: &SelectedFace, own_source: u32) -> bool {
     match face.state {
         0 => true,
         NAMING_STATE_MODIFIED => {
-            kind == Kind::Thicken
+            (matches!(kind, Kind::Thicken | Kind::ThickenOffset)
+                || (kind == Kind::MoveFace && face.schema == 42))
                 && face.owners.len() == 1
                 && !face.repeated_attribute
                 && face.feature_sources.contains(&own_source)
@@ -942,6 +941,7 @@ pub(crate) fn valid<'a>(
     feature: &Feature,
     source: &PmDcFeature,
     states: &[FeatureInputTopology],
+    carrier: &crate::native::ActiveCarrierRecord,
     property: impl Fn(&str) -> Option<&'a PmDcFeatureProperty>,
     property_at: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
 ) -> bool {
@@ -971,6 +971,10 @@ pub(crate) fn valid<'a>(
         ),
         _ => return true,
     };
+    if !matches!(carrier, crate::native::ActiveCarrierRecord::Selected { family: crate::kernel::KernelFamily::Asm, schema, .. } if super::edge_selection::historical::supported_schema(*schema))
+    {
+        return false;
+    }
     // Only Move Face keeps a partly joined collection, and a Thread
     // annotation selects one face.
     if (kind != Kind::MoveFace && unresolved.is_some())

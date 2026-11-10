@@ -70,7 +70,7 @@ fn scope(bytes: &[u8], start: usize) -> Option<DesignParameterScope> {
 fn decodes(bytes: &[u8], start: usize) -> bool {
     scope(bytes, start).is_some_and(|scope| {
         matches!(
-            exact_direct_face_operation(bytes, &indexed_record_offsets_for_test(bytes), &scope),
+            exact_direct_face_operation(bytes, &indexed_record_offsets_for_test(bytes), &scope, &mut Vec::new()),
             Some(DesignDirectFaceOperation::OffsetFaces(value))
                 if value.distance.get() == -0.5 && value.distance_record_index == 71
         )

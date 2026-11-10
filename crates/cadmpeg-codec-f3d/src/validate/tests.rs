@@ -1957,28 +1957,7 @@ mod rigid_alignment;
 
 mod work_plane;
 
-mod loft_roles;
+mod loft_lists;
 mod sketch_point_frames;
-
-#[test]
-fn loft_accepts_either_body_group_role() {
-    use crate::records::feature::extrude::DesignExtrudeOperation;
-    use crate::records::topology::extrude_selection::DesignOperandRole;
-    for body in [DesignOperandRole::BODIES_A, DesignOperandRole::BODIES_B] {
-        let groups = [
-            (body, 1),
-            (DesignOperandRole::PROFILE, 1),
-            (DesignOperandRole::PROFILE, 1),
-        ];
-        assert!(super::loft_operand_roles_are_valid(
-            DesignExtrudeOperation::Join,
-            &groups
-        ));
-        assert!(!super::loft_operand_roles_are_valid(
-            DesignExtrudeOperation::NewBody,
-            &groups
-        ));
-    }
-}
 
 mod profile_curves;

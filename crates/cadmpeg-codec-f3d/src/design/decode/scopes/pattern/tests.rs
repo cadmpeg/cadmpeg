@@ -16,6 +16,8 @@ use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use crate::test_support::push_marked_reference;
 
+mod circular_axis_frame;
+
 fn tested_circular_pattern_construction_with_owners(
     bytes: &[u8],
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
@@ -361,6 +363,7 @@ fn run_pattern_constructions_fixture() {
         ),
         Some(DesignCircularPatternConstruction {
             axis_separator_flag_offset: None,
+            symmetric: None,
             count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index,
             count_offset: u64_from_index(count_start + 40),
@@ -1722,6 +1725,8 @@ fn rectangular_pattern_spacing_direction_validates_shifted_fields() {
     }
 }
 
+mod compact_spacing;
+
 fn spacing_payload() -> Vec<u8> {
     let mut bytes = Vec::new();
     indexed_header(&mut bytes, *b"373", 77);
@@ -1787,47 +1792,52 @@ fn rectangular_pattern_payload_binds_secondary_vector_to_owners_and_seed() {
             distribution: None,
         })
         .unwrap();
-    let direction =
-        super::exact_rectangular_pattern_direction(&spacing_direction_frame(), 0, 221, 20, 23, 10)
-            .unwrap();
-    let parse = |bytes: &[u8]| {
-        super::exact_rectangular_pattern_secondary_direction(
-            bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
-            &scope,
-            &construction,
-            &[direction],
-        )
-    };
-    let bytes = spacing_payload();
-    let secondary = parse(&bytes).expect("linked secondary direction");
-    assert_eq!(secondary.offset, 63);
-    assert_eq!(
-        secondary.value,
-        crate::test_support::reals([0.0, 0.0, -3.0])
-    );
-    for offset in [
-        11, 19, 20, 24, 25, 35, 39, 40, 50, 59, 87, 88, 98, 99, 110, 111, 112, 122, 123, 140, 141,
-        151, 152, 162, 163, 173,
+    for frame in [
+        spacing_direction_frame(),
+        rectangular_pattern_direction_frame(16, [0.0, 1.0, 0.0]),
     ] {
-        let mut corrupt = bytes.clone();
-        corrupt[offset] ^= 1;
-        assert!(parse(&corrupt).is_none(), "offset {offset}");
+        let direction =
+            super::exact_rectangular_pattern_direction(&frame, 0, frame.len() - 11, 20, 23, 10)
+                .unwrap();
+        let parse = |bytes: &[u8]| {
+            super::exact_rectangular_pattern_secondary_direction(
+                bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+                &scope,
+                &construction,
+                &[direction],
+            )
+        };
+        let bytes = spacing_payload();
+        let secondary = parse(&bytes).expect("linked secondary direction");
+        assert_eq!(secondary.offset, 63);
+        assert_eq!(
+            secondary.value,
+            crate::test_support::reals([0.0, 0.0, -3.0])
+        );
+        for offset in [
+            11, 19, 20, 24, 25, 35, 39, 40, 50, 59, 87, 88, 98, 99, 110, 111, 112, 122, 123, 140,
+            141, 151, 152, 162, 163, 173,
+        ] {
+            let mut corrupt = bytes.clone();
+            corrupt[offset] ^= 1;
+            assert!(parse(&corrupt).is_none(), "offset {offset}");
+        }
+        let mut symmetric = bytes.clone();
+        symmetric[109] = 1;
+        assert_eq!(parse(&symmetric), Some(secondary));
+        symmetric[109] = 2;
+        assert!(parse(&symmetric).is_none());
+        let mut zero = bytes.clone();
+        zero[63..87].fill(0);
+        assert!(parse(&zero).is_none());
+        let mut infinite = bytes.clone();
+        infinite[63..71].copy_from_slice(&f64::INFINITY.to_le_bytes());
+        assert!(parse(&infinite).is_none());
+        let mut ambiguous = bytes.clone();
+        ambiguous.extend_from_slice(&bytes);
+        assert!(parse(&ambiguous).is_none());
     }
-    let mut symmetric = bytes.clone();
-    symmetric[109] = 1;
-    assert_eq!(parse(&symmetric), Some(secondary));
-    symmetric[109] = 2;
-    assert!(parse(&symmetric).is_none());
-    let mut zero = bytes.clone();
-    zero[63..87].fill(0);
-    assert!(parse(&zero).is_none());
-    let mut infinite = bytes.clone();
-    infinite[63..71].copy_from_slice(&f64::INFINITY.to_le_bytes());
-    assert!(parse(&infinite).is_none());
-    let mut ambiguous = bytes.clone();
-    ambiguous.extend_from_slice(&bytes);
-    assert!(parse(&ambiguous).is_none());
 }
 
 /// A pattern payload of a 5 by 3 pattern with a distribution block: a prefix

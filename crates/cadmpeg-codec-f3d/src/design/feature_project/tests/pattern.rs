@@ -116,6 +116,7 @@ fn circular_scope() -> DesignParameterScope {
     {
         *slot = Some(DesignCircularPatternConstruction {
             axis_separator_flag_offset: None,
+            symmetric: None,
             count: std::num::NonZeroU32::new(3).unwrap(),
             count_record_index: 11,
             count_offset: 0,
@@ -154,9 +155,15 @@ fn circular_pattern_seed_role_selects_body_or_face() {
             )),
         ),
     ] {
-        let definition =
-            project_circular_pattern(&circular_scope(), &[group(10, 20, role)], &[], &[], &[])
-                .expect("circular pattern");
+        let definition = project_circular_pattern(
+            &circular_scope(),
+            &[group(10, 20, role)],
+            &[],
+            &[],
+            &[],
+            &mut Vec::new(),
+        )
+        .expect("circular pattern");
         let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) = definition
         else {
             panic!("circular pattern definition");
@@ -167,6 +174,69 @@ fn circular_pattern_seed_role_selects_body_or_face() {
             PatternTransform::Circular { .. }
         ));
     }
+}
+
+#[test]
+fn a_symmetric_partial_turn_reports_its_dropped_distribution() {
+    let with = |angle: f64, symmetric: bool| {
+        let mut scope = circular_scope();
+        if let crate::records::feature::scope::DesignScopePayloadMut::CPattern(Some(construction)) =
+            scope.payload_mut()
+        {
+            construction.symmetric = Some(crate::records::identity::Located {
+                value: symmetric,
+                offset: 21,
+            });
+            construction.angle = cadmpeg_ir::scalar::PositiveAngle::new(angle).unwrap();
+        }
+        let mut losses = Vec::new();
+        project_circular_pattern(
+            &scope,
+            &[group(10, 20, DesignOperandRole::BODIES_B)],
+            &[],
+            &[],
+            &[],
+            &mut losses,
+        )
+        .expect("circular pattern");
+        losses
+    };
+    let losses = with(std::f64::consts::FRAC_PI_2, true);
+    let [loss] = losses.as_slice() else {
+        panic!("one placement loss");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::FeatureCircularPatternPlacementNotTransferred.kind()
+    );
+    assert!(loss.message.contains("symmetric distribution"));
+    assert!(with(std::f64::consts::TAU, true).is_empty());
+    assert!(with(std::f64::consts::FRAC_PI_2, false).is_empty());
+
+    let mut scope = circular_scope();
+    if let crate::records::feature::scope::DesignScopePayloadMut::CPattern(Some(construction)) =
+        scope.payload_mut()
+    {
+        construction.angle =
+            cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap();
+    }
+    let mut losses = Vec::new();
+    project_circular_pattern(
+        &scope,
+        &[group(10, 20, DesignOperandRole::BODIES_B)],
+        &[],
+        &[],
+        &[],
+        &mut losses,
+    )
+    .expect("circular pattern");
+    let [loss] = losses.as_slice() else {
+        panic!("one assumption loss");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::FeatureCircularPatternDistributionAssumed.kind()
+    );
 }
 
 #[test]
@@ -185,6 +255,7 @@ fn a_separator_axis_projects_only_a_full_turn() {
             &[],
             &[],
             &[],
+            &mut Vec::new(),
         )
     };
     assert!(with(std::f64::consts::TAU).is_some());
@@ -542,6 +613,7 @@ fn compact_entity_selection_seed_names_the_seed_feature() {
         &[],
         &[compact_entity_selection(30, 31, 5)],
         &[circular_scope(), feature],
+        &mut Vec::new(),
     )
     .expect("circular pattern");
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = circular else {
@@ -574,76 +646,78 @@ fn compact_entity_selection_seed_without_a_feature_scope_stays_native() {
 }
 
 #[test]
-fn spacing_pattern_payload_projects_both_axes_and_feature_seed() {
-    use crate::records::feature::patterns::DesignRectangularPatternConstructionWire;
-    let mut direction = direction_record(20, [0.0, 2.0, 0.0]);
-    direction.distance_type = 7;
-    let mut scope = two_direction_scope(Vec::new());
-    let mut wire = DesignRectangularPatternConstructionWire::from(
-        scope.rectangular_pattern_construction().unwrap().clone(),
-    );
-    wire.u_count = 5;
-    wire.v_count = 3;
-    wire.u_extent = 1.7;
-    wire.v_extent = -0.9;
-    wire.directions = vec![direction];
-    wire.secondary_direction = Some(crate::records::identity::Located {
-        value: crate::test_support::reals([0.0, 0.0, 4.0]),
-        offset: 63,
-    });
-    if let crate::records::feature::scope::DesignScopePayloadMut::RPattern(slot) =
-        scope.payload_mut()
-    {
-        *slot = Some(DesignRectangularPatternConstruction::try_from(wire).unwrap());
-    }
-    let feature = seed_scope(5, Some(2));
-    let expected = PatternSeed::Feature(crate::ids::neutral_feature_id(&feature));
-    let definition = project_rectangular_pattern_scalars(
-        &scope,
-        &[group(10, 30, DesignOperandRole::BODIES_A)],
-        &[],
-        &[compact_entity_selection(30, 31, 5)],
-        &[feature],
-        &mut Vec::new(),
-    )
-    .expect("spacing pattern");
-    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) = definition
-    else {
-        panic!("pattern");
-    };
-    assert_eq!(seeds, vec![expected]);
-    let PatternTransform::Linear {
-        direction,
-        spacing,
-        count,
-        second,
-        omitted_instances,
-    } = pattern.definition()
-    else {
-        panic!("linear pattern");
-    };
-    assert!(omitted_instances.is_empty());
-    assert_eq!(*count, 5);
-    assert!((spacing.get() - 17.0).abs() < EPS_SPACING);
-    assert_eq!(
-        cadmpeg_ir::features::FiniteVector3::from(direction.unwrap()).get(),
-        cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
-    );
-    let second = second.as_ref().unwrap();
-    assert_eq!(second.count, 3);
-    assert!((second.spacing.get() - 9.0).abs() < EPS_SPACING);
-    assert_eq!(
-        cadmpeg_ir::features::FiniteVector3::from(second.direction).get(),
-        cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
-    );
-    let record = scope.rectangular_pattern_construction().unwrap();
-    assert_eq!(
-        serde_json::from_value::<DesignRectangularPatternConstruction>(
-            serde_json::to_value(record).unwrap()
+fn rectangular_pattern_payload_projects_both_axes_and_feature_seed() {
+    for (distance_type, u_spacing, v_spacing) in [(7, 17.0, 9.0), (8, 4.25, 4.5)] {
+        use crate::records::feature::patterns::DesignRectangularPatternConstructionWire;
+        let mut direction = direction_record(20, [0.0, 2.0, 0.0]);
+        direction.distance_type = distance_type;
+        let mut scope = two_direction_scope(Vec::new());
+        let mut wire = DesignRectangularPatternConstructionWire::from(
+            scope.rectangular_pattern_construction().unwrap().clone(),
+        );
+        wire.u_count = 5;
+        wire.v_count = 3;
+        wire.u_extent = 1.7;
+        wire.v_extent = -0.9;
+        wire.directions = vec![direction];
+        wire.secondary_direction = Some(crate::records::identity::Located {
+            value: crate::test_support::reals([0.0, 0.0, 4.0]),
+            offset: 63,
+        });
+        if let crate::records::feature::scope::DesignScopePayloadMut::RPattern(slot) =
+            scope.payload_mut()
+        {
+            *slot = Some(DesignRectangularPatternConstruction::try_from(wire).unwrap());
+        }
+        let feature = seed_scope(5, Some(2));
+        let expected = PatternSeed::Feature(crate::ids::neutral_feature_id(&feature));
+        let definition = project_rectangular_pattern_scalars(
+            &scope,
+            &[group(10, 30, DesignOperandRole::BODIES_A)],
+            &[],
+            &[compact_entity_selection(30, 31, 5)],
+            &[feature],
+            &mut Vec::new(),
         )
-        .unwrap(),
-        *record
-    );
+        .expect("spacing pattern");
+        let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) = definition
+        else {
+            panic!("pattern");
+        };
+        assert_eq!(seeds, vec![expected]);
+        let PatternTransform::Linear {
+            direction,
+            spacing,
+            count,
+            second,
+            omitted_instances,
+        } = pattern.definition()
+        else {
+            panic!("linear pattern");
+        };
+        assert!(omitted_instances.is_empty());
+        assert_eq!(*count, 5);
+        assert!((spacing.get() - u_spacing).abs() < EPS_SPACING);
+        assert_eq!(
+            cadmpeg_ir::features::FiniteVector3::from(direction.unwrap()).get(),
+            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+        );
+        let second = second.as_ref().unwrap();
+        assert_eq!(second.count, 3);
+        assert!((second.spacing.get() - v_spacing).abs() < EPS_SPACING);
+        assert_eq!(
+            cadmpeg_ir::features::FiniteVector3::from(second.direction).get(),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+        );
+        let record = scope.rectangular_pattern_construction().unwrap();
+        assert_eq!(
+            serde_json::from_value::<DesignRectangularPatternConstruction>(
+                serde_json::to_value(record).unwrap()
+            )
+            .unwrap(),
+            *record
+        );
+    }
 }
 
 fn seed_face_operand(
@@ -714,6 +788,7 @@ fn a_face_seed_group_supplies_face_seeds_without_a_body_or_face_role_group() {
         &bounded,
         &[],
         &[],
+        &mut Vec::new(),
     )
     .expect("circular pattern");
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = circular else {
