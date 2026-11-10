@@ -1886,3 +1886,27 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The specified flagged empty collection has equal first and nested body counts. Collection 173 has first count zero and two nested body references.
 
 **Note.** Collection validation failure prevents both mesh feature definitions from receiving tessellation references.
+
+### DR-338. Extended circular-pattern axis controls and selection runs
+
+**Question.** How do the controls and selection runs of the 220-, 221-, and 241-byte circular-pattern axis frames determine the directed axis and its selected entity?
+
+**Known.** The decoder admits the 195-byte inline axis frame and the 118-, 129-, and 130-byte identity forms. An extended frame carries an origin and displacement in the same positions as the rectangular-pattern direction frame. Two 221-byte component-pattern frames carry a unit X displacement and an origin at Z = 1.92 cm. Their saved occurrence transforms are positive quarter turns about that line. A 220-byte feature-pattern frame carries a Z displacement. Its seed holes occur in symmetric pairs, so positive and negative quarter turns yield the same saved hole set. A 241-byte body-pattern frame carries an X displacement and three consecutive selection references. Its total-angle owner stores a full turn.
+
+**Need.** Bind each extended selection run to its selected entity. Compare the controls for three instances over a partial turn in each travel direction, with asymmetric seeds, for each frame form. Bind each instance to its saved BREP geometry.
+
+**Conflict.** None.
+
+**Note.** DR-327 tracks the separator of the earlier two-wrapper form.
+
+### DR-339. Circular component-pattern seed paths
+
+**Question.** How does a circular pattern's role `0x0000010000000000` path group identify its seed occurrence and ordered generated occurrences?
+
+**Known.** Two circular component-pattern scopes have an empty member run in this role and two auxiliary paths. Each scope has one later ordinal-2 occurrence carrier and an earlier ordinal-1 carrier with the same component GUID. Both generated carriers store the positive quarter-turn transform described in DR-338. The decoder's component-pattern occurrence binder consumes rectangular-pattern instance frames. Circular-pattern seed selection requires a nonempty face or body group.
+
+**Need.** Join the auxiliary path identities to occurrence carriers through stored references. Confirm the join with multiple earlier occurrences of the same component and with reordered generated occurrences. Bind the selected occurrences to saved instance geometry.
+
+**Conflict.** None.
+
+**Note.** None.
