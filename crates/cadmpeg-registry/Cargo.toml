@@ -25,6 +25,7 @@ default = [
   "iges",
   "sat",
   "pvz",
+  "edrawings",
   "usd",
 ]
 fcstd = ["dep:cadmpeg-codec-freecad"]
@@ -39,6 +40,7 @@ step = ["dep:cadmpeg-codec-step"]
 iges = ["dep:cadmpeg-codec-iges"]
 sat = ["dep:cadmpeg-codec-sat"]
 pvz = ["dep:cadmpeg-codec-pvz"]
+edrawings = ["dep:cadmpeg-codec-edrawings"]
 usd = ["dep:cadmpeg-codec-usd"]
 
 [dependencies]
@@ -59,6 +61,7 @@ cadmpeg-codec-iges = { workspace = true, optional = true }
 cadmpeg-codec-step = { workspace = true, optional = true }
 cadmpeg-codec-sat = { workspace = true, optional = true }
 cadmpeg-codec-pvz = { workspace = true, optional = true }
+cadmpeg-codec-edrawings = { workspace = true, optional = true }
 cadmpeg-codec-usd = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true

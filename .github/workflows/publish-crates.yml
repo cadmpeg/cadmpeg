@@ -44,6 +44,7 @@ jobs:
             cadmpeg-tessellate
             cadmpeg-codec-catia
             cadmpeg-codec-creo
+            cadmpeg-codec-edrawings
             cadmpeg-codec-f3d
             cadmpeg-codec-freecad
             cadmpeg-codec-iges

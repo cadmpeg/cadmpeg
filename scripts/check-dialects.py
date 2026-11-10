@@ -80,6 +80,9 @@ GENERATED_ID_OWNERS = {
     "parasolid": GeneratedIdOwner(
         Path("crates/cadmpeg-parasolid/src/registry_ids.rs"), "pub(crate)", "pub"
     ),
+    "edrawings": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-edrawings/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
     "pvz": GeneratedIdOwner(
         Path("crates/cadmpeg-codec-pvz/src/dialect/registry_ids.rs"), "pub(crate)"
     ),

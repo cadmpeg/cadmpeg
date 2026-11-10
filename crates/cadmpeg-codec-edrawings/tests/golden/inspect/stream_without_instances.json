@@ -1,0 +1,83 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "275",
+        "crc32": "b5554e0c",
+        "data_offset": "36",
+        "header_offset": "0",
+        "hsf_version": "19.10"
+      },
+      "compression": "stored",
+      "name": "eModel",
+      "role": "model-data",
+      "size": {
+        "form": "exact",
+        "size": 60
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "327",
+        "crc32": "00983853",
+        "data_offset": "137",
+        "header_offset": "96"
+      },
+      "compression": "stored",
+      "name": "preview.jpg",
+      "role": "preview-image",
+      "size": {
+        "form": "exact",
+        "size": 19
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "384",
+        "crc32": "7bd5c66f",
+        "data_offset": "189",
+        "header_offset": "156"
+      },
+      "compression": "stored",
+      "name": "OLE",
+      "role": "opaque",
+      "size": {
+        "form": "exact",
+        "size": 12
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "433",
+        "crc32": "ffb8728e",
+        "data_offset": "240",
+        "header_offset": "201"
+      },
+      "compression": "stored",
+      "name": "scene.xml",
+      "role": "auxiliary",
+      "size": {
+        "form": "exact",
+        "size": 35
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "hsf_version": "19.10"
+        },
+        "dialect": "edrawings:hsf-19-10"
+      }
+    }
+  },
+  "notes": [
+    "4 members",
+    "HSF V19.10; info record 4; bounds [-0.5, 0.0, -0.25]..[0.5, 1.0, 0.25]; model stream at offset 47"
+  ]
+}

@@ -33,6 +33,7 @@ default = [
   "iges",
   "sat",
   "pvz",
+  "edrawings",
   "usd",
 ]
 #
@@ -51,6 +52,7 @@ step = ["cadmpeg-registry/step", "dep:cadmpeg-codec-step"]
 iges = ["cadmpeg-registry/iges", "dep:cadmpeg-codec-iges"]
 sat = ["cadmpeg-registry/sat"]
 pvz = ["cadmpeg-registry/pvz"]
+edrawings = ["cadmpeg-registry/edrawings"]
 usd = ["cadmpeg-registry/usd"]
 
 [dependencies]

@@ -1,0 +1,109 @@
+{
+  "ir": {
+    "decode_depth": "full",
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {},
+    "source": {
+      "attributes": {
+        "hsf_version": "19.10",
+        "member_count": "4",
+        "model_stream_bytes": "1340"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "hsf_version": "19.10"
+            },
+            "dialect": "edrawings:hsf-19-10"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "hsf_version": "19.10"
+          },
+          "dialect": "edrawings:hsf-19-10"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "model.malformed",
+          "kind": "geometry_not_transferred",
+          "namespace": "edrawings",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "the model stream broke a record rule (bracket record is not the 24 byte trailer at byte 1315); the package carries no model data",
+        "severity": "blocking"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
+  },
+  "source_fidelity": {
+    "annotations": {}
+  }
+}
