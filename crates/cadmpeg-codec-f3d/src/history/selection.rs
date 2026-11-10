@@ -2489,3 +2489,84 @@ fn historical_identity_faces(
     }
     faces
 }
+
+pub(super) fn feature_selected_input_state_id(
+    feature: &cadmpeg_ir::features::Feature,
+) -> Option<i64> {
+    use cadmpeg_ir::features::{
+        BodySelection, EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation,
+    };
+    let parse_state = |state: &cadmpeg_ir::ids::FeatureInputTopologyId| {
+        state
+            .as_str()
+            .rsplit_once(':')
+            .and_then(|(_, s)| s.parse::<i64>().ok())
+    };
+    let op = match feature.evaluation.definition() {
+        FeatureDefinition::Operation(op) => op,
+        FeatureDefinition::PostProcess { operation, .. } => operation,
+    };
+    match op {
+        FeatureOperation::Fillet { groups } => {
+            for g in groups {
+                if let EdgeSelection::Historical { state, .. }
+                | EdgeSelection::HistoricalPartial { state, .. } = &g.edges
+                {
+                    if let Some(id) = parse_state(state) {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+        FeatureOperation::Chamfer { groups, .. } => {
+            for g in groups {
+                if let EdgeSelection::Historical { state, .. }
+                | EdgeSelection::HistoricalPartial { state, .. } = &g.edges
+                {
+                    if let Some(id) = parse_state(state) {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+        FeatureOperation::SplitBody {
+            targets:
+                BodySelection::Historical { state, .. } | BodySelection::HistoricalSet { state, .. },
+            ..
+        } => {
+            if let Some(id) = parse_state(state) {
+                return Some(id);
+            }
+        }
+        FeatureOperation::SplitFace {
+            targets: FaceSelection::Historical { state, .. },
+            ..
+        } => {
+            if let Some(id) = parse_state(state) {
+                return Some(id);
+            }
+        }
+        FeatureOperation::Shell {
+            removed_faces,
+            bodies,
+            ..
+        } => {
+            if let FaceSelection::Historical { state, .. } = removed_faces {
+                if let Some(id) = parse_state(state) {
+                    return Some(id);
+                }
+            }
+            if let Some(
+                BodySelection::Historical { state, .. }
+                | BodySelection::HistoricalSet { state, .. },
+            ) = bodies
+            {
+                if let Some(id) = parse_state(state) {
+                    return Some(id);
+                }
+            }
+        }
+        _ => {}
+    }
+    None
+}

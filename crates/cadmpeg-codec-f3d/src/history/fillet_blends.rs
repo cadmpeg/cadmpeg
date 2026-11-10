@@ -402,7 +402,8 @@ fn transition_blends(
             let left_edges = input_boundaries.get(left)?;
             for right in &supports[ordinal + 1..] {
                 let right_edges = input_boundaries.get(right)?;
-                for edge in left_edges.intersection(right_edges) {
+                let intersection = left_edges.intersection(right_edges);
+                for edge in intersection {
                     let geometry = rows.edges.get(edge).copied().unwrap_or_default();
                     if !geometry.is_classified() {
                         return None;

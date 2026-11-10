@@ -983,6 +983,53 @@ pub(crate) fn bind_extrude_profile_selections(
                     .or_insert_with(|| face_off.to_string());
             }
         }
+        if to_distance_info.is_none() {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile, extent, ..
+            }) = feature.evaluation.definition()
+            {
+                if has_to_termination(extent) {
+                    if let Some(scope_id) = feature.native_ref.as_deref() {
+                        if let Some(scope) = scopes.iter().find(|c| c.id == scope_id) {
+                            let scoped_histories = histories_for_scope(
+                                &scope.id,
+                                resolution.scope_histories,
+                                resolution.histories,
+                            );
+                            let effective_previous_history_state_id =
+                                crate::history::effective_scope_previous_history_state_id(
+                                    scope,
+                                    scoped_histories,
+                                );
+                            let sk_id = match profile {
+                                ProfileRef::Planar(
+                                    PlanarProfileRef::Sketch(id)
+                                    | PlanarProfileRef::SketchProfiles { sketch: id, .. }
+                                    | PlanarProfileRef::SketchRegions { sketch: id, .. }
+                                    | PlanarProfileRef::SketchSelection { sketch: id, .. },
+                                ) => Some(id),
+                                _ => None,
+                            };
+                            if let (Some(state_id), Some(prev_state_id), Some(sk_id)) = (
+                                scope.history_state_id(),
+                                effective_previous_history_state_id,
+                                sk_id,
+                            ) {
+                                if let Some(sketch) = sketches.iter().find(|s| &s.id == sk_id) {
+                                    to_distance_info = historical_extrude_to_distance(
+                                        sketch,
+                                        0.0,
+                                        scoped_histories,
+                                        state_id,
+                                        prev_state_id,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if let Some(dist) = to_distance_info {
             feature
                 .source_properties
