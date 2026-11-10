@@ -430,7 +430,10 @@ pub(crate) fn produced_before(
         else {
             continue;
         };
-        if label.class_id() != super::derived::CLASS_ID {
+        if !super::FeatureFamily::Base
+            .class_ids()
+            .contains(&label.class_id())
+        {
             continue;
         }
         if let Some((_, output)) = base::wrappers(source, label.class_id(), |ordinal| {

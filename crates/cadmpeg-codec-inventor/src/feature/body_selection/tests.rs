@@ -1603,3 +1603,117 @@ fn native_derived_result_makes_split_body_target_local() {
     ));
     assert!(model.feature_result_topologies.is_empty());
 }
+
+fn check_native_base_split(
+    ordinal: u64,
+    suppressed: Option<bool>,
+    joined: bool,
+    select_source: bool,
+) {
+    use crate::feature::{
+        tests::{reference_list, test_label},
+        PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily,
+    };
+    use crate::test_support::split::{plane_trim_fixture, set_kind, set_slot};
+    let (mut producer, mut inventory, result) = native_derived_producer();
+    producer.ordinal = ordinal;
+    producer.suppressed = suppressed;
+    producer.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Other("Base".into()),
+            parameters: std::collections::BTreeMap::default(),
+        }),
+    );
+    set_slot(
+        &mut inventory.features[0],
+        2,
+        crate::pmdc::PmDcReference::from_packed(0),
+    );
+    inventory.labels = vec![test_label(10, 1, crate::feature::BASE_CLASS_ID, &[])];
+    let selected = usize::from(!select_source);
+    let wrapper = inventory.properties[selected].id();
+    let (source, mut properties) = plane_trim_fixture(false);
+    set_kind(
+        &mut properties,
+        5,
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::BodySelection,
+            items: reference_list(&[inventory.properties[selected].identity.record_ordinal + 1]),
+        },
+    );
+    let original = FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        targets: BodySelection::Native(wrapper.clone()),
+        tool: SplitBodyTool::Plane {
+            plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
+        },
+    });
+    let mut consumer = plain_feature("consumer", 6, Some(false));
+    consumer.native_ref = Some(source.id());
+    consumer.evaluation =
+        cadmpeg_ir::features::FeatureEvaluation::from_definition(original.clone());
+    inventory.features.push(source);
+    inventory.properties.extend(properties);
+    let mut model = Model::default();
+    model.features = vec![producer, consumer];
+    let bodies = if joined {
+        HashMap::from([(result.clone(), body("base"))])
+    } else {
+        HashMap::new()
+    };
+    let earlier = produced_before(
+        &model.features,
+        &model.feature_result_topologies,
+        &model.features[1],
+        &ProducerRecords {
+            features: &inventory.features,
+            labels: &inventory.labels,
+            properties: &inventory.properties,
+        },
+    );
+    let eligible = ordinal < 6 && suppressed == Some(false);
+    assert_eq!(
+        earlier,
+        if eligible {
+            HashSet::from([result])
+        } else {
+            HashSet::new()
+        }
+    );
+    project(&mut model, &bodies, &inventory);
+    let expected = if joined {
+        BodySelection::Resolved {
+            bodies: vec![body("base")].try_into().expect("body"),
+            native: wrapper,
+        }
+    } else if eligible && !select_source {
+        BodySelection::local(vec![wrapper.clone()], wrapper).expect("local")
+    } else {
+        BodySelection::Native(wrapper)
+    };
+    let actual = model.features[1].evaluation.definition();
+    assert_eq!(split_targets(actual), &expected);
+    assert!(split_matches(original, actual, &bodies, &earlier, true));
+    assert!(model.feature_result_topologies.is_empty());
+}
+
+#[test]
+fn native_base_result_makes_split_body_target_local() {
+    check_native_base_split(1, Some(false), false, false);
+}
+
+#[test]
+fn later_unplaced_or_suppressed_native_base_keeps_split_target_native() {
+    for (ordinal, suppressed) in [(9, Some(false)), (1, None), (1, Some(true))] {
+        check_native_base_split(ordinal, suppressed, false, false);
+    }
+}
+
+#[test]
+fn native_base_result_current_body_join_wins_for_split() {
+    check_native_base_split(1, Some(false), true, false);
+}
+
+#[test]
+fn native_base_source_wrapper_keeps_split_target_native() {
+    check_native_base_split(1, Some(false), false, true);
+}
