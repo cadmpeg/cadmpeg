@@ -89,11 +89,11 @@ impl Carrier<'_> {
             ]),
             Self::Torus(torus, _) => Some([
                 torus
-                    .major_angular_range
+                    .major_angular_domain
                     .endpoints()
                     .map(|u| u * torus.major_scale.get()),
                 torus
-                    .minor_angular_range
+                    .minor_angular_domain
                     .endpoints()
                     .map(|v| v * torus.minor_scale.get()),
             ]),

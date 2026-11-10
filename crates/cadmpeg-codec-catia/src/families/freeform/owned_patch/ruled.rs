@@ -83,8 +83,6 @@ impl Ruled {
         distance: f64,
     ) -> Option<Self> {
         let mut chart = Self::new(guide, support_v_limits)?;
-        chart.bounds[0][0] = chart.bounds[0][0].max(bounds[0][0]);
-        chart.bounds[0][1] = chart.bounds[0][1].min(bounds[0][1]);
         chart.bounds[1] = bounds[1];
         chart.offset = distance;
         (chart.bounds[0][0] < chart.bounds[0][1]).then_some(chart)
@@ -172,4 +170,38 @@ pub(super) fn bridge(bytes: &[u8]) -> Option<([AllocationReference; 2], [[f64; 2
     let mut range = || IncreasingParameterInterval::new([view.f64_le()?, view.f64_le()?]);
     let bounds = [range()?.endpoints(), range()?.endpoints()];
     (view.remaining() == 0).then_some(([guide, profile], bounds))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::families::a5a8::records::a5_guide_curves_from_records;
+    use crate::test_support::test_a5a8::a5_guide_curve_stream;
+    use crate::wire::records::consolidated_records;
+
+    #[test]
+    fn offset_ruled_chart_retains_guide_knots_beyond_result_range() {
+        let bytes = a5_guide_curve_stream();
+        let records = consolidated_records(&bytes);
+        let guide = a5_guide_curves_from_records(&bytes, &records)
+            .pop()
+            .expect("synthetic guide");
+        let result_bounds = [[0.25, 0.75], [0.0, 1.0]];
+        let chart =
+            Ruled::offset(&guide, [0.0, 1.0], result_bounds, 0.5).expect("offset ruled chart");
+        assert_eq!(chart.bounds, [[0.0, 1.0], [0.0, 1.0]]);
+        let patch = chart
+            .fit([[0.1, 0.9], [0.0, 1.0]])
+            .expect("fit a trim inside the guide domain");
+        for u in [0.1, 0.5, 0.9] {
+            for v in [0.0, 0.5, 1.0] {
+                let expected = chart.point(u, v).expect("offset guide point");
+                let actual =
+                    eval::decode::nurbs_surface_point(EvaluationAdmission::Standard, &patch, u, v)
+                        .expect("fitted chart point")
+                        .get();
+                assert!(actual.distance(expected) <= RULED_FIT_ERROR_MM);
+            }
+        }
+    }
 }

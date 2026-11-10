@@ -562,7 +562,7 @@ The 152-byte payload is `<center:3f64le> <stored_x:3f64le> <stored_y:3f64le> <st
 
 ### 5.14 Torus record `b2 03 2b`
 
-The 200-byte payload is `<center:3f64le> <direction_x:3f64le> <direction_y:3f64le> <axis:3f64le> <major_radius:f64le> <minor_radius:f64le> <major_range:2f64le> <major_domain:2f64le> <minor_range:2f64le> <minor_domain:2f64le> <major_scale:f64le> <minor_scale:f64le> <zero:f64le>`. The three directions form a right-handed orthonormal frame. Both radii and both scales are positive. Each angular range is strictly increasing, spans at most `2π`, and lies inside its corresponding full-turn domain. Each domain spans `2π` and has the same midpoint as its active range, within `1e-12`. Native parameters use the independent gauges `major_angle=U/major_scale` and `minor_angle=V/minor_scale`. The point is `center+(major_radius+minor_radius·cos(minor_angle))·(cos(major_angle)·direction_x+sin(major_angle)·direction_y)+minor_radius·sin(minor_angle)·axis`.
+The 200-byte payload is `<center:3f64le> <direction_x:3f64le> <direction_y:3f64le> <axis:3f64le> <major_radius:f64le> <minor_radius:f64le> <major_range:2f64le> <major_domain:2f64le> <minor_range:2f64le> <minor_domain:2f64le> <major_scale:f64le> <minor_scale:f64le> <zero:f64le>`. The three directions form a right-handed orthonormal frame. Both radii and both scales are positive. Each angular range is strictly increasing, spans at most `2π`, and lies inside its corresponding full-turn domain. Each domain spans `2π` and has the same midpoint as its active range, within `1e-12`. Native parameters use the independent gauges `major_angle=U/major_scale` and `minor_angle=V/minor_scale`. Sheet-owned trims use the full-turn domains for their U and V limits. The point is `center+(major_radius+minor_radius·cos(minor_angle))·(cos(major_angle)·direction_x+sin(major_angle)·direction_y)+minor_radius·sin(minor_angle)·axis`.
 
 ### 5.15 Surface-of-revolution record `b2 03 2d`
 
@@ -970,7 +970,7 @@ knot interval.
 A sheet class-`31` offset cache can name the class-`39` guide directly.
 Its basis uses `P(U)` as the origin and adds the stored signed distance
 along the unit normal of the ruled chart. The outer class-`30` reference
-confirms the U and V intervals of the cached result.
+confirms the U and V intervals of the cached result. The guide knot interval remains the offset chart's U domain.
 
 An A-family class-`34` carrier followed by four contiguous B-family class-`18` records owns those four parameter-space sides. Each side header is a positive compact integer. Its operand is the sum of the header integers from the first side through that side. Their controls include the tuple and line forms above. The explicit direction is axis-aligned and unit within `1e-12`. Two sides have constant U and two have constant V. Their fixed coordinates define the carrier rectangle, and each side interval intersects the other axis's rectangle interval. A side interval can cover part of a rectangle side.
 
