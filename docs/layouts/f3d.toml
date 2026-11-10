@@ -24450,11 +24450,18 @@ source = "spec"
 anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
 
 [[record.field]]
-name = "zero_distance"
+name = "symmetric"
 offset = 109
-type = "bytes[2]"
+type = "u8"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "Offset 109 stores the symmetric byte of direction one"
+
+[[record.field]]
+name = "zero_after_symmetric"
+offset = 110
+type = "u8"
+source = "spec"
+anchor = "Offset 110 is zero."
 
 [[record.field]]
 name = "v_count_repeat"
@@ -24469,6 +24476,58 @@ offset = 122
 type = "bytes[11]"
 source = "spec"
 anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record]]
+name = "rectangular_pattern_payload_distribution"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The payload has a distribution block after the prefix."
+size = 29
+note = "Offsets are relative to the byte after the leading zero byte or V-direction reference."
+
+[[record.field]]
+name = "zero_run"
+offset = 0
+type = "bytes[12]"
+source = "spec"
+anchor = "Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow."
+
+[[record.field]]
+name = "fixed_two"
+offset = 12
+type = "u32"
+value = 2
+source = "spec"
+anchor = "Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow."
+
+[[record.field]]
+name = "word"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow."
+
+[[record.field]]
+name = "sentinel"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow."
+
+[[record.field]]
+name = "distance_type"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "The next byte is the distance type"
+
+[[record.field]]
+name = "entry_count"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "A u32 entry count, that many sixteen-byte entries"
 
 [[record]]
 name = "rectangular_pattern_payload_suffix"

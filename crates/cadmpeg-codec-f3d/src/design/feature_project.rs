@@ -982,6 +982,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         face_operands,
                         entity_selection_operands,
                         scopes,
+                        &mut projection_losses,
                     )
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Pattern {
@@ -7086,6 +7087,7 @@ fn project_rectangular_pattern_scalars(
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternSeed, PatternTransform},
@@ -7096,10 +7098,24 @@ fn project_rectangular_pattern_scalars(
     let construction = scope.rectangular_pattern_construction()?;
     let mut direction_records = construction.directions().iter();
     let mut active = Vec::new();
-    let adjacent = construction
-        .directions()
-        .first()
-        .is_some_and(|record| record.distance_type == 7);
+    let mut dropped = Vec::new();
+    let distribution = construction.distribution();
+    let adjacent = distribution.map_or_else(
+        || {
+            construction
+                .directions()
+                .first()
+                .is_some_and(|record| record.distance_type == 7)
+        },
+        |distribution| !distribution.total_extent.value,
+    );
+    if distribution.is_some_and(|distribution| distribution.symmetric.value) {
+        // The extent of a symmetric direction has no settled measurement.
+        if !adjacent || construction.u_extent() == 0.0 {
+            return None;
+        }
+        dropped.push("the symmetric distribution of direction one".to_owned());
+    }
     for (axis, (count, extent)) in [
         (construction.u_count(), construction.u_extent()),
         (construction.v_count(), construction.v_extent()),
@@ -7110,6 +7126,13 @@ fn project_rectangular_pattern_scalars(
         let Some(intervals) = PatternIntervals::new(count) else {
             continue;
         };
+        if extent == 0.0 {
+            dropped.push(format!(
+                "the {count} coincident instances of direction {}",
+                ["one", "two"][axis]
+            ));
+            continue;
+        }
         let stored_direction = if axis == 1 && construction.secondary_direction().is_some() {
             construction.secondary_direction().and_then(|record| {
                 cadmpeg_ir::units::UnitVector3::normalized(Vector3::from(
@@ -7210,6 +7233,17 @@ fn project_rectangular_pattern_scalars(
         omitted_instances: Vec::new(),
     })
     .ok()?;
+    if !dropped.is_empty() {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternPlacementNotTransferred.note(
+                format!(
+                    "RectangularPattern scope {} drops {}: a linear pattern has no field for them.",
+                    scope.id,
+                    dropped.join(" and ")
+                ),
+            ),
+        );
+    }
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds,
         pattern,

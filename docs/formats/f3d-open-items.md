@@ -1236,15 +1236,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-164. Primary edge-recipe references with several face fragments
 
-**Question.** How does a standard edge recipe select among several persistent face fragments for one primary-side reference?
+**Question.** Which selector rule selects the edge when several edges remain after the primary-reference lane unions, distinct-support-face constraint, and recipe-boundary constraint? Can a recipe's candidate faces omit the edge that its first-side faces select?
 
-**Known.** The first side carries one-based prefix-reference ordinals. A prefix reference can bind to several preceding faces through persistent token and Design-reference tags. Each face has an ordered loop and coedge boundary. The common-boundary rule admits references that each bind to one face and whose boundaries share exactly one live edge.
+**Known.** The first side carries one-based prefix-reference ordinals. A prefix reference can bind to several preceding faces through persistent token and Design-reference tags. Each first-side reference lane contributes the union of its live face-fragment loop edges. The lane intersection requires distinct supporting faces. The recipe-boundary constraint and singleton fallback select a unique edge. On the public Orbiter V2 test, two Orbiter X carriages, Zodiac BMO and Wago mount parts, the union rule selects the same edge for each of the 65 operand slots that the one-face-per-reference rule selects, and selects 19 further slots. Each of those further slots has an empty recipe candidate-face set. When the first-side faces share exactly one live edge and that edge bounds none of the recipe's candidate faces, the reading takes that edge and reports `history.edge-selection-inferred`.
 
-**Need.** The selector rule that distinguishes face fragments and selects an edge when the referenced boundaries share several edges. Controlled recipe changes that preserve the prefix references and vary the selected fragment.
+**Need.** The selector rule for several remaining edges. Controlled recipe changes that preserve the prefix references and vary the selected fragment, including a recipe whose candidate faces are known to bound the selected edge.
 
 **Conflict.** None.
 
-**Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples. When the referenced faces share exactly one live edge and that edge bounds none of the recipe's candidate faces, the decoder reads that edge and reports `history.edge-selection-inferred`. Whether a recipe's candidate faces can omit the selected edge is open.
+**Note.** An unresolved member retains the native group. A non-unique or incomplete reference proof reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
 
 ### DR-170. Unresolved DeleteFace operand bindings
 
@@ -1729,6 +1729,16 @@ when the operation transition carries no candidate for the group members?
 
 **Conflict.** None.
 
+### DR-344. Symmetric rectangular-pattern directions
+
+**Question.** How does a symmetric direction measure a seed-to-final-instance extent, and which byte stores the symmetric state of direction two?
+
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the symmetric byte of direction one at payload offset 109 and the zero byte at offset 110. A three-instance symmetric direction with adjacent spacing places one instance on each side of the seed at that spacing. The decoder projects that direction as a one-sided linear pattern and reports `feature.rectangular-pattern-placement-not-transferred`. A symmetric direction with an extent distance stays unresolved.
+
+**Need.** Saves of a symmetric direction with an extent distance, of a symmetric direction with an even count, and of a symmetric direction two, each compared against the instance positions.
+
+**Conflict.** None.
+
 ### DR-298. SurfaceTrim cell-table entries outside the removal reading
 
 **Question.** What do the entry values and the trailing value of a `SurfaceTrim` BRep-cell table encode when the entry count equals the trailing value or two entries store the same value?
@@ -1946,3 +1956,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The result plane forms an angle of approximately 21.2 degrees with the second input plane and 38.8 degrees with the first. Each differs from the 30-degree IR angle.
 
 **Note.** DR-341 tracks the input reference-face assignment.
+
+### DR-360. One-sided face-target Extrude without a termination group
+
+**Question.** Which stored relation supplies the termination face of a one-sided face-target Extrude whose operand roster has no termination group?
+
+**Known.** A one-sided face target (direction `1`, first-side extent `2`) stores one role-`0x0000001100000000` termination group, distinct from its start group. A selected-face start adds one start group before it in scope-reference order. A shape target replaces the termination group with one role-`0x0000000500000000` target group.
+
+**Need.** The termination face of such a scope, or the stored state that makes the extent end without one.
+
+**Conflict.** The Mini AfterSherpa V6 Zodiac BMO part stores a one-sided Cut scope with a selected-face start, one start face group, a `Side1Offset` owner, no termination group, and no shape-target group.
+
+**Note.** None.
