@@ -2140,6 +2140,7 @@ impl FeatureFamily {
 
 #[derive(Default)]
 pub(crate) struct ProjectionIndex<'a> {
+    body_joins: Option<&'a HashMap<String, cadmpeg_ir::ids::BodyId>>,
     result_model: Option<&'a cadmpeg_ir::document::Model>,
     thread_definitions: &'a [thread::Definition],
     edge_names: HashMap<(String, u32), Option<cadmpeg_ir::features::GeneratedEdgeRef>>,
@@ -2279,6 +2280,7 @@ pub(crate) fn project(
         )
     }));
     let mut index = ProjectionIndex {
+        body_joins: None,
         result_model,
         thread_definitions: &inventory.thread_definitions,
         edge_names: HashMap::new(),
@@ -5357,6 +5359,7 @@ pub(crate) mod tests {
         entity_style_links: &'a [PmDcEntityStyleLink],
     ) -> ProjectionIndex<'a> {
         ProjectionIndex {
+            body_joins: None,
             result_model: None,
             thread_definitions: &[],
             edge_names: std::collections::HashMap::new(),
