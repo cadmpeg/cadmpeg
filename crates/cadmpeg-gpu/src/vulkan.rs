@@ -4,6 +4,8 @@
 use std::sync::mpsc;
 use std::sync::OnceLock;
 
+use cadmpeg_ir::math::Point3;
+
 const TRANSFORM_WGSL: &str = "
 @group(0) @binding(0) var<storage, read> mat: array<vec4<f64>, 4>;
 @group(0) @binding(1) var<storage, read> pts_in: array<vec4<f64>>;
@@ -29,6 +31,30 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 ";
 
+const PAIRWISE_DIST_WGSL: &str = "
+@group(0) @binding(0) var<storage, read> pts_a: array<vec4<f64>>;
+@group(0) @binding(1) var<storage, read> pts_b: array<vec4<f64>>;
+@group(0) @binding(2) var<storage, read_write> dist_out: array<f64>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    let n = arrayLength(&pts_a);
+    let m = arrayLength(&pts_b);
+    if idx >= n * m {
+        return;
+    }
+    let row = idx / m;
+    let col = idx % m;
+    let a = pts_a[row];
+    let b = pts_b[col];
+    let dx = a.x - b.x;
+    let dy = a.y - b.y;
+    let dz = a.z - b.z;
+    dist_out[idx] = fma(dx, dx, fma(dy, dy, dz * dz));
+}
+";
+
 /// Hardware context for safe `wgpu` native `SHADER_F64` and `EXPERIMENTAL_RAY_QUERY` compute execution.
 pub struct VulkanContext {
     device_name: String,
@@ -36,6 +62,7 @@ pub struct VulkanContext {
     queue: wgpu::Queue,
     bgl_compute: wgpu::BindGroupLayout,
     pipe_transform: wgpu::ComputePipeline,
+    pipe_pairwise_dist: wgpu::ComputePipeline,
 }
 
 static GLOBAL_VULKAN: OnceLock<Option<VulkanContext>> = OnceLock::new();
@@ -175,6 +202,7 @@ impl VulkanContext {
         Some(Self {
             device_name: info.name,
             pipe_transform: compile_pipe("cadmpeg-wgsl-transform", TRANSFORM_WGSL),
+            pipe_pairwise_dist: compile_pipe("cadmpeg-wgsl-pairwise-dist", PAIRWISE_DIST_WGSL),
             device,
             queue,
             bgl_compute,
@@ -318,6 +346,22 @@ impl VulkanContext {
                 .collect(),
         )
     }
+
+    /// Executes native `f64` pairwise squared Euclidean distance matrix computation via Vulkan `wgpu`.
+    #[must_use]
+    pub fn compute_pairwise_distance_squared(
+        &self,
+        points_a: &[Point3],
+        points_b: &[Point3],
+    ) -> Option<Vec<f64>> {
+        let total = points_a.len().checked_mul(points_b.len())?;
+        if total == 0 {
+            return Some(Vec::new());
+        }
+        let flat_a: Vec<f64> = points_a.iter().flat_map(|p| [p.x, p.y, p.z, 0.0]).collect();
+        let flat_b: Vec<f64> = points_b.iter().flat_map(|p| [p.x, p.y, p.z, 0.0]).collect();
+        self.execute_f64_pipeline(&self.pipe_pairwise_dist, &flat_a, &flat_b, total, total)
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -367,5 +411,32 @@ mod tests {
             .expect("Vulkan 1e20 transform");
         assert_eq!(big_out[0][0], 1.0e40);
         assert!(!big_out[0][0].is_nan());
+    }
+
+    #[test]
+    fn vulkan_pairwise_distance_matches_cpu() {
+        let Some(vk) = global_vulkan() else {
+            return;
+        };
+        let pts_a: Vec<Point3> = (0..17)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(1000.0 + f * 0.25, -500.0 + f * 0.5, 250.0 - f * 0.125)
+            })
+            .collect();
+        let pts_b: Vec<Point3> = (0..13)
+            .map(|j| {
+                let f = f64::from(j);
+                Point3::new(1000.5 + f * 0.125, -499.0 - f * 0.25, 249.5 + f * 0.375)
+            })
+            .collect();
+        let expected = cpu::pairwise_distance_squared(&pts_a, &pts_b);
+        let actual = vk
+            .compute_pairwise_distance_squared(&pts_a, &pts_b)
+            .expect("Vulkan f64 pairwise dist");
+        assert_eq!(expected.len(), actual.len());
+        for (&e, &a) in expected.iter().zip(&actual) {
+            assert!((e - a).abs() < VULKAN_PARITY_TOLERANCE);
+        }
     }
 }
