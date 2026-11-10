@@ -23,13 +23,20 @@ fn solved_frame(
     });
     let placement = matches.next()?;
     if matches.next().is_some()
-        || placement.type_version != 9
+        || !matches!(placement.type_version, 8 | 9)
         || placement.fields.inferred_x_axis.value != 0
         || placement.fields.inferred_z_axis.value != 0
     {
         return None;
     }
-    super::checked_solved_frame(placement)
+    let frame = super::checked_solved_frame(placement)?;
+    if placement.type_version == 8 {
+        let [x, y, z, _] = frame.value.rows();
+        cadmpeg_ir::features::FeatureRigidPlacement::new(
+            cadmpeg_ir::transform::Transform::affine([x, y, z])?,
+        )?;
+    }
+    Some(frame)
 }
 
 pub(crate) fn bind(
@@ -50,7 +57,7 @@ pub(crate) fn bind(
         }
         if transform.is_none() {
             losses.push(F3dLossCode::CylinderPlacementUnbound.note(format!(
-                "CylinderPrimitive {} retains its native placement because no unique checked version-9 placement operand binds its references.",
+                "CylinderPrimitive {} retains its native placement because its references require one checked version-8 or version-9 placement operand.",
                 scope.id
             )));
         }
