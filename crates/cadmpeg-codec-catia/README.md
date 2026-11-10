@@ -97,6 +97,13 @@ When an emitted face uses moved rail points, the report adds
 The sampled fit check compares the spline with the construction used for
 fitting, after any reported rail correction.
 
+Three-lane endpoint stations with an 18-byte `80` tail can place the compact tag
+after either scalar. The decoder retains a valid first-scalar-tag reading in
+preference to the final-scalar-tag reading. When both tag positions match,
+`topology.endpoint-station-reading-inferred` names the selected reading,
+incidence allocation, curve allocation, and native parameter. Companion-spline
+stations follow the existing affine-spline and circular endpoint paths.
+
 ## Reference
 
 - [API documentation][docs]

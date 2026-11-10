@@ -4,6 +4,7 @@
 use cadmpeg_core::decode::View;
 
 use crate::families::consolidated::records::class25::{self, Class25SourceRelation};
+use crate::nurbs::LaneRefusals;
 use crate::wire::bytes::{allocation_reference, compact_int, AllocationReference};
 use crate::wire::records::{
     owned_pcurve_from_record, ConsolidatedFamily as Family, ConsolidatedRecord,
@@ -27,6 +28,7 @@ pub(super) fn parameter(
     curve: usize,
     domain: Domain<'_>,
     resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
+    refusal: &mut LaneRefusals,
 ) -> Option<f64> {
     let typed = |index: usize, class: u8| {
         let record = records.get(index)?;
@@ -48,7 +50,7 @@ pub(super) fn parameter(
             continue;
         };
         if let Some((t, _)) =
-            incidence_parameter(incidence_bytes, incidence, curve, domain, resolve)
+            incidence_parameter(incidence_bytes, incidence, curve, domain, resolve, refusal)
         {
             if found.is_some_and(|prior| (prior - t).abs() > STATION_TOLERANCE) {
                 return None;
@@ -66,12 +68,20 @@ pub(super) fn edge_station(
     curve: usize,
     domain: Domain<'_>,
     resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
+    refusal: &mut LaneRefusals,
 ) -> Option<(f64, bool)> {
     let incidence = records.get(record)?;
     if incidence.family() != Family::B || incidence.class() != 0x06 {
         return None;
     }
-    incidence_parameter(payload(bytes, incidence)?, record, curve, domain, resolve)
+    incidence_parameter(
+        payload(bytes, incidence)?,
+        record,
+        curve,
+        domain,
+        resolve,
+        refusal,
+    )
 }
 
 fn map_record(bytes: &[u8], record: &ConsolidatedRecord) -> Option<class25::Class25ParameterMap> {
@@ -127,6 +137,7 @@ pub(super) fn mapped_station(
     [vertex, map, curve, incidence]: [usize; 4],
     allow_spline_companion: bool,
     resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
+    refusal: &mut LaneRefusals,
 ) -> Option<(f64, bool)> {
     let mapping = map_record(bytes, records.get(map)?)?;
     let range = match &mapping.source {
@@ -180,9 +191,11 @@ pub(super) fn mapped_station(
     } else {
         return None;
     };
-    let t = edge_station(bytes, records, incidence, companion, domain, resolve)
-        .map(|(parameter, _)| parameter)
-        .or_else(|| parameter(bytes, records, vertex, companion, domain, resolve))?;
+    let t = edge_station(
+        bytes, records, incidence, companion, domain, resolve, refusal,
+    )
+    .map(|(parameter, _)| parameter)
+    .or_else(|| parameter(bytes, records, vertex, companion, domain, resolve, refusal))?;
     if t < limits[0] - STATION_TOLERANCE || t > limits[1] + STATION_TOLERANCE {
         return None;
     }
@@ -311,6 +324,7 @@ pub(super) fn mapped_spline_parameter(
     [vertex, map, curve]: [usize; 3],
     range: [f64; 2],
     resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
+    refusal: &mut LaneRefusals,
 ) -> Option<f64> {
     let record = records.get(map)?;
     if record.family() != Family::B || !matches!(record.class(), 0x23 | 0x25) {
@@ -362,6 +376,7 @@ pub(super) fn mapped_spline_parameter(
             line: false,
         },
         resolve,
+        refusal,
     )?;
     let uv = scale.get().mul_add(t, offset.get());
     (uv.is_finite() && uv >= range[0] - STATION_TOLERANCE && uv <= range[1] + STATION_TOLERANCE)
@@ -430,6 +445,7 @@ fn incidence_parameter(
         line,
     }: Domain<'_>,
     resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
+    refusal: &mut LaneRefusals,
 ) -> Option<(f64, bool)> {
     let count = match bytes.first()? {
         0x82 => 2,
@@ -461,6 +477,15 @@ fn incidence_parameter(
             _ => Some(t),
         }
     };
+    let [min, max] = if let Some((knots, _, _)) = knots {
+        [*knots.first()?, *knots.last()?]
+    } else {
+        [lo.min(hi), lo.max(hi)]
+    };
+    let valid = |t: f64| {
+        t.is_finite() && (line || (t >= min - STATION_TOLERANCE && t <= max + STATION_TOLERANCE))
+    };
+    let mut inferred = None;
     let t = match (count, lane, tail) {
         (2, 1, [0x84]) => hi,
         (2, 1, [0x88]) => lo,
@@ -493,8 +518,24 @@ fn incidence_parameter(
         (3, 1 | 2, [0x10, ..]) if tail.len() == 18 && tail[9] % 4 == 1 => {
             scalar(if lane == 1 { 1 } else { 10 }, lane == 1)?
         }
-        (3, 1 | 2, [0x80, ..]) if tail.len() == 18 && tail[17] % 4 == 1 => {
-            scalar(if lane == 1 { 1 } else { 9 }, lane == 2)?
+        (3, 1 | 2, [0x80, ..]) if tail.len() == 18 => {
+            let first_tag = tail[9] % 4 == 1;
+            let final_tag = tail[17] % 4 == 1;
+            let legacy_layout = first_tag || (line && lane == 2 && tail[9] % 2 == 1);
+            let legacy = if legacy_layout {
+                scalar(if lane == 1 { 1 } else { 10 }, lane == 1).filter(|&t| valid(t))
+            } else {
+                None
+            };
+            let extended = final_tag
+                .then(|| scalar(if lane == 1 { 1 } else { 9 }, lane == 2))
+                .flatten()
+                .filter(|&t| valid(t));
+            let t = legacy.or(extended)?;
+            if legacy_layout && final_tag {
+                inferred = Some(legacy.is_some());
+            }
+            t
         }
         (3, 1, [0x11 | 0x22, ..]) | (3, 2, [0x05, ..]) if tail.len() == 10 && tail[9] % 4 == 1 => {
             scalar(1, true)?
@@ -507,7 +548,6 @@ fn incidence_parameter(
         }
         (3, 1, [0x80, ..]) if tail.len() == 19 && tail[9] == 0x04 => scalar(1, true)?,
         (3, 2, [0x80, ..]) if tail.len() == 19 && tail[9] == 0x04 => scalar(11, false)?,
-        (3, 2, [0x80, ..]) if line && tail.len() == 18 && tail[9] % 2 == 1 => scalar(10, false)?,
         (3, 2, [0x88, ..]) if line && tail.len() == 9 => scalar(1, false)?,
         (3, 1, [0x81, ..]) | (3, 2, [0x82, ..]) if tail.len() == 9 => scalar(1, false)?,
         (3, 1, [0x81, ..]) | (3, 2, [0x82, ..]) if tail.len() == 10 && tail[9] % 4 == 1 => {
@@ -516,13 +556,11 @@ fn incidence_parameter(
         (3, 1, [0x81, ..]) if tail.len() == 11 && tail[9] == 0x04 => scalar(1, true)?,
         _ => return None,
     };
-    let [min, max] = if let Some((knots, _, _)) = knots {
-        [*knots.first()?, *knots.last()?]
-    } else {
-        [lo.min(hi), lo.max(hi)]
-    };
-    if !t.is_finite() || (!line && (t < min - STATION_TOLERANCE || t > max + STATION_TOLERANCE)) {
+    if !valid(t) {
         return None;
+    }
+    if let Some(first_tag) = inferred {
+        refusal.push_endpoint_station_reading_inferred(record, curve, t, first_tag);
     }
     let arc_station = count == 2
         && knots.is_some()
@@ -544,7 +582,15 @@ mod tests {
         domain: Domain<'_>,
         resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
     ) -> Option<f64> {
-        incidence_parameter(bytes, record, curve, domain, resolve).map(|(t, _)| t)
+        incidence_parameter(
+            bytes,
+            record,
+            curve,
+            domain,
+            resolve,
+            &mut LaneRefusals::new(),
+        )
+        .map(|(t, _)| t)
     }
 
     #[test]
@@ -682,7 +728,8 @@ mod tests {
                     knots: Some((&knots, 1, 0)),
                     line: false
                 },
-                &resolve
+                &resolve,
+                &mut LaneRefusals::new(),
             ),
             Some((2.5, true))
         );
@@ -697,7 +744,8 @@ mod tests {
                     knots: Some((&knots, 1, 0)),
                     line: false
                 },
-                &resolve
+                &resolve,
+                &mut LaneRefusals::new(),
             ),
             None
         );
@@ -717,10 +765,13 @@ mod tests {
             line: false,
         };
         assert_eq!(
-            incidence_parameter(&bytes, 0, 1, domain, &resolve),
+            incidence_parameter(&bytes, 0, 1, domain, &resolve, &mut LaneRefusals::new(),),
             Some((2.5, true))
         );
         bytes[13] = 0x46;
-        assert_eq!(incidence_parameter(&bytes, 0, 1, domain, &resolve), None);
+        assert_eq!(
+            incidence_parameter(&bytes, 0, 1, domain, &resolve, &mut LaneRefusals::new(),),
+            None
+        );
     }
 }

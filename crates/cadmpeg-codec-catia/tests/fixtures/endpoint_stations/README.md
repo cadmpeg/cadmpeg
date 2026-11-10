@@ -26,3 +26,24 @@ roster and direct edge-station readers.
 The regression tests also reject span codes outside the knot array, negative
 or overlong local stations, non-finite scalars, and a parameter map whose two
 operands select the same curve.
+
+The generator also writes complete V5 containers. These hand-encoded files
+exercise cadmpeg's normal decode entry point. They are synthetic test data
+constructed from the documented record forms; CATIA compatibility has not
+been verified.
+
+| Fixture | Expected result |
+| --- | --- |
+| `legacy-first-tag-positive.bin` | First lane 2.5, second lane 2.0. |
+| `legacy-first-tag-negative-fraction.bin` | First lane 2.5, second lane -0.5. |
+| `legacy-first-tag-negative.bin` | First lane 2.5, second lane -2.0. |
+| `ambiguous-first-tag.bin` | Select the legacy first-tag reading and report the choice. |
+| `mapped-priority.bin` | Existing affine stations 7.0 and 7.5 take precedence over companion stations 3.0 and 3.5. |
+| `extended-station-sheet.catpart` | One unit-square face, four edges and four vertices; selectors use extended span tags. |
+| `ambiguous-station-sheet.catpart` | The same square; ambiguous three-lane selectors report the first-scalar-tag choice. |
+
+The ambiguous tail's second scalar has IEEE-754 bits `3d00000000000000`.
+Its high byte also meets the final-tag guard. The first-tag layout preserves
+the existing scalar interpretation. The affine priority fixture uses positive
+companion knots and an encoded first-arc base of three; the existing affine
+path uses base one. Both paths yield valid, different parameters.

@@ -607,7 +607,9 @@ where
         let mut stations = std::array::from_fn(|endpoint| {
             let index = vertices[endpoint];
             let station = resolve_edge(3 + endpoint, selectors[endpoint]);
-            let mapped_station = |primary_station: &mut Option<f64>, allow_spline_companion| {
+            let mapped_station = |primary_station: &mut Option<f64>,
+                                  allow_spline_companion,
+                                  refusal: &mut LaneRefusals| {
                 let map = resolve_edge(0, node.curve_ref)?;
                 let (t, primary) = stations::mapped_station(
                     self.bytes,
@@ -615,6 +617,7 @@ where
                     [index, map, p, station?],
                     allow_spline_companion,
                     &self.resolve,
+                    refusal,
                 )?;
                 let t = if domain.line {
                     t
@@ -640,22 +643,24 @@ where
                         p,
                         domain,
                         &self.resolve,
+                        refusal,
                     )?;
                     if arc_station {
                         primary_stations[endpoint] = Some(t);
                     }
                     Some(t)
                 })
-                .or_else(|| mapped_station(&mut primary_stations[endpoint], domain.line))
+                .or_else(|| mapped_station(&mut primary_stations[endpoint], domain.line, refusal))
                 .or_else(|| {
-                    stations::parameter(self.bytes, self.records, index, p, domain, &self.resolve)
-                })
-                .or_else(|| {
-                    if domain.line {
-                        None
-                    } else {
-                        mapped_station(&mut primary_stations[endpoint], true)
-                    }
+                    stations::parameter(
+                        self.bytes,
+                        self.records,
+                        index,
+                        p,
+                        domain,
+                        &self.resolve,
+                        refusal,
+                    )
                 })
                 .or_else(|| {
                     let map = resolve_edge(0, node.curve_ref)?;
@@ -666,6 +671,7 @@ where
                             [index, map, p],
                             source_range,
                             &self.resolve,
+                            refusal,
                         );
                     }
                     if self.records[p].class() != 0x19 || !matches!(carrier, Carrier::Plane(_)) {
@@ -679,6 +685,13 @@ where
                         source_range,
                         &self.resolve,
                     )
+                })
+                .or_else(|| {
+                    if domain.line {
+                        None
+                    } else {
+                        mapped_station(&mut primary_stations[endpoint], true, refusal)
+                    }
                 })?;
             if matches!(pcurve, PcurveGeometry::Line(_)) {
                 Some((t - source_range[0]) / (source_range[1] - source_range[0]))
@@ -1905,6 +1918,44 @@ fn fit_ring(
 #[cfg(test)]
 mod tests {
     use super::{line_at, ring_tail, RingBounds, RingTail};
+
+    #[test]
+    fn trim_retains_existing_affine_station_before_companion_fallback() {
+        use super::*;
+        use crate::wire::bytes::AllocationReferenceEncoding;
+        use crate::wire::records::consolidated_records;
+
+        let bytes =
+            include_bytes!("../../../../tests/fixtures/endpoint_stations/mapped-priority.bin");
+        let records = consolidated_records(bytes);
+        let resolve = |index: usize, reference: AllocationReference| {
+            let value = usize::try_from(reference.value).ok()?;
+            match reference.encoding {
+                AllocationReferenceEncoding::OwnedChild => index.checked_add(1)?.checked_add(value),
+                AllocationReferenceEncoding::BackwardDistance => index.checked_sub(value),
+                _ => None,
+            }
+        };
+        let source = Source {
+            bytes,
+            records: &records,
+            resolve,
+            physical: Some,
+            tensors: &BTreeMap::new(),
+        };
+        let ir = CadIr::empty();
+        let carriers = BTreeMap::new();
+        let mut refusal = LaneRefusals::new();
+        let carrier = source
+            .carrier(&ir, 10, &carriers, &mut refusal)
+            .expect("fixture plane");
+        let trim = source
+            .trim(0, &[0x0b, 0x17], &mut 0, &carrier, &mut refusal)
+            .expect("mapped spline trim");
+        assert_eq!(trim.stations, [Some(7.0), Some(7.5)]);
+        assert_eq!(trim.primary_stations, [None, None]);
+        assert_eq!(trim.mapped_range, Some([0.0, 8.0]));
+    }
 
     #[test]
     fn trim_uses_selector_stations_from_a_spline_companion() {
