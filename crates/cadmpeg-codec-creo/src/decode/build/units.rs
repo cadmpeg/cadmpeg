@@ -743,6 +743,7 @@ fn scale_angular_termination(
         AngularTermination::OffsetFromFace { offset, .. } => {
             scale_positive_length(offset, scale)?;
         }
+        AngularTermination::ToPlane { plane, .. } => scale_support_plane_frame(plane, scale)?,
         AngularTermination::Unresolved {}
         | AngularTermination::ThroughAll {}
         | AngularTermination::ThroughNext {}

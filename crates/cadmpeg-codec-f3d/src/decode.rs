@@ -564,6 +564,7 @@ fn angular_termination_is_resolved(termination: &cadmpeg_ir::features::AngularTe
             VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
         ),
         AngularTermination::Angle { .. }
+        | AngularTermination::ToPlane { .. }
         | AngularTermination::ThroughAll {}
         | AngularTermination::ThroughNext {}
         | AngularTermination::ToFirst {}

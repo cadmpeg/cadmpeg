@@ -7393,6 +7393,20 @@ pub enum AngularTermination {
         /// Native or resolved target shape selection.
         target: FaceSelection,
     },
+    /// Extends until it reaches a plane with its native target reference.
+    ToPlane {
+        /// Model-space frame of the terminating plane.
+        plane: FeatureSupportPlaneFrame,
+        /// Native target record.
+        native: NonBlankString,
+        /// Source of the target plane.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_plane_target_source"
+        )]
+        source: Option<PlaneTargetSource>,
+    },
     /// Fixed angular travel.
     Angle {
         /// Angular travel.

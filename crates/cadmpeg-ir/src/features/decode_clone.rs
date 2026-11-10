@@ -34,6 +34,7 @@ rewrite_enum!(AngularTermination, []; {
     ToVertex { vertex },
     OffsetFromFace { face, offset },
     ToShape { target },
+    ToPlane { plane, native, source },
     Angle { angle },
 });
 
