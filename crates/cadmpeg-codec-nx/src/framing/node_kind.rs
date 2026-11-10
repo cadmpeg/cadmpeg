@@ -47,6 +47,8 @@ pub(crate) enum NodeKind {
     BlendSurface = token::BLEND_SURF,
     /// `OffsetSurface` record.
     OffsetSurface = token::OFFSET_SURF,
+    /// `SweptSurface` record.
+    SweptSurface = token::SWEPT_SURF,
     /// `BSurface` record.
     BSurface = token::B_SURFACE,
     /// `TrimmedCurve` record.
@@ -81,6 +83,7 @@ impl NodeKind {
             NodeKind::Torus => token::TORUS,
             NodeKind::BlendSurface => token::BLEND_SURF,
             NodeKind::OffsetSurface => token::OFFSET_SURF,
+            NodeKind::SweptSurface => token::SWEPT_SURF,
             NodeKind::BSurface => token::B_SURFACE,
             NodeKind::TrimmedCurve => token::TRIMMED_CURVE,
             NodeKind::BCurve => token::B_CURVE,
@@ -113,6 +116,7 @@ impl TryFrom<u8> for NodeKind {
             token::TORUS => Self::Torus,
             token::BLEND_SURF => Self::BlendSurface,
             token::OFFSET_SURF => Self::OffsetSurface,
+            token::SWEPT_SURF => Self::SweptSurface,
             token::B_SURFACE => Self::BSurface,
             token::TRIMMED_CURVE => Self::TrimmedCurve,
             token::B_CURVE => Self::BCurve,

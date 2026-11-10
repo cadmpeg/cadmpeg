@@ -8,6 +8,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::framing::node_kind::NodeKind;
+use cadmpeg_core::decode::View;
 use cadmpeg_parasolid::pointer;
 use cadmpeg_parasolid::xmt::NonNullXmt;
 use std::collections::{BTreeMap, BTreeSet};
@@ -31,6 +32,7 @@ use crate::layout::point_node as point;
 use crate::layout::shell_node as shell;
 use crate::layout::sp_curve_payload as sp_curve;
 use crate::layout::sphere_payload as sphere;
+use crate::layout::swept_surf_payload as swept_surf;
 use crate::layout::torus_payload as torus;
 use crate::layout::trimmed_curve_payload as trimmed;
 use crate::layout::vertex_node as vertex;
@@ -106,6 +108,11 @@ fn complete_frame(
         .checked_add(len)?
         .checked_add(shift)?
         .checked_add(payload_shift)?;
+    let end = if kind == NodeKind::Intersection && ends_before_sixth_reference(stream, end) {
+        end.checked_sub(2)?
+    } else {
+        end
+    };
     stream.get(pos..end)?;
     Some(FixedRecordFrame {
         xmt,
@@ -113,6 +120,27 @@ fn complete_frame(
         payload_shift,
         end,
     })
+}
+
+/// Return whether an INTERSECTION read with six references ends two bytes too late: older
+/// schemas declare five, so the sixth is then the tag of the next record. This only compares
+/// tags, because a full boundary check would recurse through consecutive intersections.
+fn ends_before_sixth_reference(stream: &[u8], six_reference_end: usize) -> bool {
+    six_reference_end != stream.len()
+        && six_reference_end
+            .checked_sub(2)
+            .is_some_and(|end| starts_known_record(stream, end))
+        && !starts_known_record(stream, six_reference_end)
+}
+
+/// Return whether the tag of a record the decoder knows starts at `at`.
+pub(crate) fn starts_known_record(stream: &[u8], at: usize) -> bool {
+    stream.get(at) == Some(&0)
+        && stream.get(at + 1).is_some_and(|tag| {
+            NodeKind::try_from(*tag).is_ok()
+                || ATTRIBUTE_RECORDS.contains(tag)
+                || matches!(*tag, CHART | TERM | MEMBER_OF_FEATURE | RING_LINK)
+        })
 }
 
 /// Return whether `end` is the stream boundary or a complete fixed-record start.
@@ -132,6 +160,20 @@ pub(crate) fn fixed_record_boundary(stream: &[u8], end: usize) -> bool {
     if kind == MEMBER_OF_FEATURE {
         return member_of_feature_frame(stream, end);
     }
+    if kind == FEATURE {
+        return feature_frame(stream, end);
+    }
+    if ATTRIBUTE_RECORDS.contains(&kind) {
+        return crate::parasolid::attribute_record_end(stream, end).is_some();
+    }
+    if kind == CHART {
+        return chart_header(stream, end);
+    }
+    if kind == RING_LINK {
+        let mut at = end + 2;
+        return read_sequence_at::<5>(stream, &mut at)
+            .is_some_and(|references| references.iter().all(|reference| *reference > 1));
+    }
     let Ok(kind) = NodeKind::try_from(kind) else {
         return false;
     };
@@ -142,8 +184,52 @@ pub(crate) fn fixed_record_boundary(stream: &[u8], end: usize) -> bool {
         .is_some()
 }
 
+/// Parasolid `FEATURE` record tag.
+const FEATURE: u8 = 90;
+
 /// Parasolid `MEMBER_OF_FEATURE` record tag.
 const MEMBER_OF_FEATURE: u8 = 91;
+
+/// Parasolid `CHART` record tag.
+const CHART: u8 = 40;
+
+/// Parasolid intersection terminator record tag.
+const TERM: u8 = 41;
+
+/// Record of five non-null references that links surface carriers.
+const RING_LINK: u8 = 141;
+
+/// Return whether a `CHART` count and non-null identity start at `pos`.
+fn chart_header(stream: &[u8], pos: usize) -> bool {
+    let header = |at: usize| -> Option<()> {
+        let count = View::u32_be_at(stream, at)?;
+        (count > 0 && usize::try_from(count).ok()? < stream.len()).then_some(())?;
+        let (xmt, _) = read_xmt(stream, at + 4)?;
+        NonNullXmt::try_from(xmt).ok().map(|_| ())
+    };
+    let at = pos + 2;
+    header(at).is_some() || (stream.get(at) == Some(&0xff) && header(at + 1).is_some())
+}
+
+/// Parasolid attribute-family record tags.
+pub(crate) const ATTRIBUTE_RECORDS: std::ops::RangeInclusive<u8> = 0x4f..=0x54;
+
+/// Return whether a complete `FEATURE` frame with a non-null owner starts at `pos`.
+fn feature_frame(stream: &[u8], pos: usize) -> bool {
+    let frame = |identity_at: usize| -> Option<()> {
+        let (xmt, extra) = read_xmt(stream, identity_at)?;
+        NonNullXmt::try_from(xmt).ok()?;
+        let mut at = identity_at.checked_add(2 + extra + 4)?;
+        let references = read_sequence_at::<4>(stream, &mut at)?;
+        NonNullXmt::try_from(references[1]).ok()?;
+        at = at.checked_add(1)?;
+        pointer::read_at(stream, &mut at)?;
+        stream.get(pos..at).map(|_| ())
+    };
+    let identity_at = pos + 2;
+    frame(identity_at).is_some()
+        || (stream.get(identity_at) == Some(&0xff) && frame(identity_at + 1).is_some())
+}
 
 /// Return whether a complete `MEMBER_OF_FEATURE` frame with a non-null owner
 /// starts at `pos`.
@@ -260,6 +346,7 @@ fn payload_shift(stream: &[u8], pos: usize, kind: NodeKind, header_shift: usize)
             | NodeKind::Torus
             | NodeKind::BlendSurface
             | NodeKind::OffsetSurface
+            | NodeKind::SweptSurface
             | NodeKind::BSurface
             | NodeKind::TrimmedCurve
             | NodeKind::BCurve
@@ -290,7 +377,7 @@ fn payload_shift(stream: &[u8], pos: usize, kind: NodeKind, header_shift: usize)
         NodeKind::BSurface | NodeKind::BCurve => {
             skip_sequence_at(stream, &mut at, 2)?;
         }
-        NodeKind::TrimmedCurve => {
+        NodeKind::TrimmedCurve | NodeKind::SweptSurface => {
             pointer::read_at(stream, &mut at)?;
         }
         NodeKind::SpCurve => {
@@ -303,7 +390,7 @@ fn payload_shift(stream: &[u8], pos: usize, kind: NodeKind, header_shift: usize)
         NodeKind::BlendSurface => 7,
         NodeKind::OffsetSurface => 4,
         NodeKind::BSurface | NodeKind::BCurve => 4,
-        NodeKind::TrimmedCurve => 2,
+        NodeKind::TrimmedCurve | NodeKind::SweptSurface => 2,
         NodeKind::SpCurve => 6,
         _ => 0,
     };
@@ -332,6 +419,7 @@ pub(crate) fn fixed_len(kind: NodeKind) -> usize {
         NodeKind::Torus => torus::LEN,
         NodeKind::BlendSurface => 66,
         NodeKind::OffsetSurface => offset_surf::LEN,
+        NodeKind::SweptSurface => swept_surf::LEN,
         NodeKind::BSurface | NodeKind::BCurve => 23,
         NodeKind::TrimmedCurve => trimmed::LEN,
         NodeKind::SpCurve => sp_curve::LEN,
@@ -341,6 +429,17 @@ pub(crate) fn fixed_len(kind: NodeKind) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{fixed_record_boundary, read_sequence_at, skip_sequence_at};
+
+    #[test]
+    fn feature_frame_with_an_owner_is_a_record_boundary() {
+        // An escaped identity, the node id, four references, the type byte and the first member.
+        let mut feature = vec![
+            0, 90, 0xff, 0, 11, 0, 0, 0, 115, 0, 104, 0, 2, 0, 105, 0, 3, 2, 0, 82,
+        ];
+        assert!(fixed_record_boundary(&feature, 0));
+        feature[11..13].copy_from_slice(&[0, 1]);
+        assert!(!fixed_record_boundary(&feature, 0));
+    }
 
     #[test]
     fn member_of_feature_frame_with_an_owner_is_a_record_boundary() {

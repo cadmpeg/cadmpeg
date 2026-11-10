@@ -36,6 +36,8 @@ use surface_curve_state::SurfaceCurveState;
 mod primary_edges;
 use primary_edges::PrimaryFrames;
 
+const MAX_MASKED_ATTRIBUTE_RECORD_BYTES: usize = 16_384;
+
 /// Type-38 first-use edit adding the support-UV `intersection_data` pointer.
 /// The terminal ASCII `Z` ends the declaration; index data follows it.
 pub(crate) const TYPE_38_SCHEMA_HEADER: &[u8] = &[
@@ -139,6 +141,15 @@ pub(crate) struct LoopFields {
     pub(crate) face: Option<XmtTarget>,
     /// Next loop owned by the same face, or the null reference.
     next_loop: Option<XmtTarget>,
+}
+
+/// References of a FIN that forms a one-vertex loop at a surface singularity.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct VertexFinFields {
+    /// Owning loop.
+    pub(crate) loop_xmt: Option<XmtTarget>,
+    /// Vertex at the singularity.
+    pub(crate) vertex: Option<XmtTarget>,
 }
 
 /// Sequentially decoded FIN references and sense.
@@ -419,6 +430,24 @@ impl Node {
         })
     }
 
+    /// Decode a FIN with unset sense, which links only to itself and has no edge.
+    pub(crate) fn vertex_fin_fields(&self) -> Option<VertexFinFields> {
+        (self.kind == NodeKind::Fin).then_some(())?;
+        let mut at = 4 + self.shift;
+        let refs = read_sequence_at::<9>(&self.bytes, &mut at)?;
+        (self.bytes.get(at) == Some(&b'?')).then_some(())?;
+        let links_to_itself = [refs[2], refs[3]]
+            .into_iter()
+            .all(|link| XmtTarget::from_wire(link).map(u32::from) == Some(self.xmt()));
+        let has_no_edge = [refs[5], refs[6], refs[7]]
+            .into_iter()
+            .all(|reference| XmtTarget::from_wire(reference).is_none());
+        (links_to_itself && has_no_edge).then_some(VertexFinFields {
+            loop_xmt: XmtTarget::from_wire(refs[1]),
+            vertex: XmtTarget::from_wire(refs[4]),
+        })
+    }
+
     /// Decode VERTEX fields with cumulative large-index shifts.
     pub(crate) fn vertex_fields(&self) -> Option<VertexFields> {
         (self.kind == NodeKind::Vertex).then_some(())?;
@@ -511,7 +540,7 @@ impl Node {
                 let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
-                if self.bytes.get(at) != Some(&b'R') {
+                if !matches!(self.bytes.get(at), Some(b'R' | b'E')) {
                     return Vec::new();
                 }
                 at += 1;
@@ -537,7 +566,7 @@ impl Node {
                     vec![(ReferenceRole::Surface, XmtTarget::from_wire(reference))]
                 })
             }
-            NodeKind::TrimmedCurve => {
+            NodeKind::TrimmedCurve | NodeKind::SweptSurface => {
                 let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
@@ -658,6 +687,19 @@ pub(crate) struct OffsetSurface {
     pub(crate) true_offset: bool,
     /// Checked support reference and signed model distance.
     pub(crate) state: OffsetSurfaceState,
+    /// Record type-tag offset in the inflated stream.
+    pub(crate) pos: usize,
+}
+
+/// A type-67 surface swept along a straight line from a section curve.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SweptSurface {
+    /// Cross-reference index of the swept surface record.
+    pub(crate) xmt: u32,
+    /// Reference to the section curve.
+    pub(crate) section: u32,
+    /// Sweep vector in millimetres: the unit `sweep` field multiplied by `scale`.
+    pub(crate) direction: [f64; 3],
     /// Record type-tag offset in the inflated stream.
     pub(crate) pos: usize,
 }
@@ -795,7 +837,7 @@ impl Graph {
         self.of_kind(NodeKind::BlendSurface)
             .filter_map(|node| {
                 let mut at = node.common_header()?.1;
-                (*node.bytes.get(at)? == b'R').then_some(())?;
+                matches!(node.bytes.get(at), Some(b'R' | b'E')).then_some(())?;
                 at += 1;
                 let refs = read_sequence_at::<3>(&node.bytes, &mut at)?;
                 let values = [
@@ -814,6 +856,40 @@ impl Graph {
                         [values[2], values[3]],
                     )
                     .ok()?,
+                    pos: node.pos(),
+                })
+            })
+            .collect()
+    }
+}
+
+/// A type-56 rolling-ball record with zero offsets. It has collapsed onto its spine, which is the
+/// cliff edge a cliff-edge blend passes through.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ZeroRadiusBlend {
+    /// Cross-reference index of the blend record.
+    pub(crate) xmt: u32,
+    /// Reference to the curve the blend collapsed onto.
+    pub(crate) spine: u32,
+    /// Record type-tag offset in the inflated stream.
+    pub(crate) pos: usize,
+}
+
+impl Graph {
+    pub(crate) fn zero_radius_blends(&self) -> Vec<ZeroRadiusBlend> {
+        self.of_kind(NodeKind::BlendSurface)
+            .filter_map(|node| {
+                let mut at = node.common_header()?.1;
+                (node.bytes.get(at) == Some(&b'R')).then_some(())?;
+                at += 1;
+                let refs = read_sequence_at::<3>(&node.bytes, &mut at)?;
+                let offsets = [
+                    View::f64_be_at(&node.bytes, at)?,
+                    View::f64_be_at(&node.bytes, at + 8)?,
+                ];
+                (offsets == [0.0, 0.0] && refs[2] > 1).then_some(ZeroRadiusBlend {
+                    xmt: node.xmt(),
+                    spine: refs[2],
                     pos: node.pos(),
                 })
             })
@@ -848,6 +924,25 @@ impl Graph {
                     discriminator,
                     true_offset,
                     state: OffsetSurfaceState::new(support, distance).ok()?,
+                    pos: node.pos(),
+                })
+            })
+            .collect()
+    }
+}
+
+impl Graph {
+    pub(crate) fn swept_surfaces(&self) -> Vec<SweptSurface> {
+        self.of_kind(NodeKind::SweptSurface)
+            .filter_map(|node| {
+                let mut at = node.common_header()?.1;
+                let section = pointer::read_at(&node.bytes, &mut at)?;
+                let sweep = crate::vec3_at::vec3_be_at(&node.bytes, at)?;
+                let scale = View::f64_be_at(&node.bytes, at + 24)?;
+                Some(SweptSurface {
+                    xmt: node.xmt(),
+                    section,
+                    direction: sweep.map(|component| component * scale * 1000.0),
                     pos: node.pos(),
                 })
             })
@@ -1019,6 +1114,47 @@ impl Graph {
         }
     }
 
+    /// Mark the bytes inside complete numeric attribute records (types 81, 82
+    /// and 83) that end at a record boundary. Their references, counts and
+    /// values can read as node tags, and a tag match there can otherwise take
+    /// the bytes of the node that follows or duplicate a real node's identity.
+    fn attribute_record_interiors(stream: &[u8]) -> Vec<bool> {
+        let mut interior = vec![false; stream.len()];
+        for pos in 0..stream.len() {
+            if stream[pos] != 0 || !matches!(stream.get(pos + 1), Some(0x51..=0x53)) {
+                continue;
+            }
+            // The index of a complete node can have the same bytes as the tag.
+            let is_node_index = pos.checked_sub(2).is_some_and(|start| {
+                stream[start] == 0
+                    && !interior[start]
+                    && NodeKind::try_from(stream[start + 1]).is_ok_and(|kind| {
+                        framed_record_candidates(stream, start, kind)
+                            .iter()
+                            .flatten()
+                            .any(|frame| fixed_record_boundary(stream, frame.end()))
+                    })
+            });
+            if is_node_index {
+                continue;
+            }
+            let Some(end) = crate::parasolid::attribute_record_end(stream, pos) else {
+                continue;
+            };
+            // Schema text and node fields can read as a tag with a huge count. Masking that span
+            // would hide every real node inside it, which costs far more than one stray tag match.
+            if end - pos > MAX_MASKED_ATTRIBUTE_RECORD_BYTES {
+                continue;
+            }
+            if fixed_record_boundary(stream, end) {
+                if let Some(bytes) = interior.get_mut(pos + 1..end) {
+                    bytes.fill(true);
+                }
+            }
+        }
+        interior
+    }
+
     fn select_fixed_records(
         stream: &[u8],
         full_node_id_domain: bool,
@@ -1059,12 +1195,16 @@ impl Graph {
                 }
             }
             None => {
+                let attribute_interiors = Self::attribute_record_interiors(stream);
                 for pos in stream
                     .len()
                     .checked_sub(3)
                     .into_iter()
                     .flat_map(|last| 0..last)
                 {
+                    if attribute_interiors[pos] {
+                        continue;
+                    }
                     admit(pos, None);
                 }
                 // Counted lane values can spell a BODY or REGION type and identity.
@@ -1078,7 +1218,8 @@ impl Graph {
         // a second serialized node. Counting it first can invalidate the real
         // node and make otherwise stable identities depend on unrelated bytes.
         let non_overlapping = Self::select_non_overlapping_candidates(stream, candidates);
-        let mut selected = Self::select_unique_candidates(non_overlapping);
+        let resolved = Self::without_unbounded_duplicates(stream, non_overlapping);
+        let mut selected = Self::select_unique_candidates(resolved);
         if let Some(frames) = frames {
             selected.extend(
                 frames
@@ -1101,6 +1242,33 @@ impl Graph {
             typed: selected,
             ownership: admitted_ownership,
         }
+    }
+
+    /// Keep the one candidate of a duplicated identity that ends at a record boundary. Bytes
+    /// inside another record can read as a node with the identity of a real one, and treating
+    /// the identity as ambiguous would then remove the real node with them.
+    fn without_unbounded_duplicates(
+        stream: &[u8],
+        candidates: Vec<NodeCandidate>,
+    ) -> Vec<NodeCandidate> {
+        let mut bounded = BTreeMap::<(NodeKind, u32), (usize, usize)>::new();
+        for node in &candidates {
+            let (total, at_boundary) = bounded.entry((node.kind, node.xmt())).or_default();
+            *total += 1;
+            if fixed_record_boundary(stream, node.end()) {
+                *at_boundary += 1;
+            }
+        }
+        candidates
+            .into_iter()
+            .filter(|node| {
+                bounded
+                    .get(&(node.kind, node.xmt()))
+                    .is_none_or(|&(total, at_boundary)| {
+                        total == 1 || at_boundary != 1 || fixed_record_boundary(stream, node.end())
+                    })
+            })
+            .collect()
     }
 
     fn admit_disjoint_ownership(
@@ -1185,10 +1353,10 @@ impl Graph {
 
     /// Keep one complete physical record for each serialized identity.
     ///
-    /// A second record with the same `(kind, xmt)` is not a recoverable choice:
-    /// the fixed-record grammar provides no discriminator that can make one
-    /// authoritative. Invalidate the identity instead of ranking candidates
-    /// by topology shape, reference counts, or scan position.
+    /// Ending at a record boundary is the one discriminator, and
+    /// `without_unbounded_duplicates` has applied it. Invalidate an identity
+    /// that still has a second record instead of ranking candidates by
+    /// topology shape, reference counts, or scan position.
     fn select_unique_candidates(mut candidates: Vec<NodeCandidate>) -> Vec<NodeCandidate> {
         let mut by_key = BTreeMap::<(NodeKind, u32), Option<NodeCandidate>>::new();
         for &node in &candidates {
@@ -1337,7 +1505,7 @@ impl Graph {
             let Some((_, mut at)) = node.common_header() else {
                 continue;
             };
-            if node.bytes.get(at) != Some(&b'R') {
+            if !matches!(node.bytes.get(at), Some(b'R' | b'E')) {
                 continue;
             }
             at += 1;
@@ -1479,7 +1647,23 @@ impl Graph {
             let first_fin = fields
                 .fin
                 .ok_or(FaceLoopFailure::InvalidLoopChain { loop_xmt: current })?;
-            let ring = self.fin_ring(current, first_fin)?;
+            let ring = match self
+                .get(NodeKind::Fin, u32::from(first_fin))
+                .and_then(Node::vertex_fin_fields)
+            {
+                Some(fin) => {
+                    if fin.loop_xmt.map(u32::from) != Some(current)
+                        || self.get_target(NodeKind::Vertex, fin.vertex).is_none()
+                    {
+                        return Err(FaceLoopFailure::InvalidFinRing {
+                            loop_xmt: current,
+                            fin_xmt: u32::from(first_fin),
+                        });
+                    }
+                    vec![u32::from(first_fin)]
+                }
+                None => self.fin_ring(current, first_fin)?,
+            };
 
             rings.push((current, ring));
             loop_xmt = fields.next_loop;
@@ -1653,6 +1837,7 @@ impl ReferenceRole {
             | NodeKind::Torus
             | NodeKind::BlendSurface
             | NodeKind::OffsetSurface
+            | NodeKind::SweptSurface
             | NodeKind::BSurface => Some(Self::Surface),
             _ => None,
         }
@@ -1766,6 +1951,7 @@ fn candidate_has_valid_family_framing(
             | NodeKind::Torus
             | NodeKind::BlendSurface
             | NodeKind::OffsetSurface
+            | NodeKind::SweptSurface
             | NodeKind::BSurface
             | NodeKind::TrimmedCurve
             | NodeKind::BCurve
@@ -1802,7 +1988,7 @@ fn candidate_has_valid_family_framing(
         NodeKind::Fin => {
             let mut at = 4 + shift;
             skip_sequence_at(bytes, &mut at, 9)?;
-            matches!(bytes.get(at), Some(b'+' | b'-')).then_some(())?;
+            matches!(bytes.get(at), Some(b'+' | b'-' | b'?')).then_some(())?;
         }
         NodeKind::Vertex => {
             let mut at = 8 + shift;

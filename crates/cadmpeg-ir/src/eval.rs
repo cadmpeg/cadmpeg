@@ -57,6 +57,11 @@ mod model_surface_point;
 mod polyline;
 mod rational;
 mod sketch_offset;
+mod spine_rolling_ball;
+pub use spine_rolling_ball::{
+    exact_blend_cap_point, exact_blend_rail_point, exact_intersection_point,
+    spine_rolling_ball_domain,
+};
 mod sweep_law;
 #[cfg(test)]
 mod test_support;

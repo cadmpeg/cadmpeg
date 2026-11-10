@@ -240,6 +240,36 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
 }
 
 #[test]
+fn blend_bound_in_the_first_support_slot_resolves_to_its_blend_surface() {
+    let mut stream = blend_bound_charted_intersection_curve_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    let first = cadmpeg_core::decode::View::u16_be_at(&stream, intersection + 19).unwrap();
+    put_ref(&mut stream, intersection + 19, 14);
+    put_ref(&mut stream, intersection + 21, first);
+    put_ref(&mut stream, intersection + 29, 1);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    let scan = crate::intersection::scan_with_graph(
+        &stream,
+        &graph,
+        crate::intersection::ChartPointLayout::Xyz3,
+    )
+    .unwrap();
+
+    let [curve] = scan.curves.as_slice() else {
+        panic!("the intersection has supports through the blend bound");
+    };
+    assert_eq!(u32::from(curve.primary_support), 13);
+    assert_eq!(
+        curve.secondary_support.map(u32::from),
+        Some(u32::from(first))
+    );
+}
+
+#[test]
 fn intersection_rejection_census_requires_resolved_supports() {
     let mut stream = charted_intersection_curve_topology_partition_stream();
     let intersection = stream
@@ -850,6 +880,24 @@ fn a_limit_without_term_use_reads_its_point_after_the_limit_type() {
         followed.extend([0, 29]);
         let tagged = super::term_use_at(&followed, 0, super::ChartPointLayout::Xyz3, true);
         assert!(tagged.is_none_or(|(term, _)| term.form != super::TermUseForm::L));
+    });
+}
+
+#[test]
+fn a_two_row_limit_without_term_use_reads_the_one_byte_t_form() {
+    let mut bytes = vec![0, 41];
+    bytes.extend(2u32.to_be_bytes());
+    bytes.extend(7u16.to_be_bytes());
+    bytes.push(b'T');
+    for value in [0.25f64, -0.15, -0.06, 0.2, -0.1, -0.05] {
+        bytes.extend(value.to_be_bytes());
+    }
+    crate::test_support::with_decode_context(|_ctx| {
+        let (term, end) =
+            super::term_use_at(&bytes, 0, super::ChartPointLayout::Xyz3, false).unwrap();
+        assert_eq!(term.form, super::TermUseForm::T);
+        assert_eq!(end, bytes.len());
+        assert_eq!(term.data.point().get(), [250.0, -150.0, -60.0]);
     });
 }
 

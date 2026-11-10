@@ -22,6 +22,7 @@ use super::refusal_of;
 use super::revision_surface_tail_has_current_cache;
 use super::rolling_ball_jet_point;
 use super::scale_vector;
+use super::spine_rolling_ball::spine_rolling_ball_point;
 use super::subset_support_parameters_with_derivatives;
 use super::surface_first_order;
 use super::sweep_has_current_cache;
@@ -508,6 +509,14 @@ pub(super) fn model_surface_point_by_id_inner(
                                 .flatten(),
                         ),
                     }
+                } else if surface.geometry.solved().is_none() {
+                    point_evaluation(spine_rolling_ball_point(
+                        admission,
+                        index,
+                        definition_payload,
+                        u,
+                        v,
+                    ))
                 } else {
                     direct_evaluation(admission, &surface.geometry, u, v, normal)
                 }

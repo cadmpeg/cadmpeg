@@ -2976,6 +2976,7 @@ impl<'a> Builder<'a> {
 
     fn shell_is_closed(&self, shell: &Shell) -> bool {
         let mut uses: BTreeMap<&str, [usize; 2]> = BTreeMap::new();
+        let mut vertex_bounded = false;
         for face_id in shell.faces() {
             let Some(face) = self.faces.get(face_id.as_str()) else {
                 return false;
@@ -2984,6 +2985,7 @@ impl<'a> Builder<'a> {
                 let Some(lp) = self.loops.get(loop_id.as_str()) else {
                     return false;
                 };
+                vertex_bounded |= lp.singular_vertex().is_some();
                 for coedge_id in lp.coedges() {
                     let Some(coedge) = self.coedges.get(coedge_id.as_str()) else {
                         return false;
@@ -3011,7 +3013,9 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        !uses.is_empty() && uses.values().all(|[forward, reversed]| forward == reversed)
+        // A whole sphere is closed with no edges at all: only pole vertices bound it.
+        (vertex_bounded || !uses.is_empty())
+            && uses.values().all(|[forward, reversed]| forward == reversed)
     }
 
     /// Writes the face use, or its reverse when `reversed` is set: the
@@ -4350,6 +4354,13 @@ impl<'a> Builder<'a> {
                     geometry::curve(&mut self.emitter, &SolvedCurveGeometry::Nurbs(fitted))?;
                 self.fitted_helix_curves.insert(id.to_owned());
                 reference
+            } else if let Some(exact) = self.approximations.exact_intersection(curve_id) {
+                let procedural = self.procedural_curves.get(curve_id)?.id.to_string();
+                let reference = geometry::curve(&mut self.emitter, &exact)?;
+                self.sampled_curves.insert(procedural);
+                reference
+            } else if let Some(chart) = self.approximations.chart_on_edge_vertices(curve_id) {
+                geometry::curve(&mut self.emitter, &chart)?
             } else if geometry::curve_is_supported(&geometry) {
                 geometry::curve(&mut self.emitter, geometry.solved()?)?
             } else {
@@ -6392,6 +6403,34 @@ impl<'a> Builder<'a> {
                     self.sampled_curves.len(),
                     self.sampled_surfaces.len(),
                     self.approximations.residual_limit()
+                ),
+            );
+        }
+        let (free_form_blends, free_form_residual) = self.approximations.free_form_blend_fits();
+        if free_form_blends > 0 {
+            self.loss(
+                StepLossCode::ProceduralSampledToBspline,
+                format!(
+                    "{free_form_blends} of those procedural surfaces are blends on free-form supports, sampled within {free_form_residual} instead"
+                ),
+            );
+        }
+        let (analytic_blends, analytic_residual) = self.approximations.analytic_blend_fits();
+        if analytic_blends > 0 {
+            self.loss(
+                StepLossCode::ProceduralSampledToBspline,
+                format!(
+                    "{analytic_blends} of those procedural surfaces are blends on analytic supports, sampled within {analytic_residual} instead"
+                ),
+            );
+        }
+        let (free_form_curves, free_form_curve_residual) =
+            self.approximations.free_form_curve_fits();
+        if free_form_curves > 0 {
+            self.loss(
+                StepLossCode::ProceduralSampledToBspline,
+                format!(
+                    "{free_form_curves} of those procedural curves lie on free-form surfaces, sampled within {free_form_curve_residual} instead"
                 ),
             );
         }
