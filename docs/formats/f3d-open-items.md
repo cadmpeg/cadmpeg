@@ -1910,3 +1910,39 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-341. Chamfer distance reference face
+
+**Question.** Which stored field assigns the first distance of a two-distance chamfer, or the distance of a distance-angle chamfer, to an input support face?
+
+**Known.** Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false.
+
+**Need.** A rule that binds each selected input edge to its distance reference face, with both face widths checked against the stored dimensional specification. The rule must cover reversed recipe-reference order, propagated edge chains, and support faces split by earlier operations.
+
+**Conflict.** None.
+
+**Note.** The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
+
+### DR-342. Chamfer recipes with conflicting transition selections
+
+**Question.** Which stored context selects the input edges when a standard chamfer recipe and the exact ASM treatment transition supply different edge candidates?
+
+**Known.** A standard edge recipe can retain several primary-reference boundary candidates or an empty intersection. The same scope can carry a compact persistent identity with a nonempty treatment-transition chain. A chain describes the complete operation transition. The projector retains independently resolved recipe edges in a partial historical selection and retains the unresolved operand identities.
+
+**Need.** A rule for the recipe's evaluation context and selected edge run that accounts for every operand and every edge of the treatment transition. A multi-member group also needs the assignment between members and selected edges when the recipe carries distinct selections.
+
+**Conflict.** None.
+
+**Note.** DR-333 tracks the candidate-face meaning of prefix record index `1`.
+
+### DR-343. Chamfer rotation parameter on oblique support faces
+
+**Question.** How does `rotateAngle` determine the second setback of a chamfer whose input support faces meet at an oblique angle?
+
+**Known.** The projector pairs `leftDistance` with `rotateAngle` and transfers the pair as `ChamferSpec::DistanceAngle`. That IR form measures its angle from the distance reference face. An operation with a 0.4 mm `leftDistance` and a 30-degree `rotateAngle` has input plane normals `(0, 0, 1)` and `(0.8660254037844384, 0, 0.5000000000000004)`. Its result treatment plane has normal `(0.6265218814381287, 0, 0.779403831193578)`. The stored distance is the setback on the second input plane. The other setback is approximately 0.230940108 mm.
+
+**Need.** A dimension rule checked on acute, right-angle, and obtuse support pairs with both setback assignments. The checks must distinguish a face angle from a parameter that encodes the ratio of two setbacks.
+
+**Conflict.** The result plane forms an angle of approximately 21.2 degrees with the second input plane and 38.8 degrees with the first. Each differs from the 30-degree IR angle.
+
+**Note.** DR-341 tracks the input reference-face assignment.
