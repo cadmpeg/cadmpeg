@@ -373,7 +373,7 @@ travel.
 
 **Question.** What do the flag byte at offset 20 and the u32 at offset 25 of a flagged mesh collection store, and what does the u32 of each flagged body entry store?
 
-**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. The u32 at offset 25 is `1` in every empty flagged collection, and in collections with bodies it takes values from 1 through 6 that differ from the body count. Every body entry stores `1`. DR-337 records a flagged collection whose nested record lists two mesh bodies.
+**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. The u32 at offset 25 is `1` in every empty flagged collection, and in collections with bodies it is at least the body count: it equals the body count in six collections and in DR-337's collection 173, and it is 6 and 4 in two collections with two bodies and 3 in one collection with one body. Every body entry stores `1`. DR-337 records a flagged collection whose nested record lists two mesh bodies.
 
 **Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, establishes the meanings of these fields.
 
