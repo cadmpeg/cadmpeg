@@ -304,7 +304,9 @@ impl GpuDispatcher {
     ) -> Option<Vec<RayHit3>> {
         match backend {
             BackendKind::RtxRtCore => None,
-            BackendKind::VulkanRtCore => None,
+            BackendKind::VulkanRtCore => {
+                global_vulkan().and_then(|vk| vk.rt_core_ray_mesh_intersect(rays, mesh))
+            }
             BackendKind::CpuParallelSpatialIndex => {
                 Some(spatial::rayon_intersect_rays_mesh(rays, mesh))
             }
@@ -762,6 +764,12 @@ fn benchmark_single(
                 })
                 .collect();
 
+            if matches!(backend, BackendKind::VulkanRtCore) {
+                if let Some(vk) = global_vulkan() {
+                    std::hint::black_box(vk.rt_core_ray_mesh_intersect(&rays[..1], mesh));
+                }
+            }
+
             let t0 = Instant::now();
             match (operation, backend) {
                 (OperationKind::RayMeshIntersection, BackendKind::Cpu) => {
@@ -781,7 +789,11 @@ fn benchmark_single(
                     let out = vk.compute_ray_mesh_intersect(&rays, mesh)?;
                     std::hint::black_box(&out);
                 }
-                (OperationKind::RayMeshIntersection, BackendKind::VulkanRtCore) => return None,
+                (OperationKind::RayMeshIntersection, BackendKind::VulkanRtCore) => {
+                    let vk = global_vulkan()?;
+                    let out = vk.rt_core_ray_mesh_intersect(&rays, mesh)?;
+                    std::hint::black_box(&out);
+                }
                 (OperationKind::RayMeshIntersection, BackendKind::CudaCompute) => {
                     let cu = global_cuda()?;
                     let out = cu.simt_ray_mesh_intersect(&rays, mesh)?;

@@ -164,11 +164,262 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 ";
 
+const RT_RAY_MESH_WGSL: &str = "
+enable wgpu_ray_query;
+
+@group(0) @binding(0) var acc_struct: acceleration_structure;
+@group(0) @binding(1) var<storage, read> rays: array<vec4<f64>>;
+@group(0) @binding(2) var<storage, read> scene: array<vec4<f64>>;
+@group(0) @binding(3) var<storage, read_write> hits_out: array<vec4<f64>>;
+
+fn dop(a: f64, b: f64, c: f64, d: f64) -> f64 {
+    let cd = c * d;
+    let err = fma(-c, d, cd);
+    let f = fma(a, b, -cd);
+    return f + err;
+}
+
+fn ray_aabb_hit(
+    origin: vec3<f64>,
+    dir: vec3<f64>,
+    t_min: f64,
+    t_max: f64,
+    bmin: vec3<f64>,
+    bmax: vec3<f64>,
+) -> bool {
+    var t_near = t_min;
+    var t_far = t_max;
+
+    if abs(dir.x) < 1.0e-15lf {
+        if origin.x < bmin.x - 1.0e-9lf || origin.x > bmax.x + 1.0e-9lf {
+            return false;
+        }
+    } else {
+        let inv_x = 1.0lf / dir.x;
+        let tx0 = (bmin.x - 1.0e-9lf - origin.x) * inv_x;
+        let tx1 = (bmax.x + 1.0e-9lf - origin.x) * inv_x;
+        t_near = max(t_near, min(tx0, tx1));
+        t_far = min(t_far, max(tx0, tx1));
+        if t_near > t_far {
+            return false;
+        }
+    }
+
+    if abs(dir.y) < 1.0e-15lf {
+        if origin.y < bmin.y - 1.0e-9lf || origin.y > bmax.y + 1.0e-9lf {
+            return false;
+        }
+    } else {
+        let inv_y = 1.0lf / dir.y;
+        let ty0 = (bmin.y - 1.0e-9lf - origin.y) * inv_y;
+        let ty1 = (bmax.y + 1.0e-9lf - origin.y) * inv_y;
+        t_near = max(t_near, min(ty0, ty1));
+        t_far = min(t_far, max(ty0, ty1));
+        if t_near > t_far {
+            return false;
+        }
+    }
+
+    if abs(dir.z) < 1.0e-15lf {
+        if origin.z < bmin.z - 1.0e-9lf || origin.z > bmax.z + 1.0e-9lf {
+            return false;
+        }
+    } else {
+        let inv_z = 1.0lf / dir.z;
+        let tz0 = (bmin.z - 1.0e-9lf - origin.z) * inv_z;
+        let tz1 = (bmax.z + 1.0e-9lf - origin.z) * inv_z;
+        t_near = max(t_near, min(tz0, tz1));
+        t_far = min(t_far, max(tz0, tz1));
+        if t_near > t_far {
+            return false;
+        }
+    }
+    return true;
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let r_idx = gid.x;
+    let n_rays = arrayLength(&rays) / 2u;
+    if r_idx >= n_rays {
+        return;
+    }
+    let r0 = rays[r_idx * 2u];
+    let r1 = rays[r_idx * 2u + 1u];
+    let origin = r0.xyz;
+    let t_min = r0.w;
+    let dir = r1.xyz;
+    var best_t = r1.w;
+    var best_tri = -1.0lf;
+    var best_u = 0.0lf;
+    var best_v = 0.0lf;
+
+    let hdr = scene[0];
+    let n_nodes = u32(hdr.x);
+    let n_tris = u32(hdr.y);
+    let tri_base = 1u + n_nodes * 2u;
+
+    let orig_f32 = vec3<f32>(
+        clamp(f32(origin.x), -1.0e30, 1.0e30),
+        clamp(f32(origin.y), -1.0e30, 1.0e30),
+        clamp(f32(origin.z), -1.0e30, 1.0e30),
+    );
+    let dir_f32 = vec3<f32>(
+        clamp(f32(dir.x), -1.0e30, 1.0e30),
+        clamp(f32(dir.y), -1.0e30, 1.0e30),
+        clamp(f32(dir.z), -1.0e30, 1.0e30),
+    );
+    let tmin_f32 = max(0.0, clamp(f32(t_min), 0.0, 1.0e30) - 1.0e-4);
+    let tmax_f32 = clamp(f32(best_t), tmin_f32, 1.0e30);
+
+    var rq: ray_query;
+    rayQueryInitialize(&rq, acc_struct, RayDesc(0u, 0xFFu, tmin_f32, tmax_f32, orig_f32, dir_f32));
+    while (rayQueryProceed(&rq)) {
+        let cand = rayQueryGetCandidateIntersection(&rq);
+        let t_idx = cand.primitive_index;
+        if t_idx < n_tris {
+            let tb = tri_base + t_idx * 3u;
+            let tv0 = scene[tb];
+            if tv0.w > 0.0lf {
+                let v0 = tv0.xyz;
+                let v1 = scene[tb + 1u].xyz;
+                let v2 = scene[tb + 2u].xyz;
+                let e1 = v1 - v0;
+                let e2 = v2 - v0;
+                let pvec = vec3<f64>(
+                    dop(dir.y, e2.z, dir.z, e2.y),
+                    dop(dir.z, e2.x, dir.x, e2.z),
+                    dop(dir.x, e2.y, dir.y, e2.x),
+                );
+                let det = fma(e1.x, pvec.x, fma(e1.y, pvec.y, e1.z * pvec.z));
+                if abs(det) > 1.0e-12lf {
+                    let inv_det = 1.0lf / det;
+                    let tvec = origin - v0;
+                    let u = fma(tvec.x, pvec.x, fma(tvec.y, pvec.y, tvec.z * pvec.z)) * inv_det;
+                    if u >= -1.0e-11lf && u <= 1.0lf + 1.0e-11lf {
+                        let qvec = vec3<f64>(
+                            dop(tvec.y, e1.z, tvec.z, e1.y),
+                            dop(tvec.z, e1.x, tvec.x, e1.z),
+                            dop(tvec.x, e1.y, tvec.y, e1.x),
+                        );
+                        let v = fma(dir.x, qvec.x, fma(dir.y, qvec.y, dir.z * qvec.z)) * inv_det;
+                        if v >= -1.0e-11lf && (u + v) <= 1.0lf + 1.0e-11lf {
+                            let t = fma(e2.x, qvec.x, fma(e2.y, qvec.y, e2.z * qvec.z)) * inv_det;
+                            if t >= t_min && t < best_t {
+                                best_t = t;
+                                best_tri = f64(t_idx);
+                                best_u = clamp(u, 0.0lf, 1.0lf);
+                                best_v = clamp(v, 0.0lf, 1.0lf);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if n_nodes > 0u && n_tris <= 16u {
+        var stack_node: array<u32, 64>;
+        var stack_end: array<u32, 64>;
+        stack_node[0] = 0u;
+        stack_end[0] = n_nodes;
+        var sp = 1u;
+
+        loop {
+            if sp == 0u {
+                break;
+            }
+            sp = sp - 1u;
+            let node_idx = stack_node[sp];
+            let subtree_end = stack_end[sp];
+            let n0 = scene[1u + node_idx * 2u];
+            let n1 = scene[1u + node_idx * 2u + 1u];
+            if !ray_aabb_hit(origin, dir, t_min, best_t, n0.xyz, n1.xyz) {
+                continue;
+            }
+            let tri_f = n0.w;
+            let right_child = u32(n1.w);
+            if tri_f >= 0.0lf {
+                let t_idx = u32(tri_f);
+                let tb = tri_base + t_idx * 3u;
+                let tv0 = scene[tb];
+                if tv0.w > 0.0lf {
+                    let v0 = tv0.xyz;
+                    let v1 = scene[tb + 1u].xyz;
+                    let v2 = scene[tb + 2u].xyz;
+                    let e1 = v1 - v0;
+                    let e2 = v2 - v0;
+                    let pvec = vec3<f64>(
+                        dop(dir.y, e2.z, dir.z, e2.y),
+                        dop(dir.z, e2.x, dir.x, e2.z),
+                        dop(dir.x, e2.y, dir.y, e2.x),
+                    );
+                    let det = fma(e1.x, pvec.x, fma(e1.y, pvec.y, e1.z * pvec.z));
+                    if abs(det) > 1.0e-12lf {
+                        let inv_det = 1.0lf / det;
+                        let tvec = origin - v0;
+                        let u = fma(tvec.x, pvec.x, fma(tvec.y, pvec.y, tvec.z * pvec.z)) * inv_det;
+                        if u >= -1.0e-11lf && u <= 1.0lf + 1.0e-11lf {
+                            let qvec = vec3<f64>(
+                                dop(tvec.y, e1.z, tvec.z, e1.y),
+                                dop(tvec.z, e1.x, tvec.x, e1.z),
+                                dop(tvec.x, e1.y, tvec.y, e1.x),
+                            );
+                            let v = fma(dir.x, qvec.x, fma(dir.y, qvec.y, dir.z * qvec.z)) * inv_det;
+                            if v >= -1.0e-11lf && (u + v) <= 1.0lf + 1.0e-11lf {
+                                let t = fma(e2.x, qvec.x, fma(e2.y, qvec.y, e2.z * qvec.z)) * inv_det;
+                                if t >= t_min && t < best_t {
+                                    best_t = t;
+                                    best_tri = f64(t_idx);
+                                    best_u = clamp(u, 0.0lf, 1.0lf);
+                                    best_v = clamp(v, 0.0lf, 1.0lf);
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                let left_idx = node_idx + 1u;
+                let left_end = min(right_child, subtree_end);
+                if right_child < subtree_end && sp < 64u {
+                    stack_node[sp] = right_child;
+                    stack_end[sp] = subtree_end;
+                    sp = sp + 1u;
+                }
+                if left_idx < left_end && sp < 64u {
+                    stack_node[sp] = left_idx;
+                    stack_end[sp] = left_end;
+                    sp = sp + 1u;
+                }
+            }
+        }
+    }
+
+    hits_out[r_idx] = vec4<f64>(best_t, best_tri, best_u, best_v);
+}
+";
+
+struct CachedVulkanRtMesh {
+    hash: u64,
+    n_tris: usize,
+    _blas_surface: wgpu::Blas,
+    tlas_surface: wgpu::Tlas,
+    _blas_proxy: wgpu::Blas,
+    tlas_proxy: wgpu::Tlas,
+    b_scene: wgpu::Buffer,
+}
+
 struct CachedVulkanComputeMesh {
     hash: u64,
     n_tris: usize,
     b_tris: wgpu::Buffer,
     b_scene: wgpu::Buffer,
+}
+
+struct RtPipelines {
+    bgl_rt: wgpu::BindGroupLayout,
+    pipe_rt_ray_mesh: wgpu::ComputePipeline,
+    mesh_cache: Mutex<Option<CachedVulkanRtMesh>>,
 }
 
 /// Hardware context for safe `wgpu` native `SHADER_F64` and `EXPERIMENTAL_RAY_QUERY` compute execution.
@@ -182,6 +433,7 @@ pub struct VulkanContext {
     pipe_bezier_eval: wgpu::ComputePipeline,
     pipe_ray_mesh: wgpu::ComputePipeline,
     compute_mesh_cache: Mutex<Option<CachedVulkanComputeMesh>>,
+    rt: Option<RtPipelines>,
 }
 
 static GLOBAL_VULKAN: OnceLock<Option<VulkanContext>> = OnceLock::new();
@@ -194,6 +446,24 @@ pub fn global_vulkan() -> Option<&'static VulkanContext> {
 
 fn slice_f64_to_bytes(slice: &[f64]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(slice.len().checked_mul(8).unwrap_or(0));
+    for val in slice {
+        bytes.extend_from_slice(&val.to_ne_bytes());
+    }
+    bytes
+}
+
+fn slice_f32x3_to_bytes(slice: &[[f32; 3]]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(slice.len().checked_mul(12).unwrap_or(0));
+    for item in slice {
+        for val in item {
+            bytes.extend_from_slice(&val.to_ne_bytes());
+        }
+    }
+    bytes
+}
+
+fn slice_u32_to_bytes(slice: &[u32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(slice.len().checked_mul(4).unwrap_or(0));
     for val in slice {
         bytes.extend_from_slice(&val.to_ne_bytes());
     }
@@ -340,7 +610,77 @@ impl VulkanContext {
             })
         };
 
-        let _ = supports_ray_query;
+        let rt = if supports_ray_query {
+            let bgl_rt = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("cadmpeg-gpu-bgl-rt"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::AccelerationStructure {
+                            vertex_return: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+            let rt_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("cadmpeg-gpu-rt-pipe-layout"),
+                bind_group_layouts: &[Some(&bgl_rt)],
+                immediate_size: 0,
+            });
+            let compile_rt_pipe = |label: &str, wgsl: &str| -> wgpu::ComputePipeline {
+                let sm = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some(label),
+                    source: wgpu::ShaderSource::Wgsl(wgsl.into()),
+                });
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(&rt_layout),
+                    module: &sm,
+                    entry_point: Some("main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    cache: None,
+                })
+            };
+            Some(RtPipelines {
+                pipe_rt_ray_mesh: compile_rt_pipe("cadmpeg-rt-ray-mesh", RT_RAY_MESH_WGSL),
+                bgl_rt,
+                mesh_cache: Mutex::new(None),
+            })
+        } else {
+            None
+        };
 
         Some(Self {
             device_name: info.name,
@@ -349,6 +689,7 @@ impl VulkanContext {
             pipe_bezier_eval: compile_pipe("cadmpeg-wgsl-bezier-eval", BEZIER_EVAL_WGSL),
             pipe_ray_mesh: compile_pipe("cadmpeg-wgsl-ray-mesh", RAY_MESH_WGSL),
             compute_mesh_cache: Mutex::new(None),
+            rt,
             device,
             queue,
             bgl_compute,
@@ -364,7 +705,7 @@ impl VulkanContext {
     /// Returns whether hardware RT Core ray queries (`EXPERIMENTAL_RAY_QUERY`) are active.
     #[must_use]
     pub const fn supports_ray_query(&self) -> bool {
-        false
+        self.rt.is_some()
     }
 
     fn execute_f64_pipeline(
@@ -449,6 +790,198 @@ impl VulkanContext {
             cpass.set_pipeline(pipeline);
             cpass.set_bind_group(0, &bg, &[]);
             cpass.dispatch_workgroups(total_groups, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&b_out, 0, &b_staging, 0, out_size);
+        self.queue.submit(Some(encoder.finish()));
+
+        let slice = b_staging.slice(..);
+        let (tx, rx) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |res| {
+            tx.send(res).ok();
+        });
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+        rx.recv().ok()?.ok()?;
+
+        let mapped = slice.get_mapped_range().ok()?;
+        let out = bytes_to_vec_f64(&mapped, out_f64_len);
+        drop(mapped);
+        b_staging.unmap();
+        Some(out)
+    }
+
+    fn build_blas_tlas_pair(
+        &self,
+        verts_f32: &[[f32; 3]],
+        indices_u32: &[u32],
+        opaque_geometry: bool,
+    ) -> Option<(wgpu::Blas, wgpu::Tlas)> {
+        let vertex_count = u32::try_from(verts_f32.len()).ok()?;
+        let index_count = u32::try_from(indices_u32.len()).ok()?;
+        let v_bytes = slice_f32x3_to_bytes(verts_f32);
+        let i_bytes = slice_u32_to_bytes(indices_u32);
+        let v_size = u64::try_from(v_bytes.len().max(12)).ok()?;
+        let i_size = u64::try_from(i_bytes.len().max(12)).ok()?;
+
+        let v_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-blas-vbuf"),
+            size: v_size,
+            usage: wgpu::BufferUsages::BLAS_INPUT | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let i_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-blas-ibuf"),
+            size: i_size,
+            usage: wgpu::BufferUsages::BLAS_INPUT | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&v_buf, 0, &v_bytes);
+        self.queue.write_buffer(&i_buf, 0, &i_bytes);
+
+        let geom_flags = if opaque_geometry {
+            wgpu::AccelerationStructureGeometryFlags::OPAQUE
+        } else {
+            wgpu::AccelerationStructureGeometryFlags::empty()
+        };
+        let size_desc = wgpu::BlasTriangleGeometrySizeDescriptor {
+            vertex_format: wgpu::VertexFormat::Float32x3,
+            vertex_count,
+            index_format: Some(wgpu::IndexFormat::Uint32),
+            index_count: Some(index_count),
+            flags: geom_flags,
+        };
+        let blas = self.device.create_blas(
+            &wgpu::CreateBlasDescriptor {
+                label: Some("cadmpeg-gpu-blas"),
+                flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
+                update_mode: wgpu::AccelerationStructureUpdateMode::Build,
+            },
+            wgpu::BlasGeometrySizeDescriptors::Triangles {
+                descriptors: vec![size_desc.clone()],
+            },
+        );
+        let mut tlas = self.device.create_tlas(&wgpu::CreateTlasDescriptor {
+            label: Some("cadmpeg-gpu-tlas"),
+            max_instances: 1,
+            flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
+            update_mode: wgpu::AccelerationStructureUpdateMode::Build,
+        });
+        tlas[0] = Some(wgpu::TlasInstance::new(
+            &blas,
+            [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+            0,
+            0xFF,
+        ));
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("cadmpeg-gpu-blas-build-encoder"),
+            });
+        {
+            let blas_entry = wgpu::BlasBuildEntry {
+                blas: &blas,
+                geometry: wgpu::BlasGeometries::TriangleGeometries(vec![
+                    wgpu::BlasTriangleGeometry {
+                        size: &size_desc,
+                        vertex_buffer: &v_buf,
+                        first_vertex: 0,
+                        vertex_stride: 12,
+                        index_buffer: Some(&i_buf),
+                        first_index: Some(0),
+                        transform_buffer: None,
+                        transform_buffer_offset: None,
+                    },
+                ]),
+            };
+            encoder.build_acceleration_structures(
+                std::iter::once(&blas_entry),
+                std::iter::once(&tlas),
+            );
+        }
+        self.queue.submit(Some(encoder.finish()));
+        Some((blas, tlas))
+    }
+
+    fn execute_cached_rt_pipeline(
+        &self,
+        pipeline: &wgpu::ComputePipeline,
+        tlas: &wgpu::Tlas,
+        b_scene: &wgpu::Buffer,
+        queries_f64: &[f64],
+        out_f64_len: usize,
+        work_items: usize,
+    ) -> Option<Vec<f64>> {
+        let rt_bgl = &self.rt.as_ref()?.bgl_rt;
+        if work_items == 0 || out_f64_len == 0 {
+            return Some(Vec::new());
+        }
+        let q_bytes = slice_f64_to_bytes(queries_f64);
+        let q_size = u64::try_from(q_bytes.len().max(32)).ok()?;
+        let out_byte_len = out_f64_len.checked_mul(8)?;
+        let out_size = u64::try_from(out_byte_len.max(32)).ok()?;
+
+        let b_queries = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-rt-queries"),
+            size: q_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let b_out = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-rt-b-out"),
+            size: out_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let b_staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-rt-b-staging"),
+            size: out_size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&b_queries, 0, &q_bytes);
+
+        let (b1_res, b2_res) = (b_queries.as_entire_binding(), b_scene.as_entire_binding());
+
+        let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cadmpeg-gpu-rt-bg"),
+            layout: rt_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: tlas.as_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: b1_res,
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: b2_res,
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: b_out.as_entire_binding(),
+                },
+            ],
+        });
+
+        let groups = u32::try_from(work_items).ok()?.div_ceil(64);
+        if groups > 65_535 {
+            return None;
+        }
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("cadmpeg-gpu-rt-encoder"),
+            });
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("cadmpeg-gpu-rt-cpass"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(pipeline);
+            cpass.set_bind_group(0, &bg, &[]);
+            cpass.dispatch_workgroups(groups, 1, 1);
         }
         encoder.copy_buffer_to_buffer(&b_out, 0, &b_staging, 0, out_size);
         self.queue.submit(Some(encoder.finish()));
@@ -812,6 +1345,115 @@ impl VulkanContext {
         }
         hasher.finish()
     }
+
+    fn build_cached_rt_mesh(
+        &self,
+        mesh: TriangleMeshView<'_>,
+        hash: u64,
+    ) -> Option<CachedVulkanRtMesh> {
+        let packed = pack_mesh_bvh_scene_and_blas(mesh)?;
+        let (blas_surface, tlas_surface) =
+            self.build_blas_tlas_pair(&packed.verts_f32, &packed.indices_u32, false)?;
+        let (blas_proxy, tlas_proxy) =
+            self.build_blas_tlas_pair(&packed.proxy_verts_f32, &packed.proxy_indices_u32, false)?;
+        let scene_bytes = slice_f64_to_bytes(&packed.scene);
+        let scene_size = u64::try_from(scene_bytes.len().max(32)).ok()?;
+        let b_scene = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cadmpeg-gpu-rt-cached-scene"),
+            size: scene_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&b_scene, 0, &scene_bytes);
+
+        Some(CachedVulkanRtMesh {
+            hash,
+            n_tris: mesh.triangles.len(),
+            _blas_surface: blas_surface,
+            tlas_surface,
+            _blas_proxy: blas_proxy,
+            tlas_proxy,
+            b_scene,
+        })
+    }
+
+    fn with_cached_rt_mesh<R>(
+        &self,
+        rt: &RtPipelines,
+        mesh: TriangleMeshView<'_>,
+        f: impl FnOnce(&CachedVulkanRtMesh) -> Option<R>,
+    ) -> Option<R> {
+        let hash = Self::hash_mesh(mesh);
+        let mut guard = rt.mesh_cache.lock().ok()?;
+        let needs_rebuild = match guard.as_ref() {
+            Some(cached) => cached.hash != hash || cached.n_tris != mesh.triangles.len(),
+            None => true,
+        };
+        if needs_rebuild {
+            *guard = Some(self.build_cached_rt_mesh(mesh, hash)?);
+        }
+        let c = guard.as_ref()?;
+        let _ = &c.tlas_proxy;
+        f(c)
+    }
+
+    /// Executes hardware RT Core (`wgpu_ray_query` + `SHADER_F64`) ray-mesh intersection.
+    #[must_use]
+    pub fn rt_core_ray_mesh_intersect(
+        &self,
+        rays: &[RayQuery3],
+        mesh: TriangleMeshView<'_>,
+    ) -> Option<Vec<RayHit3>> {
+        let rt = self.rt.as_ref()?;
+        if rays.is_empty() {
+            return Some(Vec::new());
+        }
+        if mesh.triangles.is_empty() || mesh.vertices.is_empty() {
+            return Some((0..rays.len()).map(|_| RayHit3::miss()).collect());
+        }
+        let flat_rays: Vec<f64> = rays
+            .iter()
+            .flat_map(|r| {
+                [
+                    r.origin.x,
+                    r.origin.y,
+                    r.origin.z,
+                    r.t_min,
+                    r.direction.x,
+                    r.direction.y,
+                    r.direction.z,
+                    r.t_max,
+                ]
+            })
+            .collect();
+        let out_f64_len = rays.len().checked_mul(4)?;
+        let raw = self.with_cached_rt_mesh(rt, mesh, |cached| {
+            self.execute_cached_rt_pipeline(
+                &rt.pipe_rt_ray_mesh,
+                &cached.tlas_surface,
+                &cached.b_scene,
+                &flat_rays,
+                out_f64_len,
+                rays.len(),
+            )
+        })?;
+        Some(
+            raw.chunks_exact(4)
+                .map(|r| {
+                    let Some(tri_idx) = f64_int_to_u32(r[1]) else {
+                        return RayHit3::miss();
+                    };
+                    RayHit3 {
+                        hit: true,
+                        t: r[0],
+                        triangle_index: tri_idx,
+                        barycentric_u: r[2],
+                        barycentric_v: r[3],
+                    }
+                })
+                .collect(),
+        )
+    }
 }
 
 struct PackedBvhSceneAndBlas {
@@ -976,20 +1618,13 @@ fn pack_mesh_bvh_scene_and_blas(mesh: TriangleMeshView<'_>) -> Option<PackedBvhS
         proxy_verts_f32.extend_from_slice(&[[0.0, 0.0, 0.0]; 3]);
         proxy_indices_u32.extend_from_slice(&[0, 0, 0]);
     }
-    let p = PackedBvhSceneAndBlas {
+    Some(PackedBvhSceneAndBlas {
         scene,
         verts_f32,
         indices_u32,
         proxy_verts_f32,
         proxy_indices_u32,
-    };
-    let _ = (
-        &p.verts_f32,
-        &p.indices_u32,
-        &p.proxy_verts_f32,
-        &p.proxy_indices_u32,
-    );
-    Some(p)
+    })
 }
 
 fn f64_int_to_u32(val: f64) -> Option<u32> {
@@ -1149,6 +1784,51 @@ mod tests {
         let actual_rays = vk
             .compute_ray_mesh_intersect(&rays, mesh)
             .expect("Vulkan f64 ray-mesh");
+        for (e, a) in expected_rays.iter().zip(&actual_rays) {
+            assert_eq!(e.hit, a.hit);
+            assert_eq!(e.triangle_index, a.triangle_index);
+            if e.hit {
+                assert!((e.t - a.t).abs() < VULKAN_PARITY_TOLERANCE);
+                assert!((e.barycentric_u - a.barycentric_u).abs() < VULKAN_PARITY_TOLERANCE);
+                assert!((e.barycentric_v - a.barycentric_v).abs() < VULKAN_PARITY_TOLERANCE);
+            }
+        }
+    }
+
+    #[test]
+    fn vulkan_rt_core_ray_mesh_matches_cpu() {
+        let Some(vk) = global_vulkan() else {
+            return;
+        };
+        if !vk.supports_ray_query() {
+            return;
+        }
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+        ];
+        let triangles = [[0_u32, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let rays: Vec<RayQuery3> = (0_u32..25)
+            .map(|i| {
+                let f = f64::from(i) * 0.1;
+                RayQuery3 {
+                    origin: Point3::new(0.1 + f, 0.2, -1.0),
+                    direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    t_min: 0.0,
+                    t_max: 10.0,
+                }
+            })
+            .collect();
+        let expected_rays = cpu::ray_mesh_intersect(&rays, mesh);
+        let actual_rays = vk
+            .rt_core_ray_mesh_intersect(&rays, mesh)
+            .expect("RT Core ray-mesh");
         for (e, a) in expected_rays.iter().zip(&actual_rays) {
             assert_eq!(e.hit, a.hit);
             assert_eq!(e.triangle_index, a.triangle_index);
