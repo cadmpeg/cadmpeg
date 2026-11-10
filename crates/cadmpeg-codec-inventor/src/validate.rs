@@ -2625,6 +2625,10 @@ fn validate_features(
                             properties: &data.pm_dc_feature_properties,
                         },
                     ),
+                    crate::feature::body_selection::qualified_split_target(
+                        raw_feature,
+                        &data.pm_dc_feature_properties,
+                    ),
                 )
             }) {
                 findings.push(finding(

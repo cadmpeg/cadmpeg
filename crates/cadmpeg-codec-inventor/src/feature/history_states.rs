@@ -405,6 +405,7 @@ fn target_wrapper(feature: &Feature) -> Option<&str> {
     match targets {
         BodySelection::Native(native) => Some(native.as_str()),
         BodySelection::Resolved { native, .. } => Some(native.as_str()),
+        BodySelection::Local { native, .. } => Some(native.as_str()),
         _ => None,
     }
 }
