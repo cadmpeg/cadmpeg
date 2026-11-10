@@ -40,9 +40,11 @@ fn saved_edges_are_recorded_apart_from_feature_outputs_in_both_brep_namespaces()
                 .map(String::as_str),
             Some("1")
         );
-        assert!(!losses
-            .iter()
-            .any(|loss| loss.code == F3dLossCode::FeatureOutputBodyUnbound.kind()));
+        assert!(
+            !losses
+                .iter()
+                .any(|loss| loss.code == F3dLossCode::FeatureOutputBodyUnbound.kind())
+        );
     }
 }
 
@@ -62,12 +64,16 @@ fn saved_edge_outside_the_declared_brep_source_keeps_the_unbound_loss() {
         )
         .unwrap();
         assert!(feature.evaluation.outputs().is_empty());
-        assert!(!feature
-            .source_properties
-            .contains_key("affected_saved_edges"));
-        assert!(losses
-            .iter()
-            .any(|loss| loss.code == F3dLossCode::FeatureOutputBodyUnbound.kind()));
+        assert!(
+            !feature
+                .source_properties
+                .contains_key("affected_saved_edges")
+        );
+        assert!(
+            losses
+                .iter()
+                .any(|loss| loss.code == F3dLossCode::FeatureOutputBodyUnbound.kind())
+        );
     }
 }
 
@@ -112,9 +118,11 @@ fn several_identities_at_one_slot_of_the_source_bind_nothing_and_report_the_loss
     ] {
         let (feature, unbound) = bind_slot_one(&pair, Some("BREP.selected.smbh"));
         assert!(feature.evaluation.outputs().is_empty());
-        assert!(!feature
-            .source_properties
-            .contains_key("affected_saved_edges"));
+        assert!(
+            !feature
+                .source_properties
+                .contains_key("affected_saved_edges")
+        );
         assert!(unbound);
     }
 }
@@ -128,8 +136,10 @@ fn a_saved_edge_of_another_source_leaves_the_solid_at_its_slot_as_the_output() {
     ];
     let (feature, unbound) = bind_slot_one(&bodies, Some("BREP.other.smbh"));
     assert_eq!(feature.evaluation.outputs(), &[solid.id]);
-    assert!(!feature
-        .source_properties
-        .contains_key("affected_saved_edges"));
+    assert!(
+        !feature
+            .source_properties
+            .contains_key("affected_saved_edges")
+    );
     assert!(!unbound);
 }

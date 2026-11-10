@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    decode_slots, Binder, HistoricalRecordArchive, Slots, Statistics, MAX_HISTORY_BINDING_WORK,
+    Binder, HistoricalRecordArchive, MAX_HISTORY_BINDING_WORK, Slots, Statistics, decode_slots,
 };
 use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, WorkBudget};
@@ -693,9 +693,11 @@ fn assert_reference_dirty(a: &BTreeMap<i64, Record>, b: &BTreeMap<i64, Record>, 
     binder
         .update(&a.keys().copied().collect(), &versions_a)
         .unwrap();
-    assert!(binder
-        .resolution_changes(changed, &versions_b)
-        .contains(&21));
+    assert!(
+        binder
+            .resolution_changes(changed, &versions_b)
+            .contains(&21)
+    );
 }
 
 #[test]

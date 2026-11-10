@@ -13,11 +13,11 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::report::loss::LossNote;
 
-use super::topology_cache::{endpoint_index, TopologyQueryCache, VertexBoundaryIndex};
+use super::topology_cache::{TopologyQueryCache, VertexBoundaryIndex, endpoint_index};
 use super::{boundary_vertices_for_faces, stable_ref};
 use crate::history_records::AsmHistoricalTopology;
 use crate::loss::F3dLossCode;
-use crate::records::topology::face::{prefix_operand_ordinals, DesignFaceOperand};
+use crate::records::topology::face::{DesignFaceOperand, prefix_operand_ordinals};
 
 /// How a face set meets the prefix-operand lanes of a recipe.
 #[derive(Debug, PartialEq)]

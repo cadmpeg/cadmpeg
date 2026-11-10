@@ -108,37 +108,39 @@ fn bounded_face_rule_fixture() -> (
         },
     };
 
-    let identities = vec![DesignEdgeIdentityOperand::try_new(
-        crate::records::topology::edge_identity::DesignEdgeIdentityOperandDraft {
-            id: "f3d:Design/BulkStream.dat:edge-identity#10".into(),
-            scope_record_index: 1,
-            group_record_index: 2,
-            group_member_ordinal: 0,
-            record_index: 10,
-            byte_offset: 100,
-            class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned())
+    let identities = vec![
+        DesignEdgeIdentityOperand::try_new(
+            crate::records::topology::edge_identity::DesignEdgeIdentityOperandDraft {
+                id: "f3d:Design/BulkStream.dat:edge-identity#10".into(),
+                scope_record_index: 1,
+                group_record_index: 2,
+                group_member_ordinal: 0,
+                record_index: 10,
+                byte_offset: 100,
+                class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned())
+                    .unwrap(),
+                layout: crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full,
+                local_id: 13,
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                )
                 .unwrap(),
-            layout: crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full,
-            local_id: 13,
-            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-            )
-            .unwrap(),
-            asset_id_offset: 142,
-            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-            )
-            .unwrap(),
-            context_id_offset: 218,
-            historical: None,
-            treatment_radius_candidates: Vec::new(),
-            transition_edge_candidates: vec![7, 8, 9],
-            resolved_edge_slots: Vec::new(),
-            resolved_edge_slot: None,
-            resolution_identity_id: None,
-        },
-    )
-    .unwrap()];
+                asset_id_offset: 142,
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 218,
+                historical: None,
+                treatment_radius_candidates: Vec::new(),
+                transition_edge_candidates: vec![7, 8, 9],
+                resolved_edge_slots: Vec::new(),
+                resolved_edge_slot: None,
+                resolution_identity_id: None,
+            },
+        )
+        .unwrap(),
+    ];
     let face = DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
         id: "f3d:Design/BulkStream.dat:design-face-operand#10".into(),
         scope_record_index: 1,

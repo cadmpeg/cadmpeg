@@ -3,7 +3,7 @@
 
 #![allow(clippy::default_trait_access)]
 
-use crate::history::{bind_feature_body_selections, FeatureBodySelectionInputs};
+use crate::history::{FeatureBodySelectionInputs, bind_feature_body_selections};
 use crate::records::topology::{
     construction::DesignConstructionOperandGroup,
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
@@ -175,7 +175,7 @@ fn move_body_selection_uses_unique_owning_history() {
 
 fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::{
-        patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, patterns::PatternKind,
     };
     let scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
@@ -270,7 +270,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
 #[test]
 fn pattern_body_seed_preserves_native_selection() {
     use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
+        BodySelection, FeatureDefinition, FeatureOperation, patterns::PatternSeed,
     };
     let feature = pattern_seed_feature();
     assert!(matches!(feature.evaluation.definition(),
@@ -287,8 +287,8 @@ fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
         DesignBodyRecipeOperand, DesignBodyRecipeOperandDraft, DesignOperandOwner,
     };
     use cadmpeg_ir::features::{
-        patterns::{PatternKind, PatternSeed},
         BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+        patterns::{PatternKind, PatternSeed},
     };
 
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(

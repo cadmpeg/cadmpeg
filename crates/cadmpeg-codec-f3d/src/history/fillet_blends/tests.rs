@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    bind_fillet_groups, group_edges, transition_blends, Blend, BlendRows, Candidate, Found,
+    Blend, BlendRows, Candidate, Found, bind_fillet_groups, group_edges, transition_blends,
 };
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCurveAxis,
@@ -550,7 +550,9 @@ fn an_inferred_blend_edge_binds_with_a_note() {
     );
     assert_eq!(
         notes[0].message,
-        format!("{RIB_AT} 17 of history state 1 is inferred from the blend geometry, because the blend's supports share no edge along its axis. The reading assumes the following about the rounded edge. It is an edge of a support in the preceding state. It runs along the axis. Its interior sample point lies farther than the radius from the axis line and within the blend's axial extent. A support that owns it lies on a plane that touches the blend cylinder. The transition deletes it.")
+        format!(
+            "{RIB_AT} 17 of history state 1 is inferred from the blend geometry, because the blend's supports share no edge along its axis. The reading assumes the following about the rounded edge. It is an edge of a support in the preceding state. It runs along the axis. Its interior sample point lies farther than the radius from the axis line and within the blend's axial extent. A support that owns it lies on a plane that touches the blend cylinder. The transition deletes it."
+        )
     );
 }
 
@@ -606,7 +608,9 @@ fn a_blend_edge_below_a_kept_candidate_binds_with_notes_that_name_the_kept_candi
     );
     assert_eq!(
         notes[1].message,
-        format!("{RIB_AT} 21 of history state 1 is the best-ranked deleted candidate of 2 candidates. The reading assumes that the rounded edge is the best-ranked deleted candidate. The rank puts linked candidates first, then candidates nearer the axis line, then lower slots. A linked candidate has two owner faces, and its other owner is a removed face that meets another support at an edge along the axis whose interior sample point lies on the blend cylinder and within the blend's axial extent. The transition keeps the higher-ranked candidate at slot 17, and the reading skips it because it assumes that the transition deletes the rounded edge. Candidates in rank order: slot 17 (linked, kept), slot 21 (linked, deleted, selected).")
+        format!(
+            "{RIB_AT} 21 of history state 1 is the best-ranked deleted candidate of 2 candidates. The reading assumes that the rounded edge is the best-ranked deleted candidate. The rank puts linked candidates first, then candidates nearer the axis line, then lower slots. A linked candidate has two owner faces, and its other owner is a removed face that meets another support at an edge along the axis whose interior sample point lies on the blend cylinder and within the blend's axial extent. The transition keeps the higher-ranked candidate at slot 17, and the reading skips it because it assumes that the transition deletes the rounded edge. Candidates in rank order: slot 17 (linked, kept), slot 21 (linked, deleted, selected)."
+        )
     );
 }
 

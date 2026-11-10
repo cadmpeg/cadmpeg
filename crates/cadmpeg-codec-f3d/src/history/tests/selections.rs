@@ -12,6 +12,7 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+use crate::history::TopologyStableBodyRevision;
 use crate::history::active_brep_face_matches_source;
 use crate::history::admit_history_binding;
 use crate::history::archived_active_record_count;
@@ -31,7 +32,6 @@ use crate::history::selection::complete_compact_edge_treatment_deletions;
 use crate::history::selection::entity_selection_face_candidates;
 use crate::history::singleton_body_revision_across_state_chain;
 use crate::history::singleton_revised_input_body_across_state_chain;
-use crate::history::TopologyStableBodyRevision;
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
     AsmHistoricalCarrierBinding, AsmHistoricalOptionalCarrierBinding, AsmHistoricalRelation,
@@ -655,15 +655,10 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
         .next()
         .unwrap()
         .preceding_body_slots = vec![6, 7, 9];
-    assert!(combine_recipe_family_tool_slots(
-        (stream, 10),
-        &[1, 2, 3, 4],
-        317,
-        1,
-        &operands,
-        &recipes
-    )
-    .is_none());
+    assert!(
+        combine_recipe_family_tool_slots((stream, 10), &[1, 2, 3, 4], 317, 1, &operands, &recipes)
+            .is_none()
+    );
 
     operands[1]
         .reference_bindings_mut()
@@ -674,15 +669,17 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
     let mut duplicate_selector = recipes.clone();
     duplicate_selector[1].design.as_mut().unwrap().selector =
         duplicate_selector[2].design.as_ref().unwrap().selector;
-    assert!(combine_recipe_family_tool_slots(
-        (stream, 10),
-        &[1, 2, 3, 4],
-        317,
-        1,
-        &operands,
-        &duplicate_selector
-    )
-    .is_none());
+    assert!(
+        combine_recipe_family_tool_slots(
+            (stream, 10),
+            &[1, 2, 3, 4],
+            317,
+            1,
+            &operands,
+            &duplicate_selector
+        )
+        .is_none()
+    );
 }
 
 fn combine_external_identity(

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{fan_matches, FaceRecipeIndex};
+use super::{FaceRecipeIndex, fan_matches};
 use crate::history_records::{
     AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation, AsmHistoricalTopology,
 };

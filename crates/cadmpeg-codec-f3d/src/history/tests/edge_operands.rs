@@ -590,10 +590,12 @@ fn an_inferred_side_one_edge_names_its_operand_state_and_slot() {
         note.code,
         crate::loss::F3dLossCode::HistoricalEdgeSelectionInferred.kind()
     );
-    assert!(note
-        .message
-        .starts_with("edge operand f3d:test:operand#20 reads edge slot 31 of history state 7"));
-    assert!(note
-        .message
-        .contains("bounds none of the recipe's candidate faces"));
+    assert!(
+        note.message
+            .starts_with("edge operand f3d:test:operand#20 reads edge slot 31 of history state 7")
+    );
+    assert!(
+        note.message
+            .contains("bounds none of the recipe's candidate faces")
+    );
 }

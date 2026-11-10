@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::history::{
-    face_operand_support_candidates, historical_face_support_contexts, TopologyQueryCache,
+    TopologyQueryCache, face_operand_support_candidates, historical_face_support_contexts,
 };
 use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalTopology};
 use crate::records::dimensions::DesignRecipeReference;

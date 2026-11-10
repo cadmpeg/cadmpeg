@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    blend_spines, cylinder_axes, edge_geometry, edge_points, plane_rows, BlendSpine, EdgeGeometry,
+    BlendSpine, EdgeGeometry, blend_spines, cylinder_axes, edge_geometry, edge_points, plane_rows,
 };
 use crate::history_records::{
     AsmHistoricalCurveAxis, AsmHistoricalCylinder, AsmHistoricalEdgeSample,

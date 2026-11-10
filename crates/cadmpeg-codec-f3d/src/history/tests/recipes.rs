@@ -14,7 +14,7 @@
 use crate::history_records::AsmHistory;
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::history::{bind_body_recipe_operand_history_candidates, BindingHistories};
+use crate::history::{BindingHistories, bind_body_recipe_operand_history_candidates};
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalRelation, AsmHistoricalTopology,
 };
@@ -95,7 +95,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         design_reference: 200,
         design_reference_offset: 0,
         candidate_faces: vec![
-            FaceId::mint(crate::ids::brep_entity_id(face)).expect("identity grammar")
+            FaceId::mint(crate::ids::brep_entity_id(face)).expect("identity grammar"),
         ],
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
@@ -608,13 +608,15 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         Region {
             id: RegionId::mint("test:model:region#current-region").expect("identity grammar"),
             body: bodies[0].id.clone(),
-            shells: vec![ShellId::mint("test:model:shell#current-shell").expect("identity grammar")],
+            shells: vec![
+                ShellId::mint("test:model:shell#current-shell").expect("identity grammar"),
+            ],
         },
         Region {
             id: RegionId::mint("test:model:region#external-region").expect("identity grammar"),
             body: bodies[1].id.clone(),
             shells: vec![
-                ShellId::mint("test:model:shell#external-shell").expect("identity grammar")
+                ShellId::mint("test:model:shell#external-shell").expect("identity grammar"),
             ],
         },
         Region {
@@ -971,7 +973,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
                     form: 33,
                     form_offset: 33,
                     candidate_faces: vec![
-                        FaceId::mint("f3d:brep:entity#7").expect("identity grammar")
+                        FaceId::mint("f3d:brep:entity#7").expect("identity grammar"),
                     ],
                     preceding_candidate_faces: Vec::new(),
                     preceding_body_slots: Vec::new(),
@@ -1035,10 +1037,9 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     assert_eq!(
         selection,
         BodySelection::Resolved {
-            bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
-                "f3d:brep:body#1"
-            )
-            .expect("identity grammar")],)
+            bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                BodyId::mint("f3d:brep:body#1").expect("identity grammar")
+            ],)
             .expect("distinct bodies"),
             native: group_id.into(),
         }
@@ -1384,9 +1385,11 @@ fn opaque_history_span_retains_the_precise_framing_error() {
         panic!("one opaque record");
     };
     assert_eq!(record.name(), "opaque_history_payload");
-    assert!(record
-        .framing_error()
-        .is_some_and(|error| error.contains("byte 0") && error.contains("0x33")));
+    assert!(
+        record
+            .framing_error()
+            .is_some_and(|error| error.contains("byte 0") && error.contains("0x33"))
+    );
 }
 
 mod hem_carriers;

@@ -43,9 +43,11 @@ fn historical_radii_replace_each_carrier_once_and_keep_last_blend() {
     assert_eq!(topology.surface_radii.len(), 1_000);
     assert_eq!(topology.surface_radii[0].surface, 0);
     assert_eq!(topology.surface_radii[0].radius, 3.0);
-    assert!(topology.surface_radii[1..]
-        .iter()
-        .all(|radius| radius.radius == 2.0));
+    assert!(
+        topology.surface_radii[1..]
+            .iter()
+            .all(|radius| radius.radius == 2.0)
+    );
     ctx.finish_session().unwrap();
 }
 

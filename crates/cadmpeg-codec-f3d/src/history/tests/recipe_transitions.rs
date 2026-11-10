@@ -2,9 +2,9 @@
 //! History-module unit tests.
 
 use crate::history::{
-    bind_face_operand_history_candidates, bind_feature_face_selections, bind_sweep_result_modes,
-    historical_brep_source, select_legacy_extrude_face_candidate, BindingHistories,
-    LegacyFaceResolution,
+    BindingHistories, LegacyFaceResolution, bind_face_operand_history_candidates,
+    bind_feature_face_selections, bind_sweep_result_modes, historical_brep_source,
+    select_legacy_extrude_face_candidate,
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
@@ -561,9 +561,11 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         )
     })
     .unwrap();
-    assert!(ambiguous_geometry_operands[0]
-        .resolved_face_slots
-        .is_empty());
+    assert!(
+        ambiguous_geometry_operands[0]
+            .resolved_face_slots
+            .is_empty()
+    );
 
     let mut unrelated_group = group;
     unrelated_group.operand_role =
@@ -823,8 +825,8 @@ fn hole_case_with(
         topology::entity_selection::DesignEntitySelectionFaceCandidate,
     };
     use cadmpeg_ir::features::{
-        holes::HoleKind, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        FeatureInputTopology, FeatureOperation, LinearTermination,
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
+        FeatureOperation, LinearTermination, holes::HoleKind,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 

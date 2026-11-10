@@ -2,14 +2,14 @@
 //! Bind historical snapshots by replacing the dependency closure of each delta.
 
 use super::{
-    archived_active_record_count, decode_record_archive, historical_topology_with_tags,
-    insert_only_active_record_count, walk_entity_versions, HistoricalRecordArchive,
+    HistoricalRecordArchive, archived_active_record_count, decode_record_archive,
+    historical_topology_with_tags, insert_only_active_record_count, walk_entity_versions,
 };
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition};
 use cadmpeg_asm::brep::attributes::{attribute_next, attribute_owner};
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_asm::sab::{Record, Token};
-use cadmpeg_core::decode::{work_units, WorkBudget};
+use cadmpeg_core::decode::{WorkBudget, work_units};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::{Duration, Instant};
 
@@ -780,8 +780,8 @@ fn container_rows(
     bytes: &[u8],
 ) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
     use cadmpeg_asm::brep::{
-        emit::{emit_attributes, emit_containers, ContainerInputs},
         AsmBrep, Reachable, WireShellTopology,
+        emit::{ContainerInputs, emit_attributes, emit_containers},
     };
     let records: Vec<_> = slots
         .iter()

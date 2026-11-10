@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{bind_circular_pipe_sections, PipeSectionInputs};
+use super::{PipeSectionInputs, bind_circular_pipe_sections};
 use crate::loss::F3dLossCode;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features::DesignPipeConstruction;

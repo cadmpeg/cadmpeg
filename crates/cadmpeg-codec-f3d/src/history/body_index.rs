@@ -101,11 +101,13 @@ impl<'a> CompleteBodyIndex<'a> {
             {
                 return None;
             }
-            let shells = complete_some!(region_shells
-                .members_by_owner
-                .get(&region)
-                .copied()
-                .flatten());
+            let shells = complete_some!(
+                region_shells
+                    .members_by_owner
+                    .get(&region)
+                    .copied()
+                    .flatten()
+            );
             if shells.is_empty() {
                 return None;
             }

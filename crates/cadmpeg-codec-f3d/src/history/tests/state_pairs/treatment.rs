@@ -122,34 +122,40 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
 
     let mut existing_carrier = preceding.clone();
     existing_carrier.surfaces.push(200);
-    assert!(treatment_radius_candidates(
-        Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
-        &[20],
-        &result,
-        &existing_carrier,
-        &[17],
-        &mut crate::history::treatment_index::TreatmentCache::default()
-    )
-    .is_empty());
-    assert!(treatment_edge_candidates(
-        None,
-        &[20],
-        &result,
-        &preceding,
-        &[18],
-        &mut crate::history::treatment_index::TreatmentCache::default()
-    )
-    .1
-    .is_empty());
-    assert!(treatment_radius_candidates(
-        Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
-        &[20],
-        &result,
-        &preceding,
-        &[18],
-        &mut crate::history::treatment_index::TreatmentCache::default()
-    )
-    .is_empty());
+    assert!(
+        treatment_radius_candidates(
+            Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
+            &[20],
+            &result,
+            &existing_carrier,
+            &[17],
+            &mut crate::history::treatment_index::TreatmentCache::default()
+        )
+        .is_empty()
+    );
+    assert!(
+        treatment_edge_candidates(
+            None,
+            &[20],
+            &result,
+            &preceding,
+            &[18],
+            &mut crate::history::treatment_index::TreatmentCache::default()
+        )
+        .1
+        .is_empty()
+    );
+    assert!(
+        treatment_radius_candidates(
+            Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
+            &[20],
+            &result,
+            &preceding,
+            &[18],
+            &mut crate::history::treatment_index::TreatmentCache::default()
+        )
+        .is_empty()
+    );
 }
 
 /// Faces 10 and 11 meet at edge 17 along z, and face 12 caps them at edges

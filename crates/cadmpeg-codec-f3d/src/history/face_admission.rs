@@ -221,7 +221,9 @@ impl<'a> FaceInputs<'a> {
     }
 }
 fn record_loss(feature: &FeatureId, losses: &mut Vec<LossNote>) {
-    let message = format!("Feature {feature} retains its native face selection because one matching emitted input topology and its face membership could not be proved");
+    let message = format!(
+        "Feature {feature} retains its native face selection because one matching emitted input topology and its face membership could not be proved"
+    );
     losses.push(crate::loss::F3dLossCode::HistoricalFaceSelectionUnbound.note(message));
 }
 

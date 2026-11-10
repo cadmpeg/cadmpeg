@@ -2,8 +2,8 @@
 //! Edges that a `Fillet` feature rounds, from the blend faces of its transition.
 
 use super::blend_spine::{
-    blend_spines, cylinder_axes, edge_geometry, edge_points, plane_rows, BlendSpine, CylinderAxis,
-    EdgeGeometry,
+    BlendSpine, CylinderAxis, EdgeGeometry, blend_spines, cylinder_axes, edge_geometry,
+    edge_points, plane_rows,
 };
 use crate::history_records::{AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory};
 use crate::loss::F3dLossCode;

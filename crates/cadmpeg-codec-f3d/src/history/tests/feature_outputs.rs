@@ -173,9 +173,11 @@ fn split_outputs_bind_across_complete_transition_chains() {
     )
     .unwrap();
     assert_eq!(complete.evaluation.outputs(), &[body.id.clone()]);
-    assert!(!losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()));
+    assert!(
+        !losses.iter().any(
+            |loss| loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()
+        )
+    );
     let mut incomplete = history.clone();
     incomplete.states_mut()[1].transition = None;
     let losses = super::super::bind_feature_outputs(
@@ -188,9 +190,11 @@ fn split_outputs_bind_across_complete_transition_chains() {
     )
     .unwrap();
     assert!(feature.evaluation.outputs().is_empty());
-    assert!(losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()));
+    assert!(
+        losses.iter().any(
+            |loss| loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()
+        )
+    );
     let losses = super::super::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         &[scope],
@@ -201,9 +205,11 @@ fn split_outputs_bind_across_complete_transition_chains() {
     )
     .unwrap();
     assert!(feature.evaluation.outputs().is_empty());
-    assert!(losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()));
+    assert!(
+        losses.iter().any(
+            |loss| loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()
+        )
+    );
 }
 
 #[test]
@@ -1132,9 +1138,11 @@ fn historical_partial_and_native_edge_selections_test() {
         Some(&"1,0,0".to_string())
     );
     // Verify HistoricalEdgeMidpointsUnresolved emitted because of the unresolved edge
-    assert!(losses
-        .iter()
-        .any(|note| note.code == F3dLossCode::HistoricalEdgeMidpointsUnresolved.kind()));
+    assert!(
+        losses
+            .iter()
+            .any(|note| note.code == F3dLossCode::HistoricalEdgeMidpointsUnresolved.kind())
+    );
 
     // 2. Native edge selection: emits no midpoints, emits HistoricalEdgeMidpointsUnresolved
     let mut feature_native = make_fillet(EdgeSelection::Native("native:edge".into()));
@@ -1156,9 +1164,11 @@ fn historical_partial_and_native_edge_selections_test() {
             .get(&cadmpeg_core::nonblank_literal!("edge_midpoints")),
         None
     );
-    assert!(losses_native
-        .iter()
-        .any(|note| note.code == F3dLossCode::HistoricalEdgeMidpointsUnresolved.kind()));
+    assert!(
+        losses_native
+            .iter()
+            .any(|note| note.code == F3dLossCode::HistoricalEdgeMidpointsUnresolved.kind())
+    );
 }
 
 #[test]
@@ -1255,9 +1265,11 @@ fn historical_body_bounds_unresolved_test() {
     )
     .unwrap();
 
-    assert!(losses
-        .iter()
-        .any(|note| note.code == F3dLossCode::HistoricalBodyBoundsUnresolved.kind()));
+    assert!(
+        losses
+            .iter()
+            .any(|note| note.code == F3dLossCode::HistoricalBodyBoundsUnresolved.kind())
+    );
 }
 
 #[test]
@@ -1799,9 +1811,11 @@ fn feature_output_body_namespace_refusal_has_a_loss() {
     )
     .unwrap();
     assert!(feature.evaluation.outputs().is_empty());
-    assert!(losses
-        .iter()
-        .any(|loss| { loss.code == crate::loss::F3dLossCode::FeatureOutputBodyUnbound.kind() }));
+    assert!(
+        losses
+            .iter()
+            .any(|loss| { loss.code == crate::loss::F3dLossCode::FeatureOutputBodyUnbound.kind() })
+    );
 }
 
 #[test]

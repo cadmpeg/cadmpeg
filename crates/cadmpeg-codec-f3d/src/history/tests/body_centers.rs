@@ -91,10 +91,10 @@ fn an_unbound_feature_reads_the_history_of_the_blob_that_holds_its_outputs() {
         feature.id = crate::ids::neutral_feature_id(scope);
         feature.native_ref = Some(scope.id.clone());
         feature.evaluation.set_outputs(
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![cadmpeg_ir::ids::BodyId::mint(
-                format!("f3d:brep/{}/brep:entity#1", blob(guid)),
-            )
-            .unwrap()])
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                cadmpeg_ir::ids::BodyId::mint(format!("f3d:brep/{}/brep:entity#1", blob(guid)))
+                    .unwrap(),
+            ])
             .unwrap(),
         );
         feature

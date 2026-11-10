@@ -3,7 +3,7 @@
 
 use crate::history_records::AsmHistoricalTopology;
 use crate::records::topology::face::{
-    prefix_operand_ordinals, DesignFaceOperand, DesignFaceRecipeStructure,
+    DesignFaceOperand, DesignFaceRecipeStructure, prefix_operand_ordinals,
 };
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -180,7 +180,7 @@ impl FaceRecipeIndex {
     }
 
     pub(super) fn resolve(&self, operand: &DesignFaceOperand) -> Option<i64> {
-        use crate::design::decode::operands::{face_recipe_program_kind, FaceRecipeProgramKind};
+        use crate::design::decode::operands::{FaceRecipeProgramKind, face_recipe_program_kind};
         if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace {
             return None;
         }

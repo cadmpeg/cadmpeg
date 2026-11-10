@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{entity_in_brep_source, historical_brep_source, AsmHistory};
+use super::{AsmHistory, entity_in_brep_source, historical_brep_source};
 use crate::records::{
     feature::scope::DesignParameterScope, recipes::ConstructionRecipe,
     sketch_links::PersistentSubentityTag, topology::edge_identity::DesignEdgeOperand,

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::history::selection::HistoricalIdentityIndex;
 use crate::history::selection::entity_selection_edge_candidates;
 use crate::history::selection::historical_identity_kind;
 use crate::history::selection::historical_selection_identity_kind;
 use crate::history::selection::unique_entity_selection_edge;
-use crate::history::selection::HistoricalIdentityIndex;
 use crate::history_records::AsmBulletinBoard;
 use crate::history_records::AsmDeltaState;
 use crate::history_records::AsmEntityChange;
@@ -94,11 +94,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
                     .map(|entity_ref| AsmEntityVersion {
                         entity_ref,
                         record_ref: if entity_ref == 42 {
-                            if index == 0 {
-                                700
-                            } else {
-                                701
-                            }
+                            if index == 0 { 700 } else { 701 }
                         } else {
                             entity_ref
                         },

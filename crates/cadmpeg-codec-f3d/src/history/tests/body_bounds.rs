@@ -44,12 +44,16 @@ fn an_open_arc_keeps_only_the_extremes_on_its_side() {
         end,
         false,
     );
-    assert!(upper
-        .iter()
-        .any(|point| close(*point, Point3::new(0.0, 1.0, 0.0))));
-    assert!(!upper
-        .iter()
-        .any(|point| close(*point, Point3::new(0.0, -1.0, 0.0))));
+    assert!(
+        upper
+            .iter()
+            .any(|point| close(*point, Point3::new(0.0, 1.0, 0.0)))
+    );
+    assert!(
+        !upper
+            .iter()
+            .any(|point| close(*point, Point3::new(0.0, -1.0, 0.0)))
+    );
     // Clockwise through the bottom: the lower one does.
     let lower = circle_arc_extremes(
         center,
@@ -60,12 +64,16 @@ fn an_open_arc_keeps_only_the_extremes_on_its_side() {
         end,
         false,
     );
-    assert!(lower
-        .iter()
-        .any(|point| close(*point, Point3::new(0.0, -1.0, 0.0))));
-    assert!(!lower
-        .iter()
-        .any(|point| close(*point, Point3::new(0.0, 1.0, 0.0))));
+    assert!(
+        lower
+            .iter()
+            .any(|point| close(*point, Point3::new(0.0, -1.0, 0.0)))
+    );
+    assert!(
+        !lower
+            .iter()
+            .any(|point| close(*point, Point3::new(0.0, 1.0, 0.0)))
+    );
     // Without an interior point the side is unknown.
     assert!(circle_arc_extremes(center, normal, 1.0, start, None, end, false).is_empty());
 }

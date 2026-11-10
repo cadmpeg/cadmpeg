@@ -2,8 +2,8 @@
 //! Resolve the complete ASM transition interval of a feature scope.
 
 use super::{
-    header_previous_state_id, history_state_pair, transition_or_header_previous_state_id,
-    AsmHistory,
+    AsmHistory, header_previous_state_id, history_state_pair,
+    transition_or_header_previous_state_id,
 };
 use crate::history_records::AsmHistoricalEntityDelta;
 use std::collections::{BTreeSet, HashMap, HashSet};

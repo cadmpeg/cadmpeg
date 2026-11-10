@@ -271,12 +271,14 @@ fn direct_face_recipe_selects_every_fragment_in_its_own_reference_lane() {
             cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(8)).expect("identity grammar"),
         ])
     );
-    assert!(direct_face_recipe_candidates(
-        crate::records::recipes::ConstructionRecipeKind::BoundedFace,
-        &references,
-        203
-    )
-    .is_none());
+    assert!(
+        direct_face_recipe_candidates(
+            crate::records::recipes::ConstructionRecipeKind::BoundedFace,
+            &references,
+            203
+        )
+        .is_none()
+    );
 }
 
 #[test]

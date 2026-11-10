@@ -60,7 +60,7 @@ impl<'a> LoopIndex<'a> {
 #[cfg(test)]
 mod tests {
     use super::LoopIndex;
-    use crate::history::topology_cache::{endpoint_index, TopologyQueryCache};
+    use crate::history::topology_cache::{TopologyQueryCache, endpoint_index};
     use crate::history_records::{
         AsmHistoricalCarrierBinding, AsmHistoricalEdge, AsmHistoricalPoint, AsmHistoricalTopology,
     };

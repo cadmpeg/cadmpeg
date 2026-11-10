@@ -49,12 +49,12 @@ use body_index::CompleteBodyIndex;
 use cache::SnapshotCache;
 use loop_index::LoopIndex;
 use output_properties::{
-    classify_face_plane, classify_inserted_face, collect_edge_midpoint_slots,
-    feature_consumes_tool_body, feature_supports_body_absorption, resolve_split_result_plane,
-    resolve_split_tool_plane, EdgeMidpointRequest, InsertedFaceClassification,
-    SplitResultPlaneContext, StateFacePlanes, StateSplitCandidates,
     EPS_HISTORY_BODY_BBOX_CONTAINMENT_E2, EPS_HISTORY_BODY_BBOX_GROWTH_E3,
     EPS_HISTORY_BODY_BBOX_UNCHANGED_E4, EPS_HISTORY_VERTEX_ABSORBED_DIST_SQ_E4,
+    EdgeMidpointRequest, InsertedFaceClassification, SplitResultPlaneContext, StateFacePlanes,
+    StateSplitCandidates, classify_face_plane, classify_inserted_face, collect_edge_midpoint_slots,
+    feature_consumes_tool_body, feature_supports_body_absorption, resolve_split_result_plane,
+    resolve_split_tool_plane,
 };
 use recipe_index::RecipeTopologyCache;
 use topology_cache::{TopologyQueryCache, VertexBoundaryIndex};
@@ -72,9 +72,9 @@ use crate::records::topology::{
     body_recipe::AsmHistoricalEntityKind, extrude_selection::DesignOperandRole,
 };
 use cadmpeg_asm::history::{
+    BulletinBoardItem, DeltaStateHeader, DeltaStateHeaderRead, EntityChange, StateRecords,
     delta_state_offsets, frame_state_records, read_delta_state_header, snapshot_revision_ids,
-    walk_bulletin_boards, BulletinBoardItem, DeltaStateHeader, DeltaStateHeaderRead, EntityChange,
-    StateRecords,
+    walk_bulletin_boards,
 };
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
@@ -2141,10 +2141,12 @@ pub(crate) fn bind_feature_body_selections(
         else {
             continue;
         };
-        let [cadmpeg_ir::features::patterns::PatternSeed::Bodies(BodySelection::Historical {
-            bodies: seed_bodies,
-            ..
-        })] = seeds.as_slice()
+        let [
+            cadmpeg_ir::features::patterns::PatternSeed::Bodies(BodySelection::Historical {
+                bodies: seed_bodies,
+                ..
+            }),
+        ] = seeds.as_slice()
         else {
             continue;
         };
@@ -2835,7 +2837,7 @@ fn bind_pattern_body_selections<'a>(
     body_candidates: &mut BodyCandidates<'a>,
 ) {
     use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
+        BodySelection, FeatureDefinition, FeatureOperation, patterns::PatternSeed,
     };
 
     let scopes = inputs.scopes;
@@ -5233,6 +5235,7 @@ pub(crate) fn bind_scope_histories(
         }
     }
     let mut resolved = HashMap::<String, String>::new();
+    let mut inferred_scopes = HashSet::<String>::new();
     for (scope, candidates) in &candidates {
         if candidates.len() == 1 {
             insert_scope_history_binding(&mut resolved, &scope.id, &candidates[0].id);
@@ -5288,6 +5291,7 @@ pub(crate) fn bind_scope_histories(
         }
         if let Some(history) = edge_recipe_scope::select(scope, edge_recipes, candidates) {
             insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
+            inferred_scopes.insert(scope.id.clone());
             losses.push(crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.note(format!(
                 "scope {}: its state pair occurs in several histories; it reads {}, whose BREP blob agrees with every qualified edge-recipe face candidate.",
                 scope.id, history.id
@@ -5368,6 +5372,17 @@ pub(crate) fn bind_scope_histories(
                     .filter(|history| !assigned.contains(history.id.as_str()));
                 if let Some(history) = remaining.next().filter(|_| remaining.next().is_none()) {
                     insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
+                    let rests_on_inference = members.iter().any(|other| {
+                        let other = &candidates[*other].0.id;
+                        other != &scope.id && inferred_scopes.contains(other)
+                    });
+                    if rests_on_inference {
+                        inferred_scopes.insert(scope.id.clone());
+                        losses.push(crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.note(format!(
+                            "scope {}: it reads {}, the only candidate history that no other scope with its state pair holds, and one of those scopes reads its history through edge-recipe face candidates.",
+                            scope.id, history.id
+                        )));
+                    }
                     progress = true;
                 }
             }
@@ -9628,90 +9643,97 @@ fn historical_topology(
                     .map(cadmpeg_ir::ids::CoedgeId::as_str),
             )
         }))),
-        coedge_topology: topology_some!(brep
-            .coedges
-            .iter()
-            .map(|coedge| {
-                let (next, previous) = ring_neighbors
-                    .get(&(&coedge.owner_loop, &coedge.id))
-                    .copied()?;
-                Some(AsmHistoricalCoedge {
-                    coedge: stable_ref(coedge.id.as_str())?,
-                    owner_loop: stable_ref(coedge.owner_loop.as_str())?,
-                    edge: stable_ref(coedge.edge.as_str())?,
-                    next: stable_ref(next.as_str())?,
-                    previous: stable_ref(previous.as_str())?,
-                    radial_next: stable_ref(coedge.radial_next.as_str())?,
+        coedge_topology: topology_some!(
+            brep.coedges
+                .iter()
+                .map(|coedge| {
+                    let (next, previous) = ring_neighbors
+                        .get(&(&coedge.owner_loop, &coedge.id))
+                        .copied()?;
+                    Some(AsmHistoricalCoedge {
+                        coedge: stable_ref(coedge.id.as_str())?,
+                        owner_loop: stable_ref(coedge.owner_loop.as_str())?,
+                        edge: stable_ref(coedge.edge.as_str())?,
+                        next: stable_ref(next.as_str())?,
+                        previous: stable_ref(previous.as_str())?,
+                        radial_next: stable_ref(coedge.radial_next.as_str())?,
+                    })
                 })
-            })
-            .collect::<Option<Vec<_>>>()),
-        edge_vertices: topology_some!(brep
-            .edges
-            .iter()
-            .map(|edge| {
-                Some(AsmHistoricalEdge {
-                    edge: stable_ref(edge.id.as_str())?,
-                    start_vertex: stable_ref(edge.start.as_str())?,
-                    end_vertex: stable_ref(edge.end.as_str())?,
+                .collect::<Option<Vec<_>>>()
+        ),
+        edge_vertices: topology_some!(
+            brep.edges
+                .iter()
+                .map(|edge| {
+                    Some(AsmHistoricalEdge {
+                        edge: stable_ref(edge.id.as_str())?,
+                        start_vertex: stable_ref(edge.start.as_str())?,
+                        end_vertex: stable_ref(edge.end.as_str())?,
+                    })
                 })
-            })
-            .collect::<Option<Vec<_>>>()),
-        face_surfaces: topology_some!(brep
-            .faces
-            .iter()
-            .map(|face| {
-                Some(AsmHistoricalCarrierBinding {
-                    entity: stable_ref(face.id.as_str())?,
-                    carrier: stable_ref(face.surface.as_str())?,
+                .collect::<Option<Vec<_>>>()
+        ),
+        face_surfaces: topology_some!(
+            brep.faces
+                .iter()
+                .map(|face| {
+                    Some(AsmHistoricalCarrierBinding {
+                        entity: stable_ref(face.id.as_str())?,
+                        carrier: stable_ref(face.surface.as_str())?,
+                    })
                 })
-            })
-            .collect::<Option<Vec<_>>>()),
-        edge_curves: topology_some!(brep
-            .edges
-            .iter()
-            .map(|edge| {
-                Some(AsmHistoricalOptionalCarrierBinding {
-                    entity: stable_ref(edge.id.as_str())?,
-                    carrier: match edge.curve() {
-                        Some(curve) => Some(stable_ref(curve.as_str())?),
-                        None => None,
-                    },
+                .collect::<Option<Vec<_>>>()
+        ),
+        edge_curves: topology_some!(
+            brep.edges
+                .iter()
+                .map(|edge| {
+                    Some(AsmHistoricalOptionalCarrierBinding {
+                        entity: stable_ref(edge.id.as_str())?,
+                        carrier: match edge.curve() {
+                            Some(curve) => Some(stable_ref(curve.as_str())?),
+                            None => None,
+                        },
+                    })
                 })
-            })
-            .collect::<Option<Vec<_>>>()),
-        coedge_pcurves: topology_some!(brep
-            .coedges
-            .iter()
-            .map(|coedge| {
-                Some(AsmHistoricalOptionalCarrierBinding {
-                    entity: stable_ref(coedge.id.as_str())?,
-                    carrier: match coedge.pcurves.first() {
-                        Some(use_) => Some(stable_ref(use_.pcurve.as_str())?),
-                        None => None,
-                    },
+                .collect::<Option<Vec<_>>>()
+        ),
+        coedge_pcurves: topology_some!(
+            brep.coedges
+                .iter()
+                .map(|coedge| {
+                    Some(AsmHistoricalOptionalCarrierBinding {
+                        entity: stable_ref(coedge.id.as_str())?,
+                        carrier: match coedge.pcurves.first() {
+                            Some(use_) => Some(stable_ref(use_.pcurve.as_str())?),
+                            None => None,
+                        },
+                    })
                 })
-            })
-            .collect::<Option<Vec<_>>>()),
-        vertex_points: topology_some!(brep
-            .vertices
-            .iter()
-            .map(|vertex| {
-                Some(AsmHistoricalCarrierBinding {
-                    entity: stable_ref(vertex.id.as_str())?,
-                    carrier: stable_ref(vertex.point.as_str())?,
+                .collect::<Option<Vec<_>>>()
+        ),
+        vertex_points: topology_some!(
+            brep.vertices
+                .iter()
+                .map(|vertex| {
+                    Some(AsmHistoricalCarrierBinding {
+                        entity: stable_ref(vertex.id.as_str())?,
+                        carrier: stable_ref(vertex.point.as_str())?,
+                    })
                 })
-            })
-            .collect::<Option<Vec<_>>>()),
-        point_positions: topology_some!(brep
-            .points
-            .iter()
-            .map(|point| {
-                Some(AsmHistoricalPoint {
-                    point: stable_ref(point.id.as_str())?,
-                    position: point.position().get(),
+                .collect::<Option<Vec<_>>>()
+        ),
+        point_positions: topology_some!(
+            brep.points
+                .iter()
+                .map(|point| {
+                    Some(AsmHistoricalPoint {
+                        point: stable_ref(point.id.as_str())?,
+                        position: point.position().get(),
+                    })
                 })
-            })
-            .collect::<Option<Vec<_>>>()),
+                .collect::<Option<Vec<_>>>()
+        ),
         edge_samples: historical_edge_samples(brep)?,
     };
     // Transitions diff each family in key order. The decoder appends the

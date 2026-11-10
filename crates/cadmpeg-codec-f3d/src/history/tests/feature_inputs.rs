@@ -160,14 +160,16 @@ fn input_topology_uses_scope_binding_when_global_state_numbers_repeat() {
     let bindings =
         std::collections::HashMap::from([(scope.id.clone(), "f3d:missing:history#0".into())]);
     assert!(project(&mut histories, &bindings).is_empty());
-    assert!(super::super::project_feature_input_topologies(
-        std::slice::from_ref(&feature),
-        std::slice::from_ref(&scope),
-        &mut histories[..1],
-        &[],
-        &bindings,
-    )
-    .is_empty());
+    assert!(
+        super::super::project_feature_input_topologies(
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&scope),
+            &mut histories[..1],
+            &[],
+            &bindings,
+        )
+        .is_empty()
+    );
 }
 
 #[test]

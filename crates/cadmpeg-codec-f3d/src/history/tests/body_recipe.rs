@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::history::{bind_direct_body_recipe_body_selection, FeatureBodySelectionInputs};
+use crate::history::{FeatureBodySelectionInputs, bind_direct_body_recipe_body_selection};
 
 #[test]
 fn form33_without_unique_body_proof_remains_unresolved() {
@@ -13,7 +13,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         id: BodyId::mint(format!("f3d:brep:body#{slot}")).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![
-            RegionId::mint(format!("test:model:region#{slot}")).expect("identity grammar")
+            RegionId::mint(format!("test:model:region#{slot}")).expect("identity grammar"),
         ],
         transform: None,
         name: None,

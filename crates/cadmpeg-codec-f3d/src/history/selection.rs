@@ -2,11 +2,11 @@
 //! Historical feature selection and persistent identity resolution.
 
 use super::{
+    EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9, EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9,
+    EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8, EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9,
     bound_scope_history, design_axis, effective_scope_previous_history_state_id,
     historical_edge_axis, history_state_reaches, projection_was_finalized, same_axis_line,
     stable_ref, treatment_edge_candidates, unique_history_state_pair,
-    EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9, EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9,
-    EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8, EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9,
 };
 use crate::history_records::{
     AsmHistoricalCoedge, AsmHistoricalTopology, AsmHistory, AsmTopologyScope,

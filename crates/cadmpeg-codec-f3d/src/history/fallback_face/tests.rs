@@ -2,7 +2,7 @@
 
 use cadmpeg_ir::report::loss::LossKind;
 
-use super::{check_fallback_faces, LaneFit, OperandLanes, Withdrawals};
+use super::{LaneFit, OperandLanes, Withdrawals, check_fallback_faces};
 use crate::history::topology_cache::TopologyQueryCache;
 use crate::loss::F3dLossCode;
 use crate::records::topology::face::DesignFaceOperand;

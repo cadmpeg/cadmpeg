@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{bind, Inputs};
+use super::{Inputs, bind};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTransition, AsmHistory};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use cadmpeg_ir::features::{

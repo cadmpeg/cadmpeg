@@ -124,9 +124,11 @@ fn a_saved_edge_of_the_primary_source_does_not_join_another_source() {
 #[test]
 fn a_saved_edge_is_never_a_result_body_without_a_source() {
     let bodies = [body("f3d:brep:saved-edge-body#7")];
-    assert!(ActiveBodies::new(&bodies, None)
-        .resolve(&[7], None)
-        .is_none());
+    assert!(
+        ActiveBodies::new(&bodies, None)
+            .resolve(&[7], None)
+            .is_none()
+    );
 }
 
 /// A Base Feature scope and its feature with `definition`.
@@ -165,7 +167,7 @@ fn a_base_feature_scope_projected_as_a_paste_copy_reports_its_assumed_placement(
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
     let bodies = || {
         cadmpeg_ir::features::DistinctMembers::try_from(vec![
-            BodyId::mint("test:model:body#1").unwrap()
+            BodyId::mint("test:model:body#1").unwrap(),
         ])
         .unwrap()
     };

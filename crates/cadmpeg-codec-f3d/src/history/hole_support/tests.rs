@@ -6,7 +6,7 @@ use crate::history_records::{
 };
 use crate::records::feature::hole::DesignHoleConstruction;
 use cadmpeg_ir::math::{Point3, Vector3};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const TOP: i64 = 10;
 const BOTTOM: i64 = 20;

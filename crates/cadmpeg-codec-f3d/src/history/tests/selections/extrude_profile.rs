@@ -134,16 +134,12 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         group(120, 3, vec![121]),
     ];
     let mut operands = vec![face_operand(111, 110, 1), face_operand(121, 120, 3)];
-    operands[0].candidate_faces =
-        vec![
-            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(10))
-                .expect("identity grammar"),
-        ];
-    operands[1].unreferenced_candidate_faces =
-        vec![
-            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(11))
-                .expect("identity grammar"),
-        ];
+    operands[0].candidate_faces = vec![
+        cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(10)).expect("identity grammar"),
+    ];
+    operands[1].unreferenced_candidate_faces = vec![
+        cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(11)).expect("identity grammar"),
+    ];
 
     let roots = crate::test_support::with_decode_context(|decode_ctx| {
         crate::design::face_resolve::extrude_profile_group_roots(decode_ctx, &scope, &groups)
@@ -178,15 +174,17 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         }])
         .collect();
     repeated_child[0].try_set_members(repeated_members).unwrap();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::face_resolve::extrude_profile_group_roots(
-            decode_ctx,
-            &scope,
-            &repeated_child,
-        )
-    })
-    .unwrap()
-    .is_none());
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::face_resolve::extrude_profile_group_roots(
+                decode_ctx,
+                &scope,
+                &repeated_child,
+            )
+        })
+        .unwrap()
+        .is_none()
+    );
 
     let previous_topology = AsmHistoricalTopology {
         faces: vec![10, 11, 20],

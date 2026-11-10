@@ -2,11 +2,11 @@
 //! History binding bound unit tests.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::decode::{u64_from_index, WorkBudget};
+use cadmpeg_core::decode::{WorkBudget, u64_from_index};
 
 use crate::history::binding::MAX_HISTORY_BINDING_WORK;
 use crate::history::{
-    admit_history_binding, HistoryBindingAdmission, HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT,
+    HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT, HistoryBindingAdmission, admit_history_binding,
 };
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistoryRecord,
@@ -248,10 +248,12 @@ fn skipped_history_leaves_room_for_the_next_smaller_stream() {
         .unwrap()
         .unwrap();
         assert!(!small.binding_budget_exceeded);
-        assert!(small
-            .states()
-            .iter()
-            .all(|state| state.transition.is_some()));
+        assert!(
+            small
+                .states()
+                .iter()
+                .all(|state| state.transition.is_some())
+        );
         assert_eq!(remaining, 0);
         assert_eq!(
             ctx.retained_bytes_available(),
@@ -280,10 +282,12 @@ fn history_past_its_binding_work_keeps_its_records_without_topology() {
     };
     let unbounded = WorkBudget::new(MAX_HISTORY_BINDING_WORK);
     let bound = decode(&unbounded);
-    assert!(bound
-        .states()
-        .iter()
-        .all(|state| state.transition.is_some()));
+    assert!(
+        bound
+            .states()
+            .iter()
+            .all(|state| state.transition.is_some())
+    );
 
     let at_cap = WorkBudget::new(unbounded.consumed());
     assert_eq!(decode(&at_cap), bound);
