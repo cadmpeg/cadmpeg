@@ -1310,6 +1310,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             },
                         )
                     } else if scope.kind()
+                        == crate::records::feature::scope::DesignFeatureKind::Modify
+                    {
+                        project_modify(scope, construction_groups, &mut projection_losses)
+                            .unwrap_or_else(|| {
+                                FeatureDefinition::Operation(FeatureOperation::Native {
+                                    kind: scope.kind_name().into(),
+                                    parameters: BTreeMap::new(),
+                                })
+                            })
+                    } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::RemoveBody
                     {
                         project_remove_body(scope, construction_groups).unwrap_or_else(|| {
@@ -4311,15 +4321,24 @@ fn project_move(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::BodySelection;
 
     let operation = scope.move_operation()?;
+    let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
+    move_body(operation, BodySelection::Native(group.id.clone()))
+}
+
+fn move_body(
+    operation: &crate::records::feature::direct_face::DesignMoveOperation,
+    bodies: cadmpeg_ir::features::BodySelection,
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
     if !operation.preserves_orientation() {
         return None;
     }
-    let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
     Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
-        bodies: BodySelection::Native(group.id.clone()),
+        bodies,
         translation: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(
             operation.transform[0][3] * 10.0,
             operation.transform[1][3] * 10.0,
@@ -4328,6 +4347,55 @@ fn project_move(
         rotation: matrix_axis_angle(operation.transform.as_ref()),
         copies: 0,
     }))
+}
+
+pub(super) fn project_modify(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::BodySelection;
+
+    let operation = scope.modify_operation()?;
+    let stream = native_stream(&scope.id)?;
+    let selected = operation
+        .body_group_record_indices
+        .iter()
+        .map(|record_index| {
+            groups
+                .iter()
+                .find(|group| {
+                    native_stream(&group.id) == Some(stream)
+                        && group.scope_record_index == scope.record_index
+                        && group.record_index == *record_index
+                        && group.role() == DesignOperandRole::BODIES_A
+                        && group.members().len() == 1
+                })
+                .map(|group| group.id.clone())
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let bodies = match selected.as_slice() {
+        [group] => BodySelection::Native(group.clone()),
+        _ => BodySelection::NativeSet(
+            cadmpeg_ir::features::NativeSelections::try_from(selected.clone()).ok()?,
+        ),
+    };
+    let definition = move_body(&operation.motion, bodies)?;
+    let unlisted = scope
+        .reference_members()
+        .values()
+        .skip(1)
+        .step_by(2)
+        .take(operation.body_group_record_indices.len())
+        .copied()
+        .collect::<Vec<_>>();
+    losses.push(
+        crate::loss::F3dLossCode::FeatureModifyUnlistedGroupsAssumed.note(format!(
+            "Modify scope {} moves the bodies of its listed body groups {:?}; its unlisted body groups {unlisted:?} are assumed to select the same bodies (DR-374).",
+            scope.id, operation.body_group_record_indices
+        )),
+    );
+    Some(definition)
 }
 
 pub(super) fn project_remove_body(

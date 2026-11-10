@@ -234,6 +234,8 @@ pub(crate) enum F3dLossCode {
     FeatureScopeUnprojected,
     /// A Move scope has no neutral `MoveBody` feature.
     MoveUnprojected,
+    /// A Modify scope has no neutral `MoveBody` feature.
+    ModifyUnprojected,
     /// Hole extent controls do not define an admitted termination.
     HoleExtentUnproven,
     /// An Extents To Hole ends at the face its extent group member resolves.
@@ -432,6 +434,8 @@ pub(crate) enum F3dLossCode {
     FeatureRevolveLayoutAssumed,
     /// A marked `Move` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record.
     FeatureMoveTransformAssumed,
+    /// A projected `Modify` assumes that its unlisted body groups select the bodies of its listed groups.
+    FeatureModifyUnlistedGroupsAssumed,
     /// A standard `Loft` scope stores a non-null marked reference whose target and setting are unresolved.
     FeatureLoftReferenceUnresolved,
     /// A three-flag `Loft` scope stores flag bytes whose Loft settings are unresolved.
@@ -755,6 +759,7 @@ impl F3dLossCode {
         Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
         Self::MoveUnprojected,
+        Self::ModifyUnprojected,
         Self::HoleExtentUnproven,
         Self::HoleExtentFaceAssumed,
         Self::HolePlacementUnproven,
@@ -848,6 +853,7 @@ impl F3dLossCode {
         Self::FeatureExtrudeTerminationMissing,
         Self::FeatureRevolveLayoutAssumed,
         Self::FeatureMoveTransformAssumed,
+        Self::FeatureModifyUnlistedGroupsAssumed,
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
         Self::FeatureLoftListsUnresolved,
@@ -1100,6 +1106,7 @@ impl F3dLossCode {
             Self::HoleReferenceDimensionsNative => "feature.hole-reference-dimensions-native",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::MoveUnprojected => "feature.move-unprojected",
+            Self::ModifyUnprojected => "feature.modify-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
             Self::ParameterTrailerFlagUninterpreted => "parameter.trailer-flag-uninterpreted",
@@ -1203,6 +1210,7 @@ impl F3dLossCode {
             Self::FeatureExtrudeTerminationMissing => "feature.extrude-termination-missing",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
+            Self::FeatureModifyUnlistedGroupsAssumed => "feature.modify-unlisted-groups-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
             Self::FeatureLoftListsUnresolved => "feature.loft-lists-unresolved",
@@ -1477,6 +1485,7 @@ impl F3dLossCode {
             | Self::AlignEnvelopeUnparsed
             | Self::AlignConstructionUnparsed
             | Self::MoveUnprojected
+            | Self::ModifyUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
@@ -1560,6 +1569,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
+            | Self::FeatureModifyUnlistedGroupsAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureLoftListsUnresolved
@@ -1755,6 +1765,7 @@ impl F3dLossCode {
             | Self::AlignEnvelopeUnparsed
             | Self::AlignConstructionUnparsed
             | Self::MoveUnprojected
+            | Self::ModifyUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
@@ -1834,6 +1845,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
+            | Self::FeatureModifyUnlistedGroupsAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureLoftListsUnresolved
@@ -2094,6 +2106,7 @@ mod tests {
                 "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",
                 "feature.move-unprojected",
+                "feature.modify-unprojected",
                 "feature.hole-extent-unproven",
                 "feature.hole-extent-face-assumed",
                 "feature.hole-placement-unproven",
@@ -2187,6 +2200,7 @@ mod tests {
                 "feature.extrude-termination-missing",
                 "feature.revolve-layout-assumed",
                 "feature.move-transform-assumed",
+                "feature.modify-unlisted-groups-assumed",
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
                 "feature.loft-lists-unresolved",

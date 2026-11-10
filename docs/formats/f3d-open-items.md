@@ -1068,11 +1068,23 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-306. Marked Move transform records outside the rigid-transform rules
 
-**Question.** What does a transform record that the marked reference of a `Move` scope selects store when its class type is not the rigid-transform type, its frame is not 253, 254, 273, or 274 bytes, or its form word is not the form word of its frame length?
+**Question.** What does a transform record that the marked reference of a `Move` or `Modify` scope selects store when its class type is not the rigid-transform type, its frame is not 253, 254, 273, 274, 283, or 284 bytes, or its form word is not the form word of its frame length?
 
-**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the rigid-transform type, the form word of each of the four frame lengths, and the marked reference that selects the transform record. A marked reference selects a 256-byte record with form word `5`, the zero run, and a rigid matrix at offset 48. The decoder keeps the matrix of each marked record that has the zero run, form word `1` or `5`, and a rigid matrix, and records `feature.move-transform-assumed` with each rule that the record breaks.
+**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the rigid-transform type, the form word of each of the six frame lengths, and the marked reference that selects the transform record. A marked reference selects a 256-byte record with form word `5`, the zero run, and a rigid matrix at offset 48. The decoder keeps the matrix of each marked record that has the zero run, form word `0`, `1`, or `5`, and a rigid matrix, and records `feature.move-transform-assumed` with each rule that the record breaks.
 
 **Need.** Controlled saves of one `Move` that change the transform type between translation, rotation, and point-to-point, each recording the class type, frame length, and form word of the marked record and the bytes from offset 176 to the paired header.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-374. `Modify` body groups that the prologue does not name
+
+**Question.** What do the first `N` body groups of a `Modify` scope's ordered reference table select, and how do they differ from the `N` groups that the prologue names?
+
+**Known.** `f3d.md` §3.1 "A `Modify` scope moves whole bodies by one rigid transform" gives the prologue, the `2N` single-member body groups, and the last `N` groups that the prologue names. The decoder projects a `MoveBody` of the bodies of the named groups with the motion of the transform record, and records `feature.modify-unlisted-groups-assumed` with the unnamed groups. A `Modify` scope that has no complete named body group stays native with `feature.modify-unprojected`.
+
+**Need.** Controlled saves of one `Modify` that move one body and then two bodies, and a save that selects a different body after the first selection, each recording the member records of all `2N` groups.
 
 **Conflict.** None.
 

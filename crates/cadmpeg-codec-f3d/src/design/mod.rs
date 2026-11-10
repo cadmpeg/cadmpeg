@@ -129,6 +129,7 @@ pub(crate) fn design_feature_family(
         | Kind::SplitFace
         | Kind::PathPattern
         | Kind::MoveFace
+        | Kind::Modify
         | Kind::DeleteFace
         | Kind::SurfaceDeleteFace
         | Kind::RemoveBody

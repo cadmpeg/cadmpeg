@@ -5244,7 +5244,7 @@ Offsets are relative to the transform record's primary indexed header.
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A 253- or 254-byte frame stores form word `5` |
-| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `1` or `5` |
+| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `0`, `1`, or `5` |
 | 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
 | 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
 
@@ -5262,7 +5262,7 @@ Offsets are relative to the transform record's primary indexed header.
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A 253- or 254-byte frame stores form word `5` |
-| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `1` or `5` |
+| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `0`, `1`, or `5` |
 | 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
 | 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
 
@@ -5298,7 +5298,7 @@ Offsets are relative to the transform record's primary indexed header.
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A 273- or 274-byte frame stores form word `1` |
-| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `1` or `5` |
+| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `0`, `1`, or `5` |
 | 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
 | 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
 
@@ -5306,6 +5306,73 @@ Unstated regions:
 
 - `11..43` (32 B): Offsets 11 through 42 are zero.
 - `176..274` (98 B): The transform record's tail precedes the same-index paired header at offset 274.
+
+## `move_transform_frame_283`
+
+Spec §3.1 · layout: byte offsets · size: 283 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A 283- or 284-byte frame stores form word `0` |
+| 43 | 4 | `form` | `u32` | little | spec | A 283- or 284-byte frame stores form word `0` · value `0` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..283` (107 B): The transform record's tail precedes the same-index paired header at offset 283.
+
+## `move_transform_frame_284`
+
+Spec §3.1 · layout: byte offsets · size: 284 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A 283- or 284-byte frame stores form word `0` |
+| 43 | 4 | `form` | `u32` | little | spec | A 283- or 284-byte frame stores form word `0` · value `0` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..284` (108 B): The transform record's tail precedes the same-index paired header at offset 284.
+
+## `modify_marker_zero_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 47 B
+
+Offsets are relative to the Modify scope's primary indexed header. The group references continue in steps of eleven bytes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its primary bytes 11 through 19 are zero |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | Its primary bytes 11 through 19 are zero |
+| 20 | 1 | `marker` | `u8` | little | spec | byte 20 is a prologue marker · value `0` |
+| 21 | 11 | `transform_reference` | `bytes[11]` | little | spec | a marked reference to its rigid-transform record at offset 21, u32 body count `N` at offset 32 |
+| 32 | 4 | `body_count` | `u32` | little | spec | u32 body count `N` at offset 32 |
+| 36 | 11 | `first_body_group` | `bytes[11]` | little | spec | `N` marked references to construction groups from offset 36 |
+
+## `modify_marker_one_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 51 B
+
+Offsets are relative to the Modify scope's primary indexed header. The group references continue in steps of eleven bytes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its primary bytes 11 through 19 are zero |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | Its primary bytes 11 through 19 are zero |
+| 20 | 1 | `marker` | `u8` | little | spec | When the marker is `1` · value `1` |
+| 21 | 4 | `zero_word` | `u32` | little | spec | offsets 21 through 24 store u32 zero |
+| 25 | 11 | `transform_reference` | `bytes[11]` | little | spec | the marked transform reference is at offset 25 |
+| 36 | 4 | `body_count` | `u32` | little | spec | `N` is at offset 36 |
+| 40 | 11 | `first_body_group` | `bytes[11]` | little | spec | the `N` marked group references start at offset 40 |
 
 ## `legacy_body_group_frame_123`
 

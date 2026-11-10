@@ -22,7 +22,7 @@ use super::coil::{
 };
 use super::combine::DesignCombineOperation;
 use super::direct_face::{
-    DesignDirectFaceOperation, DesignDraftOperation, DesignMoveOperation,
+    DesignDirectFaceOperation, DesignDraftOperation, DesignModifyOperation, DesignMoveOperation,
     DesignOffsetFacesOperation, DesignShellOperation, DesignThickenOperation,
 };
 use super::emboss::DesignEmbossConstruction;
@@ -229,6 +229,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_move_operation,
     DesignMoveOperation,
     "move_operation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_modify_operation,
+    DesignModifyOperation,
+    "modify_operation"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_path_feature_construction,
@@ -608,6 +613,7 @@ design_feature_kinds! {
         Align => "Align": Option<DesignAlignEnvelope>,
         Move => "Move": Option<DesignMoveOperation>,
         MoveFace => "MoveFace": Option<DesignMoveOperation>,
+        Modify => "Modify": Option<DesignModifyOperation>,
         OffsetFaces => "OffsetFaces": Option<DesignOffsetFacesOperation>,
         Shell => "Shell": Option<DesignShellOperation>,
         Thicken => "Thicken": Option<DesignThickenOperation>,
@@ -906,6 +912,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_move_operation"
     )]
     move_operation: Option<DesignMoveOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_modify_operation"
+    )]
+    modify_operation: Option<DesignModifyOperation>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1672,6 +1684,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.move_operation.is_some() {
             present.push("move_operation");
         }
+        if wire.modify_operation.is_some() {
+            present.push("modify_operation");
+        }
         if wire.scale_operation.is_some() {
             present.push("scale_operation");
         }
@@ -1806,6 +1821,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::Align => DesignScopePayload::Align(wire.align_envelope.take()),
             DesignFeatureKind::Move => DesignScopePayload::Move(wire.move_operation.take()),
             DesignFeatureKind::MoveFace => DesignScopePayload::MoveFace(wire.move_operation.take()),
+            DesignFeatureKind::Modify => DesignScopePayload::Modify(wire.modify_operation.take()),
             DesignFeatureKind::OffsetFaces => {
                 DesignScopePayload::OffsetFaces(match wire.direct_face_operation.take() {
                     None => None,
@@ -2050,6 +2066,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.direct_face_operation.is_some()
             || wire.align_envelope.is_some()
             || wire.move_operation.is_some()
+            || wire.modify_operation.is_some()
             || wire.scale_operation.is_some()
             || wire.reverse_normal_operation.is_some()
             || wire.path_pattern_settings.is_some()
@@ -2175,6 +2192,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             direct_face_operation: None,
             align_envelope: None,
             move_operation: None,
+            modify_operation: None,
             scale_operation: None,
             reverse_normal_operation: None,
             path_pattern_settings: None,
@@ -2278,6 +2296,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::Move(value) | DesignScopePayload::MoveFace(value) => {
                 wire.move_operation = value;
             }
+            DesignScopePayload::Modify(value) => wire.modify_operation = value,
             DesignScopePayload::Scale(value) => {
                 wire.scale_operation = value;
             }
@@ -2775,6 +2794,13 @@ impl DesignParameterScope {
     pub(crate) fn move_operation(&self) -> Option<&DesignMoveOperation> {
         match &self.payload {
             DesignScopePayload::Move(value) | DesignScopePayload::MoveFace(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn modify_operation(&self) -> Option<&DesignModifyOperation> {
+        match &self.payload {
+            DesignScopePayload::Modify(value) => value.as_ref(),
             _ => None,
         }
     }
