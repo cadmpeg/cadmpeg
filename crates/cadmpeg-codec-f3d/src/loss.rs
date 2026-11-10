@@ -204,6 +204,10 @@ pub(crate) enum F3dLossCode {
     /// A Mirror plane is read from the `WorkPlane` scope after its plane
     /// selection identity.
     FeatureMirrorPlaneWorkPlaneAssumed,
+    /// A circular pattern's symmetric distribution has no circular pattern field.
+    FeatureCircularPatternPlacementNotTransferred,
+    /// A partial-turn circular pattern without a readable symmetric byte is read as one-sided.
+    FeatureCircularPatternDistributionAssumed,
     /// A feature scope has no complete unique ASM output transition interval.
     FeatureOutputStateChainUnbound,
     /// An affected body slot has no unique active body in the selected BREP.
@@ -721,6 +725,8 @@ impl F3dLossCode {
         Self::FeatureTimelineOwnerUnpaired,
         Self::FeaturePasteCopyPlacementAssumed,
         Self::FeatureMirrorPlaneWorkPlaneAssumed,
+        Self::FeatureCircularPatternPlacementNotTransferred,
+        Self::FeatureCircularPatternDistributionAssumed,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
         Self::FeatureDerivedBaseUnresolved,
@@ -1031,6 +1037,12 @@ impl F3dLossCode {
             Self::FeatureTimelineOwnerUnpaired => "feature.timeline-owner-unpaired",
             Self::FeaturePasteCopyPlacementAssumed => "feature.paste-copy-placement-assumed",
             Self::FeatureMirrorPlaneWorkPlaneAssumed => "feature.mirror-plane-work-plane-assumed",
+            Self::FeatureCircularPatternPlacementNotTransferred => {
+                "feature.circular-pattern-placement-not-transferred"
+            }
+            Self::FeatureCircularPatternDistributionAssumed => {
+                "feature.circular-pattern-distribution-assumed"
+            }
             Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
             Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
             Self::FeatureDerivedBaseUnresolved => "feature.derived-base-unresolved",
@@ -1408,6 +1420,8 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureMirrorPlaneWorkPlaneAssumed
+            | Self::FeatureCircularPatternPlacementNotTransferred
+            | Self::FeatureCircularPatternDistributionAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
@@ -1673,6 +1687,8 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureMirrorPlaneWorkPlaneAssumed
+            | Self::FeatureCircularPatternPlacementNotTransferred
+            | Self::FeatureCircularPatternDistributionAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
@@ -2016,6 +2032,8 @@ mod tests {
                 "feature.timeline-owner-unpaired",
                 "feature.paste-copy-placement-assumed",
                 "feature.mirror-plane-work-plane-assumed",
+                "feature.circular-pattern-placement-not-transferred",
+                "feature.circular-pattern-distribution-assumed",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
                 "feature.derived-base-unresolved",

@@ -973,6 +973,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     face_operands,
                     entity_selection_operands,
                     scopes,
+                    &mut projection_losses,
                 )
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Pattern {
@@ -7007,6 +7008,7 @@ fn project_circular_pattern(
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternTransform},
@@ -7039,6 +7041,23 @@ fn project_circular_pattern(
         count: construction.count.get(),
     })
     .ok()?;
+    if (construction.angle.get() - std::f64::consts::TAU).abs() > EPS_CIRCULAR_PATTERN_FULL_TURN {
+        match construction.symmetric.map(|symmetric| symmetric.value) {
+            Some(true) => losses.push(
+                crate::loss::F3dLossCode::FeatureCircularPatternPlacementNotTransferred.note(format!(
+                    "CircularPattern scope {} drops the symmetric distribution: a circular pattern has no field for it.",
+                    scope.id
+                )),
+            ),
+            Some(false) => {}
+            None => losses.push(
+                crate::loss::F3dLossCode::FeatureCircularPatternDistributionAssumed.note(format!(
+                    "CircularPattern scope {} is read as one-sided: its partial turn has no readable payload symmetric byte.",
+                    scope.id
+                )),
+            ),
+        }
+    }
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds,
         pattern,
