@@ -57,6 +57,7 @@ mod paste_copy;
 mod path_pattern;
 mod pattern_seeds;
 mod reverse_normal;
+mod revolve_target;
 mod surface_offset;
 mod surface_patch;
 
@@ -810,18 +811,29 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     body_recipe_operands,
                 )
                 .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
-                Some(DesignFeatureFamily::Revolve) => project_fixed_revolve_with_entities(
-                    scope,
-                    construction_groups,
-                    edge_operands,
-                    entity_selection_operands,
-                    face_operands,
-                    (placements, curve_identities),
-                    design_types,
-                )
-                .unwrap_or(FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                    family: UnresolvedFamily::Revolve,
-                })),
+                Some(DesignFeatureFamily::Revolve) => {
+                    let mut definition = project_fixed_revolve_with_entities(
+                        scope,
+                        construction_groups,
+                        edge_operands,
+                        entity_selection_operands,
+                        face_operands,
+                        (placements, curve_identities),
+                        design_types,
+                    )
+                    .unwrap_or(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                        family: UnresolvedFamily::Revolve,
+                    }));
+                    revolve_target::bind_revolve_shape_target(
+                        &mut definition,
+                        scope,
+                        construction_groups,
+                        face_operands,
+                        body_recipe_operands,
+                        histories,
+                    );
+                    definition
+                }
                 Some(DesignFeatureFamily::Loft) => project_fixed_loft(scope, inputs, ctx)?
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
