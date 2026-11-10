@@ -842,6 +842,14 @@ pub(crate) fn prefix_operand_ordinals(references: &[DesignRecipeReference]) -> O
     Some(ordinals)
 }
 
+impl DesignFaceRecipeNode {
+    pub(crate) fn has_two_side_clauses(&self) -> bool {
+        self.recipe_structure
+            .as_ref()
+            .is_some_and(|structure| structure.sides.len() == 2)
+    }
+}
+
 impl DesignFaceRecipeStructure {
     pub(crate) fn has_valid_operand_ordinals(&self, references: &[DesignRecipeReference]) -> bool {
         let Some(ordinals) = prefix_operand_ordinals(references) else {

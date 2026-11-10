@@ -352,3 +352,31 @@ fn a_leading_packed_token_reference_states_no_prefix_operands() {
     assert_eq!(super::prefix_operand_ordinals(&references), None);
     assert!(!recipe_structure(0).has_valid_operand_ordinals(&references));
 }
+
+#[test]
+fn a_face_recipe_node_has_two_side_clauses_only_with_a_two_side_structure() {
+    let side = super::DesignTopologyRecipeSide {
+        header_value: 0,
+        scalars: vec![1],
+        payload_prefix: vec![0],
+        entries: Vec::new(),
+    };
+    let mut node = super::DesignFaceRecipeNode {
+        byte_offset: 0,
+        end_byte_offset: 12,
+        program: vec![-1, -1, 2],
+        recipe_structure: None,
+    };
+    assert!(!node.has_two_side_clauses());
+    node.recipe_structure = Some(super::DesignFaceRecipeStructure {
+        root: 1,
+        prelude: [0, 1],
+        sides: vec![side.clone()],
+        postlude_value: None,
+    });
+    assert!(!node.has_two_side_clauses());
+    let structure = node.recipe_structure.as_mut().unwrap();
+    structure.prelude[1] = 2;
+    structure.sides.push(side);
+    assert!(node.has_two_side_clauses());
+}
