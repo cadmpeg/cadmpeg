@@ -764,6 +764,86 @@ fn an_extents_to_hole_ends_on_the_face_of_its_extent_group() {
     );
 }
 
+fn extent_member(slots: Vec<i64>) -> crate::records::topology::face::DesignFaceOperand {
+    let mut operand = face_operand(7, 9);
+    operand.scope_record_index = 32;
+    operand.recipe_kind = crate::records::recipes::ConstructionRecipeKind::Face;
+    operand.resolved_face_slots = slots;
+    operand
+}
+
+fn extents_to_scope() -> DesignParameterScope {
+    let mut scope = hole_scope();
+    set_extent(&mut scope, 0, true);
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(3);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope
+}
+
+#[test]
+fn an_extents_to_hole_ends_at_the_one_face_its_member_resolves() {
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    let scope = extents_to_scope();
+    let groups = [extent_group(DesignOperandRole::ROLE_0X5, &[7])];
+    let face = |operands: &[crate::records::topology::face::DesignFaceOperand]| {
+        super::super::hole_extent_face(&scope, &groups, operands).expect("extent face")
+    };
+    let FaceSelection::Historical { faces, native, .. } = face(&[extent_member(vec![63])]) else {
+        panic!("expected a historical extent face");
+    };
+    assert_eq!(faces.len(), 1);
+    assert_eq!(native.as_str(), groups[0].id);
+
+    let native_group = FaceSelection::Native(groups[0].id.clone());
+    assert_eq!(face(&[]), native_group);
+    assert_eq!(face(&[extent_member(Vec::new())]), native_group);
+    assert_eq!(face(&[extent_member(vec![63, 41])]), native_group);
+    let mut bounded = extent_member(vec![63]);
+    bounded.recipe_kind = crate::records::recipes::ConstructionRecipeKind::BoundedFace;
+    assert_eq!(face(&[bounded]), native_group);
+    assert_eq!(
+        face(&[extent_member(vec![63]), extent_member(vec![63])]),
+        native_group
+    );
+    let mut stateless = hole_scope();
+    set_extent(&mut stateless, 0, true);
+    assert_eq!(
+        super::super::hole_extent_face(&stateless, &groups, &[extent_member(vec![63])]),
+        Some(native_group)
+    );
+}
+
+#[test]
+fn a_resolved_extents_to_face_reports_its_assumption() {
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    let scope = extents_to_scope();
+    let parameters = hole_parameters()[1..].to_vec();
+    let indexed: Vec<_> = parameters
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (u32::try_from(i).unwrap(), p))
+        .collect();
+    let groups = [extent_group(DesignOperandRole::ROLE_0X5, &[7])];
+    let mut losses = Vec::new();
+    project_hole(
+        &scope,
+        &indexed,
+        &groups,
+        &[extent_member(vec![63])],
+        &mut losses,
+    )
+    .unwrap()
+    .expect("hole");
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::HoleExtentFaceAssumed.kind()));
+}
+
 #[test]
 fn an_extents_to_hole_needs_one_extent_group_with_one_member() {
     use crate::records::topology::extrude_selection::DesignOperandRole;
