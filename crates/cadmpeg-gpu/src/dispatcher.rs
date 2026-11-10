@@ -266,7 +266,9 @@ impl GpuDispatcher {
         match backend {
             BackendKind::RtxTensorCore => None,
             BackendKind::PtxSm86 => None,
-            BackendKind::CudaCompute => None,
+            BackendKind::CudaCompute => global_cuda().and_then(|cu| {
+                cu.simt_eval_bicubic_bezier_grid(control_points, u_params, v_params)
+            }),
             BackendKind::VulkanCompute => global_vulkan().and_then(|vk| {
                 vk.compute_eval_bicubic_bezier_grid(control_points, u_params, v_params)
             }),
@@ -694,7 +696,11 @@ fn benchmark_single(
                     let out = vk.compute_eval_bicubic_bezier_grid(&ctrl, &u_params, &u_params)?;
                     std::hint::black_box(&out);
                 }
-                BackendKind::CudaCompute => return None,
+                BackendKind::CudaCompute => {
+                    let cu = global_cuda()?;
+                    let out = cu.simt_eval_bicubic_bezier_grid(&ctrl, &u_params, &u_params)?;
+                    std::hint::black_box(&out);
+                }
                 BackendKind::PtxSm86 => return None,
                 BackendKind::RtxTensorCore => return None,
                 BackendKind::CpuSpatialIndex
