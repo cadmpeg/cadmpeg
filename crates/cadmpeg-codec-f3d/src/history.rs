@@ -29,6 +29,7 @@ mod face_recipe;
 mod fallback_face;
 pub(crate) mod fillet_blends;
 pub(crate) mod fragment_edge;
+pub(crate) mod history_bodies;
 mod hole_support;
 mod loop_index;
 mod move_face;
