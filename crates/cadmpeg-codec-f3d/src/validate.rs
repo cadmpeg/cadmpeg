@@ -1619,14 +1619,6 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     Ok(())
 }
 
-fn mesh_record_offset_is(
-    record: &records::mesh::DesignMeshRecordIdentity,
-    relative: u64,
-    offset: u64,
-) -> bool {
-    record.byte_offset().checked_add(relative) == Some(offset)
-}
-
 /// Validate complete `Base Mesh Feature` record graphs and their neutral links.
 /// The neutral feature link is checked only in a document that holds features.
 fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
@@ -1634,8 +1626,8 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut scope_records = HashSet::new();
     let mut collection_records = HashSet::new();
     let mut body_records = HashSet::new();
-    let mut entry_records = HashSet::new();
-    let mut guid_records = HashSet::new();
+    let mut entry_records = HashMap::new();
+    let mut guid_records = HashMap::new();
     let mut wrapper_records = HashSet::new();
     let mut state_records = HashSet::new();
     let mut node_records = HashSet::new();
@@ -1661,32 +1653,29 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .collect::<std::collections::HashSet<_>>();
     for feature in &ctx.native.design_mesh_features {
         let stream = design_stream(&feature.id);
-        let scope = ctx
-            .scopes_by_index
-            .get(&(stream, feature.scope().record().record_index()));
         let mut valid = feature_ids.insert(feature.id.as_str())
-            && scope_records.insert((stream, feature.scope().record().record_index()))
             && collection_records.insert((stream, feature.collection().record().record_index()))
             && texture_table_records
                 .insert((stream, feature.texture_table.record().record_index()))
             && collection_owner_records
-                .insert((stream, feature.collection_owner.record().record_index()))
-            && feature
-                .scope()
-                .record()
-                .byte_offset()
-                .checked_add(scope.map_or(0, |scope| scope.frame_length()))
-                == Some(feature.scope().base_record().byte_offset())
-            && mesh_record_offset_is(
-                feature.collection_owner.record(),
-                262,
-                feature.collection_owner.backlink_offset(),
-            )
-            && scope.is_some_and(|scope| {
-                scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature
-                    && scope.byte_offset() == feature.scope().record().byte_offset()
-                    && scope.paired_byte_offset() == feature.scope().base_record().byte_offset()
-            });
+                .insert((stream, feature.collection_owner.record().record_index()));
+        for mesh_scope in feature.scopes() {
+            let scope = ctx
+                .scopes_by_index
+                .get(&(stream, mesh_scope.record().record_index()));
+            valid &= scope_records.insert((stream, mesh_scope.record().record_index()))
+                && mesh_scope
+                    .record()
+                    .byte_offset()
+                    .checked_add(scope.map_or(0, |scope| scope.frame_length()))
+                    == Some(mesh_scope.base_record().byte_offset())
+                && scope.is_some_and(|scope| {
+                    scope.kind()
+                        == crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature
+                        && scope.byte_offset() == mesh_scope.record().byte_offset()
+                        && scope.paired_byte_offset() == mesh_scope.base_record().byte_offset()
+                });
+        }
 
         let mut resources = feature.texture_table.resources().iter().collect::<Vec<_>>();
         resources.sort_by_key(|left| left.filename_ordinal);
@@ -1707,7 +1696,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
         }
         valid &= resources_valid;
 
-        for body in feature.bodies() {
+        for body in feature.all_bodies() {
             let owner_key = (stream, body.owner_record.record_index());
             let owner_consistent = body_owner_records
                 .get(&owner_key)
@@ -1716,9 +1705,19 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             body_owner_records
                 .entry(owner_key)
                 .or_insert(&body.owner_record);
+            let entry_key = (stream, body.entry.record().record_index());
+            let guid_key = (stream, body.guid.record().record_index());
+            let entry_consistent = entry_records
+                .get(&entry_key)
+                .is_none_or(|entry| *entry == &body.entry);
+            let guid_consistent = guid_records
+                .get(&guid_key)
+                .is_none_or(|guid| *guid == &body.guid);
+            entry_records.entry(entry_key).or_insert(&body.entry);
+            guid_records.entry(guid_key).or_insert(&body.guid);
             let body_valid = body_records.insert((stream, body.placement.record().record_index()))
-                && entry_records.insert((stream, body.entry.record().record_index()))
-                && guid_records.insert((stream, body.guid.record().record_index()))
+                && entry_consistent
+                && guid_consistent
                 && wrapper_records.insert((stream, body.wrapper_record.record_index()))
                 && state_records.insert((stream, body.scene_state.record().record_index()))
                 && node_records.insert((stream, body.scene_node.record_index()))
@@ -1735,23 +1734,33 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             };
             valid &= body_valid && projection_valid;
         }
-        let projected = || {
-            feature
+        for mesh_scope in feature.scopes() {
+            let scope = ctx
+                .scopes_by_index
+                .get(&(stream, mesh_scope.record().record_index()));
+            let mut projected = feature
                 .bodies()
                 .iter()
-                .filter_map(|body| body.tessellation_id.as_deref())
-        };
-        if ctx.holds_design_intent() && projected().next().is_some() {
-            valid &= scope.is_some_and(|scope| {
-                ctx.ir.model.features.iter().any(|neutral| {
-                    neutral.native_ref.as_deref() == Some(scope.id.as_str())
-                        && matches!(
-                            neutral.evaluation.definition(),
-                            cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MeshImport { tessellations })
-                                if tessellations.iter().map(String::as_str).eq(projected())
-                        )
-                })
-            });
+                .filter(|body| body.scope_record_index == mesh_scope.record().record_index())
+                .collect::<Vec<_>>();
+            projected.sort_by_key(|body| body.scope_body_ordinal);
+            let projected = || {
+                projected
+                    .iter()
+                    .filter_map(|body| body.tessellation_id.as_deref())
+            };
+            if ctx.holds_design_intent() && projected().next().is_some() {
+                valid &= scope.is_some_and(|scope| {
+                    ctx.ir.model.features.iter().any(|neutral| {
+                        neutral.native_ref.as_deref() == Some(scope.id.as_str())
+                            && matches!(
+                                neutral.evaluation.definition(),
+                                cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MeshImport { tessellations })
+                                    if tessellations.iter().map(String::as_str).eq(projected())
+                            )
+                    })
+                });
+            }
         }
         if !valid {
             push_constant_finding(

@@ -461,6 +461,18 @@ pub(crate) enum F3dLossCode {
     MeshContainerMissing,
     /// Mesh attribute channels have no settled stored-element layout.
     MeshAttributeNotTransferred,
+    MeshGuidBytesUninterpreted,
+    MeshSplitStreamAssumed,
+    MeshHistoryWindowAssumed,
+    MeshOperationRecordsNative,
+    MeshFaceGroupsAssumed,
+    MeshBodyWordsNative,
+    MeshCollectionWordsNative,
+    MeshBodyBytesUninterpreted,
+    MeshBodyIdentityAssumed,
+    MeshWrapperBytesUninterpreted,
+    MeshOwnerBytesUninterpreted,
+    MeshScopePrefixUninterpreted,
     /// The external-reference table was present but not decoded.
     XrefTableUndecoded,
     /// A typed occurrence placement failed its frame grammar.
@@ -829,6 +841,18 @@ impl F3dLossCode {
         Self::MeshContainerUndecoded,
         Self::MeshContainerMissing,
         Self::MeshAttributeNotTransferred,
+        Self::MeshGuidBytesUninterpreted,
+        Self::MeshSplitStreamAssumed,
+        Self::MeshHistoryWindowAssumed,
+        Self::MeshOperationRecordsNative,
+        Self::MeshFaceGroupsAssumed,
+        Self::MeshBodyWordsNative,
+        Self::MeshCollectionWordsNative,
+        Self::MeshBodyBytesUninterpreted,
+        Self::MeshBodyIdentityAssumed,
+        Self::MeshWrapperBytesUninterpreted,
+        Self::MeshOwnerBytesUninterpreted,
+        Self::MeshScopePrefixUninterpreted,
         Self::XrefTableUndecoded,
         Self::XrefPlacementUndecoded,
         Self::XrefOccurrenceUnplaced,
@@ -1165,6 +1189,18 @@ impl F3dLossCode {
             Self::MeshContainerUndecoded => "mesh.container-undecoded",
             Self::MeshContainerMissing => "mesh.container-missing",
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
+            Self::MeshGuidBytesUninterpreted => "mesh.guid-bytes-uninterpreted",
+            Self::MeshSplitStreamAssumed => "mesh.split-stream-assumed",
+            Self::MeshHistoryWindowAssumed => "mesh.history-window-assumed",
+            Self::MeshOperationRecordsNative => "mesh.operation-records-native",
+            Self::MeshFaceGroupsAssumed => "mesh.face-groups-assumed",
+            Self::MeshBodyWordsNative => "mesh.body-words-native",
+            Self::MeshCollectionWordsNative => "mesh.collection-words-native",
+            Self::MeshBodyBytesUninterpreted => "mesh.body-bytes-uninterpreted",
+            Self::MeshBodyIdentityAssumed => "mesh.body-identity-assumed",
+            Self::MeshWrapperBytesUninterpreted => "mesh.wrapper-bytes-uninterpreted",
+            Self::MeshOwnerBytesUninterpreted => "mesh.owner-bytes-uninterpreted",
+            Self::MeshScopePrefixUninterpreted => "mesh.scope-prefix-uninterpreted",
             Self::XrefTableUndecoded => "xref.table-undecoded",
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
             Self::XrefOccurrenceUnplaced => "xref.occurrence-unplaced",
@@ -1269,6 +1305,11 @@ impl F3dLossCode {
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel
+            | Self::MeshGuidBytesUninterpreted
+            | Self::MeshBodyBytesUninterpreted
+            | Self::MeshWrapperBytesUninterpreted
+            | Self::MeshOwnerBytesUninterpreted
+            | Self::MeshScopePrefixUninterpreted
             | Self::SketchRegionBodyOmitted
             | Self::SketchCurveUnprofiledSelected
             | Self::ThreadLiveFaceUnproven
@@ -1481,6 +1522,12 @@ impl F3dLossCode {
             | Self::MeshContainerUnjoined
             | Self::MeshContainerMissing
             | Self::MeshAttributeNotTransferred
+            | Self::MeshSplitStreamAssumed
+            | Self::MeshHistoryWindowAssumed
+            | Self::MeshOperationRecordsNative
+            | Self::MeshFaceGroupsAssumed
+            | Self::MeshBodyWordsNative
+            | Self::MeshCollectionWordsNative
             | Self::XrefTableUndecoded
             | Self::XrefPlacementUndecoded
             | Self::XrefOccurrenceUnplaced
@@ -1499,6 +1546,7 @@ impl F3dLossCode {
             | Self::XrefOwnerUnresolved
             | Self::JointPlacedOccurrenceUnsolved
             | Self::MeshVertexPrecisionReduced
+            | Self::MeshBodyIdentityAssumed
             | Self::FaceSurfaceReferenceDangling
             | Self::SurfaceShapeNotDecoded
             | Self::ProceduralCurveUndecoded
@@ -1577,6 +1625,17 @@ impl F3dLossCode {
             | Self::XrefOwnedPose
             | Self::XrefOwnedPoseDisagrees
             | Self::XrefOwnedPoseNative
+            | Self::MeshGuidBytesUninterpreted
+            | Self::MeshSplitStreamAssumed
+            | Self::MeshHistoryWindowAssumed
+            | Self::MeshOperationRecordsNative
+            | Self::MeshFaceGroupsAssumed
+            | Self::MeshBodyWordsNative
+            | Self::MeshCollectionWordsNative
+            | Self::MeshBodyBytesUninterpreted
+            | Self::MeshWrapperBytesUninterpreted
+            | Self::MeshOwnerBytesUninterpreted
+            | Self::MeshScopePrefixUninterpreted
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
@@ -1779,6 +1838,7 @@ impl F3dLossCode {
                 LossTaxonomy::AssetNotTransferred
             }
             Self::MeshContainerUndecoded
+            | Self::MeshBodyIdentityAssumed
             | Self::DialectLayerCollision
             | Self::LocalOccurrenceYieldedToRegistered
             | Self::DesignIntentUndecoded => LossTaxonomy::DecodeDiagnostic,
@@ -2068,6 +2128,18 @@ mod tests {
                 "mesh.container-undecoded",
                 "mesh.container-missing",
                 "mesh.attribute-not-transferred",
+                "mesh.guid-bytes-uninterpreted",
+                "mesh.split-stream-assumed",
+                "mesh.history-window-assumed",
+                "mesh.operation-records-native",
+                "mesh.face-groups-assumed",
+                "mesh.body-words-native",
+                "mesh.collection-words-native",
+                "mesh.body-bytes-uninterpreted",
+                "mesh.body-identity-assumed",
+                "mesh.wrapper-bytes-uninterpreted",
+                "mesh.owner-bytes-uninterpreted",
+                "mesh.scope-prefix-uninterpreted",
                 "xref.table-undecoded",
                 "xref.placement-undecoded",
                 "xref.occurrence-unplaced",
