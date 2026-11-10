@@ -343,3 +343,45 @@ fn a_new_body_distance_extrude_can_store_a_selected_face_start_without_a_group()
     assert!(conflicts(&native(DesignExtrudeOperation::Join, true)));
     assert!(conflicts(&native(DesignExtrudeOperation::NewBody, false)));
 }
+
+/// DR-360: a one-sided face target whose roster stores every expected group
+/// except its termination group.
+#[test]
+fn a_one_sided_face_target_can_lack_only_its_termination_group() {
+    use crate::records::topology::extrude_selection::DesignExtrudeFaceRole::{Start, Termination};
+    use crate::validate::one_sided_face_target_lacks_only_its_termination as lacks;
+    use DesignExtrudeExtent::{OneSidedToFace, TwoSidedDistanceToFace, TwoSidedToFaces};
+    assert!(lacks(
+        OneSidedToFace,
+        &[Start, Termination],
+        [Some(Start)].into_iter()
+    ));
+    assert!(lacks(OneSidedToFace, &[Termination], [].into_iter()));
+    assert!(!lacks(
+        OneSidedToFace,
+        &[Start, Termination],
+        [].into_iter()
+    ));
+    assert!(!lacks(
+        OneSidedToFace,
+        &[Start, Termination],
+        [Some(Start), Some(Termination)].into_iter()
+    ));
+    assert!(!lacks(OneSidedToFace, &[Start], [Some(Start)].into_iter()));
+    // Two-sided face targets keep their termination rule.
+    assert!(!lacks(
+        TwoSidedToFaces,
+        &[Termination, Termination],
+        [].into_iter()
+    ));
+    assert!(!lacks(
+        TwoSidedToFaces,
+        &[Termination, Termination],
+        [Some(Termination)].into_iter()
+    ));
+    assert!(!lacks(
+        TwoSidedDistanceToFace,
+        &[Start, Termination],
+        [Some(Start)].into_iter()
+    ));
+}

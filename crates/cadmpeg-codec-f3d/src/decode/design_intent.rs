@@ -594,6 +594,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &prereqs.design_parameters,
         &prereqs.design_parameter_owner_unparsed,
     );
+    losses.extend(
+        crate::design::decode::operands::extrude_extent::report_missing_terminations(
+            &design.design_parameter_scopes,
+            &design.design_construction_operand_groups,
+        ),
+    );
     let projected = crate::design::feature_project::project_parameter_design_with_edge_identities(
         ctx,
         &crate::design::feature_project::ProjectInputs {

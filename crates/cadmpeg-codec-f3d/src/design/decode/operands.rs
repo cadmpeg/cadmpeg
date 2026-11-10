@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse edge, face, and body operand frames and recipe structure.
 
+pub(crate) mod extrude_extent;
 mod fillet_variable_groups;
 
 use crate::bytes::lp_utf16_bounded;
