@@ -7519,15 +7519,40 @@ fn hole_extent_loss(scope: &DesignParameterScope) -> cadmpeg_ir::report::loss::L
     ))
 }
 
-/// The face that ends an Extents To Hole: the native identity of its sole
-/// role-`0x0000000500000000` group, which has one member.
+/// The face that ends an Extents To Hole. Its sole
+/// role-`0x0000000500000000` group has one member. When that member is the
+/// one direct `face` recipe operand of the scope at its record and resolves
+/// one face of the preceding state, that face ends the hole (DR-243).
+/// Otherwise the group stays the native selection.
 fn hole_extent_face(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     let group = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X5)?;
-    (group.members().len() == 1)
-        .then(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone()))
+    let [member] = group.members() else {
+        return None;
+    };
+    let stream = native_stream(&scope.id);
+    let resolved = unique_feature_match(face_operands.iter().filter(|operand| {
+        native_stream(&operand.id) == stream
+            && operand.scope_record_index == scope.record_index
+            && operand.record_index() == member.value
+    }))
+    .filter(|operand| {
+        operand.group_record_index().is_none()
+            && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::Face
+    })
+    .and_then(|operand| match operand.resolved_face_slots.as_slice() {
+        [face] => crate::design::face_resolve::historical_face_selection_with_native(
+            scope,
+            scope.previous_history_state_id()?,
+            vec![*face],
+            group.id.clone(),
+        ),
+        _ => None,
+    });
+    Some(resolved.unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())))
 }
 
 fn hole_termination(
@@ -7548,7 +7573,7 @@ fn hole_termination(
     match extent.extent_control {
         Some(0) if extent.saved_non_distance_depth.is_some() && depth.is_none() => {
             Some(LinearTermination::ToFace {
-                face: hole_extent_face(scope, groups)?,
+                face: hole_extent_face(scope, groups, face_operands)?,
                 offset: None,
             })
         }
@@ -7683,6 +7708,16 @@ fn project_hole(
         losses.push(hole_extent_loss(scope));
         return Ok(None);
     };
+    if let LinearTermination::ToFace {
+        face: FaceSelection::Historical { native, .. },
+        ..
+    } = &extent
+    {
+        losses.push(crate::loss::F3dLossCode::HoleExtentFaceAssumed.note(format!(
+            "Hole scope {} ends at the face that the member of its Extents To group {native} resolves.",
+            scope.id
+        )));
+    }
     if !matches!(parameters.len(), 2..=7) {
         return Ok(None);
     }
