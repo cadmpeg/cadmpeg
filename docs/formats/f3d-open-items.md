@@ -1958,4 +1958,3 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The Mini AfterSherpa V6 Zodiac BMO part stores a one-sided Cut scope with a selected-face start, one start face group, a `Side1Offset` owner, no termination group, and no shape-target group.
 
 **Note.** None.
-
