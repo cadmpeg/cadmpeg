@@ -178,15 +178,28 @@ fn exact_rectangular_pattern_direction(
     selection_record_index: u32,
     scope_record_index: u32,
 ) -> Option<patterns::DesignRectangularPatternDirection> {
+    use crate::layout::rectangular_pattern_compact_spacing_direction_record as compact;
     use crate::layout::rectangular_pattern_direction_record as frame;
-
     use crate::layout::rectangular_pattern_spacing_direction_record as spacing;
 
     let distance_type = View::u32_le_at(bytes, start + frame::FIXED_EIGHT)?;
-    let shift = match (paired_at.checked_sub(start)?, distance_type) {
+    let length = paired_at.checked_sub(start)?;
+    let shift = match (length, distance_type) {
         (frame::LEN, 8) => 0,
         (spacing::LEN, 7) if bytes.get(start + spacing::SPACING_FLAG) == Some(&0) => 1,
+        (compact::LEN, 7) => 0,
         _ => return None,
+    };
+    let compact_spacing = length == compact::LEN;
+    let at = |offset| {
+        start
+            + if compact_spacing && offset >= frame::INDEX_PLUS_ONE_REFERENCE {
+                offset - (frame::INDEX_PLUS_ONE_REFERENCE - compact::INDEX_PLUS_ONE_REFERENCE)
+            } else if compact_spacing && offset >= frame::SELECTION_COUNT {
+                offset - (frame::SELECTION_COUNT - compact::SELECTION_COUNT)
+            } else {
+                offset + shift
+            }
     };
     let header = start + frame::INDEXED_HEADER;
     let (class_tag, after_tag) =
@@ -199,39 +212,39 @@ fn exact_rectangular_pattern_direction(
         || bytes.get(start + frame::ZERO_RUN_10..start + frame::SELECTION_KIND) != Some(&[0; 10])
         || !matches!(selection_kind, 8 | 16)
         || bytes.get(start + frame::ZERO_RUN_16..start + frame::FIXED_EIGHT) != Some(&[0; 16])
-        || (0..3).any(|lane| {
-            View::f64_le_at(bytes, start + shift + frame::NEGATIVE_ONES + lane * 8) != Some(-1.0)
-        })
-        || View::u32_le_at(bytes, start + shift + frame::SELECTION_COUNT) != Some(1)
-        || marked_record_reference(bytes, start + shift + frame::SELECTION_REFERENCE)
+        || (!compact_spacing
+            && (0..3).any(|lane| {
+                View::f64_le_at(bytes, at(frame::NEGATIVE_ONES) + lane * 8) != Some(-1.0)
+            }))
+        || View::u32_le_at(bytes, at(frame::SELECTION_COUNT)) != Some(1)
+        || marked_record_reference(bytes, at(frame::SELECTION_REFERENCE))
             != Some(selection_record_index)
-        || bytes.get(start + shift + frame::ZERO_RUN_2..start + shift + frame::AUXILIARY_COUNT)
-            != Some(&[0; 2])
-        || View::u32_le_at(bytes, start + shift + frame::AUXILIARY_COUNT) != Some(1)
-        || marked_record_reference(bytes, start + shift + frame::AUXILIARY_REFERENCE).is_none()
-        || View::u64_le_at(bytes, start + shift + frame::ROLE) != Some(0x0000_0004_0000_0000)
-        || bytes
-            .get(start + shift + frame::ZERO_RUN_AFTER_ROLE..start + shift + frame::OPAQUE_INDEX)
-            != Some(&[0; 10])
+        || bytes.get(at(frame::ZERO_RUN_2)..at(frame::AUXILIARY_COUNT)) != Some(&[0; 2])
+        || View::u32_le_at(bytes, at(frame::AUXILIARY_COUNT)) != Some(1)
+        || marked_record_reference(bytes, at(frame::AUXILIARY_REFERENCE)).is_none()
+        || View::u64_le_at(bytes, at(frame::ROLE)) != Some(0x0000_0004_0000_0000)
+        || bytes.get(at(frame::ZERO_RUN_AFTER_ROLE)..at(frame::OPAQUE_INDEX)) != Some(&[0; 10])
     {
         return None;
     }
-    let opaque_index = View::u32_le_at(bytes, start + shift + frame::OPAQUE_INDEX)?;
+    let opaque_index = View::u32_le_at(bytes, at(frame::OPAQUE_INDEX))?;
     if opaque_index == 0
-        || !View::f64_le_at(bytes, start + shift + frame::OPAQUE_SCALAR)?.is_finite()
-        || View::u32_le_at(bytes, start + shift + frame::OPAQUE_INDEX_REPEAT) != Some(opaque_index)
-        || marked_record_reference(bytes, start + shift + frame::INDEX_PLUS_TWO_REFERENCE)
+        || !View::f64_le_at(bytes, at(frame::OPAQUE_SCALAR))?.is_finite()
+        || View::u32_le_at(bytes, at(frame::OPAQUE_INDEX_REPEAT)) != Some(opaque_index)
+        || marked_record_reference(bytes, at(frame::INDEX_PLUS_TWO_REFERENCE))
             != record_index.checked_add(2)
-        || bytes.get(start + shift + frame::SEPARATOR_FLAG) != Some(&1)
+        || (!compact_spacing && bytes.get(at(frame::SEPARATOR_FLAG)) != Some(&1))
         || bytes.get(
-            start + shift + frame::SEPARATOR_ZERO_RUN
-                ..start + shift + frame::INDEX_PLUS_ONE_REFERENCE,
+            if compact_spacing {
+                start + compact::SEPARATOR_ZERO_RUN
+            } else {
+                at(frame::SEPARATOR_ZERO_RUN)
+            }..at(frame::INDEX_PLUS_ONE_REFERENCE),
         ) != Some(&[0; 2])
-        || marked_record_reference(bytes, start + shift + frame::INDEX_PLUS_ONE_REFERENCE)
+        || marked_record_reference(bytes, at(frame::INDEX_PLUS_ONE_REFERENCE))
             != record_index.checked_add(1)
-        || bytes.get(start + shift + frame::SCOPE_SEPARATOR) != Some(&0)
-        || marked_record_reference(bytes, start + shift + frame::SCOPE_REFERENCE)
-            != Some(scope_record_index)
+        || bytes.get(at(frame::SCOPE_SEPARATOR)) != Some(&0)
+        || marked_record_reference(bytes, at(frame::SCOPE_REFERENCE)) != Some(scope_record_index)
     {
         return None;
     }
@@ -330,7 +343,7 @@ fn exact_rectangular_pattern_secondary_direction(
     let [direction] = directions else {
         return None;
     };
-    if construction.active_direction_count() != 2 || direction.distance_type != 7 {
+    if construction.active_direction_count() != 2 {
         return None;
     }
     let mut found = None;
