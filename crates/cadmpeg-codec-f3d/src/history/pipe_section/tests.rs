@@ -250,14 +250,7 @@ fn bound_with_losses(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
     );
-    let assumptions = [
-        F3dLossCode::FeaturePipeCircularSectionInferred.kind(),
-        F3dLossCode::FeaturePipeWholePathExtentAssumed.kind(),
-    ];
-    assert_eq!(
-        losses.as_slice(),
-        if projected { &assumptions[..] } else { &[] }
-    );
+    assert_eq!(losses.len(), if projected { 2 } else { 0 });
     (definition, losses)
 }
 
@@ -352,7 +345,7 @@ fn a_pipe_needs_curved_result_faces_of_its_section_radii() {
 }
 
 #[test]
-fn a_pipe_needs_a_new_body_operation_one_path_group_and_its_scalar_owners() {
+fn a_pipe_needs_one_path_group_and_its_scalar_owners() {
     let groups = [path_group(30, DesignOperandRole::ROLE_0X5)];
     let mut missing_owner = owners(0.5, 0.1);
     missing_owner.pop();
@@ -364,9 +357,7 @@ fn a_pipe_needs_a_new_body_operation_one_path_group_and_its_scalar_owners() {
     ];
     let no_path = [path_group(30, DesignOperandRole::BODIES_A)];
     let new_body = pipe_scope(DesignExtrudeOperation::NewBody, false);
-    let join = pipe_scope(DesignExtrudeOperation::Join, false);
     for (scope, owners, groups) in [
-        (&join, owners(0.5, 0.1), &groups[..]),
         (&new_body, missing_owner, &groups[..]),
         (&new_body, duplicate_owner, &groups[..]),
         (&new_body, owners(0.5, 0.1), &two_paths[..]),
@@ -383,7 +374,7 @@ fn a_pipe_needs_a_new_body_operation_one_path_group_and_its_scalar_owners() {
 fn a_pipe_needs_whole_path_fractions() {
     let scope = pipe_scope(DesignExtrudeOperation::NewBody, false);
     let groups = [path_group(30, DesignOperandRole::ROLE_0X5)];
-    for fractions in [[1.0, 0.0], [0.5, 1.0]] {
+    for fractions in [[0.5, 1.0], [1.0, 0.5], [0.0, 0.0]] {
         let (definition, losses) = bound_with_losses(
             &scope,
             &owners_with_fractions(fractions, 0.5, 0.1),
@@ -400,7 +391,7 @@ fn a_pipe_needs_whole_path_fractions() {
 }
 
 #[test]
-fn a_pipe_needs_solid_result_bodies_that_no_later_feature_changes() {
+fn a_pipe_whose_results_a_later_feature_changes_assumes_a_circle_and_unchanged_results_must_fit() {
     let scope = pipe_scope(DesignExtrudeOperation::NewBody, false);
     let groups = [path_group(30, DesignOperandRole::ROLE_0X5)];
     let later = |features: &mut Vec<Feature>, definition: FeatureDefinition, shares: bool| {
@@ -424,16 +415,21 @@ fn a_pipe_needs_solid_result_bodies_that_no_later_feature_changes() {
         })
     };
     for shares in [true, false] {
-        assert!(matches!(
-            bound_with(
-                &scope,
-                &owners(0.5, 0.1),
-                &groups,
-                &[cylinder(2.5)],
-                |_, features| later(features, native(), shares)
-            ),
-            FeatureDefinition::Operation(FeatureOperation::Native { .. })
-        ));
+        let (definition, losses) = bound_with_losses(
+            &scope,
+            &owners(0.5, 0.1),
+            &groups,
+            &[cylinder(4.0)],
+            |_, features| later(features, native(), shares),
+        );
+        assert_eq!(circular_section(&definition), Some((2.5, None)));
+        assert_eq!(
+            losses,
+            [
+                F3dLossCode::FeaturePipeCircularSectionAssumed.kind(),
+                F3dLossCode::FeaturePipeWholePathExtentAssumed.kind()
+            ]
+        );
     }
     assert!(matches!(
         bound_with(
@@ -469,4 +465,124 @@ fn a_pipe_needs_solid_result_bodies_that_no_later_feature_changes() {
         ),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })
     ));
+}
+
+/// The operation, along fraction and against fraction of a bound Sweep.
+fn sweep_operation_and_extent(
+    definition: &FeatureDefinition,
+) -> Option<(cadmpeg_ir::features::SolidSweepOperation, f64, f64)> {
+    let FeatureDefinition::Operation(FeatureOperation::Sweep {
+        shape: SweepShape::Solid { op, .. },
+        path_extent: Some(extent),
+        ..
+    }) = definition
+    else {
+        return None;
+    };
+    Some((
+        *op,
+        extent.along_fraction.get(),
+        extent.against_fraction.get(),
+    ))
+}
+
+#[test]
+fn a_pipe_with_one_unit_and_one_zero_fraction_projects_with_a_path_end_section() {
+    use cadmpeg_ir::features::SolidSweepOperation;
+    let scope = pipe_scope(DesignExtrudeOperation::NewBody, false);
+    let groups = [path_group(30, DesignOperandRole::ROLE_0X5)];
+    for [forward, reverse] in [[1.0, 0.0], [0.0, 1.0]] {
+        let (definition, losses) = bound_with_losses(
+            &scope,
+            &owners_with_fractions([forward, reverse], 0.5, 0.1),
+            &groups,
+            &[cylinder(2.5)],
+            |_, _| {},
+        );
+        assert_eq!(circular_section(&definition), Some((2.5, None)));
+        assert_eq!(
+            sweep_operation_and_extent(&definition),
+            Some((SolidSweepOperation::NewBody, forward, reverse))
+        );
+        assert_eq!(
+            losses,
+            [
+                F3dLossCode::FeaturePipeCircularSectionInferred.kind(),
+                F3dLossCode::FeaturePipePathEndSectionAssumed.kind()
+            ]
+        );
+    }
+}
+
+#[test]
+fn a_boolean_pipe_projects_its_operation_with_an_assumed_circle() {
+    use cadmpeg_ir::features::SolidSweepOperation;
+    let groups = [
+        path_group(30, DesignOperandRole::BODIES_A),
+        path_group(40, DesignOperandRole::ROLE_0X5),
+    ];
+    for (operation, op) in [
+        (DesignExtrudeOperation::Join, SolidSweepOperation::Join),
+        (DesignExtrudeOperation::Cut, SolidSweepOperation::Cut),
+    ] {
+        let scope = pipe_scope(operation, false);
+        let (definition, losses) = bound_with_losses(
+            &scope,
+            &owners_with_fractions([1.0, 0.0], 3.2, 0.8),
+            &groups,
+            &[cylinder(4.0)],
+            |_, _| {},
+        );
+        assert_eq!(circular_section(&definition), Some((16.0, None)));
+        assert_eq!(
+            sweep_operation_and_extent(&definition),
+            Some((op, 1.0, 0.0))
+        );
+        let FeatureDefinition::Operation(FeatureOperation::Sweep {
+            path: Some(PathRef::Native(path)),
+            ..
+        }) = &definition
+        else {
+            panic!("Sweep along the path group: {definition:?}");
+        };
+        assert_eq!(path, &groups[1].id);
+        assert_eq!(
+            losses,
+            [
+                F3dLossCode::FeaturePipeCircularSectionAssumed.kind(),
+                F3dLossCode::FeaturePipePathEndSectionAssumed.kind()
+            ]
+        );
+    }
+    assert!(matches!(
+        bound_with(
+            &pipe_scope(DesignExtrudeOperation::Intersect, false),
+            &owners_with_fractions([1.0, 0.0], 3.2, 0.8),
+            &groups,
+            &[cylinder(4.0)],
+            |_, _| {},
+        ),
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+    ));
+}
+
+#[test]
+fn a_new_body_pipe_without_result_bodies_assumes_a_circle() {
+    let scope = pipe_scope(DesignExtrudeOperation::NewBody, true);
+    let groups = [path_group(30, DesignOperandRole::ROLE_0X5)];
+    let (definition, losses) =
+        bound_with_losses(&scope, &owners(0.6, 0.15), &groups, &[], |_, features| {
+            features[0].evaluation = FeatureEvaluation::new(
+                features[0].evaluation.definition().clone(),
+                cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+            );
+        });
+    assert_eq!(circular_section(&definition), Some((3.0, Some(1.5))));
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::FeaturePipeCircularSectionAssumed.kind(),
+            F3dLossCode::FeaturePipeWholePathExtentAssumed.kind()
+        ]
+    );
 }
