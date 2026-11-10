@@ -753,9 +753,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     );
                     definition
                 }
-                Some(DesignFeatureFamily::Fillet) => {
-                    project_fillet_arm(ctx, inputs, scope, parameters.as_slice(), native_scope)?
-                }
+                Some(DesignFeatureFamily::Fillet) => project_fillet_arm(
+                    ctx,
+                    inputs,
+                    scope,
+                    parameters.as_slice(),
+                    native_scope,
+                    &mut projection_losses,
+                )?,
                 Some(DesignFeatureFamily::Chamfer) => {
                     let mut chamfer = if parameters.is_empty() {
                         project_fixed_chamfer(
@@ -765,7 +770,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             edge_identity_operands,
                             edge_treatment_vertex_operands,
                             histories,
-                            ctx,
+                            (ctx, &mut projection_losses),
                         )?
                     } else {
                         None
@@ -2479,6 +2484,7 @@ fn project_fillet_arm(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     native_scope: &str,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
     use cadmpeg_ir::features::{
         edge_treatments::{FilletGroup, RadiusSpec},
@@ -2558,6 +2564,7 @@ fn project_fillet_arm(
                         treatment_radius: edge_radius,
                     },
                     ctx,
+                    losses,
                 )?
             } else {
                 EdgeSelection::Native(resolved.assignment.id.clone())
@@ -2578,7 +2585,7 @@ fn project_fillet_arm(
             },
         );
     }
-    if let Some(definition) = project_variable_fillet(scope, parameters, inputs, ctx)? {
+    if let Some(definition) = project_variable_fillet(scope, parameters, inputs, ctx, losses)? {
         return Ok(definition);
     }
     if parameters.is_empty() {
@@ -2589,7 +2596,7 @@ fn project_fillet_arm(
             inputs.edge_identity_operands,
             inputs.edge_treatment_vertex_operands,
             inputs.histories,
-            ctx,
+            (ctx, losses),
         )? {
             return Ok(definition);
         }
@@ -5539,6 +5546,7 @@ fn project_variable_fillet(
     parameters: &[(u32, &DesignParameter)],
     inputs: &ProjectInputs<'_>,
     ctx: &DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         edge_treatments::{FilletGroup, RadiusSpec},
@@ -5577,6 +5585,7 @@ fn project_variable_fillet(
                         treatment_radius: None,
                     },
                     ctx,
+                    losses,
                 )?,
                 radius: RadiusSpec::Variable { points },
                 tangency_weight,
@@ -5894,6 +5903,7 @@ fn project_chamfer(
                     treatment_radius: None,
                 },
                 ctx,
+                losses,
             )?,
             spec,
         };
@@ -5921,7 +5931,10 @@ fn project_fixed_chamfer(
     edge_identity_operands: &[DesignEdgeIdentityOperand],
     edge_treatment_vertex_operands: &[DesignEdgeTreatmentVertexOperand],
     histories: &[crate::history_records::AsmHistory],
-    ctx: &DecodeContext<'_>,
+    (ctx, losses): (
+        &DecodeContext<'_>,
+        &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         edge_treatments::{ChamferGroup, ChamferSpec},
@@ -5965,6 +5978,7 @@ fn project_fixed_chamfer(
                         treatment_radius: None,
                     },
                     ctx,
+                    losses,
                 )?,
                 spec,
             }),

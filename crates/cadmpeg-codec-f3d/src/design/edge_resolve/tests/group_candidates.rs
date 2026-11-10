@@ -564,3 +564,120 @@ fn a_two_reference_group_selects_the_edges_its_transition_deletes() {
     );
     assert_eq!(resolve(&uncovered), None);
 }
+
+fn two_face_treatment_group(
+) -> crate::records::topology::construction::DesignConstructionOperandGroup {
+    let mut selection_group = group(2, 10);
+    selection_group
+        .try_set_members(
+            [10, 11]
+                .into_iter()
+                .map(|value| crate::records::identity::Located {
+                    value,
+                    offset: u64::from(value) * 11,
+                })
+                .collect(),
+        )
+        .unwrap();
+    selection_group
+}
+
+fn resolve_two_face_treatment(
+    operands: &[crate::records::topology::edge_identity::DesignEdgeOperand],
+) -> (EdgeSelection, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    let group = two_face_treatment_group();
+    let feature = FeatureId::mint("f3d:model:feature#two-face-treatment").unwrap();
+    let mut losses = Vec::new();
+    let selection = crate::test_support::with_decode_context(|ctx| {
+        super::resolved_edge_treatment_group_with_corners(
+            &group,
+            crate::design::edge_resolve::EdgeTreatmentInputs {
+                groups: std::slice::from_ref(&group),
+                operands,
+                identity_operands: &[],
+                vertex_operands: &[],
+                histories: &[],
+                previous_state_id: Some(7),
+                feature_id: &feature,
+                treatment_radius: None,
+            },
+            ctx,
+            &mut losses,
+        )
+    })
+    .unwrap();
+    (selection, losses)
+}
+
+fn two_face_treatment_operands() -> [crate::records::topology::edge_identity::DesignEdgeOperand; 2]
+{
+    [10, 11].map(|index| {
+        two_side_operand(
+            index,
+            [
+                ("f3d:brep:entity#1", &[10, 11]),
+                ("f3d:brep:entity#2", &[10, 11]),
+            ],
+            &[10, 11],
+        )
+    })
+}
+
+#[test]
+fn two_face_deleted_set_preserves_a_resolved_surviving_edge() {
+    let mut operands = two_face_treatment_operands();
+    operands[0].resolved_edge_slot = Some(99);
+    let (selection, losses) = resolve_two_face_treatment(&operands);
+    let feature = FeatureId::mint("f3d:model:feature#two-face-treatment").unwrap();
+    assert_eq!(
+        selection,
+        EdgeSelection::historical_partial(
+            crate::ids::feature_input_topology_id(&feature, 7),
+            vec![crate::ids::history_input_edge_id(
+                &crate::ids::feature_input_prefix(&feature, 7),
+                99
+            )],
+            vec![operands[1].id.clone()],
+            two_face_treatment_group().id,
+        )
+        .unwrap()
+    );
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn two_face_deleted_set_charges_one_assumption_note_per_group() {
+    let operands = two_face_treatment_operands();
+    let (selection, losses) = resolve_two_face_treatment(&operands);
+    let feature = FeatureId::mint("f3d:model:feature#two-face-treatment").unwrap();
+    assert_eq!(
+        selection,
+        EdgeSelection::historical(
+            crate::ids::feature_input_topology_id(&feature, 7),
+            [10, 11]
+                .into_iter()
+                .map(|edge| crate::ids::history_input_edge_id(
+                    &crate::ids::feature_input_prefix(&feature, 7),
+                    edge
+                ))
+                .collect(),
+            two_face_treatment_group().id.clone(),
+        )
+        .unwrap()
+    );
+    assert_eq!(losses.len(), 1);
+    let expected = crate::loss::F3dLossCode::HistoricalEdgeSelectionDeletedSetAssumed.note(
+        "Group f3d:test:group-2 is read with the assumption that the treated edge set equals the transition-deleted set."
+    );
+    assert_eq!(losses[0], expected);
+}
+
+#[test]
+fn exact_two_face_members_charge_no_deleted_set_assumption() {
+    let mut operands = two_face_treatment_operands();
+    operands[0].resolved_edge_slot = Some(10);
+    operands[1].resolved_edge_slot = Some(11);
+    let (selection, losses) = resolve_two_face_treatment(&operands);
+    assert!(matches!(selection, EdgeSelection::Historical { .. }));
+    assert!(losses.is_empty());
+}

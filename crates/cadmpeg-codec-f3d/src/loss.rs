@@ -280,6 +280,9 @@ pub(crate) enum F3dLossCode {
     HistoricalFilletEdgeInferred,
     /// An edge-treatment edge is read from the faces its recipe names; it bounds no candidate face.
     HistoricalEdgeSelectionInferred,
+    /// A two-face treatment group takes the edges its transition deletes; the
+    /// treated set is assumed to equal the deleted set.
+    HistoricalEdgeSelectionDeletedSetAssumed,
     /// A fillet with no bound history takes the one history, among several
     /// that hold its state pair, in which every edge group resolves.
     HistoricalEdgeHistoryInferred,
@@ -741,6 +744,7 @@ impl F3dLossCode {
         Self::HistoricalEdgeMidpointsUnresolved,
         Self::HistoricalFilletEdgeInferred,
         Self::HistoricalEdgeSelectionInferred,
+        Self::HistoricalEdgeSelectionDeletedSetAssumed,
         Self::HistoricalEdgeHistoryInferred,
         Self::HistoricalOutputBlobHistoryInferred,
         Self::HistoricalFilletEdgeAmbiguous,
@@ -1043,6 +1047,9 @@ impl F3dLossCode {
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
             Self::HistoricalFilletEdgeInferred => "history.fillet-edge-inferred",
             Self::HistoricalEdgeSelectionInferred => "history.edge-selection-inferred",
+            Self::HistoricalEdgeSelectionDeletedSetAssumed => {
+                "history.edge-selection-deleted-set-assumed"
+            }
             Self::HistoricalEdgeHistoryInferred => "history.edge-history-inferred",
             Self::HistoricalOutputBlobHistoryInferred => "history.output-blob-history-inferred",
             Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
@@ -1392,6 +1399,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
             | Self::HistoricalEdgeSelectionInferred
+            | Self::HistoricalEdgeSelectionDeletedSetAssumed
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
@@ -1636,6 +1644,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
             | Self::HistoricalEdgeSelectionInferred
+            | Self::HistoricalEdgeSelectionDeletedSetAssumed
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
@@ -1976,6 +1985,7 @@ mod tests {
                 "history.edge-midpoints-unresolved",
                 "history.fillet-edge-inferred",
                 "history.edge-selection-inferred",
+                "history.edge-selection-deleted-set-assumed",
                 "history.edge-history-inferred",
                 "history.output-blob-history-inferred",
                 "history.fillet-edge-ambiguous",

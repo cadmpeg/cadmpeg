@@ -77,7 +77,7 @@ pub(super) fn resolved_edge_group(
             previous_state_id,
             feature_id,
         },
-        (EdgeGroupProof::Generic, None),
+        (EdgeGroupProof::Generic, None, &mut false),
         ctx,
     )
 }
@@ -325,6 +325,7 @@ pub(super) fn resolved_edge_treatment_group(
                 treatment_radius,
             },
             decode_ctx,
+            &mut Vec::new(),
         )
     })
 }
@@ -362,6 +363,34 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
     group: &DesignConstructionOperandGroup,
     input: EdgeTreatmentInputs<'_>,
     ctx: &DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
+    let mut deleted_set_assumed = false;
+    let selection = resolved_edge_treatment_group_with_corners_inner(
+        group,
+        input,
+        ctx,
+        &mut deleted_set_assumed,
+    )?;
+    if deleted_set_assumed
+        && matches!(
+            selection,
+            cadmpeg_ir::features::EdgeSelection::Historical { .. }
+        )
+    {
+        losses.push(crate::loss::F3dLossCode::HistoricalEdgeSelectionDeletedSetAssumed.note(format!(
+            "Group {} is read with the assumption that the treated edge set equals the transition-deleted set.",
+            group.id
+        )));
+    }
+    Ok(selection)
+}
+
+fn resolved_edge_treatment_group_with_corners_inner(
+    group: &DesignConstructionOperandGroup,
+    input: EdgeTreatmentInputs<'_>,
+    ctx: &DecodeContext<'_>,
+    deleted_set_assumed: &mut bool,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     use cadmpeg_ir::features::EdgeSelection;
     let EdgeTreatmentInputs {
@@ -396,6 +425,7 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
                     radius: treatment_radius,
                 },
                 None,
+                deleted_set_assumed,
             ),
             ctx,
         );
@@ -455,6 +485,7 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
                 radius: treatment_radius,
             },
             Some(&edge_members),
+            deleted_set_assumed,
         ),
         ctx,
     )?;
@@ -531,9 +562,10 @@ fn resolved_edge_group_with_transition_chain(
     operands: &[DesignEdgeOperand],
     identity_operands: &[DesignEdgeIdentityOperand],
     transition: EdgeGroupTransition<'_>,
-    (proof, members_override): (
+    (proof, members_override, deleted_set_assumed): (
         EdgeGroupProof,
         Option<&[crate::records::identity::Located<u32>]>,
+        &mut bool,
     ),
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
@@ -938,7 +970,7 @@ fn resolved_edge_group_with_transition_chain(
     if exact_slots.is_none() {
         exact_slots = changed_reference_edge_group_candidates(&matched_operands, ctx)?;
     }
-    let transition_slots = || -> Result<Option<Vec<i64>>, CodecError> {
+    let mut transition_slots = || -> Result<Option<Vec<i64>>, CodecError> {
         let mut slots = match treatment_radius {
             Some(radius) => radius_edge_group_candidates(&matched_operands, radius),
             None => None,
@@ -988,6 +1020,7 @@ fn resolved_edge_group_with_transition_chain(
         }
         if slots.is_none() && allow_edge_treatment_transition_chain {
             slots = shared_reference_deleted_edge_group_candidates(&matched_operands, ctx)?;
+            *deleted_set_assumed = slots.is_some();
         }
         if slots.is_none() {
             slots = scope_partition_edge_group_candidates(group, groups, operands, members);
@@ -1013,7 +1046,9 @@ fn resolved_edge_group_with_transition_chain(
         // Standard recipes resolve member by member; their group may also
         // take the edges its transition deletes.
         if allow_edge_treatment_transition_chain {
-            shared_reference_deleted_edge_group_candidates(&matched_operands, ctx)?
+            let slots = shared_reference_deleted_edge_group_candidates(&matched_operands, ctx)?;
+            *deleted_set_assumed = slots.is_some();
+            slots
         } else {
             None
         }
@@ -2101,17 +2136,6 @@ fn contextual_deleted_edge_group_candidates(
     Ok(Some(assignment))
 }
 
-/// Resolve a two-reference treatment group from the edges its transition
-/// deletes.
-///
-/// Each member's recipe references two distinct faces and names an edge they
-/// share, so its candidates are the changed edges that both faces hold.
-/// The transition deletes every treated edge. When it deletes exactly as many
-/// edges as the group has members, every member's candidates are deleted
-/// edges, the candidates together cover the deleted set, and a perfect
-/// assignment of members to deleted edges exists, the group's edges are the
-/// deleted set. Members that share both references may stay interchangeable;
-/// the set is the same under every assignment.
 fn shared_reference_deleted_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
@@ -2130,6 +2154,10 @@ fn shared_reference_deleted_edge_group_candidates(
     let mut candidate_sets = Vec::new();
     let mut covered = HashSet::new();
     for operand in operands {
+        if resolved_edge_operand(operand).is_some_and(|edge| deleted.binary_search(&edge).is_err())
+        {
+            return Ok(None);
+        }
         let [first_side, second_side] = operand.recipe_reference_contexts.as_slice() else {
             return Ok(None);
         };
@@ -2611,7 +2639,7 @@ fn project_fixed_fillet(
         edge_identity_operands,
         &[],
         &[],
-        ctx,
+        (ctx, &mut Vec::new()),
     )
 }
 
@@ -2622,7 +2650,10 @@ pub(super) fn project_fixed_fillet_with_corners(
     edge_identity_operands: &[DesignEdgeIdentityOperand],
     vertex_operands: &[DesignEdgeTreatmentVertexOperand],
     histories: &[crate::history_records::AsmHistory],
-    ctx: &DecodeContext<'_>,
+    (ctx, losses): (
+        &DecodeContext<'_>,
+        &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         edge_treatments::{FilletGroup, RadiusSpec, VariableRadius},
@@ -2768,6 +2799,7 @@ pub(super) fn project_fixed_fillet_with_corners(
                 treatment_radius: edge_radius,
             },
             ctx,
+            losses,
         )?;
         groups.push(FilletGroup {
             edges,
