@@ -15,7 +15,7 @@ use cudarc::optix::{
 };
 
 use crate::cpu;
-use crate::{RayHit3, RayQuery3, TriangleMeshView};
+use crate::{ClosestPointResult, RayHit3, RayQuery3, TriangleMeshView};
 
 const OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT_U32: u32 = 1;
 
@@ -1510,6 +1510,532 @@ L_SM86_PIS_EXIT:
     ret;
 }
 
+// 8. CUDA SIMT Stack-Based Flattened BVH Closest-Point-on-Mesh Query (FP64)
+.visible .entry cuda_simt_bvh_closest_point_f64(
+    .param .u64 param_bvh,
+    .param .u64 param_tris,
+    .param .u64 param_queries,
+    .param .u64 param_out,
+    .param .u32 param_n_queries,
+    .param .u32 param_n_nodes
+) {
+    .local .align 16 .b8 %stack[1024];
+    .reg .pred %p<16>;
+    .reg .b32 %r<22>;
+    .reg .b64 %rd<20>;
+    .reg .f64 %fd<52>;
+
+    ld.param.u64 %rd1, [param_bvh];
+    ld.param.u64 %rd2, [param_tris];
+    ld.param.u64 %rd3, [param_queries];
+    ld.param.u64 %rd4, [param_out];
+    ld.param.u32 %r1, [param_n_queries];
+    ld.param.u32 %r2, [param_n_nodes];
+
+    mov.u32 %r3, %ctaid.x;
+    mov.u32 %r4, %ntid.x;
+    mov.u32 %r5, %tid.x;
+    mad.lo.u32 %r6, %r3, %r4, %r5;
+    setp.ge.u32 %p0, %r6, %r1;
+    @%p0 bra L_BVH_EXIT;
+
+    cvta.to.global.u64 %rd5, %rd1; // bvh
+    cvta.to.global.u64 %rd6, %rd2; // tris
+    cvta.to.global.u64 %rd7, %rd3; // queries
+    cvta.to.global.u64 %rd8, %rd4; // out
+
+    mul.wide.u32 %rd9, %r6, 32;
+    add.u64 %rd10, %rd7, %rd9;
+    ld.global.f64 %fd0, [%rd10 + 0];  // qx
+    ld.global.f64 %fd1, [%rd10 + 8];  // qy
+    ld.global.f64 %fd2, [%rd10 + 16]; // qz
+
+    mov.f64 %fd3, 0d7FF0000000000000; // best_sq
+    mov.f64 %fd4, 0d0000000000000000; // best_x
+    mov.f64 %fd5, 0d0000000000000000; // best_y
+    mov.f64 %fd6, 0d0000000000000000; // best_z
+    mov.u32 %r7, 0xffffffff;          // best_tri
+
+    setp.eq.u32 %p1, %r2, 0;
+    @%p1 bra L_BVH_STORE;
+
+    mov.u64 %rd11, %stack;
+    st.local.u32 [%rd11 + 0], 0;
+    st.local.u32 [%rd11 + 4], 0;
+    st.local.f64 [%rd11 + 8], 0d0000000000000000;
+    mov.u32 %r8, 1; // sp = 1
+
+L_BVH_LOOP:
+    setp.eq.u32 %p2, %r8, 0;
+    @%p2 bra L_BVH_STORE;
+
+    sub.u32 %r8, %r8, 1;
+    shl.b32 %r9, %r8, 4;
+    cvt.u64.u32 %rd12, %r9;
+    add.u64 %rd13, %rd11, %rd12;
+    ld.local.u32 %r10, [%rd13 + 0]; // node_idx
+    ld.local.f64 %fd7, [%rd13 + 8]; // lower_bound_sq
+
+    setp.ge.f64 %p3, %fd7, %fd3;
+    setp.ne.u32 %p4, %r7, 0xffffffff;
+    and.pred %p3, %p3, %p4;
+    @%p3 bra L_BVH_LOOP;
+
+    mul.wide.u32 %rd14, %r10, 64;
+    add.u64 %rd15, %rd5, %rd14;
+    ld.global.u32 %r11, [%rd15 + 48]; // triangle_index
+    ld.global.u32 %r12, [%rd15 + 52]; // right_child
+
+    setp.eq.u32 %p5, %r11, 0xffffffff;
+    @!%p5 bra L_BVH_LEAF;
+
+    // Internal node: evaluate left (node_idx + 1) and right (right_child) AABB distances
+    add.u32 %r13, %r10, 1;
+    mov.f64 %fd8, 0d7FF0000000000000;
+    setp.lt.u32 %p6, %r13, %r2;
+    @!%p6 bra L_BVH_SKIP_LEFT;
+
+    mul.wide.u32 %rd16, %r13, 64;
+    add.u64 %rd17, %rd5, %rd16;
+    ld.global.f64 %fd10, [%rd17 + 0];
+    ld.global.f64 %fd11, [%rd17 + 8];
+    ld.global.f64 %fd12, [%rd17 + 16];
+    ld.global.f64 %fd13, [%rd17 + 24];
+    ld.global.f64 %fd14, [%rd17 + 32];
+    ld.global.f64 %fd15, [%rd17 + 40];
+    sub.f64 %fd16, %fd10, %fd0;
+    sub.f64 %fd17, %fd0, %fd13;
+    max.f64 %fd16, %fd16, %fd17;
+    max.f64 %fd16, %fd16, 0d0000000000000000;
+    sub.f64 %fd18, %fd11, %fd1;
+    sub.f64 %fd19, %fd1, %fd14;
+    max.f64 %fd18, %fd18, %fd19;
+    max.f64 %fd18, %fd18, 0d0000000000000000;
+    sub.f64 %fd20, %fd12, %fd2;
+    sub.f64 %fd21, %fd2, %fd15;
+    max.f64 %fd20, %fd20, %fd21;
+    max.f64 %fd20, %fd20, 0d0000000000000000;
+    mul.f64 %fd8, %fd20, %fd20;
+    fma.rn.f64 %fd8, %fd18, %fd18, %fd8;
+    fma.rn.f64 %fd8, %fd16, %fd16, %fd8;
+
+L_BVH_SKIP_LEFT:
+    mov.f64 %fd9, 0d7FF0000000000000;
+    setp.lt.u32 %p7, %r12, %r2;
+    @!%p7 bra L_BVH_SKIP_RIGHT;
+
+    mul.wide.u32 %rd16, %r12, 64;
+    add.u64 %rd17, %rd5, %rd16;
+    ld.global.f64 %fd10, [%rd17 + 0];
+    ld.global.f64 %fd11, [%rd17 + 8];
+    ld.global.f64 %fd12, [%rd17 + 16];
+    ld.global.f64 %fd13, [%rd17 + 24];
+    ld.global.f64 %fd14, [%rd17 + 32];
+    ld.global.f64 %fd15, [%rd17 + 40];
+    sub.f64 %fd16, %fd10, %fd0;
+    sub.f64 %fd17, %fd0, %fd13;
+    max.f64 %fd16, %fd16, %fd17;
+    max.f64 %fd16, %fd16, 0d0000000000000000;
+    sub.f64 %fd18, %fd11, %fd1;
+    sub.f64 %fd19, %fd1, %fd14;
+    max.f64 %fd18, %fd18, %fd19;
+    max.f64 %fd18, %fd18, 0d0000000000000000;
+    sub.f64 %fd20, %fd12, %fd2;
+    sub.f64 %fd21, %fd2, %fd15;
+    max.f64 %fd20, %fd20, %fd21;
+    max.f64 %fd20, %fd20, 0d0000000000000000;
+    mul.f64 %fd9, %fd20, %fd20;
+    fma.rn.f64 %fd9, %fd18, %fd18, %fd9;
+    fma.rn.f64 %fd9, %fd16, %fd16, %fd9;
+
+L_BVH_SKIP_RIGHT:
+    setp.lt.f64 %p8, %fd8, %fd9;
+    selp.u32 %r14, %r13, %r12, %p8; // near_idx
+    selp.f64 %fd22, %fd8, %fd9, %p8; // d_near
+    selp.u32 %r15, %r12, %r13, %p8; // far_idx
+    selp.f64 %fd23, %fd9, %fd8, %p8; // d_far
+
+    setp.lt.u32 %p9, %r15, %r2;
+    setp.lt.f64 %p10, %fd23, %fd3;
+    and.pred %p9, %p9, %p10;
+    setp.lt.u32 %p12, %r8, 64;
+    and.pred %p9, %p9, %p12;
+    @!%p9 bra L_BVH_PUSH_NEAR;
+
+    shl.b32 %r16, %r8, 4;
+    cvt.u64.u32 %rd18, %r16;
+    add.u64 %rd19, %rd11, %rd18;
+    st.local.u32 [%rd19 + 0], %r15;
+    st.local.u32 [%rd19 + 4], 0;
+    st.local.f64 [%rd19 + 8], %fd23;
+    add.u32 %r8, %r8, 1;
+
+L_BVH_PUSH_NEAR:
+    setp.lt.u32 %p9, %r14, %r2;
+    setp.lt.f64 %p10, %fd22, %fd3;
+    and.pred %p9, %p9, %p10;
+    setp.lt.u32 %p12, %r8, 64;
+    and.pred %p9, %p9, %p12;
+    @!%p9 bra L_BVH_LOOP;
+
+    shl.b32 %r16, %r8, 4;
+    cvt.u64.u32 %rd18, %r16;
+    add.u64 %rd19, %rd11, %rd18;
+    st.local.u32 [%rd19 + 0], %r14;
+    st.local.u32 [%rd19 + 4], 0;
+    st.local.f64 [%rd19 + 8], %fd22;
+    add.u32 %r8, %r8, 1;
+    bra L_BVH_LOOP;
+
+L_BVH_LEAF:
+    // Load triangle vertices v0, v1, v2 (9 f64s = 72 bytes)
+    mul.wide.u32 %rd16, %r11, 72;
+    add.u64 %rd17, %rd6, %rd16;
+    ld.global.f64 %fd10, [%rd17 + 0];  // v0.x
+    ld.global.f64 %fd11, [%rd17 + 8];  // v0.y
+    ld.global.f64 %fd12, [%rd17 + 16]; // v0.z
+    ld.global.f64 %fd13, [%rd17 + 24]; // v1.x
+    ld.global.f64 %fd14, [%rd17 + 32]; // v1.y
+    ld.global.f64 %fd15, [%rd17 + 40]; // v1.z
+    ld.global.f64 %fd16, [%rd17 + 48]; // v2.x
+    ld.global.f64 %fd17, [%rd17 + 56]; // v2.y
+    ld.global.f64 %fd18, [%rd17 + 64]; // v2.z
+
+    // ab = v1 - v0, ac = v2 - v0, ap = q - v0
+    sub.f64 %fd19, %fd13, %fd10; // ab.x
+    sub.f64 %fd20, %fd14, %fd11; // ab.y
+    sub.f64 %fd21, %fd15, %fd12; // ab.z
+    sub.f64 %fd22, %fd16, %fd10; // ac.x
+    sub.f64 %fd23, %fd17, %fd11; // ac.y
+    sub.f64 %fd24, %fd18, %fd12; // ac.z
+    sub.f64 %fd25, %fd0,  %fd10; // ap.x
+    sub.f64 %fd26, %fd1,  %fd11; // ap.y
+    sub.f64 %fd27, %fd2,  %fd12; // ap.z
+
+    // d1 = dot(ab, ap), d2 = dot(ac, ap)
+    mul.f64 %fd28, %fd21, %fd27;
+    fma.rn.f64 %fd28, %fd20, %fd26, %fd28;
+    fma.rn.f64 %fd28, %fd19, %fd25, %fd28; // d1
+    mul.f64 %fd29, %fd24, %fd27;
+    fma.rn.f64 %fd29, %fd23, %fd26, %fd29;
+    fma.rn.f64 %fd29, %fd22, %fd25, %fd29; // d2
+
+    // Degenerate triangle check: n = ab x ac, |n|^2 <= f64::EPSILON * |ab|^2 * |ac|^2
+    mul.rn.f64 %fd32, %fd21, %fd23;
+    neg.f64 %fd35, %fd21;
+    fma.rn.f64 %fd35, %fd35, %fd23, %fd32;
+    neg.f64 %fd32, %fd32;
+    fma.rn.f64 %fd32, %fd20, %fd24, %fd32;
+    add.f64 %fd32, %fd32, %fd35; // nx
+    mul.rn.f64 %fd33, %fd19, %fd24;
+    neg.f64 %fd35, %fd19;
+    fma.rn.f64 %fd35, %fd35, %fd24, %fd33;
+    neg.f64 %fd33, %fd33;
+    fma.rn.f64 %fd33, %fd21, %fd22, %fd33;
+    add.f64 %fd33, %fd33, %fd35; // ny
+    mul.rn.f64 %fd34, %fd20, %fd22;
+    neg.f64 %fd35, %fd20;
+    fma.rn.f64 %fd35, %fd35, %fd22, %fd34;
+    neg.f64 %fd34, %fd34;
+    fma.rn.f64 %fd34, %fd19, %fd23, %fd34;
+    add.f64 %fd34, %fd34, %fd35; // nz
+    mul.f64 %fd35, %fd34, %fd34;
+    fma.rn.f64 %fd35, %fd33, %fd33, %fd35;
+    fma.rn.f64 %fd35, %fd32, %fd32, %fd35; // n_sq
+    mul.f64 %fd36, %fd21, %fd21;
+    fma.rn.f64 %fd36, %fd20, %fd20, %fd36;
+    fma.rn.f64 %fd36, %fd19, %fd19, %fd36; // ab_sq
+    mul.f64 %fd37, %fd24, %fd24;
+    fma.rn.f64 %fd37, %fd23, %fd23, %fd37;
+    fma.rn.f64 %fd37, %fd22, %fd22, %fd37; // ac_sq
+    mul.f64 %fd38, %fd36, %fd37;
+    mul.f64 %fd38, %fd38, 0d3CB0000000000000; // DEGENERATE_AREA_FACTOR (f64::EPSILON)
+    setp.le.f64 %p6, %fd35, %fd38;
+    @%p6 bra L_TRI_DEGENERATE;
+
+    setp.le.f64 %p6, %fd28, 0d0000000000000000;
+    setp.le.f64 %p7, %fd29, 0d0000000000000000;
+    and.pred %p6, %p6, %p7;
+    @!%p6 bra L_TRI_CHECK_B;
+    mov.f64 %fd40, %fd10;
+    mov.f64 %fd41, %fd11;
+    mov.f64 %fd42, %fd12;
+    bra L_TRI_EVAL_DIST;
+
+L_TRI_CHECK_B:
+    // bp = q - v1
+    sub.f64 %fd25, %fd0, %fd13;
+    sub.f64 %fd26, %fd1, %fd14;
+    sub.f64 %fd27, %fd2, %fd15;
+    // d3 = dot(ab, bp), d4 = dot(ac, bp)
+    mul.f64 %fd30, %fd21, %fd27;
+    fma.rn.f64 %fd30, %fd20, %fd26, %fd30;
+    fma.rn.f64 %fd30, %fd19, %fd25, %fd30; // d3
+    mul.f64 %fd31, %fd24, %fd27;
+    fma.rn.f64 %fd31, %fd23, %fd26, %fd31;
+    fma.rn.f64 %fd31, %fd22, %fd25, %fd31; // d4
+
+    setp.ge.f64 %p6, %fd30, 0d0000000000000000;
+    setp.le.f64 %p7, %fd31, %fd30;
+    and.pred %p6, %p6, %p7;
+    @!%p6 bra L_TRI_CHECK_AB;
+    mov.f64 %fd40, %fd13;
+    mov.f64 %fd41, %fd14;
+    mov.f64 %fd42, %fd15;
+    bra L_TRI_EVAL_DIST;
+
+L_TRI_CHECK_AB:
+    // vc = d1 * d4 - d3 * d2
+    mul.f64 %fd32, %fd30, %fd29;
+    neg.f64 %fd32, %fd32;
+    fma.rn.f64 %fd32, %fd28, %fd31, %fd32; // vc
+
+    setp.le.f64 %p6, %fd32, 0d0000000000000000;
+    setp.ge.f64 %p7, %fd28, 0d0000000000000000;
+    setp.le.f64 %p8, %fd30, 0d0000000000000000;
+    and.pred %p6, %p6, %p7;
+    and.pred %p6, %p6, %p8;
+    @!%p6 bra L_TRI_CHECK_C;
+    sub.f64 %fd33, %fd28, %fd30;
+    setp.gt.f64 %p12, %fd33, 0d0000000000000000;
+    @!%p12 bra L_TRI_CHECK_C;
+    div.rn.f64 %fd34, %fd28, %fd33; // bary_v
+    fma.rn.f64 %fd40, %fd34, %fd19, %fd10;
+    fma.rn.f64 %fd41, %fd34, %fd20, %fd11;
+    fma.rn.f64 %fd42, %fd34, %fd21, %fd12;
+    bra L_TRI_EVAL_DIST;
+
+L_TRI_CHECK_C:
+    // cp = q - v2
+    sub.f64 %fd25, %fd0, %fd16;
+    sub.f64 %fd26, %fd1, %fd17;
+    sub.f64 %fd27, %fd2, %fd18;
+    // d5 = dot(ab, cp), d6 = dot(ac, cp)
+    mul.f64 %fd33, %fd21, %fd27;
+    fma.rn.f64 %fd33, %fd20, %fd26, %fd33;
+    fma.rn.f64 %fd33, %fd19, %fd25, %fd33; // d5
+    mul.f64 %fd34, %fd24, %fd27;
+    fma.rn.f64 %fd34, %fd23, %fd26, %fd34;
+    fma.rn.f64 %fd34, %fd22, %fd25, %fd34; // d6
+
+    setp.ge.f64 %p6, %fd34, 0d0000000000000000;
+    setp.le.f64 %p7, %fd33, %fd34;
+    and.pred %p6, %p6, %p7;
+    @!%p6 bra L_TRI_CHECK_AC;
+    mov.f64 %fd40, %fd16;
+    mov.f64 %fd41, %fd17;
+    mov.f64 %fd42, %fd18;
+    bra L_TRI_EVAL_DIST;
+
+L_TRI_CHECK_AC:
+    // vb = d5 * d2 - d1 * d6
+    mul.f64 %fd35, %fd28, %fd34;
+    neg.f64 %fd35, %fd35;
+    fma.rn.f64 %fd35, %fd33, %fd29, %fd35; // vb
+
+    setp.le.f64 %p6, %fd35, 0d0000000000000000;
+    setp.ge.f64 %p7, %fd29, 0d0000000000000000;
+    setp.le.f64 %p8, %fd34, 0d0000000000000000;
+    and.pred %p6, %p6, %p7;
+    and.pred %p6, %p6, %p8;
+    @!%p6 bra L_TRI_CHECK_BC;
+    sub.f64 %fd36, %fd29, %fd34;
+    setp.gt.f64 %p12, %fd36, 0d0000000000000000;
+    @!%p12 bra L_TRI_CHECK_BC;
+    div.rn.f64 %fd37, %fd29, %fd36; // bary_w
+    fma.rn.f64 %fd40, %fd37, %fd22, %fd10;
+    fma.rn.f64 %fd41, %fd37, %fd23, %fd11;
+    fma.rn.f64 %fd42, %fd37, %fd24, %fd12;
+    bra L_TRI_EVAL_DIST;
+
+L_TRI_CHECK_BC:
+    // va = d3 * d6 - d5 * d4
+    mul.f64 %fd36, %fd33, %fd31;
+    neg.f64 %fd36, %fd36;
+    fma.rn.f64 %fd36, %fd30, %fd34, %fd36; // va
+
+    sub.f64 %fd37, %fd31, %fd30; // d4 - d3
+    sub.f64 %fd38, %fd33, %fd34; // d5 - d6
+    setp.le.f64 %p6, %fd36, 0d0000000000000000;
+    setp.ge.f64 %p7, %fd37, 0d0000000000000000;
+    setp.ge.f64 %p8, %fd38, 0d0000000000000000;
+    and.pred %p6, %p6, %p7;
+    and.pred %p6, %p6, %p8;
+    @!%p6 bra L_TRI_FACE;
+    add.f64 %fd39, %fd37, %fd38;
+    setp.gt.f64 %p12, %fd39, 0d0000000000000000;
+    @!%p12 bra L_TRI_FACE;
+    div.rn.f64 %fd39, %fd37, %fd39; // bary_w
+    sub.f64 %fd43, %fd16, %fd13;
+    sub.f64 %fd44, %fd17, %fd14;
+    sub.f64 %fd45, %fd18, %fd15;
+    fma.rn.f64 %fd40, %fd39, %fd43, %fd13;
+    fma.rn.f64 %fd41, %fd39, %fd44, %fd14;
+    fma.rn.f64 %fd42, %fd39, %fd45, %fd15;
+    bra L_TRI_EVAL_DIST;
+
+L_TRI_FACE:
+    // Accurate normal difference of products: w = c*d, e = fma(-c,d,w), f = fma(a,b,-w), res = f + e
+    mul.rn.f64 %fd32, %fd21, %fd23;
+    neg.f64 %fd35, %fd21;
+    fma.rn.f64 %fd35, %fd35, %fd23, %fd32;
+    neg.f64 %fd32, %fd32;
+    fma.rn.f64 %fd32, %fd20, %fd24, %fd32;
+    add.f64 %fd32, %fd32, %fd35; // nx
+    mul.rn.f64 %fd33, %fd19, %fd24;
+    neg.f64 %fd35, %fd19;
+    fma.rn.f64 %fd35, %fd35, %fd24, %fd33;
+    neg.f64 %fd33, %fd33;
+    fma.rn.f64 %fd33, %fd21, %fd22, %fd33;
+    add.f64 %fd33, %fd33, %fd35; // ny
+    mul.rn.f64 %fd34, %fd20, %fd22;
+    neg.f64 %fd35, %fd20;
+    fma.rn.f64 %fd35, %fd35, %fd22, %fd34;
+    neg.f64 %fd34, %fd34;
+    fma.rn.f64 %fd34, %fd19, %fd23, %fd34;
+    add.f64 %fd34, %fd34, %fd35; // nz
+    mul.f64 %fd35, %fd34, %fd34;
+    fma.rn.f64 %fd35, %fd33, %fd33, %fd35;
+    fma.rn.f64 %fd35, %fd32, %fd32, %fd35; // n_sq
+
+    setp.gt.f64 %p12, %fd35, 0d0000000000000000;
+    @!%p12 bra L_TRI_FACE_ZERO;
+
+    sub.f64 %fd36, %fd0, %fd10; // ap.x
+    sub.f64 %fd37, %fd1, %fd11; // ap.y
+    sub.f64 %fd38, %fd2, %fd12; // ap.z
+    mul.f64 %fd39, %fd38, %fd34;
+    fma.rn.f64 %fd39, %fd37, %fd33, %fd39;
+    fma.rn.f64 %fd39, %fd36, %fd32, %fd39; // ap_dot_n
+    div.rn.f64 %fd39, %fd39, %fd35; // k = ap_dot_n / n_sq
+    neg.f64 %fd39, %fd39; // -k
+    fma.rn.f64 %fd40, %fd39, %fd32, %fd0; // proj.x = query.x - k * nx
+    fma.rn.f64 %fd41, %fd39, %fd33, %fd1; // proj.y = query.y - k * ny
+    fma.rn.f64 %fd42, %fd39, %fd34, %fd2; // proj.z = query.z - k * nz
+    bra L_TRI_EVAL_DIST;
+L_TRI_FACE_ZERO:
+    mov.f64 %fd40, %fd10;
+    mov.f64 %fd41, %fd11;
+    mov.f64 %fd42, %fd12;
+    bra L_TRI_EVAL_DIST;
+
+L_TRI_DEGENERATE:
+    // Segment 1: v0 -> v1 (u = ab, u_sq = ab_sq in %fd36, w = d1 in %fd28)
+    setp.gt.f64 %p7, %fd36, 0d0000000000000000;
+    div.rn.f64 %fd30, %fd28, %fd36;
+    max.f64 %fd30, %fd30, 0d0000000000000000;
+    min.f64 %fd30, %fd30, 0d3FF0000000000000;
+    selp.f64 %fd30, %fd30, 0d0000000000000000, %p7;
+    fma.rn.f64 %fd40, %fd30, %fd19, %fd10; // p1.x
+    fma.rn.f64 %fd41, %fd30, %fd20, %fd11; // p1.y
+    fma.rn.f64 %fd42, %fd30, %fd21, %fd12; // p1.z
+    sub.f64 %fd31, %fd0, %fd40;
+    sub.f64 %fd32, %fd1, %fd41;
+    sub.f64 %fd33, %fd2, %fd42;
+    mul.f64 %fd47, %fd33, %fd33;
+    fma.rn.f64 %fd47, %fd32, %fd32, %fd47;
+    fma.rn.f64 %fd47, %fd31, %fd31, %fd47; // d1_sq
+
+    // Segment 2: v1 -> v2 (u = v2 - v1)
+    sub.f64 %fd30, %fd16, %fd13; // bc.x
+    sub.f64 %fd31, %fd17, %fd14; // bc.y
+    sub.f64 %fd32, %fd18, %fd15; // bc.z
+    mul.f64 %fd33, %fd32, %fd32;
+    fma.rn.f64 %fd33, %fd31, %fd31, %fd33;
+    fma.rn.f64 %fd33, %fd30, %fd30, %fd33; // bc_sq
+    sub.f64 %fd34, %fd0, %fd13;  // bp.x
+    sub.f64 %fd35, %fd1, %fd14;  // bp.y
+    sub.f64 %fd36, %fd2, %fd15;  // bp.z
+    mul.f64 %fd37, %fd32, %fd36;
+    fma.rn.f64 %fd37, %fd31, %fd35, %fd37;
+    fma.rn.f64 %fd37, %fd30, %fd34, %fd37; // bp_dot_bc
+    setp.gt.f64 %p7, %fd33, 0d0000000000000000;
+    div.rn.f64 %fd38, %fd37, %fd33;
+    max.f64 %fd38, %fd38, 0d0000000000000000;
+    min.f64 %fd38, %fd38, 0d3FF0000000000000;
+    selp.f64 %fd38, %fd38, 0d0000000000000000, %p7;
+    fma.rn.f64 %fd34, %fd38, %fd30, %fd13; // p2.x
+    fma.rn.f64 %fd35, %fd38, %fd31, %fd14; // p2.y
+    fma.rn.f64 %fd36, %fd38, %fd32, %fd15; // p2.z
+    sub.f64 %fd37, %fd0, %fd34;
+    sub.f64 %fd38, %fd1, %fd35;
+    sub.f64 %fd39, %fd2, %fd36;
+    mul.f64 %fd43, %fd39, %fd39;
+    fma.rn.f64 %fd43, %fd38, %fd38, %fd43;
+    fma.rn.f64 %fd43, %fd37, %fd37, %fd43; // d2_sq
+    setp.lt.f64 %p8, %fd43, %fd47;
+    selp.f64 %fd40, %fd34, %fd40, %p8;
+    selp.f64 %fd41, %fd35, %fd41, %p8;
+    selp.f64 %fd42, %fd36, %fd42, %p8;
+    selp.f64 %fd47, %fd43, %fd47, %p8;
+
+    // Segment 3: v2 -> v0 (u = v0 - v2)
+    sub.f64 %fd30, %fd10, %fd16; // ca.x
+    sub.f64 %fd31, %fd11, %fd17; // ca.y
+    sub.f64 %fd32, %fd12, %fd18; // ca.z
+    mul.f64 %fd33, %fd32, %fd32;
+    fma.rn.f64 %fd33, %fd31, %fd31, %fd33;
+    fma.rn.f64 %fd33, %fd30, %fd30, %fd33; // ca_sq
+    sub.f64 %fd34, %fd0, %fd16;  // cp.x
+    sub.f64 %fd35, %fd1, %fd17;  // cp.y
+    sub.f64 %fd36, %fd2, %fd18;  // cp.z
+    mul.f64 %fd37, %fd32, %fd36;
+    fma.rn.f64 %fd37, %fd31, %fd35, %fd37;
+    fma.rn.f64 %fd37, %fd30, %fd34, %fd37; // cp_dot_ca
+    setp.gt.f64 %p7, %fd33, 0d0000000000000000;
+    div.rn.f64 %fd38, %fd37, %fd33;
+    max.f64 %fd38, %fd38, 0d0000000000000000;
+    min.f64 %fd38, %fd38, 0d3FF0000000000000;
+    selp.f64 %fd38, %fd38, 0d0000000000000000, %p7;
+    fma.rn.f64 %fd34, %fd38, %fd30, %fd16; // p3.x
+    fma.rn.f64 %fd35, %fd38, %fd31, %fd17; // p3.y
+    fma.rn.f64 %fd36, %fd38, %fd32, %fd18; // p3.z
+    sub.f64 %fd37, %fd0, %fd34;
+    sub.f64 %fd38, %fd1, %fd35;
+    sub.f64 %fd39, %fd2, %fd36;
+    mul.f64 %fd43, %fd39, %fd39;
+    fma.rn.f64 %fd43, %fd38, %fd38, %fd43;
+    fma.rn.f64 %fd43, %fd37, %fd37, %fd43; // d3_sq
+    setp.lt.f64 %p8, %fd43, %fd47;
+    selp.f64 %fd40, %fd34, %fd40, %p8;
+    selp.f64 %fd41, %fd35, %fd41, %p8;
+    selp.f64 %fd42, %fd36, %fd42, %p8;
+    bra L_TRI_EVAL_DIST;
+
+L_TRI_EVAL_DIST:
+    sub.f64 %fd43, %fd0, %fd40;
+    sub.f64 %fd44, %fd1, %fd41;
+    sub.f64 %fd45, %fd2, %fd42;
+    mul.f64 %fd46, %fd45, %fd45;
+    fma.rn.f64 %fd46, %fd44, %fd44, %fd46;
+    fma.rn.f64 %fd46, %fd43, %fd43, %fd46;
+
+    setp.lt.f64 %p9, %fd46, %fd3;
+    @!%p9 bra L_BVH_LOOP;
+
+    mov.f64 %fd3, %fd46;
+    mov.f64 %fd4, %fd40;
+    mov.f64 %fd5, %fd41;
+    mov.f64 %fd6, %fd42;
+    mov.u32 %r7, %r11;
+    bra L_BVH_LOOP;
+
+L_BVH_STORE:
+    // Output per query: 5 f64s (40 bytes): best_x, best_y, best_z, best_sq, tri_idx_bits
+    mul.wide.u32 %rd16, %r6, 40;
+    add.u64 %rd17, %rd8, %rd16;
+    cvt.u64.u32 %rd18, %r7;
+    mov.b64 %fd47, %rd18;
+    st.global.f64 [%rd17 + 0],  %fd4;
+    st.global.f64 [%rd17 + 8],  %fd5;
+    st.global.f64 [%rd17 + 16], %fd6;
+    st.global.f64 [%rd17 + 24], %fd3;
+    st.global.f64 [%rd17 + 32], %fd47;
+
+L_BVH_EXIT:
+    ret;
+}
+
 // 11. CUDA OptiX RT Core + FP64 Ray-Mesh intersection refinement kernel
 .visible .entry cuda_optix_ray_mesh_f64(
     .param .u64 param_rays,
@@ -2221,6 +2747,7 @@ pub struct CudaContext {
     fn_sm86_ray_mesh: CudaFunction,
     fn_simt_point_in_solid: CudaFunction,
     fn_sm86_point_in_solid: CudaFunction,
+    fn_simt_bvh_closest_point: CudaFunction,
     compute_mesh_cache: Mutex<Option<CachedCudaMesh>>,
     optix: Option<OptixPipelines>,
 }
@@ -2270,6 +2797,9 @@ impl CudaContext {
             fn_sm86_ray_mesh: module.load_function("cuda_sm86_ray_mesh_f64").ok()?,
             fn_simt_point_in_solid: module.load_function("cuda_simt_point_in_solid_f64").ok()?,
             fn_sm86_point_in_solid: module.load_function("cuda_sm86_point_in_solid_f64").ok()?,
+            fn_simt_bvh_closest_point: module
+                .load_function("cuda_simt_bvh_closest_point_f64")
+                .ok()?,
             compute_mesh_cache: Mutex::new(None),
             optix,
             device_name,
@@ -2729,9 +3259,7 @@ impl CudaContext {
         if needs_rebuild {
             *guard = Some(Self::build_cached_cuda_mesh(stream, mesh, hash)?);
         }
-        let c = guard.as_ref()?;
-        let _ = (c.n_nodes, &c.d_tris_verts, &c.d_bvh);
-        f(c)
+        f(guard.as_ref()?)
     }
 
     fn dispatch_ray_mesh_kernel(
@@ -2899,6 +3427,79 @@ impl CudaContext {
             return None;
         }
         self.dispatch_point_in_solid_kernel(&self.fn_sm86_point_in_solid, points, mesh)
+    }
+
+    fn dispatch_bvh_closest_point_kernel(
+        &self,
+        func: &CudaFunction,
+        points: &[Point3],
+        mesh: TriangleMeshView<'_>,
+    ) -> Option<Vec<ClosestPointResult>> {
+        if points.is_empty() {
+            return Some(Vec::new());
+        }
+        if mesh.triangles.is_empty() {
+            return Some(cpu::closest_point_mesh(points, mesh));
+        }
+        self.ctx.bind_to_thread().ok()?;
+        let stream = self.ctx.default_stream();
+        let n_queries = u32::try_from(points.len()).ok()?;
+        let flat_queries: Vec<f64> = points.iter().flat_map(|q| [q.x, q.y, q.z, 0.0]).collect();
+
+        let d_queries = stream.clone_htod(&flat_queries).ok()?;
+        let out_f64_len = points.len().checked_mul(5)?;
+        let mut d_out = stream.alloc_zeros::<f64>(out_f64_len).ok()?;
+
+        self.with_cached_cuda_mesh(&stream, mesh, |cached| {
+            let block = 128_u32;
+            let grid = n_queries.div_ceil(block);
+            let cfg = LaunchConfig {
+                grid_dim: (grid, 1, 1),
+                block_dim: (block, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let mut builder = stream.launch_builder(func);
+            builder.arg(&cached.d_bvh);
+            builder.arg(&cached.d_tris_verts);
+            builder.arg(&d_queries);
+            builder.arg(&mut d_out);
+            builder.arg(&n_queries);
+            builder.arg(&cached.n_nodes);
+            // Safety: kernel signature matches (u64, u64, u64, u64, u32, u32) and buffer bounds are verified.
+            unsafe { builder.launch(cfg) }.ok()?;
+            Some(())
+        })?;
+
+        let raw_out = stream.clone_dtoh(&d_out).ok()?;
+        Some(
+            raw_out
+                .chunks_exact(5)
+                .map(|r| {
+                    let Ok(tri_idx) = u32::try_from(r[4].to_bits()) else {
+                        return ClosestPointResult {
+                            closest_point: Point3::new(r[0], r[1], r[2]),
+                            distance_sq: r[3],
+                            triangle_index: u32::MAX,
+                        };
+                    };
+                    ClosestPointResult {
+                        closest_point: Point3::new(r[0], r[1], r[2]),
+                        distance_sq: r[3],
+                        triangle_index: tri_idx,
+                    }
+                })
+                .collect(),
+        )
+    }
+
+    /// Executes closest-point-on-mesh queries via CUDA SIMT stack-based BVH traversal in $\mathcal{O}(N \log T)$ time.
+    #[must_use]
+    pub fn simt_spatial_closest_point(
+        &self,
+        points: &[Point3],
+        mesh: TriangleMeshView<'_>,
+    ) -> Option<Vec<ClosestPointResult>> {
+        self.dispatch_bvh_closest_point_kernel(&self.fn_simt_bvh_closest_point, points, mesh)
     }
 
     /// Whether the active GPU supports NVIDIA `OptiX` hardware RT Core acceleration.
@@ -3713,6 +4314,42 @@ mod tests {
             assert_eq!(actual, expected);
         } else {
             assert!(ctx.ptx_sm86_point_in_solid_parity(&points, mesh).is_none());
+        }
+    }
+
+    #[test]
+    fn cuda_simt_spatial_closest_point_matches_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let pts_a: Vec<Point3> = (0_u32..64)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f * 0.15 - 2.0, (f * 0.3).sin(), (f * 0.2).cos())
+            })
+            .collect();
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+        ];
+        let triangles = [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let expected_cp = cpu::closest_point_mesh(&pts_a, mesh);
+        let spatial_cp = crate::spatial::closest_points_on_mesh(&pts_a, mesh);
+        let actual_cp = ctx
+            .simt_spatial_closest_point(&pts_a, mesh)
+            .expect("CUDA SIMT spatial closest point");
+        for ((e, s), a) in expected_cp.iter().zip(&spatial_cp).zip(&actual_cp) {
+            assert!((e.distance_sq - a.distance_sq).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((e.closest_point.x - a.closest_point.x).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((e.closest_point.y - a.closest_point.y).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((e.closest_point.z - a.closest_point.z).abs() < CUDA_PARITY_TOLERANCE);
+            assert_eq!(s.triangle_index, a.triangle_index);
         }
     }
 
