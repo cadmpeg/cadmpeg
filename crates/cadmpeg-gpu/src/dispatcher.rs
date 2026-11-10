@@ -346,7 +346,9 @@ impl GpuDispatcher {
             BackendKind::CpuSpatialIndex => Some(spatial::points_in_solid_parity(points, mesh)),
             BackendKind::PtxSm86 => None,
             BackendKind::CudaCompute => None,
-            BackendKind::VulkanCompute => None,
+            BackendKind::VulkanCompute => {
+                global_vulkan().and_then(|vk| vk.compute_point_in_solid_parity(points, mesh))
+            }
             BackendKind::Cpu => Some(cpu::point_in_solid_parity(points, mesh)),
             BackendKind::RtxTensorCore => None,
         }
@@ -831,7 +833,11 @@ fn benchmark_single(
                     let out = spatial::rayon_points_in_solid_parity(&pts, mesh);
                     std::hint::black_box(&out);
                 }
-                (OperationKind::PointInSolidParity, BackendKind::VulkanCompute) => return None,
+                (OperationKind::PointInSolidParity, BackendKind::VulkanCompute) => {
+                    let vk = global_vulkan()?;
+                    let out = vk.compute_point_in_solid_parity(&pts, mesh)?;
+                    std::hint::black_box(&out);
+                }
                 (OperationKind::PointInSolidParity, BackendKind::VulkanRtCore) => return None,
                 (OperationKind::PointInSolidParity, BackendKind::CudaCompute) => return None,
                 (OperationKind::PointInSolidParity, BackendKind::PtxSm86) => return None,

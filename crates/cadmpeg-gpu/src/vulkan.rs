@@ -164,6 +164,85 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 ";
 
+const POINT_IN_SOLID_WGSL: &str = "
+@group(0) @binding(0) var<storage, read> points: array<vec4<f64>>;
+@group(0) @binding(1) var<storage, read> tris: array<vec4<f64>>;
+@group(0) @binding(2) var<storage, read_write> parity_out: array<f64>;
+
+fn dop(a: f64, b: f64, c: f64, d: f64) -> f64 {
+    let cd = c * d;
+    let err = fma(-c, d, cd);
+    let f = fma(a, b, -cd);
+    return f + err;
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let p_idx = gid.x;
+    if p_idx >= arrayLength(&points) {
+        return;
+    }
+    let origin = points[p_idx].xyz;
+    let dir = vec3<f64>(0.5773502691896258lf, 0.5345224838248488lf, 0.6172133998483676lf);
+    var hits = 0u;
+    var hit_ts: array<f64, 32>;
+    let n_tris = arrayLength(&tris) / 3u;
+    for (var t_idx = 0u; t_idx < n_tris; t_idx = t_idx + 1u) {
+        let base = t_idx * 3u;
+        let v0 = tris[base].xyz;
+        let e1 = tris[base + 1u].xyz;
+        let e2 = tris[base + 2u].xyz;
+
+        let pvec = vec3<f64>(
+            dop(dir.y, e2.z, dir.z, e2.y),
+            dop(dir.z, e2.x, dir.x, e2.z),
+            dop(dir.x, e2.y, dir.y, e2.x),
+        );
+        let det = fma(e1.x, pvec.x, fma(e1.y, pvec.y, e1.z * pvec.z));
+        if abs(det) <= 1.0e-12lf {
+            continue;
+        }
+        let inv_det = 1.0lf / det;
+        let tvec = origin - v0;
+        let u = fma(tvec.x, pvec.x, fma(tvec.y, pvec.y, tvec.z * pvec.z)) * inv_det;
+        if u < -1.0e-11lf || u > 1.0lf + 1.0e-11lf {
+            continue;
+        }
+        let qvec = vec3<f64>(
+            dop(tvec.y, e1.z, tvec.z, e1.y),
+            dop(tvec.z, e1.x, tvec.x, e1.z),
+            dop(tvec.x, e1.y, tvec.y, e1.x),
+        );
+        let v = fma(dir.x, qvec.x, fma(dir.y, qvec.y, dir.z * qvec.z)) * inv_det;
+        if v < -1.0e-11lf || (u + v) > 1.0lf + 1.0e-11lf {
+            continue;
+        }
+        let t = fma(e2.x, qvec.x, fma(e2.y, qvec.y, e2.z * qvec.z)) * inv_det;
+        if t >= 1.0e-9lf {
+            var dup = false;
+            let tracked = min(hits, 32u);
+            for (var k = 0u; k < tracked; k = k + 1u) {
+                if abs(t - hit_ts[k]) <= 1.0e-9lf {
+                    dup = true;
+                    break;
+                }
+            }
+            if !dup {
+                if hits < 32u {
+                    hit_ts[hits] = t;
+                }
+                hits = hits + 1u;
+            }
+        }
+    }
+    if (hits & 1u) == 1u {
+        parity_out[p_idx] = 1.0lf;
+    } else {
+        parity_out[p_idx] = 0.0lf;
+    }
+}
+";
+
 const RT_RAY_MESH_WGSL: &str = "
 enable wgpu_ray_query;
 
@@ -432,6 +511,7 @@ pub struct VulkanContext {
     pipe_pairwise_dist: wgpu::ComputePipeline,
     pipe_bezier_eval: wgpu::ComputePipeline,
     pipe_ray_mesh: wgpu::ComputePipeline,
+    pipe_point_in_solid: wgpu::ComputePipeline,
     compute_mesh_cache: Mutex<Option<CachedVulkanComputeMesh>>,
     rt: Option<RtPipelines>,
 }
@@ -688,6 +768,7 @@ impl VulkanContext {
             pipe_pairwise_dist: compile_pipe("cadmpeg-wgsl-pairwise-dist", PAIRWISE_DIST_WGSL),
             pipe_bezier_eval: compile_pipe("cadmpeg-wgsl-bezier-eval", BEZIER_EVAL_WGSL),
             pipe_ray_mesh: compile_pipe("cadmpeg-wgsl-ray-mesh", RAY_MESH_WGSL),
+            pipe_point_in_solid: compile_pipe("cadmpeg-wgsl-point-in-solid", POINT_IN_SOLID_WGSL),
             compute_mesh_cache: Mutex::new(None),
             rt,
             device,
@@ -1320,6 +1401,32 @@ impl VulkanContext {
         )
     }
 
+    /// Executes native `f64` batch point-in-solid parity containment via Vulkan `wgpu`.
+    #[must_use]
+    pub fn compute_point_in_solid_parity(
+        &self,
+        points: &[Point3],
+        mesh: TriangleMeshView<'_>,
+    ) -> Option<Vec<bool>> {
+        if points.is_empty() {
+            return Some(Vec::new());
+        }
+        if mesh.triangles.is_empty() {
+            return Some(vec![false; points.len()]);
+        }
+        let flat_pts: Vec<f64> = points.iter().flat_map(|p| [p.x, p.y, p.z, 0.0]).collect();
+        let raw = self.with_cached_compute_mesh(mesh, |cached| {
+            self.execute_f64_pipeline_with_cached_b1(
+                &self.pipe_point_in_solid,
+                &flat_pts,
+                &cached.b_tris,
+                points.len(),
+                points.len(),
+            )
+        })?;
+        Some(raw.into_iter().map(|v| v > 0.5).collect())
+    }
+
     fn hash_mesh(mesh: TriangleMeshView<'_>) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -1793,6 +1900,35 @@ mod tests {
                 assert!((e.barycentric_v - a.barycentric_v).abs() < VULKAN_PARITY_TOLERANCE);
             }
         }
+    }
+
+    #[test]
+    fn vulkan_point_in_solid_matches_cpu() {
+        let Some(vk) = global_vulkan() else {
+            return;
+        };
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+        ];
+        let triangles = [[0_u32, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let pts = [
+            Point3::new(0.25, 0.25, 0.25),
+            Point3::new(0.1, 0.1, 0.1),
+            Point3::new(1.5, 1.5, 1.5),
+            Point3::new(-0.5, 0.2, 0.2),
+        ];
+        let expected_parity = cpu::point_in_solid_parity(&pts, mesh);
+        let actual_parity = vk
+            .compute_point_in_solid_parity(&pts, mesh)
+            .expect("Vulkan f64 point-in-solid");
+        assert_eq!(expected_parity, actual_parity);
     }
 
     #[test]
