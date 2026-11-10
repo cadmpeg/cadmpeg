@@ -1042,3 +1042,41 @@ fn recipe_reference_retains_token_integer_and_joins_equal_pair() {
 }
 
 mod metadata;
+
+#[test]
+fn recipe_reference_unframed_token_integer_uses_the_complete_operand_frame() {
+    for token in ["5", "-37", "15095"] {
+        for integer in [
+            0u32,
+            4012,
+            82_902_527,
+            1_773_368_033,
+            1_437_049_394,
+            1_888_070_796,
+            u32::MAX,
+        ] {
+            let mut prefix = vec![0; 10];
+            for word in [1u32, 3, 2, 1, 1] {
+                prefix.extend_from_slice(&word.to_le_bytes());
+            }
+            prefix.extend_from_slice(b"9");
+            for word in [0i32, 1, -73, 0, 2] {
+                prefix.extend_from_slice(&word.to_le_bytes());
+            }
+            prefix.extend_from_slice(token.as_bytes());
+            prefix.extend_from_slice(&integer.to_le_bytes());
+            for word in [1i32, -74, 0, 0] {
+                prefix.extend_from_slice(&word.to_le_bytes());
+            }
+            let references = super::decode_recipe_references(&prefix, 100);
+            assert_eq!(references.len(), 2, "{token} {integer}");
+            assert_eq!(references[1].token, token);
+            assert_eq!(references[1].token_integer, integer);
+            assert_eq!(references[1].design_reference, -74);
+            assert_eq!(references[1].selector, 2);
+            for end in 0..prefix.len() {
+                assert!(super::decode_recipe_references(&prefix[..end], 100).is_empty());
+            }
+        }
+    }
+}

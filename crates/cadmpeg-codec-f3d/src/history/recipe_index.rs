@@ -157,6 +157,30 @@ mod tests {
         }
     }
     #[test]
+    fn token_integer_recipe_queries_separate_entities_and_keep_fragments() {
+        let tag = |entity_ref, token_integer| AsmHistoricalPersistentSubentityTag {
+            entity_kind: AsmHistoricalEntityKind::Face,
+            entity_ref,
+            selector: 1,
+            token: "10".into(),
+            token_integer,
+            design_references: vec![328],
+            ordinal: 0,
+        };
+        let topology = AsmHistoricalTopology {
+            faces: vec![10, 20, 30],
+            persistent_subentity_tags: vec![tag(10, 0), tag(20, 4012), tag(30, 4012)],
+            ..Default::default()
+        };
+        let mut cache = RecipeTopologyCache::default();
+        let index = cache.get(&topology);
+        assert_eq!(index.matching_tags("10", 0, 328), &[0]);
+        assert_eq!(index.matching_tags("10", 4012, 328), &[1, 2]);
+        assert!(index.matching_tags("10", 4013, 328).is_empty());
+        assert_eq!(index.face_tags(328), &[0, 1, 2]);
+    }
+
+    #[test]
     fn token_only_recipe_queries_match_tags_without_a_face_index() {
         let topology = AsmHistoricalTopology {
             faces: vec![10],
