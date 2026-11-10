@@ -243,6 +243,7 @@ fn an_edge_reads_the_axis_row_of_its_curve_and_its_midpoint_tangent() {
         direction: vector(0.0, 0.0, 1.0),
     };
     let sample = |edge| AsmHistoricalEdgeSample {
+        bounds: None,
         edge,
         interior: point(0.0, 30.0, 10.0),
         tangent: Some(vector(0.0, 0.0, 1.0)),
@@ -348,6 +349,7 @@ fn a_tangent_across_the_spine_rules_an_edge_out() {
 #[test]
 fn a_duplicated_or_non_finite_row_states_no_point_or_plane() {
     let sample = |edge, interior| AsmHistoricalEdgeSample {
+        bounds: None,
         edge,
         interior,
         tangent: None,

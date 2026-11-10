@@ -168,6 +168,7 @@ fn square_with_unproven_edge(bulge: Option<f64>) -> AsmHistoricalTopology {
     topology.curve_axes.remove(2);
     if let Some(bulge) = bulge {
         topology.edge_samples.push(AsmHistoricalEdgeSample {
+            bounds: None,
             edge: 402,
             interior: Point3::new(0.5, 1.0 + bulge, 2.0),
             tangent: None,
@@ -246,6 +247,7 @@ fn rows_that_contradict_an_edge_reading_read_no_cap() {
     let mut topology = loop_topology(&unit_square_corners(), &[(0, 1), (1, 2), (2, 3), (3, 0)]);
     straight_carriers(&mut topology);
     topology.edge_samples.push(AsmHistoricalEdgeSample {
+        bounds: None,
         edge: 402,
         interior: Point3::new(0.5, 1.25, 2.0),
         tangent: None,
@@ -317,6 +319,7 @@ fn circle_topology(center: (f64, f64), radius: f64, axis: Vector3) -> AsmHistori
         radius,
     });
     topology.edge_samples.push(AsmHistoricalEdgeSample {
+        bounds: None,
         edge: 400,
         interior: Point3::new(center.0 - radius, center.1, 2.0),
         tangent: None,
@@ -897,6 +900,7 @@ fn a_curve_that_is_not_a_line_or_arc_agrees_with_its_cap_at_samples() {
     topology.curve_axes.remove(0);
     topology.edge_curves.remove(0);
     topology.edge_samples.push(AsmHistoricalEdgeSample {
+        bounds: None,
         edge: 400,
         interior: Point3::new(0.0, 1.0, 2.0),
         tangent: None,

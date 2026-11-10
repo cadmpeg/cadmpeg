@@ -90,6 +90,7 @@ fn line(topology: &mut AsmHistoricalTopology, edge: i64, direction: Vector3) {
         direction,
     });
     topology.edge_samples.push(AsmHistoricalEdgeSample {
+        bounds: None,
         edge,
         interior: Point3::new(0.0, 0.0, 0.0),
         tangent: Some(direction),
@@ -228,6 +229,7 @@ fn rib_fillet() -> AsmHistoricalTopology {
     });
     for (edge, position) in [(30, 1.0), (31, 1.5)] {
         topology.edge_samples.push(AsmHistoricalEdgeSample {
+            bounds: None,
             edge,
             interior: Point3::new(position, centre.y, 0.0),
             tangent: Some(x()),

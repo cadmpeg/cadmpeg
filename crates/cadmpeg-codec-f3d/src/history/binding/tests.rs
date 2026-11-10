@@ -821,3 +821,59 @@ fn binding_work_cap_counts_decoded_records() {
         assert_eq!(work.exhausted(), !binds, "limit {limit}");
     }
 }
+
+#[test]
+fn historical_curve_cache_uses_source_definition_indices() {
+    let bytes =
+        crate::test_support::smbh_curves_test::synthetic_geometry_with_consistent_exact_curve_smbh(
+        );
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::desktop()).unwrap();
+    let mut records = cadmpeg_asm::test_support::sab::frame(
+        &bytes,
+        cadmpeg_asm::asm_header::record_stream_start(&bytes).unwrap(),
+        cadmpeg_asm::asm_header::solved_record_limit(&bytes).unwrap(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
+    let source_subtypes = cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&records);
+    let curve = records
+        .iter_mut()
+        .find(|record| record.index == 19)
+        .unwrap();
+    let open = curve
+        .tokens
+        .iter()
+        .position(|token| matches!(token, Token::SubtypeOpen))
+        .unwrap();
+    let mut tokens = curve.tokens[..open].to_vec();
+    tokens.extend([
+        Token::SubtypeOpen,
+        Token::Ident("ref".into()),
+        Token::Long(0),
+        Token::SubtypeClose,
+    ]);
+    curve.tokens = tokens.into();
+    let archive: HistoricalRecordArchive = records
+        .into_iter()
+        .map(|record| (i64::try_from(record.index).unwrap(), record))
+        .collect();
+    let slots: Slots = archive.keys().copied().collect();
+    let versions = slots.iter().map(|&slot| (slot, slot)).collect();
+    let work = WorkBudget::new(MAX_HISTORY_BINDING_WORK);
+    let mut binder = Binder::new(&archive, None, &work);
+    binder.source_subtypes = Some(&source_subtypes);
+    binder.update(&slots, &versions).unwrap();
+    let topology = binder
+        .full(&ctx, &bytes, &mut Statistics::default())
+        .unwrap()
+        .unwrap();
+    let sample = topology
+        .edge_samples
+        .iter()
+        .find(|sample| sample.edge == 10)
+        .unwrap();
+    // The quadratic poles (0,0), (10,20), (20,0) give C(1/2) = (10,10).
+    assert_eq!(sample.interior, cadmpeg_ir::math::Point3::new(10., 10., 0.));
+}

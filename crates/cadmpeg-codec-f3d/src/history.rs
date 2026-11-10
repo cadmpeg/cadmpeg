@@ -22,6 +22,7 @@ mod combine_selection;
 pub(crate) mod compact_lineage;
 mod delete_face;
 pub(crate) mod edge_flange;
+mod edge_samples;
 pub(crate) mod face_admission;
 mod face_recipe;
 mod fallback_face;
@@ -962,25 +963,33 @@ impl<'a> HistoricalBodyIndex<'a> {
         edges: &[i64],
     ) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3)> {
         let mut points = Vec::new();
-        for edge in edges.iter().filter_map(|&edge| self.edges.get(edge)) {
-            let start = self.vertex_position(edge.start_vertex);
-            let end = self.vertex_position(edge.end_vertex);
-            let interior = self
-                .edge_samples
-                .get(edge.edge)
-                .map(|sample| sample.interior)
-                .filter(|pos| pos.x.is_finite() && pos.y.is_finite() && pos.z.is_finite());
-            points.extend(start);
-            points.extend(end);
-            points.extend(interior);
-            if let (Some(start), Some(end)) = (start, end) {
-                if let Some((center, normal, radius)) = self.circle_edge(edge.edge, start) {
-                    let closed = edge.start_vertex == edge.end_vertex;
-                    points.extend(circle_arc_extremes(
-                        center, normal, radius, start, interior, end, closed,
-                    ));
-                }
+        for &edge_id in edges {
+            let edge = self.edges.get(edge_id)?;
+            let start = self.vertex_position(edge.start_vertex)?;
+            let end = self.vertex_position(edge.end_vertex)?;
+            let sample = self.edge_samples.get(edge_id);
+            let interior = sample.map(|sample| sample.interior);
+            let circle = self.circle_edge(edge_id, start);
+            let closed = edge.start_vertex == edge.end_vertex;
+            let sampled_bounds = sample.and_then(|sample| sample.bounds);
+            let arc_resolved = circle.is_some() && (closed || interior.is_some());
+            if sampled_bounds.is_none() && !self.line_edge(edge_id, start, end) && !arc_resolved {
+                return None;
             }
+            points.extend([start, end]);
+            points.extend(interior);
+            points.extend(sampled_bounds.into_iter().flatten());
+            if let Some((center, normal, radius)) = circle {
+                points.extend(circle_arc_extremes(
+                    center, normal, radius, start, interior, end, closed,
+                ));
+            }
+        }
+        if points
+            .iter()
+            .any(|p| !p.x.is_finite() || !p.y.is_finite() || !p.z.is_finite())
+        {
+            return None;
         }
         let first = *points.first()?;
         let (mut low, mut high) = (first, first);
@@ -9643,7 +9652,7 @@ fn historical_topology(
                 })
             })
             .collect::<Option<Vec<_>>>()),
-        edge_samples: historical_edge_samples(brep)?,
+        edge_samples: edge_samples::historical_edge_samples(brep)?,
     };
     // Transitions diff each family in key order. The decoder appends the
     // containers it builds for saved free edges after the containers it walks,
@@ -9663,64 +9672,6 @@ fn historical_topology(
         family.sort_by_key(|relation| relation.owner_ref);
     }
     Ok(Some(topology))
-}
-
-/// Sample each edge's solved carrier at the midpoint of its parameter interval.
-///
-/// An edge without a bounded solved carrier, or whose carrier has no finite
-/// point there, has no sample. A resource refusal of the evaluator ends the
-/// sampling.
-fn historical_edge_samples(
-    brep: &cadmpeg_asm::brep::AsmBrep,
-) -> Result<Vec<crate::history_records::AsmHistoricalEdgeSample>, cadmpeg_core::decode::ResourceLimit>
-{
-    use cadmpeg_ir::eval::admission::EvaluationAdmission;
-    use cadmpeg_ir::eval::finite_or_refusal;
-    use cadmpeg_ir::geometry::CurveGeometry;
-
-    let curves = brep
-        .curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), &curve.geometry))
-        .collect::<HashMap<_, _>>();
-    let mut samples = Vec::new();
-    for edge in &brep.edges {
-        let Some([start, end]) = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get)
-        else {
-            continue;
-        };
-        let Some(CurveGeometry::Solved(geometry)) =
-            edge.curve().and_then(|curve| curves.get(curve.as_str()))
-        else {
-            continue;
-        };
-        let Some(edge_ref) = stable_ref(edge.id.as_str()) else {
-            continue;
-        };
-        let parameter = 0.5 * (start + end);
-        let Some(interior) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_solved(
-            EvaluationAdmission::Standard,
-            geometry,
-            parameter,
-        ))?
-        else {
-            continue;
-        };
-        let tangent = finite_or_refusal(cadmpeg_ir::eval::curve_tangent_solved(
-            EvaluationAdmission::Standard,
-            geometry,
-            parameter,
-        ))?
-        .and_then(|tangent| cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(tangent.get()))
-        .map(|tangent| *tangent.as_raw());
-        samples.push(crate::history_records::AsmHistoricalEdgeSample {
-            edge: edge_ref,
-            interior: interior.get(),
-            tangent,
-        });
-    }
-    samples.sort_by_key(|sample| sample.edge);
-    Ok(samples)
 }
 
 pub(crate) fn historical_topology_with_tags(
