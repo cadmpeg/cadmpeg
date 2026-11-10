@@ -5975,6 +5975,7 @@ fn parse_edge_operand(
             terminal_boundary_edge_slots: Vec::new(),
             changed_boundary_edge_slots: Vec::new(),
             deleted_boundary_edge_slots: Vec::new(),
+            transition_deleted_edge_slots: Vec::new(),
             updated_boundary_edge_slots: Vec::new(),
             treatment_radius_candidates: Vec::new(),
             changed_boundary_edge_contexts: Vec::new(),

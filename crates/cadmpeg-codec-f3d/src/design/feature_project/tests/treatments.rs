@@ -1841,6 +1841,7 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
                     &scope,
                     &parameters,
                     "f3d:native",
+                    &mut Vec::new(),
                 )
             }),
             Ok(FeatureDefinition::Operation(

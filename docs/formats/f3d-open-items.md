@@ -2041,3 +2041,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The Mini AfterSherpa V6 Zodiac BMO part stores a one-sided Cut scope with a selected-face start, one start face group, a `Side1Offset` owner, no termination group, and no shape-target group.
 
 **Note.** None.
+
+### DR-361. Treated edges in executed treatment transitions
+
+**Question.** Does an executed `Fillet` or `Chamfer` transition delete every treated edge?
+
+**Known.** The two-face group rule assumes that the transition deletes every treated edge and that the treated edge set equals the transition-deleted set. The rule checks that the deleted-set size equals the member count, each member has two distinct preceding faces, each member's shared changed-edge candidates are nonempty and belong to the deleted set, the candidates cover that set, a perfect assignment pairs each member with a distinct candidate, and each resolved member edge belongs to the deleted set. A group selected by this rule charges `history.edge-selection-deleted-set-assumed`.
+
+**Need.** A treatment whose treated edge survives the transition, or proof that every treated edge is deleted.
+
+**Conflict.** None.
+
+**Note.** None.
