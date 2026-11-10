@@ -1943,7 +1943,7 @@ A suppressed edge-treatment scope resolves its recipes against the unique termin
 
 #### Assembly operands
 
-The four 421-byte `As-built` generations use one exact class and offset map:
+The four direct-construction 421-byte `As-built` generations use one exact class and offset map:
 
 | Scope primary / paired class | Scalar owner primary / paired class | Operand-carrier classes in reference order | Solved frame primary / paired class | Frame span; marker, matrix, and paired-header offsets | Limit source order and domain |
 | --- | --- | --- | --- | --- | --- |
@@ -2374,7 +2374,7 @@ evaluated scalar duplicated from its parameter record by its parameter owner,
 independent of the owner-frame class and width.
 
 
-In a 421-byte `As-built` scope, the eleven-entry reference table starts with its marked entry at offset 189. Offset 185 stores u32 value 11. Entries 0 and 1 form the first operand-carrier pair, entries 2 and 3 form the second pair, entries 4 through 7 are the placement owners in `OffsetX`, `OffsetY`, `OffsetZ`, and `AngleZ` order, entry 8 is the solved connector-frame carrier, and entries 9 and 10 are the two degree-of-freedom limit owners. Offset 310 stores four `ff` bytes, offset 314 stores u32 value 8, offset 318 stores the UTF-16LE string `As-built`, and offset 334 stores the feature ordinal. The canonical alignment values are the `AngleZ` value followed by the three offsets. Each row in the generation map supplies the carrier pair, solved frame, paired header, and limit interpretation. The frame carrier stores one solved connector-frame matrix; it does not store either operand-local frame. The two operand-carrier pairs are direct construction/selection pairs and do not use the operand-path locator run of the 399-byte form.
+In a 421-byte `As-built` scope of the direct-construction generation, the eleven-entry reference table starts with its marked entry at offset 189. Offset 185 stores u32 value 11. Entries 0 and 1 form the first operand-carrier pair, entries 2 and 3 form the second pair, entries 4 through 7 are the placement owners in `OffsetX`, `OffsetY`, `OffsetZ`, and `AngleZ` order, entry 8 is the solved connector-frame carrier, and entries 9 and 10 are the two degree-of-freedom limit owners. Offset 310 stores four `ff` bytes, offset 314 stores u32 value 8, offset 318 stores the UTF-16LE string `As-built`, and offset 334 stores the feature ordinal. The canonical alignment values are the `AngleZ` value followed by the three offsets. Each row in the generation map supplies the carrier pair, solved frame, paired header, and limit interpretation. The frame carrier stores one solved connector-frame matrix; it does not store either operand-local frame. The two operand-carrier pairs are direct construction/selection pairs and do not use the operand-path locator run of the 399-byte form.
 
 The first direct pair is a point construction followed by a face-recipe selection. The second is a point-and-direction Hole construction followed by a face-recipe selection. The primary construction classes and selection classes are the four class pairs listed in the generation table, in reference order. The construction record header is the `byte_offset` named by scope reference 0 or 2; the paired selection header is the `byte_offset` named by scope reference 1 or 3. The point position and Hole position are model-space centimetres. The Hole direction equals the third column of the solved frame's rotation matrix. No construction carrier stores an independent connector orientation.
 

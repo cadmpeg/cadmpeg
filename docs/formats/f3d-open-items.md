@@ -1862,3 +1862,27 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-336. Placement-owner As-built scope with an 87-byte tail
+
+**Question.** How does a placement-owner As-built scope with an 87-byte tail bind its connector frames, motion, and limits?
+
+**Known.** One public wiring assembly stores scope 7461, class pair 371/263, type `AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0` version 1, with a 421-byte frame. Its eleven reference-table members are 7471, 7473, 7476, 7487, 7490, 7501, 7504, 7507, 7510, 7518, and 7521. Owners 7501 through 7510 supply three zero offsets and a zero angle. Owners 7518 and 7521 supply −π/6 and zero radians. The prefix names locators 7462 and 7465, each of type `2E3AC990-483D-4A55-8662-C064B976A957` version 3. Both locators store a null construction reference and a matrix. Construction 7471 has type `7B6C3C2D-4096-4E6D-B225-699E8C2D9355` version 8 and stores a decoded placement matrix. Motion record 7531 references occurrence records 279 and 4716 and joint record 7460. It stores freedom code 2. The motion decoder binds it to record 279 through its reference at offset 24. With the decoded occurrence placements, both locator matrices compose to the same frame in the occurrences' shared parent within a maximum matrix-cell difference of 2.5e-14 after translation-unit conversion.
+
+**Need.** Define the roles of the motion record's ordered references and the admission rule that distinguishes the placement-owner layout from the direct-construction layout. Establish the motion and limit association for this layout.
+
+**Conflict.** The direct-construction 421-byte layout places scalar owners at reference positions four through seven and its solved frame at position eight. This scope places scalar owners at positions five through eight and stores a selection record at position four. Frame length selects two distinct layouts.
+
+**Note.** The decoder retains the scope and its six parameter values. Neutral projection requires the placement-owner layout and its motion binding together.
+
+### DR-337. Version-six mesh-body graph and flagged collection counts
+
+**Question.** What do the two prefix words of a flagged mesh collection select when its nested record lists mesh bodies, and how does that collection bind version-six mesh-body records?
+
+**Known.** One public strain-relief part stores collection 173, type `443807AD-8025-41A3-8A50-5157579C3D78` version 0, with flag 1, prefix words 0 and 2, and nested body members 177 and 563. Base Mesh Feature scopes 184 and 570 name body records 177 and 563 in their prefixes and records 188 and 574 in their reference tables. Both body records have type `EA90DA22-556C-4C61-89BB-20C2681B7A9D` version 6. The archive contains two `.paramesh` entries. Collection validation fails before body decoding. The mesh-body reader admits version 7.
+
+**Need.** Define the two collection prefix words, the nested collection layout, the version-six body fields, and the reciprocal joins from each feature to its container. Preserve each body's affine placement and container identity through the join.
+
+**Conflict.** The specified flagged empty collection has equal first and nested body counts. Collection 173 has first count zero and two nested body references.
+
+**Note.** Collection validation failure prevents both mesh feature definitions from receiving tessellation references.
