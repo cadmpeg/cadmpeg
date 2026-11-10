@@ -5697,14 +5697,16 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
 }
 
-/// True when `expected` names at least one termination group and the stored
-/// face-group roles equal `expected` with every termination role removed.
-fn extrude_face_roles_lack_only_terminations(
+/// True for a one-sided face target whose stored face-group roles equal
+/// `expected` with its termination role removed (DR-360).
+fn one_sided_face_target_lacks_only_its_termination(
+    extent: records::feature::extrude::DesignExtrudeExtent,
     expected: &[records::topology::extrude_selection::DesignExtrudeFaceRole],
     stored: impl Iterator<Item = Option<records::topology::extrude_selection::DesignExtrudeFaceRole>>,
 ) -> bool {
     use records::topology::extrude_selection::DesignExtrudeFaceRole::Termination;
-    expected.contains(&Termination)
+    extent == records::feature::extrude::DesignExtrudeExtent::OneSidedToFace
+        && expected.contains(&Termination)
         && stored.eq(expected
             .iter()
             .copied()
@@ -6116,9 +6118,10 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == records::feature::extrude::DesignExtrudeOperation::NewBody
                 && face_operand_group_count == 0
                 && face_groups.is_empty();
-            // DR-360: a face extent whose roster stores every expected group
-            // except its termination groups.
-            let termination_missing = extrude_face_roles_lack_only_terminations(
+            // DR-360: a one-sided face target whose roster stores every
+            // expected group except its termination group.
+            let termination_missing = one_sided_face_target_lacks_only_its_termination(
+                extrude_extent,
                 &expected_face_roles,
                 face_groups.iter().map(|group| group.extrude_face_role()),
             );

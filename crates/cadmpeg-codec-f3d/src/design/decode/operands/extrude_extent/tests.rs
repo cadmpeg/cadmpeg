@@ -134,3 +134,15 @@ fn shape_targets_and_distance_extents_keep_their_prologue() {
         assert_eq!(scopes[0].extrude_prologue(), before);
     }
 }
+
+#[test]
+fn two_sided_face_targets_charge_nothing() {
+    for extent in [
+        DesignExtrudeExtent::TwoSidedToFaces,
+        DesignExtrudeExtent::TwoSidedDistanceToFace,
+    ] {
+        let scopes = [scope(extent, DesignExtrudeStart::FromFace)];
+        let groups = [group(DesignExtrudeFaceRole::Start)];
+        assert!(report_missing_terminations(&scopes, &groups).is_empty());
+    }
+}

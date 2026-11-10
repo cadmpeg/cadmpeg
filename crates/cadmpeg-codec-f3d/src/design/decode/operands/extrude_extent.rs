@@ -18,13 +18,10 @@ pub(crate) fn report_missing_terminations(
         let Some(prologue) = scope.extrude_prologue() else {
             continue;
         };
-        let required = match prologue.extent() {
-            Some(
-                DesignExtrudeExtent::OneSidedToFace | DesignExtrudeExtent::TwoSidedDistanceToFace,
-            ) => 1,
-            Some(DesignExtrudeExtent::TwoSidedToFaces) => 2,
-            _ => continue,
-        };
+        if prologue.extent() != Some(DesignExtrudeExtent::OneSidedToFace) {
+            continue;
+        }
+        let required = 1;
         let scope_groups = || {
             groups.iter().filter(|group| {
                 native_stream(&group.id) == native_stream(&scope.id)
