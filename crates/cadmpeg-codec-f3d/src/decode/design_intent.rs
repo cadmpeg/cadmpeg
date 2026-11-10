@@ -475,6 +475,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     )?;
     let placements = crate::design::decode::placement_construction::decode(ctx, scan)?;
     design.design_placement_constructions = placements.records;
+    crate::design::decode::placement_construction::coils::bind(
+        scan,
+        &mut design.design_parameter_scopes,
+        &design.design_record_headers,
+        &design.design_placement_constructions,
+    )?;
     if placements.unparsed != 0 {
         push_loss_vec(
             &mut losses,
