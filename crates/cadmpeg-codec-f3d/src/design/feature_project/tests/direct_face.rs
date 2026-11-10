@@ -36,6 +36,7 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
                 outward: true,
                 outward_offset: 0,
                 wall_slots: None,
+                prefix_flag: None,
                 auxiliary_references: Vec::new(),
             });
         }

@@ -27,6 +27,7 @@ use crate::records::feature::direct_face::DesignMoveOperation;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashMap;
 
 const RIGID_TRANSFORM_TYPE_GUID: &str = "84E6245F-1CDC-4FB8-8048-163A85FAD3F0";
@@ -81,6 +82,7 @@ pub(super) fn exact_direct_face_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    losses: &mut Vec<LossNote>,
 ) -> Option<DesignDirectFaceOperation> {
     let start = usize::try_from(scope.byte_offset()).ok()?;
     match design_feature_family(&scope.kind())? {
@@ -99,7 +101,7 @@ pub(super) fn exact_direct_face_operation(
                 },
             ))
         }
-        DesignFeatureFamily::Shell => exact_shell_wall_slots(bytes, records, scope),
+        DesignFeatureFamily::Shell => exact_shell_wall_slots(bytes, records, scope, losses),
         _ => None,
     }
 }

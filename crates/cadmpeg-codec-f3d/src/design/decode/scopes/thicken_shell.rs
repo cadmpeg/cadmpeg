@@ -134,6 +134,15 @@ enum WallSlotPrefix {
 impl WallSlotPrefix {
     const ALL: [Self; 4] = [Self::Cornered, Self::Compact, Self::Marked, Self::Counted];
 
+    fn flag(self) -> Option<(usize, &'static str)> {
+        match self {
+            Self::Cornered => None,
+            Self::Compact => Some((shell_compact::FLAG, "compact")),
+            Self::Marked => Some((shell_marked::FLAG, "marked")),
+            Self::Counted => Some((shell_marked::FLAG, "counted")),
+        }
+    }
+
     fn slots_at(self, bytes: &[u8], start: usize) -> Option<usize> {
         let at = |offset: usize| bytes.get(start.checked_add(offset)?).copied();
         let zero = |from: usize, to: usize| {
@@ -246,6 +255,7 @@ pub(super) fn exact_shell_wall_slots(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    losses: &mut Vec<LossNote>,
 ) -> Option<DesignDirectFaceOperation> {
     let mut frames = WallSlotPrefix::ALL
         .into_iter()
@@ -305,20 +315,41 @@ pub(super) fn exact_shell_wall_slots(
         _ => None,
     };
     let start = usize::try_from(scope.byte_offset()).ok()?;
+    let prefix_flag = match frame.prefix.flag() {
+        Some((flag, name)) => {
+            let at = start.checked_add(flag)?;
+            let flag = direct_face::DesignShellPrefixFlag {
+                value: bytes.get(at) == Some(&1),
+                offset: u64::try_from(at).ok()?,
+            };
+            Some((flag, name))
+        }
+        None => None,
+    };
+    let outward_offset = u64::try_from(first_at).ok()?;
     let wall_slots =
         (frame.prefix == WallSlotPrefix::Cornered).then(|| direct_face::DesignShellWallSlots {
             tangent_chain: bytes.get(start + shell_slots::TANGENT_CHAIN) == Some(&1),
             rounded_corners: bytes.get(start + shell_slots::ROUNDED_CORNERS) == Some(&1),
             outside: both,
         });
+    if let Some((flag, name)) = prefix_flag {
+        losses.push(crate::loss::F3dLossCode::FeatureShellPrefixFlagAssumed.note(format!(
+            "Shell scope {} stores Boolean {} at byte {} of its {name} prefix; the Shell option this Boolean selects is unresolved (DR-315), and the present wall slot sets the wall direction.",
+            scope.id,
+            u8::from(flag.value),
+            flag.offset,
+        )));
+    }
     Some(DesignDirectFaceOperation::Shell(
         direct_face::DesignShellOperation {
             thickness,
             thickness_record_index,
             thickness_offset,
             outward: frame.inside.is_none(),
-            outward_offset: u64::try_from(first_at).ok()?,
+            outward_offset,
             wall_slots,
+            prefix_flag: prefix_flag.map(|(flag, _)| flag),
             auxiliary_references: frame.auxiliary,
         },
     ))

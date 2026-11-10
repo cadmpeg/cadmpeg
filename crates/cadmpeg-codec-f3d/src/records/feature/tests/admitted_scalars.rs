@@ -74,6 +74,7 @@ fn shell_operation_refuses_a_nonpositive_thickness() {
             outward: true,
             outward_offset: 60,
             wall_slots: None,
+            prefix_flag: None,
             auxiliary_references: Vec::new(),
         },
         "thickness",

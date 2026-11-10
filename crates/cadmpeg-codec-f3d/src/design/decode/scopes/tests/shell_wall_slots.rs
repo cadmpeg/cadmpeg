@@ -2,9 +2,12 @@
 
 use crate::design::decode::scopes::direct_face::exact_direct_face_operation;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope_with_type_guid;
-use crate::records::feature::direct_face::{DesignDirectFaceOperation, DesignShellOperation};
+use crate::records::feature::direct_face::{
+    DesignDirectFaceOperation, DesignShellOperation, DesignShellPrefixFlag,
+};
 use crate::records::references::DesignClassTag;
 use crate::test_support::{indexed_header, lp_utf16};
+use cadmpeg_ir::report::loss::LossNote;
 
 const SHELL_TYPE_GUID: &str = "E8063467-BC05-4688-8196-AECB90F0EFEE";
 const GROUP: u32 = 91;
@@ -136,6 +139,10 @@ impl Fixture {
     }
 
     fn decode(&self) -> Option<DesignShellOperation> {
+        self.decode_with_losses().0
+    }
+
+    fn decode_with_losses(&self) -> (Option<DesignShellOperation>, Vec<LossNote>) {
         let bytes = self.bytes();
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let class_tag =
@@ -150,11 +157,13 @@ impl Fixture {
         )
         .unwrap()
         .expect("Shell scope");
-        match exact_direct_face_operation(&bytes, &records, &scope) {
+        let mut losses = Vec::new();
+        let operation = match exact_direct_face_operation(&bytes, &records, &scope, &mut losses) {
             Some(DesignDirectFaceOperation::Shell(operation)) => Some(operation),
             Some(_) => panic!("expected a Shell operation"),
             None => None,
-        }
+        };
+        (operation, losses)
     }
 }
 
@@ -333,6 +342,49 @@ fn the_offset_21_boolean_leaves_the_wall_direction_to_the_slot() {
         invalid.flag = 2;
         assert_eq!(invalid.decode(), None);
     }
+}
+
+#[test]
+fn the_offset_21_boolean_is_stored_and_reported() {
+    for (prefix, name) in [
+        (Prefix::Compact, "compact"),
+        (Prefix::Marked, "marked"),
+        (Prefix::Counted(Vec::new()), "counted"),
+    ] {
+        let mut stored = Vec::new();
+        for flag in [0, 1] {
+            let mut fixture = prefixed(prefix.clone(), Some(INSIDE), None);
+            fixture.flag = flag;
+            let (operation, losses) = fixture.decode_with_losses();
+            let operation = operation.unwrap();
+            assert_eq!(
+                operation.prefix_flag,
+                Some(DesignShellPrefixFlag {
+                    value: flag == 1,
+                    offset: 21,
+                })
+            );
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                crate::loss::F3dLossCode::FeatureShellPrefixFlagAssumed.kind()
+            );
+            assert!(
+                losses[0]
+                    .message
+                    .contains(&format!("Boolean {flag} at byte 21 of its {name} prefix")),
+                "{}",
+                losses[0].message
+            );
+            assert!(losses[0].message.contains("DR-315"));
+            stored.push(operation);
+        }
+        assert_ne!(stored[0], stored[1]);
+    }
+
+    let (cornered, losses) = Fixture::new(Some(INSIDE), None).decode_with_losses();
+    assert_eq!(cornered.unwrap().prefix_flag, None);
+    assert!(losses.is_empty());
 }
 
 #[test]

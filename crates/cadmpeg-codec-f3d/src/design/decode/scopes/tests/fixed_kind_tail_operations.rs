@@ -417,7 +417,7 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &offset_scope),
+        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &offset_scope, &mut Vec::new()),
         Some(DesignDirectFaceOperation::OffsetFaces(
             crate::records::feature::direct_face::DesignOffsetFacesOperation {
                 distance,
@@ -456,7 +456,7 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &offset_scope),
+        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &offset_scope, &mut Vec::new()),
         Some(DesignDirectFaceOperation::OffsetFaces(
             crate::records::feature::direct_face::DesignOffsetFacesOperation {
                 distance,
@@ -500,6 +500,7 @@ pub(super) fn fixed_kind_tail_operations(
                     bytes,
                     &crate::design::test_support::indexed_record_offsets_for_test(bytes),
                     scope,
+                    &mut Vec::new(),
                 )
             };
         assert!(matches!(
@@ -638,6 +639,7 @@ pub(super) fn fixed_kind_tail_operations(
             outward: true,
             outward_offset: 0,
             wall_slots: None,
+            prefix_flag: None,
             auxiliary_references: Vec::new(),
         });
     }
@@ -676,6 +678,7 @@ pub(super) fn fixed_kind_tail_operations(
             outward: true,
             outward_offset: 0,
             wall_slots: None,
+            prefix_flag: None,
             auxiliary_references: Vec::new(),
         });
     }
@@ -698,6 +701,7 @@ pub(super) fn fixed_kind_tail_operations(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &offset_scope,
+            &mut Vec::new(),
         );
         match (offset_scope.payload_mut(), construction) {
             (

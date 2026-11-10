@@ -362,7 +362,8 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_direct_face_operation(bytes, &records, &scope);
+                let construction =
+                    exact_direct_face_operation(bytes, &records, &scope, &mut losses);
                 let scope_offset = scope.byte_offset();
                 match (scope.payload_mut(), construction) {
                     (
