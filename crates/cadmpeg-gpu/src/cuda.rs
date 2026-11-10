@@ -2036,6 +2036,520 @@ L_BVH_EXIT:
     ret;
 }
 
+// 10. Ampere sm_86 Specialized BVH Closest-Point Query with Non-Coherent L1 Cache Loads and Fast FP64 FMA
+.visible .entry cuda_sm86_bvh_closest_point_f64(
+    .param .u64 param_bvh,
+    .param .u64 param_tris,
+    .param .u64 param_queries,
+    .param .u64 param_out,
+    .param .u32 param_n_queries,
+    .param .u32 param_n_nodes
+) {
+    .local .align 16 .b8 %stack[1024];
+    .reg .pred %p<16>;
+    .reg .b32 %r<22>;
+    .reg .b64 %rd<20>;
+    .reg .f64 %fd<52>;
+
+    ld.param.u64 %rd1, [param_bvh];
+    ld.param.u64 %rd2, [param_tris];
+    ld.param.u64 %rd3, [param_queries];
+    ld.param.u64 %rd4, [param_out];
+    ld.param.u32 %r1, [param_n_queries];
+    ld.param.u32 %r2, [param_n_nodes];
+
+    mov.u32 %r3, %ctaid.x;
+    mov.u32 %r4, %ntid.x;
+    mov.u32 %r5, %tid.x;
+    mad.lo.u32 %r6, %r3, %r4, %r5;
+    setp.ge.u32 %p0, %r6, %r1;
+    @%p0 bra L_SM86_BVH_EXIT;
+
+    cvta.to.global.u64 %rd5, %rd1;
+    cvta.to.global.u64 %rd6, %rd2;
+    cvta.to.global.u64 %rd7, %rd3;
+    cvta.to.global.u64 %rd8, %rd4;
+
+    mul.wide.u32 %rd9, %r6, 32;
+    add.u64 %rd10, %rd7, %rd9;
+    ld.global.nc.f64 %fd0, [%rd10 + 0];
+    ld.global.nc.f64 %fd1, [%rd10 + 8];
+    ld.global.nc.f64 %fd2, [%rd10 + 16];
+
+    mov.f64 %fd3, 0d7FF0000000000000;
+    mov.f64 %fd4, 0d0000000000000000;
+    mov.f64 %fd5, 0d0000000000000000;
+    mov.f64 %fd6, 0d0000000000000000;
+    mov.u32 %r7, 0xffffffff;
+
+    setp.eq.u32 %p1, %r2, 0;
+    @%p1 bra L_SM86_BVH_STORE;
+
+    mov.u64 %rd11, %stack;
+    st.local.u32 [%rd11 + 0], 0;
+    st.local.u32 [%rd11 + 4], 0;
+    st.local.f64 [%rd11 + 8], 0d0000000000000000;
+    mov.u32 %r8, 1;
+
+L_SM86_BVH_LOOP:
+    setp.eq.u32 %p2, %r8, 0;
+    @%p2 bra L_SM86_BVH_STORE;
+
+    sub.u32 %r8, %r8, 1;
+    shl.b32 %r9, %r8, 4;
+    cvt.u64.u32 %rd12, %r9;
+    add.u64 %rd13, %rd11, %rd12;
+    ld.local.u32 %r10, [%rd13 + 0];
+    ld.local.f64 %fd7, [%rd13 + 8];
+
+    setp.ge.f64 %p3, %fd7, %fd3;
+    setp.ne.u32 %p4, %r7, 0xffffffff;
+    and.pred %p3, %p3, %p4;
+    @%p3 bra L_SM86_BVH_LOOP;
+
+    mul.wide.u32 %rd14, %r10, 64;
+    add.u64 %rd15, %rd5, %rd14;
+    ld.global.nc.u32 %r11, [%rd15 + 48];
+    ld.global.nc.u32 %r12, [%rd15 + 52];
+
+    setp.eq.u32 %p5, %r11, 0xffffffff;
+    @!%p5 bra L_SM86_BVH_LEAF;
+
+    add.u32 %r13, %r10, 1;
+    mov.f64 %fd8, 0d7FF0000000000000;
+    setp.lt.u32 %p6, %r13, %r2;
+    @!%p6 bra L_SM86_BVH_SKIP_LEFT;
+
+    mul.wide.u32 %rd16, %r13, 64;
+    add.u64 %rd17, %rd5, %rd16;
+    ld.global.nc.f64 %fd10, [%rd17 + 0];
+    ld.global.nc.f64 %fd11, [%rd17 + 8];
+    ld.global.nc.f64 %fd12, [%rd17 + 16];
+    ld.global.nc.f64 %fd13, [%rd17 + 24];
+    ld.global.nc.f64 %fd14, [%rd17 + 32];
+    ld.global.nc.f64 %fd15, [%rd17 + 40];
+    sub.f64 %fd16, %fd10, %fd0;
+    sub.f64 %fd17, %fd0, %fd13;
+    max.f64 %fd16, %fd16, %fd17;
+    max.f64 %fd16, %fd16, 0d0000000000000000;
+    sub.f64 %fd18, %fd11, %fd1;
+    sub.f64 %fd19, %fd1, %fd14;
+    max.f64 %fd18, %fd18, %fd19;
+    max.f64 %fd18, %fd18, 0d0000000000000000;
+    sub.f64 %fd20, %fd12, %fd2;
+    sub.f64 %fd21, %fd2, %fd15;
+    max.f64 %fd20, %fd20, %fd21;
+    max.f64 %fd20, %fd20, 0d0000000000000000;
+    mul.f64 %fd8, %fd20, %fd20;
+    fma.rn.f64 %fd8, %fd18, %fd18, %fd8;
+    fma.rn.f64 %fd8, %fd16, %fd16, %fd8;
+
+L_SM86_BVH_SKIP_LEFT:
+    mov.f64 %fd9, 0d7FF0000000000000;
+    setp.lt.u32 %p7, %r12, %r2;
+    @!%p7 bra L_SM86_BVH_SKIP_RIGHT;
+
+    mul.wide.u32 %rd16, %r12, 64;
+    add.u64 %rd17, %rd5, %rd16;
+    ld.global.nc.f64 %fd10, [%rd17 + 0];
+    ld.global.nc.f64 %fd11, [%rd17 + 8];
+    ld.global.nc.f64 %fd12, [%rd17 + 16];
+    ld.global.nc.f64 %fd13, [%rd17 + 24];
+    ld.global.nc.f64 %fd14, [%rd17 + 32];
+    ld.global.nc.f64 %fd15, [%rd17 + 40];
+    sub.f64 %fd16, %fd10, %fd0;
+    sub.f64 %fd17, %fd0, %fd13;
+    max.f64 %fd16, %fd16, %fd17;
+    max.f64 %fd16, %fd16, 0d0000000000000000;
+    sub.f64 %fd18, %fd11, %fd1;
+    sub.f64 %fd19, %fd1, %fd14;
+    max.f64 %fd18, %fd18, %fd19;
+    max.f64 %fd18, %fd18, 0d0000000000000000;
+    sub.f64 %fd20, %fd12, %fd2;
+    sub.f64 %fd21, %fd2, %fd15;
+    max.f64 %fd20, %fd20, %fd21;
+    max.f64 %fd20, %fd20, 0d0000000000000000;
+    mul.f64 %fd9, %fd20, %fd20;
+    fma.rn.f64 %fd9, %fd18, %fd18, %fd9;
+    fma.rn.f64 %fd9, %fd16, %fd16, %fd9;
+
+L_SM86_BVH_SKIP_RIGHT:
+    setp.lt.f64 %p8, %fd8, %fd9;
+    selp.u32 %r14, %r13, %r12, %p8;
+    selp.f64 %fd22, %fd8, %fd9, %p8;
+    selp.u32 %r15, %r12, %r13, %p8;
+    selp.f64 %fd23, %fd9, %fd8, %p8;
+
+    setp.lt.u32 %p9, %r15, %r2;
+    setp.lt.f64 %p10, %fd23, %fd3;
+    and.pred %p9, %p9, %p10;
+    setp.lt.u32 %p12, %r8, 64;
+    and.pred %p9, %p9, %p12;
+    @!%p9 bra L_SM86_BVH_PUSH_NEAR;
+
+    shl.b32 %r16, %r8, 4;
+    cvt.u64.u32 %rd18, %r16;
+    add.u64 %rd19, %rd11, %rd18;
+    st.local.u32 [%rd19 + 0], %r15;
+    st.local.u32 [%rd19 + 4], 0;
+    st.local.f64 [%rd19 + 8], %fd23;
+    add.u32 %r8, %r8, 1;
+
+L_SM86_BVH_PUSH_NEAR:
+    setp.lt.u32 %p9, %r14, %r2;
+    setp.lt.f64 %p10, %fd22, %fd3;
+    and.pred %p9, %p9, %p10;
+    setp.lt.u32 %p12, %r8, 64;
+    and.pred %p9, %p9, %p12;
+    @!%p9 bra L_SM86_BVH_LOOP;
+
+    shl.b32 %r16, %r8, 4;
+    cvt.u64.u32 %rd18, %r16;
+    add.u64 %rd19, %rd11, %rd18;
+    st.local.u32 [%rd19 + 0], %r14;
+    st.local.u32 [%rd19 + 4], 0;
+    st.local.f64 [%rd19 + 8], %fd22;
+    add.u32 %r8, %r8, 1;
+    bra L_SM86_BVH_LOOP;
+
+L_SM86_BVH_LEAF:
+    mul.wide.u32 %rd16, %r11, 72;
+    add.u64 %rd17, %rd6, %rd16;
+    ld.global.nc.f64 %fd10, [%rd17 + 0];
+    ld.global.nc.f64 %fd11, [%rd17 + 8];
+    ld.global.nc.f64 %fd12, [%rd17 + 16];
+    ld.global.nc.f64 %fd13, [%rd17 + 24];
+    ld.global.nc.f64 %fd14, [%rd17 + 32];
+    ld.global.nc.f64 %fd15, [%rd17 + 40];
+    ld.global.nc.f64 %fd16, [%rd17 + 48];
+    ld.global.nc.f64 %fd17, [%rd17 + 56];
+    ld.global.nc.f64 %fd18, [%rd17 + 64];
+
+    sub.f64 %fd19, %fd13, %fd10;
+    sub.f64 %fd20, %fd14, %fd11;
+    sub.f64 %fd21, %fd15, %fd12;
+    sub.f64 %fd22, %fd16, %fd10;
+    sub.f64 %fd23, %fd17, %fd11;
+    sub.f64 %fd24, %fd18, %fd12;
+    sub.f64 %fd25, %fd0,  %fd10;
+    sub.f64 %fd26, %fd1,  %fd11;
+    sub.f64 %fd27, %fd2,  %fd12;
+
+    mul.f64 %fd28, %fd21, %fd27;
+    fma.rn.f64 %fd28, %fd20, %fd26, %fd28;
+    fma.rn.f64 %fd28, %fd19, %fd25, %fd28;
+    mul.f64 %fd29, %fd24, %fd27;
+    fma.rn.f64 %fd29, %fd23, %fd26, %fd29;
+    fma.rn.f64 %fd29, %fd22, %fd25, %fd29;
+
+    // Degenerate triangle check: n = ab x ac, |n|^2 <= f64::EPSILON * |ab|^2 * |ac|^2
+    mul.rn.f64 %fd32, %fd21, %fd23;
+    neg.f64 %fd35, %fd21;
+    fma.rn.f64 %fd35, %fd35, %fd23, %fd32;
+    neg.f64 %fd32, %fd32;
+    fma.rn.f64 %fd32, %fd20, %fd24, %fd32;
+    add.f64 %fd32, %fd32, %fd35; // nx
+    mul.rn.f64 %fd33, %fd19, %fd24;
+    neg.f64 %fd35, %fd19;
+    fma.rn.f64 %fd35, %fd35, %fd24, %fd33;
+    neg.f64 %fd33, %fd33;
+    fma.rn.f64 %fd33, %fd21, %fd22, %fd33;
+    add.f64 %fd33, %fd33, %fd35; // ny
+    mul.rn.f64 %fd34, %fd20, %fd22;
+    neg.f64 %fd35, %fd20;
+    fma.rn.f64 %fd35, %fd35, %fd22, %fd34;
+    neg.f64 %fd34, %fd34;
+    fma.rn.f64 %fd34, %fd19, %fd23, %fd34;
+    add.f64 %fd34, %fd34, %fd35; // nz
+    mul.f64 %fd35, %fd34, %fd34;
+    fma.rn.f64 %fd35, %fd33, %fd33, %fd35;
+    fma.rn.f64 %fd35, %fd32, %fd32, %fd35; // n_sq
+    mul.f64 %fd36, %fd21, %fd21;
+    fma.rn.f64 %fd36, %fd20, %fd20, %fd36;
+    fma.rn.f64 %fd36, %fd19, %fd19, %fd36; // ab_sq
+    mul.f64 %fd37, %fd24, %fd24;
+    fma.rn.f64 %fd37, %fd23, %fd23, %fd37;
+    fma.rn.f64 %fd37, %fd22, %fd22, %fd37; // ac_sq
+    mul.f64 %fd38, %fd36, %fd37;
+    mul.f64 %fd38, %fd38, 0d3CB0000000000000; // DEGENERATE_AREA_FACTOR (f64::EPSILON)
+    setp.le.f64 %p6, %fd35, %fd38;
+    @%p6 bra L_SM86_TRI_DEGENERATE;
+
+    setp.le.f64 %p6, %fd28, 0d0000000000000000;
+    setp.le.f64 %p7, %fd29, 0d0000000000000000;
+    and.pred %p6, %p6, %p7;
+    @!%p6 bra L_SM86_TRI_CHECK_B;
+    mov.f64 %fd40, %fd10;
+    mov.f64 %fd41, %fd11;
+    mov.f64 %fd42, %fd12;
+    bra L_SM86_TRI_EVAL_DIST;
+
+L_SM86_TRI_CHECK_B:
+    sub.f64 %fd25, %fd0, %fd13;
+    sub.f64 %fd26, %fd1, %fd14;
+    sub.f64 %fd27, %fd2, %fd15;
+    mul.f64 %fd30, %fd21, %fd27;
+    fma.rn.f64 %fd30, %fd20, %fd26, %fd30;
+    fma.rn.f64 %fd30, %fd19, %fd25, %fd30;
+    mul.f64 %fd31, %fd24, %fd27;
+    fma.rn.f64 %fd31, %fd23, %fd26, %fd31;
+    fma.rn.f64 %fd31, %fd22, %fd25, %fd31;
+
+    setp.ge.f64 %p6, %fd30, 0d0000000000000000;
+    setp.le.f64 %p7, %fd31, %fd30;
+    and.pred %p6, %p6, %p7;
+    @!%p6 bra L_SM86_TRI_CHECK_AB;
+    mov.f64 %fd40, %fd13;
+    mov.f64 %fd41, %fd14;
+    mov.f64 %fd42, %fd15;
+    bra L_SM86_TRI_EVAL_DIST;
+
+L_SM86_TRI_CHECK_AB:
+    mul.f64 %fd32, %fd30, %fd29;
+    neg.f64 %fd32, %fd32;
+    fma.rn.f64 %fd32, %fd28, %fd31, %fd32;
+
+    setp.le.f64 %p6, %fd32, 0d0000000000000000;
+    setp.ge.f64 %p7, %fd28, 0d0000000000000000;
+    setp.le.f64 %p8, %fd30, 0d0000000000000000;
+    and.pred %p6, %p6, %p7;
+    and.pred %p6, %p6, %p8;
+    @!%p6 bra L_SM86_TRI_CHECK_C;
+    sub.f64 %fd33, %fd28, %fd30;
+    setp.gt.f64 %p12, %fd33, 0d0000000000000000;
+    @!%p12 bra L_SM86_TRI_CHECK_C;
+    div.rn.f64 %fd34, %fd28, %fd33;
+    fma.rn.f64 %fd40, %fd34, %fd19, %fd10;
+    fma.rn.f64 %fd41, %fd34, %fd20, %fd11;
+    fma.rn.f64 %fd42, %fd34, %fd21, %fd12;
+    bra L_SM86_TRI_EVAL_DIST;
+
+L_SM86_TRI_CHECK_C:
+    sub.f64 %fd25, %fd0, %fd16;
+    sub.f64 %fd26, %fd1, %fd17;
+    sub.f64 %fd27, %fd2, %fd18;
+    mul.f64 %fd33, %fd21, %fd27;
+    fma.rn.f64 %fd33, %fd20, %fd26, %fd33;
+    fma.rn.f64 %fd33, %fd19, %fd25, %fd33;
+    mul.f64 %fd34, %fd24, %fd27;
+    fma.rn.f64 %fd34, %fd23, %fd26, %fd34;
+    fma.rn.f64 %fd34, %fd22, %fd25, %fd34;
+
+    setp.ge.f64 %p6, %fd34, 0d0000000000000000;
+    setp.le.f64 %p7, %fd33, %fd34;
+    and.pred %p6, %p6, %p7;
+    @!%p6 bra L_SM86_TRI_CHECK_AC;
+    mov.f64 %fd40, %fd16;
+    mov.f64 %fd41, %fd17;
+    mov.f64 %fd42, %fd18;
+    bra L_SM86_TRI_EVAL_DIST;
+
+L_SM86_TRI_CHECK_AC:
+    mul.f64 %fd35, %fd28, %fd34;
+    neg.f64 %fd35, %fd35;
+    fma.rn.f64 %fd35, %fd33, %fd29, %fd35;
+
+    setp.le.f64 %p6, %fd35, 0d0000000000000000;
+    setp.ge.f64 %p7, %fd29, 0d0000000000000000;
+    setp.le.f64 %p8, %fd34, 0d0000000000000000;
+    and.pred %p6, %p6, %p7;
+    and.pred %p6, %p6, %p8;
+    @!%p6 bra L_SM86_TRI_CHECK_BC;
+    sub.f64 %fd36, %fd29, %fd34;
+    setp.gt.f64 %p12, %fd36, 0d0000000000000000;
+    @!%p12 bra L_SM86_TRI_CHECK_BC;
+    div.rn.f64 %fd37, %fd29, %fd36;
+    fma.rn.f64 %fd40, %fd37, %fd22, %fd10;
+    fma.rn.f64 %fd41, %fd37, %fd23, %fd11;
+    fma.rn.f64 %fd42, %fd37, %fd24, %fd12;
+    bra L_SM86_TRI_EVAL_DIST;
+
+L_SM86_TRI_CHECK_BC:
+    mul.f64 %fd36, %fd33, %fd31;
+    neg.f64 %fd36, %fd36;
+    fma.rn.f64 %fd36, %fd30, %fd34, %fd36;
+
+    sub.f64 %fd37, %fd31, %fd30;
+    sub.f64 %fd38, %fd33, %fd34;
+    setp.le.f64 %p6, %fd36, 0d0000000000000000;
+    setp.ge.f64 %p7, %fd37, 0d0000000000000000;
+    setp.ge.f64 %p8, %fd38, 0d0000000000000000;
+    and.pred %p6, %p6, %p7;
+    and.pred %p6, %p6, %p8;
+    @!%p6 bra L_SM86_TRI_FACE;
+    add.f64 %fd39, %fd37, %fd38;
+    setp.gt.f64 %p12, %fd39, 0d0000000000000000;
+    @!%p12 bra L_SM86_TRI_FACE;
+    div.rn.f64 %fd39, %fd37, %fd39;
+    sub.f64 %fd43, %fd16, %fd13;
+    sub.f64 %fd44, %fd17, %fd14;
+    sub.f64 %fd45, %fd18, %fd15;
+    fma.rn.f64 %fd40, %fd39, %fd43, %fd13;
+    fma.rn.f64 %fd41, %fd39, %fd44, %fd14;
+    fma.rn.f64 %fd42, %fd39, %fd45, %fd15;
+    bra L_SM86_TRI_EVAL_DIST;
+
+L_SM86_TRI_FACE:
+    // Accurate normal difference of products: w = c*d, e = fma(-c,d,w), f = fma(a,b,-w), res = f + e
+    mul.rn.f64 %fd32, %fd21, %fd23;
+    neg.f64 %fd35, %fd21;
+    fma.rn.f64 %fd35, %fd35, %fd23, %fd32;
+    neg.f64 %fd32, %fd32;
+    fma.rn.f64 %fd32, %fd20, %fd24, %fd32;
+    add.f64 %fd32, %fd32, %fd35; // nx
+    mul.rn.f64 %fd33, %fd19, %fd24;
+    neg.f64 %fd35, %fd19;
+    fma.rn.f64 %fd35, %fd35, %fd24, %fd33;
+    neg.f64 %fd33, %fd33;
+    fma.rn.f64 %fd33, %fd21, %fd22, %fd33;
+    add.f64 %fd33, %fd33, %fd35; // ny
+    mul.rn.f64 %fd34, %fd20, %fd22;
+    neg.f64 %fd35, %fd20;
+    fma.rn.f64 %fd35, %fd35, %fd22, %fd34;
+    neg.f64 %fd34, %fd34;
+    fma.rn.f64 %fd34, %fd19, %fd23, %fd34;
+    add.f64 %fd34, %fd34, %fd35; // nz
+    mul.f64 %fd35, %fd34, %fd34;
+    fma.rn.f64 %fd35, %fd33, %fd33, %fd35;
+    fma.rn.f64 %fd35, %fd32, %fd32, %fd35; // n_sq
+
+    setp.gt.f64 %p12, %fd35, 0d0000000000000000;
+    @!%p12 bra L_SM86_TRI_FACE_ZERO;
+
+    sub.f64 %fd36, %fd0, %fd10; // ap.x
+    sub.f64 %fd37, %fd1, %fd11; // ap.y
+    sub.f64 %fd38, %fd2, %fd12; // ap.z
+    mul.f64 %fd39, %fd38, %fd34;
+    fma.rn.f64 %fd39, %fd37, %fd33, %fd39;
+    fma.rn.f64 %fd39, %fd36, %fd32, %fd39; // ap_dot_n
+    div.rn.f64 %fd39, %fd39, %fd35; // k = ap_dot_n / n_sq
+    neg.f64 %fd39, %fd39; // -k
+    fma.rn.f64 %fd40, %fd39, %fd32, %fd0; // proj.x = query.x - k * nx
+    fma.rn.f64 %fd41, %fd39, %fd33, %fd1; // proj.y = query.y - k * ny
+    fma.rn.f64 %fd42, %fd39, %fd34, %fd2; // proj.z = query.z - k * nz
+    bra L_SM86_TRI_EVAL_DIST;
+L_SM86_TRI_FACE_ZERO:
+    mov.f64 %fd40, %fd10;
+    mov.f64 %fd41, %fd11;
+    mov.f64 %fd42, %fd12;
+    bra L_SM86_TRI_EVAL_DIST;
+
+L_SM86_TRI_DEGENERATE:
+    // Segment 1: v0 -> v1 (u = ab, u_sq = ab_sq in %fd36, w = d1 in %fd28)
+    setp.gt.f64 %p7, %fd36, 0d0000000000000000;
+    div.rn.f64 %fd30, %fd28, %fd36;
+    max.f64 %fd30, %fd30, 0d0000000000000000;
+    min.f64 %fd30, %fd30, 0d3FF0000000000000;
+    selp.f64 %fd30, %fd30, 0d0000000000000000, %p7;
+    fma.rn.f64 %fd40, %fd30, %fd19, %fd10; // p1.x
+    fma.rn.f64 %fd41, %fd30, %fd20, %fd11; // p1.y
+    fma.rn.f64 %fd42, %fd30, %fd21, %fd12; // p1.z
+    sub.f64 %fd31, %fd0, %fd40;
+    sub.f64 %fd32, %fd1, %fd41;
+    sub.f64 %fd33, %fd2, %fd42;
+    mul.f64 %fd47, %fd33, %fd33;
+    fma.rn.f64 %fd47, %fd32, %fd32, %fd47;
+    fma.rn.f64 %fd47, %fd31, %fd31, %fd47; // d1_sq
+
+    // Segment 2: v1 -> v2 (u = v2 - v1)
+    sub.f64 %fd30, %fd16, %fd13; // bc.x
+    sub.f64 %fd31, %fd17, %fd14; // bc.y
+    sub.f64 %fd32, %fd18, %fd15; // bc.z
+    mul.f64 %fd33, %fd32, %fd32;
+    fma.rn.f64 %fd33, %fd31, %fd31, %fd33;
+    fma.rn.f64 %fd33, %fd30, %fd30, %fd33; // bc_sq
+    sub.f64 %fd34, %fd0, %fd13;  // bp.x
+    sub.f64 %fd35, %fd1, %fd14;  // bp.y
+    sub.f64 %fd36, %fd2, %fd15;  // bp.z
+    mul.f64 %fd37, %fd32, %fd36;
+    fma.rn.f64 %fd37, %fd31, %fd35, %fd37;
+    fma.rn.f64 %fd37, %fd30, %fd34, %fd37; // bp_dot_bc
+    setp.gt.f64 %p7, %fd33, 0d0000000000000000;
+    div.rn.f64 %fd38, %fd37, %fd33;
+    max.f64 %fd38, %fd38, 0d0000000000000000;
+    min.f64 %fd38, %fd38, 0d3FF0000000000000;
+    selp.f64 %fd38, %fd38, 0d0000000000000000, %p7;
+    fma.rn.f64 %fd34, %fd38, %fd30, %fd13; // p2.x
+    fma.rn.f64 %fd35, %fd38, %fd31, %fd14; // p2.y
+    fma.rn.f64 %fd36, %fd38, %fd32, %fd15; // p2.z
+    sub.f64 %fd37, %fd0, %fd34;
+    sub.f64 %fd38, %fd1, %fd35;
+    sub.f64 %fd39, %fd2, %fd36;
+    mul.f64 %fd43, %fd39, %fd39;
+    fma.rn.f64 %fd43, %fd38, %fd38, %fd43;
+    fma.rn.f64 %fd43, %fd37, %fd37, %fd43; // d2_sq
+    setp.lt.f64 %p8, %fd43, %fd47;
+    selp.f64 %fd40, %fd34, %fd40, %p8;
+    selp.f64 %fd41, %fd35, %fd41, %p8;
+    selp.f64 %fd42, %fd36, %fd42, %p8;
+    selp.f64 %fd47, %fd43, %fd47, %p8;
+
+    // Segment 3: v2 -> v0 (u = v0 - v2)
+    sub.f64 %fd30, %fd10, %fd16; // ca.x
+    sub.f64 %fd31, %fd11, %fd17; // ca.y
+    sub.f64 %fd32, %fd12, %fd18; // ca.z
+    mul.f64 %fd33, %fd32, %fd32;
+    fma.rn.f64 %fd33, %fd31, %fd31, %fd33;
+    fma.rn.f64 %fd33, %fd30, %fd30, %fd33; // ca_sq
+    sub.f64 %fd34, %fd0, %fd16;  // cp.x
+    sub.f64 %fd35, %fd1, %fd17;  // cp.y
+    sub.f64 %fd36, %fd2, %fd18;  // cp.z
+    mul.f64 %fd37, %fd32, %fd36;
+    fma.rn.f64 %fd37, %fd31, %fd35, %fd37;
+    fma.rn.f64 %fd37, %fd30, %fd34, %fd37; // cp_dot_ca
+    setp.gt.f64 %p7, %fd33, 0d0000000000000000;
+    div.rn.f64 %fd38, %fd37, %fd33;
+    max.f64 %fd38, %fd38, 0d0000000000000000;
+    min.f64 %fd38, %fd38, 0d3FF0000000000000;
+    selp.f64 %fd38, %fd38, 0d0000000000000000, %p7;
+    fma.rn.f64 %fd34, %fd38, %fd30, %fd16; // p3.x
+    fma.rn.f64 %fd35, %fd38, %fd31, %fd17; // p3.y
+    fma.rn.f64 %fd36, %fd38, %fd32, %fd18; // p3.z
+    sub.f64 %fd37, %fd0, %fd34;
+    sub.f64 %fd38, %fd1, %fd35;
+    sub.f64 %fd39, %fd2, %fd36;
+    mul.f64 %fd43, %fd39, %fd39;
+    fma.rn.f64 %fd43, %fd38, %fd38, %fd43;
+    fma.rn.f64 %fd43, %fd37, %fd37, %fd43; // d3_sq
+    setp.lt.f64 %p8, %fd43, %fd47;
+    selp.f64 %fd40, %fd34, %fd40, %p8;
+    selp.f64 %fd41, %fd35, %fd41, %p8;
+    selp.f64 %fd42, %fd36, %fd42, %p8;
+    bra L_SM86_TRI_EVAL_DIST;
+
+L_SM86_TRI_EVAL_DIST:
+    sub.f64 %fd43, %fd0, %fd40;
+    sub.f64 %fd44, %fd1, %fd41;
+    sub.f64 %fd45, %fd2, %fd42;
+    mul.f64 %fd46, %fd45, %fd45;
+    fma.rn.f64 %fd46, %fd44, %fd44, %fd46;
+    fma.rn.f64 %fd46, %fd43, %fd43, %fd46;
+
+    setp.lt.f64 %p9, %fd46, %fd3;
+    @!%p9 bra L_SM86_BVH_LOOP;
+
+    mov.f64 %fd3, %fd46;
+    mov.f64 %fd4, %fd40;
+    mov.f64 %fd5, %fd41;
+    mov.f64 %fd6, %fd42;
+    mov.u32 %r7, %r11;
+    bra L_SM86_BVH_LOOP;
+
+L_SM86_BVH_STORE:
+    mul.wide.u32 %rd16, %r6, 40;
+    add.u64 %rd17, %rd8, %rd16;
+    cvt.u64.u32 %rd18, %r7;
+    mov.b64 %fd47, %rd18;
+    st.global.f64 [%rd17 + 0],  %fd4;
+    st.global.f64 [%rd17 + 8],  %fd5;
+    st.global.f64 [%rd17 + 16], %fd6;
+    st.global.f64 [%rd17 + 24], %fd3;
+    st.global.f64 [%rd17 + 32], %fd47;
+
+L_SM86_BVH_EXIT:
+    ret;
+}
+
 // 11. CUDA OptiX RT Core + FP64 Ray-Mesh intersection refinement kernel
 .visible .entry cuda_optix_ray_mesh_f64(
     .param .u64 param_rays,
@@ -2748,6 +3262,7 @@ pub struct CudaContext {
     fn_simt_point_in_solid: CudaFunction,
     fn_sm86_point_in_solid: CudaFunction,
     fn_simt_bvh_closest_point: CudaFunction,
+    fn_sm86_bvh_closest_point: CudaFunction,
     compute_mesh_cache: Mutex<Option<CachedCudaMesh>>,
     optix: Option<OptixPipelines>,
 }
@@ -2799,6 +3314,9 @@ impl CudaContext {
             fn_sm86_point_in_solid: module.load_function("cuda_sm86_point_in_solid_f64").ok()?,
             fn_simt_bvh_closest_point: module
                 .load_function("cuda_simt_bvh_closest_point_f64")
+                .ok()?,
+            fn_sm86_bvh_closest_point: module
+                .load_function("cuda_sm86_bvh_closest_point_f64")
                 .ok()?,
             compute_mesh_cache: Mutex::new(None),
             optix,
@@ -3500,6 +4018,19 @@ impl CudaContext {
         mesh: TriangleMeshView<'_>,
     ) -> Option<Vec<ClosestPointResult>> {
         self.dispatch_bvh_closest_point_kernel(&self.fn_simt_bvh_closest_point, points, mesh)
+    }
+
+    /// Executes closest-point-on-mesh queries via Ampere `sm_86` PTX BVH traversal with non-coherent read-only cache loads.
+    #[must_use]
+    pub fn ptx_sm86_spatial_closest_point(
+        &self,
+        points: &[Point3],
+        mesh: TriangleMeshView<'_>,
+    ) -> Option<Vec<ClosestPointResult>> {
+        if !self.supports_sm86() {
+            return None;
+        }
+        self.dispatch_bvh_closest_point_kernel(&self.fn_sm86_bvh_closest_point, points, mesh)
     }
 
     /// Whether the active GPU supports NVIDIA `OptiX` hardware RT Core acceleration.
@@ -4350,6 +4881,322 @@ mod tests {
             assert!((e.closest_point.y - a.closest_point.y).abs() < CUDA_PARITY_TOLERANCE);
             assert!((e.closest_point.z - a.closest_point.z).abs() < CUDA_PARITY_TOLERANCE);
             assert_eq!(s.triangle_index, a.triangle_index);
+        }
+    }
+
+    #[test]
+    fn cuda_sm86_spatial_closest_point_matches_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        if !ctx.supports_sm86() {
+            return;
+        }
+        let pts_a: Vec<Point3> = (0_u32..150)
+            .map(|i| {
+                let f = f64::from(i);
+                Point3::new(f * 0.11 - 3.0, (f * 0.25).sin(), (f * 0.17).cos())
+            })
+            .collect();
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+        ];
+        let triangles = [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let expected_cp = cpu::closest_point_mesh(&pts_a, mesh);
+        let spatial_cp = crate::spatial::closest_points_on_mesh(&pts_a, mesh);
+        let actual_cp = ctx
+            .ptx_sm86_spatial_closest_point(&pts_a, mesh)
+            .expect("PTX sm_86 spatial closest point");
+        for ((e, s), a) in expected_cp.iter().zip(&spatial_cp).zip(&actual_cp) {
+            assert!((e.distance_sq - a.distance_sq).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((e.closest_point.x - a.closest_point.x).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((e.closest_point.y - a.closest_point.y).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((e.closest_point.z - a.closest_point.z).abs() < CUDA_PARITY_TOLERANCE);
+            assert_eq!(s.triangle_index, a.triangle_index);
+        }
+    }
+
+    #[test]
+    fn cuda_degenerate_coincident_triangle_closest_point() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(5.0, 0.0, 0.0),
+            Point3::new(6.0, 0.0, 0.0),
+            Point3::new(5.0, 1.0, 0.0),
+        ];
+        let triangles = [[0_u32, 0, 1], [2, 3, 4]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let query = [Point3::new(0.5, 0.5, 0.0)];
+
+        if let Some(simt_cp) = ctx.simt_spatial_closest_point(&query, mesh) {
+            assert_eq!(simt_cp.len(), 1);
+            assert_eq!(simt_cp[0].triangle_index, 0);
+            assert!((simt_cp[0].distance_sq - 0.25).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((simt_cp[0].closest_point.x - 0.5).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((simt_cp[0].closest_point.y - 0.0).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((simt_cp[0].closest_point.z - 0.0).abs() < CUDA_PARITY_TOLERANCE);
+        }
+
+        if ctx.supports_sm86() {
+            if let Some(sm86_cp) = ctx.ptx_sm86_spatial_closest_point(&query, mesh) {
+                assert_eq!(sm86_cp.len(), 1);
+                assert_eq!(sm86_cp[0].triangle_index, 0);
+                assert!((sm86_cp[0].distance_sq - 0.25).abs() < CUDA_PARITY_TOLERANCE);
+                assert!((sm86_cp[0].closest_point.x - 0.5).abs() < CUDA_PARITY_TOLERANCE);
+                assert!((sm86_cp[0].closest_point.y - 0.0).abs() < CUDA_PARITY_TOLERANCE);
+                assert!((sm86_cp[0].closest_point.z - 0.0).abs() < CUDA_PARITY_TOLERANCE);
+            }
+        }
+    }
+
+    #[test]
+    fn cuda_degenerate_zero_area_and_collinear_triangle_closest_point() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+        ];
+        let triangles_zero_area = [[0_u32, 1, 1]];
+        let triangles_collinear = [[0_u32, 1, 2]];
+        let query = [Point3::new(0.1, 0.5, 0.0)];
+
+        for (triangles, label) in [
+            (&triangles_zero_area, "zero-area"),
+            (&triangles_collinear, "collinear"),
+        ] {
+            let mesh = TriangleMeshView {
+                vertices: &vertices,
+                triangles: triangles.as_slice(),
+            };
+            if let Some(simt_cp) = ctx.simt_spatial_closest_point(&query, mesh) {
+                assert_eq!(simt_cp.len(), 1, "SIMT length mismatch for {label}");
+                assert!(
+                    (simt_cp[0].distance_sq - 0.25).abs() < CUDA_PARITY_TOLERANCE,
+                    "SIMT distance_sq mismatch for {label}"
+                );
+                assert!(
+                    (simt_cp[0].closest_point.x - 0.1).abs() < CUDA_PARITY_TOLERANCE,
+                    "SIMT closest_point.x mismatch for {label}"
+                );
+                assert!(
+                    simt_cp[0].closest_point.y.abs() < CUDA_PARITY_TOLERANCE,
+                    "SIMT closest_point.y mismatch for {label}"
+                );
+                assert!(
+                    simt_cp[0].closest_point.z.abs() < CUDA_PARITY_TOLERANCE,
+                    "SIMT closest_point.z mismatch for {label}"
+                );
+            }
+            if ctx.supports_sm86() {
+                if let Some(sm86_cp) = ctx.ptx_sm86_spatial_closest_point(&query, mesh) {
+                    assert_eq!(sm86_cp.len(), 1, "SM86 length mismatch for {label}");
+                    assert!(
+                        (sm86_cp[0].distance_sq - 0.25).abs() < CUDA_PARITY_TOLERANCE,
+                        "SM86 distance_sq mismatch for {label}"
+                    );
+                    assert!(
+                        (sm86_cp[0].closest_point.x - 0.1).abs() < CUDA_PARITY_TOLERANCE,
+                        "SM86 closest_point.x mismatch for {label}"
+                    );
+                    assert!(
+                        sm86_cp[0].closest_point.y.abs() < CUDA_PARITY_TOLERANCE,
+                        "SM86 closest_point.y mismatch for {label}"
+                    );
+                    assert!(
+                        sm86_cp[0].closest_point.z.abs() < CUDA_PARITY_TOLERANCE,
+                        "SM86 closest_point.z mismatch for {label}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cuda_sliver_sharp_vertex_closest_point() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1000.0, 0.0, 0.0),
+            Point3::new(1000.0, 2.0e-5, 0.0),
+        ];
+        let triangles = [[0_u32, 1, 2]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let query = [Point3::new(900.0, 9.0e-6, 0.0)];
+
+        if let Some(simt_cp) = ctx.simt_spatial_closest_point(&query, mesh) {
+            assert_eq!(simt_cp.len(), 1);
+            assert_eq!(simt_cp[0].triangle_index, 0);
+            assert!(simt_cp[0].distance_sq < CUDA_PARITY_TOLERANCE);
+            assert!((simt_cp[0].closest_point.x - 900.0).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((simt_cp[0].closest_point.y - 9.0e-6).abs() < CUDA_PARITY_TOLERANCE);
+            assert!(simt_cp[0].closest_point.z.abs() < CUDA_PARITY_TOLERANCE);
+        }
+
+        if ctx.supports_sm86() {
+            if let Some(sm86_cp) = ctx.ptx_sm86_spatial_closest_point(&query, mesh) {
+                assert_eq!(sm86_cp.len(), 1);
+                assert_eq!(sm86_cp[0].triangle_index, 0);
+                assert!(sm86_cp[0].distance_sq < CUDA_PARITY_TOLERANCE);
+                assert!((sm86_cp[0].closest_point.x - 900.0).abs() < CUDA_PARITY_TOLERANCE);
+                assert!((sm86_cp[0].closest_point.y - 9.0e-6).abs() < CUDA_PARITY_TOLERANCE);
+                assert!(sm86_cp[0].closest_point.z.abs() < CUDA_PARITY_TOLERANCE);
+            }
+        }
+    }
+
+    #[test]
+    fn cuda_rotated_sliver_sharp_vertex_closest_point() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(
+                844.029_628_745_985_4,
+                449.098_785_111_286_93,
+                -293.128_413_857_272_2,
+            ),
+            Point3::new(
+                844.029_622_883_417_1,
+                449.098_801_991_879_5,
+                -293.128_404_875_296_5,
+            ),
+        ];
+        let triangles = [[0_u32, 1, 2]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let query = [Point3::new(
+            759.626_663_233_231_2,
+            404.188_914_196_424_9,
+            -263.815_568_429_655_97,
+        )];
+
+        if let Some(simt_cp) = ctx.simt_spatial_closest_point(&query, mesh) {
+            assert_eq!(simt_cp.len(), 1);
+            assert_eq!(simt_cp[0].triangle_index, 0);
+            assert!(simt_cp[0].distance_sq < CUDA_PARITY_TOLERANCE);
+            assert!((simt_cp[0].closest_point.x - query[0].x).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((simt_cp[0].closest_point.y - query[0].y).abs() < CUDA_PARITY_TOLERANCE);
+            assert!((simt_cp[0].closest_point.z - query[0].z).abs() < CUDA_PARITY_TOLERANCE);
+        }
+
+        if ctx.supports_sm86() {
+            if let Some(sm86_cp) = ctx.ptx_sm86_spatial_closest_point(&query, mesh) {
+                assert_eq!(sm86_cp.len(), 1);
+                assert_eq!(sm86_cp[0].triangle_index, 0);
+                assert!(sm86_cp[0].distance_sq < CUDA_PARITY_TOLERANCE);
+                assert!((sm86_cp[0].closest_point.x - query[0].x).abs() < CUDA_PARITY_TOLERANCE);
+                assert!((sm86_cp[0].closest_point.y - query[0].y).abs() < CUDA_PARITY_TOLERANCE);
+                assert!((sm86_cp[0].closest_point.z - query[0].z).abs() < CUDA_PARITY_TOLERANCE);
+            }
+        }
+    }
+
+    #[test]
+    fn cuda_degeneracy_threshold_normal_precision_closest_point() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(
+                2_943.919_949_616_599_8,
+                -2_484.031_550_366_579_7,
+                -3_187.933_905_687_633,
+            ),
+            Point3::new(
+                2_060.743_987_198_398,
+                -1_738.822_040_387_564_4,
+                -2_231.553_748_196_103_2,
+            ),
+        ];
+        let triangles = [[0_u32, 1, 2]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let dop = |a: f64, b: f64, c: f64, d: f64| -> f64 {
+            let cd = c * d;
+            let err = (-c).mul_add(d, cd);
+            let f = a.mul_add(b, -cd);
+            f + err
+        };
+        let nx = dop(vertices[1].y, vertices[2].z, vertices[1].z, vertices[2].y);
+        let ny = dop(vertices[1].z, vertices[2].x, vertices[1].x, vertices[2].z);
+        let nz = dop(vertices[1].x, vertices[2].y, vertices[1].y, vertices[2].x);
+        let n_len = nx.hypot(ny).hypot(nz);
+        let centroid = Point3::new(
+            (vertices[0].x + vertices[1].x + vertices[2].x) / 3.0,
+            (vertices[0].y + vertices[1].y + vertices[2].y) / 3.0,
+            (vertices[0].z + vertices[1].z + vertices[2].z) / 3.0,
+        );
+        let query = [Point3::new(
+            centroid.x + nx / n_len,
+            centroid.y + ny / n_len,
+            centroid.z + nz / n_len,
+        )];
+        let cpu_cp = cpu::closest_point_mesh(&query, mesh);
+
+        if let Some(simt_cp) = ctx.simt_spatial_closest_point(&query, mesh) {
+            assert_eq!(simt_cp.len(), 1);
+            assert!((simt_cp[0].distance_sq - cpu_cp[0].distance_sq).abs() < CUDA_PARITY_TOLERANCE);
+            assert!(
+                (simt_cp[0].closest_point.x - cpu_cp[0].closest_point.x).abs()
+                    < CUDA_PARITY_TOLERANCE
+            );
+            assert!(
+                (simt_cp[0].closest_point.y - cpu_cp[0].closest_point.y).abs()
+                    < CUDA_PARITY_TOLERANCE
+            );
+            assert!(
+                (simt_cp[0].closest_point.z - cpu_cp[0].closest_point.z).abs()
+                    < CUDA_PARITY_TOLERANCE
+            );
+        }
+
+        if ctx.supports_sm86() {
+            if let Some(sm86_cp) = ctx.ptx_sm86_spatial_closest_point(&query, mesh) {
+                assert_eq!(sm86_cp.len(), 1);
+                assert!(
+                    (sm86_cp[0].distance_sq - cpu_cp[0].distance_sq).abs() < CUDA_PARITY_TOLERANCE
+                );
+                assert!(
+                    (sm86_cp[0].closest_point.x - cpu_cp[0].closest_point.x).abs()
+                        < CUDA_PARITY_TOLERANCE
+                );
+                assert!(
+                    (sm86_cp[0].closest_point.y - cpu_cp[0].closest_point.y).abs()
+                        < CUDA_PARITY_TOLERANCE
+                );
+                assert!(
+                    (sm86_cp[0].closest_point.z - cpu_cp[0].closest_point.z).abs()
+                        < CUDA_PARITY_TOLERANCE
+                );
+            }
         }
     }
 

@@ -379,7 +379,9 @@ impl GpuDispatcher {
                 Some(spatial::rayon_closest_points_on_mesh(points, mesh))
             }
             BackendKind::CpuSpatialIndex => Some(spatial::closest_points_on_mesh(points, mesh)),
-            BackendKind::PtxSm86 => None,
+            BackendKind::PtxSm86 => {
+                global_cuda().and_then(|cu| cu.ptx_sm86_spatial_closest_point(points, mesh))
+            }
             BackendKind::CudaCompute => {
                 global_cuda().and_then(|cu| cu.simt_spatial_closest_point(points, mesh))
             }
@@ -893,7 +895,11 @@ fn benchmark_single(
                     let out = cu.simt_spatial_closest_point(&pts, mesh)?;
                     std::hint::black_box(&out);
                 }
-                (OperationKind::ClosestPointMesh, BackendKind::PtxSm86) => return None,
+                (OperationKind::ClosestPointMesh, BackendKind::PtxSm86) => {
+                    let cu = global_cuda()?;
+                    let out = cu.ptx_sm86_spatial_closest_point(&pts, mesh)?;
+                    std::hint::black_box(&out);
+                }
                 (OperationKind::ClosestPointMesh, BackendKind::RtxRtCore) => return None,
                 _ => return None,
             }
