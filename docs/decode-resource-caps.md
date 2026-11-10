@@ -446,6 +446,9 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch.rs` | `MAX_FIT_CANDIDATES_FLOOR` | `512` | 4 | Floor for the owned face fit allowance, which also admits one candidate per eight input records, rounded up. Transfer retains the patches collected before the cap and reports the skipped candidates. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/sheet_group.rs` | `MAX_VERTEX_RETRIES` | `3` | 4 | Recovery passes for pending faces using shared vertex witnesses. Pending faces stay untransferred after the last pass. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/sheet_group/endpoint_sites.rs` | `MAX_ENDPOINT_GAP_MM` | `0.005` | N | Maximum distance in mm between a corroborated vertex and each incident fitted endpoint. A larger gap keeps the fitted endpoint positions. |
+| `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/edge_alignment.rs` | `MAX_ENDPOINT_SEED_GAP_MM` | `0.005` | N | Maximum endpoint distance in mm for a corroborated shared-trim alignment seed. The fitted curve and surface lifts meet the ordinary edge gap. |
+| `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/transfer.rs` | `MAX_SHARED_EDGE_SEED_GAP_MM` | `0.005` | N | Maximum sampled boundary separation in mm for a retry using the admitted shared edge. Reprojection must meet the surface lift gap. |
+| `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/transfer.rs` | `MAX_CORROBORATED_VERTEX_GAP_MM` | `0.005` | N | Maximum distance in mm for a vertex repair corroborated by an incident matching edge. Larger discrepancies retain the conflicting vertex. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/surface_fit.rs` | `MAX_SPANS` | `48` | 4 | Knot spans per axis of a fitted tensor surface. A larger grid rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/surface_fit.rs` | `MAX_REFINEMENTS` | `9` | 4 | Refinements of a tensor surface grid after the initial fit. A remaining residual rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/trimmed_face.rs` | `MAX_ALTERNATE_LINES` | `4` | 4 | Ambiguous line stations admitted to the alternate boundary search. Excess skips the search. |
@@ -545,7 +548,7 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 330.
+Production `MAX_*` constants: 333.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
@@ -553,8 +556,8 @@ Production `MAX_*` constants: 330.
 | 2    | Per-input bound            | 76    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 165   |
-| N    | Not a decode bound         | 47    |
-|      | Total                      | 330   |
+| N    | Not a decode bound         | 50    |
+|      | Total                      | 333   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -564,7 +567,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 5,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 24,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 36,
-`cadmpeg-codec-catia` 74, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
+`cadmpeg-codec-catia` 77, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
 ## Routing

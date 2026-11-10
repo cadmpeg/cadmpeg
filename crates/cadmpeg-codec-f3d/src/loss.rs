@@ -253,6 +253,7 @@ pub(crate) enum F3dLossCode {
     FeatureScopePayloadUninterpreted,
     /// Emboss controls, native pairs, and selected contours have no neutral mapping.
     EmbossControlsNative,
+    FeatureShellAuxiliaryReferencesNative,
     /// An Emboss prefix matches no admitted native construction form.
     EmbossPrefixUnparsed,
     /// A non-equivalent duplicate scope envelope was superseded by the
@@ -452,6 +453,10 @@ pub(crate) enum F3dLossCode {
     FeatureRectangularPatternPlacementNotTransferred,
     /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
     FeatureThickenFlagsAssumed,
+    /// A `Shell` reference table stores references outside its face-group members.
+    FeatureShellTableMembersAssumed,
+    /// A compact, marked, or counted `Shell` prefix stores an offset-21 Boolean whose Shell option is unresolved.
+    FeatureShellPrefixFlagAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
     /// `SurfaceTrim` cell tables outside the removal reading retain native entries.
@@ -759,6 +764,7 @@ impl F3dLossCode {
         Self::AlignConstructionUnparsed,
         Self::FeatureScopePayloadUninterpreted,
         Self::EmbossControlsNative,
+        Self::FeatureShellAuxiliaryReferencesNative,
         Self::EmbossPrefixUnparsed,
         Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
@@ -853,6 +859,8 @@ impl F3dLossCode {
         Self::FeaturePathPatternPlacementNotTransferred,
         Self::FeatureRectangularPatternPlacementNotTransferred,
         Self::FeatureThickenFlagsAssumed,
+        Self::FeatureShellTableMembersAssumed,
+        Self::FeatureShellPrefixFlagAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureTrimCellTableNative,
         Self::FeatureTrimMemberTypeAssumed,
@@ -1077,6 +1085,9 @@ impl F3dLossCode {
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
+            Self::FeatureShellAuxiliaryReferencesNative => {
+                "feature.shell-auxiliary-references-native"
+            }
             Self::EmbossPrefixUnparsed => "feature.emboss-prefix-unparsed",
             Self::AlignOperandsUnresolved => "feature.align-operands-unresolved",
             Self::AlignEnvelopeUnparsed => "feature.align-envelope-unparsed",
@@ -1213,6 +1224,8 @@ impl F3dLossCode {
                 "feature.rectangular-pattern-placement-not-transferred"
             }
             Self::FeatureThickenFlagsAssumed => "feature.thicken-flags-assumed",
+            Self::FeatureShellTableMembersAssumed => "feature.shell-table-members-assumed",
+            Self::FeatureShellPrefixFlagAssumed => "feature.shell-prefix-flag-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
             Self::FeatureTrimMemberTypeAssumed => "feature.trim-member-type-assumed",
@@ -1458,6 +1471,7 @@ impl F3dLossCode {
             | Self::HoleReferenceDimensionsNative
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
+            | Self::FeatureShellAuxiliaryReferencesNative
             | Self::EmbossPrefixUnparsed
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
@@ -1557,6 +1571,8 @@ impl F3dLossCode {
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
+            | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
@@ -1733,6 +1749,7 @@ impl F3dLossCode {
             | Self::HoleReferenceDimensionsNative
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
+            | Self::FeatureShellAuxiliaryReferencesNative
             | Self::EmbossPrefixUnparsed
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
@@ -1828,6 +1845,8 @@ impl F3dLossCode {
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
+            | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
@@ -2084,6 +2103,7 @@ mod tests {
                 "feature.align-construction-unparsed",
                 "feature.scope-payload-uninterpreted",
                 "feature.emboss-controls-native",
+                "feature.shell-auxiliary-references-native",
                 "feature.emboss-prefix-unparsed",
                 "feature.scope-envelope-superseded",
                 "parameter.unprojected",
@@ -2178,6 +2198,8 @@ mod tests {
                 "feature.path-pattern-placement-not-transferred",
                 "feature.rectangular-pattern-placement-not-transferred",
                 "feature.thicken-flags-assumed",
+                "feature.shell-table-members-assumed",
+                "feature.shell-prefix-flag-assumed",
                 "feature.face-operand-unresolved",
                 "feature.trim-cell-table-native",
                 "feature.trim-member-type-assumed",

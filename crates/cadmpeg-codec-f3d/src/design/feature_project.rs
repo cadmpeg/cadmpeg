@@ -1043,6 +1043,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::Move) => project_move(scope, construction_groups)
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Shell) => {
+                    projection_losses.extend(shell_table_member_loss(scope, construction_groups));
                     project_shell(scope, face_operands, construction_groups)?
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
@@ -4213,6 +4214,41 @@ pub(crate) fn list_thicken_whole_bodies(
     )
     .unwrap_or_else(|_| FaceSelection::Native(scope.id.clone()));
     *selection = partial;
+}
+
+pub(super) fn shell_table_member_loss(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let crate::records::feature::scope::DesignScopePayload::Shell(Some(operation)) =
+        &scope.payload()
+    else {
+        return None;
+    };
+    if operation.wall_slots.is_some() {
+        return None;
+    }
+    let group = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10)
+        .or_else(|| single_operand_group(groups, scope, DesignOperandRole::BODIES_A))?;
+    let remaining = scope
+        .reference_members()
+        .values()
+        .copied()
+        .filter(|record| {
+            *record != group.record_index && *record != operation.thickness_record_index
+        })
+        .collect::<Vec<_>>();
+    let members = group
+        .members()
+        .iter()
+        .map(|member| member.value)
+        .collect::<Vec<_>>();
+    (remaining != members).then(|| {
+        crate::loss::F3dLossCode::FeatureShellTableMembersAssumed.note(format!(
+            "Shell scope {} stores ordered references {remaining:?} besides face group {} and wall scalar {}, and the face group has members {members:?}; the Shell is projected from its wall slot and face group, assuming the other references leave the walls unchanged (DR-330).",
+            scope.id, group.record_index, operation.thickness_record_index
+        ))
+    })
 }
 
 pub(super) fn project_shell(
