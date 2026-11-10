@@ -278,6 +278,10 @@ pub(crate) struct DesignLoftConstruction {
         deserialize_with = "deserialize_reference_target"
     )]
     pub(crate) reference_target: Option<u64>,
+    /// Section records of the scope body's section list, in section order.
+    pub(crate) section_records: Vec<u32>,
+    /// Construction-operand groups of the scope body's rail list, in rail order.
+    pub(crate) rail_groups: Vec<u32>,
 }
 
 /// Fixed construction of a `Sweep` scope.

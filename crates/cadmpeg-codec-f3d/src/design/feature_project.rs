@@ -40,9 +40,9 @@ use crate::records::{
     topology::{
         body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
         edge_identity::DesignEdgeIdentityOperand, edge_identity::DesignEdgeOperand,
-        entity_selection::DesignLoftLegacyBodyCarrier, extrude_selection::DesignExtrudeFaceRole,
-        extrude_selection::DesignExtrudeOperandRole, extrude_selection::DesignOperandRole,
-        face::DesignFaceOperand, fillet::DesignFilletRadiusGroup, fillet::DesignFilletRadiusLaw,
+        extrude_selection::DesignExtrudeFaceRole, extrude_selection::DesignExtrudeOperandRole,
+        extrude_selection::DesignOperandRole, face::DesignFaceOperand,
+        fillet::DesignFilletRadiusGroup, fillet::DesignFilletRadiusLaw,
     },
 };
 use cadmpeg_core::decode::DecodeContext;
@@ -116,7 +116,6 @@ pub(crate) struct ProjectInputs<'a> {
     pub(crate) curve_identities: &'a [SketchCurveIdentity],
     pub(crate) face_operands: &'a [DesignFaceOperand],
     pub(crate) body_recipe_operands: &'a [DesignBodyRecipeOperand],
-    pub(crate) legacy_loft_body_carriers: &'a [DesignLoftLegacyBodyCarrier],
     pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) body_bindings: &'a [DesignBodyBinding],
     pub(crate) component_naming_spaces: &'a [crate::records::recipes::DesignComponentNamingSpace],
@@ -834,13 +833,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     );
                     definition
                 }
-                Some(DesignFeatureFamily::Loft) => project_fixed_loft(scope, inputs, ctx)?
-                    .unwrap_or_else(|| {
-                        FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: scope.kind_name().into(),
-                            parameters: BTreeMap::new(),
-                        })
-                    }),
+                Some(DesignFeatureFamily::Loft) => {
+                    project_fixed_loft(scope, inputs, ctx, &mut projection_losses)?.unwrap_or_else(
+                        || {
+                            FeatureDefinition::Operation(FeatureOperation::Native {
+                                kind: scope.kind_name().into(),
+                                parameters: BTreeMap::new(),
+                            })
+                        },
+                    )
+                }
                 Some(DesignFeatureFamily::Sweep) => project_fixed_sweep(
                     scope,
                     construction_groups,
@@ -6664,288 +6666,195 @@ fn resolve_sketch_axis_selection(
     })
 }
 
+pub(crate) struct LoftGroups<'a> {
+    pub(crate) sections: Vec<&'a DesignConstructionOperandGroup>,
+    pub(crate) rails: Vec<&'a DesignConstructionOperandGroup>,
+}
+
+pub(crate) fn loft_groups<'a>(
+    construction: &crate::records::feature::path_features::DesignLoftConstruction,
+    groups: &[&'a DesignConstructionOperandGroup],
+) -> Result<LoftGroups<'a>, &'static str> {
+    let group = |record_index: u32| {
+        unique_feature_match(
+            groups
+                .iter()
+                .copied()
+                .filter(|group| group.record_index == record_index),
+        )
+    };
+    let mut sections = Vec::new();
+    for record in &construction.section_records {
+        let section = record
+            .checked_add(1)
+            .and_then(group)
+            .ok_or("a section-list entry names no construction-operand group of the scope")?;
+        if !matches!(
+            section.role(),
+            DesignOperandRole::PROFILE
+                | DesignOperandRole::ROLE_0X43
+                | DesignOperandRole::ROLE_0X5
+                | DesignOperandRole::ROLE_0X21
+        ) {
+            return Err("a section group has a role outside the section roles");
+        }
+        sections.push(section);
+    }
+    if sections.len() < 2 {
+        return Err("the section list names fewer than two sections");
+    }
+    let reference_rail = construction
+        .reference_target
+        .map(u32::try_from)
+        .transpose()
+        .map_err(|_| "the offset-33 reference target is not a record index")?;
+    let mut rails = Vec::new();
+    for record in construction
+        .rail_groups
+        .iter()
+        .copied()
+        .chain(reference_rail)
+    {
+        let rail =
+            group(record).ok_or("a rail entry names no construction-operand group of the scope")?;
+        if !matches!(
+            rail.role(),
+            DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X7
+        ) {
+            return Err("a rail group has a role outside the rail roles");
+        }
+        rails.push(rail);
+    }
+    let named = sections
+        .iter()
+        .chain(&rails)
+        .map(|group| group.record_index)
+        .collect::<HashSet<_>>();
+    if named.len() != sections.len() + rails.len() {
+        return Err("two list entries name one group");
+    }
+    let bodies = groups
+        .iter()
+        .filter(|group| !named.contains(&group.record_index))
+        .collect::<Vec<_>>();
+    if bodies.len() != usize::from(construction.operation != DesignExtrudeOperation::NewBody)
+        || bodies.iter().any(|group| {
+            !matches!(
+                group.role(),
+                DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
+            )
+        })
+    {
+        return Err(
+            "the groups that neither list names are not the existing-body group of the operation",
+        );
+    }
+    Ok(LoftGroups { sections, rails })
+}
+
 pub(super) fn project_fixed_loft(
     scope: &DesignParameterScope,
     inputs: &ProjectInputs<'_>,
     ctx: &DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, LoftPointSection, LoftSection, PlanarProfileRef,
-        ProfileRef,
+        FeatureDefinition, FeatureOperation, LoftGuidance, LoftPointSection, LoftSection,
+        PlanarProfileRef, ProfileRef,
     };
     let &ProjectInputs {
         construction_groups,
-        legacy_loft_body_carriers: legacy_body_carriers,
         edge_operands,
         edge_identity_operands,
-        entity_selection_operands,
         face_operands,
         face_boundaries,
         ..
     } = inputs;
 
-    let crate::records::feature::scope::DesignScopePayload::Loft(loft_payload) = &scope.payload()
+    let crate::records::feature::scope::DesignScopePayload::Loft(Some(construction)) =
+        &scope.payload()
     else {
         return Ok(None);
     };
-    let Some(crate::records::feature::path_features::DesignLoftConstruction { operation, .. }) =
-        loft_payload
-    else {
+    if construction.section_records.is_empty() {
         return Ok(None);
-    };
+    }
     let stream = or_none!(native_stream(&scope.id));
-    let mut groups = Vec::new();
-    for group in construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
-    }) {
-        groups.push(group);
-    }
-    groups.sort_by(|left, right| {
-        left.scope_reference_ordinal
-            .cmp(&right.scope_reference_ordinal)
-    });
-    let mut matching_legacy_carriers = legacy_body_carriers.iter().filter(|carrier| {
-        native_stream(&carrier.id) == Some(stream)
-            && carrier.scope_record_index == scope.record_index
-    });
-    let legacy_body_group_identity = match (
-        matching_legacy_carriers.next(),
-        matching_legacy_carriers.next(),
-    ) {
-        (Some(_), None) => {
-            if groups
-                .iter()
-                .any(|group| group.role() == DesignOperandRole::BODIES_A)
-            {
-                return Ok(None);
-            }
-            let mut body_groups = groups.iter().filter(|group| {
-                group.role() == DesignOperandRole::BODIES_B && group.scope_reference_ordinal == 1
-            });
-            let body_group = or_none!(body_groups.next());
-            if body_groups.next().is_some() {
-                return Ok(None);
-            }
-            Some((body_group.record_index, body_group.scope_reference_ordinal))
-        }
-        (None, _) => {
-            // A carrier-free Boolean Loft scope with exactly six ordered reference
-            // members, at least two sections, and no BODIES_A group admits a single
-            // BODIES_B target body selection at scope-reference ordinal one.
-            if scope.reference_members().len() == 6
-                && !groups
-                    .iter()
-                    .any(|group| group.role() == DesignOperandRole::BODIES_A)
-                && groups
-                    .iter()
-                    .filter(|group| {
-                        matches!(
-                            group.role(),
-                            DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
-                        )
-                    })
-                    .count()
-                    >= 2
-            {
-                let mut body_groups = groups.iter().filter(|group| {
-                    group.role() == DesignOperandRole::BODIES_B
-                        && group.scope_reference_ordinal == 1
-                });
-                match (body_groups.next(), body_groups.next()) {
-                    (Some(body_group), None) => {
-                        Some((body_group.record_index, body_group.scope_reference_ordinal))
-                    }
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        }
-        _ => return Ok(None),
-    };
-    let is_body_group = |group: &DesignConstructionOperandGroup| {
-        group.role() == DesignOperandRole::BODIES_A
-            || legacy_body_group_identity
-                == Some((group.record_index, group.scope_reference_ordinal))
-    };
-    let body_count = groups.iter().filter(|group| is_body_group(group)).count();
-    let expected_body_count = usize::from(*operation != DesignExtrudeOperation::NewBody);
-    if body_count != expected_body_count {
-        return Ok(None);
-    }
-    let mut operands = Vec::new();
-    for group in groups.iter().filter(|group| !is_body_group(group)) {
-        operands.push(*group);
-    }
-    let mut profile_groups = Vec::new();
-    for group in operands.iter().filter(|group| {
-        matches!(
-            group.role(),
-            DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
-        )
-    }) {
-        profile_groups.push(*group);
-    }
-    let (sections, guides, centerline) = if profile_groups.len() >= 2 {
-        if operands.iter().any(|group| {
-            !matches!(
-                group.role(),
-                DesignOperandRole::PROFILE
-                    | DesignOperandRole::ROLE_0X43
-                    | DesignOperandRole::ROLE_0X5
-                    | DesignOperandRole::ROLE_0X7
-            )
-        }) {
+    let groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    let assigned = match loft_groups(construction, &groups) {
+        Ok(assigned) => assigned,
+        Err(reason) => {
+            losses.push(
+                crate::loss::F3dLossCode::FeatureLoftGroupsUnassigned.note(format!(
+                    "Loft scope {}: {reason}, and the scope stays native.",
+                    scope.id
+                )),
+            );
             return Ok(None);
         }
-        let mut sections = Vec::new();
-        for group in &profile_groups {
-            let edge_profile =
-                resolved_loft_edge_profile_group(scope, group, edge_operands, face_boundaries)?;
-            let face_profile = if edge_profile.is_none() {
-                resolved_profile_face_group(scope, group, face_operands)?
-            } else {
-                None
-            };
-            let profile = match edge_profile.or(face_profile) {
-                Some(profile) => profile,
-                None => ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone())),
-            };
-            sections.push(LoftSection::Profile(profile));
-        }
-        let mut guides = Vec::new();
-        for group in operands
-            .iter()
-            .filter(|group| group.role() == DesignOperandRole::ROLE_0X5)
-        {
-            let path = resolved_loft_path(
-                group,
-                construction_groups,
-                edge_operands,
-                edge_identity_operands,
-                scope,
-                ctx,
-            )?;
-            guides.push(path);
-        }
-        let mut centerlines = Vec::new();
-        for group in operands
-            .iter()
-            .filter(|group| group.role() == DesignOperandRole::ROLE_0X7)
-        {
-            let path = resolved_loft_path(
-                group,
-                construction_groups,
-                edge_operands,
-                edge_identity_operands,
-                scope,
-                ctx,
-            )?;
-            centerlines.push(path);
-        }
-        let centerline = match centerlines.len() {
-            0 => None,
-            1 if guides.is_empty() => centerlines.pop(),
-            _ => return Ok(None),
-        };
-        (sections, guides, centerline)
-    } else if *operation == DesignExtrudeOperation::NewBody {
-        if profile_groups.len() == 1
-            && operands.iter().all(|group| {
-                matches!(
-                    group.role(),
-                    DesignOperandRole::ROLE_0X43 | DesignOperandRole::ROLE_0X5
-                )
-            })
-        {
-            let point_ordinal = operands.iter().position(|group| {
-                group.role() == DesignOperandRole::ROLE_0X5 && group.members().len() == 1
-            });
-            let point_ordinal = or_none!(point_ordinal);
-            if !matches!(point_ordinal, 0) && point_ordinal + 1 != operands.len() {
-                return Ok(None);
-            }
-            if operands.iter().enumerate().any(|(ordinal, group)| {
-                ordinal != point_ordinal
-                    && group.role() == DesignOperandRole::ROLE_0X5
-                    && group.members().len() == 1
-            }) {
-                return Ok(None);
-            }
-            let mut sections = Vec::new();
-            for (ordinal, group) in operands.iter().enumerate() {
-                let id = group.id.clone();
-                let section = if ordinal == point_ordinal {
-                    LoftSection::Point(LoftPointSection::Native(or_none!(
-                        cadmpeg_core::text::NonBlankString::new(id)
-                    )))
-                } else {
-                    LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id)))
-                };
-                sections.push(section);
-            }
-            (sections, Vec::new(), None)
-        } else if operands.len() == 2
-            && profile_groups.len() == 1
-            && profile_groups[0].role() == DesignOperandRole::PROFILE
-            && operands
-                .iter()
-                .any(|group| loft_point_operand(group, entity_selection_operands).is_some())
-        {
-            let mut sections = Vec::new();
-            for group in &operands {
-                let id = group.id.clone();
-                sections.push(if group.role() == DesignOperandRole::ROLE_0X21 {
-                    LoftSection::Point(LoftPointSection::Native(or_none!(
-                        cadmpeg_core::text::NonBlankString::new(id)
-                    )))
-                } else {
-                    LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id)))
-                });
-            }
-            (sections, Vec::new(), None)
-        } else if profile_groups.is_empty() {
-            let role = if operands
-                .iter()
-                .all(|group| group.role() == DesignOperandRole::PROFILE)
-            {
-                DesignOperandRole::PROFILE
-            } else if operands
-                .iter()
-                .all(|group| group.role() == DesignOperandRole::ROLE_0X5)
-            {
-                DesignOperandRole::ROLE_0X5
-            } else {
-                return Ok(None);
-            };
-            let mut sections = Vec::new();
-            for group in operands.iter().filter(|group| group.role() == role) {
-                let id = group.id.clone();
-                sections.push(LoftSection::Profile(ProfileRef::Planar(
-                    PlanarProfileRef::Native(id),
-                )));
-            }
-            (sections, Vec::new(), None)
+    };
+    let mut sections = Vec::new();
+    for group in &assigned.sections {
+        let native = || ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone()));
+        let section = if group.role() == DesignOperandRole::ROLE_0X21 {
+            LoftSection::Point(LoftPointSection::Native(or_none!(
+                cadmpeg_core::text::NonBlankString::new(group.id.clone())
+            )))
+        } else if group.role() == DesignOperandRole::ROLE_0X5 {
+            LoftSection::Profile(native())
         } else {
-            return Ok(None);
-        }
-    } else {
-        return Ok(None);
-    };
-    if sections.len() < 2
-        || sections.len() + guides.len() + usize::from(centerline.is_some()) + body_count
-            != groups.len()
-    {
-        return Ok(None);
+            let profile = match resolved_loft_edge_profile_group(
+                scope,
+                group,
+                edge_operands,
+                face_boundaries,
+            )? {
+                Some(profile) => Some(profile),
+                None => resolved_profile_face_group(scope, group, face_operands)?,
+            };
+            LoftSection::Profile(profile.unwrap_or_else(native))
+        };
+        sections.push(section);
     }
+    let mut rails = Vec::new();
+    for group in &assigned.rails {
+        rails.push(resolved_loft_path(
+            group,
+            construction_groups,
+            edge_operands,
+            edge_identity_operands,
+            scope,
+            ctx,
+        )?);
+    }
+    let guidance = match (assigned.rails.as_slice(), rails.pop()) {
+        ([rail], Some(path))
+            if rail.role() == DesignOperandRole::ROLE_0X7
+                && construction.reference_target.is_none() =>
+        {
+            losses.push(
+                crate::loss::F3dLossCode::FeatureLoftCenterlineAssumed.note(format!(
+                    "Loft scope {} projects the one role-0x7 group {} of its rail list as a centerline (DR-332).",
+                    scope.id, rail.id
+                )),
+            );
+            LoftGuidance::Centerline(path)
+        }
+        (_, path) => {
+            rails.extend(path);
+            LoftGuidance::Guides(rails)
+        }
+    };
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Loft {
         sections,
-        guidance: if let Some(centerline) = centerline {
-            cadmpeg_ir::features::LoftGuidance::Centerline(centerline)
-        } else {
-            cadmpeg_ir::features::LoftGuidance::Guides(guides)
-        },
-        op: fixed_boolean_operation(*operation),
+        guidance,
+        op: fixed_boolean_operation(construction.operation),
         closed: false,
         solid: true,
         ruled: false,

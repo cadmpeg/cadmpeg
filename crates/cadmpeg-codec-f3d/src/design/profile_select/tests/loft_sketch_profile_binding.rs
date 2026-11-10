@@ -157,3 +157,105 @@ fn loft_compact_profile_zero_flags_bind_without_an_assumption_loss() {
         Some([false, false])
     );
 }
+
+#[test]
+fn a_role_0x5_loft_section_of_planar_sketch_curves_binds_as_sketch_entities() {
+    use crate::ids::neutral_sketch_curve_id;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{SketchEntity, SketchGeometry, SketchGeometryDefinition};
+
+    let placement = super::placement();
+    let sketch = neutral_sketch_id(&placement);
+    let curves = [super::curve(30, 100, 101), super::curve(31, 200, 201)];
+    let line = |start: (f64, f64), end: (f64, f64)| {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(start.0, start.1),
+            end: Point2::new(end.0, end.1),
+        })
+        .unwrap()
+    };
+    let sketch_entities = [
+        SketchEntity::new(
+            neutral_sketch_curve_id(&sketch, 100, 101),
+            sketch.clone(),
+            line((0.0, 0.0), (1.0, 0.0)),
+        ),
+        SketchEntity::new(
+            neutral_sketch_curve_id(&sketch, 200, 201),
+            sketch.clone(),
+            line((1.0, 0.0), (1.0, 1.0)),
+        ),
+    ];
+    let sketches = [Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::Unresolved {},
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+        native_ref: None,
+    }];
+    let mut section_group = group();
+    section_group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        );
+    let operands = [super::operand(10, 0, 100), super::operand(11, 1, 200)];
+    let placements = [placement];
+    let resolution =
+        super::planar_resolution(&operands, &placements, &curves, &sketches, &sketch_entities);
+    let mut features = vec![Feature {
+        product_definition: None,
+        id: FeatureId::mint("test:model:feature#loft").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Loft {
+                sections: vec![LoftSection::Profile(ProfileRef::Planar(
+                    PlanarProfileRef::Native(section_group.id.clone()),
+                ))],
+                guidance: LoftGuidance::default(),
+                op: BooleanOp::NewBody,
+                closed: false,
+                solid: true,
+                ruled: false,
+                linearize: false,
+                max_degree: None,
+                allow_multi_profile_faces: None,
+            },
+        )),
+        native_ref: None,
+    }];
+    let (archive, _, headers, _) =
+        crate::test_support::multiple_profiles::fixture_with_flags(1, None);
+    let losses = crate::test_support::zip_test::with_scan(&archive, |scan| {
+        bind_loft_and_revolve_sketch_selections(
+            scan,
+            std::slice::from_mut(&mut section_group),
+            &headers,
+            &resolution,
+            &mut features,
+        )
+        .unwrap()
+    });
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(
+        loft_section(&features[0]),
+        &LoftSection::Profile(ProfileRef::Planar(
+            PlanarProfileRef::sketch_entities(
+                sketch.clone(),
+                vec![
+                    neutral_sketch_curve_id(&sketch, 100, 101),
+                    neutral_sketch_curve_id(&sketch, 200, 201),
+                ],
+            )
+            .unwrap()
+        ))
+    );
+}

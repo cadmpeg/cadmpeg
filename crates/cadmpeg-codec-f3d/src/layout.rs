@@ -2240,14 +2240,12 @@ pub(crate) mod typed_reference_box_primitive_1295_frame {
 
 /// Byte offsets for the `compact_loft_operation_prefix` record.
 ///
-/// Spec §3.1. Record length 45 B.
+/// Spec §3.1. Record length 34 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header. The variable scope body follows this fixed prefix.
+/// Offsets are relative to the primary indexed header. The Loft scope body starts at offset 30.
 /// ```
 pub(crate) mod compact_loft_operation_prefix {
-    /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 45;
     /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
     pub(crate) const ZERO_RUN_10: usize = 11;
     /// Offset of `one_run_4` (`bytes[4]`). Spec §3.1.
@@ -2258,20 +2256,16 @@ pub(crate) mod compact_loft_operation_prefix {
     pub(crate) const ZERO_FLAG: usize = 29;
     /// Offset of `all_ones` (`bytes[4]`). Spec §3.1.
     pub(crate) const ALL_ONES: usize = 30;
-    /// Offset of `zero_run_11` (`bytes[11]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_11: usize = 34;
 }
 
 /// Byte offsets for the `three_flag_compact_loft_operation_prefix` record.
 ///
-/// Spec §3.1. Record length 44 B.
+/// Spec §3.1. Record length 33 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header.
+/// Offsets are relative to the primary indexed header. The Loft scope body starts at offset 29.
 /// ```
 pub(crate) mod three_flag_compact_loft_operation_prefix {
-    /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 44;
     /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
     pub(crate) const ZERO_RUN_10: usize = 11;
     /// Offset of `flags` (`bytes[3]`). Spec §3.1.
@@ -2282,8 +2276,6 @@ pub(crate) mod three_flag_compact_loft_operation_prefix {
     pub(crate) const ZERO_FLAG: usize = 28;
     /// Offset of `all_ones` (`bytes[4]`). Spec §3.1.
     pub(crate) const ALL_ONES: usize = 29;
-    /// Offset of `zero_run_11` (`bytes[11]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_11: usize = 33;
 }
 
 /// Byte offsets for the `standard_loft_operation_prefix` record.
@@ -2306,6 +2298,18 @@ pub(crate) mod standard_loft_operation_prefix {
     pub(crate) const OPERATION: usize = 29;
     /// Offset of `marked_reference` (`u8`). Spec §3.1.
     pub(crate) const MARKED_REFERENCE: usize = 33;
+}
+
+/// Byte offsets for the `loft_scope_body_head` record.
+///
+/// Spec §3.1. Record length 12 B.
+///
+/// ```text
+/// Offsets are relative to the first byte of the Loft scope body. A reference follows the head at offset 12.
+/// ```
+pub(crate) mod loft_scope_body_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 12;
 }
 
 /// Byte offsets for the `three_flag_standard_loft_operation_prefix` record.
