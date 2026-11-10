@@ -371,11 +371,11 @@ travel.
 
 ### DR-85. Flagged empty mesh-collection word
 
-**Question.** What do the flag byte at offset 20 and the u32 at offset 25 of a flagged empty mesh collection store, and can a flagged collection have bodies?
+**Question.** What do the flag byte at offset 20 and the u32 at offset 25 of a flagged empty mesh collection store?
 
 **Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. Every empty flagged collection stores u32 `1`. DR-337 records a flagged collection whose nested record lists two mesh bodies.
 
-**Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value and shows whether a flagged collection keeps bodies.
+**Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value.
 
 ### DR-115. Mesh container decode-failure taxonomy
 
