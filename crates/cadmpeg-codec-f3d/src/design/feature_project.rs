@@ -1459,14 +1459,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     scope.feature_ordinal
                 )),
                 suppressed: Some(
-                    matches!(
-                        family,
-                        Some(
-                            DesignFeatureFamily::Extrude
-                                | DesignFeatureFamily::Fillet
-                                | DesignFeatureFamily::Chamfer
-                        )
-                    ) && scope.history_state_id().is_none()
+                    family.is_some_and(stateless_scope_is_suppressed)
+                        && scope.history_state_id().is_none()
                         && scope.previous_history_state_id().is_none(),
                 ),
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -5971,6 +5965,21 @@ fn project_fixed_chamfer(
             flip_direction: false,
         },
     )))
+}
+
+/// Whether a scope of this family with null current and preceding
+/// history-state identities is suppressed. An active scope of these families
+/// changes ASM topology and carries both identities.
+fn stateless_scope_is_suppressed(family: DesignFeatureFamily) -> bool {
+    matches!(
+        family,
+        DesignFeatureFamily::Extrude
+            | DesignFeatureFamily::Fillet
+            | DesignFeatureFamily::Chamfer
+            | DesignFeatureFamily::Hole
+            | DesignFeatureFamily::Thread
+            | DesignFeatureFamily::Combine
+    )
 }
 
 fn fixed_boolean_operation(operation: DesignExtrudeOperation) -> cadmpeg_ir::features::BooleanOp {
