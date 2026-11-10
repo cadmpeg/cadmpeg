@@ -20,7 +20,7 @@ use crate::history_records::AsmHistory;
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignParameterScope;
 
-const MAX_HISTORY_BODIES: usize = 8;
+const MAX_HISTORY_BODIES: usize = 64;
 const MAX_HISTORY_BODY_WORK: usize = 1 << 21;
 
 struct Want<'a> {
