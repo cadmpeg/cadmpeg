@@ -1567,6 +1567,9 @@ pub(crate) fn bind_feature_outputs(
     for idx in ordered_indices {
         let feature = &mut features[idx];
         let Some((state_id, previous_state_id)) = feature_history_states(feature, scopes) else {
+            // A stored predecessor still drives output binding above. Recovering
+            // one here would also retarget body selections through that state.
+            rewrite_kept_tool_join_from_transition(feature, scopes, histories);
             continue;
         };
         let bound_history = feature_sources[idx];
@@ -1965,6 +1968,81 @@ fn combine_states_applied_operation(
         .is_some_and(|operation| {
             operation.form == crate::records::feature::combine::DesignCombineForm::OperandLists
         })
+}
+
+/// Resolve a keep-tools `Join` from the unique transition when the scope
+/// stores no predecessor. Body selections stay as bound.
+fn rewrite_kept_tool_join_from_transition(
+    feature: &mut cadmpeg_ir::features::Feature,
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+    histories: &[AsmHistory],
+) {
+    use cadmpeg_ir::features::{BooleanKind, FeatureDefinition, FeatureOperation};
+
+    if combine_states_applied_operation(feature, scopes) {
+        return;
+    }
+    let Some(scope) = feature
+        .native_ref
+        .as_deref()
+        .and_then(|id| scopes.iter().find(|scope| scope.id == id))
+    else {
+        return;
+    };
+    if scope.previous_history_state_id().is_some() {
+        return;
+    }
+    let Some(state_id) = scope.history_state_id() else {
+        return;
+    };
+    let Some(previous_state_id) = effective_scope_previous_history_state_id(scope, histories)
+    else {
+        return;
+    };
+    let Some((history, state, previous)) =
+        unique_history_state_pair(histories, state_id, previous_state_id)
+    else {
+        return;
+    };
+    // An absent transition does not show that no solid body was deleted.
+    if transition_deletes_solid_body(history, state, previous) {
+        return;
+    }
+    feature.evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::Combine { op, keep_tools, .. })
+        | FeatureDefinition::PostProcess {
+            operation: FeatureOperation::Combine { op, keep_tools, .. },
+            ..
+        } = definition
+        {
+            if *op == BooleanKind::Join && *keep_tools {
+                *op = BooleanKind::Cut;
+            }
+        }
+    });
+}
+
+/// Whether the transition into `state` deletes a solid body of `previous`.
+fn transition_deletes_solid_body(
+    history: &AsmHistory,
+    state: &AsmDeltaState,
+    previous: &AsmDeltaState,
+) -> bool {
+    let Some(deleted) = state
+        .transition
+        .as_ref()
+        .map(|transition| transition.topology.bodies.deleted.clone())
+    else {
+        return true;
+    };
+    if deleted.is_empty() {
+        return false;
+    }
+    let Some(before) = history.topology(previous) else {
+        return true;
+    };
+    let index = HistoricalBodyIndex::new(before);
+    deleted.into_iter().any(|body| index.is_solid(body))
 }
 
 /// The history state a feature's scope produces and the state it follows.

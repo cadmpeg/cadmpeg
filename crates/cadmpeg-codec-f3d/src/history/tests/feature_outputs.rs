@@ -1565,6 +1565,122 @@ fn combine_join_to_cut_deleting_vs_non_deleting() {
 }
 
 #[test]
+fn a_keep_tools_join_without_a_stored_predecessor_uses_the_transition() {
+    use crate::records::feature::combine::{
+        DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation, DesignCombineTools,
+    };
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
+    };
+    use cadmpeg_ir::features::{
+        BodySelection, BooleanKind, CombineOperands, DistinctMembers, Feature, FeatureDefinition,
+        FeatureEvaluation, FeatureId, FeatureOperation,
+    };
+
+    let resolved = |form: Option<DesignCombineForm>, bodies_before: &[i64]| {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#1",
+            DesignFeatureKind::Combine,
+            1,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.history_state_id = Some(1);
+                draft.previous_history_state_id = None;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        if let DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
+            *slot = form.map(|form| DesignCombineOperation {
+                form,
+                operation: BooleanKind::Join,
+                operation_offset: 0,
+                keep_tools: true,
+                keep_tools_offset: 0,
+                target_record_index: 11,
+                target_body_node: None,
+                tools: DesignCombineTools {
+                    first: DesignCombineBodySelection {
+                        record_index: 12,
+                        external_identity: None,
+                        body_node: None,
+                    },
+                    additional: Vec::new(),
+                },
+            });
+        }
+        let mut feature = Feature {
+            id: FeatureId::mint("test:model:feature#combine").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: Some("Combine".into()),
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: FeatureEvaluation::new(
+                FeatureDefinition::Operation(FeatureOperation::Combine {
+                    operands: CombineOperands::new(
+                        BodySelection::Unresolved,
+                        BodySelection::Unresolved,
+                    )
+                    .unwrap(),
+                    op: BooleanKind::Join,
+                    keep_tools: true,
+                }),
+                DistinctMembers::try_from(vec![]).unwrap(),
+            ),
+            native_ref: Some(scope.id.clone()),
+            product_definition: None,
+        };
+        let history = crate::test_support::history::history(
+            "f3d:asm-history#1".into(),
+            0,
+            None,
+            false,
+            vec![
+                state(1, 1, Some(0), solid_boxes_topology(&[1])),
+                state(0, 0, None, solid_boxes_topology(bodies_before)),
+            ],
+        );
+        super::super::bind_feature_outputs(
+            std::slice::from_mut(&mut feature),
+            std::slice::from_ref(&scope),
+            &mut [history],
+            &[],
+            &Default::default(),
+            None,
+        )
+        .unwrap();
+        let FeatureDefinition::Operation(FeatureOperation::Combine { op, operands, .. }) =
+            feature.evaluation.definition()
+        else {
+            panic!("expected Combine");
+        };
+        assert!(matches!(
+            operands.clone().into_parts(),
+            (BodySelection::Unresolved, BodySelection::Unresolved)
+        ));
+        *op
+    };
+
+    assert_eq!(resolved(None, &[1]), BooleanKind::Cut);
+    assert_eq!(
+        resolved(Some(DesignCombineForm::Standard), &[1]),
+        BooleanKind::Cut
+    );
+    assert_eq!(
+        resolved(Some(DesignCombineForm::Standard), &[1, 2]),
+        BooleanKind::Join
+    );
+    assert_eq!(
+        resolved(Some(DesignCombineForm::OperandLists), &[1]),
+        BooleanKind::Join
+    );
+}
+
+#[test]
 fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
     use crate::records::feature::combine::{
         DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation, DesignCombineTools,
