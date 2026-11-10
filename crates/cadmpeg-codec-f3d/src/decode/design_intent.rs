@@ -595,8 +595,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &prereqs.design_parameter_owner_unparsed,
     );
     losses.extend(
-        crate::design::decode::operands::extrude_extent::retain_missing_terminations(
-            &mut design.design_parameter_scopes,
+        crate::design::decode::operands::extrude_extent::report_missing_terminations(
+            &design.design_parameter_scopes,
             &design.design_construction_operand_groups,
         ),
     );

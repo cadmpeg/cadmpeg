@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::records::feature::extrude::{DesignExtrudeOperation, DesignExtrudePrologue};
-use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayload};
+use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
 use crate::records::topology::construction::{
     DesignConstructionOperandGroupDraft, DesignConstructionOperandGroupFrame,
     DesignConstructionOperandGroupFrameDraft, DesignConstructionOperandRole,
@@ -82,24 +82,21 @@ fn group(usage: DesignExtrudeFaceRole) -> DesignConstructionOperandGroup {
 }
 
 #[test]
-fn missing_termination_keeps_the_extent_native_and_reports_a_loss() {
-    let mut scopes = [scope(
+fn missing_termination_keeps_the_prologue_and_reports_a_loss() {
+    let scopes = [scope(
         DesignExtrudeExtent::OneSidedToFace,
         DesignExtrudeStart::FromFace,
     )];
+    let before = scopes[0].extrude_prologue();
     let groups = [group(DesignExtrudeFaceRole::Start)];
-    let losses = retain_missing_terminations(&mut scopes, &groups);
+    let losses = report_missing_terminations(&scopes, &groups);
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code.local_code(),
         "feature.extrude-termination-missing"
     );
-    assert!(scopes[0].extrude_prologue().is_none());
-    assert!(matches!(
-        scopes[0].payload(),
-        DesignScopePayload::Extrude(Some(_))
-    ));
-    assert!(retain_missing_terminations(&mut scopes, &groups).is_empty());
+    assert!(before.is_some());
+    assert_eq!(scopes[0].extrude_prologue(), before);
 }
 
 #[test]
@@ -109,7 +106,7 @@ fn complete_face_targets_keep_their_prologue() {
         (DesignExtrudeExtent::TwoSidedDistanceToFace, 1),
         (DesignExtrudeExtent::TwoSidedToFaces, 2),
     ] {
-        let mut scopes = [scope(extent, DesignExtrudeStart::FromFace)];
+        let scopes = [scope(extent, DesignExtrudeStart::FromFace)];
         let mut groups = vec![group(DesignExtrudeFaceRole::Start)];
         for ordinal in 0..required {
             let mut termination = group(DesignExtrudeFaceRole::Termination);
@@ -117,7 +114,7 @@ fn complete_face_targets_keep_their_prologue() {
             groups.push(termination);
         }
         let before = scopes[0].extrude_prologue();
-        assert!(retain_missing_terminations(&mut scopes, &groups).is_empty());
+        assert!(report_missing_terminations(&scopes, &groups).is_empty());
         assert_eq!(scopes[0].extrude_prologue(), before);
     }
 }
@@ -128,12 +125,12 @@ fn shape_targets_and_distance_extents_keep_their_prologue() {
         DesignExtrudeExtent::OneSidedToFace,
         DesignExtrudeExtent::OneSidedDistance,
     ] {
-        let mut scopes = [scope(extent, DesignExtrudeStart::FromFace)];
+        let scopes = [scope(extent, DesignExtrudeStart::FromFace)];
         let mut shape = group(DesignExtrudeFaceRole::Termination);
         shape.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
         let groups = [group(DesignExtrudeFaceRole::Start), shape];
         let before = scopes[0].extrude_prologue();
-        assert!(retain_missing_terminations(&mut scopes, &groups).is_empty());
+        assert!(report_missing_terminations(&scopes, &groups).is_empty());
         assert_eq!(scopes[0].extrude_prologue(), before);
     }
 }

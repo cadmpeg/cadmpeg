@@ -4,13 +4,13 @@
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
 use crate::records::feature::extrude::{DesignExtrudeExtent, DesignExtrudeStart};
-use crate::records::feature::scope::{DesignParameterScope, DesignScopePayloadMut};
+use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::{DesignExtrudeFaceRole, DesignOperandRole};
 use cadmpeg_ir::report::loss::LossNote;
 
-pub(crate) fn retain_missing_terminations(
-    scopes: &mut [DesignParameterScope],
+pub(crate) fn report_missing_terminations(
+    scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
 ) -> Vec<LossNote> {
     let mut losses = Vec::new();
@@ -46,13 +46,10 @@ pub(crate) fn retain_missing_terminations(
         {
             continue;
         }
-        if let DesignScopePayloadMut::Extrude(Some(extrude)) = scope.payload_mut() {
-            extrude.extrude_prologue = None;
-            losses.push(F3dLossCode::FeatureExtrudeTerminationMissing.note(format!(
-                "Extrude scope {} requires {required} termination group(s) and stores {termination_count}; its extent payload remains native.",
-                scope.id
-            )));
-        }
+        losses.push(F3dLossCode::FeatureExtrudeTerminationMissing.note(format!(
+            "Extrude scope {} requires {required} termination group(s) and stores {termination_count}; the feature stays native.",
+            scope.id
+        )));
     }
     losses
 }
