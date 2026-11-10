@@ -6751,21 +6751,6 @@ pub(crate) fn loft_groups<'a>(
     Ok(LoftGroups { sections, rails })
 }
 
-fn loft_member_resolves_to_edge(
-    group: &DesignConstructionOperandGroup,
-    operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-) -> bool {
-    let [member] = group.members() else {
-        return false;
-    };
-    operands.iter().any(|operand| {
-        native_stream(&operand.id) == native_stream(&group.id)
-            && operand.group_record_index == group.record_index
-            && operand.record_index() == member.value
-            && operand.resolved_edge_slot.is_some()
-    })
-}
-
 pub(super) fn project_fixed_loft(
     scope: &DesignParameterScope,
     inputs: &ProjectInputs<'_>,
@@ -6780,7 +6765,6 @@ pub(super) fn project_fixed_loft(
         construction_groups,
         edge_operands,
         edge_identity_operands,
-        entity_selection_operands,
         face_operands,
         face_boundaries,
         ..
@@ -6814,31 +6798,10 @@ pub(super) fn project_fixed_loft(
             return Ok(None);
         }
     };
-    let has_profile = assigned.sections.iter().any(|group| {
-        matches!(
-            group.role(),
-            DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
-        )
-    });
-    let last = assigned.sections.len() - 1;
     let mut sections = Vec::new();
-    for (ordinal, group) in assigned.sections.iter().enumerate() {
+    for group in &assigned.sections {
         let native = || ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone()));
-        let point_section = group.role() == DesignOperandRole::ROLE_0X21
-            || (group.role() == DesignOperandRole::ROLE_0X5
-                && has_profile
-                && (ordinal == 0 || ordinal == last)
-                && group.members().len() == 1
-                && !loft_member_resolves_to_edge(group, entity_selection_operands));
-        if point_section && group.role() == DesignOperandRole::ROLE_0X5 {
-            losses.push(
-                crate::loss::F3dLossCode::FeatureLoftPointSectionAssumed.note(format!(
-                    "Loft scope {} projects the one-member role-0x5 end section group {} as a point section (DR-361).",
-                    scope.id, group.id
-                )),
-            );
-        }
-        let section = if point_section {
+        let section = if group.role() == DesignOperandRole::ROLE_0X21 {
             LoftSection::Point(LoftPointSection::Native(or_none!(
                 cadmpeg_core::text::NonBlankString::new(group.id.clone())
             )))

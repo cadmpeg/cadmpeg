@@ -1662,18 +1662,6 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** None.
 
-### DR-361. Point sections of a Loft section list
-
-**Question.** Which Loft section groups of role `0x0000000500000000` are point sections?
-
-**Known.** `f3d.md` §3.1 "A `Loft` has at least two sections" gives the section roles and makes a role-`0x0000002100000000` section group a point section. The decoder projects a one-member role-`0x0000000500000000` section group as a native point section when it is the first or last section, another section has role `0x0000004100000000` or `0x0000004300000000`, and its member does not resolve to one edge. It records `feature.loft-point-section-assumed` for each such group. Every other role-`0x0000000500000000` section group projects as a profile.
-
-**Need.** Saves of one `Loft` whose end section is a sketch point, a model vertex, one Sketch curve, and one model edge, each recording the section list, the group roles, and the member selection frames.
-
-**Conflict.** §3.1 "In a Loft guide or centerline group" binds a role-`0x0000000500000000` section group whose member selects curves of one planar Sketch as a Sketch-curve profile, and the decoder projects a one-member end group of that kind as a point section.
-
-**Note.** None.
-
 ### DR-313. Flag bytes of the Thicken scope frame
 
 **Question.** Which Thicken settings do the prologue flag byte of the six-byte marker-one prologue and the two flag bytes between the marked group references and the marked scalar reference of a `Thicken` scope select?

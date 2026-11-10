@@ -659,57 +659,34 @@ fn the_offset_33_reference_names_a_rail() {
 }
 
 #[test]
-fn a_role_0x5_end_section_is_a_point_unless_its_member_resolves_to_an_edge() {
-    use cadmpeg_ir::features::{LoftPointSection, PlanarProfileRef, ProfileRef};
+fn a_one_member_role_0x5_end_section_is_a_profile() {
+    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
     let groups = [
         (500, DesignOperandRole::ROLE_0X43),
         (502, DesignOperandRole::ROLE_0X5),
         (503, DesignOperandRole::ROLE_0X5),
     ];
-    let lists = || (vec![499, 501], vec![503], None);
-    let sections = |selections: &[DesignEntitySelectionOperand]| {
+    let end = &loft_groups_with_roles(&groups)[1];
+    for selections in [Vec::new(), vec![point_selection(end)]] {
         let (definition, losses) = listed_loft(
             DesignExtrudeOperation::NewBody,
             &groups,
-            lists(),
-            selections,
+            (vec![499, 501], vec![503], None),
+            &selections,
         );
         let Some(FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. })) =
             definition
         else {
             panic!("Loft: {definition:?}");
         };
-        (sections, losses)
-    };
-    let (point_sections, losses) = sections(&[]);
-    assert!(matches!(
-        point_sections.as_slice(),
-        [
-            LoftSection::Profile(_),
-            LoftSection::Point(LoftPointSection::Native(point))
-        ] if point.as_str() == native_group(502)
-    ));
-    assert_eq!(losses.len(), 1);
-    assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::FeatureLoftPointSectionAssumed.kind()
-    );
-    assert_eq!(
-        losses[0].message,
-        "Loft scope f3d:Design/BulkStream.dat:scope#12 projects the one-member role-0x5 end section group f3d:Design/BulkStream.dat:operand-group#502 as a point section (DR-361)."
-    );
-    let end = &loft_groups_with_roles(&groups)[1];
-    let mut edge = point_selection(end).into_draft();
-    edge.resolved_edge_slot = Some(17);
-    let edge = DesignEntitySelectionOperand::try_new(edge).unwrap();
-    let (edge_sections, losses) = sections(&[edge]);
-    assert_eq!(
-        edge_sections[1],
-        LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(native_group(
-            502
-        ))))
-    );
-    assert!(losses.is_empty(), "{losses:?}");
+        assert_eq!(
+            sections[1],
+            LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(native_group(
+                502
+            ))))
+        );
+        assert!(losses.is_empty(), "{losses:?}");
+    }
 }
 
 #[test]
