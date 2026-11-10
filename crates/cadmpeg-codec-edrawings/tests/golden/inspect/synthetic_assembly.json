@@ -1,0 +1,113 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "3457",
+        "crc32": "69df8b51",
+        "data_offset": "36",
+        "header_offset": "0",
+        "hsf_version": "19.10"
+      },
+      "compression": "stored",
+      "name": "eModel",
+      "role": "model-data",
+      "size": {
+        "form": "exact",
+        "size": 3122
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3509",
+        "crc32": "00983853",
+        "data_offset": "3199",
+        "header_offset": "3158"
+      },
+      "compression": "stored",
+      "name": "preview.jpg",
+      "role": "preview-image",
+      "size": {
+        "form": "exact",
+        "size": 19
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3566",
+        "crc32": "7bd5c66f",
+        "data_offset": "3251",
+        "header_offset": "3218"
+      },
+      "compression": "stored",
+      "name": "OLE",
+      "role": "opaque",
+      "size": {
+        "form": "exact",
+        "size": 12
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3615",
+        "crc32": "ffb8728e",
+        "data_offset": "3302",
+        "header_offset": "3263"
+      },
+      "compression": "stored",
+      "name": "scene.xml",
+      "role": "auxiliary",
+      "size": {
+        "form": "exact",
+        "size": 35
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3670",
+        "crc32": "782fc053",
+        "data_offset": "3380",
+        "header_offset": "3337"
+      },
+      "compression": "stored",
+      "name": "materials.xml",
+      "role": "material-texture",
+      "size": {
+        "form": "exact",
+        "size": 12
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3729",
+        "crc32": "bd77646e",
+        "data_offset": "3440",
+        "header_offset": "3392"
+      },
+      "compression": "stored",
+      "name": "FileProperties.xml",
+      "role": "properties",
+      "size": {
+        "form": "exact",
+        "size": 17
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "hsf_version": "19.10"
+        },
+        "dialect": "edrawings:hsf-19-10"
+      }
+    }
+  },
+  "notes": [
+    "6 members",
+    "HSF V19.10; info record 4; bounds [-0.5, 0.0, -0.25]..[0.5, 1.0, 0.25]; model stream at offset 47"
+  ]
+}

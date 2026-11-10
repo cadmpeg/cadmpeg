@@ -1263,6 +1263,49 @@ discriminants = { pvs_signature = "any other leading ten bytes", pvs_xml_version
 witness = "code:crates/cadmpeg-codec-pvz/src/dialect.rs:66"
 
 # --------------------------------------------------------------------------
+# eDrawings .eprt and .easm packages
+# --------------------------------------------------------------------------
+# An eDrawings part (`.eprt`) or assembly (`.easm`) is a ZIP package. Its
+# `eModel` member opens with the ASCII comment line `;; HSF V<major>.<minor> `
+# and holds a HOOPS Stream Format model (docs/formats/edrawings.md section 2).
+# The discriminant is the stream version the comment line declares
+# (`stream::parse`, crates/cadmpeg-codec-edrawings/src/stream.rs). Only the
+# versions 19.10 (streams re-saved by the eDrawings viewer), 18.00, and 19.00
+# (streams written directly by SolidWorks) were observed; the writer and the declared
+# version are confounded. `dialect::classify`
+# (crates/cadmpeg-codec-edrawings/src/dialect.rs) is the codec's single
+# construction path for a `DialectMatch`.
+#
+# `complete = false`: no enumeration of stream versions is published.
+[format.edrawings]
+complete = false
+
+[[dialect]]
+id = "edrawings:hsf-19-10"
+title = "eDrawings package, HSF V19.10 model stream"
+discriminants = { hsf_version = "19.10" }
+witness = "spec:docs/formats/edrawings.md section 2"
+
+[[dialect]]
+id = "edrawings:hsf-18-00"
+title = "eDrawings package, HSF V18.00 model stream written directly by SolidWorks"
+discriminants = { hsf_version = "18.00" }
+witness = "spec:docs/formats/edrawings.md section 2"
+
+[[dialect]]
+id = "edrawings:hsf-19-00"
+title = "eDrawings package, HSF V19.00 model stream written directly by SolidWorks"
+discriminants = { hsf_version = "19.00" }
+witness = "spec:docs/formats/edrawings.md section 2"
+
+[[dialect]]
+id = "edrawings:unknown"
+unknown_kind = "recovered-residual"
+title = "eDrawings package with an unrecognized model stream version"
+discriminants = { hsf_version = "any other value" }
+witness = "code:crates/cadmpeg-codec-edrawings/src/dialect.rs:1"
+
+# --------------------------------------------------------------------------
 # OpenUSD layers (.usda, .usdc, .usd) and packages (.usdz)
 # --------------------------------------------------------------------------
 # A layer is a USDA text layer or a USDC binary (Crate) layer; the first bytes

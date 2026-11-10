@@ -23,7 +23,7 @@ unreachable_pub = "deny"
 [features]
 default = [
   "f3d", "inventor", "freecad", "sldprt", "catia", "creo", "nx",
-  "rhino", "iges", "sat", "pvz", "usd", "step",
+  "rhino", "iges", "sat", "pvz", "edrawings", "usd", "step",
 ]
 f3d = ["dep:cadmpeg-codec-f3d"]
 inventor = ["dep:cadmpeg-codec-inventor"]
@@ -36,6 +36,7 @@ rhino = ["dep:cadmpeg-codec-rhino"]
 iges = ["dep:cadmpeg-codec-iges"]
 sat = ["dep:cadmpeg-codec-sat"]
 pvz = ["dep:cadmpeg-codec-pvz"]
+edrawings = ["dep:cadmpeg-codec-edrawings"]
 usd = ["dep:cadmpeg-codec-usd"]
 step = ["dep:cadmpeg-codec-step"]
 
@@ -56,6 +57,7 @@ cadmpeg-codec-rhino = { path = "../cadmpeg-codec-rhino", optional = true }
 cadmpeg-codec-iges = { path = "../cadmpeg-codec-iges", optional = true }
 cadmpeg-codec-sat = { path = "../cadmpeg-codec-sat", optional = true }
 cadmpeg-codec-pvz = { path = "../cadmpeg-codec-pvz", optional = true }
+cadmpeg-codec-edrawings = { path = "../cadmpeg-codec-edrawings", optional = true }
 cadmpeg-codec-usd = { path = "../cadmpeg-codec-usd", optional = true }
 cadmpeg-ir = { path = "../cadmpeg-ir", features = ["examples"] }
 cadmpeg-codec-step = { path = "../cadmpeg-codec-step", optional = true }
@@ -627,6 +629,27 @@ bench = false
 [[bin]]
 name = "pvz_exact"
 path = "fuzz_targets/pvz_exact.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "edrawings_package"
+path = "fuzz_targets/edrawings_package.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "edrawings_model"
+path = "fuzz_targets/edrawings_model.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "edrawings_stream"
+path = "fuzz_targets/edrawings_stream.rs"
 test = false
 doc = false
 bench = false

@@ -48,6 +48,7 @@ pub(crate) enum FormatKind {
         feature = "iges",
         feature = "sat",
         feature = "pvz",
+        feature = "edrawings",
         feature = "usd"
     ))]
     Native(NativeDescriptor),
@@ -118,6 +119,7 @@ impl FormatDescriptor {
                 feature = "iges",
                 feature = "sat",
                 feature = "pvz",
+                feature = "edrawings",
                 feature = "usd"
             ))]
             FormatKind::Native(native) => native.id,
@@ -143,6 +145,7 @@ impl FormatDescriptor {
                 feature = "iges",
                 feature = "sat",
                 feature = "pvz",
+                feature = "edrawings",
                 feature = "usd"
             ))]
             FormatKind::Native(native) => native.input_extensions,
@@ -165,6 +168,7 @@ impl FormatDescriptor {
                 feature = "iges",
                 feature = "sat",
                 feature = "pvz",
+                feature = "edrawings",
                 feature = "usd"
             ))]
             FormatKind::Native(native) => ForcedInput::Codec(native),
@@ -178,7 +182,8 @@ impl FormatDescriptor {
     feature = "creo",
     feature = "nx",
     feature = "sat",
-    feature = "pvz"
+    feature = "pvz",
+    feature = "edrawings"
 ))]
 macro_rules! reader {
     ($name:ident, $id:expr, $input_exts:expr, $decoder:expr) => {
@@ -325,6 +330,13 @@ reader!(
 reader!(PVZ, FormatId::new("pvz"), &["pvz"], || Box::new(
     cadmpeg_codec_pvz::PvzCodec
 ));
+#[cfg(feature = "edrawings")]
+reader!(
+    EDRAWINGS,
+    FormatId::new("edrawings"),
+    &["easm", "eprt"],
+    || Box::new(cadmpeg_codec_edrawings::EdrawingsCodec)
+);
 #[cfg(feature = "usd")]
 writable!(
     USD,
@@ -374,6 +386,8 @@ pub(crate) static FORMAT_DESCRIPTORS: &[&FormatDescriptor] = &[
     &SAT,
     #[cfg(feature = "pvz")]
     &PVZ,
+    #[cfg(feature = "edrawings")]
+    &EDRAWINGS,
     #[cfg(feature = "usd")]
     &USD,
     &CADIR,
