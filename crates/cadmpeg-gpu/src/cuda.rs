@@ -1028,6 +1028,157 @@ L_RAY_EXIT:
     ret;
 }
 
+// 6b. Ampere sm_86 non-coherent load Ray-Mesh intersection kernel (FP64 Moller-Trumbore)
+.visible .entry cuda_sm86_ray_mesh_f64(
+    .param .u64 param_rays,
+    .param .u64 param_tris,
+    .param .u64 param_out,
+    .param .u32 param_n_rays,
+    .param .u32 param_n_tris
+) {
+    .reg .pred %p<8>;
+    .reg .b32 %r<10>;
+    .reg .b64 %rd<14>;
+    .reg .f64 %fd<42>;
+
+    ld.param.u64 %rd1, [param_rays];
+    ld.param.u64 %rd2, [param_tris];
+    ld.param.u64 %rd3, [param_out];
+    ld.param.u32 %r1, [param_n_rays];
+    ld.param.u32 %r2, [param_n_tris];
+
+    mov.u32 %r3, %ctaid.x;
+    mov.u32 %r4, %ntid.x;
+    mov.u32 %r5, %tid.x;
+    mad.lo.u32 %r6, %r3, %r4, %r5;
+    setp.ge.u32 %p0, %r6, %r1;
+    @%p0 bra L_SM86_RAY_EXIT;
+
+    cvta.to.global.u64 %rd4, %rd1;
+    cvta.to.global.u64 %rd5, %rd2;
+    cvta.to.global.u64 %rd6, %rd3;
+
+    mul.wide.u32 %rd7, %r6, 64;
+    add.u64 %rd8, %rd4, %rd7;
+    ld.global.nc.f64 %fd0, [%rd8 + 0];
+    ld.global.nc.f64 %fd1, [%rd8 + 8];
+    ld.global.nc.f64 %fd2, [%rd8 + 16];
+    ld.global.nc.f64 %fd3, [%rd8 + 24];
+    ld.global.nc.f64 %fd4, [%rd8 + 32];
+    ld.global.nc.f64 %fd5, [%rd8 + 40];
+    ld.global.nc.f64 %fd6, [%rd8 + 48];
+    ld.global.nc.f64 %fd7, [%rd8 + 56];
+
+    mov.f64 %fd30, %fd7;
+    mov.u32 %r7, 0xffffffff;
+    mov.f64 %fd31, 0d0000000000000000;
+    mov.f64 %fd32, 0d0000000000000000;
+
+    mov.u32 %r8, 0;
+L_SM86_RAY_LOOP:
+    setp.ge.u32 %p1, %r8, %r2;
+    @%p1 bra L_SM86_RAY_DONE;
+
+    mul.wide.u32 %rd9, %r8, 72;
+    add.u64 %rd10, %rd5, %rd9;
+    ld.global.nc.f64 %fd8,  [%rd10 + 0];
+    ld.global.nc.f64 %fd9,  [%rd10 + 8];
+    ld.global.nc.f64 %fd10, [%rd10 + 16];
+    ld.global.nc.f64 %fd11, [%rd10 + 24];
+    ld.global.nc.f64 %fd12, [%rd10 + 32];
+    ld.global.nc.f64 %fd13, [%rd10 + 40];
+    ld.global.nc.f64 %fd14, [%rd10 + 48];
+    ld.global.nc.f64 %fd15, [%rd10 + 56];
+    ld.global.nc.f64 %fd16, [%rd10 + 64];
+
+    mul.f64 %fd17, %fd6, %fd15;
+    neg.f64 %fd17, %fd17;
+    fma.rn.f64 %fd17, %fd5, %fd16, %fd17;
+    mul.f64 %fd18, %fd4, %fd16;
+    neg.f64 %fd18, %fd18;
+    fma.rn.f64 %fd18, %fd6, %fd14, %fd18;
+    mul.f64 %fd19, %fd5, %fd14;
+    neg.f64 %fd19, %fd19;
+    fma.rn.f64 %fd19, %fd4, %fd15, %fd19;
+
+    mul.f64 %fd20, %fd13, %fd19;
+    fma.rn.f64 %fd20, %fd12, %fd18, %fd20;
+    fma.rn.f64 %fd20, %fd11, %fd17, %fd20;
+
+    abs.f64 %fd21, %fd20;
+    setp.le.f64 %p2, %fd21, 0d3D719799812DEA11;
+    @%p2 bra L_SM86_RAY_NEXT;
+
+    div.rn.f64 %fd22, 0d3FF0000000000000, %fd20;
+
+    sub.f64 %fd23, %fd0, %fd8;
+    sub.f64 %fd24, %fd1, %fd9;
+    sub.f64 %fd25, %fd2, %fd10;
+
+    mul.f64 %fd26, %fd25, %fd19;
+    fma.rn.f64 %fd26, %fd24, %fd18, %fd26;
+    fma.rn.f64 %fd26, %fd23, %fd17, %fd26;
+    mul.f64 %fd26, %fd26, %fd22;
+
+    setp.lt.f64 %p3, %fd26, 0dBDA5FD7FE1796495;
+    setp.gt.f64 %p4, %fd26, 0d3FF000000000AFEC;
+    or.pred %p3, %p3, %p4;
+    @%p3 bra L_SM86_RAY_NEXT;
+
+    mul.f64 %fd27, %fd25, %fd12;
+    neg.f64 %fd27, %fd27;
+    fma.rn.f64 %fd27, %fd24, %fd13, %fd27;
+    mul.f64 %fd28, %fd23, %fd13;
+    neg.f64 %fd28, %fd28;
+    fma.rn.f64 %fd28, %fd25, %fd11, %fd28;
+    mul.f64 %fd29, %fd24, %fd11;
+    neg.f64 %fd29, %fd29;
+    fma.rn.f64 %fd29, %fd23, %fd12, %fd29;
+
+    mul.f64 %fd33, %fd6, %fd29;
+    fma.rn.f64 %fd33, %fd5, %fd28, %fd33;
+    fma.rn.f64 %fd33, %fd4, %fd27, %fd33;
+    mul.f64 %fd33, %fd33, %fd22;
+
+    add.f64 %fd34, %fd26, %fd33;
+    setp.lt.f64 %p3, %fd33, 0dBDA5FD7FE1796495;
+    setp.gt.f64 %p4, %fd34, 0d3FF000000000AFEC;
+    or.pred %p3, %p3, %p4;
+    @%p3 bra L_SM86_RAY_NEXT;
+
+    mul.f64 %fd35, %fd16, %fd29;
+    fma.rn.f64 %fd35, %fd15, %fd28, %fd35;
+    fma.rn.f64 %fd35, %fd14, %fd27, %fd35;
+    mul.f64 %fd35, %fd35, %fd22;
+
+    setp.lt.f64 %p5, %fd35, %fd3;
+    setp.ge.f64 %p6, %fd35, %fd30;
+    or.pred %p5, %p5, %p6;
+    @%p5 bra L_SM86_RAY_NEXT;
+
+    mov.f64 %fd30, %fd35;
+    mov.u32 %r7, %r8;
+    mov.f64 %fd31, %fd26;
+    mov.f64 %fd32, %fd33;
+
+L_SM86_RAY_NEXT:
+    add.u32 %r8, %r8, 1;
+    bra L_SM86_RAY_LOOP;
+
+L_SM86_RAY_DONE:
+    mul.wide.u32 %rd11, %r6, 32;
+    add.u64 %rd12, %rd6, %rd11;
+    cvt.u64.u32 %rd13, %r7;
+    mov.b64 %fd36, %rd13;
+    st.global.f64 [%rd12 + 0],  %fd30;
+    st.global.f64 [%rd12 + 8],  %fd36;
+    st.global.f64 [%rd12 + 16], %fd31;
+    st.global.f64 [%rd12 + 24], %fd32;
+
+L_SM86_RAY_EXIT:
+    ret;
+}
+
 ";
 
 struct CachedCudaMesh {
@@ -1053,6 +1204,7 @@ pub struct CudaContext {
     fn_sm86_bezier_eval: CudaFunction,
     fn_tc_bezier_eval: CudaFunction,
     fn_simt_ray_mesh: CudaFunction,
+    fn_sm86_ray_mesh: CudaFunction,
     compute_mesh_cache: Mutex<Option<CachedCudaMesh>>,
 }
 
@@ -1097,6 +1249,7 @@ impl CudaContext {
             fn_sm86_bezier_eval: module.load_function("cuda_sm86_bezier_eval_f64").ok()?,
             fn_tc_bezier_eval: module.load_function("rtx_tc_bezier_eval_f64").ok()?,
             fn_simt_ray_mesh: module.load_function("cuda_simt_ray_mesh_f64").ok()?,
+            fn_sm86_ray_mesh: module.load_function("cuda_sm86_ray_mesh_f64").ok()?,
             compute_mesh_cache: Mutex::new(None),
             device_name,
             compute_capability: (major, minor),
@@ -1648,6 +1801,19 @@ impl CudaContext {
         self.dispatch_ray_mesh_kernel(&self.fn_simt_ray_mesh, rays, mesh)
     }
 
+    /// Executes Ampere `sm_86` PTX non-coherent load FP64 ray-mesh intersection.
+    #[must_use]
+    pub fn ptx_sm86_ray_mesh_intersect(
+        &self,
+        rays: &[RayQuery3],
+        mesh: TriangleMeshView<'_>,
+    ) -> Option<Vec<RayHit3>> {
+        if !self.supports_sm86() {
+            return None;
+        }
+        self.dispatch_ray_mesh_kernel(&self.fn_sm86_ray_mesh, rays, mesh)
+    }
+
     /// Whether the active GPU supports NVIDIA `OptiX` hardware RT Core acceleration.
     #[must_use]
     pub const fn supports_optix_rt(&self) -> bool {
@@ -1997,6 +2163,53 @@ mod tests {
                 assert!((e.barycentric_u - a.barycentric_u).abs() < CUDA_PARITY_TOLERANCE);
                 assert!((e.barycentric_v - a.barycentric_v).abs() < CUDA_PARITY_TOLERANCE);
             }
+        }
+    }
+
+    #[test]
+    fn cuda_sm86_ray_mesh_intersect_matches_cpu() {
+        let Some(ctx) = global_cuda() else {
+            return;
+        };
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+        ];
+        let triangles = [[0_u32, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+        let mesh = TriangleMeshView {
+            vertices: &vertices,
+            triangles: &triangles,
+        };
+        let rays: Vec<RayQuery3> = (0_u32..25)
+            .map(|i| {
+                let f = f64::from(i) * 0.1;
+                RayQuery3 {
+                    origin: Point3::new(0.1 + f, 0.2, -1.0),
+                    direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    t_min: 0.0,
+                    t_max: 10.0,
+                }
+            })
+            .collect();
+        let expected = cpu::ray_mesh_intersect(&rays, mesh);
+        if ctx.supports_sm86() {
+            let actual = ctx
+                .ptx_sm86_ray_mesh_intersect(&rays, mesh)
+                .expect("PTX sm_86 ray-mesh intersect");
+            assert_eq!(expected.len(), actual.len());
+            for (e, a) in expected.iter().zip(&actual) {
+                assert_eq!(e.hit, a.hit);
+                assert_eq!(e.triangle_index, a.triangle_index);
+                if e.hit {
+                    assert!((e.t - a.t).abs() < CUDA_PARITY_TOLERANCE);
+                    assert!((e.barycentric_u - a.barycentric_u).abs() < CUDA_PARITY_TOLERANCE);
+                    assert!((e.barycentric_v - a.barycentric_v).abs() < CUDA_PARITY_TOLERANCE);
+                }
+            }
+        } else {
+            assert!(ctx.ptx_sm86_ray_mesh_intersect(&rays, mesh).is_none());
         }
     }
 
