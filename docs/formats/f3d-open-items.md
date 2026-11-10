@@ -2066,7 +2066,7 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** Extrude 3 retains its native selection group. Existing `SketchRegions` with explicit boundary uses can represent the rectangular annulus after its selected boundaries and traversal directions are established.
 
-### DR-341. Compact complete-loop region identity across sketch arrangements
+### DR-358. Compact complete-loop region identity across sketch arrangements
 
 **Question.** Which stored relation selects an atomic region when a compact complete-loop group names boundaries that occur in several nested or intersecting regions?
 
