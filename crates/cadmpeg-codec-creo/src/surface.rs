@@ -3651,7 +3651,7 @@ fn parsed_named_surface_value(
             let mut values = Vec::new();
             for _ in 0..count {
                 let (value, next) = if name == "parent_feats" {
-                    let (value, next) = psb::parent_feature_id(body, cursor)?;
+                    let (value, next) = psb::packed_compact_int(body, cursor)?;
                     (value, next)
                 } else {
                     compact_int(body, cursor)

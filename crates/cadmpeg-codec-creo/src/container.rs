@@ -2064,7 +2064,7 @@ fn structural_feature_ids(
             let (count, mut cursor) = psb::complete_compact_int(payload, start + 1)
                 .ok_or_else(|| CodecError::malformed("incomplete parent-feature count"))?;
             for _ in 0..count {
-                let (id, next) = psb::parent_feature_id(payload, cursor)
+                let (id, next) = psb::packed_compact_int(payload, cursor)
                     .ok_or_else(|| CodecError::malformed("incomplete parent-feature entry"))?;
                 if id != 0 {
                     ids.insert(id);

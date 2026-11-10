@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry decode unknown-record admission.
 
-use super::retain_live_annotations;
+use std::collections::BTreeSet;
+
+use cadmpeg_ir::ids::BodyId;
+
+use super::{
+    body_preselection, has_plain_beside_partition_streams, plain_history_images,
+    retain_live_annotations,
+};
+use crate::parasolid::StreamKind;
 
 #[test]
 fn live_annotation_lookup_scales_with_tree_depth() {
@@ -123,5 +131,94 @@ fn a_cone_pair_off_the_unit_identity_by_1e7_reports_a_loss() {
     assert_eq!(
         surface_refusal_codes(&cone_record(2, sine, cosine)),
         [crate::loss::NxLossCode::CarrierConeHalfAngleIdentityRefused.kind()]
+    );
+}
+
+fn bodies(ids: &[&str]) -> Vec<BodyId> {
+    ids.iter()
+        .map(|id| BodyId::mint((*id).to_owned()).expect("body identity"))
+        .collect()
+}
+
+fn stream_kinds(kinds: &[StreamKind]) -> impl Fn(usize) -> Option<StreamKind> + '_ {
+    |index| kinds.get(index).copied()
+}
+
+#[test]
+fn plain_images_are_withheld_only_beside_partition_bodies() {
+    let kinds = [
+        StreamKind::Partition,
+        StreamKind::Deltas,
+        StreamKind::Plain,
+        StreamKind::Partition,
+        StreamKind::Plain,
+    ];
+    let mixed = bodies(&[
+        "nx:s0:body#3",
+        "nx:s2:body#2",
+        "nx:s3:body#2",
+        "nx:s4:body#2",
+    ]);
+    let expected: BTreeSet<BodyId> = bodies(&["nx:s2:body#2", "nx:s4:body#2"])
+        .into_iter()
+        .collect();
+    assert_eq!(
+        plain_history_images(stream_kinds(&kinds), &mixed),
+        Some(expected)
+    );
+
+    let plain_only = bodies(&["nx:s2:body#2", "nx:s4:body#2"]);
+    assert_eq!(
+        plain_history_images(stream_kinds(&kinds), &plain_only),
+        None
+    );
+
+    let partitions_only = bodies(&["nx:s0:body#3", "nx:s3:body#2"]);
+    assert_eq!(
+        plain_history_images(stream_kinds(&kinds), &partitions_only),
+        None
+    );
+}
+
+#[test]
+fn an_unattributed_body_withholds_no_plain_image() {
+    let kinds = [StreamKind::Partition, StreamKind::Plain];
+    let malformed = bodies(&["nx:s0:body#3", "nx:s1:body#2", "nx:model:body#9"]);
+    assert_eq!(plain_history_images(stream_kinds(&kinds), &malformed), None);
+    let unknown_stream = bodies(&["nx:s0:body#3", "nx:s1:body#2", "nx:s7:body#2"]);
+    assert_eq!(
+        plain_history_images(stream_kinds(&kinds), &unknown_stream),
+        None
+    );
+}
+
+#[test]
+fn plain_images_beside_partitions_suppress_terminal_lineage_preselection() {
+    assert!(has_plain_beside_partition_streams([
+        StreamKind::Partition,
+        StreamKind::Deltas,
+        StreamKind::Plain,
+    ]));
+    assert!(!has_plain_beside_partition_streams([
+        StreamKind::Plain,
+        StreamKind::Plain
+    ]));
+    assert!(!has_plain_beside_partition_streams([
+        StreamKind::Partition,
+        StreamKind::Deltas
+    ]));
+
+    assert_eq!(body_preselection(None, Some("terminal"), true), None);
+    assert_eq!(
+        body_preselection(Some("membership"), Some("terminal"), true),
+        Some("membership")
+    );
+    assert_eq!(
+        body_preselection(None, Some("terminal"), false),
+        Some("terminal")
+    );
+    assert_eq!(
+        body_preselection(Some("membership"), Some("terminal"), false),
+        Some("membership")
     );
 }

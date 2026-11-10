@@ -171,12 +171,12 @@ const WORK_POINT_TYPE: [u8; 16] = [
 ];
 /// Work-plane value that precedes the explicit plane frame in its extended form.
 const WORK_PLANE_FRAME_MARKER: u32 = 0x203;
-const WORK_AXIS_TYPE: [u8; 16] = [
+pub(crate) const WORK_AXIS_TYPE: [u8; 16] = [
     0x89, 0x6c, 0xf0, 0x8e, 0xd1, 0x11, 0x3c, 0x04, 0x60, 0x00, 0x7c, 0xb8, 0x01, 0xf3, 0x1b, 0xb0,
 ];
 /// Revolve extent value of a full revolution.
 const REVOLVE_EXTENT_FULL: u16 = 3;
-const FEATURE_LABEL_TYPE: [u8; 16] = [
+pub(crate) const FEATURE_LABEL_TYPE: [u8; 16] = [
     0x2b, 0xa4, 0x48, 0x2b, 0xd2, 0x11, 0x58, 0x64, 0x60, 0x00, 0x74, 0xb7, 0x9b, 0x49, 0xeb, 0xb0,
 ];
 
@@ -2093,6 +2093,7 @@ impl FeatureFamily {
                     FeatureOperation::SplitBody { .. }
                         | FeatureOperation::SplitFace { .. }
                         | FeatureOperation::TrimBodies { .. }
+                        | FeatureOperation::TrimBodiesAtPlane { .. }
                 )
             )
         )
@@ -2129,7 +2130,8 @@ impl FeatureFamily {
             FeatureDefinition::Operation(
                 FeatureOperation::SplitBody { .. }
                 | FeatureOperation::SplitFace { .. }
-                | FeatureOperation::TrimBodies { .. },
+                | FeatureOperation::TrimBodies { .. }
+                | FeatureOperation::TrimBodiesAtPlane { .. },
             ) => Some(Self::Split),
             _ => None,
         }
@@ -2138,6 +2140,7 @@ impl FeatureFamily {
 
 #[derive(Default)]
 pub(crate) struct ProjectionIndex<'a> {
+    body_joins: Option<&'a HashMap<String, cadmpeg_ir::ids::BodyId>>,
     result_model: Option<&'a cadmpeg_ir::document::Model>,
     thread_definitions: &'a [thread::Definition],
     edge_names: HashMap<(String, u32), Option<cadmpeg_ir::features::GeneratedEdgeRef>>,
@@ -2154,6 +2157,11 @@ pub(crate) struct ProjectionIndex<'a> {
     transforms: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcTransform>>,
     entity_style_links: HashSet<(&'a str, u32)>,
     work_planes: HashMap<(&'a str, u32), Option<&'a PmDcWorkPlane>>,
+    /// Surface-body wrappers that a new-body solid extrusion stores as its
+    /// result.
+    solid_wrappers: HashMap<(&'a str, u32), u64>,
+    /// History position of each feature record.
+    positions: HashMap<(&'a str, u32), u64>,
     profiles: profile::ProfileIndex<'a>,
     /// Profile sketch ordinal of each sheet-metal plate, from the face label
     /// whose participants are that sketch and that plate.
@@ -2272,6 +2280,7 @@ pub(crate) fn project(
         )
     }));
     let mut index = ProjectionIndex {
+        body_joins: None,
         result_model,
         thread_definitions: &inventory.thread_definitions,
         edge_names: HashMap::new(),
@@ -2363,6 +2372,8 @@ pub(crate) fn project(
             links
         },
         work_planes: unique_work_planes,
+        solid_wrappers: HashMap::new(),
+        positions: HashMap::new(),
         profiles: profile::ProfileIndex::new(
             profile_bodies,
             &inventory.kernel_entity_links,
@@ -2398,6 +2409,26 @@ pub(crate) fn project(
                 .copied()
         })
     };
+    if let Some(token) = token {
+        index.positions = history
+            .placements
+            .iter()
+            .map(|(ordinal, placement)| ((token, *ordinal), placement.ordinal))
+            .collect();
+    }
+    index.solid_wrappers = extrusion::solid_result_wrappers(
+        &inventory.features,
+        |feature| {
+            label_of(feature.identity.record_ordinal).is_some_and(|label| {
+                matches!(
+                    FeatureFamily::from_class_id(label.class_id()),
+                    Some(FeatureFamily::Extrusion)
+                )
+            })
+        },
+        &index.properties,
+        &index.positions,
+    );
     let mut projected = Vec::new();
     let mut extrusion_losses = Vec::new();
     let mut revolve_losses = Vec::new();
@@ -2844,6 +2875,8 @@ fn apply_history(
         .filter(|pattern| Some(pattern.identity.segment_token.as_str()) == token)
         .map(|pattern| (pattern.identity.record_ordinal, pattern))
         .collect::<HashMap<_, _>>();
+    let mirror_planes =
+        mirror::MirrorIndex::new(&inventory.properties, &[], &inventory.work_planes);
     for item in projected.iter_mut() {
         let Some(placement) = history.placement(item.record) else {
             continue;
@@ -2885,6 +2918,14 @@ fn apply_history(
                 })
                 .unwrap_or_default(),
         };
+        let mut consumed = consumed;
+        let mut supplier = None;
+        if let (true, Some(token), Some(pattern)) =
+            (item.neutral, token, patterns.get(&item.record).copied())
+        {
+            supplier = mirror::supplying_plane(&mirror_planes, token, pattern);
+            consumed.extend(supplier);
+        }
         for ordinal in consumed {
             let Some(dependency) = ids.get(&ordinal) else {
                 continue;
@@ -2896,6 +2937,11 @@ fn apply_history(
                 continue;
             }
             item.feature.dependencies.insert(dependency.clone());
+            if supplier == Some(ordinal) {
+                item.feature
+                    .evaluation
+                    .edit(|definition, _| mirror::without_supplied_plane_reference(definition));
+            }
         }
     }
     Ok(())
@@ -3323,9 +3369,9 @@ fn project_extrusion(
     Some(Ok((feature, result)))
 }
 
-/// Slots of a surface extrusion that hold no operand. Slot 14 holds a surface
-/// body whose role is open; slot 26 is the solid result collection.
-const SURFACE_EXTRUSION_NULL_SLOTS: [usize; 7] = [8, 9, 10, 12, 14, 17, 26];
+/// Slots of a surface extrusion that hold no operand. Slot 14 is null or
+/// selects the solid body wrapper; slot 26 is the solid result collection.
+const SURFACE_EXTRUSION_NULL_SLOTS: [usize; 6] = [8, 9, 10, 12, 17, 26];
 
 /// The profile of a surface extrusion: the native selection of the boundary
 /// patch, or the native patch record when no neutral sketch exists.
@@ -3340,6 +3386,7 @@ fn surface_extrusion_profile(
         || SURFACE_EXTRUSION_NULL_SLOTS
             .iter()
             .any(|slot| slots[*slot].index() != 0)
+        || !extrusion::surface_input_is_solid(source, index)
     {
         return None;
     }
@@ -5312,6 +5359,7 @@ pub(crate) mod tests {
         entity_style_links: &'a [PmDcEntityStyleLink],
     ) -> ProjectionIndex<'a> {
         ProjectionIndex {
+            body_joins: None,
             result_model: None,
             thread_definitions: &[],
             edge_names: std::collections::HashMap::new(),
@@ -5400,6 +5448,8 @@ pub(crate) mod tests {
                 })
                 .collect(),
             work_planes: std::collections::HashMap::new(),
+            solid_wrappers: std::collections::HashMap::new(),
+            positions: std::collections::HashMap::new(),
             profiles: super::profile::ProfileIndex::new(&[], &[], entity_style_links, &[], &[]),
             plate_sketches: std::collections::HashMap::new(),
         }

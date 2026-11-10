@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse edge, face, and body operand frames and recipe structure.
 
+pub(crate) mod extrude_extent;
 mod fillet_variable_groups;
 
 use crate::bytes::lp_utf16_bounded;
@@ -914,7 +915,10 @@ pub(crate) fn decode_face_operands(
             && group.role() == DesignOperandRole::PROFILE;
         let is_revolve_axis = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Revolve)
-            && group.role() == DesignOperandRole::ROLE_0X21;
+            && matches!(
+                group.role(),
+                DesignOperandRole::ROLE_0X21 | DesignOperandRole::ROLE_0X5
+            );
         let is_edge_treatment_support = matches!(
             design_feature_family(&scope.kind()),
             Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)

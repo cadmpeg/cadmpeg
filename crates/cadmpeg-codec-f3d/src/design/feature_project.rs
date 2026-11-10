@@ -57,6 +57,7 @@ mod paste_copy;
 mod path_pattern;
 mod pattern_seeds;
 mod reverse_normal;
+mod revolve_target;
 mod surface_offset;
 mod surface_patch;
 
@@ -68,6 +69,9 @@ const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;
 /// Millimetres of translation along its axis that a `MoveFace` rotation
 /// admits.
 const EPS_MOVE_FACE_SCREW_TRANSLATION: f64 = 1.0e-9;
+/// Largest difference, in radians, between a circular pattern's total angle
+/// and a full turn for which the pattern still spans the full turn.
+const EPS_CIRCULAR_PATTERN_FULL_TURN: f64 = 1.0e-12;
 const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E12: f64 = 1.0e-12;
 /// Largest `1 - cos` between a rectangular-pattern direction record and the
@@ -806,18 +810,29 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     body_recipe_operands,
                 )
                 .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
-                Some(DesignFeatureFamily::Revolve) => project_fixed_revolve_with_entities(
-                    scope,
-                    construction_groups,
-                    edge_operands,
-                    entity_selection_operands,
-                    face_operands,
-                    (placements, curve_identities),
-                    design_types,
-                )
-                .unwrap_or(FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                    family: UnresolvedFamily::Revolve,
-                })),
+                Some(DesignFeatureFamily::Revolve) => {
+                    let mut definition = project_fixed_revolve_with_entities(
+                        scope,
+                        construction_groups,
+                        edge_operands,
+                        entity_selection_operands,
+                        face_operands,
+                        (placements, curve_identities),
+                        design_types,
+                    )
+                    .unwrap_or(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                        family: UnresolvedFamily::Revolve,
+                    }));
+                    revolve_target::bind_revolve_shape_target(
+                        &mut definition,
+                        scope,
+                        construction_groups,
+                        face_operands,
+                        body_recipe_operands,
+                        histories,
+                    );
+                    definition
+                }
                 Some(DesignFeatureFamily::Loft) => {
                     project_fixed_loft(scope, inputs, ctx, &mut projection_losses)?.unwrap_or_else(
                         || {
@@ -980,6 +995,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         face_operands,
                         entity_selection_operands,
                         scopes,
+                        &mut projection_losses,
                     )
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Pattern {
@@ -1457,14 +1473,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     scope.feature_ordinal
                 )),
                 suppressed: Some(
-                    matches!(
-                        family,
-                        Some(
-                            DesignFeatureFamily::Extrude
-                                | DesignFeatureFamily::Fillet
-                                | DesignFeatureFamily::Chamfer
-                        )
-                    ) && scope.history_state_id().is_none()
+                    family.is_some_and(stateless_scope_is_suppressed)
+                        && scope.history_state_id().is_none()
                         && scope.previous_history_state_id().is_none(),
                 ),
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -5971,6 +5981,21 @@ fn project_fixed_chamfer(
     )))
 }
 
+/// Whether a scope of this family with null current and preceding
+/// history-state identities is suppressed. An active scope of these families
+/// changes ASM topology and carries both identities.
+fn stateless_scope_is_suppressed(family: DesignFeatureFamily) -> bool {
+    matches!(
+        family,
+        DesignFeatureFamily::Extrude
+            | DesignFeatureFamily::Fillet
+            | DesignFeatureFamily::Chamfer
+            | DesignFeatureFamily::Hole
+            | DesignFeatureFamily::Thread
+            | DesignFeatureFamily::Combine
+    )
+}
+
 fn fixed_boolean_operation(operation: DesignExtrudeOperation) -> cadmpeg_ir::features::BooleanOp {
     match operation {
         DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
@@ -6934,6 +6959,14 @@ fn project_circular_pattern(
         FeatureDefinition, FeatureOperation,
     };
     let construction = scope.circular_pattern_construction()?;
+    // The separator byte of a 130-byte axis record has no settled meaning
+    // (DR-327); only a full turn, whose instances do not depend on the
+    // direction of travel, projects from it.
+    if construction.axis_separator_flag_offset.is_some()
+        && (construction.angle.get() - std::f64::consts::TAU).abs() > EPS_CIRCULAR_PATTERN_FULL_TURN
+    {
+        return None;
+    }
     let (axis_origin, axis_dir) = circular_pattern_axis(&construction.axis)?;
     let group = pattern_seed_group(scope, groups)?;
     let seeds = pattern_group_seeds(
@@ -7007,6 +7040,7 @@ fn project_rectangular_pattern_scalars(
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternSeed, PatternTransform},
@@ -7017,10 +7051,24 @@ fn project_rectangular_pattern_scalars(
     let construction = scope.rectangular_pattern_construction()?;
     let mut direction_records = construction.directions().iter();
     let mut active = Vec::new();
-    let adjacent = construction
-        .directions()
-        .first()
-        .is_some_and(|record| record.distance_type == 7);
+    let mut dropped = Vec::new();
+    let distribution = construction.distribution();
+    let adjacent = distribution.map_or_else(
+        || {
+            construction
+                .directions()
+                .first()
+                .is_some_and(|record| record.distance_type == 7)
+        },
+        |distribution| !distribution.total_extent.value,
+    );
+    if distribution.is_some_and(|distribution| distribution.symmetric.value) {
+        // The extent of a symmetric direction has no settled measurement.
+        if !adjacent || construction.u_extent() == 0.0 {
+            return None;
+        }
+        dropped.push("the symmetric distribution of direction one".to_owned());
+    }
     for (axis, (count, extent)) in [
         (construction.u_count(), construction.u_extent()),
         (construction.v_count(), construction.v_extent()),
@@ -7031,6 +7079,13 @@ fn project_rectangular_pattern_scalars(
         let Some(intervals) = PatternIntervals::new(count) else {
             continue;
         };
+        if extent == 0.0 {
+            dropped.push(format!(
+                "the {count} coincident instances of direction {}",
+                ["one", "two"][axis]
+            ));
+            continue;
+        }
         let stored_direction = if axis == 1 && construction.secondary_direction().is_some() {
             construction.secondary_direction().and_then(|record| {
                 cadmpeg_ir::units::UnitVector3::normalized(Vector3::from(
@@ -7131,6 +7186,17 @@ fn project_rectangular_pattern_scalars(
         omitted_instances: Vec::new(),
     })
     .ok()?;
+    if !dropped.is_empty() {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternPlacementNotTransferred.note(
+                format!(
+                    "RectangularPattern scope {} drops {}: a linear pattern has no field for them.",
+                    scope.id,
+                    dropped.join(" and ")
+                ),
+            ),
+        );
+    }
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds,
         pattern,
@@ -7454,15 +7520,40 @@ fn hole_extent_loss(scope: &DesignParameterScope) -> cadmpeg_ir::report::loss::L
     ))
 }
 
-/// The face that ends an Extents To Hole: the native identity of its sole
-/// role-`0x0000000500000000` group, which has one member.
+/// The face that ends an Extents To Hole. Its sole
+/// role-`0x0000000500000000` group has one member. When that member is the
+/// one direct `face` recipe operand of the scope at its record and resolves
+/// one face of the preceding state, that face ends the hole (DR-243).
+/// Otherwise the group stays the native selection.
 fn hole_extent_face(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     let group = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X5)?;
-    (group.members().len() == 1)
-        .then(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone()))
+    let [member] = group.members() else {
+        return None;
+    };
+    let stream = native_stream(&scope.id);
+    let resolved = unique_feature_match(face_operands.iter().filter(|operand| {
+        native_stream(&operand.id) == stream
+            && operand.scope_record_index == scope.record_index
+            && operand.record_index() == member.value
+    }))
+    .filter(|operand| {
+        operand.group_record_index().is_none()
+            && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::Face
+    })
+    .and_then(|operand| match operand.resolved_face_slots.as_slice() {
+        [face] => crate::design::face_resolve::historical_face_selection_with_native(
+            scope,
+            scope.previous_history_state_id()?,
+            vec![*face],
+            group.id.clone(),
+        ),
+        _ => None,
+    });
+    Some(resolved.unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())))
 }
 
 fn hole_termination(
@@ -7483,7 +7574,7 @@ fn hole_termination(
     match extent.extent_control {
         Some(0) if extent.saved_non_distance_depth.is_some() && depth.is_none() => {
             Some(LinearTermination::ToFace {
-                face: hole_extent_face(scope, groups)?,
+                face: hole_extent_face(scope, groups, face_operands)?,
                 offset: None,
             })
         }
@@ -7618,6 +7709,16 @@ fn project_hole(
         losses.push(hole_extent_loss(scope));
         return Ok(None);
     };
+    if let LinearTermination::ToFace {
+        face: FaceSelection::Historical { native, .. },
+        ..
+    } = &extent
+    {
+        losses.push(crate::loss::F3dLossCode::HoleExtentFaceAssumed.note(format!(
+            "Hole scope {} ends at the face that the member of its Extents To group {native} resolves.",
+            scope.id
+        )));
+    }
     if !matches!(parameters.len(), 2..=7) {
         return Ok(None);
     }
