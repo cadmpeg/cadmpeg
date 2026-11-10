@@ -915,7 +915,10 @@ pub(crate) fn decode_face_operands(
             && group.role() == DesignOperandRole::PROFILE;
         let is_revolve_axis = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Revolve)
-            && group.role() == DesignOperandRole::ROLE_0X21;
+            && matches!(
+                group.role(),
+                DesignOperandRole::ROLE_0X21 | DesignOperandRole::ROLE_0X5
+            );
         let is_edge_treatment_support = matches!(
             design_feature_family(&scope.kind()),
             Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
