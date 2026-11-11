@@ -762,3 +762,51 @@ fn reused_tag_conflict_withholds_the_persistent_join() {
         loss_codes(&conflicted)
     );
 }
+
+#[test]
+fn ignored_spun_profile_interval_reaches_the_decode_report() {
+    use crate::test_support::parasolid::{circle_carrier, sphere_carrier};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+
+    let sphere = sphere_carrier(100, [0.0; 3], 1.0);
+    let mut body = sphere_patch_body().split_off(sphere.len());
+    body.extend(circle_carrier(6, [0.0; 3], [0.0, 1.0, 0.0], 1.0));
+    body.extend([0x00, 0x44]);
+    body.extend(100_u16.to_be_bytes());
+    body.extend(7_u32.to_be_bytes());
+    for value in [1_u16, 2, 3, 4, 1] {
+        body.extend(value.to_be_bytes());
+    }
+    body.push(b'+');
+    body.extend(6_u16.to_be_bytes());
+    for value in [
+        0.0_f64,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        4.0 * std::f64::consts::PI,
+    ] {
+        body.extend(value.to_be_bytes());
+    }
+    let result = decode(sldprt_with_body(&body));
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert!(matches!(
+        result.ir().model.surfaces[0].geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+    ));
+    assert!(result.report().losses.iter().any(|note| {
+        note.code.local_code() == "geometry.spun-profile-interval-ignored"
+            && note
+                .message
+                .contains(&format!("[0, {}]", 4.0 * std::f64::consts::PI))
+    }));
+}

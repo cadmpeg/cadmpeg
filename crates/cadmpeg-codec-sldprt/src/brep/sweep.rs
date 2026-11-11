@@ -29,6 +29,8 @@ use cadmpeg_parasolid::records::{NodeFields, PrimaryRecords};
 use super::LEN_TO_MM;
 use crate::layout::spun_surface_profile as spun_layout;
 
+const CONIC_INTERVAL_TOLERANCE: f64 = 1.0e-9;
+
 const ABSENT_PROFILE_PARAMETER: f64 = -3.14158e13;
 
 /// Poles per profile pole across the ruling of [`swept_nurbs`].
@@ -105,11 +107,10 @@ fn profile_parameter(point: [f64; 3], value: f64) -> Option<ProfileParameter> {
             .all(|coordinate| *coordinate == ABSENT_PROFILE_PARAMETER)
             .then_some(ProfileParameter::Absent)
     } else {
-        (value.is_finite()
-            && point.iter().all(|coordinate| {
-                coordinate.is_finite() && *coordinate != ABSENT_PROFILE_PARAMETER
-            }))
-        .then_some(ProfileParameter::Present(value))
+        point
+            .iter()
+            .all(|coordinate| coordinate.is_finite() && *coordinate != ABSENT_PROFILE_PARAMETER)
+            .then_some(ProfileParameter::Present(value))
     }
 }
 
@@ -255,7 +256,13 @@ pub(super) fn stored_conic_interval(
         (
             SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_),
             [Some(low), Some(high)],
-        ) => Some([low, high]),
+        ) if low.is_finite()
+            && high.is_finite()
+            && high > low
+            && high - low <= std::f64::consts::TAU + CONIC_INTERVAL_TOLERANCE =>
+        {
+            Some([low, high])
+        }
         _ => None,
     }
 }
@@ -324,11 +331,9 @@ pub(super) fn profile_nurbs<'a>(
     } else {
         let [low, high] = interval.unwrap_or([0.0, std::f64::consts::TAU]);
         let delta = high - low;
-        if !low.is_finite() || !high.is_finite() || delta <= 0.0 || delta > std::f64::consts::TAU {
-            return None;
-        }
-        let spans =
-            (1..=4_u32).find(|count| delta <= f64::from(*count) * std::f64::consts::FRAC_PI_2)?;
+        let spans = (1..=4_u32)
+            .find(|count| delta <= f64::from(*count) * std::f64::consts::FRAC_PI_2)
+            .unwrap_or(4);
         let step = delta / f64::from(spans);
         let point = |angle: f64, scale: f64| {
             center
@@ -1247,11 +1252,50 @@ mod tests {
         ] {
             assert!(eval_curve(&curve, parameter).distance(expected) < 1.0e-12);
         }
-        for range in [[high, low], [low, low], [0.0, 2.0 * high]] {
-            assert!(
-                profile_nurbs(&geometry, Some(range), &"invalid meridian", &mut refusal).is_none()
+        for range in [
+            [high, low],
+            [low, low],
+            [0.0, 2.0 * high],
+            [0.0, 4.0 * std::f64::consts::PI],
+            [
+                3.0 * std::f64::consts::FRAC_PI_2,
+                std::f64::consts::FRAC_PI_2,
+            ],
+            [f64::NEG_INFINITY, high],
+            [0.0, f64::INFINITY],
+            [f64::NAN, high],
+        ] {
+            let curve =
+                profile_nurbs(&geometry, Some(range), &"invalid meridian", &mut refusal).unwrap();
+            assert_eq!(curve.pole_count(), 9);
+            assert_eq!(
+                cadmpeg_ir::eval::nurbs_curve_parameter_domain(&curve)
+                    .unwrap()
+                    .endpoints(),
+                [0.0, high]
             );
         }
+        let end = high + 1.0e-15;
+        assert_eq!(
+            super::stored_conic_interval(&geometry, [Some(0.0), Some(end)]),
+            Some([0.0, end])
+        );
+        let curve = profile_nurbs(
+            &geometry,
+            Some([0.0, end]),
+            &"roundoff meridian",
+            &mut refusal,
+        )
+        .unwrap();
+        assert_eq!(curve.pole_count(), 9);
+        assert_eq!(
+            cadmpeg_ir::eval::nurbs_curve_parameter_domain(&curve)
+                .unwrap()
+                .endpoints(),
+            [0.0, end]
+        );
+        assert!(eval_curve(&curve, end).distance(eval_curve(&curve, 0.0)) < 1.0e-12);
+        assert!(refusal.take_records().is_empty());
     }
 
     #[test]

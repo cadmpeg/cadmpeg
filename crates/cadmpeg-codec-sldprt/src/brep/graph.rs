@@ -756,7 +756,8 @@ fn blend_support_geometry<'a>(
     };
     // The face that carries the sweep reports its own refusal when it emits.
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
-    let resolved = resolve_sweep_surface(ctx, carriers, tables, face, &mut refusal)?;
+    let resolved =
+        resolve_sweep_surface(ctx, carriers, tables, face, &mut refusal, &mut Vec::new())?;
     Ok(resolved.map(|sweep| Cow::Owned(sweep.geometry)))
 }
 
@@ -766,6 +767,7 @@ fn resolve_sweep_surface(
     tables: &topology::Tables,
     face: &WalkedFace,
     refusal: &mut crate::lane_refusal::LaneRefusals,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<SweepSurfaceResolution>, cadmpeg_core::CodecError> {
     let Some(construction) = carriers.sweep(face.surface_attr) else {
         return Ok(None);
@@ -783,6 +785,18 @@ fn resolve_sweep_surface(
         .map(cadmpeg_ir::units::FiniteVector::get);
     if let SweepKind::Spun { profile_bounds, .. } = &construction.kind {
         profile_range = sweep::stored_conic_interval(&profile.carrier().geometry, *profile_bounds);
+        if let [Some(low), Some(high)] = profile_bounds {
+            if profile_range.is_none()
+                && matches!(
+                    profile.carrier().geometry.solved(),
+                    Some(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))
+                )
+            {
+                losses.push(crate::loss::SldprtLossCode::GeometrySpunProfileIntervalIgnored.note(
+                    format!("{record}: ignored stored profile interval [{low}, {high}]; revolve the whole profile"),
+                ));
+            }
+        }
     }
     let Some(curve) =
         sweep::profile_nurbs(&profile.carrier().geometry, profile_range, &record, refusal)
@@ -4575,7 +4589,14 @@ fn decode_graph_inner(
                     exactness,
                 }) = {
                     let mut sweep_refusal = crate::lane_refusal::LaneRefusals::new();
-                    let resolved = resolve_sweep_surface(ctx, carriers, t, f, &mut sweep_refusal)?;
+                    let resolved = resolve_sweep_surface(
+                        ctx,
+                        carriers,
+                        t,
+                        f,
+                        &mut sweep_refusal,
+                        &mut out.losses,
+                    )?;
                     for record in sweep_refusal.take_records() {
                         let note = crate::loss::spline_lane_refusal(format_args!(
                             "swept surface for face attr {}: {record}",

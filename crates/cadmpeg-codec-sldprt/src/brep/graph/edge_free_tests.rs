@@ -456,6 +456,7 @@ fn spun_circle_with_one_stored_bound_revolves_the_whole_profile() {
         &topology::Tables::default(),
         &face,
         &mut refusal,
+        &mut Vec::new(),
     )
     .unwrap()
     .unwrap();
@@ -469,4 +470,76 @@ fn spun_circle_with_one_stored_bound_revolves_the_whole_profile() {
     );
     assert_eq!(surface.u_count(), 9);
     assert!(refusal.take_records().is_empty());
+}
+
+#[test]
+fn ignored_spun_profile_intervals_keep_typed_surfaces_and_report_loss() {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use F::{C, I, P, R, V};
+    for [low, high] in [
+        [0.0, 4.0 * std::f64::consts::PI],
+        [
+            3.0 * std::f64::consts::FRAC_PI_2,
+            std::f64::consts::FRAC_PI_2,
+        ],
+        [1.0, 1.0],
+        [0.0, f64::INFINITY],
+        [f64::NAN, 1.0],
+    ] {
+        let mut nodes = ellipse_sheet(true);
+        nodes[4] = (
+            68,
+            20,
+            vec![
+                I(7),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                C(b'+'),
+                P(22),
+                V([0.0; 3]),
+                V([1.0, 0.0, 0.0]),
+                V([0.007, 0.0, 0.0]),
+                V([-0.007, 0.0, 0.0]),
+                R(low),
+                R(high),
+                V([0.0, 1.0, 0.0]),
+                R(crate::test_support::parasolid::sequence::NULL_REAL),
+            ],
+        );
+        let mut profile = nodes
+            .iter()
+            .find(|(kind, _, _)| *kind == 32)
+            .unwrap()
+            .clone();
+        profile.1 = 22;
+        nodes.push(profile);
+        let out = decode(&nodes);
+        assert_eq!(out.faces.len(), 1);
+        assert_eq!(out.stats.unknown_surface_faces, 0);
+        let surface = out
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == out.faces[0].surface)
+            .unwrap();
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &surface.geometry
+        else {
+            panic!("typed spun surface")
+        };
+        assert_eq!(surface.u_count(), 9);
+        assert_eq!(surface.u_knots().as_slice().first(), Some(&0.0));
+        assert_eq!(
+            surface.u_knots().as_slice().last(),
+            Some(&std::f64::consts::TAU)
+        );
+        let notes = out
+            .losses
+            .iter()
+            .filter(|note| note.code.local_code() == "geometry.spun-profile-interval-ignored")
+            .collect::<Vec<_>>();
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].message.contains(&format!("[{low}, {high}]")));
+    }
 }
