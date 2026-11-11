@@ -160,6 +160,26 @@ impl CompactReferencePlaneIndex {
         self.lane_source()
     }
 
+    pub(super) fn profile_model_space_component_frame(
+        &self,
+        context_start: usize,
+        profile_start: usize,
+        profile_end: usize,
+    ) -> Option<PlaneFrame> {
+        let (translation, row_z, row_x) =
+            self.profile_component_frame(context_start, profile_start, profile_end)?;
+        let row_y = row_z.cross(row_x);
+        let u_axis = Vector3::new(row_x.x, row_y.x, row_z.x);
+        let v_axis = Vector3::new(row_x.y, row_y.y, row_z.y);
+        let normal = Vector3::new(row_x.z, row_y.z, row_z.z);
+        let origin = Point3::new(
+            -u_axis.x * translation.x - v_axis.x * translation.y - normal.x * translation.z,
+            -u_axis.y * translation.x - v_axis.y * translation.y - normal.y * translation.z,
+            -u_axis.z * translation.x - v_axis.z * translation.y - normal.z * translation.z,
+        );
+        Some((origin, normal, u_axis))
+    }
+
     /// Component frames use the profile interval before its enclosing context.
     pub(super) fn profile_component_frame(
         &self,

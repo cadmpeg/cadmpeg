@@ -7,7 +7,7 @@ use super::helix::fit_helix_polyline;
 use super::reference_geometry::{explicit_reference_plane_frame, reference_plane_frame_key};
 use super::relation_loci::same_dimension_length;
 use super::scalars::{feature_object_name, FeatureObjectNames, FeatureObjectStarts};
-use super::transforms::sketch_frame_marker_transform;
+use super::transforms::{sketch_frame_marker_transform, MarkerTransform};
 use super::{is_class_token, CLASS_MARKER};
 use crate::classification::{classify, FeatureClass};
 use crate::parasolid::control_vertices::control_vertices;
@@ -4219,6 +4219,34 @@ fn hole_temporary_axis(payload: &[u8], start: usize, end: usize) -> Option<(Poin
     axes.all(|candidate| candidate == axis).then_some(axis)
 }
 
+fn resolved_support_component_frame(
+    plane_frames: &HashMap<u32, SketchPlaneFrame>,
+    plane_index: &CompactReferencePlaneIndex,
+    [context_start, start, end]: [usize; 3],
+) -> Option<(Point3, Vector3, Vector3)> {
+    let source = plane_index.profile_source(context_start, start, end)?;
+    let reference = plane_frames.get(&source)?;
+    if reference.u_axis_source != SketchPlaneUAxisSource::ResolvedSupportPlane {
+        return None;
+    }
+    let component = plane_index.profile_model_space_component_frame(context_start, start, end)?;
+    coplanar_plane_frames(reference.as_tuple(), component).then_some(component)
+}
+
+pub(super) fn feature_input_sketch_marker_transform(
+    plane_frames: &HashMap<u32, SketchPlaneFrame>,
+    plane_index: &CompactReferencePlaneIndex,
+    interval: [usize; 3],
+    sketch: &Sketch,
+    quantum: f64,
+) -> Option<MarkerTransform> {
+    if resolved_support_component_frame(plane_frames, plane_index, interval).is_some() {
+        Some(MarkerTransform::identity())
+    } else {
+        sketch_frame_marker_transform(sketch, quantum)
+    }
+}
+
 pub(super) fn feature_input_sketch_frame(
     payload: &[u8],
     plane_frames: &HashMap<u32, SketchPlaneFrame>,
@@ -4227,6 +4255,11 @@ pub(super) fn feature_input_sketch_frame(
     start: usize,
     end: usize,
 ) -> Option<(Point3, Vector3, Vector3)> {
+    if let Some(frame) =
+        resolved_support_component_frame(plane_frames, plane_index, [context_start, start, end])
+    {
+        return Some(frame);
+    }
     let reference = plane_index
         .profile_source(context_start, start, end)
         .and_then(|source| {
@@ -4297,7 +4330,7 @@ pub(super) fn feature_input_sketch_frame(
     }
 }
 
-fn coplanar_plane_frames(
+pub(crate) fn coplanar_plane_frames(
     reference: (Point3, Vector3, Vector3),
     candidate: (Point3, Vector3, Vector3),
 ) -> bool {

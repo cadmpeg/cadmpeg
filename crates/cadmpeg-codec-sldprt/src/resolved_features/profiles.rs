@@ -34,7 +34,9 @@ use super::endpoints::{
     terminal_relation_class_offset, unique_arc_center_marker, wide_coordinate_roster_full_circle,
 };
 use super::grid::quantize;
-use super::holes::{feature_input_sketch_frame, sketch_feature_frames};
+use super::holes::{
+    feature_input_sketch_frame, feature_input_sketch_marker_transform, sketch_feature_frames,
+};
 use super::markers::{
     compact_legacy_142_profile_curve_endpoints, inline_arc_coordinates,
     legacy_140_profile_point_variant_coordinates, marker_is_geometry_locus,
@@ -725,7 +727,13 @@ pub(crate) fn project_compact_sketch_profiles(
                 profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                 native_ref: Some(lane.id.clone()),
             };
-            let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
+            let Some(transform) = feature_input_sketch_marker_transform(
+                &plane_frames,
+                &plane_index,
+                [context_start, start, end],
+                &sketch,
+                QUANTUM,
+            ) else {
                 continue;
             };
             let entity_start = sketch_entities.len();
@@ -1380,7 +1388,13 @@ pub(crate) fn project_marker_backed_sketches(
                 profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                 native_ref: Some(lane.id.clone()),
             };
-            let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
+            let Some(transform) = feature_input_sketch_marker_transform(
+                &plane_frames,
+                &plane_index,
+                [context_start, start, end],
+                &sketch,
+                QUANTUM,
+            ) else {
                 continue;
             };
             let encoded_rectangle =
