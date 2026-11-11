@@ -974,6 +974,29 @@ Parsed by:
 | 89 | 4 | `reference_type` | `u32` | little | spec | `refType` at offset `89` |
 | 93 | 4 | `input_count` | `u32` | little | spec | the counted input-reference count at offset `93` |
 
+## `design_hole_point_data_v2_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 121 B
+
+Offsets are relative to the version-two Hole point-data primary indexed header. The counted non-null reference run follows the fixed prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/point_direction.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the point-data primary indexed header |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | eight zero bytes at offsets `11` through `18` |
+| 19 | 1 | `leading_block_presence` | `u8` | little | spec | a leading-block presence byte at offset `19` |
+| 20 | 1 | `property_block_presence` | `u8` | little | spec | a property-block presence byte at offset `20` |
+| 21 | 4 | `bounding_box_index` | `u32` | little | spec | a bounding-box index at offset `21` |
+| 25 | 24 | `position` | `f64[3]` | little | spec | The position triple is at offset `25` |
+| 49 | 24 | `direction` | `f64[3]` | little | spec | the model-space direction triple at offset `49` |
+| 73 | 16 | `point_parameters` | `f64[2]` | little | spec | the two construction parameters at offset `73` |
+| 89 | 4 | `reference_type` | `u32` | little | spec | `refType` at offset `89` |
+| 93 | 24 | `tangent_point_data` | `f64[3]` | little | spec | Version `2` stores a tangent triple at offset `93` |
+| 117 | 4 | `input_count` | `u32` | little | spec | the counted input-reference count at offset `117` |
+
 ## `design_hole_point_data_v4_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 122 B

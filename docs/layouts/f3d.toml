@@ -3005,6 +3005,92 @@ source = "spec"
 anchor = "the counted input-reference count at offset `93`"
 
 [[record]]
+name = "design_hole_point_data_v2_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/point_direction.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Version `2` stores a tangent triple at offset `93`"
+size = 121
+note = "Offsets are relative to the version-two Hole point-data primary indexed header. The counted non-null reference run follows the fixed prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the point-data primary indexed header"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at offsets `11` through `18`"
+
+[[record.field]]
+name = "leading_block_presence"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "a leading-block presence byte at offset `19`"
+
+[[record.field]]
+name = "property_block_presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "a property-block presence byte at offset `20`"
+
+[[record.field]]
+name = "bounding_box_index"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a bounding-box index at offset `21`"
+
+[[record.field]]
+name = "position"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "The position triple is at offset `25`"
+
+[[record.field]]
+name = "direction"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "the model-space direction triple at offset `49`"
+
+[[record.field]]
+name = "point_parameters"
+offset = 73
+type = "f64[2]"
+source = "spec"
+anchor = "the two construction parameters at offset `73`"
+
+[[record.field]]
+name = "reference_type"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "`refType` at offset `89`"
+
+[[record.field]]
+name = "tangent_point_data"
+offset = 93
+type = "f64[3]"
+source = "spec"
+anchor = "Version `2` stores a tangent triple at offset `93`"
+
+[[record.field]]
+name = "input_count"
+offset = 117
+type = "u32"
+source = "spec"
+anchor = "the counted input-reference count at offset `117`"
+
+[[record]]
 name = "design_hole_point_data_v4_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
