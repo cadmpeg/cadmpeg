@@ -37,6 +37,7 @@ use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::writer::{refs, string, Emitter, Ref};
 
+mod closed_surfaces;
 mod edge_split;
 mod implicit_outer;
 mod non_manifold;
@@ -3035,7 +3036,13 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        !uses.is_empty() && uses.values().all(|[forward, reversed]| forward == reversed)
+        (!uses.is_empty()
+            || (shell.faces().len() == 1
+                && self
+                    .implicit_outer_bounds
+                    .get(shell.faces()[0].as_str())
+                    .is_some_and(|bound| matches!(bound, implicit_outer::OuterBound::Closed(_)))))
+            && uses.values().all(|[forward, reversed]| forward == reversed)
     }
 
     /// Writes the face use, or its reverse when `reversed` is set: the
@@ -3048,6 +3055,7 @@ impl<'a> Builder<'a> {
         let rectangle = match self.implicit_outer_bounds.get(face_id).cloned() {
             None => None,
             Some(implicit_outer::OuterBound::Rectangle(rectangle)) => Some(*rectangle),
+            Some(implicit_outer::OuterBound::Closed(_)) => None,
             Some(implicit_outer::OuterBound::Unwritable(reason)) => {
                 self.implicit_outer_loss(face_id, reason);
                 return None;
@@ -3061,7 +3069,12 @@ impl<'a> Builder<'a> {
             return None;
         };
 
-        let mut bound_refs = Vec::new();
+        let mut bound_refs = match self.implicit_outer_bounds.get(face_id).cloned() {
+            Some(implicit_outer::OuterBound::Closed(bound)) => {
+                self.emit_closed_bound(*bound, surf_ref, bound_flag)?
+            }
+            _ => Vec::new(),
+        };
         if let Some(rectangle) = rectangle {
             let Some(bound) = self.emit_parameter_rectangle(rectangle, surf_ref, bound_flag) else {
                 self.implicit_outer_loss(
