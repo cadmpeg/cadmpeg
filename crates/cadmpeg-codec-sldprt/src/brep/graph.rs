@@ -1176,11 +1176,22 @@ fn covers_whole_closed_surface(
     carriers: &CarrierIndex,
 ) -> bool {
     face.loops.is_empty()
-        && t.bridges()
-            .get(&face.bridge_attr)
-            .is_some_and(|bridge| bridge.refs[2] <= 1)
+        && t.bridges().get(&face.bridge_attr).is_some_and(|bridge| {
+            whole_closed_face(
+                bridge.refs[2],
+                carriers.surface(face.surface_attr),
+                t.has_looped_bridge_frame(face.bridge_attr),
+            )
+        })
         && !t.loops().values().any(|lp| lp.refs[2] == face.bridge_attr)
-        && loopless_surface(carriers.surface(face.surface_attr))
+}
+
+fn whole_closed_face(
+    loop_attr: u32,
+    carrier: Option<&super::SurfaceCarrier>,
+    has_looped_bridge_frame: bool,
+) -> bool {
+    loop_attr <= 1 && !has_looped_bridge_frame && loopless_surface(carrier)
 }
 
 fn loopless_surface(carrier: Option<&super::SurfaceCarrier>) -> bool {
@@ -2640,7 +2651,13 @@ fn scan_site(
             }
         }
     }
-    let evidence = SiteEvidence::of(&entity_streams, &typed_streams);
+    let evidence = SiteEvidence::of(
+        &entity_streams,
+        &typed_streams,
+        ordered.iter().map(|(_, header)| {
+            !is_deltas_stream(header) && !crate::parasolid::is_body_stream(header)
+        }),
+    );
     // A Deltas blend enters only when the current faces, edges, and carriers
     // reach it, directly or through reached Deltas carriers.
     let mut seeds: Vec<u32> = evidence
@@ -2773,10 +2790,15 @@ struct SiteEvidence {
     typed: typed::Facts,
     owner_attrs: HashSet<u32>,
     bridge_attrs: Option<HashSet<u32>>,
+    looped_bridge_attrs: HashSet<u32>,
 }
 
 impl SiteEvidence {
-    fn of(entity_streams: &[(&[u8], bool)], typed_streams: &[typed::Facts]) -> Self {
+    fn of(
+        entity_streams: &[(&[u8], bool)],
+        typed_streams: &[typed::Facts],
+        plain_streams: impl Iterator<Item = bool>,
+    ) -> Self {
         let mut typed = typed::Facts::default();
         for stream_typed_facts in typed_streams {
             typed.merge_missing(stream_typed_facts.clone());
@@ -2788,10 +2810,18 @@ impl SiteEvidence {
                 .map(|((body, deltas), facts)| (facts, *body, *deltas)),
         );
         let bridge_attrs = typed.valid_ownership_face_attrs();
+        let looped_bridge_attrs = entity_streams
+            .iter()
+            .zip(plain_streams)
+            .flat_map(|((body, deltas), plain)| {
+                topology::framed_looped_bridge_attrs(body, *deltas, plain)
+            })
+            .collect();
         Self {
             typed,
             owner_attrs,
             bridge_attrs,
+            looped_bridge_attrs,
         }
     }
 }
@@ -2826,12 +2856,16 @@ fn stream_topology(
     let mut typed_face_offsets =
         stream_typed_facts.selected_face_offsets(evidence.bridge_attrs.as_ref());
     for face in &stream_typed_facts.faces {
-        if loopless_surface(carriers.surface(face.refs[4])) {
+        if whole_closed_face(
+            face.refs[2],
+            carriers.surface(face.refs[4]),
+            evidence.looped_bridge_attrs.contains(&face.attr),
+        ) {
             typed_face_offsets.remove(&face.offset);
         }
     }
     let curve_attrs = carriers.curve_attrs();
-    if let Some(mut tables) = node_tables {
+    let mut tables = if let Some(mut tables) = node_tables {
         topology::nodes::own(&mut tables, &typed_face_offsets, &evidence.owner_attrs);
         tables
     } else if is_deltas_stream(header) {
@@ -2858,7 +2892,9 @@ fn stream_topology(
             &typed_face_offsets,
             &evidence.owner_attrs,
         )
-    }
+    };
+    tables.record_looped_bridge_attrs(&evidence.looped_bridge_attrs);
+    tables
 }
 
 /// The typed-fact, carrier and topology identities of each Deltas stream of
@@ -2883,7 +2919,13 @@ fn incomplete_deltas_identities(
     for (payload, header) in ordered {
         entity_streams.push((header_body(payload, header)?, is_deltas_stream(header)));
     }
-    let evidence = SiteEvidence::of(&entity_streams, typed_streams);
+    let evidence = SiteEvidence::of(
+        &entity_streams,
+        typed_streams,
+        ordered.iter().map(|(_, header)| {
+            !is_deltas_stream(header) && !crate::parasolid::is_body_stream(header)
+        }),
+    );
     let no_conflicts = HashSet::new();
     let mut carriers = CarrierIndex::default();
     let mut tables: Option<topology::Tables> = None;

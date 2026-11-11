@@ -72,6 +72,72 @@ fn typed_loopless_sphere_and_torus_keep_their_ownership() {
 }
 
 #[test]
+fn a_compact_trimmed_face_supplies_topology_for_its_null_loop_ownership_face() {
+    use crate::test_support::parasolid::{
+        parasolid_with_body, sphere_carrier, sphere_patch_body, typed_single_face_ownership,
+    };
+    for (trimmed, ownership_first, separate_streams) in [
+        (false, false, false),
+        (true, false, false),
+        (true, true, false),
+        (true, false, true),
+        (true, true, true),
+    ] {
+        let mut body = if trimmed {
+            sphere_patch_body()
+        } else {
+            sphere_carrier(100, [0.0; 3], 1.0)
+        };
+        let topology_len = body.len();
+        typed_single_face_ownership(&mut body, 900, 901, 902, 10, 100, 1);
+        let mut parts = if separate_streams {
+            let ownership = body.split_off(topology_len);
+            vec![body, ownership]
+        } else {
+            if ownership_first {
+                body.rotate_left(topology_len);
+            }
+            vec![body]
+        };
+        if separate_streams && ownership_first {
+            parts.reverse();
+        }
+        let payloads = parts
+            .iter()
+            .map(|part| {
+                let payload = parasolid_with_body("sphere ownership", "SCH_SW_33103_11000", part);
+                let header = crate::parasolid::stream_header(&payload).unwrap().unwrap();
+                (payload, header)
+            })
+            .collect::<Vec<_>>();
+        let streams = payloads
+            .iter()
+            .map(|(payload, header)| (payload.as_slice(), header))
+            .collect::<Vec<_>>();
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let out = super::decode_bodies(
+            &ctx,
+            &streams,
+            &cadmpeg_ir::stream_name!("sphere-ownership"),
+        )
+        .unwrap();
+        assert_eq!(
+            (out.bodies.len(), out.shells.len(), out.faces.len()),
+            (1, 1, 1)
+        );
+        assert_eq!(out.faces[0].loops.len(), usize::from(trimmed));
+        assert_eq!(out.loops.len(), usize::from(trimmed));
+        assert_eq!(
+            out.shells[0].faces(),
+            std::slice::from_ref(&out.faces[0].id)
+        );
+        assert!(out.losses.is_empty(), "{:?}", out.losses);
+    }
+}
+
+#[test]
 fn a_loopless_plane_stays_withheld_with_ownership_loss() {
     let out = decode(&loopless_nodes(50));
     assert!(out.faces.is_empty());
