@@ -2253,7 +2253,7 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The Loft section binder retains selections with non-outer loops as native profiles and records `feature.profile-selection-native`.
 
-### DR-374. One-sided face-target Extrude direction and offset reference
+### DR-461. One-sided face-target Extrude direction and offset reference
 
 **Question.** Which vector defines the signed `Side1Offset` of a one-sided face-target Extrude, and how is travel selected when the target lies behind the start plane?
 

@@ -93,6 +93,17 @@ pub(crate) fn bind(
             }) {
                 return;
             }
+            let retained: BTreeSet<_> = selection_slots(face).unwrap_or_default().into_iter().collect();
+            let preceding = &operand.preceding_candidate_faces;
+            let candidate = match preceding.as_slice() {
+                [face] => Some(face),
+                _ => match operand.changed_candidate_faces.as_slice() {
+                    [face] if preceding.contains(face) => Some(face),
+                    _ => None,
+                },
+            };
+            let preceding: BTreeSet<_> = candidate.and_then(|face| super::stable_ref(face.as_str()))
+                .into_iter().collect();
             let Some((before, after)) = history.topology(previous).zip(history.topology(current)) else {
                 return;
             };
@@ -107,20 +118,31 @@ pub(crate) fn bind(
                     ExtrudeDirection::Unresolved {} => return None,
                 };
                 let sweep = sweep.unit()?;
-                let start = start_origin(start, origin.get(), normal.get(), sweep, before)?;
+                let start = start_origin(start, origin.get(), normal.get(), sweep, before);
                 let caps: Vec<_> = transition.topology.faces.inserted.iter()
                     .chain(&transition.topology.faces.updated)
                     .filter_map(|slot| exact_plane(after, *slot))
                     .collect();
-                select_target(
-                    &referenced,
+                let terminal_caps: Vec<_> = caps.iter().copied().filter(|cap| {
+                    start.is_some_and(|start| {
+                        (cap.normal.dot(sweep).abs() - 1.0).abs() <= input.angular_tolerance
+                            && cap.origin.vector_from(start).dot(sweep).abs() > input.linear_tolerance
+                    })
+                }).collect();
+                let retained_caps = if terminal_caps.is_empty() { caps.as_slice() }
+                    else { terminal_caps.as_slice() };
+                let cap_match = |candidates, start, caps: &[&AsmHistoricalPlane]| select_target(
+                    candidates,
                     before,
-                    &caps,
+                    caps,
                     start,
                     sweep,
                     offset.map_or(0.0, Length::get),
                     (input.linear_tolerance, input.angular_tolerance),
-                )
+                );
+                start.and_then(|start| cap_match(&referenced, Some(start), &caps))
+                    .or_else(|| cap_match(&retained, None, retained_caps))
+                    .or_else(|| cap_match(&preceding, None, retained_caps))
             });
             if let Some(slot) = selected {
                 if let Some(selection) = crate::design::face_resolve::historical_face_selection_with_native(
@@ -222,7 +244,7 @@ fn select_target(
     referenced: &BTreeSet<i64>,
     before: &AsmHistoricalTopology,
     caps: &[&AsmHistoricalPlane],
-    start: Point3,
+    start: Option<Point3>,
     sweep: Vector3,
     offset: f64,
     tolerances: (f64, f64),
@@ -242,7 +264,7 @@ fn select_target(
             return false;
         }
         let end = target.origin.translated(sweep, offset);
-        end.vector_from(start).dot(sweep) > linear
+        start.is_none_or(|start| end.vector_from(start).dot(sweep) > linear)
             && caps.iter().any(|cap| {
                 aligned(cap.normal) && cap.origin.vector_from(end).dot(sweep).abs() <= linear
             })

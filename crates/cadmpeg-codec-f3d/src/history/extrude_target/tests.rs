@@ -170,6 +170,15 @@ fn state(id: i64, mut topology: AsmHistoricalTopology) -> crate::test_support::h
 }
 
 fn run(ambiguous: bool, cap: f64) -> (FaceSelection, Vec<i64>, Vec<LossNote>) {
+    run_configured(ambiguous, cap, None, |_, _, _| {})
+}
+
+fn run_configured(
+    ambiguous: bool,
+    cap: f64,
+    terminal_cap: Option<f64>,
+    configure: impl FnOnce(&mut Feature, &mut DesignFaceOperand, &mut AsmHistoricalTopology),
+) -> (FaceSelection, Vec<i64>, Vec<LossNote>) {
     let (mut feature, sketch, scope, group, mut operand) = fixture();
     feature.evaluation.edit(|definition, _| {
         let FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -196,8 +205,12 @@ fn run(ambiguous: bool, cap: f64) -> (FaceSelection, Vec<i64>, Vec<LossNote>) {
             .candidate_faces
             .push(crate::ids::brep_face_id(3486));
     }
+    configure(&mut feature, &mut operand, &mut before);
     let mut after = before.clone();
     add_plane(&mut after, 394, cap);
+    if let Some(cap) = terminal_cap {
+        add_plane(&mut after, 395, cap);
+    }
     let history = crate::test_support::history::history(
         "f3d:history".into(),
         0,
@@ -292,7 +305,7 @@ fn recipe_target_planes_match_stored_signed_offset_caps() {
                 &BTreeSet::from([10]),
                 &before,
                 &[&cap_plane],
-                Point3::new(0.0, 0.0, 0.0),
+                Some(Point3::new(0.0, 0.0, 0.0)),
                 Vector3::new(0.0, 0.0, 1.0),
                 offset,
                 (LINEAR_TOLERANCE, ANGULAR_TOLERANCE)
@@ -300,6 +313,85 @@ fn recipe_target_planes_match_stored_signed_offset_caps() {
             Some(10)
         );
     }
+}
+
+#[test]
+fn stored_caps_preserve_prior_targets_outside_recipe_references() {
+    for (target, reversed, native) in [(0.0, false, true), (-10.8, true, false), (0.0, true, false)]
+    {
+        let (face, slots, losses) =
+            run_configured(false, target, None, |feature, operand, before| {
+                feature.evaluation.edit(|definition, _| {
+                    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                        start,
+                        direction,
+                        extent: ExtrudeExtent::OneSided { side },
+                        ..
+                    }) = definition
+                    else {
+                        panic!("Extrude")
+                    };
+                    *start = ExtrudeStart::ProfilePlane {};
+                    *direction = if reversed {
+                        ExtrudeDirection::ReversedProfileNormal {}
+                    } else {
+                        ExtrudeDirection::ProfileNormal {}
+                    };
+                    let LinearTermination::ToFace { face, offset } = &mut side.termination else {
+                        panic!("face")
+                    };
+                    *offset = None;
+                    if native {
+                        *face = FaceSelection::Native("f3d:test:group#1448".into());
+                    }
+                });
+                before
+                    .surface_planes
+                    .iter_mut()
+                    .find(|plane| plane.surface == 13465)
+                    .unwrap()
+                    .origin = Point3::new(0.0, 0.0, target);
+                operand
+                    .preceding_candidate_faces
+                    .push(crate::ids::brep_face_id(3484));
+                operand.changed_candidate_faces = vec![crate::ids::brep_face_id(3465)];
+            });
+        assert!(matches!(face, FaceSelection::Historical { .. }));
+        assert_eq!(selection_slots(&face), Some(vec![3465]));
+        assert_eq!(slots, [3465]);
+        assert!(losses.is_empty());
+    }
+}
+
+#[test]
+fn a_cap_proven_selection_survives_a_second_cap_proven_predecessor() {
+    let (face, slots, losses) = run_configured(false, 0.0, None, |feature, operand, before| {
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                start,
+                extent: ExtrudeExtent::OneSided { side },
+                ..
+            }) = definition
+            else {
+                panic!("Extrude")
+            };
+            *start = ExtrudeStart::ProfilePlane {};
+            let LinearTermination::ToFace { offset, .. } = &mut side.termination else {
+                panic!("face")
+            };
+            *offset = None;
+        });
+        before
+            .surface_planes
+            .iter_mut()
+            .find(|plane| plane.surface == 13484)
+            .unwrap()
+            .origin = Point3::new(0.0, 0.0, 0.0);
+        operand.preceding_candidate_faces = vec![crate::ids::brep_face_id(3484)];
+    });
+    assert_eq!(selection_slots(&face), Some(vec![3465]));
+    assert_eq!(slots, [3465]);
+    assert!(losses.is_empty());
 }
 
 #[test]
@@ -315,4 +407,64 @@ fn termination_binding_preserves_agreeing_recipe_candidates() {
         &[],
     );
     assert_eq!(selection_slots(&selection), Some(vec![3465]));
+}
+
+#[test]
+fn a_start_cap_does_not_prove_a_target_when_a_separate_terminal_cap_exists() {
+    let (face, slots, losses) = run_configured(false, 0.0, Some(20.0), |feature, _, before| {
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                start,
+                extent: ExtrudeExtent::OneSided { side },
+                ..
+            }) = definition
+            else {
+                panic!("Extrude")
+            };
+            *start = ExtrudeStart::ProfilePlane {};
+            let LinearTermination::ToFace { offset, .. } = &mut side.termination else {
+                panic!("face")
+            };
+            *offset = None;
+        });
+        before
+            .surface_planes
+            .iter_mut()
+            .find(|plane| plane.surface == 13484)
+            .unwrap()
+            .origin = Point3::new(0.0, 0.0, 30.0);
+    });
+    assert_eq!(face, FaceSelection::Native("f3d:test:group#1448".into()));
+    assert!(slots.is_empty());
+    assert_eq!(losses.len(), 1);
+}
+
+#[test]
+fn a_lateral_plane_with_its_origin_on_a_cap_is_not_a_cap_match() {
+    let (face, slots, losses) = run_configured(false, 0.0, None, |feature, _, before| {
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                start,
+                extent: ExtrudeExtent::OneSided { side },
+                ..
+            }) = definition
+            else {
+                panic!("Extrude")
+            };
+            *start = ExtrudeStart::ProfilePlane {};
+            let LinearTermination::ToFace { offset, .. } = &mut side.termination else {
+                panic!("face")
+            };
+            *offset = None;
+        });
+        before
+            .surface_planes
+            .iter_mut()
+            .find(|plane| plane.surface == 13465)
+            .unwrap()
+            .normal = Vector3::new(1.0, 0.0, 0.0);
+    });
+    assert_eq!(face, FaceSelection::Native("f3d:test:group#1448".into()));
+    assert!(slots.is_empty());
+    assert_eq!(losses.len(), 1);
 }
