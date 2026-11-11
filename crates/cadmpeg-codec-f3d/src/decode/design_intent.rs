@@ -801,7 +801,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             shells: geometry.shells,
         },
     ));
-    crate::history::bind_feature_face_selections(
+    losses.extend(crate::history::bind_feature_face_selections(
         &mut model.features,
         &mut model.feature_input_topologies,
         crate::history::FeatureFaceSelectionInputs {
@@ -813,7 +813,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             histories: &mut design.asm_histories,
             scope_histories: &scope_histories,
         },
-    );
+    ));
     losses.extend(crate::history::thread_face::bind(
         &mut model.features,
         &crate::history::thread_face::Inputs {

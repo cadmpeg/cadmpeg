@@ -292,6 +292,8 @@ pub(crate) enum F3dLossCode {
     HistoryDependencyAmbiguous,
     /// A historical face selection cannot bind uniquely to emitted input topology members.
     HistoricalFaceSelectionUnbound,
+    /// A healed `DeleteFace` group assumes member order from selected face stable-slot order.
+    HistoryDeleteFaceMemberOrderAssumed,
     /// Historical edge midpoint geometry could not be resolved from feature selections.
     HistoricalEdgeMidpointsUnresolved,
     /// A `Fillet` edge is inferred from blend geometry; no two supports share it.
@@ -800,6 +802,7 @@ impl F3dLossCode {
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
+        Self::HistoryDeleteFaceMemberOrderAssumed,
         Self::HistoricalEdgeMidpointsUnresolved,
         Self::HistoricalFilletEdgeInferred,
         Self::HistoricalEdgeSelectionInferred,
@@ -1142,6 +1145,7 @@ impl F3dLossCode {
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
+            Self::HistoryDeleteFaceMemberOrderAssumed => "history.delete-face-member-order-assumed",
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
             Self::HistoricalFilletEdgeInferred => "history.fillet-edge-inferred",
             Self::HistoricalEdgeSelectionInferred => "history.edge-selection-inferred",
@@ -1532,6 +1536,7 @@ impl F3dLossCode {
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
+            | Self::HistoryDeleteFaceMemberOrderAssumed
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
             | Self::HistoricalEdgeSelectionInferred
@@ -1813,6 +1818,7 @@ impl F3dLossCode {
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
+            | Self::HistoryDeleteFaceMemberOrderAssumed
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
             | Self::HistoricalEdgeSelectionInferred
@@ -2175,6 +2181,7 @@ mod tests {
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
                 "history.face-selection-unbound",
+                "history.delete-face-member-order-assumed",
                 "history.edge-midpoints-unresolved",
                 "history.fillet-edge-inferred",
                 "history.edge-selection-inferred",
