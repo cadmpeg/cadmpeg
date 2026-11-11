@@ -4358,21 +4358,19 @@ pub(super) fn project_modify(
 
     let operation = scope.modify_operation()?;
     let stream = native_stream(&scope.id)?;
+    let body_group = |record_index: u32| {
+        groups.iter().find(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && group.record_index == record_index
+                && group.role() == DesignOperandRole::BODIES_A
+                && group.members().len() == 1
+        })
+    };
     let selected = operation
         .body_group_record_indices
         .iter()
-        .map(|record_index| {
-            groups
-                .iter()
-                .find(|group| {
-                    native_stream(&group.id) == Some(stream)
-                        && group.scope_record_index == scope.record_index
-                        && group.record_index == *record_index
-                        && group.role() == DesignOperandRole::BODIES_A
-                        && group.members().len() == 1
-                })
-                .map(|group| group.id.clone())
-        })
+        .map(|record_index| body_group(*record_index).map(|group| group.id.clone()))
         .collect::<Option<Vec<_>>>()?;
     let bodies = match selected.as_slice() {
         [group] => BodySelection::Native(group.clone()),
@@ -4381,12 +4379,17 @@ pub(super) fn project_modify(
         ),
     };
     let definition = move_body(&operation.motion, bodies)?;
-    let unlisted = scope
+    let references = scope
         .reference_members()
         .values()
+        .copied()
+        .collect::<Vec<_>>();
+    let count = operation.body_group_record_indices.len();
+    let unlisted = references
+        .iter()
         .skip(1)
         .step_by(2)
-        .take(operation.body_group_record_indices.len())
+        .take(count)
         .copied()
         .collect::<Vec<_>>();
     losses.push(
@@ -4395,6 +4398,28 @@ pub(super) fn project_modify(
             scope.id, operation.body_group_record_indices
         )),
     );
+    let table_breaks = (0..2 * count)
+        .filter_map(|ordinal| {
+            let group = *references.get(1 + 2 * ordinal)?;
+            let member = references.get(2 + 2 * ordinal).copied();
+            let holds = body_group(group).is_some_and(|group| {
+                group.members().first().map(|located| located.value) == member
+            });
+            (!holds).then_some(group)
+        })
+        .collect::<Vec<_>>();
+    if !table_breaks.is_empty() {
+        losses.push(crate::loss::F3dLossCode::FeatureModifyTableAssumed.note(format!(
+            "Modify scope {} stores ordered references {table_breaks:?} where its table holds single-member body groups, each followed by its member; the MoveBody assumes that they leave the moved bodies unchanged (DR-374).",
+            scope.id
+        )));
+    }
+    if let Some(state) = scope.history_state_id() {
+        losses.push(crate::loss::F3dLossCode::FeatureModifyStateAssumed.note(format!(
+            "Modify scope {} commits history state {state}; the MoveBody assumes that the state leaves the motion of the transform record unchanged (DR-374).",
+            scope.id
+        )));
+    }
     Some(definition)
 }
 

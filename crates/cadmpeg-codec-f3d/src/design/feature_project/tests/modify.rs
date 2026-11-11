@@ -178,3 +178,69 @@ fn modify_stays_native_without_each_listed_body_group_or_with_a_reflection() {
     .is_none());
     assert!(losses.is_empty());
 }
+
+#[test]
+fn modify_keeps_its_move_when_a_table_position_breaks_the_body_group_run() {
+    let scope = modify_scope(TRANSLATION, vec![54]);
+    let mut losses = Vec::new();
+    let projected = super::super::project_modify(
+        &scope,
+        &[
+            group(52, DesignOperandRole::BODIES_A),
+            group(54, DesignOperandRole::BODIES_A),
+        ],
+        &mut losses,
+    );
+    assert!(matches!(
+        projected,
+        Some(FeatureDefinition::Operation(
+            FeatureOperation::MoveBody { .. }
+        ))
+    ));
+    let codes = losses
+        .iter()
+        .map(|note| note.code.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        codes,
+        vec![
+            crate::loss::F3dLossCode::FeatureModifyUnlistedGroupsAssumed.kind(),
+            crate::loss::F3dLossCode::FeatureModifyTableAssumed.kind(),
+        ]
+    );
+    assert_eq!(
+        losses[1].message,
+        "Modify scope f3d:test:scope#12 stores ordered references [50] where its table holds single-member body groups, each followed by its member; the MoveBody assumes that they leave the moved bodies unchanged (DR-374)."
+    );
+}
+
+#[test]
+fn modify_keeps_its_move_when_it_commits_a_history_state() {
+    let mut scope = modify_scope(TRANSLATION, vec![54]);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(7);
+        })
+        .unwrap();
+    let mut losses = Vec::new();
+    assert!(super::super::project_modify(
+        &scope,
+        &[
+            group(50, DesignOperandRole::BODIES_A),
+            group(52, DesignOperandRole::BODIES_A),
+            group(54, DesignOperandRole::BODIES_A),
+            group(56, DesignOperandRole::BODIES_A),
+        ],
+        &mut losses,
+    )
+    .is_some());
+    assert_eq!(losses.len(), 2);
+    assert_eq!(
+        losses[1].code,
+        crate::loss::F3dLossCode::FeatureModifyStateAssumed.kind()
+    );
+    assert_eq!(
+        losses[1].message,
+        "Modify scope f3d:test:scope#12 commits history state 7; the MoveBody assumes that the state leaves the motion of the transform record unchanged (DR-374)."
+    );
+}

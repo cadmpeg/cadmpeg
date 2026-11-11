@@ -1082,7 +1082,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** What do the first `N` body groups of a `Modify` scope's ordered reference table select, and how do they differ from the `N` groups that the prologue names?
 
-**Known.** `f3d.md` §3.1 "A `Modify` scope moves whole bodies by one rigid transform" gives the prologue, the `2N` single-member body groups, and the last `N` groups that the prologue names. The decoder projects a `MoveBody` of the bodies of the named groups with the motion of the transform record, and records `feature.modify-unlisted-groups-assumed` with the unnamed groups. A `Modify` scope that has no complete named body group stays native with `feature.modify-unprojected`.
+**Known.** `f3d.md` §3.1 "A `Modify` scope moves whole bodies by one rigid transform" gives the prologue, the `2N` single-member body groups, and the last `N` groups that the prologue names. The decoder projects a `MoveBody` of the bodies of the named groups with the motion of the transform record, and records `feature.modify-unlisted-groups-assumed` with the unnamed groups. It records `feature.modify-table-assumed` with each table position of the `2N`-group run that is not a single-member body group followed by its member, and `feature.modify-state-assumed` when the scope commits a current history state. A `Modify` scope that has no complete named body group stays native with `feature.modify-unprojected`.
 
 **Need.** Controlled saves of one `Modify` that move one body and then two bodies, and a save that selects a different body after the first selection, each recording the member records of all `2N` groups.
 

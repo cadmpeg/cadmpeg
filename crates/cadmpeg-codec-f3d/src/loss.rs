@@ -436,6 +436,10 @@ pub(crate) enum F3dLossCode {
     FeatureMoveTransformAssumed,
     /// A projected `Modify` assumes that its unlisted body groups select the bodies of its listed groups.
     FeatureModifyUnlistedGroupsAssumed,
+    /// A projected `Modify` stores a reference table outside the body-group run of its family.
+    FeatureModifyTableAssumed,
+    /// A projected `Modify` commits a current history state.
+    FeatureModifyStateAssumed,
     /// A standard `Loft` scope stores a non-null marked reference whose target and setting are unresolved.
     FeatureLoftReferenceUnresolved,
     /// A three-flag `Loft` scope stores flag bytes whose Loft settings are unresolved.
@@ -854,6 +858,8 @@ impl F3dLossCode {
         Self::FeatureRevolveLayoutAssumed,
         Self::FeatureMoveTransformAssumed,
         Self::FeatureModifyUnlistedGroupsAssumed,
+        Self::FeatureModifyTableAssumed,
+        Self::FeatureModifyStateAssumed,
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
         Self::FeatureLoftListsUnresolved,
@@ -1211,6 +1217,8 @@ impl F3dLossCode {
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
             Self::FeatureModifyUnlistedGroupsAssumed => "feature.modify-unlisted-groups-assumed",
+            Self::FeatureModifyTableAssumed => "feature.modify-table-assumed",
+            Self::FeatureModifyStateAssumed => "feature.modify-state-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
             Self::FeatureLoftListsUnresolved => "feature.loft-lists-unresolved",
@@ -1570,6 +1578,8 @@ impl F3dLossCode {
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureModifyUnlistedGroupsAssumed
+            | Self::FeatureModifyTableAssumed
+            | Self::FeatureModifyStateAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureLoftListsUnresolved
@@ -1846,6 +1856,8 @@ impl F3dLossCode {
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureModifyUnlistedGroupsAssumed
+            | Self::FeatureModifyTableAssumed
+            | Self::FeatureModifyStateAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureLoftListsUnresolved
@@ -2201,6 +2213,8 @@ mod tests {
                 "feature.revolve-layout-assumed",
                 "feature.move-transform-assumed",
                 "feature.modify-unlisted-groups-assumed",
+                "feature.modify-table-assumed",
+                "feature.modify-state-assumed",
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
                 "feature.loft-lists-unresolved",
