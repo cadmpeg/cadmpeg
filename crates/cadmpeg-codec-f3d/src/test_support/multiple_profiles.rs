@@ -30,6 +30,19 @@ pub(crate) fn fixture_with_flags(
     Vec<DesignRecordHeader>,
     Vec<DesignEntityHeader>,
 ) {
+    fixture_with_curve_regions(count, flags, None)
+}
+
+pub(crate) fn fixture_with_curve_regions(
+    count: u32,
+    flags: Option<([u8; 2], usize)>,
+    loops: Option<&[(u64, u64, bool)]>,
+) -> (
+    Vec<u8>,
+    DesignParameterScope,
+    Vec<DesignRecordHeader>,
+    Vec<DesignEntityHeader>,
+) {
     let stream = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
     let mut bytes = Vec::new();
     let mut headers = Vec::new();
@@ -69,6 +82,36 @@ pub(crate) fn fixture_with_flags(
             bytes.extend_from_slice(&[0; 94]);
         }
         indexed_header(&mut bytes, *b"259", record);
+        if let Some(loops) = loops {
+            indexed_header(&mut bytes, *b"308", record + 1);
+            bytes.extend_from_slice(&[0; 14]);
+            bytes.extend_from_slice(&[1, 1, 1, 0, 0, 0]);
+            bytes.push(1);
+            bytes.extend_from_slice(&7u32.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+            indexed_header(&mut bytes, *b"321", record + 2);
+            bytes.extend_from_slice(&[0; 22]);
+            indexed_header(&mut bytes, *b"363", record + 3);
+            bytes.extend_from_slice(&[0; 10]);
+            bytes.push(1);
+            bytes.extend_from_slice(&record.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+            bytes.extend_from_slice(&u32::try_from(loops.len()).unwrap().to_le_bytes());
+            for &(primary, secondary, outer) in loops {
+                bytes.extend_from_slice(&1u32.to_le_bytes());
+                bytes.extend_from_slice(&3u32.to_le_bytes());
+                bytes.extend_from_slice(&primary.to_le_bytes());
+                bytes.extend_from_slice(&secondary.to_le_bytes());
+                for value in [0u32, 1, 1] {
+                    bytes.extend_from_slice(&value.to_le_bytes());
+                }
+                bytes.extend_from_slice(&[0; 8]);
+                bytes.push(u8::from(outer));
+            }
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            indexed_header(&mut bytes, *b"263", record + 3);
+        }
         headers.push(DesignRecordHeader {
             id: format!("{stream}:design-record-header#{start}"),
             record_index: record,
