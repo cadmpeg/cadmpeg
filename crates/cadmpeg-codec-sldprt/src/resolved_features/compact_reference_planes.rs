@@ -1,5 +1,6 @@
 //! Compact reference plane record index.
 
+use crate::layout::compact_principal_plane_component as principal_component;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -18,6 +19,7 @@ pub(super) struct CompactReferencePlaneIndex {
     declared: Vec<(usize, u32)>,
     components: Vec<(usize, u32)>,
     component_frames: Vec<(usize, PlaneFrame)>,
+    deferred_principal_components: Vec<usize>,
 }
 
 impl CompactReferencePlaneIndex {
@@ -26,6 +28,7 @@ impl CompactReferencePlaneIndex {
         let mut declared = Vec::new();
         let mut components = Vec::new();
         let mut component_frames = Vec::new();
+        let mut deferred_principal_components = Vec::new();
         for (offset, byte) in payload.iter().enumerate() {
             if *byte == COMPACT_REFERENCE_PLANE_CLASS[0]
                 && payload.get(offset..offset + COMPACT_REFERENCE_PLANE_CLASS.len())
@@ -51,6 +54,9 @@ impl CompactReferencePlaneIndex {
                     if let Some(bytes) =
                         payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN)
                     {
+                        if compact_principal_reference_plane_record(bytes).is_some() {
+                            deferred_principal_components.push(start);
+                        }
                         if let Some(source) = compact_component_reference_plane_record(bytes) {
                             components.push((start, source));
                         }
@@ -67,7 +73,27 @@ impl CompactReferencePlaneIndex {
             declared,
             components,
             component_frames,
+            deferred_principal_components,
         }
+    }
+
+    pub(super) fn preserved_principal_fallback(
+        &self,
+        start: usize,
+        end: usize,
+    ) -> Option<PlaneFrame> {
+        let records = records_in_range(
+            &self.deferred_principal_components,
+            start,
+            end,
+            COMPACT_COMPONENT_PLANE_RECORD_LEN,
+            |offset| *offset,
+        );
+        (!records.is_empty()).then_some((
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+        ))
     }
 
     fn declared_source(&self, start: usize, end: usize) -> Option<u32> {
@@ -191,6 +217,42 @@ fn unique_indexed_value<T: Copy + PartialEq>(records: &[(usize, T)]) -> Option<T
         }
     }
     Some(*first)
+}
+
+fn compact_principal_reference_plane_record(bytes: &[u8]) -> Option<()> {
+    let source = View::u32_le_at(bytes, principal_component::SOURCE)?;
+    let selector = View::u32_le_at(bytes, principal_component::SELECTOR)?;
+    if !matches!((source, selector), (4, 1) | (3, 2))
+        || bytes.get(principal_component::RESERVED..principal_component::SELECTOR) != Some(&[0; 2])
+        || bytes.get(principal_component::MATRIX_PRESENT) != Some(&1)
+        || bytes.get(principal_component::TRAILER_RESERVED..principal_component::TRAILER_KIND)
+            != Some(&[0; 3])
+        || View::u32_le_at(bytes, principal_component::TRAILER_KIND) != Some(4)
+        || View::u32_le_at(bytes, principal_component::TRAILER_SENTINEL) != Some(u32::MAX)
+    {
+        return None;
+    }
+    let (origin, normal, u_axis) =
+        principal_sketch_frame(cadmpeg_ir::features::PrincipalPlane::Right);
+    let v_axis = normal.cross(u_axis);
+    let expected = if source == 4 {
+        [
+            u_axis.x, v_axis.x, normal.x, u_axis.y, v_axis.y, normal.y, u_axis.z, v_axis.z,
+            normal.z, origin.x, origin.y, origin.z, 1.0,
+        ]
+    } else {
+        [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ]
+    };
+    expected
+        .into_iter()
+        .enumerate()
+        .all(|(index, expected)| {
+            View::f64_le_at(bytes, principal_component::BASIS + index * 8)
+                .is_some_and(|value| value == expected)
+        })
+        .then_some(())
 }
 
 fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
@@ -320,8 +382,8 @@ pub(crate) fn principal_sketch_frame(
     match plane {
         PrincipalPlane::Front => (
             Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, -1.0, 0.0),
-            Vector3::new(0.0, 0.0, -1.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
         ),
         PrincipalPlane::Top => (
             Point3::new(0.0, 0.0, 0.0),

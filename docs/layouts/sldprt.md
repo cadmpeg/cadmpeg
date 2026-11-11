@@ -3812,6 +3812,31 @@ Parsed by:
 | 96 | 8 | `start_param` | `f64` | big | spec | the profile's parameter at each as two more, low parameter first |
 | 104 | 8 | `end_param` | `f64` | big | spec | the profile's parameter at each as two more, low parameter first |
 
+## `compact_principal_plane_component`
+
+Spec §2 · layout: byte offsets · size: 138 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/compact_reference_planes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `source` | `u32` | little | spec | Its source identifier and selector are |
+| 8 | 2 | `reserved` | `bytes[2]` | little | spec | A principal-plane component record has the 138-byte extent |
+| 10 | 4 | `selector` | `u32` | little | spec | Its source identifier and selector are |
+| 14 | 1 | `matrix_present` | `u8` | little | spec | Its f64 matrix is row-major |
+| 15 | 72 | `basis` | `f64[9]` | little | spec | Its f64 matrix is row-major |
+| 87 | 24 | `translation` | `f64[3]` | little | spec | Its translation is zero |
+| 111 | 8 | `scale` | `f64` | little | spec | its homogeneous scale is `1` |
+| 119 | 3 | `trailer_reserved` | `bytes[3]` | little | spec | A principal-plane component record has the 138-byte extent |
+| 122 | 4 | `trailer_kind` | `u32` | little | spec | A principal-plane component record has the 138-byte extent |
+| 126 | 4 | `trailer_sentinel` | `u32` | little | spec | A principal-plane component record has the 138-byte extent |
+
+Unstated regions:
+
+- `4..8` (4 B): Opaque identity.
+- `130..138` (8 B): Opaque continuation.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

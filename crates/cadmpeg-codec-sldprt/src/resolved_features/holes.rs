@@ -4229,7 +4229,22 @@ pub(super) fn feature_input_sketch_frame(
 ) -> Option<(Point3, Vector3, Vector3)> {
     let reference = plane_index
         .profile_source(context_start, start, end)
-        .and_then(|source| plane_frames.get(&source).copied());
+        .and_then(|source| {
+            plane_frames.get(&source).copied().map(|reference| {
+                if source == 2
+                    && reference.u_axis_source == SketchPlaneUAxisSource::Native
+                    && reference.as_tuple()
+                        == super::compact_reference_planes::principal_sketch_frame(
+                            cadmpeg_ir::features::PrincipalPlane::Front,
+                        )
+                {
+                    if let Some(frame) = plane_index.preserved_principal_fallback(start, end) {
+                        return SketchPlaneFrame::from_frame(frame, reference.u_axis_source);
+                    }
+                }
+                reference
+            })
+        });
     let component = plane_index.profile_component_frame(context_start, start, end);
     let explicit = || -> Option<(Point3, Vector3, Vector3)> {
         let object = payload.get(start..end)?;
