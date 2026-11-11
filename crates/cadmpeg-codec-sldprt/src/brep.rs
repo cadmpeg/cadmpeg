@@ -39,6 +39,7 @@ pub(crate) mod evaluation;
 mod fit;
 mod index;
 mod intersection;
+mod mesh;
 mod offset;
 pub(crate) mod read_ledger;
 mod sp_curve;

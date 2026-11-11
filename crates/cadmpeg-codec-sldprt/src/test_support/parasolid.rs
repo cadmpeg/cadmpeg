@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 pub(crate) mod construction_curve;
+pub(crate) mod mesh;
 pub(crate) mod sequence;
 pub(crate) mod wide;
 
