@@ -46,6 +46,17 @@ pub(super) enum ProfileAxis {
 }
 
 impl MarkerTransform {
+    pub(super) fn identity() -> Self {
+        Self {
+            axes: Axes::Aligned {
+                swap: false,
+                u: Sign::Positive,
+                v: Sign::Positive,
+            },
+            translation: (0, 0),
+        }
+    }
+
     pub(super) fn apply_axes(self, point: impl Into<GridPoint>) -> Option<(i64, i64)> {
         let point = point.into().cells()?;
         match self.axes {

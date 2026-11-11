@@ -1043,3 +1043,27 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Known.** `parasolid.md` §3 defines the type-201 MESH field list and the reciprocal MESH/FACE link through SHELL to BODY. A MESH node can carry null `psm_imesh`, `pff_imesh`, and `rcv_key` pointers with a positive `rcv_index`. The same partition section can contain a separate `: MESH FILE` stream with type-189 PSM_MESH nodes, type-191 integer combs, type-193 vector combs, and their typed teeth. PSM_MESH owner pointers can be null. Its pool and index fields link to comb records; comb teeth arrays link to typed value arrays. The IR admits indexed triangle tessellations with body and face references, and polygonal support surfaces with a chordal-deflection bound. The decoder reports the distinct mesh-body count with `sldprt/geometry.mesh-body-not-transferred` and retains the source image.
 
 **Need.** Establish the cross-stream receive-index mapping, precision and comb encodings, coordinate units, triangle grouping, orientation, and complete per-body ownership. Check each reconstructed mesh against independent body areas and volumes before transfer.
+
+### SF-01. Top principal-plane placement and profile coordinates
+
+**Question.** Which Top reference forms bind profile marker pairs to the matrix, and which matrix direction and coordinate polarity apply?
+
+**Known.** The principal component form with source `3` and selector `2` stores the f64 sequence `[1,0,0,0,0,1,0,-1,0]`, zero translation, and unit scale. A row-major reading gives U=+X, V=-Z, N=+Y. Complete finite-face profile support covers six sketches from one independent design. Seven profiles from two designs have plane-carrier support. The second design has one of twelve sampled points on finite faces; its carrier incidence does not distinguish in-plane polarity. The current Top fallback uses U=+X and N=+Z. A deferred Top component that used an existing Front reference retains its original frame N=-Y and U=-Z. Its marker pairs retain their original projection.
+
+**Need.** Establish profile attachment and coordinate polarity in at least two independent designs. Include complete profile geometry and consumed-feature controls.
+
+**Conflict.** The candidate matrix reading and the current fallback select different normal axes.
+
+**Note.** Eight tested extrude profiles are empty and one has unsupported geometry. Their final-body checks remain unavailable.
+
+### SF-02. Right component ownership and profile coordinates
+
+**Question.** Which field distinguishes a sketch support-plane component from a reference to another plane within the sketch object?
+
+**Known.** A profile context can contain a declared plane source and a Right component with another source. The complete component matrix identifies its referenced frame. The existing profile binding remains selected when the component source conflicts with it.
+
+**Need.** Establish component ownership and the profile coordinate rule from explicit fields. Preserve prior carrier incidence across independent designs.
+
+**Conflict.** Selecting the component through interval enclosure changes a public fixture's complete carrier support from eighteen sampled points to sixteen. A scoped component mapping gains carrier support in three designs and changes another profile from three carrier hits to two.
+
+**Note.** Top and Right component mappings retain their current interpretation. Their existing scoped and lane Front fallback retains its original frame.

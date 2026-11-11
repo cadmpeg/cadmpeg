@@ -153,6 +153,7 @@ fn indexed_profile_frames_resolve_each_record_interval() {
         class_offsets: Vec::new(),
         declared: Vec::new(),
         components: (0..records).map(|i| (i * width, 7)).collect(),
+        deferred_principal_components: Vec::new(),
         component_frames: (0..records).map(|i| (i * width, frame)).collect(),
     };
     for i in 0..1000 {
@@ -168,7 +169,7 @@ fn indexed_profile_frames_resolve_each_record_interval() {
 
 #[test]
 fn indexed_component_frames_keep_complete_boundaries_and_ambiguity() {
-    let first = principal_sketch_frame(PrincipalPlane::Top);
+    let first = principal_sketch_frame(PrincipalPlane::Right);
     let second = principal_sketch_frame(PrincipalPlane::Front);
     let width = super::COMPACT_COMPONENT_PLANE_RECORD_LEN;
     let index = CompactReferencePlaneIndex {
@@ -176,6 +177,7 @@ fn indexed_component_frames_keep_complete_boundaries_and_ambiguity() {
         class_offsets: Vec::new(),
         declared: Vec::new(),
         components: vec![(0, 7), (width, 7), (width * 2, 9)],
+        deferred_principal_components: Vec::new(),
         component_frames: vec![(0, first), (width, first), (width * 2, second)],
     };
     assert_eq!(index.profile_component_frame(0, 0, width - 1), None);
@@ -187,4 +189,33 @@ fn indexed_component_frames_keep_complete_boundaries_and_ambiguity() {
         Some(second)
     );
     assert_eq!(index.profile_component_frame(0, 0, width * 3 + 1), None);
+}
+
+#[test]
+fn front_frame_uses_model_xy_with_positive_z_normal() {
+    let (origin, normal, u_axis) = principal_sketch_frame(PrincipalPlane::Front);
+    assert_eq!(origin, Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(u_axis, Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(normal.cross(u_axis), Vector3::new(0.0, 1.0, 0.0));
+}
+
+#[test]
+fn deferred_principal_planes_retain_existing_frames() {
+    assert_eq!(
+        principal_sketch_frame(PrincipalPlane::Top),
+        (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0)
+        )
+    );
+    assert_eq!(
+        principal_sketch_frame(PrincipalPlane::Right),
+        (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0)
+        )
+    );
 }
