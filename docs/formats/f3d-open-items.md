@@ -2193,3 +2193,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** DR-358 covers compact selections whose curve identities all resolve.
+
+### DR-357. Compact owned Thread option semantics
+
+**Question.** Which compact owned Thread field states the modeled flag? What property does the prefix word encode, and what construction option does the byte `C` encode beyond its owner-reference order?
+
+**Known.** The version-four class-`326/263` compact owned frame has a zero u32 at primary-relative offset 33. The compact marker starts at offset 37, the `6H` token at offset 42, and the designation at offset 46. Construction marker `00 01 00 00 00` has leading offset and length owners; marker `00 02 00 00 00` has trailing offset and length owners. Both trailers repeat the length and offset owner references. Both pitch markers are zero. The selected internal cylinders have the stored minor diameters. The decoder retains these forms and their owner order; the neutral modeled state remains unspecified.
+
+**Need.** Controlled changes to the prefix word and construction option, with complete scope bytes, face orientation, and resulting geometry.
+
+**Conflict.** None.
+
+**Note.** DR-142 covers construction options. DR-205 covers modeled extended-prefix entries.

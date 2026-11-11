@@ -3325,7 +3325,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         | records::feature::thread::DesignThreadForm::StandardLegacy
                         | records::feature::thread::DesignThreadForm::StandardExtended
                         | records::feature::thread::DesignThreadForm::StandardCompact
-                        | records::feature::thread::DesignThreadForm::CompactLegacy => true,
+                        | records::feature::thread::DesignThreadForm::CompactLegacy
+                        | records::feature::thread::DesignThreadForm::CompactOwnersLeading
+                        | records::feature::thread::DesignThreadForm::CompactOwnersTrailing => true,
                     }
                     && construction
                         .face_group_record_indices
@@ -3339,6 +3341,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                         _
                                     )
                                     | records::feature::thread::DesignThreadForm::CompactLegacy
+                                    | records::feature::thread::DesignThreadForm::CompactOwnersLeading
+                                    | records::feature::thread::DesignThreadForm::CompactOwnersTrailing
                             ) {
                                 let Some(reference_ordinal) =
                                     group_ordinal.checked_mul(2).and_then(|ordinal| {

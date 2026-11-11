@@ -9802,6 +9802,35 @@ Parsed by:
 | 183 | 1 | `scope_separator` | `u8` | little | spec | The compact spacing direction form is a 195-byte frame. |
 | 184 | 11 | `scope_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
 
+## `thread_compact_owned_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 46 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact owned Thread prefix has the owner-marked prologue through offset 32. |
+| 11 | 22 | `prologue` | `bytes[22]` | little | spec | The compact owned Thread prefix has the owner-marked prologue through offset 32. |
+| 33 | 4 | `prefix_word` | `u32` | little | spec | The compact owned Thread prefix has the owner-marked prologue through offset 32. |
+| 37 | 5 | `form_marker` | `bytes[5]` | little | spec | The compact owned Thread prefix has the owner-marked prologue through offset 32. |
+| 42 | 4 | `form_token` | `bytes[4]` | little | spec | The compact owned Thread prefix has the owner-marked prologue through offset 32. |
+
+## `thread_owner_extended_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 38 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The owner-marked extended Thread prefix has the owner-marked prologue through offset 32. |
+| 11 | 22 | `prologue` | `bytes[22]` | little | spec | The owner-marked extended Thread prefix has the owner-marked prologue through offset 32. |
+| 33 | 1 | `external_flag` | `u8` | little | spec | The owner-marked extended Thread prefix has the owner-marked prologue through offset 32. |
+| 34 | 4 | `entry_count` | `u32` | little | spec | The owner-marked extended Thread prefix has the owner-marked prologue through offset 32. |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
