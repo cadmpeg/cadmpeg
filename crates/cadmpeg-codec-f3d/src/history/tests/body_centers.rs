@@ -9,6 +9,8 @@ use crate::history_records::{
 /// A closed body of two triangular faces that share their three edges, with
 /// its vertices at `x`, `x + 2` and `x + 1`.
 fn pillow(x: f64) -> AsmHistoricalTopology {
+    use cadmpeg_ir::math::Point3;
+
     let relation = |owner_ref, member_refs: &[i64]| AsmHistoricalRelation {
         owner_ref,
         member_refs: member_refs.to_vec(),
@@ -64,6 +66,27 @@ fn pillow(x: f64) -> AsmHistoricalTopology {
             });
         }
     }
+    topology.edge_samples = [
+        (1000, Point3::new(x, 0., 0.), Point3::new(x + 2., 0., 0.)),
+        (
+            1001,
+            Point3::new(x + 2., 0., 0.),
+            Point3::new(x + 1., 0., 2.),
+        ),
+        (1002, Point3::new(x + 1., 0., 2.), Point3::new(x, 0., 0.)),
+    ]
+    .map(
+        |(edge, start, end)| crate::history_records::AsmHistoricalEdgeSample {
+            edge,
+            interior: Point3::new((start.x + end.x) * 0.5, 0., (start.z + end.z) * 0.5),
+            tangent: None,
+            bounds: Some([
+                Point3::new(start.x.min(end.x), 0., start.z.min(end.z)),
+                Point3::new(start.x.max(end.x), 0., start.z.max(end.z)),
+            ]),
+        },
+    )
+    .to_vec();
     topology
 }
 
@@ -136,6 +159,9 @@ fn an_unbound_feature_reads_the_history_of_the_blob_that_holds_its_outputs() {
         2
     );
     for (feature, expected) in features.iter().zip(["100:1,0,1", "100:11,0,1"]) {
+        assert!(!feature
+            .source_properties
+            .contains_key(&cadmpeg_core::nonblank_literal!("body_centers_incomplete")));
         assert_eq!(
             feature
                 .source_properties
@@ -144,4 +170,161 @@ fn an_unbound_feature_reads_the_history_of_the_blob_that_holds_its_outputs() {
             Some(expected)
         );
     }
+}
+
+fn spline_pillow(cached: bool) -> AsmHistoricalTopology {
+    use cadmpeg_asm::brep::AsmBrep;
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, VertexId};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier};
+
+    let mut topology = pillow(0.0);
+    let mut brep = AsmBrep::default();
+    for (edge, poles) in [
+        (
+            1000,
+            vec![
+                Point3::new(0., 0., 0.),
+                Point3::new(1., 8., 0.),
+                Point3::new(2., 0., 0.),
+            ],
+        ),
+        (1001, vec![Point3::new(2., 0., 0.), Point3::new(1., 0., 2.)]),
+        (1002, vec![Point3::new(1., 0., 2.), Point3::new(0., 0., 0.)]),
+    ] {
+        let degree = if edge == 1000 { 2 } else { 1 };
+        let knots = if degree == 2 {
+            vec![0., 0., 0., 1., 1., 1.]
+        } else {
+            vec![0., 0., 1., 1.]
+        };
+        let geometry = SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(degree, knots, poles, None, false).unwrap(),
+        );
+        let geometry = if cached {
+            CurveGeometry::Procedural {
+                construction: ProceduralCurveId::mint(format!("f3d:test:construction#{edge}"))
+                    .unwrap(),
+                cache: Some(geometry),
+            }
+        } else {
+            CurveGeometry::Solved(geometry)
+        };
+        let id = CurveId::mint(format!("f3d:test:curve#{edge}")).unwrap();
+        brep.curves.push(Curve {
+            id: id.clone(),
+            geometry,
+            parameter_range: None,
+            source_object: None,
+        });
+        brep.edges.push(Edge {
+            id: EdgeId::mint(format!("f3d:test:edge#{edge}")).unwrap(),
+            carrier: EdgeCarrier::new(Some(id), Some([0., 1.])).unwrap(),
+            start: VertexId::mint("f3d:test:vertex#1").unwrap(),
+            end: VertexId::mint("f3d:test:vertex#2").unwrap(),
+            tolerance: None,
+        });
+    }
+    topology.edge_samples = crate::history::edge_samples::historical_edge_samples(&brep).unwrap();
+    topology
+}
+
+#[test]
+fn spline_side_edge_extends_the_body_box_beyond_its_vertices() {
+    use cadmpeg_ir::math::Point3;
+    for cached in [false, true] {
+        let topology = spline_pillow(cached);
+        let index = crate::history::HistoricalBodyIndex::new(&topology);
+        let evidence = index.body_bounds(100, &[1000, 1001, 1002]);
+        let bounds = evidence.bounds.unwrap();
+        assert!(evidence.missing_evidence.is_empty());
+        // The quadratic Bezier has y(t) = 16t(1-t), whose maximum is 4.
+        assert_eq!(bounds, (Point3::new(0., 0., 0.), Point3::new(2., 4., 2.)));
+        assert!(!evidence.exact);
+    }
+}
+
+#[test]
+fn an_incomplete_sample_box_keeps_its_midpoint_in_the_partial_center() {
+    let mut topology = spline_pillow(true);
+    topology
+        .edge_samples
+        .iter_mut()
+        .find(|sample| sample.edge == 1000)
+        .unwrap()
+        .bounds = None;
+    assert_incomplete_center(topology, Some("100:1,2,1"), "edge 1000");
+}
+
+#[test]
+fn an_unsampleable_edge_keeps_the_partial_body_center() {
+    let mut topology = spline_pillow(true);
+    topology.edge_samples.retain(|sample| sample.edge != 1000);
+    assert_incomplete_center(topology, Some("100:1,0,1"), "edge 1000");
+}
+
+#[test]
+fn a_missing_vertex_keeps_the_partial_body_center() {
+    let mut topology = pillow(0.0);
+    topology.point_positions.retain(|point| point.point != 11);
+    assert_incomplete_center(topology, Some("100:1,0,1"), "vertex 1");
+}
+
+#[test]
+fn a_body_without_edge_evidence_has_an_incomplete_center_entry() {
+    let mut topology = pillow(0.0);
+    topology.point_positions.clear();
+    topology.edge_samples.clear();
+    assert_incomplete_center(topology, None, "edge 1000");
+}
+
+fn assert_incomplete_center(topology: AsmHistoricalTopology, expected: Option<&str>, detail: &str) {
+    let scope = scope_between(3, 2);
+    let mut feature = base_feature();
+    feature.id = crate::ids::neutral_feature_id(&scope);
+    feature.native_ref = Some(scope.id.clone());
+    let history = crate::test_support::history::history(
+        "f3d:asm-history#incomplete-edge".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(3, 3, Some(2), topology.clone()),
+            state(2, 2, None, topology),
+        ],
+    );
+    let losses = bind_feature_outputs(
+        std::slice::from_mut(&mut feature),
+        &[scope],
+        &mut [history],
+        &[],
+        &std::collections::HashMap::new(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        feature
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("body_centers"))
+            .map(String::as_str),
+        expected
+    );
+    assert_eq!(
+        feature
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("body_centers_incomplete"))
+            .map(String::as_str),
+        Some("100")
+    );
+    let code = if expected.is_some() {
+        crate::loss::F3dLossCode::HistoricalBodyCenterPartial
+    } else {
+        crate::loss::F3dLossCode::HistoricalBodyBoundsUnresolved
+    };
+    assert!(losses
+        .iter()
+        .any(|note| note.code == code.kind()
+            && (expected.is_none() || note.message.contains(detail))));
 }

@@ -36,6 +36,7 @@ fn midpoint_history(id: &str, x: f64) -> crate::history_records::AsmHistory {
     let input = AsmHistoricalTopology {
         edges: vec![10],
         edge_samples: vec![AsmHistoricalEdgeSample {
+            bounds: None,
             edge: 10,
             interior: cadmpeg_ir::math::Point3::new(x, 0.0, 0.0),
             tangent: None,
@@ -350,6 +351,7 @@ fn edge_midpoints_preserve_explicit_edge_selections_without_deleted_edge_fallbac
     crate::test_support::history::edit(&mut history, 2, |topology, _| {
         topology.edges = vec![99];
         topology.edge_samples = vec![crate::history_records::AsmHistoricalEdgeSample {
+            bounds: None,
             edge: 99,
             interior: cadmpeg_ir::math::Point3::new(5.0, 0.0, 0.0),
             tangent: None,

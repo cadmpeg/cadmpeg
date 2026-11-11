@@ -22,6 +22,7 @@ mod combine_selection;
 pub(crate) mod compact_lineage;
 mod delete_face;
 pub(crate) mod edge_flange;
+mod edge_samples;
 pub(crate) mod face_admission;
 mod face_recipe;
 mod fallback_face;
@@ -656,6 +657,12 @@ pub(crate) fn projection_was_finalized(histories: &[AsmHistory]) -> bool {
         })
 }
 
+struct HistoricalBounds {
+    bounds: Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3)>,
+    exact: bool,
+    missing_evidence: Vec<String>,
+}
+
 /// The keyed rows that decide the solidity and extent of one state's bodies.
 struct HistoricalBodyIndex<'a> {
     body_regions: KeyedRows<'a, AsmHistoricalRelation>,
@@ -858,13 +865,10 @@ impl<'a> HistoricalBodyIndex<'a> {
     /// The box of a solid `body` from its `edges`, and whether that box is
     /// exact: every edge is a proven segment or circular arc and every face a
     /// plane or a cylinder.
-    fn body_bounds(
-        &self,
-        body: i64,
-        edges: &[i64],
-    ) -> Option<((cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3), bool)> {
-        let bounds = self.edge_bounds(edges)?;
-        let exact = self.faces_bound_by_edges(body)
+    fn body_bounds(&self, body: i64, edges: &[i64]) -> HistoricalBounds {
+        let mut bounds = self.edge_bounds(edges);
+        bounds.exact = bounds.missing_evidence.is_empty()
+            && self.faces_bound_by_edges(body)
             && edges.iter().all(|&edge| {
                 let Some(row) = self.edges.get(edge) else {
                     return false;
@@ -880,7 +884,7 @@ impl<'a> HistoricalBodyIndex<'a> {
                         && (row.start_vertex == row.end_vertex
                             || self.edge_samples.get(edge).is_some()))
             });
-        Some((bounds, exact))
+        bounds
     }
 
     fn has_complete_solid_topology(&self, body: i64) -> bool {
@@ -957,46 +961,74 @@ impl<'a> HistoricalBodyIndex<'a> {
 
     /// The box of the edges: their vertices, their interior samples, and
     /// the axis extremes of every proven circular arc among them.
-    fn edge_bounds(
-        &self,
-        edges: &[i64],
-    ) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3)> {
+    fn edge_bounds(&self, edges: &[i64]) -> HistoricalBounds {
         let mut points = Vec::new();
-        for edge in edges.iter().filter_map(|&edge| self.edges.get(edge)) {
+        let mut missing_evidence = Vec::new();
+        for &edge_id in edges {
+            let Some(edge) = self.edges.get(edge_id) else {
+                missing_evidence.push(format!("edge {edge_id} has no topology"));
+                continue;
+            };
             let start = self.vertex_position(edge.start_vertex);
             let end = self.vertex_position(edge.end_vertex);
-            let interior = self
-                .edge_samples
-                .get(edge.edge)
-                .map(|sample| sample.interior)
-                .filter(|pos| pos.x.is_finite() && pos.y.is_finite() && pos.z.is_finite());
-            points.extend(start);
-            points.extend(end);
-            points.extend(interior);
-            if let (Some(start), Some(end)) = (start, end) {
-                if let Some((center, normal, radius)) = self.circle_edge(edge.edge, start) {
-                    let closed = edge.start_vertex == edge.end_vertex;
-                    points.extend(circle_arc_extremes(
-                        center, normal, radius, start, interior, end, closed,
-                    ));
+            for (vertex, position) in [(edge.start_vertex, start), (edge.end_vertex, end)] {
+                if position.is_none() {
+                    missing_evidence
+                        .push(format!("edge {edge_id} vertex {vertex} has no position"));
                 }
             }
+            let sample = self.edge_samples.get(edge_id);
+            let interior = sample.map(|sample| sample.interior);
+            let circle = start.and_then(|start| self.circle_edge(edge_id, start));
+            let closed = edge.start_vertex == edge.end_vertex;
+            let sampled_bounds = sample.and_then(|sample| sample.bounds);
+            let arc_resolved = circle.is_some() && (closed || interior.is_some());
+            let segment = start
+                .zip(end)
+                .is_some_and(|(start, end)| self.line_edge(edge_id, start, end));
+            if sampled_bounds.is_none() && !segment && !arc_resolved {
+                missing_evidence.push(format!("edge {edge_id} has no complete interval samples"));
+            }
+            let mut edge_points = Vec::new();
+            edge_points.extend(start);
+            edge_points.extend(end);
+            edge_points.extend(interior);
+            edge_points.extend(sampled_bounds.into_iter().flatten());
+            if let (Some((center, normal, radius)), Some(start), Some(end)) = (circle, start, end) {
+                edge_points.extend(circle_arc_extremes(
+                    center, normal, radius, start, interior, end, closed,
+                ));
+            }
+            if edge_points
+                .iter()
+                .any(|p| !p.x.is_finite() || !p.y.is_finite() || !p.z.is_finite())
+            {
+                missing_evidence.push(format!("edge {edge_id} has nonfinite samples"));
+                edge_points.retain(|p| p.x.is_finite() && p.y.is_finite() && p.z.is_finite());
+            }
+            points.extend(edge_points);
         }
-        let first = *points.first()?;
-        let (mut low, mut high) = (first, first);
-        for point in points {
-            low = cadmpeg_ir::math::Point3::new(
-                low.x.min(point.x),
-                low.y.min(point.y),
-                low.z.min(point.z),
-            );
-            high = cadmpeg_ir::math::Point3::new(
-                high.x.max(point.x),
-                high.y.max(point.y),
-                high.z.max(point.z),
-            );
+        let bounds = points.first().copied().map(|first| {
+            points.iter().fold((first, first), |(low, high), point| {
+                (
+                    cadmpeg_ir::math::Point3::new(
+                        low.x.min(point.x),
+                        low.y.min(point.y),
+                        low.z.min(point.z),
+                    ),
+                    cadmpeg_ir::math::Point3::new(
+                        high.x.max(point.x),
+                        high.y.max(point.y),
+                        high.z.max(point.z),
+                    ),
+                )
+            })
+        });
+        HistoricalBounds {
+            bounds,
+            exact: false,
+            missing_evidence,
         }
-        Some((low, high))
     }
 
     fn body_faces(&self, body: i64) -> Option<BTreeSet<i64>> {
@@ -1248,6 +1280,7 @@ pub(crate) fn bind_feature_outputs(
     let mut state_solid_bodies = HashMap::<(usize, i64), BTreeSet<i64>>::new();
     let mut state_body_centers =
         HashMap::<(usize, i64), Vec<(i64, cadmpeg_ir::math::Point3)>>::new();
+    let mut state_incomplete_body_centers = HashMap::<(usize, i64), BTreeSet<i64>>::new();
     let mut state_exact_bodies = HashMap::<(usize, i64), BTreeSet<i64>>::new();
     let mut state_body_bounds = HashMap::<
         (usize, i64),
@@ -1375,39 +1408,55 @@ pub(crate) fn bind_feature_outputs(
                 let mut vertices_map = BTreeMap::new();
                 let mut body_faces_map = BTreeMap::new();
                 for (&b, edges) in &solid_edges {
-                    if let Some((vpos, bds, exact, faces)) = body_index
+                    let evidence = body_index.body_bounds(b, edges);
+                    let complete_topology = body_index
                         .has_complete_solid_topology(b)
                         .then(|| {
-                            let vpos = body_index.edge_vertex_positions(edges)?;
-                            let (bds, exact) = body_index.body_bounds(b, edges)?;
-                            let faces = body_index.body_faces(b)?;
-                            Some((vpos, bds, exact, faces))
+                            Some((
+                                body_index.edge_vertex_positions(edges)?,
+                                body_index.body_faces(b)?,
+                            ))
                         })
-                        .flatten()
+                        .flatten();
+                    let topology_complete = complete_topology.is_some();
+                    if !topology_complete
+                        || !evidence.missing_evidence.is_empty()
+                        || evidence.bounds.is_none()
                     {
-                        vertices_map.insert(b, vpos);
-                        bounds_list.push((b, bds));
-                        center_bounds_list.push((b, bds));
-                        if exact {
-                            exact_bodies.insert(b);
+                        state_incomplete_body_centers
+                            .entry(state_key)
+                            .or_default()
+                            .insert(b);
+                    }
+                    if let Some(bds) = evidence.bounds {
+                        if let Some((vpos, faces)) = complete_topology {
+                            vertices_map.insert(b, vpos);
+                            bounds_list.push((b, bds));
+                            body_faces_map.insert(b, faces);
+                            if evidence.exact {
+                                exact_bodies.insert(b);
+                            }
                         }
-                        body_faces_map.insert(b, faces);
-                    } else if let Some((bds, _)) = body_index.body_bounds(b, edges) {
                         if output_states.contains(&state_key) {
                             center_bounds_list.push((b, bds));
-                            losses.push(
-                                crate::loss::F3dLossCode::HistoricalBodyCenterPartial.note(format!(
-                                    "historical solid body {b} uses incomplete topology or vertex evidence for its center in state {cur_state_id}"
-                                )),
-                            );
+                            if !topology_complete || !evidence.missing_evidence.is_empty() {
+                                let detail = if evidence.missing_evidence.is_empty() {
+                                    "incomplete topology".to_owned()
+                                } else {
+                                    evidence.missing_evidence.join("; ")
+                                };
+                                losses.push(
+                                    crate::loss::F3dLossCode::HistoricalBodyCenterPartial.note(format!(
+                                        "historical solid body {b} uses partial center bounds in state {cur_state_id}: {detail}"
+                                    )),
+                                );
+                            }
                         }
                     } else {
                         losses.push(
-                            crate::loss::F3dLossCode::HistoricalBodyBoundsUnresolved.note(
-                                format!(
-                                    "historical solid body {b} has unresolved bounds in state {cur_state_id}"
-                                ),
-                            ),
+                            crate::loss::F3dLossCode::HistoricalBodyBoundsUnresolved.note(format!(
+                                "historical solid body {b} has unresolved bounds in state {cur_state_id}"
+                            )),
                         );
                     }
                 }
@@ -1745,6 +1794,23 @@ pub(crate) fn bind_feature_outputs(
                 .source_properties
                 .entry(cadmpeg_core::nonblank_literal!("edge_midpoints"))
                 .or_insert(formatted);
+        }
+        if let Some(bodies) = cur_key.and_then(|k| state_incomplete_body_centers.get(&k)) {
+            let unresolved = bodies
+                .iter()
+                .filter(|b| {
+                    !history_absorbed.is_some_and(|ab| ab.contains(b))
+                        && !newly_absorbed.contains(*b)
+                })
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(";");
+            if !unresolved.is_empty() {
+                feature
+                    .source_properties
+                    .entry(cadmpeg_core::nonblank_literal!("body_centers_incomplete"))
+                    .or_insert(unresolved);
+            }
         }
         if let Some(centers) = cur_key.and_then(|k| state_body_centers.get(&k)) {
             let formatted = centers
@@ -9647,7 +9713,7 @@ fn historical_topology(
                 })
             })
             .collect::<Option<Vec<_>>>()),
-        edge_samples: historical_edge_samples(brep)?,
+        edge_samples: edge_samples::historical_edge_samples(brep)?,
     };
     // Transitions diff each family in key order. The decoder appends the
     // containers it builds for saved free edges after the containers it walks,
@@ -9667,64 +9733,6 @@ fn historical_topology(
         family.sort_by_key(|relation| relation.owner_ref);
     }
     Ok(Some(topology))
-}
-
-/// Sample each edge's solved carrier at the midpoint of its parameter interval.
-///
-/// An edge without a bounded solved carrier, or whose carrier has no finite
-/// point there, has no sample. A resource refusal of the evaluator ends the
-/// sampling.
-fn historical_edge_samples(
-    brep: &cadmpeg_asm::brep::AsmBrep,
-) -> Result<Vec<crate::history_records::AsmHistoricalEdgeSample>, cadmpeg_core::decode::ResourceLimit>
-{
-    use cadmpeg_ir::eval::admission::EvaluationAdmission;
-    use cadmpeg_ir::eval::finite_or_refusal;
-    use cadmpeg_ir::geometry::CurveGeometry;
-
-    let curves = brep
-        .curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), &curve.geometry))
-        .collect::<HashMap<_, _>>();
-    let mut samples = Vec::new();
-    for edge in &brep.edges {
-        let Some([start, end]) = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get)
-        else {
-            continue;
-        };
-        let Some(CurveGeometry::Solved(geometry)) =
-            edge.curve().and_then(|curve| curves.get(curve.as_str()))
-        else {
-            continue;
-        };
-        let Some(edge_ref) = stable_ref(edge.id.as_str()) else {
-            continue;
-        };
-        let parameter = 0.5 * (start + end);
-        let Some(interior) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_solved(
-            EvaluationAdmission::Standard,
-            geometry,
-            parameter,
-        ))?
-        else {
-            continue;
-        };
-        let tangent = finite_or_refusal(cadmpeg_ir::eval::curve_tangent_solved(
-            EvaluationAdmission::Standard,
-            geometry,
-            parameter,
-        ))?
-        .and_then(|tangent| cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(tangent.get()))
-        .map(|tangent| *tangent.as_raw());
-        samples.push(crate::history_records::AsmHistoricalEdgeSample {
-            edge: edge_ref,
-            interior: interior.get(),
-            tangent,
-        });
-    }
-    samples.sort_by_key(|sample| sample.edge);
-    Ok(samples)
 }
 
 pub(crate) fn historical_topology_with_tags(

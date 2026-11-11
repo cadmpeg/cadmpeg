@@ -1098,6 +1098,7 @@ fn historical_partial_and_native_edge_selections_test() {
         ..Default::default()
     };
     state0_topo.edge_samples.push(AsmHistoricalEdgeSample {
+        bounds: None,
         edge: 10,
         interior: Point3::new(1.0, 0.0, 0.0),
         tangent: None,

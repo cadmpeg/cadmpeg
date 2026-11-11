@@ -214,6 +214,7 @@ fn capped_blend(cylinder: bool) -> (AsmHistoricalTopology, AsmHistoricalTopology
             direction,
         });
         preceding.edge_samples.push(AsmHistoricalEdgeSample {
+            bounds: None,
             edge,
             interior: Point3::new(0.0, 0.0, 0.0),
             tangent: Some(direction),
