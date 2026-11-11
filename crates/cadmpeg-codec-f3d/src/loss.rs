@@ -163,6 +163,9 @@ pub(crate) enum F3dLossCode {
     AssemblyOperandDescentAmbiguous,
     /// A complete joint occurrence path has no unique merged insertion instance.
     AssemblyOperandDescentUnresolved,
+    /// A joint operand path continues inside an unmerged inserted document; the
+    /// remaining keys stay a nested occurrence path.
+    AssemblyOperandNestedPathRetained,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
     /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
@@ -739,6 +742,7 @@ impl F3dLossCode {
         Self::AssemblyRootPathIdentitiesNative,
         Self::AssemblyOperandDescentAmbiguous,
         Self::AssemblyOperandDescentUnresolved,
+        Self::AssemblyOperandNestedPathRetained,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryBindingWorkExceeded,
@@ -1072,6 +1076,7 @@ impl F3dLossCode {
             Self::AssemblyRootPathIdentitiesNative => "assembly.root-path-identities-native",
             Self::AssemblyOperandDescentAmbiguous => "assembly.operand-descent-ambiguous",
             Self::AssemblyOperandDescentUnresolved => "assembly.operand-descent-unresolved",
+            Self::AssemblyOperandNestedPathRetained => "assembly.operand-nested-path-retained",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
@@ -1480,6 +1485,7 @@ impl F3dLossCode {
             | Self::AssemblyJointActivationAssumed
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
+            | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::DrawingDocumentOmitted
@@ -1929,6 +1935,7 @@ impl F3dLossCode {
             | Self::AssemblyJointActivationAssumed
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
+            | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::HistoryOnlyBodyOmitted => LossTaxonomy::FeatureHistoryRetained,
@@ -2122,6 +2129,7 @@ mod tests {
                 "assembly.root-path-identities-native",
                 "assembly.operand-descent-ambiguous",
                 "assembly.operand-descent-unresolved",
+                "assembly.operand-nested-path-retained",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",

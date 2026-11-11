@@ -153,6 +153,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
             occurrence_identity: Some(17),
             neutron_role: "cccccccc-dddd-eeee-ffff-000000000000".into(),
             neutron_role_offset: 259,
+            occurrence_key: None,
             placement: None,
         });
     }
