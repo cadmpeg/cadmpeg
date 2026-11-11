@@ -2573,18 +2573,28 @@ pub(crate) fn decode_bodies(
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     let mut site = scan_site(ctx, bodies, &mut |_| {})?;
-    decode_graph(
+    let mut decoded = decode_graph(
         ctx,
         &mut site.carriers,
         &site.tables,
         site.facts,
         &site.typed_facts,
         stream,
-    )
+    )?;
+    if !site.mesh_bodies.is_empty() {
+        decoded.losses.push(crate::loss::SldprtLossCode::GeometryMeshBodyNotTransferred.note(
+            format!(
+                "{} mesh body/bodies have Parasolid MESH face support; facet positions and triangle ownership remain unresolved. Mesh geometry is withheld.",
+                site.mesh_bodies.len(),
+            ),
+        ));
+    }
+    Ok(decoded)
 }
 
 /// The merged record state of one site.
 struct SiteState {
+    mesh_bodies: HashSet<u32>,
     carriers: CarrierIndex,
     tables: topology::Tables,
     facts: entity::Facts,
@@ -2649,6 +2659,7 @@ fn scan_site(
     let mut node_attributes = Vec::new();
     let mut deltas_typed = Vec::new();
     let mut deltas_blends = Vec::new();
+    let mut mesh_bodies = HashSet::new();
     for (((payload, header), (body, prefixed)), deltas) in
         ordered.iter().zip(&entity_streams).zip(&deltas_records)
     {
@@ -2656,6 +2667,7 @@ fn scan_site(
             .then(|| topology::nodes::sequence(payload))
             .flatten()
             .and_then(|records| {
+                mesh_bodies.extend(super::mesh::bodies(&records));
                 let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
                 let mut lane_refusals = Vec::new();
                 let splines = super::spline::nodes::carriers(
@@ -2917,6 +2929,7 @@ fn scan_site(
         }
     }
     Ok(SiteState {
+        mesh_bodies,
         carriers,
         tables,
         facts,
