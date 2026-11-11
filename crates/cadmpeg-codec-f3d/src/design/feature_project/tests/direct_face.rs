@@ -36,6 +36,8 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
                 outward: true,
                 outward_offset: 0,
                 wall_slots: None,
+                prefix_flag: None,
+                auxiliary_references: Vec::new(),
             });
         }
         _ => panic!("unsupported direct-face scope fixture"),
@@ -285,6 +287,73 @@ fn a_shell_without_wall_slots_states_no_corners() {
     };
     assert_eq!(outward, Some(true));
     assert_eq!(join, None);
+}
+
+fn with_table(mut scope: DesignParameterScope, table: Vec<u32>) -> DesignParameterScope {
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(table);
+            draft.frame_length = 256;
+            draft.paired_byte_offset = 256;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope
+}
+
+#[test]
+fn a_shell_table_of_face_group_wall_and_members_reports_no_loss() {
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let scope = with_table(scope(DesignFeatureKind::Shell), vec![100, 300, 200]);
+    assert_eq!(
+        super::super::shell_table_member_loss(&scope, std::slice::from_ref(&group)),
+        None
+    );
+}
+
+#[test]
+fn a_shell_table_reference_outside_the_face_group_keeps_the_shell_and_reports_it() {
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let scope = with_table(scope(DesignFeatureKind::Shell), vec![100, 300, 200, 400]);
+    let loss = super::super::shell_table_member_loss(&scope, std::slice::from_ref(&group)).unwrap();
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::FeatureShellTableMembersAssumed.kind()
+    );
+    assert!(
+        loss.message
+            .contains("ordered references [200, 400] besides face group 100 and wall scalar 300"),
+        "{}",
+        loss.message
+    );
+    assert!(loss.message.contains("members [200]"), "{}", loss.message);
+    let FeatureOperation::Shell {
+        removed_faces,
+        thickness,
+        outward,
+        ..
+    } = projected_operation(super::super::project_shell(
+        &scope,
+        &[],
+        std::slice::from_ref(&group),
+    ))
+    else {
+        panic!("expected a shell");
+    };
+    assert_eq!(removed_faces, FaceSelection::Native(group.id.clone()));
+    assert_eq!(thickness.unwrap().get(), 5.0);
+    assert_eq!(outward, Some(true));
+}
+
+#[test]
+fn a_cornered_shell_table_takes_no_member_comparison() {
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let scope = with_table(wall_slot_scope(0.2, None, false), vec![100, 200, 400, 300]);
+    assert_eq!(
+        super::super::shell_table_member_loss(&scope, std::slice::from_ref(&group)),
+        None
+    );
 }
 
 fn move_face_scope(transform: [[f64; 4]; 4]) -> DesignParameterScope {

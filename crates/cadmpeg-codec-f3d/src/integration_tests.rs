@@ -26,6 +26,7 @@ mod reference_rows;
 mod scene;
 mod sketch_regions;
 mod tracking_path_headers;
+mod treatment_losses;
 mod work_planes;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -707,3 +708,5 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
 }
 
 mod dimension_annotations;
+
+mod stale_region_certificate;

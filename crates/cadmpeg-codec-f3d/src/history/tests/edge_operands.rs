@@ -107,6 +107,81 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
 }
 
 #[test]
+fn a_rebind_that_stops_before_the_transition_clears_its_deleted_edges() {
+    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
+        serde_json::from_value(serde_json::json!({
+            "id": format!("{stream}:design-edge-operand#20"),
+            "scope_record_index": 10,
+            "scope_reference_ordinal": 0,
+            "record_index": 20,
+            "byte_offset": 0,
+            "class_tag": "297",
+            "paired_byte_offset": 16,
+            "paired_class_tag": "259",
+            "recipe_record_index": 23,
+            "recipe_record_byte_offset": 32,
+            "recipe_id": format!("{stream}:construction-recipe#23"),
+            "recipe_prefix_offset": 43,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_program_offset": 0,
+            "recipe_program": [],
+            "changed_boundary_edge_slots": [],
+            "deleted_boundary_edge_slots": [],
+            "transition_deleted_edge_slots": [17],
+            "next_record_index": 24,
+            "next_byte_offset": 160
+        }))
+        .expect("edge operand");
+    assert_eq!(operand.transition_deleted_edge_slots, [17]);
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![(
+            AsmDeltaState {
+                id: "f3d:history:state#1".into(),
+                parent: "f3d:history".into(),
+                byte_offset: 0,
+                state_id: 1,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 1,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology {
+                edges: vec![17],
+                ..AsmHistoricalTopology::default()
+            }),
+            Vec::new(),
+        )],
+    );
+
+    // No scope owns the operand, so binding stops before any transition is
+    // read; the list from an earlier binding must not survive.
+    bind_edge_operand_history_candidates(
+        std::slice::from_mut(&mut operand),
+        &[],
+        &[],
+        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        &HashMap::new(),
+    )
+    .unwrap();
+
+    assert!(operand.transition_deleted_edge_slots.is_empty());
+}
+
+#[test]
 fn primary_reference_edges_bind_in_the_named_input_topology() {
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalCoedge, AsmHistoricalPersistentSubentityTag,
@@ -552,7 +627,7 @@ fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_inf
     };
     let resolve = |references: &[DesignRecipeReference], candidate_edges: &[i64]| {
         let mut queries = crate::history::topology_cache::TopologyQueryCache::default();
-        crate::history::side_one_reference_face_edge(
+        crate::history::reference_face::side_one_reference_face_edge(
             Some(&structure),
             references,
             candidate_edges,
@@ -567,8 +642,6 @@ fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_inf
     // support faces alone still read it, as an inference.
     assert_eq!(resolve(&both, &[30, 32]), Some((31, true)));
     assert_eq!(resolve(&both, &[]), Some((31, true)));
-    // An operand whose names supply two faces names no single face; one
-    // whose first name supplies none takes its face from a later name.
     let lane = [
         reference(1, Some(10)),
         reference(2, Some(10)),

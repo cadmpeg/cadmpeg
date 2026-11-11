@@ -101,6 +101,9 @@ pub(crate) struct Axis {
 pub(crate) struct NurbsChart<'ir> {
     pub(crate) surface: &'ir NurbsSurface,
     pub(crate) placement: Placement,
+    pub(crate) evaluation: Option<&'ir SurfaceId>,
+    pub(crate) offset_reach: f64,
+    pub(crate) column_offset: Option<f64>,
     /// The `u` and `v` knot domains.
     pub(crate) domain: [[f64; 2]; 2],
     pub(crate) periods: [Option<f64>; 2],
@@ -216,6 +219,9 @@ impl<'ir> NurbsChart<'ir> {
         Some(Self {
             surface,
             placement,
+            evaluation: None,
+            offset_reach: 0.0,
+            column_offset: None,
             domain: [u, v],
             periods: [
                 surface.u_periodic().then_some(u[1] - u[0]),
@@ -224,14 +230,77 @@ impl<'ir> NurbsChart<'ir> {
         })
     }
 
+    pub(crate) fn closed_domain(&self, tolerance: f64) -> bool {
+        let counts = [self.surface.u_count(), self.surface.v_count()];
+        let degrees = [self.surface.u_degree(), self.surface.v_degree()];
+        let knots = [
+            self.surface.u_knots().as_slice(),
+            self.surface.v_knots().as_slice(),
+        ];
+        for axis in 0..2 {
+            if self.periods[axis].is_some() {
+                continue;
+            }
+            let Ok(degree) = usize::try_from(degrees[axis]) else {
+                return false;
+            };
+            if knots[axis]
+                .get(..=degree)
+                .is_none_or(|head| head.iter().any(|knot| *knot != self.domain[axis][0]))
+                || knots[axis]
+                    .get(counts[axis]..)
+                    .is_none_or(|tail| tail.iter().any(|knot| *knot != self.domain[axis][1]))
+            {
+                return false;
+            }
+            let pole = |side: usize, index: usize| {
+                let [u, v] = if axis == 0 {
+                    [side, index]
+                } else {
+                    [index, side]
+                };
+                let point = self.placement.point(self.surface.pole(u, v)?.get());
+                let weight = self
+                    .surface
+                    .weight(u, v)
+                    .map_or(1.0, cadmpeg_ir::scalar::NonZeroReal::get);
+                (weight > 0.0).then_some((point, weight))
+            };
+            let last = counts[axis] - 1;
+            let width = counts[1 - axis];
+            let same = |a: Point3, b: Point3| a.distance(b) <= tolerance;
+            let seam = (0..width).all(|index| match (pole(0, index), pole(last, index)) {
+                (Some((a, w)), Some((b, v))) => w == v && same(a, b),
+                _ => false,
+            });
+            let collapsed = |side| {
+                let Some((origin, _)) = pole(side, 0) else {
+                    return false;
+                };
+                (0..width)
+                    .all(|index| pole(side, index).is_some_and(|(point, _)| same(origin, point)))
+            };
+            if !(seam || collapsed(0) && collapsed(last)) {
+                return false;
+            }
+        }
+        true
+    }
+
     fn partials(&self, eval: &Eval<'_, '_>, u: f64, v: f64) -> Measure<Partials> {
-        let local = eval.work.evaluate(eval.ctx, |admission| {
-            cadmpeg_ir::eval::nurbs_surface_partials(admission, self.surface, u, v)
-        })?;
+        let local = eval
+            .work
+            .evaluate(eval.ctx, |admission| match self.evaluation {
+                Some(surface) => cadmpeg_ir::eval::model_surface_partials_by_id(
+                    admission, eval.index, surface, u, v,
+                ),
+                None => cadmpeg_ir::eval::nurbs_surface_partials(admission, self.surface, u, v),
+            })?;
+        let placement = self.placement;
         Ok(Partials {
-            point: self.placement.point(local.point.get()),
-            du: self.placement.vector(local.du.get()),
-            dv: self.placement.vector(local.dv.get()),
+            point: placement.point(local.point.get()),
+            du: placement.vector(local.du.get()),
+            dv: placement.vector(local.dv.get()),
         })
     }
 
@@ -253,7 +322,7 @@ impl<'ir> NurbsChart<'ir> {
             self.surface,
             local,
             seed.map(|[u, v]| Point2::new(u, v)),
-            tolerance / self.placement.scale,
+            (tolerance + self.offset_reach) / self.placement.scale,
             eval.work.slice(),
         )?;
         let Some(found) = found else {
@@ -317,7 +386,15 @@ impl NurbsChart<'_> {
                 None => hull = Some(Aabb::of_point(point)),
             }
         }
-        hull.ok_or(UnavailableReason::BboxInteriorUnbounded)
+        let mut hull = hull.ok_or(UnavailableReason::BboxInteriorUnbounded)?;
+        for axis in 0..3 {
+            hull.min[axis] -= self.offset_reach;
+            hull.max[axis] += self.offset_reach;
+            if !hull.min[axis].is_finite() || !hull.max[axis].is_finite() {
+                return Err(UnavailableReason::BboxInteriorUnbounded);
+            }
+        }
+        Ok(hull)
     }
 
     /// The knots of the `v` direction.
@@ -932,3 +1009,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod closure_tests;

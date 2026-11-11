@@ -840,7 +840,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ];
     let mut indexed_scope = scope.clone();
     if let DesignScopePayloadMut::Fillet(slot) = indexed_scope.payload_mut() {
-        *slot = Some(DesignFixedFilletParameters {
+        slot.fixed = Some(DesignFixedFilletParameters {
             groups: vec![DesignFixedFilletGroup::try_new(
                 Some(DesignFixedFilletScalar {
                     value: crate::test_support::real(1.0),
@@ -1841,6 +1841,7 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
                     &scope,
                     &parameters,
                     "f3d:native",
+                    &mut Vec::new(),
                 )
             }),
             Ok(FeatureDefinition::Operation(

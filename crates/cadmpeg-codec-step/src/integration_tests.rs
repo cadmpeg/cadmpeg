@@ -2,6 +2,7 @@
 //! Integration contracts over synthesized STEP Part 21 exchanges.
 
 mod assembly_bodies;
+mod closed_faces;
 mod declared_measures;
 mod partial_geometry;
 mod tolerance_zones;
@@ -264,3 +265,5 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
 }
 
 mod dimension_limits;
+
+mod near_coincident_edges;

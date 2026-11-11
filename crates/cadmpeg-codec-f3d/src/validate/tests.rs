@@ -29,6 +29,7 @@ use crate::F3dCodec;
 mod act_document_root;
 mod arithmetic;
 mod body_ownership;
+mod chamfer_sets;
 mod component_insert;
 mod component_occurrences;
 mod configurations;
@@ -152,6 +153,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
             occurrence_identity: Some(17),
             neutron_role: "cccccccc-dddd-eeee-ffff-000000000000".into(),
             neutron_role_offset: 259,
+            occurrence_key: None,
             placement: None,
         });
     }
@@ -1957,28 +1959,7 @@ mod rigid_alignment;
 
 mod work_plane;
 
-mod loft_roles;
+mod loft_lists;
 mod sketch_point_frames;
-
-#[test]
-fn loft_accepts_either_body_group_role() {
-    use crate::records::feature::extrude::DesignExtrudeOperation;
-    use crate::records::topology::extrude_selection::DesignOperandRole;
-    for body in [DesignOperandRole::BODIES_A, DesignOperandRole::BODIES_B] {
-        let groups = [
-            (body, 1),
-            (DesignOperandRole::PROFILE, 1),
-            (DesignOperandRole::PROFILE, 1),
-        ];
-        assert!(super::loft_operand_roles_are_valid(
-            DesignExtrudeOperation::Join,
-            &groups
-        ));
-        assert!(!super::loft_operand_roles_are_valid(
-            DesignExtrudeOperation::NewBody,
-            &groups
-        ));
-    }
-}
 
 mod profile_curves;

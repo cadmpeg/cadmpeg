@@ -22,6 +22,11 @@ cadmpeg_core::named_optional_field!(
     "secondary_direction"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_distribution,
+    DesignRectangularPatternDistribution,
+    "distribution"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_instances,
     DesignRectangularPatternInstances,
     "instances"
@@ -59,7 +64,16 @@ pub(crate) struct DesignCircularPatternConstruction {
         deserialize_with = "deserialize_axis_separator_flag_offset"
     )]
     pub(crate) axis_separator_flag_offset: Option<u64>,
+    /// Symmetric byte of the pattern payload: the instances lie on both sides of the seed.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_symmetric"
+    )]
+    pub(crate) symmetric: Option<Located<bool>>,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_symmetric, Located<bool>, "symmetric");
 
 cadmpeg_core::named_optional_field!(
     deserialize_axis_separator_flag_offset,
@@ -481,6 +495,19 @@ pub(crate) struct DesignRectangularPatternConstruction {
     /// Direction records in U-then-V order; the payload can supply V.
     directions: Vec<DesignRectangularPatternDirection>,
     secondary_direction: Option<crate::records::identity::Located<[FiniteReal; 3]>>,
+    /// Distribution bytes of the pattern payload.
+    distribution: Option<DesignRectangularPatternDistribution>,
+}
+
+/// Distribution bytes of a rectangular-pattern payload.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignRectangularPatternDistribution {
+    /// Payload record.
+    pub(crate) record_index: u32,
+    /// Direction one places its instances on both sides of the seed.
+    pub(crate) symmetric: Located<bool>,
+    /// Each distance owner stores the seed-to-final-instance extent; adjacent spacing otherwise.
+    pub(crate) total_extent: Located<bool>,
 }
 
 /// Direction record of one active rectangular-pattern direction.
@@ -539,6 +566,7 @@ impl Clone for DesignRectangularPatternConstruction {
             instance_search_cap: self.instance_search_cap,
             directions: self.directions.clone(),
             secondary_direction: self.secondary_direction,
+            distribution: self.distribution,
         }
     }
 }
@@ -559,6 +587,8 @@ struct DesignRectangularPatternConstructionRef<'a> {
     directions: &'a [DesignRectangularPatternDirection],
     #[serde(skip_serializing_if = "Option::is_none")]
     secondary_direction: Option<crate::records::identity::Located<[FiniteReal; 3]>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    distribution: Option<DesignRectangularPatternDistribution>,
 }
 
 impl Serialize for DesignRectangularPatternConstruction {
@@ -574,6 +604,7 @@ impl Serialize for DesignRectangularPatternConstruction {
             instance_search_cap: self.instance_search_cap,
             directions: &self.directions,
             secondary_direction: self.secondary_direction,
+            distribution: self.distribution,
         }
         .serialize(serializer)
     }
@@ -617,6 +648,13 @@ pub(crate) struct DesignRectangularPatternConstructionWire {
         deserialize_with = "deserialize_secondary_direction"
     )]
     pub(crate) secondary_direction: Option<crate::records::identity::Located<[FiniteReal; 3]>>,
+    /// Distribution bytes of the pattern payload.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_distribution"
+    )]
+    pub(crate) distribution: Option<DesignRectangularPatternDistribution>,
 }
 
 impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatternConstruction {
@@ -624,14 +662,14 @@ impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatt
     fn try_from(wire: DesignRectangularPatternConstructionWire) -> Result<Self, Self::Error> {
         let u_count = NonZeroU32::new(wire.u_count).ok_or("u_count must be nonzero")?;
         let v_count = NonZeroU32::new(wire.v_count).ok_or("v_count must be nonzero")?;
-        if u_count.get() == 1 && v_count.get() == 1 {
-            return Err("u_count and v_count must not both be one");
+        if !wire.u_extent.is_finite() || (u_count.get() == 1 && wire.u_extent != 0.0) {
+            return Err("u_extent must be finite and zero when u_count is one");
         }
-        if !wire.u_extent.is_finite() || (u_count.get() == 1) != (wire.u_extent == 0.0) {
-            return Err("u_extent must be finite and zero exactly when u_count is one");
+        if !wire.v_extent.is_finite() || (v_count.get() == 1 && wire.v_extent != 0.0) {
+            return Err("v_extent must be finite and zero when v_count is one");
         }
-        if !wire.v_extent.is_finite() || (v_count.get() == 1) != (wire.v_extent == 0.0) {
-            return Err("v_extent must be finite and zero exactly when v_count is one");
+        if wire.u_extent == 0.0 && wire.v_extent == 0.0 {
+            return Err("one direction must repeat over a nonzero distance");
         }
         let mut record = Self {
             u_count,
@@ -644,6 +682,7 @@ impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatt
             instance_search_cap: None,
             directions: Vec::new(),
             secondary_direction: None,
+            distribution: wire.distribution,
         };
         record.try_set_instances(wire.instances)?;
         if let Some(cap) = wire.instance_search_cap {
@@ -669,6 +708,7 @@ impl From<DesignRectangularPatternConstruction> for DesignRectangularPatternCons
             instance_search_cap: value.instance_search_cap,
             directions: value.directions,
             secondary_direction: value.secondary_direction,
+            distribution: value.distribution,
         }
     }
 }
@@ -712,12 +752,23 @@ impl DesignRectangularPatternConstruction {
         Ok(())
     }
 
-    /// The number of directions whose count exceeds one.
+    /// The number of directions that repeat the seed over a nonzero distance.
     pub(crate) fn active_direction_count(&self) -> usize {
-        [self.u_count, self.v_count]
+        [(self.u_count, self.u_extent), (self.v_count, self.v_extent)]
             .iter()
-            .filter(|count| count.get() > 1)
+            .filter(|(count, extent)| count.get() > 1 && *extent != 0.0)
             .count()
+    }
+
+    pub(crate) fn distribution(&self) -> Option<&DesignRectangularPatternDistribution> {
+        self.distribution.as_ref()
+    }
+
+    pub(crate) fn set_distribution(
+        &mut self,
+        distribution: Option<DesignRectangularPatternDistribution>,
+    ) {
+        self.distribution = distribution;
     }
 
     /// Direction records in U-then-V order; empty when direction binding fails.
@@ -729,10 +780,8 @@ impl DesignRectangularPatternConstruction {
         &mut self,
         directions: Vec<DesignRectangularPatternDirection>,
     ) -> Result<(), &'static str> {
-        if self.secondary_direction.is_some()
-            && (directions.len() != 1 || directions[0].distance_type != 7)
-        {
-            return Err("payload V direction requires one spacing direction record");
+        if self.secondary_direction.is_some() && directions.len() != 1 {
+            return Err("payload V direction requires one U direction record");
         }
         if directions
             .windows(2)
@@ -1047,9 +1096,10 @@ mod tests {
         DesignAxis, DesignCircularPatternAxis, DesignCircularPatternAxisWire,
         DesignPatternAxisWrapper, DesignPatternComponentInstance, DesignPatternInstance,
         DesignRectangularPatternConstruction, DesignRectangularPatternConstructionWire,
-        DesignRectangularPatternInstances, DesignRectangularPatternInstancesWire,
-        RectangularPatternSearchCap, CIRCULAR_PATTERN_AXIS_CLONE_COUNT,
-        RECTANGULAR_PATTERN_CONSTRUCTION_CLONE_COUNT, RECTANGULAR_PATTERN_INSTANCES_CLONE_COUNT,
+        DesignRectangularPatternDistribution, DesignRectangularPatternInstances,
+        DesignRectangularPatternInstancesWire, RectangularPatternSearchCap,
+        CIRCULAR_PATTERN_AXIS_CLONE_COUNT, RECTANGULAR_PATTERN_CONSTRUCTION_CLONE_COUNT,
+        RECTANGULAR_PATTERN_INSTANCES_CLONE_COUNT,
     };
     use crate::records::identity::Located;
     use crate::records::sketch_placement::SketchPlacementMatrix;
@@ -1108,6 +1158,7 @@ mod tests {
             instance_search_cap: None,
             directions: Vec::new(),
             secondary_direction: None,
+            distribution: None,
         }
     }
 
@@ -1269,6 +1320,44 @@ mod tests {
     }
 
     #[test]
+    fn rectangular_pattern_admits_a_coincident_direction() {
+        let wire = |u_count, v_count, u_extent, v_extent| {
+            let mut wire = DesignRectangularPatternConstructionWire::from(construction(None));
+            wire.u_count = u_count;
+            wire.v_count = v_count;
+            wire.u_extent = u_extent;
+            wire.v_extent = v_extent;
+            DesignRectangularPatternConstruction::try_from(wire)
+        };
+        let coincident = wire(3, 3, 2.0, 0.0).expect("coincident second direction");
+        assert_eq!(coincident.active_direction_count(), 1);
+        assert_eq!(wire(3, 2, 2.0, -1.0).unwrap().active_direction_count(), 2);
+        assert!(wire(3, 3, 0.0, 0.0).is_err());
+        assert!(wire(1, 1, 0.0, 0.0).is_err());
+        assert!(wire(3, 1, 2.0, 1.0).is_err());
+
+        let mut wire = DesignRectangularPatternConstructionWire::from(coincident);
+        wire.distribution = Some(DesignRectangularPatternDistribution {
+            record_index: 9,
+            symmetric: Located {
+                value: true,
+                offset: 109,
+            },
+            total_extent: Located {
+                value: false,
+                offset: 158,
+            },
+        });
+        let record = DesignRectangularPatternConstruction::try_from(wire.clone()).unwrap();
+        assert_eq!(record.distribution(), wire.distribution.as_ref());
+        let json = serde_json::to_value(&record).unwrap();
+        assert_eq!(
+            serde_json::from_value::<DesignRectangularPatternConstruction>(json).unwrap(),
+            record
+        );
+    }
+
+    #[test]
     fn rectangular_pattern_capped_instance_search_round_trips_without_instances() {
         let uncapped = construction(None);
         assert!(serde_json::to_value(&uncapped)
@@ -1346,7 +1435,6 @@ mod tests {
         for (field, value) in [
             ("distance_type", 6),
             ("selection_kind", 9),
-            ("distance_type", 8),
             ("selection_kind", 16),
         ] {
             let mut corrupt = encoded.clone();
@@ -1355,6 +1443,11 @@ mod tests {
                 serde_json::from_value::<DesignRectangularPatternConstruction>(corrupt).is_err()
             );
         }
+        let mut span = encoded.clone();
+        span["directions"][0]["distance_type"] = 8.into();
+        span["directions"][0]["selection_kind"] = 16.into();
+        span["directions"][0]["displacement"] = serde_json::json!([0.0, 0.0, 1.0]);
+        assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(span).is_ok());
         let mut zero = encoded.clone();
         zero["secondary_direction"]["value"] = serde_json::json!([0.0, 0.0, 0.0]);
         assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(zero).is_err());

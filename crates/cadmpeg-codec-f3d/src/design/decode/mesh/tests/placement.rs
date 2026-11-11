@@ -7,6 +7,7 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::units::UnitVector3;
 
 const EPS_MESH_NORMAL_ALIGNMENT: f64 = 1.0e-12;
+const PLAIN: crate::records::mesh::MeshBodyLayout = crate::records::mesh::MeshBodyLayout::of(false);
 
 fn mesh_body_payload(cells: [f64; 16]) -> Vec<u8> {
     let mut payload = vec![0; paramesh_mesh_body_join_prefix::FIRST_TRANSFORM];
@@ -21,7 +22,7 @@ fn mesh_body_transform_applies_nonuniform_scale_and_translation() {
     let cells = [
         0.175, 0.0, 0.0, 0.4, 0.0, 0.06, 0.0, 0.7, 0.0, 0.0, 0.125, 0.3, 0.0, 0.0, 0.0, 1.0,
     ];
-    let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("affine map");
+    let transform = mesh_body_transform(&mesh_body_payload(cells), PLAIN).expect("affine map");
     assert_eq!(
         transform
             .transform_point(
@@ -38,8 +39,11 @@ fn reflected_mesh_placement_preserves_triangle_and_corner_order() {
     let cells = [
         -0.5, 0.0, 0.0, 1.0, 0.0, 0.25, 0.0, -2.0, 0.0, 0.0, 2.0, 0.5, 0.0, 0.0, 0.0, 1.0,
     ];
-    let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("reflected map");
+    let transform = mesh_body_transform(&mesh_body_payload(cells), PLAIN).expect("reflected map");
     let container = MeshContainer {
+        split_streams: Vec::new(),
+        history_streams: Vec::new(),
+        face_group_metadata: None,
         fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
         mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(
             "11111111-2222-4333-8444-555555555555".to_owned(),
@@ -94,8 +98,11 @@ fn mesh_placement_transforms_corner_normals_with_oriented_cofactors() {
     let cells = [
         -2.0, 0.5, 0.2, 1.0, 0.1, 3.0, 0.25, -2.0, 0.3, -0.2, 4.0, 0.5, 0.0, 0.0, 0.0, 1.0,
     ];
-    let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("affine map");
+    let transform = mesh_body_transform(&mesh_body_payload(cells), PLAIN).expect("affine map");
     let container = MeshContainer {
+        split_streams: Vec::new(),
+        history_streams: Vec::new(),
+        face_group_metadata: None,
         fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
         mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(
             "11111111-2222-4333-8444-555555555555".to_owned(),
@@ -139,13 +146,13 @@ fn mesh_body_transform_refuses_mismatched_projective_and_singular_pairs() {
     mismatched[paramesh_mesh_body_join_prefix::SECOND_TRANSFORM
         ..paramesh_mesh_body_join_prefix::SECOND_TRANSFORM + 8]
         .copy_from_slice(&2.0f64.to_le_bytes());
-    assert!(mesh_body_transform(&mismatched).is_none());
+    assert!(mesh_body_transform(&mismatched, PLAIN).is_none());
 
     let mut projective = identity;
     projective[12] = 1.0;
-    assert!(mesh_body_transform(&mesh_body_payload(projective)).is_none());
+    assert!(mesh_body_transform(&mesh_body_payload(projective), PLAIN).is_none());
 
     let mut singular = identity;
     singular[0] = 0.0;
-    assert!(mesh_body_transform(&mesh_body_payload(singular)).is_none());
+    assert!(mesh_body_transform(&mesh_body_payload(singular), PLAIN).is_none());
 }

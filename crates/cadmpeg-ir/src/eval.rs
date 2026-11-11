@@ -41,6 +41,13 @@ use crate::CadIr;
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit, WorkBudget};
 use cadmpeg_core::CodecError;
 
+/// Whether evaluated curve endpoints meet within the topology tolerance.
+#[must_use]
+pub fn curve_endpoints_coincident(endpoints: [Point3; 2], tolerance: f64) -> bool {
+    let distance = endpoints[0].distance(endpoints[1]);
+    distance.is_finite() && distance <= tolerance
+}
+
 /// Resource policies for geometry evaluation.
 pub mod admission;
 
@@ -8292,6 +8299,24 @@ fn subset_parameter(
     let agrees = sense.unwrap_or(end >= start);
     let derivative = if agrees { 1.0 } else { -1.0 };
     Some((start + derivative * parameter, derivative))
+}
+
+/// The point and first partials of a signed normal offset, from the
+/// support's point, first partials and second partials.
+pub fn offset_surface_partials(
+    support: SurfaceSecondPartials<FinitePoint3, FiniteVector3>,
+    distance: f64,
+) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    offset_surface_jet(
+        SurfaceJet {
+            point: support.point,
+            first: Ok([support.du, support.dv]),
+            second: Ok([support.duu, support.duv, support.dvv]),
+        },
+        distance,
+    )?
+    .first_order()
+    .partials()
 }
 
 /// The jet of the offset by `distance` along the unit normal of `base`, or

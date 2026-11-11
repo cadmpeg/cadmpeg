@@ -98,6 +98,8 @@ fn hole_point_stream_tail(
     bytes.extend_from_slice(&19u32.to_le_bytes());
     if version == 4 {
         bytes.push(0x7f);
+    }
+    if matches!(version, 2 | 4) {
         for value in [-1.0_f64, -1.0, -1.0] {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
@@ -175,7 +177,7 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
         construction
             .tangent_point_data
             .as_ref()
-            .map(|tangent| tangent.prefix),
+            .and_then(|tangent| tangent.prefix),
         Some(0x7f)
     );
     assert_f64_array(
@@ -241,7 +243,7 @@ fn hole_construction_reads_the_legacy_point_and_direction_carrier_without_tangen
         construction
             .tangent_point_data
             .as_ref()
-            .map(|tangent| tangent.prefix),
+            .and_then(|tangent| tangent.prefix),
         None
     );
     assert_eq!(construction.tangent_point_data, None);
@@ -299,7 +301,7 @@ fn hole_construction_reads_a_version_four_class_tail_before_its_paired_header() 
 fn hole_construction_refuses_another_record_before_its_paired_header() {
     let mut tail = Vec::new();
     indexed_header(&mut tail, *b"300", 90);
-    for version in [1, 4] {
+    for version in [1, 2, 4] {
         let (bytes, scope, _, _) = hole_point_stream_tail(version, &tail);
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         assert!(exact_hole_construction(
@@ -846,4 +848,65 @@ fn the_standard_flag_is_refused_without_the_leading_word() {
     controls.extend_from_slice(&standard_block(M3, 2));
     controls.push(1);
     assert!(super::hole_extent_payload(&extent_payload(&controls, false), 0, BARE).is_none());
+}
+
+#[test]
+fn hole_construction_reads_version_two_tangent_data_without_a_prefix() {
+    let (mut bytes, mut scope, position_at, input_reference_at) =
+        hole_point_stream_tail(2, &[0x55; 17]);
+    with_point_records(&mut scope, &mut bytes, &[(70, [1.25, -2.5, 3.75], 6)]);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let construction = exact_hole_construction(
+        &bytes,
+        &records,
+        &scope,
+        &HashMap::from([
+            (55_u64, (POINT_DIRECTION_TYPE_GUID, 2)),
+            (70_u64, (super::POINT_DATA_TYPE_GUID, 3)),
+        ]),
+    )
+    .expect("version-two hole point carrier");
+    assert_f64_array(
+        construction
+            .position
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [1.25, -2.5, 3.75],
+    );
+    assert_eq!(construction.position_offset, u64_from_index(position_at));
+    assert_f64_array(
+        construction
+            .direction
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [0.0, 0.0, 1.0],
+    );
+    assert_eq!(construction.reference_type, 19);
+    let tangent = construction.tangent_point_data.as_ref().unwrap();
+    assert_eq!(tangent.prefix, None);
+    assert_eq!(tangent.data.offset, 93);
+    assert_f64_array(
+        tangent.data.value.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [-1.0; 3],
+    );
+    assert_eq!(
+        construction
+            .input_records
+            .iter()
+            .map(|input| (input.value, input.offset))
+            .collect::<Vec<_>>(),
+        [(378, u64_from_index(input_reference_at + 1))]
+    );
+    assert_eq!(input_reference_at, 121);
+    let points = construction.entry_points().unwrap();
+    assert_eq!(points.len(), 1);
+    assert_f64_array(
+        points[0].map(cadmpeg_ir::scalar::FiniteReal::get),
+        [1.25, -2.5, 3.75],
+    );
+    assert_eq!(construction.drilling_direction(0), Some([0.0, 0.0, -1.0]));
+    let wire = serde_json::to_string(&construction).unwrap();
+    assert_eq!(
+        serde_json::from_str::<crate::records::feature::hole::DesignHoleConstruction>(&wire)
+            .unwrap(),
+        construction
+    );
 }

@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 pub(crate) mod construction_curve;
+pub(crate) mod mesh;
 pub(crate) mod sequence;
 pub(crate) mod wide;
 
@@ -1384,7 +1385,7 @@ fn typed_prefix(bytes: &mut Vec<u8>, tag: [u8; 2], attr: u16, node_id: u32) {
 }
 
 /// Append one validated XT ownership graph for a compact face bridge.
-fn typed_single_face_ownership(
+pub(crate) fn typed_single_face_ownership(
     bytes: &mut Vec<u8>,
     body_attr: u16,
     shell_attr: u16,

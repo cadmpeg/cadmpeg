@@ -8,12 +8,14 @@
 
 mod assembly;
 mod assembly_variable_reference;
+mod chamfer_sets;
 mod combine;
 mod component_pattern;
 mod copy_paste_bodies;
 mod derived_instance;
 mod draft_flags;
 mod extended_thread;
+mod fillet_sets;
 mod fixed_extrude_lanes;
 mod fixed_kind_operations;
 mod fixed_kind_tail;

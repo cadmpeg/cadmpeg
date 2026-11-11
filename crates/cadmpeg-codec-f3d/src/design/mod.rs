@@ -20,6 +20,7 @@ pub(crate) mod owners;
 pub(crate) mod presentation;
 pub(crate) mod profile_select;
 mod relation_kinds;
+pub(crate) mod sketch_names;
 pub(crate) mod sketch_project;
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -129,6 +130,7 @@ pub(crate) fn design_feature_family(
         | Kind::SplitFace
         | Kind::PathPattern
         | Kind::MoveFace
+        | Kind::Modify
         | Kind::DeleteFace
         | Kind::SurfaceDeleteFace
         | Kind::RemoveBody

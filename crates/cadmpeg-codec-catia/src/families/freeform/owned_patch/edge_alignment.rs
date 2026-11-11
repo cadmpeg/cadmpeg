@@ -14,6 +14,8 @@ const LOCUS_STEPS: u32 = 64;
 const PROJECTION_STEPS: usize = 48;
 const UV_FIT_TOLERANCE: f64 = 1.0e-6;
 const UV_FIT_FALLBACK: f64 = 1.0e-4;
+const UV_FIT_PACING_FALLBACK: f64 = 1.0e-3;
+const MAX_ENDPOINT_SEED_GAP_MM: f64 = 0.005;
 
 pub(super) fn edge_relation(first: &Use, second: &Use) -> Option<bool> {
     let same =
@@ -30,6 +32,23 @@ fn evaluate_uv(pcurve: &PcurveGeometry, t: f64) -> Option<Point2> {
 }
 
 pub(super) fn align(first: &Use, second: &mut Use, surface: &SolvedSurfaceGeometry) -> Option<()> {
+    align_with_tolerance(first, second, surface, GAP_MM)
+}
+
+pub(super) fn align_seed(
+    first: &Use,
+    second: &mut Use,
+    surface: &SolvedSurfaceGeometry,
+) -> Option<()> {
+    align_with_tolerance(first, second, surface, MAX_ENDPOINT_SEED_GAP_MM)
+}
+
+fn align_with_tolerance(
+    first: &Use,
+    second: &mut Use,
+    surface: &SolvedSurfaceGeometry,
+    max_endpoint_gap: f64,
+) -> Option<()> {
     let same = edge_relation(first, second)?;
     let [lo, hi] = first.curve.full_knot_endpoints().endpoints();
     let [s0, s1] = second.curve.full_knot_endpoints().endpoints();
@@ -42,10 +61,20 @@ pub(super) fn align(first: &Use, second: &mut Use, surface: &SolvedSurfaceGeomet
     let project = |parameter: f64| {
         let point = curve_point(&first.curve, parameter)?;
         if parameter == lo {
-            return (point.distance(*samples.first()?) <= GAP_MM).then_some(0.0);
+            if point.distance(*samples.first()?) <= GAP_MM {
+                return Some(0.0);
+            }
+            if point.distance(*samples.first()?) > max_endpoint_gap {
+                return None;
+            }
         }
         if parameter == hi {
-            return (point.distance(*samples.last()?) <= GAP_MM).then_some(1.0);
+            if point.distance(*samples.last()?) <= GAP_MM {
+                return Some(1.0);
+            }
+            if point.distance(*samples.last()?) > max_endpoint_gap {
+                return None;
+            }
         }
         let mut ranked = Vec::new();
         for (i, pair) in samples.windows(2).enumerate() {
@@ -100,7 +129,8 @@ pub(super) fn align(first: &Use, second: &mut Use, surface: &SolvedSurfaceGeomet
         Some([uv.u, uv.v, 0.0])
     };
     let curve = fit_edge_with_error([lo, hi], evaluate, UV_FIT_TOLERANCE)
-        .or_else(|| fit_edge_with_error([lo, hi], evaluate, UV_FIT_FALLBACK))?;
+        .or_else(|| fit_edge_with_error([lo, hi], evaluate, UV_FIT_FALLBACK))
+        .or_else(|| fit_edge_with_error([lo, hi], evaluate, UV_FIT_PACING_FALLBACK))?;
     let poles = curve
         .control_points()
         .into_iter()
@@ -135,18 +165,94 @@ pub(super) fn reproject(
     occurrence: &Use,
     surface: &SolvedSurfaceGeometry,
 ) -> Option<Use> {
-    let SolvedSurfaceGeometry::Nurbs(spline) = surface else {
-        return None;
-    };
     let same = edge_relation(edge, occurrence)?;
     let [lo, hi] = occurrence.curve.full_knot_endpoints().endpoints();
     let occurrence_range = if same { [lo, hi] } else { [hi, lo] };
-    let pcurve = project_spline(edge, spline, |fraction| {
-        evaluate_uv(
-            &occurrence.pcurve,
-            interval_parameter(occurrence_range, fraction),
-        )
-    })?;
+    let pcurve = match surface {
+        SolvedSurfaceGeometry::Nurbs(spline) => project_spline(edge, spline, |fraction| {
+            evaluate_uv(
+                &occurrence.pcurve,
+                interval_parameter(occurrence_range, fraction),
+            )
+        })?,
+        analytic => {
+            let seed_fn = |fraction| {
+                evaluate_uv(
+                    &occurrence.pcurve,
+                    interval_parameter(occurrence_range, fraction),
+                )
+            };
+            let range = edge.curve.full_knot_endpoints().endpoints();
+            let project = |parameter| {
+                let fraction =
+                    cadmpeg_ir::math::parameter_fraction(parameter, range[0], range[1])?.get();
+                let seed = seed_fn(fraction);
+                let point = curve_point(&edge.curve, parameter)?;
+                let mut uv = eval::analytic_surface_parameters_solved(analytic, point)?.get();
+                if matches!(
+                    analytic,
+                    SolvedSurfaceGeometry::Cylinder(_)
+                        | SolvedSurfaceGeometry::Cone(_)
+                        | SolvedSurfaceGeometry::Sphere(_)
+                        | SolvedSurfaceGeometry::Torus(_)
+                ) {
+                    if let Some(seed) = seed {
+                        uv.u += ((seed.u - uv.u) / std::f64::consts::TAU).round()
+                            * std::f64::consts::TAU;
+                        if matches!(analytic, SolvedSurfaceGeometry::Torus(_)) {
+                            uv.v += ((seed.v - uv.v) / std::f64::consts::TAU).round()
+                                * std::f64::consts::TAU;
+                        }
+                    }
+                }
+                let lifted = eval::decode::surface_point_solved(
+                    EvaluationAdmission::Standard,
+                    surface,
+                    uv.u,
+                    uv.v,
+                )
+                .ok()?
+                .get();
+                (point.distance(lifted) <= GAP_MM).then_some([uv.u, uv.v, 0.0])
+            };
+            let fit = fit_edge_with_error(range, project, UV_FIT_TOLERANCE)
+                .or_else(|| fit_edge_with_error(range, project, UV_FIT_FALLBACK))?;
+            let poles = fit
+                .control_points()
+                .iter()
+                .map(|point| {
+                    let point = point.get();
+                    Point2::new(point.x, point.y)
+                })
+                .collect();
+            let pcurve = PcurveGeometry::Nurbs {
+                nurbs: PcurveNurbs::from_lanes(
+                    fit.degree(),
+                    fit.knots().clone(),
+                    poles,
+                    None,
+                    false,
+                )
+                .ok()?,
+            };
+            for i in 0..=LOCUS_STEPS {
+                let parameter = interval_parameter(range, f64::from(i) / f64::from(LOCUS_STEPS));
+                let uv = evaluate_uv(&pcurve, parameter)?;
+                let lift = eval::decode::surface_point_solved(
+                    EvaluationAdmission::Standard,
+                    surface,
+                    uv.u,
+                    uv.v,
+                )
+                .ok()?
+                .get();
+                if lift.distance(curve_point(&edge.curve, parameter)?) > GAP_MM {
+                    return None;
+                }
+            }
+            pcurve
+        }
+    };
     Some(Use {
         pcurve,
         forward: occurrence.forward == same,
@@ -209,6 +315,8 @@ pub(super) fn project_spline(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod recovery;
     use cadmpeg_ir::geometry::{analytic::PlaneSurface, nurbs::NurbsCurve};
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -240,6 +348,26 @@ mod tests {
             pcurve: PcurveGeometry::Nurbs { nurbs },
             forward,
         }
+    }
+
+    #[test]
+    fn seed_alignment_shortens_an_overextended_edge() {
+        let plane = SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("fixture plane"),
+        );
+        let native = edge(vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)], true);
+        let mut long = edge(vec![Point2::new(0.0, 0.0), Point2::new(1.003, 0.0)], false);
+        long.vertices = native.vertices;
+
+        assert!(align(&native, &mut long, &plane).is_none());
+        align_seed(&native, &mut long, &plane).expect("align the corroborated trim");
+        let end = evaluate_uv(&long.pcurve, 1.0).expect("aligned trim endpoint");
+        assert!((end.u - 1.0).abs() < UV_FIT_TOLERANCE);
     }
 
     #[test]

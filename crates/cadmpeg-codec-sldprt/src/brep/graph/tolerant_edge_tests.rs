@@ -136,6 +136,7 @@ fn an_sp_curve_on_a_spun_surface_is_emitted_as_its_fitted_curve() {
             .expect("a line"),
         )),
         kind: SweepKind::Spun {
+            profile_bounds: [None, None],
             base: Point3::new(0.0, 0.0, 0.0),
             axis: cadmpeg_ir::units::SumSquaresUnitVector3::new(Vector3::new(0.0, 0.0, 1.0))
                 .expect("a unit axis"),
@@ -348,6 +349,16 @@ fn a_bounded_sp_curve_carries_a_fitted_cache_in_its_own_parameter() {
     out.surfaces.push(cylinder("sldprt:brep:surf#100"));
     let emitted = HashMap::from([(200, 100)]);
     attach(&mut out, &carrier, &emitted);
+    out.losses.extend(out.approximations.take_notes());
+    assert_eq!(out.losses.len(), 1);
+    assert_eq!(
+        out.losses[0].code,
+        crate::loss::SldprtLossCode::GeometryCarrierApproximated.kind()
+    );
+    assert_eq!(out.losses[0].message, format!(
+        "1 fitted surface-parameter curve(s) use approximate carriers; largest sampled fit tolerance {} mm.",
+        crate::brep::fit::FIT_TOLERANCE_MM
+    ));
     let cache = out.curves[0].geometry.solved_cache().expect("a cache");
     let SolvedCurveGeometry::Nurbs(nurbs) = cache else {
         panic!("{cache:?}");
@@ -424,6 +435,8 @@ fn a_bounded_sp_curve_the_fit_refuses_has_no_cache() {
         CurveGeometry::Procedural { cache: None, .. }
     ));
     assert_eq!(out.procedural_curves[0].cache_fit_tolerance(), None);
+    assert!(out.losses.is_empty());
+    assert!(out.approximations.take_notes().is_empty());
 }
 
 /// The planar triangle with `edge_40` and `coedge_30` in place of its own, and

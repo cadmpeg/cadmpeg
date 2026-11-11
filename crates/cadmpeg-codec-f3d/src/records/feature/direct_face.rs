@@ -38,6 +38,11 @@ pub(crate) struct DesignOffsetFacesOperation {
 
 cadmpeg_core::named_optional_field!(deserialize_wall_slots, DesignShellWallSlots, "wall_slots");
 cadmpeg_core::named_optional_field!(deserialize_outside_wall, DesignShellOutsideWall, "outside");
+cadmpeg_core::named_optional_field!(
+    deserialize_prefix_flag,
+    DesignShellPrefixFlag,
+    "prefix_flag"
+);
 
 /// Exact `Shell` construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -50,7 +55,7 @@ pub(crate) struct DesignShellOperation {
     pub(crate) thickness_offset: u64,
     /// Whether the wall grows outward from the original boundary.
     pub(crate) outward: bool,
-    /// Byte offset of the outward Boolean or of the present wall slot.
+    /// Byte offset of the first present wall slot.
     pub(crate) outward_offset: u64,
     /// Fields that only the wall-slot form stores.
     #[serde(
@@ -59,6 +64,24 @@ pub(crate) struct DesignShellOperation {
         deserialize_with = "deserialize_wall_slots"
     )]
     pub(crate) wall_slots: Option<DesignShellWallSlots>,
+    /// Offset-21 Boolean of the compact, marked, and counted prefixes.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_prefix_flag"
+    )]
+    pub(crate) prefix_flag: Option<DesignShellPrefixFlag>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) auxiliary_references: Vec<u32>,
+}
+
+/// Offset-21 Boolean of a compact, marked, or counted `Shell` prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignShellPrefixFlag {
+    /// Stored Boolean.
+    pub(crate) value: bool,
+    /// Byte offset of the Boolean.
+    pub(crate) offset: u64,
 }
 
 /// Fields of a `Shell` scope that stores its walls in optional slots.
@@ -140,8 +163,10 @@ impl DesignMoveOperation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u32", into = "u32")]
 pub(crate) enum DesignMoveForm {
+    Form0,
     /// Source form 1.
     Form1,
+    Form2,
     /// Source form 5.
     Form5,
 }
@@ -150,9 +175,11 @@ impl TryFrom<u32> for DesignMoveForm {
     type Error = String;
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
+            0 => Ok(Self::Form0),
             1 => Ok(Self::Form1),
+            2 => Ok(Self::Form2),
             5 => Ok(Self::Form5),
-            _ => Err(format!("form must be 1 or 5, not {value}")),
+            _ => Err(format!("form must be 0, 1, 2 or 5, not {value}")),
         }
     }
 }
@@ -160,10 +187,19 @@ impl TryFrom<u32> for DesignMoveForm {
 impl From<DesignMoveForm> for u32 {
     fn from(form: DesignMoveForm) -> Self {
         match form {
+            DesignMoveForm::Form0 => 0,
             DesignMoveForm::Form1 => 1,
+            DesignMoveForm::Form2 => 2,
             DesignMoveForm::Form5 => 5,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignModifyOperation {
+    pub(crate) motion: DesignMoveOperation,
+    pub(crate) body_group_record_indices: Vec<u32>,
+    pub(crate) body_count_offset: u64,
 }
 
 /// Exact signed-angle lanes carried by a `Draft` scope.
@@ -245,7 +281,9 @@ mod identity_rewrite;
 
 #[cfg(test)]
 mod tests {
-    use super::{DesignShellOperation, DesignShellOutsideWall, DesignShellWallSlots};
+    use super::{
+        DesignShellOperation, DesignShellOutsideWall, DesignShellPrefixFlag, DesignShellWallSlots,
+    };
 
     fn operation(outside: Option<DesignShellOutsideWall>) -> DesignShellOperation {
         DesignShellOperation {
@@ -259,6 +297,8 @@ mod tests {
                 rounded_corners: false,
                 outside,
             }),
+            prefix_flag: None,
+            auxiliary_references: Vec::new(),
         }
     }
 
@@ -274,7 +314,14 @@ mod tests {
             wall_slots: None,
             ..one.clone()
         };
-        for value in [both, one, without] {
+        let flagged = DesignShellOperation {
+            prefix_flag: Some(DesignShellPrefixFlag {
+                value: true,
+                offset: 21,
+            }),
+            ..without.clone()
+        };
+        for value in [both, one, without, flagged] {
             let wire = serde_json::to_value(&value).unwrap();
             assert_eq!(
                 serde_json::from_value::<DesignShellOperation>(wire).unwrap(),

@@ -239,6 +239,7 @@ fn input_edge_geometry_carries_samples_endpoints_and_faces() {
             },
         ],
         edge_samples: vec![AsmHistoricalEdgeSample {
+            bounds: None,
             edge: 40,
             interior: Point3::new(0.0, 0.0, 5.0),
             tangent: Some(Vector3::new(0.0, 0.0, 1.0)),

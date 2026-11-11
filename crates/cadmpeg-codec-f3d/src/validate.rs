@@ -10,6 +10,7 @@
 //! generic IR validation report.
 
 mod body_ownership;
+mod chamfer_sets;
 mod emboss;
 mod path_pattern;
 mod sheet_metal_settings;
@@ -1090,6 +1091,8 @@ fn validate_loaded(
     validate_construction_operand_groups(&ctx, &mut findings);
     validate_path_feature_operand_roles(&ctx, &mut findings);
     validate_extrude_parameter_operands(&ctx, &mut findings);
+    validate_fillet_sets(&ctx, &mut findings);
+    chamfer_sets::validate(&ctx, &mut findings);
     let fillet_radius_group_records = validate_fillet_radius_groups(&ctx, &mut findings);
     validate_fillet_operand_groups(&ctx, &mut findings, &fillet_radius_group_records);
     let operand_identity_groups = validate_construction_operand_identities(&ctx, &mut findings);
@@ -1619,14 +1622,6 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     Ok(())
 }
 
-fn mesh_record_offset_is(
-    record: &records::mesh::DesignMeshRecordIdentity,
-    relative: u64,
-    offset: u64,
-) -> bool {
-    record.byte_offset().checked_add(relative) == Some(offset)
-}
-
 /// Validate complete `Base Mesh Feature` record graphs and their neutral links.
 /// The neutral feature link is checked only in a document that holds features.
 fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
@@ -1634,8 +1629,8 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut scope_records = HashSet::new();
     let mut collection_records = HashSet::new();
     let mut body_records = HashSet::new();
-    let mut entry_records = HashSet::new();
-    let mut guid_records = HashSet::new();
+    let mut entry_records = HashMap::new();
+    let mut guid_records = HashMap::new();
     let mut wrapper_records = HashSet::new();
     let mut state_records = HashSet::new();
     let mut node_records = HashSet::new();
@@ -1661,32 +1656,29 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .collect::<std::collections::HashSet<_>>();
     for feature in &ctx.native.design_mesh_features {
         let stream = design_stream(&feature.id);
-        let scope = ctx
-            .scopes_by_index
-            .get(&(stream, feature.scope().record().record_index()));
         let mut valid = feature_ids.insert(feature.id.as_str())
-            && scope_records.insert((stream, feature.scope().record().record_index()))
             && collection_records.insert((stream, feature.collection().record().record_index()))
             && texture_table_records
                 .insert((stream, feature.texture_table.record().record_index()))
             && collection_owner_records
-                .insert((stream, feature.collection_owner.record().record_index()))
-            && feature
-                .scope()
-                .record()
-                .byte_offset()
-                .checked_add(scope.map_or(0, |scope| scope.frame_length()))
-                == Some(feature.scope().base_record().byte_offset())
-            && mesh_record_offset_is(
-                feature.collection_owner.record(),
-                262,
-                feature.collection_owner.backlink_offset(),
-            )
-            && scope.is_some_and(|scope| {
-                scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature
-                    && scope.byte_offset() == feature.scope().record().byte_offset()
-                    && scope.paired_byte_offset() == feature.scope().base_record().byte_offset()
-            });
+                .insert((stream, feature.collection_owner.record().record_index()));
+        for mesh_scope in feature.scopes() {
+            let scope = ctx
+                .scopes_by_index
+                .get(&(stream, mesh_scope.record().record_index()));
+            valid &= scope_records.insert((stream, mesh_scope.record().record_index()))
+                && mesh_scope
+                    .record()
+                    .byte_offset()
+                    .checked_add(scope.map_or(0, |scope| scope.frame_length()))
+                    == Some(mesh_scope.base_record().byte_offset())
+                && scope.is_some_and(|scope| {
+                    scope.kind()
+                        == crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature
+                        && scope.byte_offset() == mesh_scope.record().byte_offset()
+                        && scope.paired_byte_offset() == mesh_scope.base_record().byte_offset()
+                });
+        }
 
         let mut resources = feature.texture_table.resources().iter().collect::<Vec<_>>();
         resources.sort_by_key(|left| left.filename_ordinal);
@@ -1707,7 +1699,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
         }
         valid &= resources_valid;
 
-        for body in feature.bodies() {
+        for body in feature.all_bodies() {
             let owner_key = (stream, body.owner_record.record_index());
             let owner_consistent = body_owner_records
                 .get(&owner_key)
@@ -1716,9 +1708,19 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             body_owner_records
                 .entry(owner_key)
                 .or_insert(&body.owner_record);
+            let entry_key = (stream, body.entry.record().record_index());
+            let guid_key = (stream, body.guid.record().record_index());
+            let entry_consistent = entry_records
+                .get(&entry_key)
+                .is_none_or(|entry| *entry == &body.entry);
+            let guid_consistent = guid_records
+                .get(&guid_key)
+                .is_none_or(|guid| *guid == &body.guid);
+            entry_records.entry(entry_key).or_insert(&body.entry);
+            guid_records.entry(guid_key).or_insert(&body.guid);
             let body_valid = body_records.insert((stream, body.placement.record().record_index()))
-                && entry_records.insert((stream, body.entry.record().record_index()))
-                && guid_records.insert((stream, body.guid.record().record_index()))
+                && entry_consistent
+                && guid_consistent
                 && wrapper_records.insert((stream, body.wrapper_record.record_index()))
                 && state_records.insert((stream, body.scene_state.record().record_index()))
                 && node_records.insert((stream, body.scene_node.record_index()))
@@ -1735,23 +1737,33 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             };
             valid &= body_valid && projection_valid;
         }
-        let projected = || {
-            feature
+        for mesh_scope in feature.scopes() {
+            let scope = ctx
+                .scopes_by_index
+                .get(&(stream, mesh_scope.record().record_index()));
+            let mut projected = feature
                 .bodies()
                 .iter()
-                .filter_map(|body| body.tessellation_id.as_deref())
-        };
-        if ctx.holds_design_intent() && projected().next().is_some() {
-            valid &= scope.is_some_and(|scope| {
-                ctx.ir.model.features.iter().any(|neutral| {
-                    neutral.native_ref.as_deref() == Some(scope.id.as_str())
-                        && matches!(
-                            neutral.evaluation.definition(),
-                            cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MeshImport { tessellations })
-                                if tessellations.iter().map(String::as_str).eq(projected())
-                        )
-                })
-            });
+                .filter(|body| body.scope_record_index == mesh_scope.record().record_index())
+                .collect::<Vec<_>>();
+            projected.sort_by_key(|body| body.scope_body_ordinal);
+            let projected = || {
+                projected
+                    .iter()
+                    .filter_map(|body| body.tessellation_id.as_deref())
+            };
+            if ctx.holds_design_intent() && projected().next().is_some() {
+                valid &= scope.is_some_and(|scope| {
+                    ctx.ir.model.features.iter().any(|neutral| {
+                        neutral.native_ref.as_deref() == Some(scope.id.as_str())
+                            && matches!(
+                                neutral.evaluation.definition(),
+                                cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MeshImport { tessellations })
+                                    if tessellations.iter().map(String::as_str).eq(projected())
+                            )
+                    })
+                });
+            }
         }
         if !valid {
             push_constant_finding(
@@ -3043,16 +3055,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 let relation =
                     records_by_index.get(&(native_stream, construction.relation_record_index));
                 let frame_matches_transform = match (
-                    scope.frame_length(),
+                    scope.canonical_name_frame_length().unwrap_or_default(),
                     scope.paired_class_tag.as_str(),
                     construction.placement.as_ref(),
                 ) {
-                    (272, "262", None) if scope.class_tag.as_str() == "357" => true,
-                    (276, "262", None)
-                        if matches!(scope.class_tag.as_str(), "357" | "360" | "362") =>
-                    {
-                        true
-                    }
+                    (272 | 276, _, None) => true,
                     (261, "263", None) if scope.class_tag.as_str() == "296" => true,
                     (261, "261", None) if scope.class_tag.as_str() == "410" => true,
                     (261, "258", None) if scope.class_tag.as_str() == "426" => true,
@@ -3066,10 +3073,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             .is_some_and(|expected_offset| matrix.scope.offset == expected_offset)
                             && matrix.carrier_offset.is_none()
                     }
-                    (404, _, Some(matrix)) => {
+                    (frame_length @ (400 | 404), _, Some(matrix)) => {
                         scope
                             .byte_offset()
-                            .checked_add(54)
+                            .checked_add(if frame_length == 400 { 50 } else { 54 })
                             .is_some_and(|expected_offset| matrix.scope.offset == expected_offset)
                             && matrix
                                 .carrier_offset
@@ -3320,7 +3327,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         | records::feature::thread::DesignThreadForm::StandardLegacy
                         | records::feature::thread::DesignThreadForm::StandardExtended
                         | records::feature::thread::DesignThreadForm::StandardCompact
-                        | records::feature::thread::DesignThreadForm::CompactLegacy => true,
+                        | records::feature::thread::DesignThreadForm::CompactLegacy
+                        | records::feature::thread::DesignThreadForm::CompactOwnersLeading
+                        | records::feature::thread::DesignThreadForm::CompactOwnersTrailing => true,
                     }
                     && construction
                         .face_group_record_indices
@@ -3334,6 +3343,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                         _
                                     )
                                     | records::feature::thread::DesignThreadForm::CompactLegacy
+                                    | records::feature::thread::DesignThreadForm::CompactOwnersLeading
+                                    | records::feature::thread::DesignThreadForm::CompactOwnersTrailing
                             ) {
                                 let Some(reference_ordinal) =
                                     group_ordinal.checked_mul(2).and_then(|ordinal| {
@@ -5284,6 +5295,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     scope.kind(),
                     crate::records::feature::scope::DesignFeatureKind::RemoveBody
                         | crate::records::feature::scope::DesignFeatureKind::ReverseNormal
+                        | crate::records::feature::scope::DesignFeatureKind::Modify
                 ) =>
                 {
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
@@ -5355,6 +5367,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     crate::records::feature::scope::DesignFeatureKind::Emboss
                         | crate::records::feature::scope::DesignFeatureKind::RemoveBody
                         | crate::records::feature::scope::DesignFeatureKind::ReverseNormal
+                        | crate::records::feature::scope::DesignFeatureKind::Modify
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
                         | crate::records::feature::scope::DesignFeatureKind::SplitFace
                         | crate::records::feature::scope::DesignFeatureKind::PathPattern
@@ -5438,88 +5451,6 @@ fn is_path_seed_group(
         && group.frame.trailing_records().len() == 1
 }
 
-/// Validate path-feature operand roles against the scope construction.
-///
-/// The role grammar is shared with the fixed Loft projector, though the
-/// projector additionally gates admission on scope member count, group
-/// ordinals, and legacy carrier pairing (this validator remains role-only and
-/// reports valid for shapes the projector leaves Native). Keeping the
-/// predicate independent of native byte offsets lets validation reject a
-/// malformed role combination without rejecting a valid section/guide mix.
-pub(crate) fn loft_operand_roles_are_valid(
-    operation: records::feature::extrude::DesignExtrudeOperation,
-    groups: &[(DesignOperandRole, usize)],
-) -> bool {
-    const SECTION: DesignOperandRole = DesignOperandRole::PROFILE;
-    const FACE_SECTION: DesignOperandRole = DesignOperandRole::ROLE_0X43;
-    const GUIDE: DesignOperandRole = DesignOperandRole::ROLE_0X5;
-    const CENTERLINE: DesignOperandRole = DesignOperandRole::ROLE_0X7;
-    const POINT: DesignOperandRole = DesignOperandRole::ROLE_0X21;
-    let is_body = |role: DesignOperandRole| {
-        matches!(
-            role,
-            DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-        )
-    };
-
-    let body_count = groups.iter().filter(|(role, _)| is_body(*role)).count();
-    let expected_body_count =
-        usize::from(operation != records::feature::extrude::DesignExtrudeOperation::NewBody);
-    if body_count != expected_body_count {
-        return false;
-    }
-    let operands = || groups.iter().filter(|(role, _)| !is_body(*role));
-    let section_count = operands()
-        .filter(|(role, _)| matches!(*role, SECTION | FACE_SECTION))
-        .count();
-    let guide_count = operands().filter(|(role, _)| *role == GUIDE).count();
-    let centerline_count = operands().filter(|(role, _)| *role == CENTERLINE).count();
-
-    if section_count >= 2 {
-        let roles_are_known = operands()
-            .all(|(role, _)| matches!(*role, SECTION | FACE_SECTION | GUIDE | CENTERLINE));
-        return roles_are_known
-            && centerline_count <= 1
-            && !(guide_count > 0 && centerline_count > 0)
-            && operands().count() == section_count + guide_count + centerline_count;
-    }
-
-    if operation != records::feature::extrude::DesignExtrudeOperation::NewBody {
-        return false;
-    }
-
-    if operands().any(|(role, _)| *role == POINT) {
-        return operands().count() == 2
-            && operands().filter(|(role, _)| *role == SECTION).count() == 1
-            && operands().any(|(role, member_count)| *role == POINT && *member_count == 1);
-    }
-
-    if section_count == 1 && operands().all(|(role, _)| matches!(*role, FACE_SECTION | GUIDE)) {
-        let mut point_ordinals = operands()
-            .enumerate()
-            .filter(|(_, (role, member_count))| *role == GUIDE && *member_count == 1)
-            .map(|(ordinal, _)| ordinal);
-        let Some(point_ordinal) = point_ordinals.next() else {
-            return false;
-        };
-        return point_ordinals.next().is_none()
-            && (point_ordinal == 0 || point_ordinal + 1 == operands().count())
-            && operands()
-                .enumerate()
-                .all(|(ordinal, (role, member_count))| {
-                    ordinal == point_ordinal || *role != GUIDE || *member_count != 1
-                });
-    }
-
-    if section_count == 0 && operands().count() >= 2 {
-        let all_sections = operands().all(|(role, _)| *role == SECTION);
-        let all_guides = operands().all(|(role, _)| *role == GUIDE);
-        return all_sections || all_guides;
-    }
-
-    false
-}
-
 /// Validate the operand-group roles of path-feature scopes. The groups are
 /// design-intent records, so a document without them has nothing to check.
 fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
@@ -5543,10 +5474,6 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             })
             .collect::<Vec<_>>();
         let role_count = |role| groups.iter().filter(|group| group.role() == role).count();
-        let group_roles = groups
-            .iter()
-            .map(|group| (group.role(), group.members().len()))
-            .collect::<Vec<_>>();
         let valid = match &scope.payload() {
             records::feature::scope::DesignScopePayload::Revolve(Some(
                 crate::records::feature::path_features::DesignRevolveConstruction {
@@ -5600,11 +5527,10 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && role_count(DesignOperandRole::PROFILE) == 1
                     && body_count == expected_body_count
             }
-            records::feature::scope::DesignScopePayload::Loft(Some(
-                crate::records::feature::path_features::DesignLoftConstruction {
-                    operation, ..
-                },
-            )) => loft_operand_roles_are_valid(*operation, &group_roles),
+            records::feature::scope::DesignScopePayload::Loft(Some(construction)) => {
+                construction.section_records.is_empty()
+                    || design::feature_project::loft_groups(construction, &groups).is_ok()
+            }
             records::feature::scope::DesignScopePayload::Sweep(Some(
                 records::feature::scope::DesignSweepScope {
                     construction:
@@ -5695,6 +5621,23 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             );
         }
     }
+}
+
+/// True for a one-sided face target whose stored face-group roles equal
+/// `expected` with its termination role removed (DR-360).
+fn one_sided_face_target_lacks_only_its_termination(
+    extent: records::feature::extrude::DesignExtrudeExtent,
+    expected: &[records::topology::extrude_selection::DesignExtrudeFaceRole],
+    stored: impl Iterator<Item = Option<records::topology::extrude_selection::DesignExtrudeFaceRole>>,
+) -> bool {
+    use records::topology::extrude_selection::DesignExtrudeFaceRole::Termination;
+    extent == records::feature::extrude::DesignExtrudeExtent::OneSidedToFace
+        && expected.contains(&Termination)
+        && stored.eq(expected
+            .iter()
+            .copied()
+            .filter(|role| *role != Termination)
+            .map(Some))
 }
 
 /// Validate Extrude profile, operation, start, and extent operand agreement.
@@ -6101,11 +6044,19 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == records::feature::extrude::DesignExtrudeOperation::NewBody
                 && face_operand_group_count == 0
                 && face_groups.is_empty();
+            // DR-360: a one-sided face target whose roster stores every
+            // expected group except its termination group.
+            let termination_missing = one_sided_face_target_lacks_only_its_termination(
+                extrude_extent,
+                &expected_face_roles,
+                face_groups.iter().map(|group| group.extrude_face_role()),
+            );
             if ctx.holds_design_intent()
                 && !invalid_face_groups_hide_extent_conflict
                 && (!extent_matches_operands
                     || !start_matches_operands
                     || (!selected_start_without_group
+                        && !termination_missing
                         && (face_operand_group_count != expected_face_group_count
                             || face_groups
                                 .iter()
@@ -6291,6 +6242,24 @@ fn validate_fillet_radius_groups<'a>(
                         parameter.source_kind() == "TangencyWeight" && parameter.unit().is_none()
                     })
                 })
+            && scope
+                .and_then(|scope| scope.fillet_sets())
+                .is_none_or(|list| {
+                    list.sets
+                        .iter()
+                        .filter(|set| set.group_record_index == assignment.group_record_index)
+                        .all(|set| {
+                            design::decode::scopes::fillet_set::fillet_set_matches_radius_group(
+                                set,
+                                assignment,
+                                |owner_record_index| {
+                                    ctx.owners_by_index
+                                        .get(&(native_stream, owner_record_index))
+                                        .map(|owner| owner.parameter_record_index())
+                                },
+                            )
+                        })
+                })
             && fillet_radius_group_records.insert((native_stream, assignment.group_record_index))
             && fillet_radius_group_slots.insert((
                 native_stream,
@@ -6307,6 +6276,56 @@ fn validate_fillet_radius_groups<'a>(
         }
     }
     fillet_radius_group_records
+}
+
+/// Every fillet set names a reference-table member of its scope as its edge
+/// group, and owners of its scope whose parameters have the source kinds of
+/// its law and of `TangencyWeight`.
+fn validate_fillet_sets(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
+    use records::feature::fillet_set::DesignFilletSetLaw;
+    for scope in &ctx.native.design_parameter_scopes {
+        let Some(list) = scope.fillet_sets() else {
+            continue;
+        };
+        let native_stream = design_stream(&scope.id);
+        let owned_kind = |owner_record_index: u32, kind: &str| {
+            ctx.owners_by_index
+                .get(&(native_stream, owner_record_index))
+                .filter(|owner| owner.scope_record_index() == scope.record_index)
+                .and_then(|owner| {
+                    ctx.parameters_by_index
+                        .get(&(native_stream, owner.parameter_record_index()))
+                        .filter(|parameter| {
+                            parameter.owner_record_index() == Some(owner.record_index())
+                        })
+                })
+                .is_some_and(|parameter| parameter.source_kind() == kind)
+        };
+        let valid = list.sets.iter().all(|set| {
+            let law = match set.law {
+                DesignFilletSetLaw::Constant {
+                    radius_owner_record_index,
+                } => owned_kind(radius_owner_record_index, "Radius"),
+                DesignFilletSetLaw::Chordal {
+                    chord_length_owner_record_index,
+                } => owned_kind(chord_length_owner_record_index, "ChordLen"),
+            };
+            law && owned_kind(set.tangency_weight_owner_record_index, "TangencyWeight")
+                && scope
+                    .reference_members()
+                    .values()
+                    .any(|member| *member == set.group_record_index)
+        }) && design::design_feature_family(&scope.kind())
+            == Some(design::DesignFeatureFamily::Fillet);
+        if !valid {
+            push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design Fillet set names a record outside its scope or an owner of another parameter kind",
+                Some(scope.id.clone()),
+            );
+        }
+    }
 }
 
 /// Whether a Mirror scope owns an operand group of this role: faces or
@@ -6342,6 +6361,15 @@ fn mirror_operand_recipe_admitted(
 /// Whether a Revolve axis operand uses an admitted face-recipe spelling. The
 /// axis face is selected either by its whole-face recipe or by a bounded-face
 /// recipe.
+/// Whether a `Revolve` group with this role holds face operands: the axis
+/// group and a to-object target group.
+fn revolve_face_group_role_admitted(role: DesignOperandRole) -> bool {
+    matches!(
+        role,
+        DesignOperandRole::ROLE_0X21 | DesignOperandRole::ROLE_0X5
+    )
+}
+
 fn revolve_axis_recipe_kind_admitted(kind: records::recipes::ConstructionRecipeKind) -> bool {
     matches!(
         kind,
@@ -8113,7 +8141,7 @@ fn validate_face_operands<'a>(
                             }
                             Some(design::DesignFeatureFamily::Revolve) => {
                                 group.is_some_and(|group| {
-                                    group.role() == DesignOperandRole::ROLE_0X21
+                                    revolve_face_group_role_admitted(group.role())
                                 }) && revolve_axis_recipe_kind_admitted(operand.recipe_kind)
                             }
                             Some(

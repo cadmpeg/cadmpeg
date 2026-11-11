@@ -44,8 +44,7 @@ pub(in crate::brep) fn tables(
         match node.kind() {
             FACE => {
                 let record = bridge(&node, offset)?;
-                t.bridge_frames.insert(record.attr, frame());
-                t.bridges.insert(record.attr, record);
+                t.merge_bridge_frame(record, frame());
             }
             LOOP => {
                 let record = loop_record(&node, offset)?;
@@ -183,13 +182,7 @@ pub(in crate::brep) fn deltas_tables(
         match node.kind() {
             FACE => {
                 let record = bridge(&node, offset)?;
-                merge_record_frame(
-                    &mut t.bridges,
-                    &mut t.bridge_frames,
-                    record.attr,
-                    frame,
-                    Some(record),
-                );
+                t.merge_bridge_frame(record, frame);
             }
             LOOP => {
                 let record = loop_record(&node, offset)?;

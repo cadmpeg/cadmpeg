@@ -1623,7 +1623,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         recipe_structure: Some(DesignFaceRecipeStructure {
             root: 0,
             prelude: [0, 2],
-            sides: [
+            sides: vec![
                 DesignTopologyRecipeSide {
                     header_value: 0,
                     scalars: vec![0, 1],

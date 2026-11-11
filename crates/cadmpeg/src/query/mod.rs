@@ -20,7 +20,7 @@ mod schema_infer;
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::io::Read;
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -548,6 +548,13 @@ pub(crate) fn run(view: &QueryView) -> Result<()> {
 
 fn run_aggregate(view: &AggregateView) -> Result<()> {
     let args = view.args();
+    if let AggregateView::Counts(args) = view {
+        if args.file != Path::new("-")
+            && std::fs::metadata(&args.file)?.len() > MAX_QUERY_INPUT_BYTES
+        {
+            return counts_large_file(args);
+        }
+    }
     let bytes = read_input(&args.file)?;
     let artifact = detect(&bytes, &args.file)?;
     match view {
@@ -560,6 +567,29 @@ fn run_aggregate(view: &AggregateView) -> Result<()> {
 }
 
 const MAX_QUERY_INPUT_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_COUNTS_INPUT_BYTES: u64 = 1024 * 1024 * 1024;
+
+fn counts_large_file(args: &QueryArgs) -> Result<()> {
+    let file = std::fs::File::open(&args.file)
+        .with_context(|| format!("reading {}", args.file.display()))?;
+    if file.metadata()?.len() > MAX_COUNTS_INPUT_BYTES {
+        bail!(
+            "{} exceeds the query counts input limit of 1 GiB",
+            args.file.display()
+        );
+    }
+    let mut reader = BufReader::new(file);
+    let sniff: KindProbe = serde_json::from_reader(&mut reader)
+        .with_context(|| format!("parsing {}", args.file.display()))?;
+    let kind = classify_kind(&sniff, &args.file)?;
+    reader.seek(SeekFrom::Start(0))?;
+    let artifact = match kind {
+        ArtifactKind::Report => Artifact::Report(Box::new(serde_json::from_reader(&mut reader)?)),
+        ArtifactKind::Cadir => Artifact::Cadir(serde_json::from_reader(&mut reader)?),
+        ArtifactKind::Sidecar => Artifact::Sidecar(serde_json::from_reader(&mut reader)?),
+    };
+    counts(&artifact, args)
+}
 
 fn read_input(path: &Path) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
@@ -611,6 +641,10 @@ fn sniff_kind(bytes: &[u8], path: &Path) -> Result<ArtifactKind> {
             path.display()
         )
     })?;
+    classify_kind(&sniff, path)
+}
+
+fn classify_kind(sniff: &KindProbe, path: &Path) -> Result<ArtifactKind> {
     let kind = if sniff.command.is_some() && sniff.status.is_some() {
         ArtifactKind::Report
     } else if sniff.ir_sha256.is_some() {

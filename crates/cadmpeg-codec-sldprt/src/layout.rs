@@ -3353,3 +3353,45 @@ pub(crate) mod configuration_manager_scalar_prefix {
     /// Offset of `filetime` (`u64`, little-endian). Spec §8.
     pub(crate) const FILETIME: usize = 117;
 }
+
+/// Byte offsets for the `spun_surface_profile` record.
+///
+/// Spec §7.1. Record length 112 B.
+///
+/// ```text
+/// The fixed payload prefix starts after the profile pointer.
+/// ```
+pub(crate) mod spun_surface_profile {
+    /// Offset of `axis` (`f64[3]`, big-endian). Spec §7.1.
+    pub(crate) const AXIS: usize = 24;
+    /// Offset of `start` (`f64[3]`, big-endian). Spec §7.1.
+    pub(crate) const START: usize = 48;
+    /// Offset of `end` (`f64[3]`, big-endian). Spec §7.1.
+    pub(crate) const END: usize = 72;
+    /// Offset of `start_param` (`f64`, big-endian). Spec §7.1.
+    pub(crate) const START_PARAM: usize = 96;
+    /// Offset of `end_param` (`f64`, big-endian). Spec §7.1.
+    pub(crate) const END_PARAM: usize = 104;
+}
+
+/// Byte offsets for the `compact_principal_plane_component` record.
+///
+/// Spec §2. Record length 138 B.
+pub(crate) mod compact_principal_plane_component {
+    /// Offset of `source` (`u32`, little-endian). Spec §2.
+    pub(crate) const SOURCE: usize = 0;
+    /// Offset of `reserved` (`bytes[2]`). Spec §2.
+    pub(crate) const RESERVED: usize = 8;
+    /// Offset of `selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const SELECTOR: usize = 10;
+    /// Offset of `matrix_present` (`u8`). Spec §2.
+    pub(crate) const MATRIX_PRESENT: usize = 14;
+    /// Offset of `basis` (`f64[9]`, little-endian). Spec §2.
+    pub(crate) const BASIS: usize = 15;
+    /// Offset of `trailer_reserved` (`bytes[3]`). Spec §2.
+    pub(crate) const TRAILER_RESERVED: usize = 119;
+    /// Offset of `trailer_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const TRAILER_KIND: usize = 122;
+    /// Offset of `trailer_sentinel` (`u32`, little-endian). Spec §2.
+    pub(crate) const TRAILER_SENTINEL: usize = 126;
+}
