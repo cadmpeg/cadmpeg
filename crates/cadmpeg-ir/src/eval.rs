@@ -41,6 +41,13 @@ use crate::CadIr;
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit, WorkBudget};
 use cadmpeg_core::CodecError;
 
+/// Whether evaluated curve endpoints meet within the topology tolerance.
+#[must_use]
+pub fn curve_endpoints_coincident(endpoints: [Point3; 2], tolerance: f64) -> bool {
+    let distance = endpoints[0].distance(endpoints[1]);
+    distance.is_finite() && distance <= tolerance
+}
+
 /// Resource policies for geometry evaluation.
 pub mod admission;
 
