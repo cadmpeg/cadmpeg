@@ -2254,6 +2254,7 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
         let name = section.name().unwrap_or("");
         if contains_ascii_case_insensitive(name, "ghost")
             || contains_ascii_case_insensitive(name, "resolvedfeatures")
+            || container::is_stock_bodies_section(name)
             || crate::container::is_embedded_document(name)
             || crate::container::virtual_component_key(name).is_some()
         {
