@@ -7789,14 +7789,7 @@ fn edge_recipe_reference_context<'a>(
     topology_queries: &mut TopologyQueryCache<'a>,
     face_boundaries: &mut FaceBoundaryArena,
 ) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
-    let mut candidate_faces = Vec::new();
-    for reference in lane {
-        for face in effective_faces(reference) {
-            if !candidate_faces.contains(face) {
-                candidate_faces.push(face.clone());
-            }
-        }
-    }
+    let candidate_faces = recipe_index::reference_lane_faces(lane);
     let candidate_faces = candidate_faces.as_slice();
     let face_slots = |faces: &[cadmpeg_ir::ids::FaceId]| {
         faces

@@ -5,6 +5,26 @@ use crate::history_records::AsmHistoricalTopology;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use std::collections::{HashMap, HashSet};
 
+pub(super) fn reference_lane_faces(
+    lane: &[crate::records::dimensions::DesignRecipeReference],
+) -> Vec<cadmpeg_ir::ids::FaceId> {
+    let mut names: std::collections::BTreeMap<_, Vec<_>> = std::collections::BTreeMap::new();
+    for reference in lane {
+        let faces = names.entry(reference.selector_offset).or_default();
+        for face in super::effective_faces(reference) {
+            if !faces.contains(face) {
+                faces.push(face.clone());
+            }
+        }
+    }
+    let mut names = names.into_values().filter(|faces| !faces.is_empty());
+    let mut faces = names.next().unwrap_or_default();
+    for name in names {
+        faces.retain(|face| name.contains(face));
+    }
+    faces
+}
+
 type TokenReferences<'a> = HashMap<&'a str, HashMap<u32, HashMap<i64, Vec<usize>>>>;
 
 pub(super) struct RecipeTopologyIndex<'a> {
@@ -108,6 +128,42 @@ mod tests {
     use super::RecipeTopologyCache;
     use crate::history_records::{AsmHistoricalPersistentSubentityTag, AsmHistoricalTopology};
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
+
+    #[test]
+    fn recipe_reference_aliases_union_references_and_intersect_live_names() {
+        use crate::records::dimensions::DesignRecipeReference;
+        use cadmpeg_ir::ids::FaceId;
+        let face = |slot| FaceId::mint(format!("f3d:brep:entity#{slot}")).unwrap();
+        let reference = |selector_offset, design_reference, slots: &[i64]| DesignRecipeReference {
+            selector: 1,
+            selector_offset,
+            token: "2".into(),
+            token_integer: 0,
+            token_offset: selector_offset + 8,
+            design_reference,
+            design_reference_offset: selector_offset + 17,
+            candidate_faces: slots.iter().map(|slot| face(*slot)).collect(),
+            candidate_edges: Vec::new(),
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
+            operand_offset: Some(0),
+        };
+        let lane = [
+            reference(0, 301, &[10, 20]),
+            reference(0, 302, &[30]),
+            reference(40, 303, &[20, 30, 40]),
+        ];
+        assert_eq!(super::reference_lane_faces(&lane), [face(20), face(30)]);
+        assert_eq!(
+            super::reference_lane_faces(&lane[..2]),
+            [face(10), face(20), face(30)]
+        );
+        let missing = [lane[0].clone(), reference(40, 303, &[])];
+        assert_eq!(super::reference_lane_faces(&missing), [face(10), face(20)]);
+        let conflict = [lane[0].clone(), reference(40, 303, &[40])];
+        assert!(super::reference_lane_faces(&conflict).is_empty());
+        assert!(super::reference_lane_faces(&[]).is_empty());
+    }
 
     #[test]
     fn recipe_queries_reuse_indexes_and_keep_snapshots_separate() {
