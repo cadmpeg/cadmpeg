@@ -29,6 +29,7 @@ use crate::F3dCodec;
 mod act_document_root;
 mod arithmetic;
 mod body_ownership;
+mod chamfer_sets;
 mod component_insert;
 mod component_occurrences;
 mod configurations;

@@ -6,6 +6,7 @@ pub(crate) mod assembly;
 pub(crate) mod assembly_features;
 pub(crate) mod base_feature;
 pub(crate) mod body_ops;
+pub(crate) mod chamfer_set;
 pub(crate) mod coil;
 pub(crate) mod combine;
 pub(crate) mod deleted_members;

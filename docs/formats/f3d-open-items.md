@@ -1136,6 +1136,16 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
+### DR-460. Chamfer set flag, entry run, fixed words, and auxiliary record
+
+**Question.** What do the prefix `u32 1` after the prologue, the chamfer set flag byte, the entry-run marker form, the prefix entry run, the fixed `u32 1` and `u8 1` words, and the auxiliary record of a parameter-owned `Chamfer` scope encode?
+
+**Known.** `f3d.md` §3.1 "A parameter-owned `Chamfer` scope names its chamfer sets in a prefix" gives their positions and admitted values. The decoder retains the flag byte as the set's `flag`, the marker as the list's `form` (`current` or `compact`), `E` as the list's `entry_count`, and the auxiliary record index as the set's `auxiliary_record_index`.
+
+**Need.** Controlled Chamfer designs that vary one option at a time and a multi-set Chamfer, saved by one Fusion version.
+
+**Conflict.** None.
+
 ### DR-243. Face of an Extents To Hole
 
 **Question.** Which face does the member of an Extents To Hole's role-`0x0000000500000000` group name?

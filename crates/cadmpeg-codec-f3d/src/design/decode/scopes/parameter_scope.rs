@@ -13,6 +13,7 @@ use super::base_feature::{
     exact_base_feature_construction, timeline_body_owners, timeline_owned_base_feature,
     TimelineBodyOwner,
 };
+use super::chamfer_set::chamfer_set_list;
 use super::coil::bind_coil_extent_from_parameters;
 use super::coil::exact_coil_discriminators;
 use super::coil::exact_coil_placement;
@@ -517,8 +518,12 @@ pub(crate) fn decode_parameter_scopes(
             {
                 let construction =
                     exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
+                let sets = chamfer_set_list(bytes, &records, &scope, parameters, parameter_owners);
                 if let scope::DesignScopePayloadMut::Chamfer(slot) = scope.payload_mut() {
-                    *slot = construction;
+                    *slot = crate::records::feature::chamfer_set::DesignChamferScope::admit(
+                        construction,
+                        sets,
+                    );
                 }
             }
             if let Some(construction) =

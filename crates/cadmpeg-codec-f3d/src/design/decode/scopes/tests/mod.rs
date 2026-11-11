@@ -8,6 +8,7 @@
 
 mod assembly;
 mod assembly_variable_reference;
+mod chamfer_sets;
 mod combine;
 mod component_pattern;
 mod copy_paste_bodies;
