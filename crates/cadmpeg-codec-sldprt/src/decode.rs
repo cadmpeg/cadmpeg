@@ -2462,6 +2462,7 @@ fn try_decode_brep(
         selected_is_empty_model && (resolved_active_site.is_some() || !any_site_has_geometry);
     if resolved_active_site.is_some() {
         if !selected_is_empty_model && !selected_has_geometry {
+            fallback_losses.extend(decoded_sites[selected_site].2.losses.iter().cloned());
             append_topology_record_losses(&decoded_sites[selected_site].2.stats, fallback_losses);
             return Ok(None);
         }
@@ -2480,6 +2481,7 @@ fn try_decode_brep(
         });
         if !any_site_has_geometry && !any_empty_model {
             for (_, _, decoded) in &decoded_sites {
+                fallback_losses.extend(decoded.losses.iter().cloned());
                 append_topology_record_losses(&decoded.stats, fallback_losses);
             }
             return Ok(None);
