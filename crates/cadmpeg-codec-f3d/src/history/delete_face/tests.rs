@@ -36,7 +36,7 @@ fn deleted_faces_are_the_selection_when_they_match_the_member_count() {
         delete_face_selection(
             &[100],
             PREVIOUS,
-            &transition(PREVIOUS, &[10]),
+            &[&transition(PREVIOUS, &[10])],
             &preceding(&[10, 20])
         ),
         Some(vec![10])
@@ -45,7 +45,7 @@ fn deleted_faces_are_the_selection_when_they_match_the_member_count() {
         delete_face_selection(
             &[100, 101],
             PREVIOUS,
-            &transition(PREVIOUS, &[20, 10]),
+            &[&transition(PREVIOUS, &[20, 10])],
             &preceding(&[10, 20, 30])
         ),
         Some(vec![10, 20])
@@ -58,7 +58,7 @@ fn healing_that_deletes_a_further_face_states_no_selection() {
         delete_face_selection(
             &[100],
             PREVIOUS,
-            &transition(PREVIOUS, &[10, 20]),
+            &[&transition(PREVIOUS, &[10, 20])],
             &preceding(&[10, 20])
         ),
         None
@@ -71,7 +71,7 @@ fn fewer_deleted_faces_than_members_state_no_selection() {
         delete_face_selection(
             &[100, 101],
             PREVIOUS,
-            &transition(PREVIOUS, &[10]),
+            &[&transition(PREVIOUS, &[10])],
             &preceding(&[10, 20])
         ),
         None
@@ -84,7 +84,7 @@ fn a_repeated_member_counts_once() {
         delete_face_selection(
             &[100, 100],
             PREVIOUS,
-            &transition(PREVIOUS, &[10]),
+            &[&transition(PREVIOUS, &[10])],
             &preceding(&[10, 20])
         ),
         Some(vec![10])
@@ -93,7 +93,7 @@ fn a_repeated_member_counts_once() {
         delete_face_selection(
             &[100, 100],
             PREVIOUS,
-            &transition(PREVIOUS, &[10, 20]),
+            &[&transition(PREVIOUS, &[10, 20])],
             &preceding(&[10, 20])
         ),
         None
@@ -107,7 +107,7 @@ fn every_deleted_face_must_belong_to_the_preceding_state() {
             delete_face_selection(
                 &[100, 101],
                 PREVIOUS,
-                &transition(PREVIOUS, &deleted),
+                &[&transition(PREVIOUS, &deleted)],
                 &preceding(&[10, 20])
             ),
             None
@@ -121,10 +121,50 @@ fn a_transition_from_another_state_states_no_selection() {
         delete_face_selection(
             &[100],
             PREVIOUS,
-            &transition(PREVIOUS - 1, &[10]),
+            &[&transition(PREVIOUS - 1, &[10])],
             &preceding(&[10, 20])
         ),
         None
+    );
+}
+
+#[test]
+fn a_complete_interval_counts_each_deleted_input_face_once() {
+    assert_eq!(
+        delete_face_selection(
+            &[100, 101],
+            PREVIOUS,
+            &[
+                &transition(PREVIOUS + 2, &[20]),
+                &transition(PREVIOUS + 1, &[10]),
+                &transition(PREVIOUS, &[]),
+            ],
+            &preceding(&[10, 20, 30]),
+        ),
+        Some(vec![10, 20]),
+    );
+}
+
+#[test]
+fn an_interval_with_a_reinserted_face_keeps_the_native_selection() {
+    let mut later = transition(PREVIOUS + 1, &[]);
+    later.topology.faces.inserted.push(10);
+    assert_eq!(
+        delete_face_selection(
+            &[100],
+            PREVIOUS,
+            &[&later, &transition(PREVIOUS, &[10])],
+            &preceding(&[10, 20]),
+        ),
+        None,
+    );
+}
+
+#[test]
+fn an_empty_interval_keeps_the_native_selection() {
+    assert_eq!(
+        delete_face_selection(&[100], PREVIOUS, &[], &preceding(&[10, 20])),
+        None,
     );
 }
 
@@ -134,7 +174,7 @@ fn a_transition_that_deletes_nothing_states_no_selection() {
         delete_face_selection(
             &[],
             PREVIOUS,
-            &transition(PREVIOUS, &[]),
+            &[&transition(PREVIOUS, &[])],
             &preceding(&[10, 20])
         ),
         None

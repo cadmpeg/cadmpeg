@@ -64,7 +64,9 @@ fn scope() -> DesignParameterScope {
 }
 
 fn group(scope_record_index: u32, members: &[u32]) -> DesignConstructionOperandGroup {
-    let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap()).collect();
+    let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
+        .map(|ordinal| ordinal * 11)
+        .collect();
     serde_json::from_value(serde_json::json!({
         "id": GROUP_ID,
         "byte_offset": 0,
@@ -108,6 +110,26 @@ fn bind_groups(
     initial: FaceSelection,
     history: AsmHistory,
 ) -> FaceSelection {
+    bind_groups_with_scope(groups, heal, initial, history, scope())
+}
+
+fn bind_groups_with_scope(
+    groups: &[DesignConstructionOperandGroup],
+    heal: bool,
+    initial: FaceSelection,
+    history: AsmHistory,
+    scope: DesignParameterScope,
+) -> FaceSelection {
+    bind_groups_with_scope_and_losses(groups, heal, initial, history, scope).0
+}
+
+fn bind_groups_with_scope_and_losses(
+    groups: &[DesignConstructionOperandGroup],
+    heal: bool,
+    initial: FaceSelection,
+    history: AsmHistory,
+    scope: DesignParameterScope,
+) -> (FaceSelection, Vec<cadmpeg_ir::report::loss::LossNote>) {
     let feature_id = FeatureId::mint("f3d:test:feature#42").expect("identity grammar");
     let mut feature = Feature {
         product_definition: None,
@@ -138,11 +160,11 @@ fn bind_groups(
         edge_geometry: Vec::new(),
         native_ref: None,
     }];
-    bind_feature_face_selections(
+    let losses = bind_feature_face_selections(
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
         crate::history::FeatureFaceSelectionInputs {
-            scopes: &[scope()],
+            scopes: &[scope],
             groups,
             operands: &[],
             entity_operands: &[],
@@ -156,7 +178,61 @@ fn bind_groups(
     else {
         panic!("DeleteFace definition");
     };
-    faces.clone()
+    (faces.clone(), losses)
+}
+
+#[test]
+fn healed_delete_face_binds_across_intermediate_history_states() {
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(4, vec![20], Some(3)),
+            state(3, vec![10, 20], Some(2)),
+            state(2, vec![10, 20], Some(1)),
+            state(1, vec![10, 20], None),
+        ],
+    );
+    let mut scope = scope();
+    scope
+        .try_edit(|draft| draft.history_state_id = Some(4))
+        .unwrap();
+    let bound = bind_groups_with_scope(&[group(42, &[100])], true, native(), history, scope);
+    let FaceSelection::Historical { state, faces, .. } = bound else {
+        panic!("historical face selection");
+    };
+    let feature_id = FeatureId::mint("f3d:test:feature#42").unwrap();
+    let prefix = crate::ids::feature_input_prefix(&feature_id, 1);
+    assert_eq!(state, crate::ids::history_input_state_id(&prefix));
+    assert_eq!(
+        faces.as_slice(),
+        [crate::ids::history_input_face_id(&prefix, 10)]
+    );
+}
+
+#[test]
+fn an_intermediate_healing_deletion_prevents_the_member_count_proof() {
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(3, vec![30], Some(2)),
+            state(2, vec![10, 30], Some(1)),
+            state(1, vec![10, 20, 30], None),
+        ],
+    );
+    let mut scope = scope();
+    scope
+        .try_edit(|draft| draft.history_state_id = Some(3))
+        .unwrap();
+    assert_eq!(
+        bind_groups_with_scope(&[group(42, &[100])], true, native(), history, scope),
+        native(),
+    );
 }
 
 fn native() -> FaceSelection {
@@ -233,4 +309,59 @@ fn delete_face_keeps_a_selection_that_is_already_bound() {
         ),
         bound
     );
+}
+
+#[test]
+fn delete_face_member_order_assumption_keeps_direct_and_interval_selections() {
+    for intermediate in [false, true] {
+        for members in [&[100][..], &[100, 101][..]] {
+            let after = if members.len() == 1 {
+                vec![20]
+            } else {
+                Vec::new()
+            };
+            let mut states = vec![state(2, after, Some(1)), state(1, vec![10, 20], None)];
+            let mut scope = scope();
+            if intermediate {
+                if members.len() >= 2 {
+                    states = vec![
+                        state(3, Vec::new(), Some(2)),
+                        state(2, vec![10], Some(1)),
+                        state(1, vec![10, 20], None),
+                    ];
+                } else {
+                    states.insert(0, state(3, vec![20], Some(2)));
+                }
+                scope
+                    .try_edit(|draft| draft.history_state_id = Some(3))
+                    .unwrap();
+            }
+            let history =
+                crate::test_support::history::history("f3d:history".into(), 0, None, false, states);
+            let (bound, losses) = bind_groups_with_scope_and_losses(
+                &[group(42, members)],
+                true,
+                native(),
+                history,
+                scope,
+            );
+            let FaceSelection::Historical { faces, .. } = bound else {
+                panic!("historical face selection");
+            };
+            let feature_id = FeatureId::mint("f3d:test:feature#42").unwrap();
+            let prefix = crate::ids::feature_input_prefix(&feature_id, 1);
+            let expected: Vec<_> = [10, 20]
+                .into_iter()
+                .take(members.len())
+                .map(|slot| crate::ids::history_input_face_id(&prefix, slot))
+                .collect();
+            assert_eq!(faces.as_slice(), expected);
+            assert_eq!(losses.len(), usize::from(members.len() >= 2));
+            if let Some(loss) = losses.first() {
+                assert_eq!(*loss, crate::loss::F3dLossCode::HistoryDeleteFaceMemberOrderAssumed.note(
+                    format!("DeleteFace group {GROUP_ID} assigns selected faces to members in stable-slot order"),
+                ));
+            }
+        }
+    }
 }
