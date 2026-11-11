@@ -3171,27 +3171,7 @@ fn report_withheld_ownership(out: &mut Brep, facts: &typed::Facts) {
     let Some(attrs) = facts.valid_ownership_face_attrs() else {
         return;
     };
-    let Some(hierarchies) = facts.hierarchies(&attrs) else {
-        return;
-    };
-    let body_ids: HashSet<_> = out.bodies.iter().map(|body| body.id.as_str()).collect();
-    let shell_ids: HashSet<_> = out.shells.iter().map(|shell| shell.id.as_str()).collect();
     let face_ids: HashSet<_> = out.faces.iter().map(|face| face.id.as_str()).collect();
-    let bodies = hierarchies
-        .iter()
-        .filter(|hierarchy| {
-            let id = BodyId::compose(&body_namespace(), hierarchy.body.attr);
-            !body_ids.contains(id.as_str())
-        })
-        .count();
-    let shells = hierarchies
-        .iter()
-        .flat_map(|hierarchy| &hierarchy.shells)
-        .filter(|native| {
-            let id = ShellId::compose(&shell_namespace(), native.attr);
-            !shell_ids.contains(id.as_str())
-        })
-        .count();
     let faces = attrs
         .iter()
         .filter(|attr| {
@@ -3199,6 +3179,27 @@ fn report_withheld_ownership(out: &mut Brep, facts: &typed::Facts) {
             !face_ids.contains(id.as_str())
         })
         .count();
+    let mut bodies = 0;
+    let mut shells = 0;
+    if let Some(hierarchies) = facts.hierarchies(&attrs) {
+        let body_ids: HashSet<_> = out.bodies.iter().map(|body| body.id.as_str()).collect();
+        let shell_ids: HashSet<_> = out.shells.iter().map(|shell| shell.id.as_str()).collect();
+        bodies = hierarchies
+            .iter()
+            .filter(|hierarchy| {
+                let id = BodyId::compose(&body_namespace(), hierarchy.body.attr);
+                !body_ids.contains(id.as_str())
+            })
+            .count();
+        shells = hierarchies
+            .iter()
+            .flat_map(|hierarchy| &hierarchy.shells)
+            .filter(|native| {
+                let id = ShellId::compose(&shell_namespace(), native.attr);
+                !shell_ids.contains(id.as_str())
+            })
+            .count();
+    }
     let withheld = bodies + shells + faces;
     if withheld > 0 {
         out.losses.push(crate::loss::SldprtLossCode::TopologyOwnershipWithheld.note(format!(
