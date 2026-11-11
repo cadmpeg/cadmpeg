@@ -99,7 +99,7 @@ pub(super) fn bind_revolve_shape_target(
 
 /// Return the frame of the plane a target group's sole entity selection
 /// names: the `WorkPlane` scope at the next record, or an origin plane of a
-/// scope in model space.
+/// scope whose Design stream binds one component.
 fn selected_target_plane(
     inputs: &RevolveTargetInputs<'_>,
     group: &DesignConstructionOperandGroup,
@@ -120,7 +120,7 @@ fn selected_target_plane(
     }
     let (ordinal, _) =
         super::selected_origin_plane(scope, group, entity_selection_operands, design_types)?;
-    if !super::scope_space_is_model_space(scope, component_naming_spaces) {
+    if !super::scope_stream_has_one_component(scope, component_naming_spaces) {
         return None;
     }
     let frame = crate::history::selection::design_geometry_origin_plane_frame(ordinal)?;
