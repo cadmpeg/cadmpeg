@@ -60,3 +60,106 @@ pub(super) fn resolve(
     }
     Ok(profile)
 }
+
+pub(super) fn resolve_stale(
+    stream: &str,
+    profile: &DesignSketchProfileOperand,
+    sketch: &Sketch,
+    curves: &[SketchCurveIdentity],
+    resolution: ScopedExtrudeProfileResolution<'_>,
+    states: (i64, i64),
+    sweep: super::cap_regions::compact::Sweep<'_>,
+) -> Result<Option<PlanarProfileRef>, CodecError> {
+    let Some(selection) = &profile.region_selection else {
+        return Ok(None);
+    };
+    let Ok(owner) = u32::try_from(profile.entity_id.suffix()) else {
+        return Ok(None);
+    };
+    let mut stale = false;
+    let mut owned = Vec::new();
+    for region in &selection.regions {
+        let mut members = Vec::new();
+        for member in &region.members {
+            let has_identity = curves.iter().any(|curve| {
+                crate::ids::native_stream(&curve.id) == Some(stream)
+                    && curve.owner_reference == Some(owner)
+                    && curve.primary_id.get() == u64::from(member.curve_primary_id.get())
+            });
+            if has_identity {
+                let Some(entity) = sketch_profile_member_entity(
+                    stream,
+                    owner,
+                    member,
+                    sketch,
+                    curves,
+                    resolution.entities,
+                ) else {
+                    return Ok(None);
+                };
+                members.push(entity.clone());
+            } else {
+                stale = true;
+            }
+        }
+        owned.push(members);
+    }
+    if !stale {
+        return Ok(None);
+    }
+    let Some(candidate) =
+        super::cap_regions::compact::removed_candidate(sketch, resolution, states, sweep)?
+    else {
+        return Ok(None);
+    };
+    let PlanarProfileRef::SketchRegions { regions, .. } = &candidate else {
+        return Ok(None);
+    };
+    if regions.len() != owned.len() {
+        return Ok(None);
+    }
+    let mut assignments = vec![None; owned.len()];
+    for index in 0..owned.len() {
+        let mut visited = vec![false; owned.len()];
+        if !assign_region(index, &owned, regions, &mut assignments, &mut visited) {
+            return Ok(None);
+        }
+    }
+    Ok(Some(candidate))
+}
+
+fn assign_region(
+    index: usize,
+    owned: &[Vec<cadmpeg_ir::sketches::SketchEntityId>],
+    regions: &[cadmpeg_ir::features::SketchProfileRegion],
+    assignments: &mut [Option<usize>],
+    visited: &mut [bool],
+) -> bool {
+    for (target, region) in regions.iter().enumerate() {
+        let cadmpeg_ir::features::SketchProfileRegion::Trimmed {
+            outer_boundary,
+            hole_boundaries,
+        } = region
+        else {
+            continue;
+        };
+        if visited[target]
+            || !owned[index].iter().all(|entity| {
+                outer_boundary
+                    .iter()
+                    .chain(hole_boundaries.iter().flatten())
+                    .any(|use_| &use_.entity == entity)
+            })
+        {
+            continue;
+        }
+        visited[target] = true;
+        if assignments[target]
+            .is_none_or(|previous| assign_region(previous, owned, regions, assignments, visited))
+        {
+            assignments[target] = Some(index);
+            return true;
+        }
+    }
+    false
+}

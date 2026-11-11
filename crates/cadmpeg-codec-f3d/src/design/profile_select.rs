@@ -490,9 +490,10 @@ pub(crate) fn bind_extrude_profile_selections(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     curve_resolution: &SketchCurveSelectionResolution<'_>,
     resolution: ExtrudeProfileResolution<'_>,
-) -> Result<(), CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
 
+    let mut losses = Vec::new();
     for feature in features {
         let mut edit_result = Ok(());
         let mut to_distance_info = None;
@@ -745,6 +746,19 @@ pub(crate) fn bind_extrude_profile_selections(
                             .zip(native_stream(&scope.id))
                             .filter(|(operand, _)| operand.region_selection.is_some())
                         {
+                            if let Some(states) = scope.history_state_id().zip(effective_previous_history_state_id) {
+                                if let Some(selected) = region_members::resolve_stale(
+                                    stream, operand, sketch, curve_resolution.curve_identities,
+                                    scoped_resolution, states,
+                                    cap_regions::compact::Sweep { operation: op, start, direction, extent },
+                                )? {
+                                    *profile = ProfileRef::Planar(selected);
+                                    losses.push(crate::loss::F3dLossCode::FeatureProfileRegionIdentitiesStale.note(format!(
+                                        "Feature {} uses the atomic regions certified by its stored Cut transition because its region selection contains stale curve identities.", feature.id
+                                    )));
+                                    break 'feature_edit;
+                                }
+                            }
                             if let Some(selected) = region_members::resolve(
                                 stream,
                                 operand,
@@ -986,7 +1000,7 @@ pub(crate) fn bind_extrude_profile_selections(
         }
         resolution.profile_work.finish_selection();
     }
-    Ok(())
+    Ok(losses)
 }
 
 /// Loss notes for sketch curves that lie in no closed profile loop.

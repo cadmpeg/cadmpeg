@@ -2125,3 +2125,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** These start and termination groups retain their native identities when the candidate, support, complete-loop, and plane proofs remain unresolved.
+
+### DR-359. Region selections with curve identities absent from their Sketch
+
+**Question.** When a counted region selection names a curve identity that its Sketch no longer owns, do the atomic regions that the stored Cut transition removes equal the selected regions?
+
+**Known.** A later Sketch edit can remove a curve identity that a region selection names. The reading takes the atomic arrangement regions that lose material on a changed plane parallel to the Sketch. The candidate set must pass the compact Cut certificate, its region count must equal the stored region count, and every stored member identity that the Sketch still owns must bound the corresponding region. A feature read this way charges `feature.profile-region-identities-stale`.
+
+**Need.** The stored relation between a removed curve identity and its replacement curves, or a Cut whose stored transition removes a region outside its selection.
+
+**Conflict.** None.
+
+**Note.** DR-358 covers compact selections whose curve identities all resolve.
