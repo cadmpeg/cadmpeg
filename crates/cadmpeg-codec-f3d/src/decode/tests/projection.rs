@@ -221,7 +221,7 @@ fn recipe_side_search_past_its_work_cap_reports_a_loss() {
         .expect("face operand");
     // One counted side with 3,000 payload-prefix splits needs more search
     // work than the cap allows.
-    let mut program = vec![-1, -1, 2, 1, -1, 0, -1, 0, -1, 2, 5, -1, 7, -1];
+    let mut program = vec![-1, -1, 2, 1, -1, 0, -1, 1, -1, 2, 5, -1, 7, -1];
     program.extend_from_slice(&[0; 3000]);
     operand
         .recipe_nodes

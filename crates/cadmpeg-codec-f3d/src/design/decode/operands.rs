@@ -6473,19 +6473,22 @@ pub(crate) fn face_recipe_structure_within(
     let Some(remaining) = recipe_delimiter(remaining) else {
         return Ok(None);
     };
+    let side_count = match second_prelude {
+        1 => 1,
+        2 => 2,
+        _ => return Ok(None),
+    };
     let mut structure = None;
     for RecipeSideSequence {
         sides,
         remaining: tail,
-    } in edge_recipe_side_sequences(ctx, budget, remaining, 2, RecipeSideGrammar::Face)?
+    } in
+        edge_recipe_side_sequences(ctx, budget, remaining, side_count, RecipeSideGrammar::Face)?
     {
         let postlude = match tail {
             [] | [-1 | 0] => None,
             [-1, value, -1, 0, 0, -1] => Some(*value),
             _ => continue,
-        };
-        let Ok(sides) = sides.try_into() else {
-            continue;
         };
         if structure.is_some() {
             return Ok(None);
