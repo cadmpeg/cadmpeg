@@ -159,6 +159,9 @@ fn an_unbound_feature_reads_the_history_of_the_blob_that_holds_its_outputs() {
         2
     );
     for (feature, expected) in features.iter().zip(["100:1,0,1", "100:11,0,1"]) {
+        assert!(!feature
+            .source_properties
+            .contains_key(&cadmpeg_core::nonblank_literal!("body_centers_incomplete")));
         assert_eq!(
             feature
                 .source_properties
@@ -234,15 +237,17 @@ fn spline_side_edge_extends_the_body_box_beyond_its_vertices() {
     for cached in [false, true] {
         let topology = spline_pillow(cached);
         let index = crate::history::HistoricalBodyIndex::new(&topology);
-        let (bounds, exact) = index.body_bounds(100, &[1000, 1001, 1002]).unwrap();
+        let evidence = index.body_bounds(100, &[1000, 1001, 1002]);
+        let bounds = evidence.bounds.unwrap();
+        assert!(evidence.missing_evidence.is_empty());
         // The quadratic Bezier has y(t) = 16t(1-t), whose maximum is 4.
         assert_eq!(bounds, (Point3::new(0., 0., 0.), Point3::new(2., 4., 2.)));
-        assert!(!exact);
+        assert!(!evidence.exact);
     }
 }
 
 #[test]
-fn an_incomplete_sample_box_omits_the_body_center() {
+fn an_incomplete_sample_box_keeps_its_midpoint_in_the_partial_center() {
     let mut topology = spline_pillow(true);
     topology
         .edge_samples
@@ -250,14 +255,38 @@ fn an_incomplete_sample_box_omits_the_body_center() {
         .find(|sample| sample.edge == 1000)
         .unwrap()
         .bounds = None;
-    let index = crate::history::HistoricalBodyIndex::new(&topology);
-    assert!(index.body_bounds(100, &[1000, 1001, 1002]).is_none());
+    assert_incomplete_center(topology, Some("100:1,2,1"), "edge 1000");
+}
+
+#[test]
+fn an_unsampleable_edge_keeps_the_partial_body_center() {
+    let mut topology = spline_pillow(true);
+    topology.edge_samples.retain(|sample| sample.edge != 1000);
+    assert_incomplete_center(topology, Some("100:1,0,1"), "edge 1000");
+}
+
+#[test]
+fn a_missing_vertex_keeps_the_partial_body_center() {
+    let mut topology = pillow(0.0);
+    topology.point_positions.retain(|point| point.point != 11);
+    assert_incomplete_center(topology, Some("100:1,0,1"), "vertex 1");
+}
+
+#[test]
+fn a_body_without_edge_evidence_has_an_incomplete_center_entry() {
+    let mut topology = pillow(0.0);
+    topology.point_positions.clear();
+    topology.edge_samples.clear();
+    assert_incomplete_center(topology, None, "edge 1000");
+}
+
+fn assert_incomplete_center(topology: AsmHistoricalTopology, expected: Option<&str>, detail: &str) {
     let scope = scope_between(3, 2);
     let mut feature = base_feature();
     feature.id = crate::ids::neutral_feature_id(&scope);
     feature.native_ref = Some(scope.id.clone());
     let history = crate::test_support::history::history(
-        "f3d:asm-history#unresolved-edge".into(),
+        "f3d:asm-history#incomplete-edge".into(),
         0,
         None,
         false,
@@ -275,10 +304,27 @@ fn an_incomplete_sample_box_omits_the_body_center() {
         None,
     )
     .unwrap();
-    assert!(!feature
-        .source_properties
-        .contains_key(&cadmpeg_core::nonblank_literal!("body_centers")));
+    assert_eq!(
+        feature
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("body_centers"))
+            .map(String::as_str),
+        expected
+    );
+    assert_eq!(
+        feature
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("body_centers_incomplete"))
+            .map(String::as_str),
+        Some("100")
+    );
+    let code = if expected.is_some() {
+        crate::loss::F3dLossCode::HistoricalBodyCenterPartial
+    } else {
+        crate::loss::F3dLossCode::HistoricalBodyBoundsUnresolved
+    };
     assert!(losses
         .iter()
-        .any(|note| note.code == crate::loss::F3dLossCode::HistoricalBodyBoundsUnresolved.kind()));
+        .any(|note| note.code == code.kind()
+            && (expected.is_none() || note.message.contains(detail))));
 }

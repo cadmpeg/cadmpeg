@@ -1010,6 +1010,9 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
     topo_partial_vertices
         .point_positions
         .retain(|p| p.point != 21);
+    topo_partial_vertices
+        .edge_samples
+        .retain(|sample| sample.edge != 8);
 
     let mut topo_unsolid_body = two_solid_boxes_with_planes(
         1,
@@ -1079,22 +1082,13 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
                 .source_properties
                 .get(&cadmpeg_core::nonblank_literal!("body_centers"))
                 .map(String::as_str),
-            Some(if i == 0 { "2:0,0,2" } else { "1:0,0,1;2:0,0,2" }),
-            "case {i} must preserve centres with complete edge evidence"
+            Some("1:0,0,1;2:0,0,2"),
+            "case {i} must preserve centres from available edge evidence"
         );
         if i == 0 {
-            assert!(
-                losses.iter().any(|loss| {
-                    loss.code == crate::loss::F3dLossCode::HistoricalBodyBoundsUnresolved.kind()
-                }),
-                "partial vertex evidence must emit HistoricalBodyBoundsUnresolved"
-            );
-            assert!(
-                losses.iter().all(|loss| {
-                    loss.code != crate::loss::F3dLossCode::HistoricalBodyCenterPartial.kind()
-                }),
-                "partial vertex evidence must omit the body centre"
-            );
+            assert!(losses.iter().any(|loss| {
+                loss.code == crate::loss::F3dLossCode::HistoricalBodyCenterPartial.kind()
+            }));
 
             let history_prev_only = crate::test_support::history::history(
                 "f3d:asm-history#incomplete-prev-only".into(),
