@@ -34,7 +34,7 @@ fn names(
     scopes: &[DesignParameterScope],
     placements: &[DesignSketchPlacement],
     name: Option<&str>,
-) -> (Option<String>, Option<String>) {
+) -> ((Option<String>, Option<String>), Vec<LossNote>) {
     let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
     let mut features = crate::test_support::with_decode_context(|ctx| {
         project_parameter_design_with_edge_identities(
@@ -69,53 +69,55 @@ fn names(
         profiles: Vec::new(),
         native_ref: Some(placements[0].id.clone()),
     }];
-    bind_sketch_names(&features, scopes, placements, &mut sketches, &mut spatial);
-    (sketches[0].name.clone(), spatial[0].name.clone())
+    let losses = bind_sketch_names(&features, scopes, placements, &mut sketches, &mut spatial);
+    ((sketches[0].name.clone(), spatial[0].name.clone()), losses)
 }
 
 #[test]
-fn exact_scope_copies_the_feature_display_name_to_planar_and_spatial_sketches() {
-    let result = names(
-        &[scope(10)],
-        &[placement(20, Some(10))],
-        Some("Browser label"),
-    );
+fn exact_scope_copies_composed_feature_name_and_charges_one_loss() {
+    let (result, losses) = names(&[scope(10)], &[placement(20, Some(10))], Some("Sketch 1"));
+    assert_eq!(losses.len(), 1);
     assert_eq!(
-        result,
-        (Some("Browser label".into()), Some("Browser label".into()))
+        losses[0].code,
+        F3dLossCode::SketchNameComposedFromFeatureOrdinal.kind()
     );
+    assert_eq!(result, (Some("Sketch 1".into()), Some("Sketch 1".into())));
 }
 
 #[test]
 fn absent_scope_keeps_entity_names() {
-    let result = names(&[], &[placement(20, None)], Some("Browser label"));
+    let (result, losses) = names(&[], &[placement(20, None)], Some("Sketch 1"));
+    assert!(losses.is_empty());
     assert_eq!(result, (Some("Sketch_42".into()), Some("Sketch_42".into())));
 }
 
 #[test]
 fn two_scopes_selecting_one_sketch_keep_entity_names() {
-    let result = names(
+    let (result, losses) = names(
         &[scope(10), scope(11)],
         &[placement(20, Some(10)), placement(21, Some(11))],
-        Some("Browser label"),
+        Some("Sketch 1"),
     );
+    assert!(losses.is_empty());
     assert_eq!(result, (Some("Sketch_42".into()), Some("Sketch_42".into())));
 }
 
 #[test]
 fn two_placements_carrying_one_scope_keep_entity_names() {
-    let result = names(
+    let (result, losses) = names(
         &[scope(10)],
         &[placement(20, Some(10)), placement(21, Some(10))],
-        Some("Browser label"),
+        Some("Sketch 1"),
     );
+    assert!(losses.is_empty());
     assert_eq!(result, (Some("Sketch_42".into()), Some("Sketch_42".into())));
 }
 
 #[test]
 fn absent_or_empty_display_name_keeps_entity_names() {
     for name in [None, Some("")] {
-        let result = names(&[scope(10)], &[placement(20, Some(10))], name);
+        let (result, losses) = names(&[scope(10)], &[placement(20, Some(10))], name);
+        assert!(losses.is_empty());
         assert_eq!(result, (Some("Sketch_42".into()), Some("Sketch_42".into())));
     }
 }
@@ -124,6 +126,29 @@ fn absent_or_empty_display_name_keeps_entity_names() {
 fn scope_stream_is_part_of_the_placement_join() {
     let mut other = scope(10);
     other.id = "f3d:Other/BulkStream.dat:parameter-scope#10".into();
-    let result = names(&[other], &[placement(20, Some(10))], Some("Browser label"));
+    let (result, losses) = names(&[other], &[placement(20, Some(10))], Some("Sketch 1"));
+    assert!(losses.is_empty());
     assert_eq!(result, (Some("Sketch_42".into()), Some("Sketch_42".into())));
+}
+
+#[test]
+fn a_named_feature_without_projected_sketches_charges_no_name_loss() {
+    let scopes = [scope(10)];
+    let placements = [placement(20, Some(10))];
+    let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
+    let features = crate::test_support::with_decode_context(|ctx| {
+        project_parameter_design_with_edge_identities(
+            ctx,
+            &ProjectInputs {
+                scopes: &scopes,
+                placements: &placements,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .features
+    });
+    assert_eq!(features.len(), 1);
+    assert!(bind_sketch_names(&features, &scopes, &placements, &mut [], &mut []).is_empty());
 }

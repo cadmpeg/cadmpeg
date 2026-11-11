@@ -2053,3 +2053,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-375. Stored name of a Sketch renamed in the timeline
+
+**Question.** Where does a Sketch renamed in the timeline store its name?
+
+**Known.** The placement reader in `design/decode/sketch.rs` reads the display-name slot in its empty form. The empty form occurs in all ten Sketch placements checked in two public inputs: nine in the Micron motor cover and one in ParametricLogo. The projected Feature name joins the stored scope kind spelling, a space, and the feature ordinal. A planar or spatial Sketch takes this name when one placement in the same stream carries its scope, one Feature with a non-empty name projects from that scope, and one scope selects the sketch.
+
+**Need.** A design with a Sketch renamed in the timeline.
+
+**Conflict.** None.
+
+**Note.** The decoder charges one aggregate `sketch.name-composed-from-feature-ordinal` loss when sketches take the composed name.

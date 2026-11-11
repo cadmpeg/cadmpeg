@@ -2150,6 +2150,16 @@
         "code": {
           "scope": "namespaced",
           "namespace": "f3d",
+          "code": "sketch.name-composed-from-feature-ordinal",
+          "kind": "attributes_not_transferred"
+        },
+        "severity": "warning",
+        "message": "1 sketch name(s) use the projected Feature name composed from the stored scope kind spelling and feature ordinal; this assumes the default timeline name."
+      },
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
           "code": "feature.edge-reference-lost",
           "kind": "attributes_not_transferred"
         },

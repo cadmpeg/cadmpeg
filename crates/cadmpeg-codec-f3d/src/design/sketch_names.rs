@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::ids::{native_stream, neutral_sketch_id, neutral_spatial_sketch_id};
+use crate::loss::F3dLossCode;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::sketch_placement::DesignSketchPlacement;
 use cadmpeg_ir::features::Feature;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::{Sketch, SpatialSketch};
 use std::collections::HashMap;
 
@@ -26,7 +28,8 @@ pub(crate) fn bind_sketch_names(
     placements: &[DesignSketchPlacement],
     sketches: &mut [Sketch],
     spatial_sketches: &mut [SpatialSketch],
-) {
+) -> Vec<LossNote> {
+    let mut composed = 0usize;
     let mut owners = HashMap::new();
     for scope in scopes
         .iter()
@@ -51,13 +54,22 @@ pub(crate) fn bind_sketch_names(
         let spatial = neutral_spatial_sketch_id(placement);
         for sketch in sketches.iter_mut().filter(|sketch| sketch.id == planar) {
             sketch.name = Some(name.to_owned());
+            composed += 1;
         }
         for sketch in spatial_sketches
             .iter_mut()
             .filter(|sketch| sketch.id == spatial)
         {
             sketch.name = Some(name.to_owned());
+            composed += 1;
         }
+    }
+    if composed == 0 {
+        Vec::new()
+    } else {
+        vec![F3dLossCode::SketchNameComposedFromFeatureOrdinal.note(format!(
+            "{composed} sketch name(s) use the projected Feature name composed from the stored scope kind spelling and feature ordinal; this assumes the default timeline name."
+        ))]
     }
 }
 
