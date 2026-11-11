@@ -128,3 +128,15 @@ fn planar_pcurve_recovers_a_solid_for_each_geometry_writer() {
 }
 
 mod repro;
+
+#[cfg(all(
+    feature = "step",
+    any(
+        feature = "sldprt",
+        feature = "nx",
+        feature = "catia",
+        feature = "creo",
+        feature = "inventor"
+    )
+))]
+mod nist_twins;
