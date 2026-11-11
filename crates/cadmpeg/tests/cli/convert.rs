@@ -6,7 +6,8 @@
     feature = "fcstd",
     feature = "iges",
     feature = "rhino",
-    feature = "step"
+    feature = "step",
+    all(feature = "f3d", feature = "sldprt")
 ))]
 use std::fs;
 #[cfg(feature = "rhino")]
