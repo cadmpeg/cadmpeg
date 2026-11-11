@@ -918,12 +918,32 @@ fn split_body_tool_body_selects_the_resolved_body_faces() {
     )
     .unwrap()
     .unwrap();
-    let cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Historical { faces, .. }) =
-        split_body_tool(&definition)
+    let cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Historical {
+        state,
+        faces,
+        native,
+    }) = split_body_tool(&definition)
     else {
         panic!("expected historical tool faces");
     };
-    assert_eq!(faces.len(), 2);
+    assert!(state.as_str().ends_with(":7"));
+    let faces: Vec<&str> = faces.iter().map(|face| face.as_str()).collect();
+    assert!(faces.len() == 2 && faces[0].ends_with(":7:20") && faces[1].ends_with(":7:21"));
+    assert_eq!(native.as_str(), groups[0].id);
+
+    let scope = split_body_scope_referencing(vec![100, 101, 102, 103, 104]);
+    let mixed = [
+        group(77, 0, 100, vec![101, 102], DesignOperandRole::ROLE_0X21),
+        group(77, 3, 103, vec![104], DesignOperandRole::BODIES_A),
+    ];
+    let definition = project_split(&scope, &[], &mixed, &[], &[], &[split_body_tool_body(true)])
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        split_body_tool(&definition),
+        &cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(mixed[0].id.clone()))
+    );
+    let scope = split_body_scope();
 
     let definition = project_split(
         &scope,
