@@ -287,6 +287,7 @@ pub(super) fn exact_component_insert_construction(
                 _ => return None,
             };
         let relation_at = records.first_at_or_after(0, relation_record_index)?;
+        let mut occurrence_key = None;
         let (carrier_record_index, placements) = if matches!(frame_length, 272 | 276 | 400 | 404) {
             if relation_at >= start
                 || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 58
@@ -320,21 +321,21 @@ pub(super) fn exact_component_insert_construction(
                 if let Some((role, offset)) = identity {
                     placements.push((role, offset, None));
                 } else {
-                    let (role, offset, carrier_transform_at) =
-                        crate::xref::attributed_component_insert_carrier(
-                            bytes,
-                            carrier_at,
-                            relation_at,
-                            carrier_record_index,
-                        )?;
-                    let carrier_transform = match carrier_transform_at {
+                    let carrier = crate::xref::attributed_component_insert_carrier(
+                        bytes,
+                        carrier_at,
+                        relation_at,
+                        carrier_record_index,
+                    )?;
+                    let carrier_transform = match carrier.transform_offset {
                         Some(at) => Some(rigid_transform_at(bytes, at)?),
                         None => None,
                     };
                     if carrier_transform != transform_at.map(|_| transform) {
                         return None;
                     }
-                    placements.push((role, offset, carrier_transform_at));
+                    placements.push((carrier.role, carrier.role_offset, carrier.transform_offset));
+                    occurrence_key = Some(carrier.occurrence_key);
                 }
             }
             for &carrier_at in records
@@ -362,17 +363,17 @@ pub(super) fn exact_component_insert_construction(
             if frame_length == 404 && placements.is_empty() {
                 let carrier_at =
                     unique_indexed_record_before(records, carrier_record_index, relation_at)?;
-                let (role, offset, carrier_transform_at) =
-                    crate::xref::attributed_component_insert_carrier(
-                        bytes,
-                        carrier_at,
-                        relation_at,
-                        carrier_record_index,
-                    )?;
-                if rigid_transform_at(bytes, carrier_transform_at?)? != transform {
+                let carrier = crate::xref::attributed_component_insert_carrier(
+                    bytes,
+                    carrier_at,
+                    relation_at,
+                    carrier_record_index,
+                )?;
+                if rigid_transform_at(bytes, carrier.transform_offset?)? != transform {
                     return None;
                 }
-                placements.push((role, offset, carrier_transform_at));
+                placements.push((carrier.role, carrier.role_offset, carrier.transform_offset));
+                occurrence_key = Some(carrier.occurrence_key);
             }
             (carrier_record_index, placements)
         } else if scope.class_tag.as_str() == "426" && scope.paired_class_tag.as_str() == "258" {
@@ -518,6 +519,7 @@ pub(super) fn exact_component_insert_construction(
             occurrence_identity: Some(occurrence_identity),
             neutron_role,
             neutron_role_offset: u64::try_from(neutron_role_offset).ok()?,
+            occurrence_key,
             placement: match (transform_at, carrier_transform_offset) {
                 (Some(offset), carrier_offset) => {
                     Some(assembly_features::DesignComponentInsertMatrix {

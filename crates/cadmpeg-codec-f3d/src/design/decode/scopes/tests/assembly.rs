@@ -1958,6 +1958,7 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
             occurrence_identity: None,
             neutron_role: role.into(),
             neutron_role_offset: 0,
+            occurrence_key: None,
             placement: Some(DesignComponentInsertMatrix {
                 scope: Located {
                     value: SketchPlacementMatrix::IDENTITY,

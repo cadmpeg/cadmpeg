@@ -1157,6 +1157,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             .xref_table()
             .map_or(&[], |table| table.references.as_slice()),
         products.occurrences,
+        &design.design_parameter_scopes,
     );
     crate::design::components::project_derived_instance_features(
         &mut model.features,

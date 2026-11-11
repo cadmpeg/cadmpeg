@@ -18,6 +18,16 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_occurrence_identity, u64, "occurrence_identity");
 cadmpeg_core::named_optional_field!(deserialize_transform, SketchPlacementMatrix, "transform");
 cadmpeg_core::named_optional_field!(deserialize_transform_offset, u64, "transform_offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_occurrence_key,
+    DesignRelaxedGuidText,
+    "occurrence_key"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_occurrence_key_offset,
+    u64,
+    "occurrence_key_offset"
+);
 /// External occurrence and placement joined through a `Component Insert` scope.
 #[derive(Debug, PartialEq, Deserialize)]
 #[cfg_attr(not(test), derive(Clone))]
@@ -35,6 +45,9 @@ pub(crate) struct DesignComponentInsertConstruction {
     pub(crate) neutron_role: String,
     /// Byte offset of the occurrence-role string payload.
     pub(crate) neutron_role_offset: u64,
+    /// Source occurrence key of an attributed legacy carrier and the offset of
+    /// its string payload.
+    pub(crate) occurrence_key: Option<Located<DesignRelaxedGuidText>>,
     /// Explicit scope-local placement and its optional repeated carrier location.
     /// Absence is the encoded identity form.
     pub(crate) placement: Option<DesignComponentInsertMatrix>,
@@ -55,6 +68,7 @@ impl Clone for DesignComponentInsertConstruction {
             occurrence_identity: self.occurrence_identity,
             neutron_role: self.neutron_role.clone(),
             neutron_role_offset: self.neutron_role_offset,
+            occurrence_key: self.occurrence_key.clone(),
             placement: self.placement.clone(),
         }
     }
@@ -109,6 +123,20 @@ struct DesignComponentInsertConstructionWire {
     neutron_role: String,
     /// Byte offset of the occurrence-role string payload.
     neutron_role_offset: u64,
+    /// Source occurrence key of an attributed legacy carrier.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_occurrence_key"
+    )]
+    occurrence_key: Option<DesignRelaxedGuidText>,
+    /// Byte offset of the source occurrence key's string payload.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_occurrence_key_offset"
+    )]
+    occurrence_key_offset: Option<u64>,
     /// Row-major local occurrence transform in centimetres.
     transform: SketchPlacementMatrix,
     /// Byte offset of the first scope-local transform scalar. `None` is the
@@ -139,6 +167,10 @@ impl Serialize for DesignComponentInsertConstruction {
             occurrence_identity: Option<u64>,
             neutron_role: &'a str,
             neutron_role_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            occurrence_key: Option<&'a DesignRelaxedGuidText>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            occurrence_key_offset: Option<u64>,
             transform: SketchPlacementMatrix,
             #[serde(skip_serializing_if = "Option::is_none")]
             transform_offset: Option<u64>,
@@ -151,6 +183,8 @@ impl Serialize for DesignComponentInsertConstruction {
             occurrence_identity: self.occurrence_identity,
             neutron_role: &self.neutron_role,
             neutron_role_offset: self.neutron_role_offset,
+            occurrence_key: self.occurrence_key.as_ref().map(|key| &key.value),
+            occurrence_key_offset: self.occurrence_key.as_ref().map(|key| key.offset),
             transform: *self.transform(),
             transform_offset: self.transform_offset(),
             carrier_transform_offset: self.carrier_transform_offset(),
@@ -186,12 +220,18 @@ impl TryFrom<DesignComponentInsertConstructionWire> for DesignComponentInsertCon
                 return Err("carrier_transform_offset requires transform_offset".into())
             }
         };
+        let occurrence_key = match (wire.occurrence_key, wire.occurrence_key_offset) {
+            (Some(value), Some(offset)) => Some(Located { value, offset }),
+            (None, None) => None,
+            _ => return Err("occurrence_key and occurrence_key_offset occur together".into()),
+        };
         Ok(Self {
             relation_record_index: wire.relation_record_index,
             carrier_record_index: wire.carrier_record_index,
             occurrence_identity: wire.occurrence_identity,
             neutron_role: wire.neutron_role,
             neutron_role_offset: wire.neutron_role_offset,
+            occurrence_key,
             placement,
         })
     }
@@ -209,6 +249,8 @@ impl From<DesignComponentInsertConstruction> for DesignComponentInsertConstructi
             occurrence_identity: record.occurrence_identity,
             neutron_role: record.neutron_role,
             neutron_role_offset: record.neutron_role_offset,
+            occurrence_key: record.occurrence_key.as_ref().map(|key| key.value.clone()),
+            occurrence_key_offset: record.occurrence_key.as_ref().map(|key| key.offset),
             transform,
             transform_offset,
             carrier_transform_offset,

@@ -2122,6 +2122,7 @@ mod tests {
                 &carriers[..count],
                 &table.references,
                 &combined,
+                &[],
             );
             assert_eq!(
                 bindings.ambiguous(STREAM, &[external_key.to_owned()]),
@@ -2939,7 +2940,7 @@ mod tests {
             1
         );
         let paths =
-            super::paths::LocalOccurrencePaths::new(&carriers, &[], &projection.occurrences);
+            super::paths::LocalOccurrencePaths::new(&carriers, &[], &projection.occurrences, &[]);
         assert!(paths
             .resolve(STREAM, &[carriers[1].occurrence_guid.as_str().to_owned()])
             .is_none());
@@ -3083,7 +3084,7 @@ mod tests {
         assert_eq!(projection.occurrences.len(), 4);
         let graph = cadmpeg_ir::products::AssemblyGraph::new(&projection.occurrences).unwrap();
         let paths =
-            super::paths::LocalOccurrencePaths::new(&carriers, &[], &projection.occurrences);
+            super::paths::LocalOccurrencePaths::new(&carriers, &[], &projection.occurrences, &[]);
         let key = vec![carriers[0].occurrence_guid.as_str().to_owned()];
         let first = paths.resolve(STREAM, &key).unwrap().0;
         let second = paths.resolve(OTHER_STREAM, &key).unwrap().0;
@@ -3354,7 +3355,7 @@ mod tests {
             std::slice::from_mut(&mut feature),
             std::slice::from_ref(&scope),
         );
-        let paths = super::paths::LocalOccurrencePaths::new(&[], &[], &operation_occurrences);
+        let paths = super::paths::LocalOccurrencePaths::new(&[], &[], &operation_occurrences, &[]);
         assert!(
             super::paths::bind_feature_paths(std::slice::from_mut(&mut feature), &paths).is_empty()
         );
@@ -3377,6 +3378,7 @@ mod tests {
                     occurrence_identity: None,
                     neutron_role: role.into(),
                     neutron_role_offset: 0,
+                    occurrence_key: None,
                     placement: None,
                 },
             );
