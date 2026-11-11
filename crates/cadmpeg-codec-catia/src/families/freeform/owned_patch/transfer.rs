@@ -105,6 +105,7 @@ pub(super) fn append(
     }
     let mut count = 0;
     let mut inferred_senses = 0;
+    let mut boundary_recovery = [(0_usize, 0.0_f64); 3];
     let mut reconciled = [0; 4];
     let mut max_discrepancy_mm = 0.0_f64;
     let (mut rolling_ball, mut offset, mut ruled, mut extrusion) = (0, 0, 0, 0);
@@ -152,6 +153,24 @@ pub(super) fn append(
                         }
                     }
                 }
+                for patch in &patches {
+                    let accuracy_gap = patch
+                        .sides
+                        .iter()
+                        .map(|side| side.lift_error_mm)
+                        .filter(|&gap| gap > GAP_MM)
+                        .fold(0.0_f64, f64::max);
+                    for ((faces, largest), gap) in boundary_recovery.iter_mut().zip([
+                        patch.recovery.rolling_extension_mm,
+                        patch.recovery.affine_vertex_shift_mm,
+                        accuracy_gap,
+                    ]) {
+                        if gap > 0.0 {
+                            *faces += 1;
+                            *largest = largest.max(gap);
+                        }
+                    }
+                }
                 inferred_senses += patches.iter().filter(|patch| patch.sense_inferred).count();
                 for fit in patches.iter().filter_map(|patch| patch.surface_fit) {
                     match fit {
@@ -170,6 +189,18 @@ pub(super) fn append(
     }
     if reconciled.iter().any(|&count| count != 0) {
         refusal.push_shared_boundary_reconciled(reconciled, max_discrepancy_mm);
+    }
+    for (code, (faces, gap)) in [
+        CatiaLossCode::GeometryRollingSheetExtended,
+        CatiaLossCode::TopologyAffineVertexReconciled,
+        CatiaLossCode::GeometryParameterMapAccuracyInferred,
+    ]
+    .into_iter()
+    .zip(boundary_recovery)
+    {
+        if faces > 0 {
+            refusal.push_sheet_boundary_recovery(code, faces, gap);
+        }
     }
     if inferred_senses != 0 {
         refusal.push_owned_patch_sense_inferred(inferred_senses);
@@ -454,7 +485,8 @@ fn retry_shared_boundary(
                     max_gap_mm = max_gap_mm.max(edge_discrepancy(prior, side));
                     if edge_alignment::align(prior, side, &retry.surface).is_none() {
                         matches_edge_within(prior, side, MAX_SHARED_EDGE_SEED_GAP_MM)?;
-                        *side = edge_alignment::reproject(prior, side, &retry.surface)?;
+                        *side =
+                            edge_alignment::reproject_corroborated(prior, side, &retry.surface)?;
                     }
                     modified = true;
                 }
@@ -522,6 +554,13 @@ fn append_component(
             uses.push((patch.face, side));
         }
     }
+    let affine_vertices = patches
+        .iter()
+        .filter(|patch| patch.recovery.affine_vertex_shift_mm > 0.0)
+        .flat_map(|patch| &patch.sides)
+        .flat_map(|side| side.vertices.map(|(id, _)| id))
+        .collect::<BTreeSet<_>>();
+    let mut inferred_fields = Vec::new();
     let first = patches[0].face;
     macro_rules! id {
         ($kind:ty, $label:literal, $offset:expr) => {
@@ -557,6 +596,9 @@ fn append_component(
             .ok_or_else(|| CodecError::malformed("CATIA patch vertex is non-finite"))?;
         admit(point_id.as_str(), vertex, "lifted_boundary_vertex")?;
         admit(vertex_id.as_str(), vertex, "boundary_vertex")?;
+        if affine_vertices.contains(&vertex) {
+            inferred_fields.push((point_id.to_string(), "position"));
+        }
         ir.model
             .points
             .push(Point::new(point_id.clone(), point, None));
@@ -572,6 +614,20 @@ fn append_component(
         let edge_id = id!(EdgeId, "edge", edge);
         admit(curve.as_str(), edge, "fitted_boundary_curve")?;
         admit(edge_id.as_str(), edge, "boundary_edge")?;
+        let mut edge_accuracy_mm = GAP_MM;
+        for (_, occurrence) in uses {
+            if occurrence.lift_error_mm > GAP_MM {
+                let accuracy = occurrence.inferred_accuracy.ok_or_else(|| {
+                    CodecError::malformed("CATIA repaired edge has no inferred accuracy")
+                })?;
+                edge_accuracy_mm = edge_accuracy_mm.max(accuracy.bound_mm + GAP_MM);
+                admit(edge_id.as_str(), accuracy.source, "parameter_map_accuracy")?;
+            }
+        }
+        let tolerance = PositiveReal::new(edge_accuracy_mm);
+        if edge_accuracy_mm > GAP_MM {
+            inferred_fields.push((edge_id.to_string(), "tolerance"));
+        }
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(side.curve.clone())),
@@ -690,6 +746,9 @@ fn append_component(
             tolerance,
         });
         faces.push(face);
+    }
+    for (id, field) in inferred_fields {
+        annotations.field_exactness(id, field, Exactness::Inferred)?;
     }
     for (face, patch) in faces.iter().zip(patches) {
         if patch.sense_inferred {

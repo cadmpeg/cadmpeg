@@ -65,6 +65,12 @@ pub(crate) enum CatiaLossCode {
     SourceCatalogScanBounded,
     /// Verbatim vertex points and analytic surface carriers were decoded.
     GeometryCarrierSummary,
+    /// A sheet fit extends a rolling section past its stored transverse interval.
+    GeometryRollingSheetExtended,
+    /// Corroborated affine stations replace disagreeing fitted vertex positions.
+    TopologyAffineVertexReconciled,
+    /// A planar shared-edge lift uses a native parameter-map fit tolerance.
+    GeometryParameterMapAccuracyInferred,
     /// A sheet face uses a fitted surface carrier.
     GeometrySheetSurfaceFitted,
     /// A transferred rolling-ball fit uses adjusted rail points.
@@ -162,6 +168,9 @@ impl CatiaLossCode {
         Self::SourceAnnotationCollision,
         Self::SourceCatalogScanBounded,
         Self::GeometryCarrierSummary,
+        Self::GeometryRollingSheetExtended,
+        Self::TopologyAffineVertexReconciled,
+        Self::GeometryParameterMapAccuracyInferred,
         Self::GeometrySheetSurfaceFitted,
         Self::GeometryRollingBallRailsAdjusted,
         Self::GeometryUnresolvedCarriers,
@@ -218,6 +227,11 @@ impl CatiaLossCode {
             Self::SourceAnnotationCollision => "source.annotation-identity-collision",
             Self::SourceCatalogScanBounded => "source.catalog-scan-bounded",
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
+            Self::GeometryRollingSheetExtended => "geometry.rolling-sheet-extended",
+            Self::TopologyAffineVertexReconciled => "topology.affine-vertex-reconciled",
+            Self::GeometryParameterMapAccuracyInferred => {
+                "geometry.parameter-map-accuracy-inferred"
+            }
             Self::GeometrySheetSurfaceFitted => "geometry.sheet-surface-fitted",
             Self::GeometryRollingBallRailsAdjusted => "geometry.rolling-ball-rails-adjusted",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
@@ -302,9 +316,10 @@ impl CatiaLossCode {
             | Self::GeometryVertexToleranceWidened
             | Self::TopologySheetComponentsInferred => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
-            Self::GeometrySheetSurfaceFitted | Self::GeometryRollingBallRailsAdjusted => {
-                LossTaxonomy::GeometryAgreementSampled
-            }
+            Self::GeometryRollingSheetExtended
+            | Self::GeometryParameterMapAccuracyInferred
+            | Self::GeometrySheetSurfaceFitted
+            | Self::GeometryRollingBallRailsAdjusted => LossTaxonomy::GeometryAgreementSampled,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::GeometryPlaneParametersInvalid
@@ -332,6 +347,7 @@ impl CatiaLossCode {
             | Self::TopologyZeroEntityNotTransferred
             | Self::TopologyZeroEntityFaceUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyZeroEntityGaugeSubstituted
+            | Self::TopologyAffineVertexReconciled
             | Self::TopologyOwnedPatchSenseInferred
             | Self::TopologySharedBoundaryReconciled
             | Self::TopologyTwoEdgeBindingInferred => LossTaxonomy::TopologyGaugeSubstituted,
@@ -389,6 +405,9 @@ mod tests {
                 "source.annotation-identity-collision",
                 "source.catalog-scan-bounded",
                 "geometry.carrier-summary",
+                "geometry.rolling-sheet-extended",
+                "topology.affine-vertex-reconciled",
+                "geometry.parameter-map-accuracy-inferred",
                 "geometry.sheet-surface-fitted",
                 "geometry.rolling-ball-rails-adjusted",
                 "geometry.unresolved-carriers",

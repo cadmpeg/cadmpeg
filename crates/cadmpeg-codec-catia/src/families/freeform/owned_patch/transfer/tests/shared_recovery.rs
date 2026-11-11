@@ -8,7 +8,7 @@ fn transfer(patches: Vec<Patch>) -> CadIr {
     transfer_with_notes(patches).0
 }
 
-fn transfer_with_notes(patches: Vec<Patch>) -> (CadIr, Vec<LossNote>) {
+pub(super) fn transfer_with_notes(patches: Vec<Patch>) -> (CadIr, Vec<LossNote>) {
     let mut ir = CadIr::empty();
     let mut refusal = LaneRefusals::new();
     crate::test_support::with_service_context(|ctx| {
@@ -65,7 +65,7 @@ fn assert_no_reconciliation(notes: &[LossNote]) {
         .all(|note| note.code.local_code() != "topology.shared-boundary-reconciled"));
 }
 
-fn assert_shared_sheet(ir: &CadIr) {
+pub(super) fn assert_shared_sheet(ir: &CadIr) {
     let validation =
         cadmpeg_ir::validate_neutral(ir, Vec::new()).expect("validate recovered sheet");
     assert!(validation.is_ok(), "{:?}", validation.findings);
@@ -236,6 +236,8 @@ fn shared_sheet_recovery_preserves_hole_containment() {
             .expect("hole edge"),
             pcurve: line_pcurve([0.0, 1.0], uv).expect("hole pcurve"),
             forward: true,
+            inferred_accuracy: None,
+            lift_error_mm: 0.0,
         });
     }
     let (ir, notes) = transfer_with_notes(patches);
