@@ -8,6 +8,11 @@ use cadmpeg_ir::scalar::PositiveReal;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
+    deserialize_construction_plane_scope,
+    DesignMirrorConstructionPlaneScope,
+    "construction_plane_scope"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_assumed_plane_scope,
     DesignMirrorAssumedPlaneScope,
     "assumed_plane_scope"
@@ -86,6 +91,8 @@ pub(crate) struct DesignMirrorConstruction {
     pub(crate) plane_selection_record_index: Option<u32>,
     /// Proven selected-face mirror plane, when exact.
     pub(crate) plane: Option<DesignPlane>,
+    /// `WorkPlane` scope named by a construction-plane selection identity.
+    pub(crate) construction_plane_scope: Option<DesignMirrorConstructionPlaneScope>,
     /// `WorkPlane` scope read from the plane selection identity when no face
     /// candidate gives a plane.
     pub(crate) assumed_plane_scope: Option<DesignMirrorAssumedPlaneScope>,
@@ -177,6 +184,13 @@ struct DesignMirrorConstructionWire {
         deserialize_with = "deserialize_plane_normal"
     )]
     plane_normal: Option<FiniteVector3>,
+    /// `WorkPlane` scope named by a construction-plane selection identity.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_construction_plane_scope"
+    )]
+    construction_plane_scope: Option<DesignMirrorConstructionPlaneScope>,
     /// `WorkPlane` scope read from the plane selection identity.
     #[serde(
         default,
@@ -184,6 +198,14 @@ struct DesignMirrorConstructionWire {
         deserialize_with = "deserialize_assumed_plane_scope"
     )]
     assumed_plane_scope: Option<DesignMirrorAssumedPlaneScope>,
+}
+
+/// `WorkPlane` scope at a construction-plane selection identity plus one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignMirrorConstructionPlaneScope {
+    pub(crate) scope_record_index: u32,
+    /// Byte offset of the plane-selection primary identity.
+    pub(crate) identity_offset: u64,
 }
 
 /// `WorkPlane` scope at the compact plane-selection identity plus one.
@@ -248,6 +270,7 @@ impl TryFrom<DesignMirrorConstructionWire> for DesignMirrorConstruction {
                 (Some(origin), Some(normal)) => Some(DesignPlane::from_parts(origin, normal).ok_or("plane_normal must be a unit vector")?),
                 _ => return Err("plane_origin and plane_normal must occur together".into()),
             },
+            construction_plane_scope: wire.construction_plane_scope,
             assumed_plane_scope: wire.assumed_plane_scope,
         })
     }
@@ -287,6 +310,7 @@ impl From<DesignMirrorConstruction> for DesignMirrorConstructionWire {
             plane_normal: record
                 .plane
                 .map(|plane| FiniteVector3::from(plane.normal())),
+            construction_plane_scope: record.construction_plane_scope,
             assumed_plane_scope: record.assumed_plane_scope,
         }
     }

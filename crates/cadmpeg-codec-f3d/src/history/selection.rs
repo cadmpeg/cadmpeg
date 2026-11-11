@@ -1168,7 +1168,6 @@ pub(crate) fn bind_mirror_selection_planes(
     histories: &[AsmHistory],
     design_types: &[crate::records::entity_header::SegmentType],
 ) {
-    let work_planes = work_plane_mirror_planes(scopes);
     for scope in scopes {
         let stream = crate::ids::native_stream(&scope.id).map(str::to_owned);
         let record_index = scope.record_index;
@@ -1179,6 +1178,7 @@ pub(crate) fn bind_mirror_selection_planes(
         };
         construction.plane = None;
         construction.assumed_plane_scope = None;
+        construction.construction_plane_scope = None;
         let (Some(selection_record_index), Some(state_id), Some(previous_state_id)) = (
             construction.plane_selection_record_index,
             history_state_id,
@@ -1245,7 +1245,7 @@ pub(crate) fn bind_mirror_selection_planes(
             let Some(stream) = stream.as_deref() else {
                 continue;
             };
-            let selected_work_plane = if operand.secondary().is_none()
+            let construction_plane_scope = if operand.secondary().is_none()
                 && crate::design::decode::meta::is_construction_plane_entity(
                     design_types,
                     stream,
@@ -1259,8 +1259,12 @@ pub(crate) fn bind_mirror_selection_planes(
                             .plane_scope_record_index
                             .is_none_or(|scope| scope.value == *next_record)
                     })
-                    .and_then(|next_record| work_planes.get(&(stream.to_owned(), next_record)))
-                    .cloned()
+                    .map(|scope_record_index| {
+                        crate::records::feature::mirror::DesignMirrorConstructionPlaneScope {
+                            scope_record_index,
+                            identity_offset: operand.primary_identity_offset(),
+                        }
+                    })
             } else {
                 None
             };
@@ -1277,9 +1281,10 @@ pub(crate) fn bind_mirror_selection_planes(
                 )
                 | crate::design::decode::meta::OriginClassification::Unknown => continue,
                 crate::design::decode::meta::OriginClassification::NotOrigin
-                    if selected_work_plane.is_some() =>
+                    if construction_plane_scope.is_some() =>
                 {
-                    selected_work_plane
+                    construction.construction_plane_scope = construction_plane_scope;
+                    continue;
                 }
                 crate::design::decode::meta::OriginClassification::NotOrigin => {
                     let persistent_candidates = if let Some(identity) = identity
@@ -1341,46 +1346,6 @@ pub(crate) fn bind_mirror_selection_planes(
         construction.plane =
             crate::records::feature::patterns::DesignPlane::from_parts(origin, normal);
     }
-}
-
-/// Mirror plane of every `WorkPlane` scope with a transform, keyed by stream and
-/// record index; the origin is in millimetres.
-fn work_plane_mirror_planes(
-    scopes: &[crate::records::feature::scope::DesignParameterScope],
-) -> HashMap<(String, u32), HistoricalMirrorPlane> {
-    const DESIGN_CENTIMETRES_TO_MM: f64 = 10.0;
-    let mut planes = HashMap::new();
-    let mut repeated = HashSet::new();
-    for scope in scopes {
-        if scope.kind() != crate::records::feature::scope::DesignFeatureKind::WorkPlane {
-            continue;
-        }
-        let (Some(stream), Some(transform)) = (
-            crate::ids::native_stream(&scope.id),
-            scope.work_plane_transform(),
-        ) else {
-            continue;
-        };
-        let key = (stream.to_owned(), scope.record_index);
-        let plane = HistoricalMirrorPlane {
-            origin: cadmpeg_ir::math::Point3::new(
-                transform[0][3] * DESIGN_CENTIMETRES_TO_MM,
-                transform[1][3] * DESIGN_CENTIMETRES_TO_MM,
-                transform[2][3] * DESIGN_CENTIMETRES_TO_MM,
-            ),
-            normal: cadmpeg_ir::math::Vector3::new(
-                transform[0][2],
-                transform[1][2],
-                transform[2][2],
-            ),
-        };
-        if planes.insert(key.clone(), plane).is_some() {
-            // discarded-value: a key repeated more than twice is already marked.
-            let _ = repeated.insert(key);
-        }
-    }
-    planes.retain(|key, _| !repeated.contains(key));
-    planes
 }
 
 /// The `WorkPlane` scope after a compact plane-selection identity, when every

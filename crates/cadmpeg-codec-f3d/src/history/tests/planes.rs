@@ -881,7 +881,7 @@ fn a_compact_plane_selection_without_a_usable_face_assumes_the_next_work_plane()
 }
 
 #[test]
-fn a_construction_plane_identity_reads_the_next_work_plane_without_an_assumption() {
+fn a_construction_plane_identity_names_the_next_work_plane_without_an_assumption() {
     let meta = "f3d:Design/MetaStream.dat";
     let history = crate::test_support::history::history(
         "history".into(),
@@ -1000,8 +1000,9 @@ fn a_construction_plane_identity_reads_the_next_work_plane_without_an_assumption
             .expect("mirror construction");
         (
             construction
-                .plane
-                .map(|plane| (plane.origin().get(), *plane.normal().as_raw())),
+                .construction_plane_scope
+                .map(|selected| (selected.scope_record_index, selected.identity_offset)),
+            construction.plane.is_some(),
             construction.assumed_plane_scope.is_some(),
         )
     };
@@ -1014,23 +1015,13 @@ fn a_construction_plane_identity_reads_the_next_work_plane_without_an_assumption
         );
         types
     };
-    assert_eq!(
-        bound(plane_types(), 369),
-        (
-            Some((
-                cadmpeg_ir::math::Point3::new(5.0, 0.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-            )),
-            false
-        )
-    );
+    assert_eq!(bound(plane_types(), 369), (Some((369, 21)), false, false));
     let mut other_types = crate::test_support::origin_types::origin_design_types(meta, 39);
     other_types.extend(
         (363..=368).map(|entity| crate::test_support::origin_types::other_type_row(meta, entity)),
     );
-    assert_eq!(bound(other_types, 369), (None, true));
+    assert_eq!(bound(other_types, 369), (None, false, true));
     let mut conflicting = plane_types();
     conflicting.push(crate::test_support::origin_types::other_type_row(meta, 368));
-    assert_eq!(bound(conflicting, 369), (None, false));
-    assert_eq!(bound(plane_types(), 370), (None, true));
+    assert_eq!(bound(conflicting, 369), (None, false, false));
 }
