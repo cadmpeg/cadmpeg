@@ -436,6 +436,8 @@ fn an_unproven_plane_target_stays_native() {
         (plane_selection(282, true), vec![work_plane_scope(283)], 1),
         (plane_selection(44, false), Vec::new(), 2),
         (plane_selection(44, false), Vec::new(), 0),
+        (plane_selection(44, false), vec![work_plane_scope(45)], 1),
+        (plane_selection(282, false), vec![work_plane_scope(283)], 2),
     ] {
         assert_eq!(
             bound_plane(one_sided(), &[], &[], &[selection], &scopes, components),

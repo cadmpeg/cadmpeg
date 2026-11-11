@@ -1082,7 +1082,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which fields of the record that an entity-selection member's trailing reference names state the selected plane's frame, and does every plane selection store one?
 
-**Known.** The trailing reference of an entity-selection member that selects a plane names a record with type GUID `CC54ECAD-6DE8-4DE1-803D-BBE0E751975B`. The record stores the plane origin in centimetres and the unit u and v axes, each as three f64 values. A selection of the XY, XZ, or YZ origin plane stores the canonical origin-plane frame, and a `WorkPlane` selection stores the columns of the `WorkPlane` matrix. The decoder takes an origin plane's frame from the canonical table by ordinal and does not read or compare the record.
+**Known.** The trailing reference of an entity-selection member that selects a plane names a record with type GUID `CC54ECAD-6DE8-4DE1-803D-BBE0E751975B`. The record stores the plane origin in centimetres and the unit u and v axes, each as three f64 values. A selection of the XY, XZ, or YZ origin plane stores the canonical origin-plane frame, and a `WorkPlane` selection stores the columns of the `WorkPlane` matrix. The decoder takes an origin plane's frame from the canonical table by ordinal and does not read or compare the record. It states the frame of a Draft origin plane, and of a Revolve origin-plane or `WorkPlane` target, only when the scope's Design stream binds one component.
 
 **Need.** Saves with an angled `WorkPlane`, a `WorkPlane` moved after the selecting feature, and an origin plane of a non-root component, to type the remaining bytes of the record and its refresh rule.
 

@@ -98,8 +98,9 @@ pub(super) fn bind_revolve_shape_target(
 }
 
 /// Return the frame of the plane a target group's sole entity selection
-/// names: the `WorkPlane` scope at the next record, or an origin plane of a
-/// scope whose Design stream binds one component.
+/// names in a Design stream that binds one component: the `WorkPlane` scope
+/// at the next record, or an origin plane. An identity that has both
+/// readings names no plane.
 fn selected_target_plane(
     inputs: &RevolveTargetInputs<'_>,
     group: &DesignConstructionOperandGroup,
@@ -112,19 +113,23 @@ fn selected_target_plane(
         component_naming_spaces,
         ..
     } = *inputs;
-    if let Some(work_plane) =
-        super::selected_work_plane(scope, group, entity_selection_operands, scopes)
-    {
-        let frame = super::work_plane_support_frame(work_plane.work_plane_transform()?.into())?;
-        return Some((frame, Some(PlaneTargetSource::WorkPlane)));
-    }
-    let (ordinal, _) =
-        super::selected_origin_plane(scope, group, entity_selection_operands, design_types)?;
     if !super::scope_stream_has_one_component(scope, component_naming_spaces) {
         return None;
     }
-    let frame = crate::history::selection::design_geometry_origin_plane_frame(ordinal)?;
-    Some((frame, None))
+    match (
+        super::selected_work_plane(scope, group, entity_selection_operands, scopes),
+        super::selected_origin_plane(scope, group, entity_selection_operands, design_types),
+    ) {
+        (Some(work_plane), None) => {
+            let frame = super::work_plane_support_frame(work_plane.work_plane_transform()?.into())?;
+            Some((frame, Some(PlaneTargetSource::WorkPlane)))
+        }
+        (None, Some((ordinal, _))) => {
+            let frame = crate::history::selection::design_geometry_origin_plane_frame(ordinal)?;
+            Some((frame, None))
+        }
+        _ => None,
+    }
 }
 
 #[cfg(test)]
