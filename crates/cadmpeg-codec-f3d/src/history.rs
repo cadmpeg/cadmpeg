@@ -5425,7 +5425,7 @@ pub(crate) fn bind_scope_histories(
             insert_scope_history_binding(&mut resolved, &scope.id, history_id);
         }
     }
-    let mut groups = HashMap::<(&str, i64, Option<i64>), Vec<usize>>::new();
+    let mut groups = BTreeMap::<(&str, i64, Option<i64>), Vec<usize>>::new();
     for (index, (scope, _)) in candidates.iter().enumerate() {
         let (Some(stream), Some(state_id)) = (
             crate::ids::native_stream(&scope.id),
