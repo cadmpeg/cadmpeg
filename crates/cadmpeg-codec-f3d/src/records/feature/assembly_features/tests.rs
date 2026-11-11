@@ -52,6 +52,10 @@ fn component_insert_borrowed_wire_matches_owned_wire_bytes() {
     for record in [
         component_insert(),
         serde_json::from_str(
+            r#"{"relation_record_index":1,"carrier_record_index":2,"neutron_role":"role","neutron_role_offset":30,"occurrence_key":"66666666-7777-8888-9999-aaaaaaaaaaaa","occurrence_key_offset":120,"transform":[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]}"#,
+        )
+        .unwrap(),
+        serde_json::from_str(
             r#"{"relation_record_index":1,"carrier_record_index":2,"neutron_role":"role","neutron_role_offset":30,"transform":[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]}"#,
         )
         .unwrap(),

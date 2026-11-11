@@ -804,8 +804,15 @@ fn rebind_joints(
                 // continues below an unmerged placement, with its operand as
                 // decoded; its feature stays native.
                 let mut descended = joint.clone();
+                let mut nested = joint.clone();
                 if complete_joint_descent(&mut descended, complete_children, &instances) {
                     *joint = descended;
+                } else if nest_residual_descent(&mut nested, complete_children, &instances) {
+                    losses.push(F3dLossCode::AssemblyOperandNestedPathRetained.note(format!(
+                        "joint {}: the occurrence path continues inside an unmerged inserted document; the remaining keys stay a nested occurrence path",
+                        joint.id
+                    )));
+                    *joint = nested;
                 } else {
                     losses.push(F3dLossCode::AssemblyOperandDescentUnresolved.note(format!(
                         "joint {}: the complete occurrence path continues below an unmerged placement; the joint keeps its decoded operand and its feature stays native",
@@ -909,6 +916,56 @@ fn retain_complete_joint(
         "joint {}: the complete occurrence path has no unique merged insertion instance; the joint stays native", joint.id
     )));
     false
+}
+
+/// Descend each occurrence operand through merged children to an occurrence
+/// that has none, and keep its remaining keys as the nested occurrence path
+/// inside that occurrence's document.
+fn nest_residual_descent(
+    joint: &mut cadmpeg_ir::products::AssemblyJoint,
+    children: &JointChildren<'_>,
+    instances: &std::collections::BTreeSet<&cadmpeg_ir::ids::OccurrenceId>,
+) -> bool {
+    use cadmpeg_ir::products::OperandContainer;
+    for connector in joint.connectors_mut() {
+        let operand = &mut connector.operand;
+        let OperandContainer::Occurrence {
+            occurrence,
+            occurrence_path,
+        } = &operand.container
+        else {
+            if !matches!(operand.container, OperandContainer::Root {})
+                || !operand.subelements.is_empty()
+            {
+                return false;
+            }
+            continue;
+        };
+        if !instances.contains(occurrence) || !occurrence_path.is_empty() {
+            return false;
+        }
+        let mut selected = occurrence;
+        let mut consumed = 0;
+        for key in &operand.subelements {
+            match children.get(&(selected.clone(), key.to_ascii_lowercase())) {
+                Some(Some(child)) => {
+                    selected = child;
+                    consumed += 1;
+                }
+                Some(None) => return false,
+                None => break,
+            }
+        }
+        if children.keys().any(|(parent, _)| parent == selected) {
+            return false;
+        }
+        operand.container = OperandContainer::Occurrence {
+            occurrence: selected.clone(),
+            occurrence_path: operand.subelements.split_off(consumed),
+        };
+        operand.subelements.clear();
+    }
+    true
 }
 
 fn complete_joint_descent(

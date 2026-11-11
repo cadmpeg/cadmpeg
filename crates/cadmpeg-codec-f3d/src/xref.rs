@@ -1513,6 +1513,7 @@ pub(crate) fn legacy_placement_metadata_native(source: &XrefPlacementSource) -> 
 struct LegacyAttributedPlacementDetails<'a> {
     carrier_record_index: u64,
     occurrence_guid: crate::records::mesh::DesignRelaxedGuidText,
+    occurrence_guid_offset: usize,
     owner: u64,
     role: Utf16View<'a>,
     role_offset: usize,
@@ -1645,6 +1646,7 @@ fn legacy_attributed_placement_details(
         .to_string()
         .try_into()
         .ok()?,
+        occurrence_guid_offset: members_start + legacy_members::TRACKING_GUID_LENGTH + 4,
         owner,
         role,
         role_offset: identity_tail_start + legacy_identity_tail::ROLE_LENGTH + 4,
@@ -1653,27 +1655,40 @@ fn legacy_attributed_placement_details(
     })
 }
 
-/// Read a `Component Insert` carrier stored as an attributed legacy placement.
-/// The result is the occurrence role, its absolute offset, and the absolute
-/// offset of the placement matrix when the carrier stores one.
+/// A `Component Insert` carrier stored as an attributed legacy placement, with
+/// absolute offsets.
+pub(crate) struct AttributedInsertCarrier {
+    pub(crate) role: String,
+    pub(crate) role_offset: usize,
+    pub(crate) transform_offset: Option<usize>,
+    pub(crate) occurrence_key:
+        crate::records::identity::Located<crate::records::mesh::DesignRelaxedGuidText>,
+}
+
 pub(crate) fn attributed_component_insert_carrier(
     bytes: &[u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(String, usize, Option<usize>)> {
+) -> Option<AttributedInsertCarrier> {
     let details = legacy_attributed_placement_details(bytes.get(carrier_at..relation_at)?)?;
     if details.carrier_record_index != u64::from(carrier_record_index) {
         return None;
     }
-    Some((
-        details.role.to_string(),
-        carrier_at.checked_add(details.role_offset)?,
-        match details.transform_offset {
+    Some(AttributedInsertCarrier {
+        role: details.role.to_string(),
+        role_offset: carrier_at.checked_add(details.role_offset)?,
+        transform_offset: match details.transform_offset {
             Some(offset) => Some(carrier_at.checked_add(offset)?),
             None => None,
         },
-    ))
+        occurrence_key: crate::records::identity::Located {
+            value: details.occurrence_guid,
+            offset: cadmpeg_core::decode::u64_from_index(
+                carrier_at.checked_add(details.occurrence_guid_offset)?,
+            ),
+        },
+    })
 }
 
 fn legacy_placement_attributes_len(body: &[u8]) -> Option<usize> {

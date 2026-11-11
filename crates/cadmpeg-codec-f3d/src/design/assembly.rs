@@ -3314,6 +3314,7 @@ mod tests {
                     occurrence_identity: None,
                     neutron_role: "component-role".into(),
                     neutron_role_offset: 0,
+                    occurrence_key: None,
                     placement: None,
                 },
             );

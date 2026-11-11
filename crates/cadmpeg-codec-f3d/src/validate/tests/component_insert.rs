@@ -51,6 +51,7 @@ fn validation_accepts_transformed_insert_frames_with_other_paired_tags() {
                 occurrence_identity: Some(17),
                 neutron_role: "cccccccc-dddd-eeee-ffff-000000000000".into(),
                 neutron_role_offset: 10,
+                occurrence_key: None,
                 placement: Some(DesignComponentInsertMatrix {
                     scope: Located {
                         value: SketchPlacementMatrix::IDENTITY,
@@ -136,6 +137,7 @@ fn validation_accepts_identity_insert_frame_with_any_paired_class_tag() {
             carrier_record_index: 166,
             occurrence_identity: Some(17),
             neutron_role: "cccccccc-dddd-eeee-ffff-000000000000".into(),
+            occurrence_key: None,
             neutron_role_offset: 259,
             placement: None,
         });

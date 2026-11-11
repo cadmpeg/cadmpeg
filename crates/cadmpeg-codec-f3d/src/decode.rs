@@ -3122,12 +3122,13 @@ impl<'a> F3dDecodeSession<'a> {
             &prereqs.design_component_occurrences,
             &component_inserts,
             &prereqs.design_joint_motions,
-            &crate::design::components::paths::LocalOccurrencePaths::new(
+            &crate::design::components::paths::LocalOccurrencePaths::with_component_inserts(
                 &prereqs.design_component_occurrences,
                 prereqs
                     .xref_table()
                     .map_or(&[], |table| table.references.as_slice()),
                 &self.ir.model.occurrences,
+                &prereqs.design_parameter_scopes,
             ),
         );
         self.ir.model.assembly_joints = joints.joints;

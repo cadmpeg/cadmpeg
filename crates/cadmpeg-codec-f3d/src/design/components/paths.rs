@@ -7,6 +7,7 @@ use cadmpeg_ir::ids::OccurrenceId;
 use cadmpeg_ir::products::{Occurrence, OccurrenceParent};
 
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
+use crate::records::feature::scope::DesignParameterScope;
 
 #[derive(Default)]
 pub(crate) struct LocalOccurrencePaths {
@@ -21,6 +22,30 @@ impl LocalOccurrencePaths {
         external: &[crate::records::xref::XrefReference],
         occurrences: &[Occurrence],
     ) -> Self {
+        Self::with_component_inserts(native, external, occurrences, &[])
+    }
+
+    /// Paths that also key each `Component Insert` occurrence by the source
+    /// occurrence key of its carrier.
+    pub(crate) fn with_component_inserts(
+        native: &[DesignComponentOccurrence],
+        external: &[crate::records::xref::XrefReference],
+        occurrences: &[Occurrence],
+        scopes: &[DesignParameterScope],
+    ) -> Self {
+        let inserts = scopes
+            .iter()
+            .filter_map(|scope| {
+                let key = scope
+                    .component_insert_construction()?
+                    .occurrence_key
+                    .as_ref()?;
+                Some((
+                    scope.id.as_str(),
+                    (crate::ids::native_stream(&scope.id)?, key.value.as_str()),
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
         let unplaced_external = external
             .iter()
             .filter(|reference| !crate::xref::has_projected_placement(reference, occurrences))
@@ -78,6 +103,7 @@ impl LocalOccurrencePaths {
                                 .get(id)
                                 .map(|(stream, guid)| (*stream, guid.as_str()))
                         })
+                        .or_else(|| inserts.get(id).copied())
                 });
                 if let Some((source_stream, key)) = identity {
                     if stream.is_some_and(|stream| stream != source_stream) {
@@ -235,6 +261,59 @@ pub(crate) fn bind_feature_paths(
 mod tests {
     use super::*;
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+
+    #[test]
+    fn a_component_insert_occurrence_resolves_by_its_carrier_occurrence_key() {
+        use crate::records::feature::assembly_features::DesignComponentInsertConstruction;
+        use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
+        let stream = "f3d:Design/BulkStream.dat";
+        let key = "bc7c305e-42cc-4c2d-a213-063506349b08";
+        let nested = "d7dd44c5-9574-4a6d-9dd2-dc82af142924";
+        let scope_id = format!("{stream}:design-parameter-scope#100");
+        let mut scope =
+            DesignParameterScope::empty(&scope_id, DesignFeatureKind::ComponentInsert, 9);
+        if let DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() {
+            *slot = Some(DesignComponentInsertConstruction {
+                relation_record_index: 8,
+                carrier_record_index: 7,
+                occurrence_identity: Some(17),
+                neutron_role: "cccccccc-dddd-eeee-ffff-000000000000".into(),
+                neutron_role_offset: 259,
+                occurrence_key: Some(crate::records::identity::Located {
+                    value: key.to_ascii_uppercase().try_into().unwrap(),
+                    offset: 40,
+                }),
+                placement: None,
+            });
+        }
+        let id = OccurrenceId::mint("f3d:model:occurrence#insert").unwrap();
+        let occurrence = Occurrence {
+            id: id.clone(),
+            prototype: cadmpeg_ir::products::PrototypeReference::Unresolved {},
+            parent: OccurrenceParent::Root {},
+            ordinal: 0,
+            transform: cadmpeg_ir::transform::Transform::identity(),
+            linked_prototype: None,
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: Some(scope_id),
+        };
+        let keys = [key.to_owned(), nested.to_owned()];
+        let paths = LocalOccurrencePaths::with_component_inserts(
+            &[],
+            &[],
+            std::slice::from_ref(&occurrence),
+            std::slice::from_ref(&scope),
+        );
+        assert_eq!(paths.resolve(stream, &keys), Some((id, 1)));
+        assert_eq!(
+            LocalOccurrencePaths::new(&[], &[], std::slice::from_ref(&occurrence))
+                .resolve(stream, &keys),
+            None
+        );
+    }
 
     #[test]
     fn residual_keys_are_refused_after_a_local_occurrence_only() {
