@@ -40,22 +40,45 @@ enum Form {
     CompactEqual,
 }
 
+struct SetLayout {
+    len: usize,
+    kind_at: usize,
+    kind: u32,
+    group: usize,
+    word: usize,
+    byte: Option<usize>,
+    auxiliary: usize,
+    scope: usize,
+    owners: &'static [usize],
+}
+
 fn set_frame(form: Form) -> Vec<u8> {
-    let (len, kind_at, kind, group, word, byte, auxiliary, scope, owners): (
-        usize,
-        usize,
-        u32,
-        usize,
-        usize,
-        Option<usize>,
-        usize,
-        usize,
-        &[usize],
-    ) = match form {
-        Form::Equal => (83, 36, 1, 40, 53, Some(57), 60, 72, &[24]),
-        Form::TwoDistances => (93, 46, 2, 50, 63, Some(67), 70, 82, &[24, 35]),
-        Form::DistanceAngle => (93, 46, 3, 50, 63, Some(67), 70, 82, &[34, 23]),
-        Form::CompactEqual => (82, 36, 1, 40, 53, None, 59, 71, &[24]),
+    let layout = |len, kind_at, kind, group, word, byte, auxiliary, scope, owners| SetLayout {
+        len,
+        kind_at,
+        kind,
+        group,
+        word,
+        byte,
+        auxiliary,
+        scope,
+        owners,
+    };
+    let SetLayout {
+        len,
+        kind_at,
+        kind,
+        group,
+        word,
+        byte,
+        auxiliary,
+        scope,
+        owners,
+    } = match form {
+        Form::Equal => layout(83, 36, 1, 40, 53, Some(57), 60, 72, &[24]),
+        Form::TwoDistances => layout(93, 46, 2, 50, 63, Some(67), 70, 82, &[24, 35]),
+        Form::DistanceAngle => layout(93, 46, 3, 50, 63, Some(67), 70, 82, &[34, 23]),
+        Form::CompactEqual => layout(82, 36, 1, 40, 53, None, 59, 71, &[24]),
     };
     let mut frame = header(b"366", SET);
     frame.resize(len, 0);
