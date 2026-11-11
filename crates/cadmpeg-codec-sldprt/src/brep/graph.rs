@@ -782,24 +782,7 @@ fn resolve_sweep_surface(
         .parameter_range
         .map(cadmpeg_ir::units::FiniteVector::get);
     if let SweepKind::Spun { profile_bounds, .. } = &construction.kind {
-        if profile_bounds.iter().any(Option::is_some) {
-            let Some(mut range) = profile_range.or_else(|| {
-                profile
-                    .carrier()
-                    .geometry
-                    .solved()?
-                    .closed_traversal_range()
-                    .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
-            }) else {
-                return Ok(None);
-            };
-            for (end, bound) in range.iter_mut().zip(profile_bounds) {
-                if let Some(value) = bound {
-                    *end = *value;
-                }
-            }
-            profile_range = Some(range);
-        }
+        profile_range = sweep::stored_conic_interval(&profile.carrier().geometry, *profile_bounds);
     }
     let Some(curve) =
         sweep::profile_nurbs(&profile.carrier().geometry, profile_range, &record, refusal)

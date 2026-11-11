@@ -247,6 +247,19 @@ pub(super) fn from_nodes_of<N: NodeFields>(
     Some(out)
 }
 
+pub(super) fn stored_conic_interval(
+    geometry: &CurveGeometry,
+    bounds: [Option<f64>; 2],
+) -> Option<[f64; 2]> {
+    match (geometry.solved()?, bounds) {
+        (
+            SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_),
+            [Some(low), Some(high)],
+        ) => Some([low, high]),
+        _ => None,
+    }
+}
+
 /// Convert an exact analytic sweep profile to its exact rational NURBS form.
 pub(super) fn profile_nurbs<'a>(
     geometry: &'a CurveGeometry,
@@ -256,23 +269,7 @@ pub(super) fn profile_nurbs<'a>(
 ) -> Option<Cow<'a, NurbsCurve>> {
     let (center, frame, major_radius, minor_radius) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
-            let interval = interval.filter(|range| {
-                cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)
-                    .is_none_or(|domain| domain.endpoints() != *range)
-            });
-            return match interval {
-                Some(range) => match super::graph::clamp_nurbs_curve_to_domain(curve, range) {
-                    Ok(curve) => curve.map(Cow::Owned),
-                    Err(error) => {
-                        refusal.note(
-                            format_args!("sldprt bounded sweep profile: {record}"),
-                            &error,
-                        );
-                        None
-                    }
-                },
-                None => Some(Cow::Borrowed(curve)),
-            };
+            return Some(Cow::Borrowed(curve));
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let radius = circle_curve.radius().get();
@@ -291,7 +288,9 @@ pub(super) fn profile_nurbs<'a>(
         ),
         _ => return None,
     };
-    let interval = interval.filter(|range| *range != [0.0, std::f64::consts::TAU]);
+    let interval = interval
+        .and_then(|range| stored_conic_interval(geometry, range.map(Some)))
+        .filter(|range| *range != [0.0, std::f64::consts::TAU]);
     let major = *frame.reference().as_raw();
     let minor = *frame.binormal().as_raw();
     let (control_points, weights, knots) = if interval.is_none() {
@@ -1311,6 +1310,63 @@ mod tests {
             assert_eq!(
                 super::curve_projection_bounds(&curve, Vector3::new(0.0, 0.0, 1.0)),
                 positive.then_some([2.0, 5.0])
+            );
+        }
+    }
+    #[test]
+    fn nurbs_profile_keeps_its_whole_knot_domain() {
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 2.0, 2.0],
+            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 2.0)],
+            Some(vec![1.0, 2.0]),
+            false,
+        )
+        .unwrap();
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.clone()));
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
+        for interval in [None, Some([0.5, 1.5]), Some([-1.0, 3.0])] {
+            let profile =
+                profile_nurbs(&geometry, interval, &"whole spline profile", &mut refusal).unwrap();
+            assert_eq!(profile.as_ref(), &curve);
+            assert!(matches!(profile, std::borrow::Cow::Borrowed(_)));
+        }
+        assert_eq!(
+            super::stored_conic_interval(&geometry, [Some(0.5), Some(1.5)]),
+            None
+        );
+        assert!(refusal.take_records().is_empty());
+    }
+
+    #[test]
+    fn stored_conic_interval_requires_both_bounds() {
+        let circle = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .unwrap();
+        let ellipse = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+            2.0,
+        )
+        .unwrap();
+        for geometry in [
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
+            CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)),
+        ] {
+            let low = std::f64::consts::FRAC_PI_2;
+            let high = std::f64::consts::PI;
+            for bounds in [[Some(low), None], [None, Some(high)], [None, None]] {
+                assert_eq!(super::stored_conic_interval(&geometry, bounds), None);
+            }
+            assert_eq!(
+                super::stored_conic_interval(&geometry, [Some(low), Some(high)]),
+                Some([low, high])
             );
         }
     }

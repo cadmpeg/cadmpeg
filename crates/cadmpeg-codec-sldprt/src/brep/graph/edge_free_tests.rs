@@ -400,3 +400,73 @@ fn a_loopless_nurbs_face_requires_both_periodic_parameters() {
         }
     }
 }
+
+#[test]
+fn spun_circle_with_one_stored_bound_revolves_the_whole_profile() {
+    use crate::brep::{index, topology};
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    use cadmpeg_ir::topology::Sense;
+    use std::collections::HashSet;
+
+    let mut body =
+        crate::test_support::parasolid::circle_carrier(6, [0.0; 3], [0.0, 1.0, 0.0], 0.002);
+    body.extend([0x00, 0x44]);
+    body.extend(12_u16.to_be_bytes());
+    body.extend(7_u32.to_be_bytes());
+    for value in [1_u16, 2, 3, 4, 1] {
+        body.extend(value.to_be_bytes());
+    }
+    body.push(b'+');
+    body.extend(6_u16.to_be_bytes());
+    for value in [
+        0.0_f64,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        -0.002,
+        -3.14158e13,
+        -3.14158e13,
+        -3.14158e13,
+        std::f64::consts::FRAC_PI_2,
+        -3.14158e13,
+    ] {
+        body.extend(value.to_be_bytes());
+    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let carriers = index::scan_carriers(&ctx, &body).unwrap();
+    let face = super::WalkedFace {
+        bridge_attr: 20,
+        surface_attr: 12,
+        sense: Sense::Forward,
+        loops: Vec::new(),
+        vertex_loops: Vec::new(),
+        unresolved_loop: None,
+        unresolved_fins: Vec::new(),
+        withheld_forward_links: 0,
+        unlinked_loops: HashSet::new(),
+    };
+    let mut refusal = crate::lane_refusal::LaneRefusals::new();
+    let resolved = super::resolve_sweep_surface(
+        &ctx,
+        &carriers,
+        &topology::Tables::default(),
+        &face,
+        &mut refusal,
+    )
+    .unwrap()
+    .unwrap();
+    let SolvedSurfaceGeometry::Nurbs(surface) = resolved.geometry else {
+        panic!("spun NURBS surface")
+    };
+    assert_eq!(surface.u_knots().as_slice().first(), Some(&0.0));
+    assert_eq!(
+        surface.u_knots().as_slice().last(),
+        Some(&std::f64::consts::TAU)
+    );
+    assert_eq!(surface.u_count(), 9);
+    assert!(refusal.take_records().is_empty());
+}
