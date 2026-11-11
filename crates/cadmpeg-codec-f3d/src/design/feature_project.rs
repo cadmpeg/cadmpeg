@@ -4250,9 +4250,9 @@ pub(super) fn project_thicken(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Thicken {
             faces,
-            thickness: Some(or_none!(cadmpeg_ir::scalar::PositiveLength::new(
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(
                 signed_thickness.get().abs() * if *symmetric { 20.0 } else { 10.0 },
-            ))),
+            ),
             side: Some(if *symmetric {
                 ThickenSide::Both
             } else if signed_thickness.get() > 0.0 {

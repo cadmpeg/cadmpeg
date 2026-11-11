@@ -111,7 +111,7 @@ pub(super) fn exact_thicken_operation(
     }
     if let Some((at, 1)) = prologue_flag {
         losses.push(crate::loss::F3dLossCode::FeatureThickenFlagsAssumed.note(format!(
-            "Thicken scope {} stores prologue flag byte 01 at byte {at}; the Thicken setting this flag selects is unresolved (DR-313), and the Thicken is projected from its side and chain flags and its thickness alone.",
+            "Thicken scope {} stores prologue flag byte 01 at byte {at}; the Thicken setting this flag selects is unresolved (DR-313), and the Thicken is projected from its symmetric flag and its thickness alone.",
             scope.id
         )));
     }

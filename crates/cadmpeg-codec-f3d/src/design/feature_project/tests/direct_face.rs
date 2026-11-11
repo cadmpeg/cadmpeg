@@ -134,6 +134,24 @@ fn a_symmetric_thicken_adds_the_stored_thickness_on_each_side() {
         project(false),
         (Some(5.0), Some(cadmpeg_ir::features::ThickenSide::Forward))
     );
+
+    let mut scope = scope(DesignFeatureKind::Thicken);
+    if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+        operation.symmetric = true;
+        operation.signed_thickness = cadmpeg_ir::scalar::FiniteReal::new(1.5e307).unwrap();
+    }
+    let FeatureOperation::Thicken {
+        faces, thickness, ..
+    } = projected_operation(super::super::project_thicken(
+        &scope,
+        &[],
+        std::slice::from_ref(&group),
+    ))
+    else {
+        panic!("expected a thicken");
+    };
+    assert_eq!(faces, FaceSelection::Native(group.id.clone()));
+    assert!(thickness.is_none());
 }
 
 fn thicken_after_state(previous_state: i64) -> DesignParameterScope {
