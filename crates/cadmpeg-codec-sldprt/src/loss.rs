@@ -202,7 +202,7 @@ pub(crate) enum SldprtLossCode {
     /// A FIN forward link names no reciprocal same-loop backward link, so
     /// its ring is withheld instead of walked on doubt.
     TopologyFinLinkUnresolved,
-    /// Vertexless ring FINs fail strict reciprocal-circle single-loop
+    /// Vertexless ring FINs fail reciprocal closed-carrier single-loop
     /// admission, so no vertex is invented for them.
     TopologyRingEdgeWithheld,
     /// A vertex loop names no resolved vertex, so its face and surface are

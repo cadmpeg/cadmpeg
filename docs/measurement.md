@@ -549,6 +549,13 @@ reach natural edges (`natural_edge_faces`).
 
 ## Volume, centroid and closure
 
+A whole NURBS face has a closed domain when each parameter axis is periodic,
+joins its clamped boundary curves, or ends at two poles. Clamped boundary
+curves join when their corresponding positive weights are equal and their
+paired control points lie within the model tolerance. A clamped boundary
+collapses to a pole when its weights are positive and all its control points
+lie within the model tolerance of its first control point.
+
 Each face region gives five flux integrals over the face, with
 `N = S_u × S_v` and `d = P − P_ref`: `∫ d·N / 3` (volume), `∫ d_i² N_i / 2`
 (first moments), `∫ N` (closure vector), `∫ d_i³ N_i / 3` and

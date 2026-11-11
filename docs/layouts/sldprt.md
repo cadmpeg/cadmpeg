@@ -3794,6 +3794,24 @@ Unstated regions:
 - `70..107` (37 B): Opaque prefix between minor version and state count.
 - `108..117` (9 B): Opaque prefix before FILETIME.
 
+## `spun_surface_profile`
+
+Spec §7.1 · layout: byte offsets · size: 112 B
+
+The fixed payload prefix starts after the profile pointer.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/sweep.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `base` | `f64[3]` | big | spec | an axis point |
+| 24 | 24 | `axis` | `f64[3]` | big | spec | unit axis direction as six f64 values |
+| 48 | 24 | `start` | `f64[3]` | big | spec | the two points at which the profile meets the axis as six f64 values |
+| 72 | 24 | `end` | `f64[3]` | big | spec | the two points at which the profile meets the axis as six f64 values |
+| 96 | 8 | `start_param` | `f64` | big | spec | the profile's parameter at each as two more, low parameter first |
+| 104 | 8 | `end_param` | `f64` | big | spec | the profile's parameter at each as two more, low parameter first |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

@@ -617,16 +617,19 @@ fn an_edge_on_a_chart_inverts_each_vertex_into_one_run_of_spans() {
 
 #[test]
 fn a_closed_chart_starts_a_ring_edge_at_its_seam() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+
     let mut ring = SQUARE.to_vec();
     ring.push(SQUARE[0]);
     let closed =
         crate::brep::index::IndexedCurve::Derived(chart(&ring, &[0.0, 10.0, 20.0, 30.0, 40.0]));
     assert_eq!(
-        super::closed_edge_start(Some(&closed)),
+        super::closed_edge_start(&ctx, Some(&closed)).unwrap(),
         Some((Point3::new(0.0, 0.0, 0.0), [0.0, 40.0]))
     );
     let open = crate::brep::index::IndexedCurve::Derived(chart(&SQUARE, &[0.0, 10.0, 20.0, 30.0]));
-    assert_eq!(super::closed_edge_start(Some(&open)), None);
+    assert_eq!(super::closed_edge_start(&ctx, Some(&open)).unwrap(), None);
 }
 
 /// The boundary a blend face on one ring edge sees, with the closed edge's

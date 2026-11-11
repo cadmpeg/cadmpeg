@@ -136,6 +136,7 @@ fn an_sp_curve_on_a_spun_surface_is_emitted_as_its_fitted_curve() {
             .expect("a line"),
         )),
         kind: SweepKind::Spun {
+            profile_bounds: [None, None],
             base: Point3::new(0.0, 0.0, 0.0),
             axis: cadmpeg_ir::units::SumSquaresUnitVector3::new(Vector3::new(0.0, 0.0, 1.0))
                 .expect("a unit axis"),

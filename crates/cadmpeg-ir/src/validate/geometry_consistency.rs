@@ -751,7 +751,7 @@ pub(super) fn check_edge_endpoint_consistency(
                 Point3::distance(at_start, *end),
                 Point3::distance(at_end, *start),
             );
-            let open = Point3::distance(at_start, at_end) > bound;
+            let open = !crate::eval::curve_endpoints_coincident([at_start, at_end], bound);
             let along = mismatch <= bound;
             if open && reversed_mismatch <= bound && !along {
                 super::record_finding(
