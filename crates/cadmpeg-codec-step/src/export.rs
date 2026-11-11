@@ -37,6 +37,7 @@ use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::writer::{refs, string, Emitter, Ref};
 
+mod edge_split;
 mod implicit_outer;
 mod non_manifold;
 mod ownership;
@@ -131,6 +132,9 @@ pub(crate) fn write_step_outcome(
     let mut b = Builder::new(ir, schema, recovered_edges)?;
     b.model_name = &opts.product_name;
     b.build();
+    if let Some(error) = b.edge_split_error.take() {
+        return Err(error);
+    }
     if let Some(limit) = b.approximations.resource_limit() {
         return Err(limit.into());
     }
@@ -305,14 +309,17 @@ pub(crate) struct Builder<'a> {
 
     surface_refs: HashMap<String, WrittenSurface>,
     curve_refs: HashMap<String, Ref>,
-    edge_refs: HashMap<String, Ref>,
+    edge_refs: HashMap<String, Vec<Ref>>,
+    edge_midpoints: HashMap<String, Ref>,
+    edge_split_index: cadmpeg_ir::index::ModelIndex<'a>,
+    edge_split_error: Option<cadmpeg_core::CodecError>,
     /// Written edge occurrence of each coedge whose edge a closed shell uses
     /// more than twice. A STEP closed shell admits two uses per edge, so each
     /// forward and reversed use pair gets its own `EDGE_CURVE`.
     coedge_edge_occurrences: HashMap<&'a str, usize>,
     /// Pcurve uses of each split edge occurrence.
     edge_occurrence_pcurves: HashMap<(&'a str, usize), Vec<PcurveUse<'a>>>,
-    edge_occurrence_refs: HashMap<(&'a str, usize), Ref>,
+    edge_occurrence_refs: HashMap<(&'a str, usize), Vec<Ref>>,
     split_edges: BTreeSet<&'a str>,
     vertex_refs: HashMap<String, Ref>,
     point_refs: HashMap<String, Ref>,
@@ -569,6 +576,9 @@ impl<'a> Builder<'a> {
             surface_refs: HashMap::new(),
             curve_refs: HashMap::new(),
             edge_refs: HashMap::new(),
+            edge_midpoints: HashMap::new(),
+            edge_split_index: cadmpeg_ir::index::ModelIndex::new_model_only(ir),
+            edge_split_error: None,
             coedge_edge_occurrences: HashMap::new(),
             edge_occurrence_pcurves: HashMap::new(),
             edge_occurrence_refs: HashMap::new(),
@@ -956,9 +966,13 @@ impl<'a> Builder<'a> {
                 AppearanceTarget::Curve(id) => {
                     (self.curve_refs.get(id.as_str()).copied(), StyleKind::Curve)
                 }
-                AppearanceTarget::Edge(id) => {
-                    (self.edge_refs.get(id.as_str()).copied(), StyleKind::Curve)
-                }
+                AppearanceTarget::Edge(id) => (
+                    self.edge_refs
+                        .get(id.as_str())
+                        .and_then(|edges| edges.first())
+                        .copied(),
+                    StyleKind::Curve,
+                ),
                 AppearanceTarget::Point(id) => {
                     (self.point_refs.get(id.as_str()).copied(), StyleKind::Point)
                 }
@@ -996,11 +1010,19 @@ impl<'a> Builder<'a> {
                 StyleKind::Point => self.point_style(color, name, &mut style_refs),
             };
             self.written_appearance_bindings.insert(binding.id.clone());
-            styled.push(self.emit_styled_item(
-                style,
-                target,
-                hidden_binding_ids.contains(binding.id.as_str()),
-            ));
+            let targets = match &binding.target {
+                AppearanceTarget::Edge(id) => {
+                    self.edge_refs.get(id.as_str()).cloned().unwrap_or_default()
+                }
+                _ => vec![target],
+            };
+            for target in targets {
+                styled.push(self.emit_styled_item(
+                    style,
+                    target,
+                    hidden_binding_ids.contains(binding.id.as_str()),
+                ));
+            }
         }
         for body in &ir.model.bodies {
             let body_id = body.id.as_str();
@@ -1229,9 +1251,8 @@ impl<'a> Builder<'a> {
                     PresentationItem::Edge { edge } => self
                         .edge_refs
                         .get(edge.as_str())
-                        .copied()
-                        .into_iter()
-                        .collect(),
+                        .cloned()
+                        .unwrap_or_default(),
                     PresentationItem::Vertex { vertex } => self
                         .vertex_refs
                         .get(vertex.as_str())
@@ -2183,7 +2204,7 @@ impl<'a> Builder<'a> {
             }
             if let Some(reference) = self.emit_edge(edge_id.as_str()) {
                 retained.extend([edge.start.clone(), edge.end.clone()]);
-                edges.push((reference, edge));
+                edges.extend(reference.into_iter().map(|reference| (reference, edge)));
             }
         }
         if !edges.is_empty() {
@@ -2445,9 +2466,12 @@ impl<'a> Builder<'a> {
             let edges = shell
                 .wire_edges()
                 .iter()
-                .filter_map(|id| {
-                    let emitted = self.emit_edge(id.as_str())?;
-                    self.edges.get(id.as_str()).map(|edge| (emitted, *edge))
+                .flat_map(|id| {
+                    let emitted = self.emit_edge(id.as_str()).unwrap_or_default();
+                    let edge = self.edges.get(id.as_str()).copied();
+                    emitted
+                        .into_iter()
+                        .filter_map(move |reference| edge.map(|edge| (reference, edge)))
                 })
                 .collect::<Vec<_>>();
             for component in wire::connected_components(&edges) {
@@ -3189,7 +3213,7 @@ impl<'a> Builder<'a> {
                 return None;
             };
             let orientation = matches!(coedge.sense, Sense::Forward);
-            let Some(edge_ref) = self.emit_coedge_edge(coedge) else {
+            let Some(mut edge_refs) = self.emit_coedge_edge(coedge) else {
                 self.topology_relation_loss(
                     format!("loop:{loop_id}:edge:{}", coedge.edge),
                     StepLossCode::LoopEdgeNotWritable,
@@ -3201,10 +3225,15 @@ impl<'a> Builder<'a> {
                 return None;
             };
             let flag = if orientation { ".T." } else { ".F." };
-            let oe = self
-                .emitter
-                .emit("ORIENTED_EDGE", &format!("'',*,*,{edge_ref},{flag}"));
-            oe_refs.push(oe);
+            if !orientation {
+                edge_refs.reverse();
+            }
+            for edge_ref in edge_refs {
+                let oe = self
+                    .emitter
+                    .emit("ORIENTED_EDGE", &format!("'',*,*,{edge_ref},{flag}"));
+                oe_refs.push(oe);
+            }
         }
         if oe_refs.is_empty() {
             self.topology_relation_loss(
@@ -3618,14 +3647,14 @@ impl<'a> Builder<'a> {
 
     /// The written edge a coedge uses: its own use pair's edge when its edge
     /// was split, else the edge shared by all its uses.
-    fn emit_coedge_edge(&mut self, coedge: &'a Coedge) -> Option<Ref> {
+    fn emit_coedge_edge(&mut self, coedge: &'a Coedge) -> Option<Vec<Ref>> {
         let edge_id = coedge.edge.as_str();
         let Some(occurrence) = self.coedge_edge_occurrences.get(coedge.id.as_str()) else {
             return self.emit_edge(edge_id);
         };
         let key = (edge_id, *occurrence);
         if let Some(r) = self.edge_occurrence_refs.get(&key) {
-            return Some(*r);
+            return Some(r.clone());
         }
         let associated = self
             .edge_occurrence_pcurves
@@ -3633,22 +3662,28 @@ impl<'a> Builder<'a> {
             .cloned()
             .unwrap_or_default();
         let r = self.emit_edge_curve(edge_id, associated)?;
-        self.edge_occurrence_refs.insert(key, r);
-        self.edge_refs.entry(edge_id.to_owned()).or_insert(r);
+        self.edge_occurrence_refs.insert(key, r.clone());
+        self.edge_refs
+            .entry(edge_id.to_owned())
+            .or_insert_with(|| r.clone());
         Some(r)
     }
 
-    fn emit_edge(&mut self, edge_id: &str) -> Option<Ref> {
+    fn emit_edge(&mut self, edge_id: &str) -> Option<Vec<Ref>> {
         if let Some(r) = self.edge_refs.get(edge_id) {
-            return Some(*r);
+            return Some(r.clone());
         }
         let associated = self.edge_coedges.get(edge_id).cloned().unwrap_or_default();
         let r = self.emit_edge_curve(edge_id, associated)?;
-        self.edge_refs.insert(edge_id.to_string(), r);
+        self.edge_refs.insert(edge_id.to_string(), r.clone());
         Some(r)
     }
 
-    fn emit_edge_curve(&mut self, edge_id: &str, associated: Vec<PcurveUse<'a>>) -> Option<Ref> {
+    fn emit_edge_curve(
+        &mut self,
+        edge_id: &str,
+        associated: Vec<PcurveUse<'a>>,
+    ) -> Option<Vec<Ref>> {
         let Some(edge) = self.edges.get(edge_id).copied() else {
             self.topology_relation_loss(
                 format!("edge:{edge_id}:record"),
@@ -3738,12 +3773,42 @@ impl<'a> Builder<'a> {
                 &format!("'',{basis_curve},{},.CURVE_3D.", refs(&pcurve_refs)),
             )
         };
-        // same_sense = .T.: the edge runs start→end along the curve's own
-        // parameterization, the convention IR curves follow.
-        Some(
-            self.emitter
-                .emit("EDGE_CURVE", &format!("'',{v1},{v2},{curve_ref},.T.")),
-        )
+        let midpoint = if let Some(vertex) = self.edge_midpoints.get(edge_id) {
+            Some(*vertex)
+        } else {
+            match edge_split::midpoint(&self.edge_split_index, edge) {
+                Ok(Some(point)) => {
+                    let point = geometry::point(&mut self.emitter, point);
+                    let vertex = self.emitter.emit("VERTEX_POINT", &format!("'',{point}"));
+                    self.edge_midpoints.insert(edge_id.to_owned(), vertex);
+                    Some(vertex)
+                }
+                Ok(None) => None,
+                Err(error) => {
+                    self.edge_split_error.get_or_insert(error);
+                    return None;
+                }
+            }
+        };
+        Some(self.emit_edge_segments([v1, v2], curve_ref, midpoint))
+    }
+
+    fn emit_edge_segments(
+        &mut self,
+        [start, end]: [Ref; 2],
+        curve: Ref,
+        midpoint: Option<Ref>,
+    ) -> Vec<Ref> {
+        let ends = match midpoint {
+            Some(middle) => vec![[start, middle], [middle, end]],
+            None => vec![[start, end]],
+        };
+        ends.into_iter()
+            .map(|[start, end]| {
+                self.emitter
+                    .emit("EDGE_CURVE", &format!("'',{start},{end},{curve},.T."))
+            })
+            .collect()
     }
 
     fn emit_pcurve(&mut self, use_: PcurveUse<'a>, edge: &Edge) -> Option<Ref> {
@@ -4496,22 +4561,30 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn pmi_target_ref(&self, target: &PmiTarget) -> Option<Ref> {
-        match target {
+    fn pmi_target_refs(&self, target: &PmiTarget) -> Vec<Ref> {
+        if let PmiTarget::Edge { edge } = target {
+            return self
+                .edge_refs
+                .get(edge.as_str())
+                .cloned()
+                .unwrap_or_default();
+        }
+        let reference = match target {
             PmiTarget::Body { body } => self
                 .body_step_refs
                 .get(body.as_str())
                 .copied()
                 .or_else(|| self.body_shape_refs.get(body.as_str()).copied()),
             PmiTarget::Face { face } => self.face_step_refs.get(face.as_str()).copied(),
-            PmiTarget::Edge { edge } => self.edge_refs.get(edge.as_str()).copied(),
+            PmiTarget::Edge { .. } => None,
             PmiTarget::Vertex { vertex } => self.vertex_refs.get(vertex.as_str()).copied(),
             PmiTarget::Point { point } => self.point_refs.get(point.as_str()).copied(),
             PmiTarget::Curve { curve } => self.curve_refs.get(curve.as_str()).copied(),
             PmiTarget::Product { .. }
             | PmiTarget::Occurrence { .. }
             | PmiTarget::ShapeAspect { .. } => None,
-        }
+        };
+        reference.into_iter().collect()
     }
 
     fn emit_datum_target(
@@ -4668,7 +4741,7 @@ impl<'a> Builder<'a> {
                 continue;
             }
             for target in &annotation.targets {
-                if let Some(target_ref) = self.pmi_target_ref(target) {
+                for target_ref in self.pmi_target_refs(target) {
                     if !target_items.contains(&target_ref) {
                         target_items.push(target_ref);
                     }
@@ -4687,21 +4760,24 @@ impl<'a> Builder<'a> {
             let definition = target_ref(annotation).unwrap_or(fallback_aspect);
             let mut exact = true;
             for target in &annotation.targets {
-                let Some(identified_item) = self.pmi_target_ref(target) else {
+                let identified_items = self.pmi_target_refs(target);
+                if identified_items.is_empty() {
                     if !matches!(target, PmiTarget::ShapeAspect { .. }) {
                         exact = false;
                     }
                     continue;
-                };
+                }
                 let Some(used_representation) = target_representation else {
                     exact = false;
                     continue;
                 };
                 if semantic {
-                    self.emitter.emit(
-                        "GEOMETRIC_ITEM_SPECIFIC_USAGE",
-                        &format!("'','',{definition},{used_representation},{identified_item}"),
-                    );
+                    for identified_item in identified_items {
+                        self.emitter.emit(
+                            "GEOMETRIC_ITEM_SPECIFIC_USAGE",
+                            &format!("'','',{definition},{used_representation},{identified_item}"),
+                        );
+                    }
                 } else {
                     exact = false;
                 }
