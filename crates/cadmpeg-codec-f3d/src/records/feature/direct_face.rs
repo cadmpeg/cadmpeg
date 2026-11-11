@@ -166,6 +166,7 @@ pub(crate) enum DesignMoveForm {
     Form0,
     /// Source form 1.
     Form1,
+    Form2,
     /// Source form 5.
     Form5,
 }
@@ -176,8 +177,9 @@ impl TryFrom<u32> for DesignMoveForm {
         match value {
             0 => Ok(Self::Form0),
             1 => Ok(Self::Form1),
+            2 => Ok(Self::Form2),
             5 => Ok(Self::Form5),
-            _ => Err(format!("form must be 0, 1 or 5, not {value}")),
+            _ => Err(format!("form must be 0, 1, 2 or 5, not {value}")),
         }
     }
 }
@@ -187,6 +189,7 @@ impl From<DesignMoveForm> for u32 {
         match form {
             DesignMoveForm::Form0 => 0,
             DesignMoveForm::Form1 => 1,
+            DesignMoveForm::Form2 => 2,
             DesignMoveForm::Form5 => 5,
         }
     }
