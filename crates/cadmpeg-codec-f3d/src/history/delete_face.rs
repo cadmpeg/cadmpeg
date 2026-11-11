@@ -64,6 +64,7 @@ pub(super) fn bind_delete_face_selection(
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     states: &DeleteFaceStates<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     let FaceSelection::Native(native) = selection else {
         return;
@@ -107,6 +108,7 @@ pub(super) fn bind_delete_face_selection(
     else {
         return;
     };
+    let order_assumed = faces.len() >= 2;
     let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let selected = faces
         .into_iter()
@@ -119,6 +121,14 @@ pub(super) fn bind_delete_face_selection(
         selected,
         native.clone(),
     ) {
+        if order_assumed {
+            losses.push(
+                crate::loss::F3dLossCode::HistoryDeleteFaceMemberOrderAssumed.note(format!(
+                    "DeleteFace group {} assigns selected faces to members in stable-slot order",
+                    group.id
+                )),
+            );
+        }
         *selection = historical;
     }
 }
