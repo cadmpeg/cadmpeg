@@ -927,7 +927,10 @@ fn split_body_tool_body_selects_the_resolved_body_faces() {
         panic!("expected historical tool faces");
     };
     assert!(state.as_str().ends_with(":7"));
-    let faces: Vec<&str> = faces.iter().map(|face| face.as_str()).collect();
+    let faces: Vec<&str> = faces
+        .iter()
+        .map(cadmpeg_ir::ids::HistoricalFaceId::as_str)
+        .collect();
     assert!(faces.len() == 2 && faces[0].ends_with(":7:20") && faces[1].ends_with(":7:21"));
     assert_eq!(native.as_str(), groups[0].id);
 
