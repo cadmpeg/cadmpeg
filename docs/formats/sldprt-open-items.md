@@ -62,11 +62,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### GC-04. Offset-surface admission
 
-**Question.** Which complete support and selected-set relation validates an unchecked offset for exact transfer, including negative support sense and full canonical indexes?
+**Question.** Which sense relation, distance band and bounded support domain admit an unchecked offset with negative support sense, a distance within model resolution or a partially typed support graph?
 
-**Known.** `sldprt.md` §7.5 defines the complete status, unused logical, support, distance and scale fields. The current short grammar requires the scale lane and withholds invalid, unchecked and zero-distance offsets while retaining their raw source and index claims. Scale does not multiply distance; FACE sense does not change its sign.
+**Known.** `sldprt.md` §7.5 defines the validity-check state, unused logical, support, distance and nullable scale. A complete node graph with unique positively sensed supports carries the unchecked offset equation through typed analytic, NURBS and swept supports. The node reader resolves canonical pointer indexes. Unchecked transfer requires a distance beyond model resolution. Negative support sense, opaque support dependencies and bounded faces with intersection-chart trims retain unresolved validity.
 
-**Need.** Exact unchecked admission needs a selected typed support, equal carrier/support senses, nonzero distance outside modeller resolution, an acyclic support graph and a valid selected surface set. Wide identities and pointers need one canonical index domain across every dependent carrier.
+**Need.** Resolve negative support orientation against the neutral carrier normal, the validity of offsets within model resolution, and the selected parameter domain when the support graph contains an opaque dependency.
 
 ### GC-05. Variable-radius law and result parameterization
 
@@ -135,6 +135,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `sldprt.md` §7.1 "The line direction is unit length." gives each field in the open interval (0, 1), the cone identity within `1e-9`, and the half-angle `atan2(sin, cos)`. `siemens_nx.md` §6.1 gives the same rule. The SLDPRT decoder omits a CONE node with a negative field and reports `geometry.cone-half-angle-sign-unresolved`; the NX decoder reports `carrier.cone-half-angle-sign-unresolved`.
 
 **Need.** We must know whether a signed half-angle is a valid cone or a different surface before a negative field can transfer as exact geometry.
+
+### GC-51. Intersection guide parameterization
+
+**Question.** Which guide constraint binds a chart parameter to the exact intersection of its two support surfaces?
+
+**Known.** §7.3 defines the support pointers, chart interval, terminators and optional support-UV caches. The three-dimensional chart bounds its positional approximation with `chordal_error`. A bounded offset FACE can use these intersection edges.
+
+**Need.** Derive the exact parameterization and branch selection from the chart and supports. The neutral representation needs a guide-curve relation or certified coincident support pcurves.
+
+**Conflict.** A positional cache evaluates the interpolated chart. The exact intersection lies on both supports.
+
+**Note.** An unchecked offset face with these trims keeps opaque geometry and `geometry.offset-validity-unresolved`.
 
 ## 3. Container metadata
 

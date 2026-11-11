@@ -8301,6 +8301,24 @@ fn subset_parameter(
     Some((start + derivative * parameter, derivative))
 }
 
+/// The point and first partials of a signed normal offset, from the
+/// support's point, first partials and second partials.
+pub fn offset_surface_partials(
+    support: SurfaceSecondPartials<FinitePoint3, FiniteVector3>,
+    distance: f64,
+) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    offset_surface_jet(
+        SurfaceJet {
+            point: support.point,
+            first: Ok([support.du, support.dv]),
+            second: Ok([support.duu, support.duv, support.dvv]),
+        },
+        distance,
+    )?
+    .first_order()
+    .partials()
+}
+
 /// The jet of the offset by `distance` along the unit normal of `base`, or
 /// why its point has none. The offset point reads the base's first partials,
 /// and its first partials read the base's second. A distance or normal

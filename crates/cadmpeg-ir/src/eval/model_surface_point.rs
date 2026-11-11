@@ -6,7 +6,9 @@ use super::cacheless_constant_rolling_ball_first_order;
 use super::cacheless_constant_rolling_ball_point;
 use super::cacheless_law_sweep_point;
 use super::cacheless_variable_blend_point;
+use super::model_axis_revolution_jet;
 use super::model_axis_revolution_point;
+use super::model_linear_sweep_jet;
 use super::model_linear_sweep_point;
 use super::model_native_extrusion_point;
 use super::model_native_revolution_point;
@@ -144,6 +146,24 @@ pub(super) fn model_surface_point_by_id_inner(
             scale_vector(normal, -1.0)
         } else {
             normal
+        })
+    }
+
+    fn jet_evaluation(
+        jet: Result<super::SurfaceJet, EvaluationFailure<Point3>>,
+    ) -> Option<SurfaceEvaluation> {
+        let jet = match jet {
+            Ok(jet) => jet,
+            Err(failure) => return point_evaluation(Err(failure)),
+        };
+        let oriented_normal = oriented_normal(jet.first, false);
+        if let Some(refusal) = refusal_of(&oriented_normal) {
+            return Some(refused(refusal));
+        }
+        Some(SurfaceEvaluation {
+            point: Ok(jet.point),
+            oriented_normal,
+            refusal: None,
         })
     }
 
@@ -369,6 +389,17 @@ pub(super) fn model_surface_point_by_id_inner(
         let carrier_interval =
             procedural.and_then(|procedural| record_u_interval(procedural.record_bounds()));
         let result = match procedural.map(crate::geometry::ProceduralSurface::definition) {
+            Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) if normal => {
+                jet_evaluation(model_axis_revolution_jet(
+                    admission,
+                    index,
+                    definition_payload.directrix(),
+                    definition_payload.axis_origin().get(),
+                    definition_payload.axis_direction(),
+                    u,
+                    v,
+                ))
+            }
             Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => {
                 point_evaluation(model_axis_revolution_point(
                     admission,
@@ -390,9 +421,25 @@ pub(super) fn model_surface_point_by_id_inner(
                     v,
                 ))
             }
-            Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => point_evaluation(
-                model_linear_sweep_point(admission, index, definition_payload, u, v),
-            ),
+            Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => {
+                if normal {
+                    jet_evaluation(model_linear_sweep_jet(
+                        admission,
+                        index,
+                        definition_payload,
+                        u,
+                        v,
+                    ))
+                } else {
+                    point_evaluation(model_linear_sweep_point(
+                        admission,
+                        index,
+                        definition_payload,
+                        u,
+                        v,
+                    ))
+                }
+            }
             Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => {
                 point_evaluation(model_native_revolution_point(
                     admission,
@@ -670,3 +717,6 @@ pub(super) fn model_surface_point_by_id_inner(
     }
     evaluation.point.map_err(EvaluationFailure::NonFinite)
 }
+
+#[cfg(test)]
+mod tests;
