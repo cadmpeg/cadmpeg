@@ -166,6 +166,7 @@ fn topology(keys: &[i64], changed: bool) -> AsmHistoricalTopology {
         edge_samples: keys
             .iter()
             .map(|&key| AsmHistoricalEdgeSample {
+                bounds: None,
                 edge: key,
                 interior: origin,
                 tangent: if changed { None } else { Some(axis) },

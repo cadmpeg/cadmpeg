@@ -519,8 +519,8 @@ pub enum DecodePurpose {
 ///
 /// `stream` names the source ZIP entry for provenance. Ids are minted as
 /// `<format>:brep:entity#<record-index>`, unique across the `RecordTable`.
-/// [`DecodePurpose::History`] skips free-form carrier shapes because
-/// historical binding consumes stable record identities, not control data.
+/// [`DecodePurpose::History`] retains bounded edge curve caches for historical
+/// measurements and skips free-form surface shapes.
 pub fn decode_with_purpose(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
@@ -569,7 +569,7 @@ pub fn decode_with_header(
     )
 }
 
-/// Decode a History subset with the complete state's subtype numbering.
+/// Decode a History subset with the source stream's subtype numbering.
 /// The supplied table must carry the stream's save format version.
 pub fn decode_history_with_subtypes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -721,8 +721,10 @@ fn decode_with_table(
         attach_point_edge_carriers(&mut out, records, format);
         let collapsed = collapsed_edges(records, &by_index, &reach.edges, format)?;
         classify_body_kinds(&mut out, &collapsed);
-        clamp_edge_ranges_to_carrier_domains(&mut out)?;
+    } else {
+        attach_point_edge_carriers(&mut out, records, format);
     }
+    clamp_edge_ranges_to_carrier_domains(&mut out)?;
 
     Ok(out)
 }
