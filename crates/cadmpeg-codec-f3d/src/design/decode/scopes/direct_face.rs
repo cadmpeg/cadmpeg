@@ -13,16 +13,21 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::layout::indexed_design_record_header as indexed_header;
+use crate::layout::modify_marker_one_prologue as modify_one;
+use crate::layout::modify_marker_zero_prologue as modify_zero;
 use crate::layout::move_marked_transform_prologue as marked_move;
 use crate::layout::move_transform_frame_253 as move_frame;
 use crate::layout::move_transform_frame_254 as move_frame_254;
 use crate::layout::move_transform_frame_273 as move_frame_273;
 use crate::layout::move_transform_frame_274 as move_frame_274;
+use crate::layout::move_transform_frame_283 as move_frame_283;
+use crate::layout::move_transform_frame_284 as move_frame_284;
 use crate::layout::scale_legacy_uniform_tail as scale_tail;
 use crate::records::entity_header::SegmentType;
 use crate::records::feature::body_ops::DesignScaleOperation;
 use crate::records::feature::direct_face;
 use crate::records::feature::direct_face::DesignDirectFaceOperation;
+use crate::records::feature::direct_face::DesignModifyOperation;
 use crate::records::feature::direct_face::DesignMoveOperation;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
@@ -325,6 +330,7 @@ fn rigid_transform_rule_breaks(
     let length_form = match frame_length {
         move_frame::LEN | move_frame_254::LEN => direct_face::DesignMoveForm::Form5,
         move_frame_273::LEN | move_frame_274::LEN => direct_face::DesignMoveForm::Form1,
+        move_frame_283::LEN | move_frame_284::LEN => direct_face::DesignMoveForm::Form0,
         _ => {
             breaks.push(format!("a {frame_length}-byte frame"));
             return breaks;
@@ -356,11 +362,69 @@ pub(super) fn marked_move_transform_loss(
     let breaks = rigid_transform_rule_breaks(bytes, start, paired, operation.form, class_types);
     (!breaks.is_empty()).then(|| {
         crate::loss::F3dLossCode::FeatureMoveTransformAssumed.note(format!(
-            "Move scope {} keeps the rigid matrix of its marked transform record {}, which has {} (DR-306).",
+            "{} scope {} keeps the rigid matrix of its marked transform record {}, which has {} (DR-306).",
+            scope.kind().as_str(),
             scope.id,
             operation.transform_record_index,
             breaks.join(" and ")
         ))
+    })
+}
+
+pub(super) fn exact_modify_operation(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignModifyOperation> {
+    if scope.kind() != scope::DesignFeatureKind::Modify {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    if bytes.get(start + modify_zero::ZERO_RUN_9..start + modify_zero::MARKER)? != [0; 9] {
+        return None;
+    }
+    let (transform_at, count_at, groups_at) = match *bytes.get(start + modify_zero::MARKER)? {
+        modify_zero::MARKER_VALUE => (
+            modify_zero::TRANSFORM_REFERENCE,
+            modify_zero::BODY_COUNT,
+            modify_zero::FIRST_BODY_GROUP,
+        ),
+        modify_one::MARKER_VALUE if View::u32_le_at(bytes, start + modify_one::ZERO_WORD)? == 0 => {
+            (
+                modify_one::TRANSFORM_REFERENCE,
+                modify_one::BODY_COUNT,
+                modify_one::FIRST_BODY_GROUP,
+            )
+        }
+        _ => return None,
+    };
+    let transform_record_index = marked_record_reference(bytes, start + transform_at)?;
+    let references = scope
+        .reference_members()
+        .values()
+        .copied()
+        .collect::<Vec<_>>();
+    let count = usize::try_from(View::u32_le_at(bytes, start + count_at)?).ok()?;
+    if count == 0 || references.len() < 1 + 4 * count {
+        return None;
+    }
+    let mut body_group_record_indices = Vec::with_capacity(count);
+    for ordinal in 0..count {
+        let group = marked_record_reference(bytes, start + groups_at + 11 * ordinal)?;
+        if references.get(1 + 2 * count + 2 * ordinal) != Some(&group) {
+            return None;
+        }
+        body_group_record_indices.push(group);
+    }
+    if references.first() != Some(&transform_record_index) {
+        return None;
+    }
+    let mut motion = move_face_transform(bytes, records, transform_record_index)?;
+    motion.transform_reference_offset = Some(u64_from_index(start + transform_at));
+    Some(DesignModifyOperation {
+        motion,
+        body_group_record_indices,
+        body_count_offset: u64_from_index(start + count_at),
     })
 }
 
