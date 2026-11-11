@@ -18,6 +18,7 @@ pub(crate) mod direct_face;
 mod draft;
 mod emboss;
 pub(crate) mod extrude;
+pub(crate) mod fillet_set;
 mod fixed_parameters;
 pub(super) mod hole;
 pub(crate) mod legacy_class_397;

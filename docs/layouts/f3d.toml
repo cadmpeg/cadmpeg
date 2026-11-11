@@ -1520,6 +1520,332 @@ source = "spec"
 anchor = "The slots start at offset 26"
 
 [[record]]
+name = "fillet_scope_prologue"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A parameter-owned `Fillet` scope names its fillet sets in a prefix"
+size = 21
+note = "Offsets are relative to the primary indexed header. Prologue byte 0 ends the prologue at offset 21; prologue byte 1 is followed by u32 0 and ends it at offset 25. The counted set and edge-group lists follow."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Offsets are relative to the primary indexed header"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "prologue_byte"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "a prologue byte at offset 20"
+
+[[record]]
+name = "fillet_set_constant"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "`+29: edge-group reference`"
+size = 97
+note = "Offsets are relative to the set record indexed header; the frame ends at the next indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A fillet set is one indexed record"
+
+[[record.field]]
+name = "zero_run_12_at_11"
+offset = 11
+type = "bytes[12]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "form_marker"
+offset = 23
+type = "u8"
+source = "spec"
+anchor = "`+23: u8 1`"
+value = 1
+
+[[record.field]]
+name = "zero_run_2_at_24"
+offset = 24
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "flag"
+offset = 26
+type = "u8"
+source = "spec"
+anchor = "`+26: u8 flag`"
+
+[[record.field]]
+name = "zero_run_2_at_27"
+offset = 27
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 29
+type = "bytes[11]"
+source = "spec"
+anchor = "`+29: edge-group reference`"
+
+[[record.field]]
+name = "zero_run_23_at_40"
+offset = 40
+type = "bytes[23]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "radius_owner_reference"
+offset = 63
+type = "bytes[11]"
+source = "spec"
+anchor = "`+63: Radius owner reference`"
+
+[[record.field]]
+name = "zero_run_4_at_74"
+offset = 74
+type = "bytes[4]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "set_ordinal"
+offset = 78
+type = "u32"
+source = "spec"
+anchor = "`+78: u32 set ordinal`"
+
+[[record.field]]
+name = "tangency_weight_owner_reference"
+offset = 82
+type = "bytes[11]"
+source = "spec"
+anchor = "`+82: TangencyWeight owner reference`"
+
+[[record.field]]
+name = "zero_run_4_at_93"
+offset = 93
+type = "bytes[4]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record]]
+name = "fillet_set_chordal"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "`+28: ChordLen owner reference`"
+size = 97
+note = "Offsets are relative to the set record indexed header; the frame ends at the next indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A fillet set is one indexed record"
+
+[[record.field]]
+name = "zero_run_11_at_11"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "form_marker"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "`+22: u8 1`; `+26: u8 flag`"
+value = 1
+
+[[record.field]]
+name = "zero_run_3_at_23"
+offset = 23
+type = "bytes[3]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "flag"
+offset = 26
+type = "u8"
+source = "spec"
+anchor = "`+26: u8 flag`"
+
+[[record.field]]
+name = "zero_run_1_at_27"
+offset = 27
+type = "bytes[1]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "chord_length_owner_reference"
+offset = 28
+type = "bytes[11]"
+source = "spec"
+anchor = "`+28: ChordLen owner reference`"
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 39
+type = "bytes[11]"
+source = "spec"
+anchor = "`+39: edge-group reference`"
+
+[[record.field]]
+name = "zero_run_28_at_50"
+offset = 50
+type = "bytes[28]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "set_ordinal"
+offset = 78
+type = "u32"
+source = "spec"
+anchor = "`+78: u32 set ordinal`"
+
+[[record.field]]
+name = "tangency_weight_owner_reference"
+offset = 82
+type = "bytes[11]"
+source = "spec"
+anchor = "`+82: TangencyWeight owner reference`"
+
+[[record.field]]
+name = "zero_run_4_at_93"
+offset = 93
+type = "bytes[4]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record]]
+name = "fillet_set_compact_constant"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "`+27: edge-group reference`"
+size = 93
+note = "Offsets are relative to the set record indexed header; the frame ends at the next indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A fillet set is one indexed record"
+
+[[record.field]]
+name = "zero_run_11_at_11"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "form_marker"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "`+22: u8 1`; `+24: u8 flag`"
+value = 1
+
+[[record.field]]
+name = "zero_run_1_at_23"
+offset = 23
+type = "bytes[1]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "flag"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "`+24: u8 flag`"
+
+[[record.field]]
+name = "zero_run_2_at_25"
+offset = 25
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 27
+type = "bytes[11]"
+source = "spec"
+anchor = "`+27: edge-group reference`"
+
+[[record.field]]
+name = "zero_run_21_at_38"
+offset = 38
+type = "bytes[21]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "radius_owner_reference"
+offset = 59
+type = "bytes[11]"
+source = "spec"
+anchor = "`+59: Radius owner reference`"
+
+[[record.field]]
+name = "zero_run_4_at_70"
+offset = 70
+type = "bytes[4]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "set_ordinal"
+offset = 74
+type = "u32"
+source = "spec"
+anchor = "`+74: u32 set ordinal`"
+
+[[record.field]]
+name = "tangency_weight_owner_reference"
+offset = 78
+type = "bytes[11]"
+source = "spec"
+anchor = "`+78: TangencyWeight owner reference`"
+
+[[record.field]]
+name = "zero_run_4_at_89"
+offset = 89
+type = "bytes[4]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record]]
 name = "thicken_scope_prologue"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs"
 kind = "byte"

@@ -12,6 +12,7 @@ pub(crate) mod deleted_members;
 pub(crate) mod direct_face;
 pub(crate) mod emboss;
 pub(crate) mod extrude;
+pub(crate) mod fillet_set;
 pub(crate) mod fixed_parameters;
 pub(crate) mod hole;
 pub(crate) mod joint_motion;

@@ -840,7 +840,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ];
     let mut indexed_scope = scope.clone();
     if let DesignScopePayloadMut::Fillet(slot) = indexed_scope.payload_mut() {
-        *slot = Some(DesignFixedFilletParameters {
+        slot.fixed = Some(DesignFixedFilletParameters {
             groups: vec![DesignFixedFilletGroup::try_new(
                 Some(DesignFixedFilletScalar {
                     value: crate::test_support::real(1.0),

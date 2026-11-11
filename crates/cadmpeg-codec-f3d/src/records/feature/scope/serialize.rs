@@ -208,6 +208,7 @@ impl Serialize for DesignParameterScope {
         emit_opt!("edge_flange_operation", self.edge_flange_operation());
         emit_opt!("hem_operation", self.hem_operation());
         emit_opt!("fixed_fillet_parameters", self.fixed_fillet_parameters());
+        emit_opt!("fillet_sets", self.fillet_sets());
         emit_opt!("fixed_chamfer_parameters", self.fixed_chamfer_parameters());
 
         match &self.payload {
