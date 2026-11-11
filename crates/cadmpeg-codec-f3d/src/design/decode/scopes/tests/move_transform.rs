@@ -2,7 +2,7 @@
 
 use crate::design::decode::scopes::direct_face::{
     exact_modify_operation, exact_move_face_operation, exact_move_operation,
-    marked_move_transform_loss,
+    marked_move_transform_loss, move_transform_references_loss,
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 
@@ -622,4 +622,85 @@ fn a_284_byte_transform_record_stores_form_zero() {
             .as_deref(),
         Some("Modify scope f3d:test:scope#17 keeps the rigid matrix of its marked transform record 71, which has form word 1 in a 284-byte frame (DR-306).")
     );
+}
+
+fn form_two_fixture() -> (Vec<u8>, DesignParameterScope) {
+    let mut bytes = vec![0; 293];
+    bytes[..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"424");
+    bytes[7..11].copy_from_slice(&71u32.to_le_bytes());
+    for (at, target) in [(31, 96u32), (42, 93), (53, 115), (68, 118)] {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&target.to_le_bytes());
+    }
+    bytes[83..87].copy_from_slice(&2u32.to_le_bytes());
+    let transform: [[f64; 4]; 4] = [
+        [1., 0., 0., 0.4],
+        [0., 1., 0., -1.4],
+        [0., 0., 1., 10.7],
+        [0., 0., 0., 1.],
+    ];
+    for (cell, value) in transform.into_iter().flatten().enumerate() {
+        let at = 88 + cell * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"262");
+    bytes.extend_from_slice(&71u32.to_le_bytes());
+    let start = bytes.len();
+    bytes.resize(start + 200, 0);
+    bytes[start + 21] = 1;
+    bytes[start + 22..start + 26].copy_from_slice(&71u32.to_le_bytes());
+    bytes[start + 32..start + 36].copy_from_slice(&1u32.to_le_bytes());
+    bytes[start + 36] = 1;
+    bytes[start + 37..start + 41].copy_from_slice(&50u32.to_le_bytes());
+    let mut scope = DesignParameterScope::empty("f3d:test:scope#17", DesignFeatureKind::Move, 17);
+    lay_out_move_face(&mut scope, start, 126, vec![50, 60, 71]);
+    (bytes, scope)
+}
+
+#[test]
+fn a_form_two_transform_record_stores_its_matrix_after_four_references() {
+    let row = super::move_transform_type("84E6245F-1CDC-4FB8-8048-163A85FAD3F0", 2);
+    let class_types = super::move_transform_types(&row, &[424]);
+    let (bytes, scope) = form_two_fixture();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let decoded = exact_move_operation(&bytes, &records, &scope, &class_types).unwrap();
+    assert_eq!(u32::from(decoded.form), 2);
+    assert_eq!(decoded.form_offset, 83);
+    assert_eq!(decoded.transform_offset, 88);
+    assert_eq!(decoded.transform.rows()[2], [0., 0., 1., 10.7]);
+    assert!(marked_move_transform_loss(&bytes, &records, &scope, &decoded, &class_types).is_none());
+    let note = move_transform_references_loss(&scope, &decoded).unwrap();
+    assert_eq!(
+        note.code,
+        crate::loss::F3dLossCode::FeatureMoveTransformReferencesAssumed.kind()
+    );
+    assert_eq!(
+        note.message,
+        "Move scope f3d:test:scope#17 takes the rigid matrix of its form-2 transform record 71; the four references of the record are assumed to leave that motion unchanged (DR-375)."
+    );
+    let (bytes, scope) = fixture("424", 273);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let standard = exact_move_operation(&bytes, &records, &scope, &class_types).unwrap();
+    assert!(move_transform_references_loss(&scope, &standard).is_none());
+}
+
+#[test]
+fn a_form_two_transform_record_with_a_broken_field_is_refused() {
+    let row = super::move_transform_type("84E6245F-1CDC-4FB8-8048-163A85FAD3F0", 2);
+    let class_types = super::move_transform_types(&row, &[424]);
+    for at in [20, 31, 42, 53, 64, 68, 80, 83, 87] {
+        let (mut bytes, scope) = form_two_fixture();
+        bytes[at] ^= 0x04;
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        assert!(
+            exact_move_operation(&bytes, &records, &scope, &class_types).is_none(),
+            "offset {at} accepted"
+        );
+    }
+    let (mut bytes, scope) = fixture("424", 273);
+    bytes[43..47].copy_from_slice(&2u32.to_le_bytes());
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    assert!(exact_move_operation(&bytes, &records, &scope, &class_types).is_none());
 }

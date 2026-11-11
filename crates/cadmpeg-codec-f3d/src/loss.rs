@@ -436,6 +436,8 @@ pub(crate) enum F3dLossCode {
     FeatureRevolveLayoutAssumed,
     /// A marked `Move` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record.
     FeatureMoveTransformAssumed,
+    /// A form-2 rigid-transform record stores four references whose effect on its stored motion is unresolved.
+    FeatureMoveTransformReferencesAssumed,
     /// A projected `Modify` assumes that its unlisted body groups select the bodies of its listed groups.
     FeatureModifyUnlistedGroupsAssumed,
     /// A projected `Modify` stores a reference table outside the body-group run of its family.
@@ -860,6 +862,7 @@ impl F3dLossCode {
         Self::FeatureExtrudeTerminationMissing,
         Self::FeatureRevolveLayoutAssumed,
         Self::FeatureMoveTransformAssumed,
+        Self::FeatureMoveTransformReferencesAssumed,
         Self::FeatureModifyUnlistedGroupsAssumed,
         Self::FeatureModifyTableAssumed,
         Self::FeatureModifyStateAssumed,
@@ -1220,6 +1223,9 @@ impl F3dLossCode {
             Self::FeatureExtrudeTerminationMissing => "feature.extrude-termination-missing",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
+            Self::FeatureMoveTransformReferencesAssumed => {
+                "feature.move-transform-references-assumed"
+            }
             Self::FeatureModifyUnlistedGroupsAssumed => "feature.modify-unlisted-groups-assumed",
             Self::FeatureModifyTableAssumed => "feature.modify-table-assumed",
             Self::FeatureModifyStateAssumed => "feature.modify-state-assumed",
@@ -1582,6 +1588,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
+            | Self::FeatureMoveTransformReferencesAssumed
             | Self::FeatureModifyUnlistedGroupsAssumed
             | Self::FeatureModifyTableAssumed
             | Self::FeatureModifyStateAssumed
@@ -1861,6 +1868,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
+            | Self::FeatureMoveTransformReferencesAssumed
             | Self::FeatureModifyUnlistedGroupsAssumed
             | Self::FeatureModifyTableAssumed
             | Self::FeatureModifyStateAssumed
@@ -2219,6 +2227,7 @@ mod tests {
                 "feature.extrude-termination-missing",
                 "feature.revolve-layout-assumed",
                 "feature.move-transform-assumed",
+                "feature.move-transform-references-assumed",
                 "feature.modify-unlisted-groups-assumed",
                 "feature.modify-table-assumed",
                 "feature.modify-state-assumed",

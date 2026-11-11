@@ -1068,11 +1068,23 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-306. Marked Move transform records outside the rigid-transform rules
 
-**Question.** What does a transform record that the marked reference of a `Move` or `Modify` scope selects store when its class type is not the rigid-transform type, its frame is not 253, 254, 273, 274, 283, or 284 bytes, or its form word is not the form word of its frame length?
+**Question.** What does a transform record that the marked reference of a `Move` or `Modify` scope selects store when its class type is not the rigid-transform type, its frame is not 253, 254, 273, 274, 283, 284, or 293 bytes, or its form word is not the form word of its frame length?
 
-**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the rigid-transform type, the form word of each of the six frame lengths, and the marked reference that selects the transform record. A marked reference selects a 256-byte record with form word `5`, the zero run, and a rigid matrix at offset 48. The decoder keeps the matrix of each marked record that has the zero run, form word `0`, `1`, or `5`, and a rigid matrix, and records `feature.move-transform-assumed` with each rule that the record breaks.
+**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the rigid-transform type, the form word of each of the seven frame lengths, and the marked reference that selects the transform record. A marked reference selects a 256-byte record with form word `5`, the zero run, and a rigid matrix at offset 48. The decoder keeps the matrix of each marked record that has the zero run, form word `0`, `1`, or `5`, and a rigid matrix, or the fields of the form-2 frame, and records `feature.move-transform-assumed` with each rule that the record breaks.
 
 **Need.** Controlled saves of one `Move` that change the transform type between translation, rotation, and point-to-point, each recording the class type, frame length, and form word of the marked record and the bytes from offset 176 to the paired header.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-375. References of a form-2 rigid-transform record
+
+**Question.** What do the four marked references of a 293-byte form-2 rigid-transform record name, and do they change the motion that its matrix stores?
+
+**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the 293-byte frame: four marked references, form word `2`, and a rigid matrix at offset 88. The decoder projects the matrix as the motion of the `Move`, `Modify`, or `MoveFace` scope that selects the record, and records `feature.move-transform-references-assumed`.
+
+**Need.** Controlled saves of one `Move` that use point-to-point and other reference-based motion types, each recording the records that the four references name.
 
 **Conflict.** None.
 
