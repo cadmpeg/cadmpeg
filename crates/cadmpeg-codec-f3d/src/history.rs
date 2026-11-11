@@ -7790,7 +7790,7 @@ fn edge_recipe_reference_context<'a>(
     face_boundaries: &mut FaceBoundaryArena,
 ) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
     let candidate_faces = recipe_index::reference_lane_faces(lane);
-    let candidate_faces = candidate_faces.as_slice();
+    let candidate_faces = candidate_faces.faces.as_slice();
     let face_slots = |faces: &[cadmpeg_ir::ids::FaceId]| {
         faces
             .iter()

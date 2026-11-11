@@ -5,9 +5,14 @@ use crate::history_records::AsmHistoricalTopology;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use std::collections::{HashMap, HashSet};
 
+pub(super) struct ReferenceLaneFaces {
+    pub(super) faces: Vec<cadmpeg_ir::ids::FaceId>,
+    pub(super) disjoint_names: bool,
+}
+
 pub(super) fn reference_lane_faces(
     lane: &[crate::records::dimensions::DesignRecipeReference],
-) -> Vec<cadmpeg_ir::ids::FaceId> {
+) -> ReferenceLaneFaces {
     let mut names: std::collections::BTreeMap<_, Vec<_>> = std::collections::BTreeMap::new();
     for reference in lane {
         let faces = names.entry(reference.selector_offset).or_default();
@@ -19,10 +24,20 @@ pub(super) fn reference_lane_faces(
     }
     let mut names = names.into_values().filter(|faces| !faces.is_empty());
     let mut faces = names.next().unwrap_or_default();
+    let mut union = faces.clone();
     for name in names {
         faces.retain(|face| name.contains(face));
+        for face in name {
+            if !union.contains(&face) {
+                union.push(face);
+            }
+        }
     }
-    faces
+    let disjoint_names = faces.is_empty() && !union.is_empty();
+    ReferenceLaneFaces {
+        faces: if disjoint_names { union } else { faces },
+        disjoint_names,
+    }
 }
 
 type TokenReferences<'a> = HashMap<&'a str, HashMap<u32, HashMap<i64, Vec<usize>>>>;
@@ -153,16 +168,25 @@ mod tests {
             reference(0, 302, &[30]),
             reference(40, 303, &[20, 30, 40]),
         ];
-        assert_eq!(super::reference_lane_faces(&lane), [face(20), face(30)]);
         assert_eq!(
-            super::reference_lane_faces(&lane[..2]),
+            super::reference_lane_faces(&lane).faces,
+            [face(20), face(30)]
+        );
+        assert_eq!(
+            super::reference_lane_faces(&lane[..2]).faces,
             [face(10), face(20), face(30)]
         );
         let missing = [lane[0].clone(), reference(40, 303, &[])];
-        assert_eq!(super::reference_lane_faces(&missing), [face(10), face(20)]);
+        assert_eq!(
+            super::reference_lane_faces(&missing).faces,
+            [face(10), face(20)]
+        );
         let conflict = [lane[0].clone(), reference(40, 303, &[40])];
-        assert!(super::reference_lane_faces(&conflict).is_empty());
-        assert!(super::reference_lane_faces(&[]).is_empty());
+        let conflict = super::reference_lane_faces(&conflict);
+        assert_eq!(conflict.faces, [face(10), face(20), face(40)]);
+        assert!(conflict.disjoint_names);
+        assert!(!super::reference_lane_faces(&lane).disjoint_names);
+        assert!(super::reference_lane_faces(&[]).faces.is_empty());
     }
 
     #[test]
