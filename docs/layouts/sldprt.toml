@@ -14146,3 +14146,92 @@ offset = 104
 type = "f64"
 source = "spec"
 anchor = "the profile's parameter at each as two more, low parameter first"
+
+[[record]]
+name = "compact_principal_plane_component"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/compact_reference_planes.rs"
+kind = "byte"
+section = "2"
+anchor = "A principal-plane component record has the 138-byte extent"
+size = 138
+endianness = "little"
+
+[[record.field]]
+name = "source"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "Its source identifier and selector are"
+
+[[record.field]]
+name = "reserved"
+offset = 8
+type = "bytes[2]"
+source = "spec"
+anchor = "A principal-plane component record has the 138-byte extent"
+
+[[record.field]]
+name = "selector"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "Its source identifier and selector are"
+
+[[record.field]]
+name = "matrix_present"
+offset = 14
+type = "u8"
+source = "spec"
+anchor = "Its f64 matrix is row-major"
+
+[[record.field]]
+name = "basis"
+offset = 15
+type = "f64[9]"
+source = "spec"
+anchor = "Its f64 matrix is row-major"
+
+[[record.field]]
+name = "translation"
+offset = 87
+type = "f64[3]"
+source = "spec"
+anchor = "Its translation is zero"
+
+[[record.field]]
+name = "scale"
+offset = 111
+type = "f64"
+source = "spec"
+anchor = "its homogeneous scale is `1`"
+
+[[record.field]]
+name = "trailer_reserved"
+offset = 119
+type = "bytes[3]"
+source = "spec"
+anchor = "A principal-plane component record has the 138-byte extent"
+
+[[record.field]]
+name = "trailer_kind"
+offset = 122
+type = "u32"
+source = "spec"
+anchor = "A principal-plane component record has the 138-byte extent"
+
+[[record.field]]
+name = "trailer_sentinel"
+offset = 126
+type = "u32"
+source = "spec"
+anchor = "A principal-plane component record has the 138-byte extent"
+
+[[record.gap]]
+offset = 4
+size = 4
+note = "Opaque identity."
+
+[[record.gap]]
+offset = 130
+size = 8
+note = "Opaque continuation."

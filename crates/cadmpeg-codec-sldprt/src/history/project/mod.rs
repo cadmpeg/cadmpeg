@@ -24,6 +24,7 @@ use crate::history::classify::{
 };
 use crate::history::literals::{parse_point3_mm, parse_vector3, valid_plane_frame};
 use crate::records::FeatureSource;
+use crate::resolved_features::compact_reference_planes::principal_sketch_frame;
 
 #[cfg(test)]
 mod content_tests;
@@ -389,23 +390,6 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
         let u_axis = parse_vector3(feature.source_properties.get("UAxis")?)?;
         valid_plane_frame(normal, u_axis).then_some((origin, normal, u_axis))
     };
-    let principal_frame = |plane| match plane {
-        cadmpeg_ir::features::PrincipalPlane::Front => (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, -1.0, 0.0),
-            Vector3::new(0.0, 0.0, -1.0),
-        ),
-        cadmpeg_ir::features::PrincipalPlane::Top => (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        ),
-        cadmpeg_ir::features::PrincipalPlane::Right => (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, -1.0),
-        ),
-    };
     let same_scalar = |left: f64, right: f64| {
         (left - right).abs() <= FRAME_TOLERANCE * left.abs().max(right.abs()).max(1.0)
     };
@@ -491,7 +475,7 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             feature.ordinal,
             match feature.evaluation.definition() {
                 FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
-                    Some(principal_frame(*plane))
+                    Some(principal_sketch_frame(*plane))
                 }
                 FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => Some((
                     frame.origin().get(),
@@ -611,7 +595,7 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
     for feature in features.iter() {
         let frame = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
-                principal_frame(*plane)
+                principal_sketch_frame(*plane)
             }
             FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => (
                 frame.origin().get(),

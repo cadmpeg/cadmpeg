@@ -73,7 +73,7 @@ pub(crate) mod compact_reference_planes;
 
 pub(crate) mod component_paths;
 
-mod curves;
+pub(crate) mod curves;
 
 pub(crate) mod dimensions;
 
