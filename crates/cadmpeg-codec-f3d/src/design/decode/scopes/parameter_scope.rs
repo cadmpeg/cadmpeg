@@ -29,6 +29,7 @@ use super::direct_face::exact_move_face_operation;
 use super::direct_face::exact_move_operation;
 use super::direct_face::exact_scale_operation;
 use super::direct_face::marked_move_transform_loss;
+use super::direct_face::move_transform_references_loss;
 use super::draft::exact_draft_operation_with_owners;
 use super::emboss::exact_emboss_construction;
 use super::extrude::{exact_extrude_prologue, exact_typed_extrude_prologue};
@@ -418,6 +419,7 @@ pub(crate) fn decode_parameter_scopes(
                         operation,
                         &class_types,
                     ));
+                    losses.extend(move_transform_references_loss(&scope, operation));
                 }
                 if let scope::DesignScopePayloadMut::Move(slot) = scope.payload_mut() {
                     *slot = construction;
@@ -431,12 +433,16 @@ pub(crate) fn decode_parameter_scopes(
                     &operation.motion,
                     &class_types,
                 ));
+                losses.extend(move_transform_references_loss(&scope, &operation.motion));
                 if let scope::DesignScopePayloadMut::Modify(slot) = scope.payload_mut() {
                     *slot = Some(operation);
                 }
             }
             {
                 let construction = exact_move_face_operation(bytes, &records, &scope);
+                if let Some(operation) = &construction {
+                    losses.extend(move_transform_references_loss(&scope, operation));
+                }
                 if let scope::DesignScopePayloadMut::MoveFace(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
