@@ -25,6 +25,8 @@
 //! circular arc is compared with the cap at sample points, and the selection
 //! reports `feature.profile-cap-outline-assumed`.
 
+pub(super) mod compact;
+
 use std::collections::HashSet;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -119,6 +121,7 @@ impl PlaneFrame {
 }
 
 /// One proven piece of a cap loop, in frame coordinates.
+#[derive(Clone)]
 enum Piece {
     Line(Point2, Point2),
     /// From `start` radians through `sweep` radians; a negative sweep turns

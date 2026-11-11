@@ -1369,13 +1369,13 @@ fn coil_placement_derives_only_the_encoded_identity_matrix() {
 
 #[test]
 fn move_form_preserves_its_closed_integer_wire_domain() {
-    for code in [1, 5] {
+    for code in [0, 1, 2, 5] {
         let wire = code.to_string();
         let form: crate::records::feature::direct_face::DesignMoveForm =
             serde_json::from_str(&wire).expect("move form");
         assert_eq!(serde_json::to_string(&form).expect("move form wire"), wire);
     }
-    for code in [0, 2, 3, 4, 6, u32::MAX] {
+    for code in [3, 4, 6, u32::MAX] {
         let error = serde_json::from_str::<crate::records::feature::direct_face::DesignMoveForm>(
             &code.to_string(),
         )
@@ -1830,6 +1830,7 @@ fn surface_trim_sidecar_requires_a_nonempty_cell_table() {
 mod scalars;
 
 mod fillet_law;
+mod fillet_sets;
 
 mod combine;
 

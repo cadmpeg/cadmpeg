@@ -12,6 +12,7 @@ use crate::records::references::DesignClassTag;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+pub(crate) mod coils;
 pub(crate) mod cylinders;
 mod fields;
 pub(crate) mod work_planes;

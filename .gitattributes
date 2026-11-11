@@ -13,6 +13,8 @@ crates/*/tests/golden/**/*.bin binary
 # to a different document.
 crates/*/tests/golden/fixtures/** binary
 crates/*/tests/fixtures/** binary
+crates/cadmpeg-codec-catia/tests/fixtures/chart_domains/*.md diff merge text eol=lf
+crates/cadmpeg-codec-catia/tests/fixtures/chart_domains/*.py diff merge text eol=lf
 crates/*/src/**/tests/data/** binary
 
 # NIST corpus files are SHA-256 pinned in corpus/manifest.toml and

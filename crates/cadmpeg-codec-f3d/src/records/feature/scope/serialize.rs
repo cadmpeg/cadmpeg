@@ -180,6 +180,7 @@ impl Serialize for DesignParameterScope {
 
         emit_opt!("align_envelope", self.align_envelope());
         emit_opt!("move_operation", self.move_operation());
+        emit_opt!("modify_operation", self.modify_operation());
         emit_opt!("scale_operation", self.scale_operation());
         emit_opt!("reverse_normal_operation", self.reverse_normal_operation());
         emit_opt!("path_pattern_settings", self.path_pattern_settings());
@@ -207,6 +208,7 @@ impl Serialize for DesignParameterScope {
         emit_opt!("edge_flange_operation", self.edge_flange_operation());
         emit_opt!("hem_operation", self.hem_operation());
         emit_opt!("fixed_fillet_parameters", self.fixed_fillet_parameters());
+        emit_opt!("fillet_sets", self.fillet_sets());
         emit_opt!("fixed_chamfer_parameters", self.fixed_chamfer_parameters());
 
         match &self.payload {

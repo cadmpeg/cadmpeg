@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+
+mod shared_recovery;
 use crate::families::freeform::owned_patch::{line_pcurve, sheet_carrier::Carrier};
 use cadmpeg_ir::geometry::{analytic::PlaneSurface, nurbs::NurbsCurve, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Vector3;

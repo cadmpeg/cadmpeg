@@ -619,6 +619,22 @@ fn listed_type_guid_family_wins_over_stored_name() {
 }
 
 #[test]
+fn the_modify_class_guid_selects_the_modify_family() {
+    use crate::records::feature::scope::DesignFeatureKind;
+
+    let modify = super::family::from_type_guid("DDB7BC00-2E41-4BC1-8DA1-A0F104A67E71");
+    assert_eq!(modify, Some(DesignFeatureKind::Modify));
+    assert_eq!(
+        super::scope_feature_kind("Ändern", modify.as_ref()),
+        Some(DesignFeatureKind::Modify)
+    );
+    assert_eq!(
+        super::scope_feature_kind("Modify", None),
+        Some(DesignFeatureKind::Modify)
+    );
+}
+
+#[test]
 fn unassigned_extrude_extent_retains_scope_with_a_loss() {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     let scope = DesignParameterScope::empty(

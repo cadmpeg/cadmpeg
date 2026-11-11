@@ -540,3 +540,51 @@ fn a_shell_on_both_sides_needs_no_outward_direction() {
         Some(ShellMode::Skin)
     )));
 }
+
+#[test]
+fn a_native_neutral_plane_is_complete_with_a_parallel_plane_frame() {
+    use cadmpeg_ir::features::{
+        DraftAnchor, DraftPull, FaceSelection, FeatureDefinition, FeatureDirection3,
+        FeatureOperation, FeatureSupportPlaneFrame,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let draft_with = |frame_normal: Option<Vector3>, datum: Option<&str>| {
+        let mut pull = DraftPull::new(
+            FeatureDirection3::new(Vector3::new(0.0, 0.0, -1.0)).unwrap(),
+            datum.map(|datum| cadmpeg_ir::features::FeatureId::mint(datum).unwrap()),
+        );
+        pull.frame = frame_normal.map(|normal| {
+            FeatureSupportPlaneFrame::new(
+                Point3::new(0.0, 0.0, 0.0),
+                normal,
+                normal.cross(Vector3::new(0.0, 1.0, 0.0)),
+            )
+            .unwrap()
+        });
+        FeatureDefinition::Operation(FeatureOperation::Draft {
+            faces: FaceSelection::Faces(vec![
+                cadmpeg_ir::ids::FaceId::mint("f3d:test:face#1").unwrap()
+            ]),
+            anchor: DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Native("f3d:test:group#1".into()),
+                pull: Some(pull),
+            },
+            angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
+            outward: Some(false),
+            second_side: None,
+        })
+    };
+    let draft = |frame_normal| draft_with(frame_normal, None);
+    assert!(feature_definition_is_incomplete(&draft_with(
+        Some(Vector3::new(0.0, 0.0, 1.0)),
+        Some("f3d:test:feature#2")
+    )));
+    assert!(!feature_definition_is_incomplete(&draft(Some(
+        Vector3::new(0.0, 0.0, 1.0)
+    ))));
+    assert!(feature_definition_is_incomplete(&draft(None)));
+    assert!(feature_definition_is_incomplete(&draft(Some(
+        Vector3::new(1.0, 0.0, 0.0)
+    ))));
+}

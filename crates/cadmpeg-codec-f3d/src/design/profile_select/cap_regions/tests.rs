@@ -589,8 +589,11 @@ type PlaneFace = (i64, f64, Vec<Vec<(f64, f64)>>);
 
 /// Faces whose edges all have straight carriers.
 fn plane_faces(faces: &[PlaneFace]) -> AsmHistoricalTopology {
+    plane_faces_from(faces, 10_000)
+}
+
+fn plane_faces_from(faces: &[PlaneFace], mut next: i64) -> AsmHistoricalTopology {
     let mut topology = AsmHistoricalTopology::default();
-    let mut next = 10_000;
     let mut mint = || {
         next += 1;
         next
@@ -1121,4 +1124,227 @@ fn a_cut_whose_regions_use_curves_outside_the_stored_profile_takes_the_proven_re
         F3dLossCode::FeatureProfileCutRegionsAssumed.kind()
     );
     assert!(loss.message.contains("curves outside the stored profile"));
+}
+#[test]
+fn compact_cut_certificate_checks_region_side_carriers_and_stored_travel() {
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
+        PlanarProfileRef, ProfileRef,
+    };
+    use cadmpeg_ir::sketches::SketchEntityUse;
+    let plate = vec![(-2.0, -2.0), (5.0, -2.0), (5.0, 5.0), (-2.0, 5.0)];
+    let square = unit_square_corners();
+    let other: Vec<_> = square.iter().map(|(x, y)| (x + 3.0, *y)).collect();
+    let mut sketch = xy_sketch();
+    let mut entities = Vec::new();
+    let mut profiles = Vec::new();
+    let inner = vec![(0.25, 0.25), (0.75, 0.25), (0.75, 0.75), (0.25, 0.75)];
+    for ring in [&square, &other, &plate, &inner] {
+        let mut profile = Vec::new();
+        for k in 0..ring.len() {
+            let id =
+                SketchEntityId::mint(format!("synthetic:test:line#{}", entities.len())).unwrap();
+            entities.push(SketchEntity::new(
+                id.clone(),
+                sketch.id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                    start: Point2::new(ring[k].0, ring[k].1),
+                    end: Point2::new(ring[(k + 1) % ring.len()].0, ring[(k + 1) % ring.len()].1),
+                })
+                .unwrap(),
+            ));
+            profile.push(SketchEntityUse {
+                entity: id,
+                reversed: false,
+            });
+        }
+        profiles.push(profile);
+    }
+    sketch.profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles).unwrap();
+    let before = plane_faces_from(
+        &[
+            (1, 0.0, vec![plate.clone()]),
+            (2, -2.0, vec![plate.clone()]),
+        ],
+        50_000,
+    );
+    let side = vec![(0.0, 0.0), (1.0, 0.0), (1.0, -2.0), (0.0, -2.0)];
+    let holed = vec![plate.clone(), square];
+    let mut after = plane_faces(&[
+        (11, 0.0, holed.clone()),
+        (12, -2.0, holed),
+        (13, 0.0, vec![side.clone()]),
+        (14, 0.0, vec![side.clone()]),
+        (15, 0.0, vec![side.clone()]),
+        (16, 0.0, vec![side]),
+    ]);
+    for (face, fixed_x, offset) in [
+        (13, true, 0.0),
+        (14, true, 1.0),
+        (15, false, 0.0),
+        (16, false, 1.0),
+    ] {
+        let transform = |point: Point3| {
+            if fixed_x {
+                Point3::new(offset, point.x, point.y)
+            } else {
+                Point3::new(point.x, offset, point.y)
+            }
+        };
+        let transform_vector = |vector: Vector3| {
+            if fixed_x {
+                Vector3::new(0.0, vector.x, vector.y)
+            } else {
+                Vector3::new(vector.x, 0.0, vector.y)
+            }
+        };
+        let loops = super::relation(&after.face_loops, face).unwrap();
+        let coedges: Vec<_> = loops
+            .iter()
+            .flat_map(|loop_| super::relation(&after.loop_coedges, *loop_).unwrap())
+            .copied()
+            .collect();
+        let edges: Vec<_> = after
+            .coedge_topology
+            .iter()
+            .filter(|row| coedges.contains(&row.coedge))
+            .map(|row| row.edge)
+            .collect();
+        let vertices: Vec<_> = after
+            .edge_vertices
+            .iter()
+            .filter(|row| edges.contains(&row.edge))
+            .flat_map(|row| [row.start_vertex, row.end_vertex])
+            .collect();
+        let points: Vec<_> = after
+            .vertex_points
+            .iter()
+            .filter(|row| vertices.contains(&row.entity))
+            .map(|row| row.carrier)
+            .collect();
+        for point in &mut after.point_positions {
+            if points.contains(&point.point) {
+                point.position = transform(point.position);
+            }
+        }
+        let curves: Vec<_> = after
+            .edge_curves
+            .iter()
+            .filter(|row| edges.contains(&row.entity))
+            .filter_map(|row| row.carrier)
+            .collect();
+        for axis in &mut after.curve_axes {
+            if curves.contains(&axis.curve) {
+                axis.origin = transform(axis.origin);
+                axis.direction = transform_vector(axis.direction);
+            }
+        }
+        let surface = after
+            .face_surfaces
+            .iter()
+            .find(|row| row.entity == face)
+            .unwrap()
+            .carrier;
+        let plane = after
+            .surface_planes
+            .iter_mut()
+            .find(|row| row.surface == surface)
+            .unwrap();
+        plane.origin = transform(Point3::new(0.0, 0.0, 0.0));
+        plane.normal = if fixed_x {
+            Vector3::new(1.0, 0.0, 0.0)
+        } else {
+            Vector3::new(0.0, 1.0, 0.0)
+        };
+    }
+    let selected =
+        ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch.id.clone(), vec![0]).unwrap());
+    let wrong =
+        ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch.id.clone(), vec![1]).unwrap());
+    let complement = ProfileRef::Planar(
+        PlanarProfileRef::sketch_regions(
+            sketch.id.clone(),
+            vec![cadmpeg_ir::features::SketchProfileRegion::loops(2, vec![0]).unwrap()],
+        )
+        .unwrap(),
+    );
+    let certify = |before: AsmHistoricalTopology,
+                   after: AsmHistoricalTopology,
+                   candidate: &ProfileRef,
+                   length: f64| {
+        let history = cut_history(before, after);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let work = crate::design::geometry::ProfileGeometryWork::new();
+        let resolution = super::super::ScopedExtrudeProfileResolution {
+            entities: &entities,
+            spatial_entities: &[],
+            histories: std::slice::from_ref(&history),
+            linear_tolerance: TOLERANCE,
+            angular_tolerance: 1e-9,
+            profile_work: &work,
+            ctx: &ctx,
+        };
+        let extent = ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: LinearTermination::Blind {
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(length).unwrap(),
+                },
+                draft: None,
+            },
+        };
+        super::compact::selection_agrees(
+            &sketch,
+            resolution,
+            candidate,
+            (2, 1),
+            super::compact::Sweep {
+                operation: &BooleanOp::Cut,
+                start: &ExtrudeStart::ProfilePlane {},
+                direction: &ExtrudeDirection::ReversedProfileNormal {},
+                extent: &extent,
+            },
+        )
+        .unwrap()
+    };
+    assert!(certify(before.clone(), after.clone(), &selected, 3.0));
+    let annular_before = plane_faces_from(
+        &[
+            (1, 0.0, vec![plate.clone(), inner.clone()]),
+            (2, -2.0, vec![plate, inner]),
+        ],
+        50_000,
+    );
+    let annulus = ProfileRef::Planar(
+        PlanarProfileRef::sketch_regions(
+            sketch.id.clone(),
+            vec![cadmpeg_ir::features::SketchProfileRegion::loops(0, vec![3]).unwrap()],
+        )
+        .unwrap(),
+    );
+    assert!(certify(
+        annular_before.clone(),
+        after.clone(),
+        &annulus,
+        3.0
+    ));
+    assert!(!certify(annular_before, after.clone(), &selected, 3.0));
+
+    assert!(!certify(before.clone(), after.clone(), &wrong, 3.0));
+    assert!(!certify(before.clone(), after.clone(), &complement, 3.0));
+    assert!(!certify(before.clone(), after.clone(), &selected, 1.0));
+    assert!(!certify(before.clone(), before.clone(), &selected, 3.0));
+    let surface = after
+        .face_surfaces
+        .iter()
+        .find(|row| row.entity == 13)
+        .unwrap()
+        .carrier;
+    after
+        .surface_planes
+        .iter_mut()
+        .find(|row| row.surface == surface)
+        .unwrap()
+        .origin
+        .x = 9.0;
+    assert!(!certify(before, after, &selected, 3.0));
 }

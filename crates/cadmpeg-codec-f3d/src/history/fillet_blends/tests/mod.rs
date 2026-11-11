@@ -1995,3 +1995,4 @@ fn a_fillet_binds_from_the_transition_of_its_scope() {
 }
 
 mod covering;
+mod fragment_precedence;

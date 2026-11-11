@@ -120,7 +120,7 @@ pub(crate) enum SldprtLossCode {
     FeatureNativeKindRetained,
     /// Native feature-input operation object does not bind uniquely to a feature.
     FeatureInputObjectUnbound,
-    /// A nested solid-body transmit remains in its native feature-input lane.
+    /// A solid-body transmit remains in its native feature-input or stock-body section.
     FeatureInputSolidBodyRetained,
     /// The archive walk of a feature-input lane stopped before the stream's
     /// end, so the lane scalars keep no archive parameter class.
@@ -141,6 +141,8 @@ pub(crate) enum SldprtLossCode {
     GeometrySurfaceCarrierAmbiguous,
     /// Offset validity does not establish an exact construction.
     GeometryOffsetValidityUnresolved,
+    /// Stored spun-profile bounds are ignored and the whole profile is revolved.
+    GeometrySpunProfileIntervalIgnored,
     /// Edge references an untyped support curve carried opaque.
     GeometryEdgeSupportCurveUntyped,
     /// Tolerant edge has no curve because its fin geometry is not read.
@@ -191,6 +193,8 @@ pub(crate) enum SldprtLossCode {
     TopologyFaceUnclaimed,
     /// A face has no decoded loop, so the face and its surface are withheld.
     TopologyFaceWithheld,
+    /// Current typed ownership nodes are absent from the decoded topology.
+    TopologyOwnershipWithheld,
     /// Referenced FIN records have conflicting complete frames.
     TopologyFinRecordAmbiguous,
     /// A canonical edge whose FIN record is an unwalked boundary dummy lacks
@@ -200,7 +204,7 @@ pub(crate) enum SldprtLossCode {
     /// A FIN forward link names no reciprocal same-loop backward link, so
     /// its ring is withheld instead of walked on doubt.
     TopologyFinLinkUnresolved,
-    /// Vertexless ring FINs fail strict reciprocal-circle single-loop
+    /// Vertexless ring FINs fail reciprocal closed-carrier single-loop
     /// admission, so no vertex is invented for them.
     TopologyRingEdgeWithheld,
     /// A vertex loop names no resolved vertex, so its face and surface are
@@ -353,6 +357,7 @@ impl SldprtLossCode {
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometrySurfaceCarrierAmbiguous,
         Self::GeometryOffsetValidityUnresolved,
+        Self::GeometrySpunProfileIntervalIgnored,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryTolerantEdgeCurveUnread,
         Self::GeometryPointRecordAmbiguous,
@@ -375,6 +380,7 @@ impl SldprtLossCode {
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyFaceUnclaimed,
         Self::TopologyFaceWithheld,
+        Self::TopologyOwnershipWithheld,
         Self::TopologyFinRecordAmbiguous,
         Self::TopologyFinPartnerUnresolved,
         Self::TopologyFinLinkUnresolved,
@@ -470,6 +476,7 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometrySurfaceCarrierAmbiguous => "geometry.surface-carrier-ambiguous",
             Self::GeometryOffsetValidityUnresolved => "geometry.offset-validity-unresolved",
+            Self::GeometrySpunProfileIntervalIgnored => "geometry.spun-profile-interval-ignored",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryTolerantEdgeCurveUnread => "geometry.tolerant-edge-curve-unread",
             Self::GeometryPointRecordAmbiguous => "geometry.point-record-ambiguous",
@@ -493,6 +500,7 @@ impl SldprtLossCode {
             Self::TessellationDisplayWithoutGeometry => "tessellation.display-without-geometry",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
+            Self::TopologyOwnershipWithheld => "topology.ownership-withheld",
             Self::TopologyFaceWithheld => "topology.face-withheld",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
             Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
@@ -623,6 +631,7 @@ impl SldprtLossCode {
             | Self::FeatureBodyRetentionUnresolved
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
+            | Self::GeometrySpunProfileIntervalIgnored
             | Self::GeometryOffsetValidityUnresolved
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryTolerantEdgeCurveUnread
@@ -645,6 +654,7 @@ impl SldprtLossCode {
             | Self::TessellationDisplayWithoutGeometry
             | Self::TopologyBodyHierarchyDerived
             | Self::TopologyFaceUnclaimed
+            | Self::TopologyOwnershipWithheld
             | Self::TopologyFaceWithheld
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
@@ -728,6 +738,7 @@ impl SldprtLossCode {
             }
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
+            | Self::TopologyOwnershipWithheld
             | Self::TopologyFaceWithheld
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
@@ -741,6 +752,7 @@ impl SldprtLossCode {
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
+            | Self::GeometrySpunProfileIntervalIgnored
             | Self::GeometryOffsetValidityUnresolved
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryTolerantEdgeCurveUnread
@@ -1032,6 +1044,7 @@ mod tests {
                 "geometry.face-support-surface-untyped",
                 "geometry.surface-carrier-ambiguous",
                 "geometry.offset-validity-unresolved",
+                "geometry.spun-profile-interval-ignored",
                 "geometry.edge-support-curve-untyped",
                 "geometry.tolerant-edge-curve-unread",
                 "geometry.point-record-ambiguous",
@@ -1054,6 +1067,7 @@ mod tests {
                 "topology.body-hierarchy-derived",
                 "topology.face-unclaimed",
                 "topology.face-withheld",
+                "topology.ownership-withheld",
                 "topology.fin-record-ambiguous",
                 "topology.fin-partner-unresolved",
                 "topology.fin-link-unresolved",

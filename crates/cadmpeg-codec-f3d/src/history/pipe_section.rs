@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Bind a new-body Pipe whose result topology fits a circular section.
+//! Bind a Pipe with whole-path fractions as a circular-section Sweep.
 
 use std::collections::{HashMap, HashSet};
 
@@ -30,9 +30,42 @@ pub(crate) struct PipeSectionInputs<'a> {
     pub(crate) linear_tolerance: f64,
 }
 
-/// Project each native new-body Pipe whose unchanged result faces fit a
-/// circular section, and whose fractions both equal one, as a Sweep of that
-/// circular region along its whole path group.
+/// How a Pipe's result faces settle its circular section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SectionReading {
+    /// Unchanged new-body result faces fit the circle.
+    Inferred,
+    /// No unchanged new-body result exists to test the circle against.
+    Assumed,
+}
+
+/// How a Pipe's fractions settle its whole-path extent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExtentReading {
+    /// Both fractions equal one.
+    BothUnit,
+    /// One fraction equals one and the other zero.
+    OneUnit,
+}
+
+impl ExtentReading {
+    fn of(forward: f64, reverse: f64) -> Option<Self> {
+        let unit = |value: f64| value == 1.0;
+        let zero = |value: f64| value == 0.0;
+        if unit(forward) && unit(reverse) {
+            Some(Self::BothUnit)
+        } else if unit(forward) && zero(reverse) || zero(forward) && unit(reverse) {
+            Some(Self::OneUnit)
+        } else {
+            None
+        }
+    }
+}
+
+/// Project each native Pipe with whole-path fractions as a Sweep of a
+/// circular region along its path group. A new-body Pipe whose result bodies
+/// no later feature changes projects only when its result faces fit the
+/// circle.
 #[must_use]
 pub(crate) fn bind_circular_pipe_sections(
     features: &mut [Feature],
@@ -51,17 +84,30 @@ pub(crate) fn bind_circular_pipe_sections(
         .collect::<Vec<_>>();
     let mut losses = Vec::new();
     for (feature, definition) in features.iter_mut().zip(definitions) {
-        if let Some(definition) = definition {
-            feature.evaluation.set_definition(definition);
-            losses.push(F3dLossCode::FeaturePipeCircularSectionInferred.note(format!(
+        let Some((definition, section, extent)) = definition else {
+            continue;
+        };
+        feature.evaluation.set_definition(definition);
+        losses.push(match section {
+            SectionReading::Inferred => F3dLossCode::FeaturePipeCircularSectionInferred.note(format!(
                 "feature {}: the Pipe section is inferred as a circle from the planes, cylinders and tori of its result bodies",
                 feature.id
-            )));
-            losses.push(F3dLossCode::FeaturePipeWholePathExtentAssumed.note(format!(
+            )),
+            SectionReading::Assumed => F3dLossCode::FeaturePipeCircularSectionAssumed.note(format!(
+                "feature {}: no unchanged new-body result tests the Pipe section, and the section is assumed to be a circle",
+                feature.id
+            )),
+        });
+        losses.push(match extent {
+            ExtentReading::BothUnit => F3dLossCode::FeaturePipeWholePathExtentAssumed.note(format!(
                 "feature {}: the Pipe forward and reverse fractions are 1, and the sweep is assumed to cover its whole path group",
                 feature.id
-            )));
-        }
+            )),
+            ExtentReading::OneUnit => F3dLossCode::FeaturePipePathEndSectionAssumed.note(format!(
+                "feature {}: one Pipe fraction is 1 and the other 0, and the section is assumed to lie at the path end where the unit fraction starts, so the sweep covers its whole path group",
+                feature.id
+            )),
+        });
     }
     losses
 }
@@ -76,7 +122,7 @@ fn circular_pipe_sweep(
     features: &[Feature],
     inputs: &PipeSectionInputs<'_>,
     surfaces: &HashMap<&SurfaceId, Option<&Surface>>,
-) -> Option<FeatureDefinition> {
+) -> Option<(FeatureDefinition, SectionReading, ExtentReading)> {
     use cadmpeg_ir::features::{
         GeneratedSweepSection, PathRef, SolidSweepOperation, SweepCircularRegion, SweepPathExtent,
         SweepSection, SweepShape,
@@ -96,13 +142,8 @@ fn circular_pipe_sweep(
     let DesignScopePayload::Pipe(Some(construction)) = scope.payload() else {
         return None;
     };
-    if construction.operation != DesignExtrudeOperation::NewBody {
-        return None;
-    }
     let [forward, reverse, size, thickness] = pipe_values(scope, construction, inputs.owners)?;
-    if forward != 1.0 || reverse != 1.0 {
-        return None;
-    }
+    let extent = ExtentReading::of(forward, reverse)?;
     let stream = native_stream(&scope.id)?;
     let path = only(inputs.groups.iter().filter(|group| {
         native_stream(&group.id) == Some(stream)
@@ -113,11 +154,21 @@ fn circular_pipe_sweep(
     let outer_radius = size * 10.0 / 2.0;
     let wall = construction.is_hollow.then_some(thickness * 10.0);
     let inner_radius = wall.map(|wall| outer_radius - wall);
-    if !result_bodies_unchanged(feature, features)
-        || !result_faces_fit_circle(feature, inputs, surfaces, outer_radius, inner_radius)
+    let section = if construction.operation == DesignExtrudeOperation::NewBody
+        && !feature.evaluation.outputs().is_empty()
+        && result_bodies_unchanged(feature, features)
     {
-        return None;
-    }
+        result_faces_fit_circle(feature, inputs, surfaces, outer_radius, inner_radius)
+            .then_some(SectionReading::Inferred)?
+    } else {
+        SectionReading::Assumed
+    };
+    let op = match construction.operation {
+        DesignExtrudeOperation::NewBody => SolidSweepOperation::NewBody,
+        DesignExtrudeOperation::Join => SolidSweepOperation::Join,
+        DesignExtrudeOperation::Cut => SolidSweepOperation::Cut,
+        DesignExtrudeOperation::Intersect => return None,
+    };
     let region = SweepCircularRegion::new(
         PositiveLength::new(outer_radius)?,
         match wall {
@@ -126,9 +177,9 @@ fn circular_pipe_sweep(
         },
     )
     .ok()?;
-    Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
+    let definition = FeatureDefinition::Operation(FeatureOperation::Sweep {
         shape: SweepShape::Solid {
-            op: SolidSweepOperation::NewBody,
+            op,
             section: SweepSection::Generated(GeneratedSweepSection::CircularRegion { region }),
             sections: Vec::new(),
         },
@@ -147,7 +198,8 @@ fn circular_pipe_sweep(
         taper: None,
         scale: None,
         allow_multi_profile_faces: None,
-    }))
+    });
+    Some((definition, section, extent))
 }
 
 /// The forward fraction, reverse fraction, Section Size and Section

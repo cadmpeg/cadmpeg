@@ -74,6 +74,8 @@ fn shell_operation_refuses_a_nonpositive_thickness() {
             outward: true,
             outward_offset: 60,
             wall_slots: None,
+            prefix_flag: None,
+            auxiliary_references: Vec::new(),
         },
         "thickness",
         "PositiveReal",
@@ -140,6 +142,7 @@ fn circular_pattern_construction_refuses_a_nonpositive_angle() {
     refuses_zero(
         &DesignCircularPatternConstruction {
             axis_separator_flag_offset: None,
+            symmetric: None,
             count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index: 11,
             count_offset: 40,

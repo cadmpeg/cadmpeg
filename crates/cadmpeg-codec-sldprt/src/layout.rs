@@ -3353,3 +3353,23 @@ pub(crate) mod configuration_manager_scalar_prefix {
     /// Offset of `filetime` (`u64`, little-endian). Spec §8.
     pub(crate) const FILETIME: usize = 117;
 }
+
+/// Byte offsets for the `spun_surface_profile` record.
+///
+/// Spec §7.1. Record length 112 B.
+///
+/// ```text
+/// The fixed payload prefix starts after the profile pointer.
+/// ```
+pub(crate) mod spun_surface_profile {
+    /// Offset of `axis` (`f64[3]`, big-endian). Spec §7.1.
+    pub(crate) const AXIS: usize = 24;
+    /// Offset of `start` (`f64[3]`, big-endian). Spec §7.1.
+    pub(crate) const START: usize = 48;
+    /// Offset of `end` (`f64[3]`, big-endian). Spec §7.1.
+    pub(crate) const END: usize = 72;
+    /// Offset of `start_param` (`f64`, big-endian). Spec §7.1.
+    pub(crate) const START_PARAM: usize = 96;
+    /// Offset of `end_param` (`f64`, big-endian). Spec §7.1.
+    pub(crate) const END_PARAM: usize = 104;
+}

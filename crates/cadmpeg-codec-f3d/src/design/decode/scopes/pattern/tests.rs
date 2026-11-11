@@ -16,6 +16,8 @@ use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use crate::test_support::push_marked_reference;
 
+mod circular_axis_frame;
+
 fn tested_circular_pattern_construction_with_owners(
     bytes: &[u8],
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
@@ -361,6 +363,7 @@ fn run_pattern_constructions_fixture() {
         ),
         Some(DesignCircularPatternConstruction {
             axis_separator_flag_offset: None,
+            symmetric: None,
             count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index,
             count_offset: u64_from_index(count_start + 40),
@@ -1296,6 +1299,7 @@ fn numerical_ranges_rectangular_pattern_accepts_finite_large_extent() {
                 instance_search_cap: None,
                 directions: Vec::new(),
                 secondary_direction: None,
+                distribution: None,
             },
         )
         .unwrap();
@@ -1456,6 +1460,7 @@ fn rectangular_instance_fixture() -> (
                 instance_search_cap: None,
                 directions: Vec::new(),
                 secondary_direction: None,
+                distribution: None,
             },
         )
         .unwrap();
@@ -1720,6 +1725,8 @@ fn rectangular_pattern_spacing_direction_validates_shifted_fields() {
     }
 }
 
+mod compact_spacing;
+
 fn spacing_payload() -> Vec<u8> {
     let mut bytes = Vec::new();
     indexed_header(&mut bytes, *b"373", 77);
@@ -1782,13 +1789,128 @@ fn rectangular_pattern_payload_binds_secondary_vector_to_owners_and_seed() {
             instance_search_cap: None,
             directions: Vec::new(),
             secondary_direction: None,
+            distribution: None,
+        })
+        .unwrap();
+    for frame in [
+        spacing_direction_frame(),
+        rectangular_pattern_direction_frame(16, [0.0, 1.0, 0.0]),
+    ] {
+        let direction =
+            super::exact_rectangular_pattern_direction(&frame, 0, frame.len() - 11, 20, 23, 10)
+                .unwrap();
+        let parse = |bytes: &[u8]| {
+            super::exact_rectangular_pattern_secondary_direction(
+                bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+                &scope,
+                &construction,
+                &[direction],
+            )
+        };
+        let bytes = spacing_payload();
+        let secondary = parse(&bytes).expect("linked secondary direction");
+        assert_eq!(secondary.offset, 63);
+        assert_eq!(
+            secondary.value,
+            crate::test_support::reals([0.0, 0.0, -3.0])
+        );
+        for offset in [
+            11, 19, 20, 24, 25, 35, 39, 40, 50, 59, 87, 88, 98, 99, 110, 111, 112, 122, 123, 140,
+            141, 151, 152, 162, 163, 173,
+        ] {
+            let mut corrupt = bytes.clone();
+            corrupt[offset] ^= 1;
+            assert!(parse(&corrupt).is_none(), "offset {offset}");
+        }
+        let mut symmetric = bytes.clone();
+        symmetric[109] = 1;
+        assert_eq!(parse(&symmetric), Some(secondary));
+        symmetric[109] = 2;
+        assert!(parse(&symmetric).is_none());
+        let mut zero = bytes.clone();
+        zero[63..87].fill(0);
+        assert!(parse(&zero).is_none());
+        let mut infinite = bytes.clone();
+        infinite[63..71].copy_from_slice(&f64::INFINITY.to_le_bytes());
+        assert!(parse(&infinite).is_none());
+        let mut ambiguous = bytes.clone();
+        ambiguous.extend_from_slice(&bytes);
+        assert!(parse(&ambiguous).is_none());
+    }
+}
+
+/// A pattern payload of a 5 by 3 pattern with a distribution block: a prefix
+/// with the given symmetric byte, the optional V-direction reference, the
+/// distance-type byte, two instance entries, and fifteen instance references.
+fn distribution_payload(symmetric: u8, v_direction: Option<u32>, distance_type: u8) -> Vec<u8> {
+    let mut bytes = spacing_payload();
+    bytes.truncate(133);
+    bytes[109] = symmetric;
+    match v_direction {
+        Some(index) => push_marked_reference(&mut bytes, index),
+        None => bytes.push(0),
+    }
+    bytes.extend_from_slice(&[0; 12]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+    bytes.push(distance_type);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for (key, identity) in [(2u64, 0x130u64), (3, 0x131)] {
+        bytes.extend_from_slice(&key.to_le_bytes());
+        bytes.extend_from_slice(&identity.to_le_bytes());
+    }
+    bytes.extend_from_slice(&15u32.to_le_bytes());
+    for index in 200..215 {
+        push_marked_reference(&mut bytes, index);
+    }
+    for index in [50, 10, 100] {
+        push_marked_reference(&mut bytes, index);
+    }
+    bytes.extend_from_slice(&[0; 4]);
+    indexed_header(&mut bytes, *b"307", 99);
+    bytes
+}
+
+#[test]
+fn rectangular_pattern_payload_distribution_reads_symmetric_and_distance_type() {
+    use crate::records::feature::patterns::{
+        DesignRectangularPatternConstruction, DesignRectangularPatternConstructionWire,
+    };
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:parameter-scope#10",
+        crate::records::feature::scope::DesignFeatureKind::RPattern,
+        10,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![100, 20, 23]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let construction =
+        DesignRectangularPatternConstruction::try_from(DesignRectangularPatternConstructionWire {
+            u_count: 5,
+            v_count: 3,
+            u_extent: 1.7,
+            v_extent: 0.0,
+            owner_record_indices: [50, 51, 52, 53],
+            value_offsets: [0; 4],
+            instances: None,
+            instance_search_cap: None,
+            directions: Vec::new(),
+            secondary_direction: None,
+            distribution: None,
         })
         .unwrap();
     let direction =
         super::exact_rectangular_pattern_direction(&spacing_direction_frame(), 0, 221, 20, 23, 10)
             .unwrap();
     let parse = |bytes: &[u8]| {
-        super::exact_rectangular_pattern_secondary_direction(
+        super::exact_rectangular_pattern_distribution(
             bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             &scope,
@@ -1796,28 +1918,50 @@ fn rectangular_pattern_payload_binds_secondary_vector_to_owners_and_seed() {
             &[direction],
         )
     };
-    let bytes = spacing_payload();
-    let secondary = parse(&bytes).expect("linked secondary direction");
-    assert_eq!(secondary.offset, 63);
+
+    let spacing = parse(&distribution_payload(0, None, 0)).expect("spacing distribution");
+    assert_eq!(spacing.record_index, 77);
     assert_eq!(
-        secondary.value,
-        crate::test_support::reals([0.0, 0.0, -3.0])
+        (spacing.symmetric.value, spacing.symmetric.offset),
+        (false, 109)
     );
-    for offset in [
-        11, 19, 20, 24, 25, 35, 39, 40, 50, 59, 87, 88, 98, 99, 109, 110, 111, 112, 122, 123, 140,
-        141, 151, 152, 162, 163, 173,
+    assert_eq!(
+        (spacing.total_extent.value, spacing.total_extent.offset),
+        (false, 158)
+    );
+    let extent = parse(&distribution_payload(1, Some(24), 1)).expect("extent distribution");
+    assert!(extent.symmetric.value);
+    assert_eq!(
+        (extent.total_extent.value, extent.total_extent.offset),
+        (true, 168)
+    );
+
+    let bytes = distribution_payload(0, None, 0);
+    // The mark byte, the zero run, the fixed word, the sentinel, the distance
+    // type, the entry count, and the instance count.
+    for (offset, value) in [
+        (133, 2),
+        (134, 1),
+        (146, 3),
+        (154, 0),
+        (158, 2),
+        (159, 3),
+        (195, 14),
     ] {
         let mut corrupt = bytes.clone();
-        corrupt[offset] ^= 1;
+        corrupt[offset] = value;
         assert!(parse(&corrupt).is_none(), "offset {offset}");
     }
-    let mut zero = bytes.clone();
-    zero[63..87].fill(0);
-    assert!(parse(&zero).is_none());
-    let mut infinite = bytes.clone();
-    infinite[63..71].copy_from_slice(&f64::INFINITY.to_le_bytes());
-    assert!(parse(&infinite).is_none());
+    assert!(parse(&spacing_payload()).is_none());
     let mut ambiguous = bytes.clone();
     ambiguous.extend_from_slice(&bytes);
     assert!(parse(&ambiguous).is_none());
+    assert!(super::exact_rectangular_pattern_distribution(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+        &construction,
+        &[],
+    )
+    .is_none());
 }

@@ -129,6 +129,20 @@ fn revolve_axis_admits_face_and_bounded_face_recipes() {
 }
 
 #[test]
+fn revolve_face_operands_belong_to_the_axis_or_a_target_group() {
+    use crate::records::topology::extrude_selection::DesignOperandRole as Role;
+    assert!(super::super::revolve_face_group_role_admitted(
+        Role::ROLE_0X21
+    ));
+    assert!(super::super::revolve_face_group_role_admitted(
+        Role::ROLE_0X5
+    ));
+    for role in [Role::PROFILE, Role::BODIES_A, Role::BODIES_B, Role::FACES] {
+        assert!(!super::super::revolve_face_group_role_admitted(role));
+    }
+}
+
+#[test]
 fn mirror_admits_its_selection_runs_and_bounded_plane_operand() {
     use crate::records::recipes::ConstructionRecipeKind as Kind;
     use crate::records::topology::extrude_selection::DesignOperandRole as Role;

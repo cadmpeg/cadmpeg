@@ -385,15 +385,20 @@ fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -
 
 fn draft_neutral_plane_is_resolved(
     selection: &cadmpeg_ir::features::FaceSelection,
-    pull_plane: Option<&cadmpeg_ir::features::FeatureId>,
-    pull_direction: Option<&cadmpeg_ir::math::Vector3>,
+    pull: Option<&cadmpeg_ir::features::DraftPull>,
 ) -> bool {
     face_selection_is_resolved(selection)
         || match selection {
-            cadmpeg_ir::features::FaceSelection::Native(native) => {
-                pull_plane.is_some_and(|plane| plane.as_str() == *native)
-                    && pull_direction.is_some_and(|direction| direction.unit().is_some())
-            }
+            cadmpeg_ir::features::FaceSelection::Native(native) => pull.is_some_and(|pull| {
+                pull.direction.unit().is_some()
+                    && (pull
+                        .plane
+                        .as_ref()
+                        .is_some_and(|plane| plane.as_str() == *native)
+                        || (pull.plane.is_none()
+                            && pull.frame.is_some()
+                            && pull.frame_matches_direction()))
+            }),
             _ => false,
         }
 }
@@ -813,11 +818,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                             || pull.plane.is_none()
                     }
                     cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, pull } => {
-                        !draft_neutral_plane_is_resolved(
-                            plane,
-                            pull.as_ref().and_then(|pull| pull.plane.as_ref()),
-                            pull.as_ref().map(|pull| &*pull.direction),
-                        )
+                        !draft_neutral_plane_is_resolved(plane, pull.as_ref())
                     }
                 }
         }
@@ -2010,6 +2011,21 @@ fn report_design_projection_gaps(
             report.losses.push(
                 F3dLossCode::MoveUnprojected
                     .note(format!("Move {} remains native: {reason}.", scope.id)),
+            );
+        }
+        if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Modify
+            && !projected_moves.contains(scope.id.as_str())
+        {
+            let reason = match scope.modify_operation() {
+                None => "no admitted prologue, body groups and rigid-transform record",
+                Some(operation) if !operation.motion.preserves_orientation() => {
+                    "stored basis reverses orientation"
+                }
+                Some(_) => "no complete body group for each listed group",
+            };
+            report.losses.push(
+                F3dLossCode::ModifyUnprojected
+                    .note(format!("Modify {} remains native: {reason}.", scope.id)),
             );
         }
     }
@@ -3835,6 +3851,61 @@ fn project_mesh_bodies(
         }
     };
     native.design_mesh_features = decoded.features;
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_guid_byte_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_split_stream_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_history_window_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_operation_record_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_face_group_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_word_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_wrapper_tail_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_body_identity_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_owner_frame_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_body_frame_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_scope_prefix_losses(
+            &native.design_mesh_features,
+        ));
     let mut texture_assets = Vec::new();
     for texture in native
         .design_mesh_features
@@ -3866,7 +3937,7 @@ fn project_mesh_bodies(
             let asset = texture.asset.clone();
             texture_table.push((source_id, asset));
         }
-        for body in feature.bodies() {
+        for body in feature.all_bodies() {
             if let Some(tessellation_id) = &body.tessellation_id {
                 insert_mesh_texture_table(&mut texture_tables, tessellation_id, &texture_table)?;
             }
@@ -3944,15 +4015,22 @@ fn project_mesh_bodies(
     }
     for feature in &native.design_mesh_features {
         let stream = crate::ids::native_stream(&feature.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-        insert_mesh_scope_tessellations(
-            &mut projection.tessellations_by_scope,
-            stream,
-            feature.scope().record().record_index(),
-            feature
+        for scope in feature.scopes() {
+            let mut bodies = feature
                 .bodies()
                 .iter()
-                .filter_map(|body| body.tessellation_id.as_deref()),
-        )?;
+                .filter(|body| body.scope_record_index == scope.record().record_index())
+                .collect::<Vec<_>>();
+            bodies.sort_by_key(|body| body.scope_body_ordinal);
+            insert_mesh_scope_tessellations(
+                &mut projection.tessellations_by_scope,
+                stream,
+                scope.record().record_index(),
+                bodies
+                    .into_iter()
+                    .filter_map(|body| body.tessellation_id.as_deref()),
+            )?;
+        }
     }
     report_unresolved_mesh_attributes(report, &unresolved);
     Ok(projection)

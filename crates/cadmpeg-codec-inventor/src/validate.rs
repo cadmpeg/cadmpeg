@@ -1916,6 +1916,7 @@ fn validate_features(
                 values: &ir.model.parameters,
                 transforms: &data.pm_dc_transforms,
                 directions: &data.pm_dc_directions,
+                bodies: &body_joins,
             })
         });
     let revolve_sketches = ir
@@ -2113,6 +2114,7 @@ fn validate_features(
                 feature,
                 raw_feature,
                 &ir.model.feature_input_topologies,
+                &data.active_carrier,
                 |id| {
                     let mut candidates = data
                         .pm_dc_feature_properties
@@ -2534,6 +2536,7 @@ fn validate_features(
             feature,
             raw_feature,
             &ir.model.feature_input_topologies,
+            &data.active_carrier,
             |id| {
                 let mut candidates = data
                     .pm_dc_feature_properties
@@ -2623,6 +2626,10 @@ fn validate_features(
                             labels: &data.pm_dc_feature_labels,
                             properties: &data.pm_dc_feature_properties,
                         },
+                    ),
+                    crate::feature::body_selection::qualified_split_target(
+                        raw_feature,
+                        &data.pm_dc_feature_properties,
                     ),
                 )
             }) {
