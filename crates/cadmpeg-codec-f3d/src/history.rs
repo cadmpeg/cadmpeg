@@ -1137,7 +1137,7 @@ pub(crate) fn bind_feature_outputs(
     let feature_sources = features
         .iter()
         .map(|feature| {
-            let (state_id, previous_state_id) = feature_history_states(feature, scopes)?;
+            let (state_id, previous_state_id) = feature_history_states(feature, scopes, histories)?;
             let scope = feature.native_ref.as_deref()?;
             let (history, _, previous) = if scope_histories.contains_key(scope) {
                 bound_history_state_pair(
@@ -1177,7 +1177,7 @@ pub(crate) fn bind_feature_outputs(
     let output_chains = features
         .iter()
         .map(|feature| {
-            let (current, previous) = feature_history_states(feature, scopes)?;
+            let (current, previous) = feature_history_states(feature, scopes, histories)?;
             output_chain::OutputChain::resolve(
                 histories,
                 current,
@@ -1196,7 +1196,7 @@ pub(crate) fn bind_feature_outputs(
         .filter_map(|(idx, feature)| {
             Some((
                 feature_sources[idx]?,
-                feature_history_states(feature, scopes)?.0,
+                feature_history_states(feature, scopes, histories)?.0,
             ))
         })
         .chain(output_chains.iter().flatten().flat_map(|chain| {
@@ -1210,7 +1210,7 @@ pub(crate) fn bind_feature_outputs(
     for (idx, feature) in features.iter().enumerate() {
         if let (Some(history_index), Some((_, previous_state_id))) = (
             feature_sources[idx],
-            feature_history_states(feature, scopes),
+            feature_history_states(feature, scopes, histories),
         ) {
             measured_states.insert((history_index, previous_state_id));
         }
@@ -1234,7 +1234,9 @@ pub(crate) fn bind_feature_outputs(
     );
     let mut treatment_states = HashMap::<(usize, i64), Vec<EdgeMidpointRequest>>::new();
     for (feature_index, feature) in features.iter().enumerate() {
-        let Some((state_id, previous_state_id)) = feature_history_states(feature, scopes) else {
+        let Some((state_id, previous_state_id)) =
+            feature_history_states(feature, scopes, histories)
+        else {
             continue;
         };
         let op = match feature.evaluation.definition() {
@@ -1615,7 +1617,9 @@ pub(crate) fn bind_feature_outputs(
     let mut absorbed_bodies = HashMap::<usize, BTreeSet<i64>>::new();
     for idx in ordered_indices {
         let feature = &mut features[idx];
-        let Some((state_id, previous_state_id)) = feature_history_states(feature, scopes) else {
+        let Some((state_id, previous_state_id)) =
+            feature_history_states(feature, scopes, histories)
+        else {
             continue;
         };
         let bound_history = feature_sources[idx];
@@ -2037,15 +2041,15 @@ fn combine_states_applied_operation(
 fn feature_history_states(
     feature: &cadmpeg_ir::features::Feature,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
+    histories: &[AsmHistory],
 ) -> Option<(i64, i64)> {
     let scope = feature
         .native_ref
         .as_deref()
         .and_then(|id| scopes.iter().find(|scope| scope.id == id))?;
-    Some((
-        scope.history_state_id()?,
-        scope.previous_history_state_id()?,
-    ))
+    let state_id = scope.history_state_id()?;
+    let previous_state_id = effective_scope_previous_history_state_id(scope, histories)?;
+    Some((state_id, previous_state_id))
 }
 
 fn bind_base_feature_output_selection(
@@ -4401,8 +4405,8 @@ pub(crate) fn project_feature_input_topologies(
             None
         };
         let scoped_histories = scoped_history.map_or(histories, std::slice::from_ref);
-        let Some(previous_state_id) = scope
-            .previous_history_state_id()
+        let Some(previous_state_id) = selection::feature_selected_input_state_id(feature)
+            .or_else(|| scope.previous_history_state_id())
             .or_else(|| {
                 crate::design::feature_project::work_point_recipe_state_id(scope, edge_operands)
             })

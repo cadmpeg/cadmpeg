@@ -43,7 +43,7 @@ const ARRANGEMENT_CURVATURE_TOLERANCE: f64 = 1.0e-12;
 
 /// Local work cap for arrangement edge retention walks, shared by every walk
 /// of one decode. An exhausted cap skips the arrangement.
-pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 1_000_000;
+pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 50_000_000;
 
 /// Local cap on the certified tubes of one NURBS span. A span that needs
 /// more skips the certification that uses it.
