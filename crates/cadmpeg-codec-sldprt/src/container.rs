@@ -1044,6 +1044,17 @@ impl ActiveParasolidSite<'_> {
     }
 }
 
+pub(crate) fn is_stock_bodies_section(name: &str) -> bool {
+    let name = name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    name.strip_prefix("config-")
+        .and_then(|name| name.strip_suffix("-stockbodies"))
+        .is_some_and(|index| !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
 /// Select the unique Parasolid partition stream for the active configuration.
 ///
 /// The selector is shared by native and Compound File Binary envelopes. A
@@ -1067,6 +1078,7 @@ pub(crate) fn select_active_parasolid_site<'a>(
         let section_is_admissible = !contains_ascii_case_insensitive(name, "ghost")
             && !contains_ascii_case_insensitive(name, "deltas")
             && !contains_ascii_case_insensitive(name, "resolvedfeatures")
+            && !is_stock_bodies_section(name)
             && virtual_component_key(name).is_none();
         let sole_body_stream = section
             .ps_streams()

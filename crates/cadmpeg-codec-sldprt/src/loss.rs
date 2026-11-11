@@ -120,7 +120,7 @@ pub(crate) enum SldprtLossCode {
     FeatureNativeKindRetained,
     /// Native feature-input operation object does not bind uniquely to a feature.
     FeatureInputObjectUnbound,
-    /// A nested solid-body transmit remains in its native feature-input lane.
+    /// A solid-body transmit remains in its native feature-input or stock-body section.
     FeatureInputSolidBodyRetained,
     /// The archive walk of a feature-input lane stopped before the stream's
     /// end, so the lane scalars keep no archive parameter class.

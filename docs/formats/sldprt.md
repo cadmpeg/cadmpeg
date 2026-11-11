@@ -2321,6 +2321,15 @@ Compact analytic records, `00 11` coedges, `00 12` vertex-uses, and `00 1d` poin
 
 ### 3.3 Feature-local bodies
 
+`Contents/Config-<N>-Partition` holds the current bodies of configuration
+`N`. `Contents/Config-<N>-StockBodies` holds source bodies for Insert Part
+and Mirror Part features. The section name supplies the stock-body role.
+Both sections carry partition transmit headers and use independent site
+namespaces. Stock bodies remain derived-feature inputs. Configuration body
+membership comes from the current partition. The stock-body role also applies
+to the corresponding compound stream, with ASCII case-insensitive section
+names and either path separator.
+
 `Config-<N>-FeatureBodies/LocalBodies` holds the bodies an Imported feature owns. It starts with a
 `u32` LE count, which equals the stream count, i.e. one body per feature.
 

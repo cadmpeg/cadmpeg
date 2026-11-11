@@ -820,3 +820,64 @@ fn a_wrapped_section_name_is_its_name_without_the_suffix() {
     assert_eq!(unwrapped_name("__ZLB__ZLB"), "__ZLB");
     assert_eq!(unwrapped_name("ZLB"), "ZLB");
 }
+
+#[test]
+fn stock_body_section_role_requires_a_configuration_suffix() {
+    for name in [
+        "Contents/Config-0-StockBodies",
+        "Contents\\Config-17-StockBodies",
+        "contents/config-2-stockbodies",
+    ] {
+        assert!(container::is_stock_bodies_section(name));
+    }
+    for name in [
+        "Contents/Config-0-Partition",
+        "Contents/Config-0-StockBodiesExtra",
+        "Contents/Config--StockBodies",
+        "Contents/Config-a-StockBodies",
+        "Contents/StockBodies",
+    ] {
+        assert!(!container::is_stock_bodies_section(name));
+    }
+}
+
+#[test]
+fn stock_body_partition_does_not_compete_for_active_geometry() {
+    let payload = parasolid_with_body(
+        ": TRANSMIT FILE (partition) created by modeller version 2400000",
+        "SCH_2400000_20000_13006",
+        &triangle_body(),
+    );
+    let mut source = outer_header();
+    source.extend(make_block(0x20, "Contents/Config-0-StockBodies", &payload));
+    let scan = crate::test_support::container::scan(&source);
+    assert!(container::select_active_parasolid_site(&scan).is_none());
+    source.extend(make_block(0x20, "Contents/Config-0-Partition", &payload));
+    let scan = crate::test_support::container::scan(&source);
+    let site = container::select_active_parasolid_site(&scan).unwrap();
+    assert_eq!(site.name(), "Contents/Config-0-Partition");
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let streams = [
+        "Contents/Config-0-StockBodies",
+        "Contents/Config-0-Partition",
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, name)| {
+        container::compound_stream(
+            &ctx,
+            name.into(),
+            u32::try_from(index).unwrap(),
+            11,
+            payload.clone(),
+            None,
+        )
+        .unwrap()
+    })
+    .collect();
+    let scan = container::completed_scan(&ctx, &[], 0, Vec::new(), Vec::new(), Vec::new(), streams)
+        .unwrap();
+    let site = container::select_active_parasolid_site(&scan).unwrap();
+    assert_eq!(site.name(), "Contents/Config-0-Partition");
+}
