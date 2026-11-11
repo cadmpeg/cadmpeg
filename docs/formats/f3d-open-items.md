@@ -1114,6 +1114,16 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Keep the operand proofs for these groups.
 
+### DR-390. Fillet set flag byte and set-list flag run
+
+**Question.** What do the flag byte of a fillet set record and the two flag-run forms of a parameter-owned `Fillet` scope prefix encode?
+
+**Known.** `f3d.md` §3.1 "A parameter-owned `Fillet` scope names its fillet sets in a prefix" gives the positions and admitted values of both. The flag byte is `0` or `1` at offset 26 of a 97-byte set frame and at offset 24 of a 93-byte set frame; the flag run is `01 00 01` or `01 01`, each followed by nine zero bytes. The decoder retains the raw byte as the set's `flag` and the run as the list's `form` (`current` or `compact`).
+
+**Need.** Controlled designs that vary one Fillet option at a time, saved by one Fusion version.
+
+**Conflict.** None.
+
 ### DR-243. Face of an Extents To Hole
 
 **Question.** Which face does the member of an Extents To Hole's role-`0x0000000500000000` group name?

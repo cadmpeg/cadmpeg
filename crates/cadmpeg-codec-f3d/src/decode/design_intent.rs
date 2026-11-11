@@ -1542,6 +1542,9 @@ fn extend_related_design_records(
             ))
         })
         .collect::<std::collections::HashSet<_>>();
+    let decoded_groups = crate::design::decode::scopes::fillet_set::decoded_group_keys(
+        &design.design_construction_operand_groups,
+    );
     design.design_construction_operand_groups.retain(|group| {
         let Some(stream) = crate::ids::native_stream(&group.id) else {
             return true;
@@ -1560,6 +1563,16 @@ fn extend_related_design_records(
             &prereqs.design_parameter_owners,
             &prereqs.design_parameters,
         );
+    let fillet_set_conflicts =
+        crate::design::decode::scopes::fillet_set::retain_consistent_fillet_sets(
+            &mut design.design_parameter_scopes,
+            &decoded_groups,
+            &design.design_fillet_radius_groups,
+            &prereqs.design_parameter_owners,
+        );
+    profile_losses.extend(
+        crate::design::decode::scopes::fillet_set::fillet_set_conflict_loss(&fillet_set_conflicts),
+    );
     crate::design::decode::operands::bind_lost_edge_groups(
         &mut design.design_construction_operand_groups,
         &design.design_construction_operand_identities,
