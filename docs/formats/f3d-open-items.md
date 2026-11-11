@@ -2251,4 +2251,4 @@ when the operation transition carries no candidate for the group members?
 
 **Conflict.** The Extrude reading of the same record form uses the exterior flag to select the exterior loop and the other loops to select holes. That reading selects rings for both Loft 7 sections, while the stored caps have filled areas.
 
-**Note.** The Loft and Revolve binder retains selections with non-outer loops as native profiles and records `feature.profile-selection-native`.
+**Note.** The Loft section binder retains selections with non-outer loops as native profiles and records `feature.profile-selection-native`.

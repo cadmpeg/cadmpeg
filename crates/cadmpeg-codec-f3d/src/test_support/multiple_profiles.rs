@@ -43,6 +43,20 @@ pub(crate) fn fixture_with_curve_regions(
     Vec<DesignRecordHeader>,
     Vec<DesignEntityHeader>,
 ) {
+    fixture_with_curve_region_operands(count, flags, loops, [0, 1, 1])
+}
+
+pub(crate) fn fixture_with_curve_region_operands(
+    count: u32,
+    flags: Option<([u8; 2], usize)>,
+    loops: Option<&[(u64, u64, bool)]>,
+    operands: [u32; 3],
+) -> (
+    Vec<u8>,
+    DesignParameterScope,
+    Vec<DesignRecordHeader>,
+    Vec<DesignEntityHeader>,
+) {
     let stream = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
     let mut bytes = Vec::new();
     let mut headers = Vec::new();
@@ -103,7 +117,7 @@ pub(crate) fn fixture_with_curve_regions(
                 bytes.extend_from_slice(&3u32.to_le_bytes());
                 bytes.extend_from_slice(&primary.to_le_bytes());
                 bytes.extend_from_slice(&secondary.to_le_bytes());
-                for value in [0u32, 1, 1] {
+                for value in operands {
                     bytes.extend_from_slice(&value.to_le_bytes());
                 }
                 bytes.extend_from_slice(&[0; 8]);

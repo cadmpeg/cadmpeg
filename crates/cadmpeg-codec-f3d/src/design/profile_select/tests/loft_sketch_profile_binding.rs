@@ -36,11 +36,35 @@ fn loft_binding_with_regions(
     Feature,
     cadmpeg_ir::sketches::SketchId,
 ) {
+    binding_with_regions(
+        flags,
+        tail_length,
+        selected,
+        role,
+        usize::from(selected.is_some()),
+        [0, 1, 1],
+    )
+}
+
+fn binding_with_regions(
+    flags: [u8; 2],
+    tail_length: usize,
+    selected: Option<&[(u64, u64, bool)]>,
+    role: DesignOperandRole,
+    curve_selection_count: usize,
+    operands: [u32; 3],
+) -> (
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+    crate::records::topology::construction::DesignConstructionOperandGroup,
+    Feature,
+    cadmpeg_ir::sketches::SketchId,
+) {
     let (archive, _, headers, entities) =
-        crate::test_support::multiple_profiles::fixture_with_curve_regions(
+        crate::test_support::multiple_profiles::fixture_with_curve_region_operands(
             1,
             Some((flags, tail_length)),
             selected,
+            operands,
         );
     let mut profile_group = group();
     profile_group.id = format!("{STREAM}:construction-group#9");
@@ -119,7 +143,7 @@ fn loft_binding_with_regions(
         )
         .unwrap()
     });
-    assert_eq!(profile_curves.len(), usize::from(selected.is_some()));
+    assert_eq!(profile_curves.len(), curve_selection_count);
     let resolution = SketchProfileResolution {
         profile_curves: &profile_curves,
         entities: &entities,
@@ -197,10 +221,10 @@ fn loft_binding_with_regions(
     else {
         panic!("revolve definition");
     };
-    let LoftSection::Profile(ProfileRef::Planar(profile)) = loft_section(&feature) else {
-        panic!("planar loft section");
-    };
-    assert_eq!(construction.profile(), Some(profile));
+    assert_eq!(
+        construction.profile(),
+        Some(&PlanarProfileRef::Sketch(sketch_id.clone())),
+    );
     (losses, profile_group, feature, sketch_id)
 }
 
@@ -351,7 +375,7 @@ fn a_role_0x5_loft_section_of_planar_sketch_curves_binds_as_sketch_entities() {
 }
 
 #[test]
-fn loft_and_revolve_non_outer_region_loops_stay_native_with_loss() {
+fn loft_non_outer_region_loops_stay_native_with_loss() {
     let (losses, group, feature, _) = loft_binding_with_regions(
         [0, 0],
         93,
@@ -410,7 +434,7 @@ fn loft_unresolved_planar_region_selection_stays_native_with_loss() {
 }
 
 #[test]
-fn loft_and_revolve_single_outer_loop_selects_the_outer_profile() {
+fn loft_single_outer_loop_selects_the_outer_profile() {
     let (losses, _, feature, sketch) = loft_binding_with_regions(
         [0, 0],
         93,
@@ -427,5 +451,38 @@ fn loft_and_revolve_single_outer_loop_selects_the_outer_profile() {
             )
             .unwrap(),
         )),
+    );
+}
+
+#[test]
+fn revolve_counted_region_selection_keeps_main_whole_sketch_profile() {
+    let (losses, group, feature, _) = binding_with_regions(
+        [0, 0],
+        93,
+        Some(&[(99, 0, true)]),
+        DesignOperandRole::PROFILE,
+        0,
+        [1, 2, 2],
+    );
+    let member = &group
+        .sketch_profile
+        .as_ref()
+        .unwrap()
+        .region_selection
+        .as_ref()
+        .unwrap()
+        .regions[0]
+        .members[0];
+    assert_eq!(member.curve_primary_id.get(), 99);
+    assert!(member.incidence_flag);
+    assert_eq!(member.incidence_values.map(u32::from), [2, 2]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.profile-selection-native"
+    );
+    assert_eq!(
+        loft_section(&feature),
+        &LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(group.id))),
     );
 }

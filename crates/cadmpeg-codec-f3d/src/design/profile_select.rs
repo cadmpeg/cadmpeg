@@ -5074,24 +5074,94 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         };
         header_index.insert((stream, header.record_index), header);
     }
-    let mut requested_profiles = HashSet::new();
+    let mut resolved_revolve_profiles = HashMap::new();
+    for group in groups.iter().filter(|group| {
+        matches!(
+            group.role(),
+            DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
+        ) && group.members().len() == 1
+    }) {
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(header) = header_index.get(&(stream, group.members()[0].value)) else {
+            continue;
+        };
+        let Some(profile) = parse_sketch_profile(
+            bytes,
+            stream,
+            group.scope_reference_ordinal,
+            header,
+            resolution.entities,
+        ) else {
+            continue;
+        };
+        let mut matches = resolution.placements.iter().filter(|placement| {
+            native_stream(&placement.id) == Some(stream) && placement.entity_id == profile.entity_id
+        });
+        let Some(placement) = matches.next() else {
+            continue;
+        };
+        if matches.next().is_some() {
+            continue;
+        }
+        let spatial_sketch_id = crate::ids::neutral_spatial_sketch_id(placement);
+        let resolved = if let Some(spatial_sketch) = resolution
+            .spatial_sketches
+            .iter()
+            .find(|sketch| sketch.id == spatial_sketch_id)
+        {
+            let id = spatial_sketch_id.clone();
+            if let Some(profiles) = resolved_spatial_sketch_profile_regions(
+                stream,
+                &profile,
+                spatial_sketch,
+                resolution,
+            ) {
+                match ProfileRef::spatial_sketch_profiles(id, profiles) {
+                    Ok(profile) => profile,
+                    Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone())),
+                }
+            } else {
+                let group_id = group.id.clone();
+                match ProfileRef::spatial_sketch_selection(id, vec![group_id]) {
+                    Ok(profile) => profile,
+                    Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone())),
+                }
+            }
+        } else {
+            let sketch = crate::ids::neutral_sketch_id(placement);
+            if !resolution
+                .sketches
+                .iter()
+                .any(|candidate| candidate.id == sketch)
+            {
+                continue;
+            }
+            ProfileRef::Planar(PlanarProfileRef::Sketch(sketch))
+        };
+        if matches!(&resolved, ProfileRef::Planar(PlanarProfileRef::Native(_))) {
+            continue;
+        }
+        resolved_revolve_profiles.insert(group.id.clone(), (resolved, Some(profile)));
+    }
+    let mut requested_loft_profiles = HashSet::new();
     for feature in features.iter() {
-        match feature.evaluation.definition() {
-            FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => {
-                for section in sections {
-                    if let LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id))) =
-                        section
-                    {
-                        requested_profiles.insert(id.clone());
-                    }
+        if let FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) =
+            feature.evaluation.definition()
+        {
+            for section in sections {
+                if let LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id))) =
+                    section
+                {
+                    requested_loft_profiles.insert(id.clone());
                 }
             }
-            FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) => {
-                if let Some(PlanarProfileRef::Native(id)) = construction.profile() {
-                    requested_profiles.insert(id.clone());
-                }
-            }
-            _ => {}
         }
     }
     let mut resolved_profiles = HashMap::new();
@@ -5100,7 +5170,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             group.role(),
             DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
         ) && group.members().len() == 1
-            && requested_profiles.contains(group.id.as_str())
+            && requested_loft_profiles.contains(group.id.as_str())
     }) {
         let Some(stream) = native_stream(&group.id) else {
             continue;
@@ -5375,7 +5445,8 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                 let Some(PlanarProfileRef::Native(native)) = construction.profile() else {
                     return Ok(());
                 };
-                let Some((ProfileRef::Planar(profile), _)) = resolved_profiles.get(native.as_str())
+                let Some((ProfileRef::Planar(profile), _)) =
+                    resolved_revolve_profiles.get(native.as_str())
                 else {
                     return Ok(());
                 };
@@ -5390,7 +5461,10 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         .iter_mut()
         .filter(|group| bound_profiles.contains(&group.id))
     {
-        if let Some((_, Some(profile))) = resolved_profiles.remove(&group.id) {
+        if let Some((_, Some(profile))) = resolved_profiles
+            .remove(&group.id)
+            .or_else(|| resolved_revolve_profiles.remove(&group.id))
+        {
             losses.extend(profile.flags_assumption_loss());
             group.sketch_profile = Some(profile);
         }
