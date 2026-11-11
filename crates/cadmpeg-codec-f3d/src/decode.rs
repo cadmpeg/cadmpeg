@@ -2012,6 +2012,21 @@ fn report_design_projection_gaps(
                     .note(format!("Move {} remains native: {reason}.", scope.id)),
             );
         }
+        if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Modify
+            && !projected_moves.contains(scope.id.as_str())
+        {
+            let reason = match scope.modify_operation() {
+                None => "no admitted prologue, body groups and rigid-transform record",
+                Some(operation) if !operation.motion.preserves_orientation() => {
+                    "stored basis reverses orientation"
+                }
+                Some(_) => "no complete body group for each listed group",
+            };
+            report.losses.push(
+                F3dLossCode::ModifyUnprojected
+                    .note(format!("Modify {} remains native: {reason}.", scope.id)),
+            );
+        }
     }
     let gaps = design_projection_gaps(ir, native)?;
     report.losses.extend(crate::history::stored_bodies::losses(

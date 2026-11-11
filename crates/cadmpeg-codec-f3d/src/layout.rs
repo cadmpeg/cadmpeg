@@ -5462,6 +5462,72 @@ pub(crate) mod move_transform_frame_274 {
     pub(crate) const LEN: usize = 274;
 }
 
+/// Byte offsets for the `move_transform_frame_283` record.
+///
+/// Spec §3.1. Record length 283 B.
+///
+/// ```text
+/// Offsets are relative to the transform record's primary indexed header.
+/// ```
+pub(crate) mod move_transform_frame_283 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 283;
+}
+
+/// Byte offsets for the `move_transform_frame_284` record.
+///
+/// Spec §3.1. Record length 284 B.
+///
+/// ```text
+/// Offsets are relative to the transform record's primary indexed header.
+/// ```
+pub(crate) mod move_transform_frame_284 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 284;
+}
+
+/// Byte offsets for the `modify_marker_zero_prologue` record.
+///
+/// Spec §3.1. Record length 47 B.
+///
+/// ```text
+/// Offsets are relative to the Modify scope's primary indexed header. The group references continue in steps of eleven bytes.
+/// ```
+pub(crate) mod modify_marker_zero_prologue {
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 20;
+    /// Stated value of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER_VALUE: u8 = 0;
+    /// Offset of `transform_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TRANSFORM_REFERENCE: usize = 21;
+    /// Offset of `body_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_COUNT: usize = 32;
+    /// Offset of `first_body_group` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FIRST_BODY_GROUP: usize = 36;
+}
+
+/// Byte offsets for the `modify_marker_one_prologue` record.
+///
+/// Spec §3.1. Record length 51 B.
+///
+/// ```text
+/// Offsets are relative to the Modify scope's primary indexed header. The group references continue in steps of eleven bytes.
+/// ```
+pub(crate) mod modify_marker_one_prologue {
+    /// Stated value of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER_VALUE: u8 = 1;
+    /// Offset of `zero_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_WORD: usize = 21;
+    /// Offset of `transform_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TRANSFORM_REFERENCE: usize = 25;
+    /// Offset of `body_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_COUNT: usize = 36;
+    /// Offset of `first_body_group` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FIRST_BODY_GROUP: usize = 40;
+}
+
 /// Byte offsets for the `component_insert_identity_scope_compact` record.
 ///
 /// Spec §3.1. Record length 261 B.

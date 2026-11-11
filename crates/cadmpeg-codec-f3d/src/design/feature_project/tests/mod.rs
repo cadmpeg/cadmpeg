@@ -19,6 +19,7 @@ mod hole;
 mod hole_sketch_profiles;
 mod loft;
 mod mirror;
+mod modify;
 mod native_scope_definition;
 mod parameter_cycles;
 mod parameters;

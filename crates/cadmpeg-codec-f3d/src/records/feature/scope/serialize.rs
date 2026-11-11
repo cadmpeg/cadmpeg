@@ -180,6 +180,7 @@ impl Serialize for DesignParameterScope {
 
         emit_opt!("align_envelope", self.align_envelope());
         emit_opt!("move_operation", self.move_operation());
+        emit_opt!("modify_operation", self.modify_operation());
         emit_opt!("scale_operation", self.scale_operation());
         emit_opt!("reverse_normal_operation", self.reverse_normal_operation());
         emit_opt!("path_pattern_settings", self.path_pattern_settings());

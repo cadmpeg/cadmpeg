@@ -24,6 +24,7 @@ use super::component_constructions::exact_copy_paste_component_operation;
 use super::component_constructions::exact_derived_instance_construction;
 use super::copy_paste_bodies::exact_copy_paste_bodies_operation;
 use super::direct_face::exact_direct_face_operation;
+use super::direct_face::exact_modify_operation;
 use super::direct_face::exact_move_face_operation;
 use super::direct_face::exact_move_operation;
 use super::direct_face::exact_scale_operation;
@@ -420,6 +421,18 @@ pub(crate) fn decode_parameter_scopes(
                 }
                 if let scope::DesignScopePayloadMut::Move(slot) = scope.payload_mut() {
                     *slot = construction;
+                }
+            }
+            if let Some(operation) = exact_modify_operation(bytes, &records, &scope) {
+                losses.extend(marked_move_transform_loss(
+                    bytes,
+                    &records,
+                    &scope,
+                    &operation.motion,
+                    &class_types,
+                ));
+                if let scope::DesignScopePayloadMut::Modify(slot) = scope.payload_mut() {
+                    *slot = Some(operation);
                 }
             }
             {

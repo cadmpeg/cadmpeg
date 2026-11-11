@@ -113,6 +113,10 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         DesignFeatureKind::Mirror,
     ),
     (
+        "DDB7BC00-2E41-4BC1-8DA1-A0F104A67E71",
+        DesignFeatureKind::Modify,
+    ),
+    (
         "64E40C8E-E564-469C-8690-5C4E77C1B02C",
         DesignFeatureKind::Move,
     ),
