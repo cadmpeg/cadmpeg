@@ -642,7 +642,9 @@ impl<'ir> FaceInput<'_, 'ir> {
             | (Some(_), None, _, Err(missing), _)
             | (Some(_), None, _, _, Err(missing)) => Some(Err(missing.clone())),
         };
-        let natural = region.as_ref().is_ok_and(|region| region.exterior != 0.0);
+        let closed_domain = matches!((&chart, &region), (Ok(Chart::Nurbs(nurbs)), Ok(region))
+            if region.rule == RegionRule::WholeSurface && nurbs.closed_domain(tau));
+        let natural = region.as_ref().is_ok_and(|region| region.exterior != 0.0) && !closed_domain;
         let mut result = FaceResult {
             row,
             aabb: aabbs[0],

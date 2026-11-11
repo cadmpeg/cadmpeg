@@ -4,6 +4,7 @@
 mod acceptance;
 mod aggregates;
 mod boundaries;
+mod closed_nurbs;
 mod compare;
 mod cone_apex_rings;
 mod cones;

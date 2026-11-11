@@ -14094,3 +14094,55 @@ offset = 117
 type = "u64"
 source = "spec"
 anchor = "the FILETIME is u64 LE at `+117`"
+
+[[record]]
+name = "spun_surface_profile"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/sweep.rs"
+kind = "byte"
+section = "7.1"
+anchor = "Tag `00 44` instead stores an axis point"
+size = 112
+endianness = "big"
+note = "The fixed payload prefix starts after the profile pointer."
+
+[[record.field]]
+name = "base"
+offset = 0
+type = "f64[3]"
+source = "spec"
+anchor = "an axis point"
+
+[[record.field]]
+name = "axis"
+offset = 24
+type = "f64[3]"
+source = "spec"
+anchor = "unit axis direction as six f64 values"
+
+[[record.field]]
+name = "start"
+offset = 48
+type = "f64[3]"
+source = "spec"
+anchor = "the two points at which the profile meets the axis as six f64 values"
+
+[[record.field]]
+name = "end"
+offset = 72
+type = "f64[3]"
+source = "spec"
+anchor = "the two points at which the profile meets the axis as six f64 values"
+
+[[record.field]]
+name = "start_param"
+offset = 96
+type = "f64"
+source = "spec"
+anchor = "the profile's parameter at each as two more, low parameter first"
+
+[[record.field]]
+name = "end_param"
+offset = 104
+type = "f64"
+source = "spec"
+anchor = "the profile's parameter at each as two more, low parameter first"

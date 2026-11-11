@@ -50,14 +50,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the link grammar that walks such a ring.
 
-### BC-11. Vertexless ring-edge admission
-
-**Question.** Which native record admits a vertexless ring edge onto its carrier?
-
-**Known.** `decode.rs` admits a vertexless ring edge only with reciprocal opposite FINs on the same unbounded circle carrier, a face-owned single-FIN loop, and at most one sheet dummy; every other vertexless ring edge stays native under `TopologyRingEdgeWithheld`, with vertices as stored (#517).
-
-**Need.** We must know the native admission record that places such an edge on its carrier.
-
 ## 2. Geometry carriers
 
 ### GC-02. Missing intersection witnesses

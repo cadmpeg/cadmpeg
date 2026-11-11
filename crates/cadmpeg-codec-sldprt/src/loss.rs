@@ -141,6 +141,8 @@ pub(crate) enum SldprtLossCode {
     GeometrySurfaceCarrierAmbiguous,
     /// Offset validity does not establish an exact construction.
     GeometryOffsetValidityUnresolved,
+    /// Stored spun-profile bounds are ignored and the whole profile is revolved.
+    GeometrySpunProfileIntervalIgnored,
     /// Edge references an untyped support curve carried opaque.
     GeometryEdgeSupportCurveUntyped,
     /// Tolerant edge has no curve because its fin geometry is not read.
@@ -202,7 +204,7 @@ pub(crate) enum SldprtLossCode {
     /// A FIN forward link names no reciprocal same-loop backward link, so
     /// its ring is withheld instead of walked on doubt.
     TopologyFinLinkUnresolved,
-    /// Vertexless ring FINs fail strict reciprocal-circle single-loop
+    /// Vertexless ring FINs fail reciprocal closed-carrier single-loop
     /// admission, so no vertex is invented for them.
     TopologyRingEdgeWithheld,
     /// A vertex loop names no resolved vertex, so its face and surface are
@@ -355,6 +357,7 @@ impl SldprtLossCode {
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometrySurfaceCarrierAmbiguous,
         Self::GeometryOffsetValidityUnresolved,
+        Self::GeometrySpunProfileIntervalIgnored,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryTolerantEdgeCurveUnread,
         Self::GeometryPointRecordAmbiguous,
@@ -473,6 +476,7 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometrySurfaceCarrierAmbiguous => "geometry.surface-carrier-ambiguous",
             Self::GeometryOffsetValidityUnresolved => "geometry.offset-validity-unresolved",
+            Self::GeometrySpunProfileIntervalIgnored => "geometry.spun-profile-interval-ignored",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryTolerantEdgeCurveUnread => "geometry.tolerant-edge-curve-unread",
             Self::GeometryPointRecordAmbiguous => "geometry.point-record-ambiguous",
@@ -627,6 +631,7 @@ impl SldprtLossCode {
             | Self::FeatureBodyRetentionUnresolved
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
+            | Self::GeometrySpunProfileIntervalIgnored
             | Self::GeometryOffsetValidityUnresolved
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryTolerantEdgeCurveUnread
@@ -747,6 +752,7 @@ impl SldprtLossCode {
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
+            | Self::GeometrySpunProfileIntervalIgnored
             | Self::GeometryOffsetValidityUnresolved
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryTolerantEdgeCurveUnread
@@ -1038,6 +1044,7 @@ mod tests {
                 "geometry.face-support-surface-untyped",
                 "geometry.surface-carrier-ambiguous",
                 "geometry.offset-validity-unresolved",
+                "geometry.spun-profile-interval-ignored",
                 "geometry.edge-support-curve-untyped",
                 "geometry.tolerant-edge-curve-unread",
                 "geometry.point-record-ambiguous",

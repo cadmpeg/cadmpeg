@@ -4238,7 +4238,7 @@ fn append_topology_record_losses(
     }
     if stats.withheld_ring_edges > 0 {
         losses.push(SldprtLossCode::TopologyRingEdgeWithheld.note(format!(
-            "{} vertexless ring edge(s) fail strict reciprocal-circle single-loop admission; no vertex is invented and the edge is withheld.",
+            "{} vertexless ring edge(s) fail reciprocal closed-carrier single-loop admission.",
             stats.withheld_ring_edges,
         )));
     }
