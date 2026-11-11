@@ -3167,7 +3167,60 @@ fn sorted_graph_attrs(attrs: impl IntoIterator<Item = u32>) -> Vec<u32> {
     sorted
 }
 
+fn report_withheld_ownership(out: &mut Brep, facts: &typed::Facts) {
+    let Some(attrs) = facts.valid_ownership_face_attrs() else {
+        return;
+    };
+    let Some(hierarchies) = facts.hierarchies(&attrs) else {
+        return;
+    };
+    let body_ids: HashSet<_> = out.bodies.iter().map(|body| body.id.as_str()).collect();
+    let shell_ids: HashSet<_> = out.shells.iter().map(|shell| shell.id.as_str()).collect();
+    let face_ids: HashSet<_> = out.faces.iter().map(|face| face.id.as_str()).collect();
+    let bodies = hierarchies
+        .iter()
+        .filter(|hierarchy| {
+            let id = BodyId::compose(&body_namespace(), hierarchy.body.attr);
+            !body_ids.contains(id.as_str())
+        })
+        .count();
+    let shells = hierarchies
+        .iter()
+        .flat_map(|hierarchy| &hierarchy.shells)
+        .filter(|native| {
+            let id = ShellId::compose(&shell_namespace(), native.attr);
+            !shell_ids.contains(id.as_str())
+        })
+        .count();
+    let faces = attrs
+        .iter()
+        .filter(|attr| {
+            let id = id_face(**attr);
+            !face_ids.contains(id.as_str())
+        })
+        .count();
+    let withheld = bodies + shells + faces;
+    if withheld > 0 {
+        out.losses.push(crate::loss::SldprtLossCode::TopologyOwnershipWithheld.note(format!(
+            "{withheld} current typed ownership node(s) are withheld: {bodies} body node(s), {shells} shell node(s), and {faces} face node(s)."
+        )));
+    }
+}
+
 fn decode_graph(
+    ctx: &DecodeContext<'_>,
+    carriers: &mut CarrierIndex,
+    t: &topology::Tables,
+    entity_facts: entity::Facts,
+    typed_facts: &typed::Facts,
+    stream: &cadmpeg_ir::StreamName,
+) -> Result<Brep, cadmpeg_core::CodecError> {
+    let mut out = decode_graph_inner(ctx, carriers, t, entity_facts, typed_facts, stream)?;
+    report_withheld_ownership(&mut out, typed_facts);
+    Ok(out)
+}
+
+fn decode_graph_inner(
     ctx: &DecodeContext<'_>,
     carriers: &mut CarrierIndex,
     t: &topology::Tables,
@@ -11090,3 +11143,6 @@ mod tolerant_edge_tests;
 
 #[cfg(test)]
 mod vertex_loop_tests;
+
+#[cfg(test)]
+mod ownership_loss_tests;
