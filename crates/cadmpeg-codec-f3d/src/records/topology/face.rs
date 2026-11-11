@@ -789,7 +789,7 @@ pub(crate) struct DesignFaceRecipeNode {
     pub(crate) end_byte_offset: u64,
     /// Complete node words, including the three-word opener.
     pub(crate) program: Vec<i32>,
-    /// Shared two-side topology recipe structure following the node opener.
+    /// Topology recipe structure following the node opener.
     pub(crate) recipe_structure: Option<DesignFaceRecipeStructure>,
 }
 
@@ -798,10 +798,11 @@ pub(crate) struct DesignFaceRecipeNode {
 pub(crate) struct DesignFaceRecipeStructure {
     /// Scalar before the prelude delimiters.
     pub(crate) root: i32,
-    /// Two scalar prelude runs before the first side clause.
+    /// Two scalar prelude runs before the first side clause. The second
+    /// counts the side clauses.
     pub(crate) prelude: [i32; 2],
-    /// Two ordered topology side clauses.
-    pub(crate) sides: [DesignTopologyRecipeSide; 2],
+    /// Ordered topology side clauses, one or two.
+    pub(crate) sides: Vec<DesignTopologyRecipeSide>,
     /// Scalar carried by the optional `[-1, value, -1, 0, 0, -1]` postlude.
     #[serde(
         default,
@@ -841,6 +842,14 @@ pub(crate) fn prefix_operand_ordinals(references: &[DesignRecipeReference]) -> O
     Some(ordinals)
 }
 
+impl DesignFaceRecipeNode {
+    pub(crate) fn has_two_side_clauses(&self) -> bool {
+        self.recipe_structure
+            .as_ref()
+            .is_some_and(|structure| structure.sides.len() == 2)
+    }
+}
+
 impl DesignFaceRecipeStructure {
     pub(crate) fn has_valid_operand_ordinals(&self, references: &[DesignRecipeReference]) -> bool {
         let Some(ordinals) = prefix_operand_ordinals(references) else {
@@ -850,6 +859,7 @@ impl DesignFaceRecipeStructure {
         let in_range =
             |value: i32| usize::try_from(value).is_ok_and(|ordinal| ordinal < operand_count);
         self.prelude[1] == 2
+            && self.sides.len() == 2
             && in_range(self.root)
             && in_range(self.prelude[0])
             && self.sides.iter().all(|side| {

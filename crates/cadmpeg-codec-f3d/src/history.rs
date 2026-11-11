@@ -6493,10 +6493,10 @@ fn resolve_bounded_face_recipe_target<'a>(
         return Ok(None);
     };
     if operand.recipe_nodes.len() != header_value
-        || operand
+        || !operand
             .recipe_nodes
             .iter()
-            .any(|node| node.recipe_structure.is_none())
+            .all(crate::records::topology::face::DesignFaceRecipeNode::has_two_side_clauses)
     {
         return Ok(None);
     }
