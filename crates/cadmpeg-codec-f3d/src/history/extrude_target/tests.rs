@@ -468,3 +468,87 @@ fn a_lateral_plane_with_its_origin_on_a_cap_is_not_a_cap_match() {
     assert!(slots.is_empty());
     assert_eq!(losses.len(), 1);
 }
+
+#[test]
+fn a_rejected_preceding_target_charges_a_dispute_without_a_sketch() {
+    for (historical_profile, changed_preference) in
+        [(false, false), (true, false), (false, true), (true, true)]
+    {
+        let (face, slots, losses) = run_configured(false, 17.0, None, |feature, operand, _| {
+            if changed_preference {
+                operand
+                    .preceding_candidate_faces
+                    .push(crate::ids::brep_face_id(3484));
+                operand.changed_candidate_faces = vec![crate::ids::brep_face_id(3465)];
+            }
+            let (_, _, scope, group, _) = fixture();
+            let feature_id = crate::ids::neutral_feature_id(&scope);
+            feature.evaluation.edit(|definition, _| {
+                let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    profile,
+                    extent: ExtrudeExtent::OneSided { side },
+                    ..
+                }) = definition
+                else {
+                    panic!("Extrude")
+                };
+                *profile = if historical_profile {
+                    ProfileRef::Planar(PlanarProfileRef::HistoricalFaces {
+                        state: crate::ids::feature_input_topology_id(&feature_id, 6),
+                        faces: vec![crate::ids::history_input_face_id(
+                            &crate::ids::feature_input_prefix(&feature_id, 6),
+                            3465,
+                        )]
+                        .try_into()
+                        .unwrap(),
+                        native: vec!["f3d:test:profile".into()].try_into().unwrap(),
+                    })
+                } else {
+                    ProfileRef::Planar(PlanarProfileRef::Native("f3d:test:profile".into()))
+                };
+                let LinearTermination::ToFace { face, .. } = &mut side.termination else {
+                    panic!("face")
+                };
+                *face = FaceSelection::Native(group.id.clone());
+                super::super::selection::bind_face_selection(
+                    face,
+                    &scope,
+                    std::slice::from_ref(&group),
+                    std::slice::from_ref(operand),
+                    &[],
+                );
+                assert!(matches!(face, FaceSelection::Native(_)));
+            });
+        });
+        assert!(matches!(face, FaceSelection::Native(_)));
+        assert!(slots.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "feature.extrude-target-disputed"
+        );
+    }
+}
+
+#[test]
+fn an_unselected_target_without_a_preceding_candidate_has_no_withdrawal_loss() {
+    let (face, slots, losses) = run_configured(false, 17.0, None, |feature, operand, _| {
+        operand.preceding_candidate_faces.clear();
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                extent: ExtrudeExtent::OneSided { side },
+                ..
+            }) = definition
+            else {
+                panic!("Extrude")
+            };
+            let LinearTermination::ToFace { face, .. } = &mut side.termination else {
+                panic!("face")
+            };
+            *face = FaceSelection::Native("f3d:test:group#1448".into());
+        });
+    });
+    assert!(matches!(face, FaceSelection::Native(_)));
+    assert!(slots.is_empty());
+    assert!(losses.is_empty());
+}

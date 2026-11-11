@@ -153,11 +153,12 @@ pub(crate) fn bind(
                     *face = selection;
                 }
             } else {
-                let was_resolved = !matches!(face, FaceSelection::Native(_));
+                let had_candidate = !matches!(face, FaceSelection::Native(_))
+                    || !preceding.is_empty();
                 *face = FaceSelection::Native(native);
                 operand.resolved_face_slots.clear();
                 operand.resolved_active_face = None;
-                if was_resolved {
+                if had_candidate {
                     losses.push(crate::loss::F3dLossCode::FeatureExtrudeTargetDisputed.note(format!(
                         "Extrude termination {} retains its native recipe because its derived faces and recipe candidates have no unique stored-cap agreement.", operand.id
                     )));
