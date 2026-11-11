@@ -35,7 +35,8 @@ use super::endpoints::{
 };
 use super::grid::quantize;
 use super::holes::{
-    feature_input_sketch_frame, feature_input_sketch_marker_transform, sketch_feature_frames,
+    feature_input_sketch_frame, feature_input_sketch_marker_transform, principal_top_profile_frame,
+    sketch_feature_frames,
 };
 use super::markers::{
     compact_legacy_142_profile_curve_endpoints, inline_arc_coordinates,
@@ -46,7 +47,7 @@ use super::reference_geometry::reference_plane_frame_key;
 use super::relation_geometry::{declared_entity_handle_circular_marker, owned_relation_parameters};
 use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
-use super::transforms::sketch_frame_marker_transform;
+use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
 };
@@ -681,14 +682,18 @@ pub(crate) fn project_compact_sketch_profiles(
                 .and_then(|index| objects.get(index))
                 .and_then(|(offset, _, _)| usize::try_from(*offset).ok())
                 .unwrap_or(0);
-            let Some((origin, normal, u_axis)) = feature_input_sketch_frame(
-                &lane.native_payload,
-                &plane_frames,
-                &plane_index,
-                context_start,
-                start,
-                end,
-            ) else {
+            let top_frame =
+                principal_top_profile_frame(&plane_frames, &plane_index, context_start, start, end);
+            let Some((origin, normal, u_axis)) = top_frame.or_else(|| {
+                feature_input_sketch_frame(
+                    &lane.native_payload,
+                    &plane_frames,
+                    &plane_index,
+                    context_start,
+                    start,
+                    end,
+                )
+            }) else {
                 continue;
             };
             let lane_key = lane
@@ -810,6 +815,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 let profiles = vec![profile];
                 sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
                 sketches.push(sketch);
+                record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -949,6 +955,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 let profiles = vec![profile];
                 sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
                 sketches.push(sketch);
+                record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1023,6 +1030,7 @@ pub(crate) fn project_compact_sketch_profiles(
             let profiles = vec![profile];
             sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
             sketches.push(sketch);
+            record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
             features[feature_index].evaluation.set_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1246,14 +1254,27 @@ pub(crate) fn project_marker_backed_sketches(
             ) else {
                 continue;
             };
-            let frame = feature_input_sketch_frame(
-                &lane.native_payload,
-                &plane_frames,
-                &plane_index,
-                context_start,
-                start,
-                end,
-            );
+            let top_frame = (!block_definition)
+                .then(|| {
+                    principal_top_profile_frame(
+                        &plane_frames,
+                        &plane_index,
+                        context_start,
+                        start,
+                        end,
+                    )
+                })
+                .flatten();
+            let frame = top_frame.or_else(|| {
+                feature_input_sketch_frame(
+                    &lane.native_payload,
+                    &plane_frames,
+                    &plane_index,
+                    context_start,
+                    start,
+                    end,
+                )
+            });
             let frame = frame
                 .or_else(|| feature_frames.get(native_feature.id.as_str()).copied())
                 .or_else(|| {
@@ -1330,6 +1351,10 @@ pub(crate) fn project_marker_backed_sketches(
                             native_ref: Some(lane.id.clone()),
                         };
                         sketches.push(sketch);
+                        record_top_marker_coordinates(
+                            &mut features[feature_index],
+                            top_frame.is_some(),
+                        );
                     }
                     features[feature_index].evaluation.set_definition(
                         cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -2288,6 +2313,7 @@ pub(crate) fn project_marker_backed_sketches(
             }
             sketch_entities.extend(projected);
             sketches.push(sketch);
+            record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
             features[feature_index]
                 .evaluation
                 .set_definition(if block_definition {

@@ -1044,17 +1044,15 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** Establish the cross-stream receive-index mapping, precision and comb encodings, coordinate units, triangle grouping, orientation, and complete per-body ownership. Check each reconstructed mesh against independent body areas and volumes before transfer.
 
-### SF-01. Top principal-plane placement and profile coordinates
+### SF-01. Remaining Top reference forms and profile coordinates
 
-**Question.** Which Top reference forms bind profile marker pairs to the matrix, and which matrix direction and coordinate polarity apply?
+**Question.** Which placement and coordinate convention applies to declared Top references, lane-default Front references, mixed or enclosing-context component records, lane component references, block definitions, and nested profile streams?
 
-**Known.** The principal component form with source `3` and selector `2` stores the f64 sequence `[1,0,0,0,0,1,0,-1,0]`, zero translation, and unit scale. A row-major reading gives U=+X, V=-Z, N=+Y. Complete finite-face profile support covers six sketches from one independent design. Seven profiles from two designs have plane-carrier support. The second design has one of twelve sampled points on finite faces; its carrier incidence does not distinguish in-plane polarity. The current Top fallback uses U=+X and N=+Z. A deferred Top component that used an existing Front reference retains its original frame N=-Y and U=-Z. Its marker pairs retain their original projection.
+**Known.** `sldprt.md` §3.3 defines local Top component placement and intrinsic marker coordinates for marker and compact profile objects with a profile or immediate-context Front reference. The declared Top fallback retains U=+X and N=+Z. The retained Front lane fallback uses N=-Y and U=-Z. Nested profile streams carry their own coordinate records.
 
-**Need.** Establish profile attachment and coordinate polarity in at least two independent designs. Include complete profile geometry and consumed-feature controls.
+**Need.** Determine the byte fields that bind each remaining reference form to its profile coordinates and normal direction. Establish each complete rule with independent profile and mirrored-polarity controls.
 
-**Conflict.** The candidate matrix reading and the current fallback select different normal axes.
-
-**Note.** Eight tested extrude profiles are empty and one has unsupported geometry. Their final-body checks remain unavailable.
+**Conflict.** The local component's N=+Y and the declared fallback's N=+Z select different normal axes.
 
 ### SF-02. Right component ownership and profile coordinates
 
@@ -1066,4 +1064,4 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Conflict.** Selecting the component through interval enclosure changes a public fixture's complete carrier support from eighteen sampled points to sixteen. A scoped component mapping gains carrier support in three designs and changes another profile from three carrier hits to two.
 
-**Note.** Top and Right component mappings retain their current interpretation. Their existing scoped and lane Front fallback retains its original frame.
+**Note.** Right component mappings retain their current interpretation. Their scoped and lane Front fallback retains its original frame. Section 3.3 defines local Top component profile placement.

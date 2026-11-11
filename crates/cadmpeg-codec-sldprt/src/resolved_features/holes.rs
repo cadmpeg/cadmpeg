@@ -7,7 +7,9 @@ use super::helix::fit_helix_polyline;
 use super::reference_geometry::{explicit_reference_plane_frame, reference_plane_frame_key};
 use super::relation_loci::same_dimension_length;
 use super::scalars::{feature_object_name, FeatureObjectNames, FeatureObjectStarts};
-use super::transforms::{sketch_frame_marker_transform, MarkerTransform};
+use super::transforms::{
+    component_sketch_marker_transform, feature_sketch_marker_transform, MarkerTransform,
+};
 use super::{is_class_token, CLASS_MARKER};
 use crate::classification::{classify, FeatureClass};
 use crate::parasolid::control_vertices::control_vertices;
@@ -1447,6 +1449,13 @@ pub(crate) fn project_hole_position_sketches(
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = EPS_HOLE_POSITION;
     let native_features = crate::records::HistoryFeatures::new(histories);
+    let marker_transforms = sketches
+        .iter()
+        .filter_map(|sketch| {
+            feature_sketch_marker_transform(sketch, QUANTUM, features)
+                .map(|transform| (sketch.id.clone(), transform))
+        })
+        .collect::<HashMap<_, _>>();
     let position_sketches = HolePositionSketches::new(histories, lanes);
     let mut model_sketch_features = HashMap::new();
     for feature in features.iter() {
@@ -1606,7 +1615,7 @@ pub(crate) fn project_hole_position_sketches(
             if authored_markers.is_empty() {
                 break 'feature_edit;
             }
-            let marker_transform = sketch_frame_marker_transform(sketch, QUANTUM);
+            let marker_transform = marker_transforms.get(&sketch.id).copied();
             let v_axis = normal.cross(u_axis.get());
             let mut resolved = Vec::new();
             for marker in &authored_markers {
@@ -4243,8 +4252,42 @@ pub(super) fn feature_input_sketch_marker_transform(
     if resolved_support_component_frame(plane_frames, plane_index, interval).is_some() {
         Some(MarkerTransform::identity())
     } else {
-        sketch_frame_marker_transform(sketch, quantum)
+        component_sketch_marker_transform(
+            sketch,
+            quantum,
+            principal_top_profile_frame(
+                plane_frames,
+                plane_index,
+                interval[0],
+                interval[1],
+                interval[2],
+            )
+            .is_some(),
+        )
     }
+}
+
+pub(super) fn principal_top_profile_frame(
+    plane_frames: &HashMap<u32, SketchPlaneFrame>,
+    plane_index: &CompactReferencePlaneIndex,
+    context_start: usize,
+    start: usize,
+    end: usize,
+) -> Option<(Point3, Vector3, Vector3)> {
+    let source = plane_index.profile_source(context_start, start, end)?;
+    let reference = plane_frames.get(&source)?;
+    if plane_index.profile_declared_source(context_start, start, end) != Some(source)
+        || plane_index.has_component_frame(context_start.min(start), end)
+        || source != 2
+        || reference.u_axis_source != SketchPlaneUAxisSource::Native
+        || reference.as_tuple()
+            != super::compact_reference_planes::principal_sketch_frame(
+                cadmpeg_ir::features::PrincipalPlane::Front,
+            )
+    {
+        return None;
+    }
+    plane_index.principal_top_profile_frame(start, end)
 }
 
 pub(super) fn feature_input_sketch_frame(

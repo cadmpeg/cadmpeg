@@ -22,8 +22,8 @@ use super::relation_records::{
     relation_uses_dynamic_operands, relation_uses_solver_points, CircleHandleDrivers,
 };
 use super::transforms::{
-    marker_entities, sketch_entity_locus_points, sketch_frame_marker_transform, MarkerEntityFilter,
-    ProfileAxis,
+    feature_sketch_marker_transform, marker_entities, sketch_entity_locus_points,
+    MarkerEntityFilter, ProfileAxis,
 };
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -566,7 +566,7 @@ pub(crate) fn project_relation_point_geometry(
                 sketches
                     .iter()
                     .find(|candidate| candidate.id == *sketch)
-                    .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
+                    .and_then(|sketch| feature_sketch_marker_transform(sketch, QUANTUM, features))
                     .and_then(|transform| transform.apply(native))
             } else {
                 unique_position
@@ -1076,7 +1076,9 @@ pub(crate) fn project_relation_solved_line_geometry(
                     sketches
                         .iter()
                         .find(|candidate| candidate.id == *sketch)
-                        .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
+                        .and_then(|sketch| {
+                            feature_sketch_marker_transform(sketch, QUANTUM, features)
+                        })
                         .and_then(|transform| transform.apply(native))
                 } else {
                     unique_position
@@ -1127,7 +1129,9 @@ pub(crate) fn project_relation_solved_line_geometry(
                         sketches
                             .iter()
                             .find(|candidate| candidate.id == *sketch)
-                            .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
+                            .and_then(|sketch| {
+                                feature_sketch_marker_transform(sketch, QUANTUM, features)
+                            })
                     })
                     .flatten();
                 let mut candidates = Vec::new();
@@ -1593,7 +1597,9 @@ pub(crate) fn project_relation_solved_point_geometry(
                         sketches
                             .iter()
                             .find(|candidate| candidate.id == **sketch)
-                            .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
+                            .and_then(|sketch| {
+                                feature_sketch_marker_transform(sketch, QUANTUM, features)
+                            })
                             .and_then(|transform| transform.apply(native))
                     } else {
                         unique_position
