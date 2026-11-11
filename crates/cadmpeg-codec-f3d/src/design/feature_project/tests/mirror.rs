@@ -277,9 +277,7 @@ fn an_assumed_mirror_plane_scope_needs_a_framed_work_plane_and_records_its_loss(
             serde_json::to_value(plane_normal).unwrap(),
             serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0})
         );
-        if mode != Mode::Assumed {
-            assert!(losses.is_empty());
-        } else {
+        if mode == Mode::Assumed {
             assert_eq!(losses.len(), 1);
             assert_eq!(
                 losses[0].code,
@@ -288,6 +286,8 @@ fn an_assumed_mirror_plane_scope_needs_a_framed_work_plane_and_records_its_loss(
             assert!(losses[0]
                 .message
                 .contains("face 10 of history history (not planar)"));
+        } else {
+            assert!(losses.is_empty());
         }
         for plane in [
             work_plane(DesignFeatureKind::WorkPlane, false),
