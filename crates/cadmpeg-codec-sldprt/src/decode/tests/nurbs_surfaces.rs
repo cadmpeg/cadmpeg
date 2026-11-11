@@ -222,6 +222,19 @@ fn blend_cache_fit_tolerance(body: &[u8]) -> Option<f64> {
         .cache_fit_tolerance()
         .map(cadmpeg_ir::geometry::FitTolerance::get);
     assert_eq!(cached, fit_tolerance.is_some());
+    let losses: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::GeometryCarrierApproximated.kind())
+        .collect();
+    assert_eq!(losses.len(), usize::from(cached));
+    if let Some(tolerance) = fit_tolerance {
+        assert_eq!(losses[0].message, format!(
+            "1 fitted blend surface(s) use approximate carriers; largest fit tolerance {tolerance} mm."
+        ));
+    }
+
     fit_tolerance
 }
 
