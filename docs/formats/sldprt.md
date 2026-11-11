@@ -2473,6 +2473,8 @@ A record key is the decoded stream-local `attr` in the pointer domain.
 A wide record key and a wide reference use the same encoding. The complete
 record fields determine the framing. Complete analytic carriers, bounded-curve records, spline wrapper headers, curve and surface descriptors, and their referenced value arrays form enclosing node scopes. Their node IDs, references, and scalar payloads belong to that node. A byte pair equal to a node tag inside a field retains its field meaning.
 
+The loss `geometry.carrier-approximated` counts intersection chart curves, fitted surface-parameter curves, fitted blend surfaces, inverse NURBS boundary caches, and charts with absent tolerance per decoded stream and kind, and reports the largest fit tolerance or sampled distance in millimetres for each kind, with an unavailable size for charts with absent tolerance.
+
 A framed FACE record with no decoded loop is the loss `topology.face-withheld`.
 A vertex loop decodes to a vertex boundary on its vertex-use. A FACE with a vertex loop whose vertex-use does not resolve is the loss `topology.vertex-loop-withheld`.
 A FACE with a loop whose FIN is ambiguous is the loss `topology.ambiguous-fin-face-withheld`.

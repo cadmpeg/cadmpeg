@@ -69,6 +69,7 @@ const EPS_SWEEP_EXTENT_RELATIVE: f64 = 1.0e-3;
 /// Decoded B-rep arenas, provenance, and transfer statistics.
 #[derive(Default)]
 pub(crate) struct Brep {
+    pub(crate) approximations: super::approximation::ApproximationCounts,
     /// Source locations for decoded entities.
     pub(crate) annotations: Annotations,
     /// Top-level solid or sheet bodies.
@@ -2062,6 +2063,10 @@ fn attach_surface_curve(
         .map(SolvedCurveGeometry::Nurbs),
         None => None,
     };
+    if cache.is_some() {
+        out.approximations
+            .surface_curve(super::fit::FIT_TOLERANCE_MM);
+    }
     let construction = ProceduralCurveId::compose(
         &cadmpeg_ir::identity_namespace!("sldprt", "brep", "sp-curve"),
         attr,
@@ -3480,6 +3485,7 @@ fn decode_graph(
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     let mut out = decode_graph_inner(ctx, carriers, t, entity_facts, typed_facts, stream)?;
+    out.losses.extend(out.approximations.take_notes());
     report_withheld_ownership(&mut out, typed_facts);
     Ok(out)
 }
@@ -4000,6 +4006,7 @@ fn decode_graph_inner(
                     let carrier = indexed.carrier();
                     if emitted_curves.insert(curve_attr) {
                         emit_curve(ctx, &mut out, carrier)?;
+                        out.approximations.intersection(indexed);
                         if matches!(indexed, IndexedCurve::Derived(_)) {
                             let offset = carrier.offset;
                             annotations.note(
@@ -4594,6 +4601,7 @@ fn decode_graph_inner(
                         let carrier = indexed.carrier();
                         if emitted_curves.insert(blend.spine) {
                             emit_curve(ctx, &mut out, carrier)?;
+                            out.approximations.intersection(indexed);
                             annotations.note(
                                 id_curve(blend.spine).as_str(),
                                 &source_stream,
@@ -4740,6 +4748,7 @@ fn decode_graph_inner(
                         .map_err(cadmpeg_core::CodecError::malformed)?;
                     let mut definition = ProceduralSurfaceDefinition::Blend(admitted_payload);
                     if let Some(cache) = &cache {
+                        out.approximations.blend(cache.fit_tolerance);
                         let fit_tolerance =
                             cadmpeg_ir::geometry::FitTolerance::try_new(cache.fit_tolerance)
                                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -4958,6 +4967,7 @@ fn decode_graph_inner(
 
     if out.faces.is_empty() {
         return Ok(Brep {
+            approximations: out.approximations,
             losses: out.losses,
             stats: out.stats,
             ..Brep::default()
@@ -7128,6 +7138,9 @@ fn derive_nurbs_isoparametric_pcurves(
             }),
         );
         annotations.exactness(id.as_str(), Exactness::Derived);
+        if let Some(tolerance) = pcurve.fit_tolerance().filter(|_| cache) {
+            out.approximations.inverse_boundary(tolerance.get());
+        }
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
@@ -11461,3 +11474,6 @@ mod edge_free_tests;
 
 #[cfg(test)]
 mod offset_support_tests;
+
+#[cfg(test)]
+mod approximation_loss_tests;
