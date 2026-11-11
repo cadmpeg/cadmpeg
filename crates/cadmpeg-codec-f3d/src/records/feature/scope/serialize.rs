@@ -210,6 +210,7 @@ impl Serialize for DesignParameterScope {
         emit_opt!("fixed_fillet_parameters", self.fixed_fillet_parameters());
         emit_opt!("fillet_sets", self.fillet_sets());
         emit_opt!("fixed_chamfer_parameters", self.fixed_chamfer_parameters());
+        emit_opt!("chamfer_sets", self.chamfer_sets());
 
         match &self.payload {
             DesignScopePayload::Revolve(Some(value)) => {

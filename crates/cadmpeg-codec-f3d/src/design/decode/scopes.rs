@@ -10,6 +10,7 @@ pub(crate) use assembly_operand_frames::wide_family_frame_offsets;
 mod assembly_operand_paths;
 mod axial_assembly;
 mod base_feature;
+pub(crate) mod chamfer_set;
 mod coil;
 mod combine;
 mod component_constructions;

@@ -258,6 +258,8 @@ pub(crate) enum F3dLossCode {
     FeatureScopePayloadUninterpreted,
     /// A Fillet set list contradicts the radius group that the indexed-owner path projects.
     FeatureFilletSetConflict,
+    /// A Chamfer set list pairs groups and specifications against owner order.
+    FeatureChamferSetConflict,
     /// Emboss controls, native pairs, and selected contours have no neutral mapping.
     EmbossControlsNative,
     FeatureShellAuxiliaryReferencesNative,
@@ -785,6 +787,7 @@ impl F3dLossCode {
         Self::AlignConstructionUnparsed,
         Self::FeatureScopePayloadUninterpreted,
         Self::FeatureFilletSetConflict,
+        Self::FeatureChamferSetConflict,
         Self::EmbossControlsNative,
         Self::FeatureShellAuxiliaryReferencesNative,
         Self::EmbossPrefixUnparsed,
@@ -1125,6 +1128,7 @@ impl F3dLossCode {
             Self::AlignConstructionUnparsed => "feature.align-construction-unparsed",
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
             Self::FeatureFilletSetConflict => "feature.fillet-set-conflict",
+            Self::FeatureChamferSetConflict => "feature.chamfer-set-conflict",
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
             Self::HoleExtentFaceAssumed => "feature.hole-extent-face-assumed",
@@ -1522,6 +1526,7 @@ impl F3dLossCode {
             | Self::ModifyUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureFilletSetConflict
+            | Self::FeatureChamferSetConflict
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnparsed
@@ -1808,6 +1813,7 @@ impl F3dLossCode {
             | Self::ModifyUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureFilletSetConflict
+            | Self::FeatureChamferSetConflict
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnrecognized
@@ -2164,6 +2170,7 @@ mod tests {
                 "feature.align-construction-unparsed",
                 "feature.scope-payload-uninterpreted",
                 "feature.fillet-set-conflict",
+                "feature.chamfer-set-conflict",
                 "feature.emboss-controls-native",
                 "feature.shell-auxiliary-references-native",
                 "feature.emboss-prefix-unparsed",
