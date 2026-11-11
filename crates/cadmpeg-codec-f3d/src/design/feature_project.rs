@@ -2959,17 +2959,11 @@ pub(crate) fn bind_sketch_feature_geometry(
             else {
                 return;
             };
-            let stream = native_stream(&scope.id);
-            let mut matching = placements.iter().filter(|placement| {
-                native_stream(&placement.id) == stream
-                    && placement.scope_record_index == Some(scope.record_index)
-            });
-            let Some(placement) = matching.next() else {
+            let Some(placement) =
+                crate::design::sketch_names::exact_scope_placement(scope, placements)
+            else {
                 return;
             };
-            if matching.next().is_some() {
-                return;
-            }
             let planar = crate::ids::neutral_sketch_id(placement);
             let spatial = crate::ids::neutral_spatial_sketch_id(placement);
             let has_planar = sketches.iter().any(|sketch| sketch.id == planar);

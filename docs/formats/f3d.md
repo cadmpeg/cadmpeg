@@ -1759,6 +1759,8 @@ A native `ToFace` target selection resolves from exactly one qualifying referenc
 
 Each parameter-owning Sketch scope references exactly one paired placement record. The compact placement frame is 201 bytes from its primary indexed header to its same-index paired header and denotes the identity local-to-model transform. The explicit placement frame is 329 bytes and inserts a row-major 4×4 f64 local-to-model matrix at primary-record offset 55. The 305- and 325-byte placement frames store the same matrix at primary-record offset 48. Its bottom row is `(0, 0, 0, 1)` and its three basis columns are orthonormal. Matrix column 0 is the sketch u-axis, column 1 is the sketch v-axis, column 2 is the sketch normal, and column 3 is the model-space origin.
 
+A planar or spatial Sketch takes the name of the Feature projected from its owning Sketch scope: the stored kind spelling plus a space and the feature ordinal. This rule applies when exactly one placement in the same stream carries that scope, exactly one Feature with a non-empty name projects from that scope, and exactly one scope selects the sketch. Each other sketch uses its entity-id name.
+
 A `Sketch` scope joined to `EntityGenesis`-form entity headers references its placement in a wider frame. The placement type GUID is `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`. With an empty display name, its class members start at primary-record offset 21. The bytes from indexed-header offset 11 through 20 are zero. Version 4 admits marked and unmarked matrix forms. The placement class holds one class level whose members are, in order:
 
 ```

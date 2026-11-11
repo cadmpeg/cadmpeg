@@ -93,6 +93,9 @@ pub(crate) enum F3dLossCode {
     FeatureOccurrencePathUnresolved,
     /// A sketch collection owner does not bind one component definition.
     SketchOwnerUnresolved,
+    /// Sketches take the Feature label composed from the scope kind spelling
+    /// and feature ordinal instead of a stored name.
+    SketchNameComposedFromFeatureOrdinal,
     SketchMembershipConflict,
     SketchFolderClosingReference,
     SketchFolderUnprojected,
@@ -700,6 +703,7 @@ impl F3dLossCode {
         Self::LocalOccurrenceExpansionLimit,
         Self::FeatureOccurrencePathUnresolved,
         Self::SketchOwnerUnresolved,
+        Self::SketchNameComposedFromFeatureOrdinal,
         Self::SketchMembershipConflict,
         Self::SketchFolderClosingReference,
         Self::SketchFolderUnprojected,
@@ -1015,6 +1019,9 @@ impl F3dLossCode {
             Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
             Self::FeatureOccurrencePathUnresolved => "feature.occurrence-path-unresolved",
             Self::SketchOwnerUnresolved => "sketch.component-owner-unresolved",
+            Self::SketchNameComposedFromFeatureOrdinal => {
+                "sketch.name-composed-from-feature-ordinal"
+            }
             Self::SketchMembershipConflict => "sketch.membership-conflict",
             Self::SketchFolderClosingReference => "sketch.folder-closing-reference",
             Self::SketchFolderUnprojected => "sketch.folder-unprojected",
@@ -1433,6 +1440,7 @@ impl F3dLossCode {
             | Self::FeatureOccurrencePathUnresolved
             | Self::LocalOccurrenceUnplaced
             | Self::SketchOwnerUnresolved
+            | Self::SketchNameComposedFromFeatureOrdinal
             | Self::SketchMembershipConflict
             | Self::SketchFolderClosingReference
             | Self::SketchFolderUnprojected
@@ -1936,7 +1944,8 @@ impl F3dLossCode {
             | Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
-            Self::ReferenceImageNativeRetained
+            Self::SketchNameComposedFromFeatureOrdinal
+            | Self::ReferenceImageNativeRetained
             | Self::ReferenceImageFlagAssumed
             | Self::DecalNativeRetained
             | Self::EdgeReferenceLostUnrepaired
@@ -2065,6 +2074,7 @@ mod tests {
                 "assembly.local-occurrence-expansion-limit",
                 "feature.occurrence-path-unresolved",
                 "sketch.component-owner-unresolved",
+                "sketch.name-composed-from-feature-ordinal",
                 "sketch.membership-conflict",
                 "sketch.folder-closing-reference",
                 "sketch.folder-unprojected",

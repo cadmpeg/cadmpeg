@@ -986,6 +986,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.sketches,
         &model.spatial_sketches,
     )?;
+    losses.extend(crate::design::sketch_names::bind_sketch_names(
+        &model.features,
+        &design.design_parameter_scopes,
+        &design.design_sketch_placements,
+        &mut model.sketches,
+        &mut model.spatial_sketches,
+    ));
     model.spatial_sketch_constraints =
         crate::design::sketch_project::project_spatial_sketch_constraints(
             &design.design_sketch_placements,
