@@ -17,17 +17,9 @@ pub(crate) struct LocalOccurrencePaths {
 }
 
 impl LocalOccurrencePaths {
+    /// Paths over local and external occurrences, with each `Component
+    /// Insert` occurrence keyed by the source occurrence key of its carrier.
     pub(crate) fn new(
-        native: &[DesignComponentOccurrence],
-        external: &[crate::records::xref::XrefReference],
-        occurrences: &[Occurrence],
-    ) -> Self {
-        Self::with_component_inserts(native, external, occurrences, &[])
-    }
-
-    /// Paths that also key each `Component Insert` occurrence by the source
-    /// occurrence key of its carrier.
-    pub(crate) fn with_component_inserts(
         native: &[DesignComponentOccurrence],
         external: &[crate::records::xref::XrefReference],
         occurrences: &[Occurrence],
@@ -301,7 +293,7 @@ mod tests {
             native_ref: Some(scope_id),
         };
         let keys = [key.to_owned(), nested.to_owned()];
-        let paths = LocalOccurrencePaths::with_component_inserts(
+        let paths = LocalOccurrencePaths::new(
             &[],
             &[],
             std::slice::from_ref(&occurrence),
@@ -309,7 +301,7 @@ mod tests {
         );
         assert_eq!(paths.resolve(stream, &keys), Some((id, 1)));
         assert_eq!(
-            LocalOccurrencePaths::new(&[], &[], std::slice::from_ref(&occurrence))
+            LocalOccurrencePaths::new(&[], &[], std::slice::from_ref(&occurrence), &[])
                 .resolve(stream, &keys),
             None
         );
@@ -407,7 +399,7 @@ mod tests {
                 "scale": [1.0, 1.0, 1.0], "native_ref": reference.id
             })).unwrap()
         }).collect::<Vec<_>>();
-        let paths = LocalOccurrencePaths::new(&[], &table.references, &occurrences);
+        let paths = LocalOccurrencePaths::new(&[], &table.references, &occurrences, &[]);
         for ((stream, key), occurrence) in sources.iter().zip(&occurrences) {
             assert_eq!(
                 paths.resolve(stream, &[(*key).to_owned()]),
@@ -424,7 +416,7 @@ mod tests {
         nested[1].parent = OccurrenceParent::Occurrence {
             occurrence: nested[2].id.clone(),
         };
-        let nested_paths = LocalOccurrencePaths::new(&[], &table.references, &nested);
+        let nested_paths = LocalOccurrencePaths::new(&[], &table.references, &nested, &[]);
         assert_eq!(
             nested_paths.resolve(sources[1].0, &[key_b.to_owned()]),
             Some((nested[1].id.clone(), 1))
@@ -451,7 +443,7 @@ mod tests {
         chain[2].parent = OccurrenceParent::Occurrence {
             occurrence: chain[1].id.clone(),
         };
-        let chain_paths = LocalOccurrencePaths::new(&[], &table.references, &chain);
+        let chain_paths = LocalOccurrencePaths::new(&[], &table.references, &chain, &[]);
         let stream = sources[0].0;
         let keys = |keys: &[&str]| keys.iter().map(|key| (*key).to_owned()).collect::<Vec<_>>();
         assert_eq!(
@@ -471,7 +463,7 @@ mod tests {
         second.id = OccurrenceId::mint("f3d:model:occurrence#second-c").unwrap();
         second.parent = OccurrenceParent::Root {};
         repeated.push(second);
-        let repeated_paths = LocalOccurrencePaths::new(&[], &table.references, &repeated);
+        let repeated_paths = LocalOccurrencePaths::new(&[], &table.references, &repeated, &[]);
         assert!(repeated_paths.ambiguous(stream, &keys(&[key_c])));
         assert_eq!(
             repeated_paths.resolve(stream, &keys(&[key_b, key_c])),

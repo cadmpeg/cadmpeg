@@ -1142,15 +1142,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             products.occurrences,
         ));
     }
-    let occurrence_paths =
-        crate::design::components::paths::LocalOccurrencePaths::with_component_inserts(
-            &prereqs.design_component_occurrences,
-            prereqs
-                .xref_table()
-                .map_or(&[], |table| table.references.as_slice()),
-            products.occurrences,
-            &design.design_parameter_scopes,
-        );
+    let occurrence_paths = crate::design::components::paths::LocalOccurrencePaths::new(
+        &prereqs.design_component_occurrences,
+        prereqs
+            .xref_table()
+            .map_or(&[], |table| table.references.as_slice()),
+        products.occurrences,
+        &design.design_parameter_scopes,
+    );
     crate::design::components::project_derived_instance_features(
         &mut model.features,
         &design.design_parameter_scopes,

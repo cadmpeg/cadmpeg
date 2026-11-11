@@ -1734,6 +1734,37 @@ fn standalone_joint_inside_an_unmerged_document_keeps_a_nested_occurrence_path()
 }
 
 #[test]
+fn writer_reprojection_rebinds_a_nested_standalone_joint_as_decode_does() {
+    let (mut decoded, _) =
+        standalone_joint_model(vec!["ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee".into()]);
+    let projected = decoded.assembly_joints.clone();
+    let complete = std::collections::BTreeSet::from(["f3d:scope#standalone".to_owned()]);
+    let children = std::collections::BTreeMap::new();
+    super::super::rebind_joints(
+        &mut super::super::JointRows {
+            occurrences: &decoded.occurrences,
+            joints: &mut decoded.assembly_joints,
+            features: &mut decoded.features,
+        },
+        &children,
+        &children,
+        &complete,
+        super::super::JointRebind::CompleteScopes,
+        &mut Vec::new(),
+    );
+    assert_ne!(decoded.assembly_joints, projected);
+    let mut reprojected = projected;
+    super::super::rebind_projected_joints(
+        &std::collections::BTreeMap::new(),
+        &std::collections::BTreeMap::new(),
+        &complete,
+        &decoded.occurrences,
+        &mut reprojected,
+    );
+    assert_eq!(reprojected, decoded.assembly_joints);
+}
+
+#[test]
 fn standalone_joint_with_an_unknown_merged_child_key_keeps_its_decoded_operand() {
     use cadmpeg_ir::features::FeatureOperation;
     use cadmpeg_ir::ids::OccurrenceId;
