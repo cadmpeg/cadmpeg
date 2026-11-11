@@ -1102,8 +1102,8 @@ pub struct DraftPull {
         deserialize_with = "deserialize_plane"
     )]
     pub plane: Option<FeatureId>,
-    /// Model-space frame of the plane that supplied the direction, when no
-    /// datum-plane feature is retained.
+    /// Frame of the plane that supplied the direction, in the same space as
+    /// `direction`, when no datum-plane feature is retained.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

@@ -237,22 +237,6 @@ fn an_origin_plane_states_its_normal_as_the_pull_direction() {
 }
 
 #[test]
-fn an_xref_occurrence_scope_is_not_in_model_space() {
-    let mut scope = draft_scope(0.25, Some(false));
-    let space = naming_space(&scope, 1);
-    assert!(super::super::scope_space_is_model_space(
-        &scope,
-        std::slice::from_ref(&space)
-    ));
-    scope.id = scope.id.replacen("f3d:", "f3d:xref/root/occurrence-0/", 1);
-    let space = naming_space(&scope, 1);
-    assert!(!super::super::scope_space_is_model_space(
-        &scope,
-        std::slice::from_ref(&space)
-    ));
-}
-
-#[test]
 fn an_origin_plane_in_a_stream_of_several_components_keeps_no_frame() {
     let scope = draft_scope(0.25, Some(false));
     let space = |component_record_index| naming_space(&scope, component_record_index);

@@ -62,11 +62,6 @@ pub(crate) fn same_native_occurrence(left: &str, right: &str) -> bool {
     }
 }
 
-/// Return whether a native ID belongs to the root document, outside every xref occurrence.
-pub(crate) fn in_root_document(id: &str) -> bool {
-    same_native_occurrence(id, "")
-}
-
 /// Parse the Design segment shared by sibling `MetaStream.dat` and
 /// `BulkStream.dat` entries from a native record identity.
 pub(crate) fn design_segment(id: &str) -> Option<&str> {
@@ -1297,19 +1292,6 @@ mod tests {
             "f3d:xref/root/occurrence-invalid/design:record#1",
             "f3d:design:persistent-subentity-tag#1",
         ));
-    }
-
-    #[test]
-    fn a_root_document_id_has_no_occurrence_segment() {
-        assert!(super::in_root_document(
-            "f3d:Asset/Design1/BulkStream.dat:record#1"
-        ));
-        for id in [
-            "f3d:xref/root/occurrence-0/Asset/Design1/BulkStream.dat:record#1",
-            "f3d:xref/root/occurrence-invalid/design:record#1",
-        ] {
-            assert!(!super::in_root_document(id), "{id}");
-        }
     }
 
     #[test]
