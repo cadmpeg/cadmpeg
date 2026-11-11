@@ -2114,7 +2114,7 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** None.
 
-### DR-375. Stored name of a Sketch renamed in the timeline
+### DR-376. Stored name of a Sketch renamed in the timeline
 
 **Question.** Where does a Sketch renamed in the timeline store its name?
 
