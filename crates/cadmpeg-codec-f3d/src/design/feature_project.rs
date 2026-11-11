@@ -793,21 +793,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             parameters: BTreeMap::new(),
                         })
                     }),
-                Some(DesignFeatureFamily::Draft) => project_draft(
-                    scope,
-                    scopes,
-                    construction_groups,
-                    entity_selection_operands,
-                    face_operands,
-                    histories,
-                    design_types,
-                )?
-                .unwrap_or_else(|| {
-                    FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: scope.kind_name().into(),
-                        parameters: BTreeMap::new(),
+                Some(DesignFeatureFamily::Draft) => {
+                    project_draft(scope, inputs)?.unwrap_or_else(|| {
+                        FeatureDefinition::Operation(FeatureOperation::Native {
+                            kind: scope.kind_name().into(),
+                            parameters: BTreeMap::new(),
+                        })
                     })
-                }),
+                }
                 Some(DesignFeatureFamily::ReplaceFace) => project_replace_face(
                     scope,
                     construction_groups,
@@ -3549,16 +3542,16 @@ fn draft_pull_vector(normal: Vector3, flipped: bool) -> Vector3 {
     }
 }
 
-/// Normal of the Design Geometry origin plane that a neutral-plane member names.
+/// Ordinal and normal of the Design Geometry origin plane that a group member names.
 ///
 /// The type table identifies the origin plane. An ASM entity can share its
 /// number, and such historical candidates describe unrelated topology.
-fn selected_origin_plane_normal(
+fn selected_origin_plane(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     design_types: &[crate::records::entity_header::SegmentType],
-) -> Option<Vector3> {
+) -> Option<(usize, Vector3)> {
     let stream = native_stream(&scope.id)?;
     let [crate::records::identity::Located { value: member, .. }] = group.members() else {
         return None;
@@ -3583,19 +3576,43 @@ fn selected_origin_plane_normal(
     else {
         return None;
     };
-    crate::history::selection::design_geometry_origin_plane(ordinal).map(|plane| plane.normal)
+    crate::history::selection::design_geometry_origin_plane(ordinal)
+        .map(|plane| (ordinal, plane.normal))
+}
+
+/// Return whether a scope's Design stream binds exactly one component, so the
+/// component's origin planes lie in the design's frame.
+fn scope_stream_has_one_component(
+    scope: &DesignParameterScope,
+    component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
+) -> bool {
+    let Some(stream) = native_stream(&scope.id) else {
+        return false;
+    };
+    component_naming_spaces
+        .iter()
+        .filter(|space| native_stream(&space.id) == Some(stream))
+        .take(2)
+        .count()
+        == 1
 }
 
 fn project_draft(
     scope: &DesignParameterScope,
-    scopes: &[DesignParameterScope],
-    groups: &[DesignConstructionOperandGroup],
-    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-    face_operands: &[DesignFaceOperand],
-    histories: &[crate::history_records::AsmHistory],
-    design_types: &[crate::records::entity_header::SegmentType],
+    inputs: &ProjectInputs<'_>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    let &ProjectInputs {
+        scopes,
+        construction_groups: groups,
+        entity_selection_operands,
+        face_operands,
+        histories,
+        design_types,
+        component_naming_spaces,
+        ..
+    } = inputs;
 
     let construction = or_none!(scope.draft_operation());
     let flipped = construction.flags.is_some_and(|flags| flags.flipped);
@@ -3662,12 +3679,10 @@ fn project_draft(
                             plane: cadmpeg_ir::features::FaceSelection::Native(
                                 crate::ids::neutral_feature_id(neutral_plane).into_string(),
                             ),
-                            pull: Some(cadmpeg_ir::features::DraftPull {
-                                direction: cadmpeg_ir::features::FeatureDirection3::from(
-                                    pull_direction,
-                                ),
-                                plane: Some(crate::ids::neutral_feature_id(neutral_plane)),
-                            }),
+                            pull: Some(cadmpeg_ir::features::DraftPull::new(
+                                cadmpeg_ir::features::FeatureDirection3::from(pull_direction),
+                                Some(crate::ids::neutral_feature_id(neutral_plane)),
+                            )),
                         },
                         angle: Some(angle),
                         outward: Some(angle_outward),
@@ -3675,7 +3690,7 @@ fn project_draft(
                     },
                 )));
             }
-            if let Some(normal) = selected_origin_plane_normal(
+            if let Some((ordinal, normal)) = selected_origin_plane(
                 scope,
                 neutral_plane,
                 entity_selection_operands,
@@ -3684,6 +3699,17 @@ fn project_draft(
                 let direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(
                     draft_pull_vector(normal, flipped)
                 ));
+                let mut pull = cadmpeg_ir::features::DraftPull::new(
+                    cadmpeg_ir::features::FeatureDirection3::from(direction),
+                    None,
+                );
+                if scope_stream_has_one_component(scope, component_naming_spaces) {
+                    pull.frame =
+                        crate::history::selection::design_geometry_origin_plane_frame(ordinal);
+                }
+                if !pull.frame_matches_direction() {
+                    pull.frame = None;
+                }
                 return Ok(Some(FeatureDefinition::Operation(
                     FeatureOperation::Draft {
                         faces: project_draft_face_selection(
@@ -3696,10 +3722,7 @@ fn project_draft(
                             plane: cadmpeg_ir::features::FaceSelection::Native(
                                 neutral_plane.id.clone(),
                             ),
-                            pull: Some(cadmpeg_ir::features::DraftPull {
-                                direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
-                                plane: None,
-                            }),
+                            pull: Some(pull),
                         },
                         angle: Some(angle),
                         outward: Some(angle_outward),
@@ -3781,10 +3804,10 @@ fn project_draft(
                         face_operands,
                         histories,
                     )?,
-                    pull: cadmpeg_ir::features::DraftPull {
-                        direction: cadmpeg_ir::features::FeatureDirection3::from(pull_direction),
-                        plane: Some(crate::ids::neutral_feature_id(pull_plane)),
-                    },
+                    pull: cadmpeg_ir::features::DraftPull::new(
+                        cadmpeg_ir::features::FeatureDirection3::from(pull_direction),
+                        Some(crate::ids::neutral_feature_id(pull_plane)),
+                    ),
                 },
                 angle: Some(angle),
                 outward: Some(angle_outward),
