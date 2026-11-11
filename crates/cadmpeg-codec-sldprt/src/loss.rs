@@ -172,6 +172,8 @@ pub(crate) enum SldprtLossCode {
     /// The stream's INTERSECTION declaration states no node layout that
     /// frames, so its intersection curves are not read.
     GeometryIntersectionLayoutUnknown,
+    /// A neutral carrier uses an approximate intersection or fitted cache.
+    GeometryCarrierApproximated,
     /// Current face records carry conflicting or incoherent color bindings.
     AppearanceFaceColorUnresolved,
     /// Appearance assignments have no unambiguous `DisplayLists` target.
@@ -372,6 +374,7 @@ impl SldprtLossCode {
         Self::GeometryConeHalfAngleSignUnresolved,
         Self::GeometryConeHalfAngleIdentityRefused,
         Self::GeometryIntersectionLayoutUnknown,
+        Self::GeometryCarrierApproximated,
         Self::AppearanceFaceColorUnresolved,
         Self::AppearanceAssignmentUnresolved,
         Self::NativeAppearanceScopeUnresolved,
@@ -494,6 +497,7 @@ impl SldprtLossCode {
                 "geometry.cone-half-angle-identity-refused"
             }
             Self::GeometryIntersectionLayoutUnknown => "geometry.intersection-layout-unknown",
+            Self::GeometryCarrierApproximated => "geometry.carrier-approximated",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
             Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
             Self::NativeAppearanceScopeUnresolved => "appearance.native-scope-unresolved",
@@ -649,6 +653,7 @@ impl SldprtLossCode {
             | Self::GeometryConeHalfAngleSignUnresolved
             | Self::GeometryConeHalfAngleIdentityRefused
             | Self::GeometryIntersectionLayoutUnknown
+            | Self::GeometryCarrierApproximated
             | Self::AppearanceFaceColorUnresolved
             | Self::AppearanceAssignmentUnresolved
             | Self::NativeAppearanceScopeUnresolved
@@ -753,6 +758,7 @@ impl SldprtLossCode {
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
+            Self::GeometryCarrierApproximated => LossTaxonomy::ProceduralReduced,
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
@@ -1062,6 +1068,7 @@ mod tests {
                 "geometry.cone-half-angle-sign-unresolved",
                 "geometry.cone-half-angle-identity-refused",
                 "geometry.intersection-layout-unknown",
+                "geometry.carrier-approximated",
                 "appearance.face-color-unresolved",
                 "appearance.assignment-unresolved",
                 "appearance.native-scope-unresolved",

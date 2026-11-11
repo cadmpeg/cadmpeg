@@ -28,6 +28,7 @@ use crate::layout::compact_analytic_header as analytic;
 const EPS_BREP_UNIT_LENGTH_E9: f64 = 1.0e-9;
 const EPS_BREP_ORTHONORMAL_E9: f64 = 1.0e-9;
 
+mod approximation;
 pub(crate) mod attrib;
 mod blend;
 mod blend_fit;
