@@ -2593,7 +2593,7 @@ pub(crate) fn disambiguate_fixed_fillet_parameters(
             if let crate::records::feature::scope::DesignScopePayloadMut::Fillet(slot) =
                 scope.payload_mut()
             {
-                *slot = None;
+                slot.fixed = None;
             }
         }
     }

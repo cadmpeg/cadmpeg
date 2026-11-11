@@ -519,6 +519,95 @@ Parsed by:
 | 25 | 1 | `slot_marker` | `u8` | little | spec | offsets 22 through 24 are zero, and offset 25 is `1` · value `1` |
 | 26 | 1 | `marked_slots` | `u8` | little | spec | The slots start at offset 26 |
 
+## `fillet_scope_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 21 B
+
+Offsets are relative to the primary indexed header. Prologue byte 0 ends the prologue at offset 21; prologue byte 1 is followed by u32 0 and ends it at offset 25. The counted set and edge-group lists follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Offsets are relative to the primary indexed header |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 1 | `prologue_byte` | `u8` | little | spec | a prologue byte at offset 20 |
+
+## `fillet_set_constant`
+
+Spec §3.1 · layout: byte offsets · size: 97 B
+
+Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A fillet set is one indexed record |
+| 11 | 12 | `zero_run_12_at_11` | `bytes[12]` | little | spec | Every byte that the form does not name is zero |
+| 23 | 1 | `form_marker` | `u8` | little | spec | `+23: u8 1` · value `1` |
+| 24 | 2 | `zero_run_2_at_24` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 26 | 1 | `flag` | `u8` | little | spec | `+26: u8 flag` |
+| 27 | 2 | `zero_run_2_at_27` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 29 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+29: edge-group reference` |
+| 40 | 23 | `zero_run_23_at_40` | `bytes[23]` | little | spec | Every byte that the form does not name is zero |
+| 63 | 11 | `radius_owner_reference` | `bytes[11]` | little | spec | `+63: Radius owner reference` |
+| 74 | 4 | `zero_run_4_at_74` | `bytes[4]` | little | spec | Every byte that the form does not name is zero |
+| 78 | 4 | `set_ordinal` | `u32` | little | spec | `+78: u32 set ordinal` |
+| 82 | 11 | `tangency_weight_owner_reference` | `bytes[11]` | little | spec | `+82: TangencyWeight owner reference` |
+| 93 | 4 | `zero_run_4_at_93` | `bytes[4]` | little | spec | Every byte that the form does not name is zero |
+
+## `fillet_set_chordal`
+
+Spec §3.1 · layout: byte offsets · size: 97 B
+
+Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A fillet set is one indexed record |
+| 11 | 11 | `zero_run_11_at_11` | `bytes[11]` | little | spec | Every byte that the form does not name is zero |
+| 22 | 1 | `form_marker` | `u8` | little | spec | `+22: u8 1`; `+26: u8 flag` · value `1` |
+| 23 | 3 | `zero_run_3_at_23` | `bytes[3]` | little | spec | Every byte that the form does not name is zero |
+| 26 | 1 | `flag` | `u8` | little | spec | `+26: u8 flag` |
+| 27 | 1 | `zero_run_1_at_27` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
+| 28 | 11 | `chord_length_owner_reference` | `bytes[11]` | little | spec | `+28: ChordLen owner reference` |
+| 39 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+39: edge-group reference` |
+| 50 | 28 | `zero_run_28_at_50` | `bytes[28]` | little | spec | Every byte that the form does not name is zero |
+| 78 | 4 | `set_ordinal` | `u32` | little | spec | `+78: u32 set ordinal` |
+| 82 | 11 | `tangency_weight_owner_reference` | `bytes[11]` | little | spec | `+82: TangencyWeight owner reference` |
+| 93 | 4 | `zero_run_4_at_93` | `bytes[4]` | little | spec | Every byte that the form does not name is zero |
+
+## `fillet_set_compact_constant`
+
+Spec §3.1 · layout: byte offsets · size: 93 B
+
+Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A fillet set is one indexed record |
+| 11 | 11 | `zero_run_11_at_11` | `bytes[11]` | little | spec | Every byte that the form does not name is zero |
+| 22 | 1 | `form_marker` | `u8` | little | spec | `+22: u8 1`; `+24: u8 flag` · value `1` |
+| 23 | 1 | `zero_run_1_at_23` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
+| 24 | 1 | `flag` | `u8` | little | spec | `+24: u8 flag` |
+| 25 | 2 | `zero_run_2_at_25` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 27 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+27: edge-group reference` |
+| 38 | 21 | `zero_run_21_at_38` | `bytes[21]` | little | spec | Every byte that the form does not name is zero |
+| 59 | 11 | `radius_owner_reference` | `bytes[11]` | little | spec | `+59: Radius owner reference` |
+| 70 | 4 | `zero_run_4_at_70` | `bytes[4]` | little | spec | Every byte that the form does not name is zero |
+| 74 | 4 | `set_ordinal` | `u32` | little | spec | `+74: u32 set ordinal` |
+| 78 | 11 | `tangency_weight_owner_reference` | `bytes[11]` | little | spec | `+78: TangencyWeight owner reference` |
+| 89 | 4 | `zero_run_4_at_89` | `bytes[4]` | little | spec | Every byte that the form does not name is zero |
+
 ## `thicken_scope_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 21 B
