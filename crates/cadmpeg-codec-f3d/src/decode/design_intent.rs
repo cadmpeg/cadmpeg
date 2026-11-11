@@ -1009,36 +1009,38 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             },
         )?,
     );
-    crate::design::profile_select::bind_extrude_profile_selections(
-        &mut model.features,
-        &design.design_parameter_scopes,
-        &design.design_extrude_selection_groups,
-        &design.design_extrude_selection_members,
-        &model.sketches,
-        &crate::design::profile_select::SketchCurveSelectionResolution {
-            scopes: &design.design_parameter_scopes,
-            profile_curves: &design.design_profile_curve_selections,
-            groups: &design.design_construction_operand_groups,
-            operands: &design.design_entity_selection_operands,
-            placements: &design.design_sketch_placements,
-            curve_identities: &design.sketch_curve_identities,
-            sketches: &model.sketches,
-            sketch_entities: &model.sketch_entities,
-            spatial_sketches: &model.spatial_sketches,
-            spatial_sketch_entities: &model.spatial_sketch_entities,
-        },
-        crate::design::profile_select::ExtrudeProfileResolution {
-            entities: &model.sketch_entities,
-            spatial_sketches: &model.spatial_sketches,
-            spatial_entities: &model.spatial_sketch_entities,
-            histories: &design.asm_histories,
-            scope_histories: &scope_histories,
-            linear_tolerance: geometry.tolerances.linear.get(),
-            angular_tolerance: geometry.tolerances.angular.get(),
-            profile_work: &profile_work,
-            ctx,
-        },
-    )?;
+    losses.extend(
+        crate::design::profile_select::bind_extrude_profile_selections(
+            &mut model.features,
+            &design.design_parameter_scopes,
+            &design.design_extrude_selection_groups,
+            &design.design_extrude_selection_members,
+            &model.sketches,
+            &crate::design::profile_select::SketchCurveSelectionResolution {
+                scopes: &design.design_parameter_scopes,
+                profile_curves: &design.design_profile_curve_selections,
+                groups: &design.design_construction_operand_groups,
+                operands: &design.design_entity_selection_operands,
+                placements: &design.design_sketch_placements,
+                curve_identities: &design.sketch_curve_identities,
+                sketches: &model.sketches,
+                sketch_entities: &model.sketch_entities,
+                spatial_sketches: &model.spatial_sketches,
+                spatial_sketch_entities: &model.spatial_sketch_entities,
+            },
+            crate::design::profile_select::ExtrudeProfileResolution {
+                entities: &model.sketch_entities,
+                spatial_sketches: &model.spatial_sketches,
+                spatial_entities: &model.spatial_sketch_entities,
+                histories: &design.asm_histories,
+                scope_histories: &scope_histories,
+                linear_tolerance: geometry.tolerances.linear.get(),
+                angular_tolerance: geometry.tolerances.angular.get(),
+                profile_work: &profile_work,
+                ctx,
+            },
+        )?,
+    );
     losses.extend(profile_work.losses());
     losses.splice(
         unprofiled_at..unprofiled_at,

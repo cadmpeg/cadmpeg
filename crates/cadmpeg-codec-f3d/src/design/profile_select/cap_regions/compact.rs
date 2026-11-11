@@ -18,6 +18,7 @@ use cadmpeg_ir::math::Point3;
 use std::collections::HashSet;
 
 const PERPENDICULAR_SIDE: f64 = 1.0e-9;
+const TRANSVERSE_CYLINDER: f64 = 1.0e-9;
 
 #[derive(Clone, Copy)]
 pub(in crate::design::profile_select) struct Sweep<'a> {
@@ -107,17 +108,35 @@ pub(in crate::design::profile_select) fn selection_agrees(
         return Ok(false);
     };
     let points: Vec<_> = sampled.iter().map(|region| region.point).collect();
-    let Some(selected) = covered_regions(
-        sketch,
-        resolution.entities,
-        &current,
-        &points,
-        tolerance,
-        &work,
-        resolution.ctx,
-    )?
-    else {
-        return Ok(false);
+    let selected = match &current {
+        ResolvedProfileSelection::Regions(regions)
+            if regions.iter().any(|region| {
+                matches!(
+                    region,
+                    cadmpeg_ir::features::SketchProfileRegion::Trimmed { .. }
+                )
+            }) =>
+        {
+            let Some(selected) = trimmed_indices(regions, &sampled) else {
+                return Ok(false);
+            };
+            selected
+        }
+        _ => {
+            let Some(selected) = covered_regions(
+                sketch,
+                resolution.entities,
+                &current,
+                &points,
+                tolerance,
+                &work,
+                resolution.ctx,
+            )?
+            else {
+                return Ok(false);
+            };
+            selected
+        }
     };
     if selected.is_empty() {
         return Ok(false);
@@ -153,13 +172,26 @@ pub(in crate::design::profile_select) fn selection_agrees(
             area: 0.0,
             measured: Vec::new(),
         };
+        let endpoints: Vec<_> = plane
+            .before
+            .iter()
+            .chain(&plane.after)
+            .flat_map(|source| &source.pieces)
+            .flat_map(|piece| {
+                let [start, _, end] = piece.points();
+                [start, end]
+            })
+            .collect();
         for source in plane.before.iter().chain(&plane.after) {
             for piece in &source.pieces {
-                let Some((left, right)) = piece.sides_of_middle(SIDE_OFFSET * tolerance) else {
-                    return Ok(false);
-                };
-                if changed(left) != changed(right) {
-                    cap.pieces.push(piece.clone());
+                for fragment in split_piece(piece, &endpoints, tolerance) {
+                    let Some((left, right)) = fragment.sides_of_middle(SIDE_OFFSET * tolerance)
+                    else {
+                        return Ok(false);
+                    };
+                    if changed(left) != changed(right) {
+                        cap.pieces.push(fragment);
+                    }
                 }
             }
         }
@@ -211,7 +243,17 @@ pub(in crate::design::profile_select) fn selection_agrees(
             return Ok(false);
         };
         for (edge, start, end) in loops.into_iter().flatten() {
-            if !edge_height_is_bounded(after, &frame, edge, start, end, tolerance) {
+            if !edge_height_is_bounded(after, &frame, edge, start, end, tolerance)
+                && !bounded_lateral_ellipse(
+                    after,
+                    binding.carrier,
+                    edge,
+                    &frame,
+                    &outline,
+                    far,
+                    tolerance,
+                )
+            {
                 return Ok(false);
             }
             for point in [start, end] {
@@ -230,6 +272,167 @@ pub(in crate::design::profile_select) fn selection_agrees(
         side_count += 1;
     }
     Ok(side_count > 0)
+}
+
+fn split_piece(piece: &Piece, points: &[cadmpeg_ir::math::Point2], tolerance: f64) -> Vec<Piece> {
+    let length = match *piece {
+        Piece::Line(start, end) => distance(start, end),
+        Piece::Arc { radius, sweep, .. } => radius * sweep.abs(),
+    };
+    if length <= tolerance {
+        return vec![piece.clone()];
+    }
+    let mut parameters = vec![0.0, 1.0];
+    for point in points {
+        if piece.distance(*point) > tolerance {
+            continue;
+        }
+        let parameter = match *piece {
+            Piece::Line(start, end) => {
+                ((point.u - start.u) * (end.u - start.u) + (point.v - start.v) * (end.v - start.v))
+                    / (length * length)
+            }
+            Piece::Arc {
+                center,
+                start,
+                sweep,
+                ..
+            } => {
+                let angle = (point.v - center.v).atan2(point.u - center.u);
+                ((angle - start) * sweep.signum()).rem_euclid(std::f64::consts::TAU) / sweep.abs()
+            }
+        };
+        if parameter > tolerance / length && parameter < 1.0 - tolerance / length {
+            parameters.push(parameter);
+        }
+    }
+    parameters.sort_by(f64::total_cmp);
+    parameters.dedup_by(|a, b| (*a - *b).abs() * length <= tolerance);
+    parameters
+        .windows(2)
+        .map(|pair| match *piece {
+            Piece::Line(start, end) => {
+                let at = |t: f64| {
+                    cadmpeg_ir::math::Point2::new(
+                        start.u + (end.u - start.u) * t,
+                        start.v + (end.v - start.v) * t,
+                    )
+                };
+                Piece::Line(at(pair[0]), at(pair[1]))
+            }
+            Piece::Arc {
+                center,
+                radius,
+                start,
+                sweep,
+            } => Piece::Arc {
+                center,
+                radius,
+                start: start + sweep * pair[0],
+                sweep: sweep * (pair[1] - pair[0]),
+            },
+        })
+        .collect()
+}
+
+fn trimmed_indices(
+    regions: &[cadmpeg_ir::features::SketchProfileRegion],
+    sampled: &[super::Sampled<'_>],
+) -> Option<Vec<usize>> {
+    let mut selected = Vec::new();
+    for region in regions {
+        let cadmpeg_ir::features::SketchProfileRegion::Trimmed { outer_boundary, .. } = region
+        else {
+            return None;
+        };
+        let mut matching = sampled.iter().enumerate().filter(|(_, candidate)| {
+            candidate.region.boundary.as_slice() == outer_boundary.as_slice()
+        });
+        let (index, _) = matching.next()?;
+        if matching.next().is_some() || selected.contains(&index) {
+            return None;
+        }
+        selected.push(index);
+    }
+    let Some(ResolvedProfileSelection::Regions(expected)) =
+        super::trimmed_selection(sampled, &selected)
+    else {
+        return None;
+    };
+    (expected.as_slice() == regions).then_some(selected)
+}
+
+pub(in crate::design::profile_select) fn removed_candidate(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    resolution: super::super::ScopedExtrudeProfileResolution<'_>,
+    state_ids: (i64, i64),
+    sweep: Sweep<'_>,
+) -> Result<Option<PlanarProfileRef>, CodecError> {
+    let Some((after, state)) = unique_state(resolution.histories, state_ids.0) else {
+        return Ok(None);
+    };
+    let Some(transition) = state.transition.as_ref() else {
+        return Ok(None);
+    };
+    if transition.previous_state_id != Some(state_ids.1) {
+        return Ok(None);
+    }
+    let Some((before, _)) = unique_state(resolution.histories, state_ids.1) else {
+        return Ok(None);
+    };
+    let tolerance = resolution.linear_tolerance;
+    let Some(planes) = changed_planes(
+        sketch,
+        (before, after),
+        &transition.topology.faces,
+        tolerance,
+    ) else {
+        return Ok(None);
+    };
+    let work = ProfileGeometryWork::new();
+    let Some(regions) = atomic_sketch_regions(
+        sketch,
+        resolution.entities,
+        tolerance,
+        &work,
+        resolution.ctx,
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(sampled) = sample_regions(&regions, tolerance) else {
+        return Ok(None);
+    };
+    let selected: Vec<_> = sampled
+        .iter()
+        .enumerate()
+        .filter(|(_, region)| {
+            planes.iter().any(|plane| {
+                plane.before.iter().any(|cap| cap.contains(region.point))
+                    && !plane.after.iter().any(|cap| cap.contains(region.point))
+            })
+        })
+        .map(|(index, _)| index)
+        .collect();
+    let Some(ResolvedProfileSelection::Regions(regions)) =
+        super::trimmed_selection(&sampled, &selected)
+    else {
+        return Ok(None);
+    };
+    let Ok(candidate) = PlanarProfileRef::sketch_regions(sketch.id.clone(), regions) else {
+        return Ok(None);
+    };
+    if selection_agrees(
+        sketch,
+        resolution,
+        &ProfileRef::Planar(candidate.clone()),
+        state_ids,
+        sweep,
+    )? {
+        Ok(Some(candidate))
+    } else {
+        Ok(None)
+    }
 }
 
 fn signed_length(sweep: &Sweep<'_>) -> Option<f64> {
@@ -290,6 +493,88 @@ fn lateral_carrier_agrees(
     false
 }
 
+fn bounded_lateral_ellipse(
+    topology: &AsmHistoricalTopology,
+    surface: i64,
+    edge: i64,
+    frame: &PlaneFrame,
+    outline: &[Piece],
+    far: f64,
+    tolerance: f64,
+) -> bool {
+    let Some(plane) = topology
+        .surface_planes
+        .iter()
+        .find(|plane| plane.surface == surface)
+    else {
+        return false;
+    };
+    let tangent = frame.normal.cross(plane.normal);
+    if tangent.norm() <= PERPENDICULAR_SIDE {
+        return false;
+    }
+    let tangent = tangent.scale(1.0 / tangent.norm());
+    let mut surfaces = HashSet::new();
+    for row in topology
+        .coedge_topology
+        .iter()
+        .filter(|row| row.edge == edge)
+    {
+        for face in topology
+            .face_loops
+            .iter()
+            .filter(|face| face.member_refs.contains(&row.owner_loop))
+        {
+            surfaces.extend(
+                topology
+                    .face_surfaces
+                    .iter()
+                    .filter(|binding| binding.entity == face.owner_ref)
+                    .map(|binding| binding.carrier),
+            );
+        }
+    }
+    for cylinder in topology
+        .surface_cylinders
+        .iter()
+        .filter(|cylinder| surfaces.contains(&cylinder.surface))
+    {
+        let norm = cylinder.axis.norm();
+        if norm == 0.0 || cylinder.radius <= tolerance {
+            continue;
+        }
+        let axis = cylinder.axis.scale(1.0 / norm);
+        let denominator = plane.normal.dot(axis);
+        if denominator.abs() <= TRANSVERSE_CYLINDER * plane.normal.norm() {
+            continue;
+        }
+        let center = cylinder.origin.translated(
+            axis,
+            -cylinder.origin.vector_from(plane.origin).dot(plane.normal) / denominator,
+        );
+        let span = |direction: cadmpeg_ir::math::Vector3| {
+            let radial = direction - plane.normal.scale(direction.dot(axis) / denominator);
+            cylinder.radius * (radial - axis.scale(radial.dot(axis))).norm()
+        };
+        let height = frame.height(center);
+        let height_span = span(frame.normal);
+        if height - height_span < far.min(0.0) - tolerance
+            || height + height_span > far.max(0.0) + tolerance
+        {
+            continue;
+        }
+        let projected_span = span(tangent);
+        let extent = Piece::Line(
+            frame.project(center.translated(tangent, -projected_span)),
+            frame.project(center.translated(tangent, projected_span)),
+        );
+        if extent.covered_by(&outline.iter().collect::<Vec<_>>(), tolerance) {
+            return true;
+        }
+    }
+    false
+}
+
 fn edge_height_is_bounded(
     topology: &AsmHistoricalTopology,
     frame: &PlaneFrame,
@@ -328,3 +613,6 @@ fn edge_height_is_bounded(
         })
     })
 }
+
+#[cfg(test)]
+mod tests;
