@@ -297,6 +297,9 @@ impl FluxFrame<'_, '_> {
             let mut charge = |units| eval.charge(units);
             let mut integrand = |t: f64| -> Measure<[f64; TRACKED]> {
                 let sample = piece.sample(eval, self.chart, t)?;
+                if sample.duv[0] == 0.0 {
+                    return Ok([0.0; TRACKED]);
+                }
                 let v = cut.map_or(sample.uv[1], |cut| cut.wrap(base, sample.uv[1]));
                 let (value, error) = self.inner(eval, sample.uv[0], [base, v])?;
                 let speed = sample.duv[0];

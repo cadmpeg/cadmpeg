@@ -25,6 +25,15 @@ pub(super) struct OffsetCarrier {
     /// Byte offset of the `00 3c` tag.
     pub(super) offset: usize,
     pub(super) transferable: bool,
+    pub(super) unchecked: bool,
+}
+
+fn transferable(status: u8, distance: f64, positive_support: bool) -> bool {
+    match status {
+        b'V' => distance != 0.0,
+        b'U' => positive_support && distance.abs() > super::graph::LINEAR_RESOLUTION_MM,
+        _ => false,
+    }
 }
 
 fn parse_payload(
@@ -57,7 +66,8 @@ fn parse_payload(
         support,
         distance: FiniteReal::new(distance)?,
         offset,
-        transferable: discriminator == b'V' && distance != 0.0,
+        transferable: transferable(discriminator, distance, false),
+        unchecked: discriminator == b'U',
     })
 }
 
@@ -129,7 +139,8 @@ pub(super) fn from_nodes_of<N: NodeFields>(
 ) -> Option<HashMap<u32, OffsetCarrier>> {
     let mut out = HashMap::new();
     for node in nodes.iter().filter(|node| node.kind() == OFFSET_SURF) {
-        let sensed = matches!(node.char("sense")?, b'+' | b'-');
+        let sense = node.char("sense")?;
+        let sensed = matches!(sense, b'+' | b'-');
         let discriminator = node.char("check")?;
         node.logical("true_offset")?;
         let support = node.pointer("surface")?;
@@ -143,11 +154,18 @@ pub(super) fn from_nodes_of<N: NodeFields>(
         let Some(finite) = FiniteReal::new(distance).filter(|_| admitted) else {
             continue;
         };
+        let mut supports = nodes
+            .iter()
+            .filter(|candidate| candidate.index() == support);
+        let positive_support = sense == b'+'
+            && supports.next().and_then(|support| support.char("sense")) == Some(b'+')
+            && supports.next().is_none();
         let carrier = OffsetCarrier {
             support,
             distance: finite,
             offset,
-            transferable: discriminator == b'V' && distance != 0.0,
+            transferable: transferable(discriminator, distance, positive_support),
+            unchecked: discriminator == b'U',
         };
         out.insert(node.index(), carrier).is_none().then_some(())?;
     }
@@ -340,5 +358,55 @@ mod tests {
         let (payload, body_offset) = sequence_of(&[(60, 3, surface()), (60, 3, surface())]);
         let records = sequence(&payload).unwrap();
         assert!(super::from_nodes(&records, body_offset).is_none());
+    }
+    fn plane_fields(sense: u8) -> Vec<crate::test_support::parasolid::sequence::F> {
+        use crate::test_support::parasolid::sequence::F::{C, I, P, V};
+        vec![
+            I(2),
+            P(1),
+            P(1),
+            P(1),
+            P(1),
+            P(1),
+            C(sense),
+            V([0.0; 3]),
+            V([0.0, 0.0, 1.0]),
+            V([1.0, 0.0, 0.0]),
+        ]
+    }
+
+    #[test]
+    fn unchecked_nodes_require_unique_positive_support_sense_and_resolved_distance() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::{sequence_of, F, NULL_REAL};
+        for distance in [-0.0025, 0.0025] {
+            for scale in [NULL_REAL, 0.0, 7.25] {
+                for sense in *b"+-" {
+                    let mut fields = offset_surface(b'U', 20, distance);
+                    fields[11] = F::R(scale);
+                    let (payload, start) =
+                        sequence_of(&[(60, 3, fields), (50, 20, plane_fields(sense))]);
+                    let records = sequence(&payload).unwrap();
+                    let offsets = super::from_nodes(&records, start).unwrap();
+                    assert_eq!(offsets[&3].transferable, sense == b'+');
+                    assert!(offsets[&3].unchecked);
+                    assert_eq!(offsets[&3].distance.get(), distance * 1000.0);
+                }
+            }
+        }
+        for distance in [0.0, -0.0, 1.0e-9, -1.0e-9] {
+            let (payload, start) = sequence_of(&[
+                (60, 3, offset_surface(b'U', 20, distance)),
+                (50, 20, plane_fields(b'+')),
+            ]);
+            let records = sequence(&payload).unwrap();
+            assert!(!super::from_nodes(&records, start).unwrap()[&3].transferable);
+        }
+        let (payload, start) = sequence_of(&[
+            (60, 3, offset_surface(b'U', 20, 0.0025)),
+            (50, 20, plane_fields(b'+')),
+            (50, 20, plane_fields(b'+')),
+        ]);
+        assert!(!super::from_nodes(&sequence(&payload).unwrap(), start).unwrap()[&3].transferable);
     }
 }
