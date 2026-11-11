@@ -19,6 +19,11 @@ cadmpeg_core::named_optional_field!(deserialize_occurrence_identity, u64, "occur
 cadmpeg_core::named_optional_field!(deserialize_transform, SketchPlacementMatrix, "transform");
 cadmpeg_core::named_optional_field!(deserialize_transform_offset, u64, "transform_offset");
 cadmpeg_core::named_optional_field!(
+    deserialize_occurrence_key,
+    DesignRelaxedGuidText,
+    "occurrence_key"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_occurrence_key_offset,
     u64,
     "occurrence_key_offset"
@@ -119,7 +124,11 @@ struct DesignComponentInsertConstructionWire {
     /// Byte offset of the occurrence-role string payload.
     neutron_role_offset: u64,
     /// Source occurrence key of an attributed legacy carrier.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_occurrence_key"
+    )]
     occurrence_key: Option<DesignRelaxedGuidText>,
     /// Byte offset of the source occurrence key's string payload.
     #[serde(
