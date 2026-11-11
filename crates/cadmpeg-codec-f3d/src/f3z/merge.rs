@@ -1010,7 +1010,7 @@ fn retain_complete_joint(
     false
 }
 
-/// Descend each occurrence operand through merged children to an occurrence
+/// Descend each occurrence operand through keyed children to an occurrence
 /// that has none, and keep its remaining keys as the nested occurrence path
 /// inside that occurrence's document.
 fn nest_residual_descent(
