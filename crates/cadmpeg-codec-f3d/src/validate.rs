@@ -10,6 +10,7 @@
 //! generic IR validation report.
 
 mod body_ownership;
+mod chamfer_sets;
 mod emboss;
 mod path_pattern;
 mod sheet_metal_settings;
@@ -1091,6 +1092,7 @@ fn validate_loaded(
     validate_path_feature_operand_roles(&ctx, &mut findings);
     validate_extrude_parameter_operands(&ctx, &mut findings);
     validate_fillet_sets(&ctx, &mut findings);
+    chamfer_sets::validate(&ctx, &mut findings);
     let fillet_radius_group_records = validate_fillet_radius_groups(&ctx, &mut findings);
     validate_fillet_operand_groups(&ctx, &mut findings, &fillet_radius_group_records);
     let operand_identity_groups = validate_construction_operand_identities(&ctx, &mut findings);

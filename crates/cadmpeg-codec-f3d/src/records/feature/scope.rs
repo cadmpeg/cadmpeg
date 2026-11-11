@@ -165,6 +165,11 @@ cadmpeg_core::named_optional_field!(
     "extrude_native_profiles"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_chamfer_sets,
+    super::chamfer_set::DesignChamferSetList,
+    "chamfer_sets"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_extrude_prologue,
     DesignExtrudePrologue,
     "extrude_prologue"
@@ -410,6 +415,12 @@ impl ScopePayloadCompleteness for crate::records::feature::hole::DesignHoleScope
     }
 }
 
+impl ScopePayloadCompleteness for super::chamfer_set::DesignChamferScope {
+    fn is_uninterpreted(&self) -> bool {
+        self.fixed.is_none() && self.sets.is_none()
+    }
+}
+
 impl ScopePayloadCompleteness for super::fillet_set::DesignFilletScope {
     fn is_uninterpreted(&self) -> bool {
         self.fixed.is_none() && self.sets.is_none()
@@ -612,7 +623,7 @@ design_feature_kinds! {
         AsBuilt => "As-built": Option<DesignAssemblyAlignment>,
         Extrude => "Extrude": Option<DesignExtrudeScope>,
         Fillet => "Fillet": super::fillet_set::DesignFilletScope,
-        Chamfer => "Chamfer": Option<DesignFixedChamferParameters>,
+        Chamfer => "Chamfer": super::chamfer_set::DesignChamferScope,
         Combine => "Combine": Option<DesignCombineOperation>,
         Draft => "Draft": Option<DesignDraftOperation>,
         CPattern => "C-Pattern": Option<DesignCircularPatternConstruction>,
@@ -1041,6 +1052,13 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_fixed_chamfer_parameters"
     )]
     fixed_chamfer_parameters: Option<DesignFixedChamferParameters>,
+    /// Chamfer sets named by the prefix of a parameter-owned Chamfer scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_chamfer_sets"
+    )]
+    chamfer_sets: Option<super::chamfer_set::DesignChamferSetList>,
     /// Path-feature construction and Sweep sketch profile.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1747,6 +1765,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.fixed_chamfer_parameters.is_some() {
             present.push("fixed_chamfer_parameters");
         }
+        if wire.chamfer_sets.is_some() {
+            present.push("chamfer_sets");
+        }
         if wire.combine_operation.is_some() {
             present.push("combine_operation");
         }
@@ -1820,7 +1841,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 })
             }
             DesignFeatureKind::Chamfer => {
-                DesignScopePayload::Chamfer(wire.fixed_chamfer_parameters.take())
+                DesignScopePayload::Chamfer(super::chamfer_set::DesignChamferScope {
+                    fixed: wire.fixed_chamfer_parameters.take(),
+                    sets: wire.chamfer_sets.take(),
+                })
             }
             DesignFeatureKind::Combine => {
                 DesignScopePayload::Combine(wire.combine_operation.take())
@@ -2106,6 +2130,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.fixed_fillet_parameters.is_some()
             || wire.fillet_sets.is_some()
             || wire.fixed_chamfer_parameters.is_some()
+            || wire.chamfer_sets.is_some()
             || wire.combine_operation.is_some()
             || wire.emboss_construction.is_some()
             || wire.thread_construction.is_some()
@@ -2234,6 +2259,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             fixed_fillet_parameters: None,
             fillet_sets: None,
             fixed_chamfer_parameters: None,
+            chamfer_sets: None,
             path_feature: None,
             combine_operation: None,
             thread_construction: None,
@@ -2346,7 +2372,8 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.fillet_sets = value.sets;
             }
             DesignScopePayload::Chamfer(value) => {
-                wire.fixed_chamfer_parameters = value;
+                wire.fixed_chamfer_parameters = value.fixed;
+                wire.chamfer_sets = value.sets;
             }
             DesignScopePayload::Combine(value) => wire.combine_operation = value,
             DesignScopePayload::Thread(value) => wire.thread_construction = value,
@@ -2917,6 +2944,13 @@ impl DesignParameterScope {
         }
     }
 
+    pub(crate) fn chamfer_sets(&self) -> Option<&super::chamfer_set::DesignChamferSetList> {
+        match &self.payload {
+            DesignScopePayload::Chamfer(value) => value.sets.as_ref(),
+            _ => None,
+        }
+    }
+
     pub(crate) fn fillet_sets(&self) -> Option<&super::fillet_set::DesignFilletSetList> {
         match &self.payload {
             DesignScopePayload::Fillet(value) => value.sets.as_ref(),
@@ -2926,7 +2960,7 @@ impl DesignParameterScope {
 
     pub(crate) fn fixed_chamfer_parameters(&self) -> Option<&DesignFixedChamferParameters> {
         match &self.payload {
-            DesignScopePayload::Chamfer(value) => value.as_ref(),
+            DesignScopePayload::Chamfer(value) => value.fixed.as_ref(),
             _ => None,
         }
     }

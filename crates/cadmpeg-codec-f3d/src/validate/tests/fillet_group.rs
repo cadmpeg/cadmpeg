@@ -21,7 +21,7 @@ fn native() -> crate::native::F3dNative {
     native
 }
 
-fn add_radius_parameter(
+pub(super) fn add_radius_parameter(
     native: &mut crate::native::F3dNative,
     record_index: u32,
     source_kind: &str,
@@ -84,7 +84,7 @@ fn add_radius_parameter(
     crate::design::test_support::name_scope_references(scope, [owner_index]);
 }
 
-fn radius_native(valid: bool) -> crate::native::F3dNative {
+pub(super) fn radius_native(valid: bool) -> crate::native::F3dNative {
     use crate::records::topology::fillet::{DesignFilletRadiusGroup, DesignFilletRadiusLaw};
     let mut native = native();
     if valid {

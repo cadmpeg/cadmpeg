@@ -519,6 +519,129 @@ Parsed by:
 | 25 | 1 | `slot_marker` | `u8` | little | spec | offsets 22 through 24 are zero, and offset 25 is `1` · value `1` |
 | 26 | 1 | `marked_slots` | `u8` | little | spec | The slots start at offset 26 |
 
+## `chamfer_scope_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 21 B
+
+Offsets are relative to the primary indexed header. Prologue byte 0 ends the prologue at offset 21; prologue byte 1 is followed by u32 0 and ends it at offset 25.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Offsets are relative to the primary indexed header |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 1 | `prologue_byte` | `u8` | little | spec | a chamfer prologue byte at offset 20 |
+
+## `chamfer_set_equal`
+
+Spec §3.1 · layout: byte offsets · size: 83 B
+
+Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A chamfer set is one indexed record |
+| 11 | 10 | `zero_run_10_at_11` | `bytes[10]` | little | spec | Every byte that the form does not name is zero |
+| 21 | 1 | `flag` | `u8` | little | spec | `+21: u8 flag` |
+| 22 | 2 | `zero_run_2_at_22` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 24 | 11 | `distance_owner_reference` | `bytes[11]` | little | spec | `+24: distance owner reference` |
+| 35 | 1 | `zero_run_1_at_35` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
+| 36 | 4 | `spec_kind` | `u32` | little | spec | `+36: u32 spec kind 1` · value `1` |
+| 40 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+40: edge-group reference` |
+| 51 | 2 | `zero_run_2_at_51` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 53 | 4 | `fixed_word` | `u32` | little | spec | `+53: u32 1` · value `1` |
+| 57 | 1 | `fixed_byte` | `u8` | little | spec | `+57: u8 1` · value `1` |
+| 58 | 2 | `zero_run_2_at_58` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 60 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | `+60: auxiliary reference` |
+| 71 | 1 | `zero_run_1_at_71` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
+| 72 | 11 | `scope_reference` | `bytes[11]` | little | spec | `+72: scope reference` |
+
+## `chamfer_set_two_distances`
+
+Spec §3.1 · layout: byte offsets · size: 93 B
+
+Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A chamfer set is one indexed record |
+| 11 | 10 | `zero_run_10_at_11` | `bytes[10]` | little | spec | Every byte that the form does not name is zero |
+| 21 | 1 | `flag` | `u8` | little | spec | `+21: u8 flag` |
+| 22 | 2 | `zero_run_2_at_22` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 24 | 11 | `first_distance_owner_reference` | `bytes[11]` | little | spec | `+24: first distance owner reference` |
+| 35 | 11 | `second_distance_owner_reference` | `bytes[11]` | little | spec | `+35: second distance owner reference` |
+| 46 | 4 | `spec_kind` | `u32` | little | spec | `+46: u32 spec kind 2` · value `2` |
+| 50 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+50: edge-group reference` |
+| 61 | 2 | `zero_run_2_at_61` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 63 | 4 | `fixed_word` | `u32` | little | spec | `+63: u32 1` · value `1` |
+| 67 | 1 | `fixed_byte` | `u8` | little | spec | `+67: u8 1` · value `1` |
+| 68 | 2 | `zero_run_2_at_68` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 70 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | `+70: auxiliary reference` |
+| 81 | 1 | `zero_run_1_at_81` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
+| 82 | 11 | `scope_reference` | `bytes[11]` | little | spec | `+82: scope reference` |
+
+## `chamfer_set_distance_angle`
+
+Spec §3.1 · layout: byte offsets · size: 93 B
+
+Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A chamfer set is one indexed record |
+| 11 | 10 | `zero_run_10_at_11` | `bytes[10]` | little | spec | Every byte that the form does not name is zero |
+| 21 | 1 | `flag` | `u8` | little | spec | `+21: u8 flag` |
+| 22 | 1 | `zero_run_1_at_22` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
+| 23 | 11 | `angle_owner_reference` | `bytes[11]` | little | spec | `+23: angle owner reference` |
+| 34 | 11 | `distance_owner_reference` | `bytes[11]` | little | spec | `+34: distance owner reference` |
+| 45 | 1 | `zero_run_1_at_45` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
+| 46 | 4 | `spec_kind` | `u32` | little | spec | `+46: u32 spec kind 3` · value `3` |
+| 50 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+50: edge-group reference` |
+| 61 | 2 | `zero_run_2_at_61` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 63 | 4 | `fixed_word` | `u32` | little | spec | `+63: u32 1` · value `1` |
+| 67 | 1 | `fixed_byte` | `u8` | little | spec | `+67: u8 1` · value `1` |
+| 68 | 2 | `zero_run_2_at_68` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 70 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | `+70: auxiliary reference` |
+| 81 | 1 | `zero_run_1_at_81` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
+| 82 | 11 | `scope_reference` | `bytes[11]` | little | spec | `+82: scope reference` |
+
+## `chamfer_set_compact_equal`
+
+Spec §3.1 · layout: byte offsets · size: 82 B
+
+Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A chamfer set is one indexed record |
+| 11 | 10 | `zero_run_10_at_11` | `bytes[10]` | little | spec | Every byte that the form does not name is zero |
+| 21 | 1 | `flag` | `u8` | little | spec | `+21: u8 flag` |
+| 22 | 2 | `zero_run_2_at_22` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 24 | 11 | `distance_owner_reference` | `bytes[11]` | little | spec | `+24: distance owner reference` |
+| 35 | 1 | `zero_run_1_at_35` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
+| 36 | 4 | `spec_kind` | `u32` | little | spec | `+36: u32 spec kind 1` · value `1` |
+| 40 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+40: edge-group reference` |
+| 51 | 2 | `zero_run_2_at_51` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 53 | 4 | `fixed_word` | `u32` | little | spec | `+53: u32 1` · value `1` |
+| 57 | 2 | `zero_run_2_at_57` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 59 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | `+59: auxiliary reference` |
+| 70 | 1 | `zero_run_1_at_70` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
+| 71 | 11 | `scope_reference` | `bytes[11]` | little | spec | `+71: scope reference` |
+
 ## `fillet_scope_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 21 B
