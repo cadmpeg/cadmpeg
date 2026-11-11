@@ -10,7 +10,7 @@ fn fixed_fillet_unassigned_groups_emit_one_scope_loss() {
     let DesignScopePayloadMut::Fillet(slot) = scope.payload_mut() else {
         panic!("Fillet fixture");
     };
-    *slot = Some(
+    slot.fixed = Some(
         serde_json::from_value(serde_json::json!({"groups": [{
             "radii": [0.2], "radius_offsets": [2020], "radius_record_indexes": [202]
         }]}))

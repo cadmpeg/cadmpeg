@@ -256,6 +256,8 @@ pub(crate) enum F3dLossCode {
     AlignConstructionUnparsed,
     /// A decoded native feature envelope has no interpreted specialized payload.
     FeatureScopePayloadUninterpreted,
+    /// A Fillet set list contradicts the radius group that the indexed-owner path projects.
+    FeatureFilletSetConflict,
     /// Emboss controls, native pairs, and selected contours have no neutral mapping.
     EmbossControlsNative,
     FeatureShellAuxiliaryReferencesNative,
@@ -780,6 +782,7 @@ impl F3dLossCode {
         Self::AlignEnvelopeUnparsed,
         Self::AlignConstructionUnparsed,
         Self::FeatureScopePayloadUninterpreted,
+        Self::FeatureFilletSetConflict,
         Self::EmbossControlsNative,
         Self::FeatureShellAuxiliaryReferencesNative,
         Self::EmbossPrefixUnparsed,
@@ -1118,6 +1121,7 @@ impl F3dLossCode {
             Self::AlignEnvelopeUnparsed => "feature.align-envelope-unparsed",
             Self::AlignConstructionUnparsed => "feature.align-construction-unparsed",
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
+            Self::FeatureFilletSetConflict => "feature.fillet-set-conflict",
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
             Self::HoleExtentFaceAssumed => "feature.hole-extent-face-assumed",
@@ -1513,6 +1517,7 @@ impl F3dLossCode {
             | Self::MoveUnprojected
             | Self::ModifyUnprojected
             | Self::FeatureScopePayloadUninterpreted
+            | Self::FeatureFilletSetConflict
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnparsed
@@ -1797,6 +1802,7 @@ impl F3dLossCode {
             | Self::MoveUnprojected
             | Self::ModifyUnprojected
             | Self::FeatureScopePayloadUninterpreted
+            | Self::FeatureFilletSetConflict
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnrecognized
@@ -2151,6 +2157,7 @@ mod tests {
                 "feature.align-envelope-unparsed",
                 "feature.align-construction-unparsed",
                 "feature.scope-payload-uninterpreted",
+                "feature.fillet-set-conflict",
                 "feature.emboss-controls-native",
                 "feature.shell-auxiliary-references-native",
                 "feature.emboss-prefix-unparsed",

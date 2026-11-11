@@ -1830,6 +1830,7 @@ fn surface_trim_sidecar_requires_a_nonempty_cell_table() {
 mod scalars;
 
 mod fillet_law;
+mod fillet_sets;
 
 mod combine;
 

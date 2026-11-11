@@ -654,6 +654,94 @@ pub(crate) mod shell_marked_slot_scope_prefix {
     pub(crate) const MARKED_SLOTS: usize = 26;
 }
 
+/// Byte offsets for the `fillet_scope_prologue` record.
+///
+/// Spec §3.1. Record length 21 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. Prologue byte 0 ends the prologue at offset 21; prologue byte 1 is followed by u32 0 and ends it at offset 25. The counted set and edge-group lists follow.
+/// ```
+pub(crate) mod fillet_scope_prologue {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 21;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `prologue_byte` (`u8`). Spec §3.1.
+    pub(crate) const PROLOGUE_BYTE: usize = 20;
+}
+
+/// Byte offsets for the `fillet_set_constant` record.
+///
+/// Spec §3.1. Record length 97 B.
+///
+/// ```text
+/// Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+/// ```
+pub(crate) mod fillet_set_constant {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 97;
+    /// Offset of `form_marker` (`u8`). Spec §3.1.
+    pub(crate) const FORM_MARKER: usize = 23;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 26;
+    /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_GROUP_REFERENCE: usize = 29;
+    /// Offset of `radius_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RADIUS_OWNER_REFERENCE: usize = 63;
+    /// Offset of `set_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SET_ORDINAL: usize = 78;
+    /// Offset of `tangency_weight_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TANGENCY_WEIGHT_OWNER_REFERENCE: usize = 82;
+}
+
+/// Byte offsets for the `fillet_set_chordal` record.
+///
+/// Spec §3.1. Record length 97 B.
+///
+/// ```text
+/// Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+/// ```
+pub(crate) mod fillet_set_chordal {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 97;
+    /// Offset of `form_marker` (`u8`). Spec §3.1.
+    pub(crate) const FORM_MARKER: usize = 22;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 26;
+    /// Offset of `chord_length_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CHORD_LENGTH_OWNER_REFERENCE: usize = 28;
+    /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_GROUP_REFERENCE: usize = 39;
+    /// Offset of `set_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SET_ORDINAL: usize = 78;
+    /// Offset of `tangency_weight_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TANGENCY_WEIGHT_OWNER_REFERENCE: usize = 82;
+}
+
+/// Byte offsets for the `fillet_set_compact_constant` record.
+///
+/// Spec §3.1. Record length 93 B.
+///
+/// ```text
+/// Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+/// ```
+pub(crate) mod fillet_set_compact_constant {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 93;
+    /// Offset of `form_marker` (`u8`). Spec §3.1.
+    pub(crate) const FORM_MARKER: usize = 22;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 24;
+    /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_GROUP_REFERENCE: usize = 27;
+    /// Offset of `radius_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RADIUS_OWNER_REFERENCE: usize = 59;
+    /// Offset of `set_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SET_ORDINAL: usize = 74;
+    /// Offset of `tangency_weight_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TANGENCY_WEIGHT_OWNER_REFERENCE: usize = 78;
+}
+
 /// Byte offsets for the `thicken_scope_prologue` record.
 ///
 /// Spec §3.1. Record length 21 B.
