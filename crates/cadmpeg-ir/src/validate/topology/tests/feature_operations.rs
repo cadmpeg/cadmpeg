@@ -54,10 +54,10 @@ fn a_two_sided_draft_needs_a_neutral_plane_pull() {
         FeatureDirection3, FeatureOperation,
     };
 
-    let pull = DraftPull {
-        direction: FeatureDirection3::new(crate::math::Vector3::new(0.0, 0.0, 1.0)).unwrap(),
-        plane: None,
-    };
+    let pull = DraftPull::new(
+        FeatureDirection3::new(crate::math::Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+        None,
+    );
     let draft = |anchor, second_side| {
         FeatureDefinition::Operation(FeatureOperation::Draft {
             faces: FaceSelection::Native("draft:faces".into()),
@@ -110,6 +110,96 @@ fn a_two_sided_draft_needs_a_neutral_plane_pull() {
             "{id}"
         );
     }
+}
+
+#[test]
+fn a_draft_pull_frame_normal_is_parallel_to_its_direction() {
+    use crate::features::{
+        DraftAnchor, DraftPull, FaceSelection, FeatureDefinition, FeatureDirection3,
+        FeatureOperation, FeatureSupportPlaneFrame,
+    };
+    use crate::math::{Point3, Vector3};
+
+    let message = "draft pull plane frame normal is not parallel to the pull direction";
+    let pull = |normal: Vector3, u_axis: Vector3| {
+        let mut pull = DraftPull::new(
+            FeatureDirection3::new(Vector3::new(0.0, 0.0, 2.0)).unwrap(),
+            None,
+        );
+        pull.frame = Some(
+            FeatureSupportPlaneFrame::new(Point3::new(0.0, 0.0, 0.0), normal, u_axis).unwrap(),
+        );
+        pull
+    };
+    let x = Vector3::new(1.0, 0.0, 0.0);
+    let draft = |anchor| {
+        FeatureDefinition::Operation(FeatureOperation::Draft {
+            faces: FaceSelection::Native("draft:faces".into()),
+            anchor,
+            angle: Some(crate::scalar::SlopeAngle::new(0.1).unwrap()),
+            outward: Some(false),
+            second_side: None,
+        })
+    };
+    let neutral = |pull| DraftAnchor::NeutralPlane {
+        plane: FaceSelection::Native("draft:plane".into()),
+        pull: Some(pull),
+    };
+    let cases = [
+        (neutral(pull(Vector3::new(0.0, 0.0, 1.0), x)), false),
+        (neutral(pull(Vector3::new(0.0, 0.0, -3.0), x)), false),
+        (
+            neutral(pull(
+                Vector3::new(1.0e-12, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, -1.0e-12),
+            )),
+            false,
+        ),
+        (
+            neutral(pull(
+                Vector3::new(1.0e-6, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, -1.0e-6),
+            )),
+            true,
+        ),
+        (neutral(pull(x, Vector3::new(0.0, 1.0, 0.0))), true),
+        (
+            DraftAnchor::PartingLine {
+                tool: FaceSelection::Native("draft:tool".into()),
+                pull: pull(x, Vector3::new(0.0, 1.0, 0.0)),
+            },
+            true,
+        ),
+    ];
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let mut both = pull(Vector3::new(0.0, 0.0, 1.0), x);
+    both.plane = Some(crate::features::FeatureId::mint("synthetic:test:feature#datum").unwrap());
+    let both_id = "synthetic:test:feature#draft-frame-both";
+    ir.model
+        .features
+        .push(feature(both_id, cases.len(), draft(neutral(both))));
+    let mut expected = Vec::new();
+    for (ordinal, (anchor, refused)) in cases.into_iter().enumerate() {
+        let id = format!("synthetic:test:feature#draft-frame-{ordinal}");
+        ir.model.features.push(feature(&id, ordinal, draft(anchor)));
+        expected.push((id, refused));
+    }
+    let findings = validate_neutral(&ir, Vec::new())
+        .expect("validate the neutral model")
+        .findings;
+    for (id, refused) in expected {
+        assert_eq!(
+            findings.iter().any(|finding| {
+                finding.entity.as_deref() == Some(id.as_str()) && finding.message == message
+            }),
+            refused,
+            "{id}"
+        );
+    }
+    assert!(findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(both_id)
+            && finding.message == "draft pull states both a datum plane and a plane frame"
+    }));
 }
 
 fn feature(

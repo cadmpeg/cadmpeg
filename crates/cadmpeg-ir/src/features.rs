@@ -1102,6 +1102,42 @@ pub struct DraftPull {
         deserialize_with = "deserialize_plane"
     )]
     pub plane: Option<FeatureId>,
+    /// Frame of the plane that supplied the direction, in the same space as
+    /// `direction`, when no datum-plane feature is retained.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_frame"
+    )]
+    pub frame: Option<FeatureSupportPlaneFrame>,
+}
+
+/// Relative bound on the sine between a draft pull direction and its plane-frame normal.
+const EPS_DRAFT_PULL_FRAME_PARALLEL: f64 = 1.0e-9;
+
+impl DraftPull {
+    /// Pull frame with a direction and an optional datum-plane feature.
+    #[must_use]
+    pub const fn new(direction: FeatureDirection3, plane: Option<FeatureId>) -> Self {
+        Self {
+            direction,
+            plane,
+            frame: None,
+        }
+    }
+
+    /// Return whether the retained plane frame, if any, has a normal parallel
+    /// or antiparallel to the direction.
+    #[must_use]
+    pub fn frame_matches_direction(&self) -> bool {
+        self.frame.is_none_or(|frame| {
+            let normal = frame.normal();
+            let scale = normal.norm() * self.direction.norm();
+            scale.is_finite()
+                && normal.get().cross(self.direction.get()).norm()
+                    <= EPS_DRAFT_PULL_FRAME_PARALLEL * scale
+        })
+    }
 }
 
 /// Draft of the face portions on the far side of a two-sided draft's neutral plane.
@@ -9389,6 +9425,7 @@ mod tests;
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_plane, FeatureId, "plane");
 cadmpeg_core::named_optional_field!(deserialize_pull, DraftPull, "pull");
+cadmpeg_core::named_optional_field!(deserialize_frame, FeatureSupportPlaneFrame, "frame");
 cadmpeg_core::named_optional_field!(
     deserialize_draft_second_side,
     DraftSecondSide,

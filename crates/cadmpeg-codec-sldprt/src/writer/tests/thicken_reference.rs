@@ -592,10 +592,7 @@ fn semantic_writer_round_trips_typed_draft() {
             faces: FaceSelection::Native(faces),
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: FaceSelection::Native(neutral_plane),
-                pull: Some(cadmpeg_ir::features::DraftPull {
-                    direction: geometry_1,
-                    plane: None,
-                }),
+                pull: Some(cadmpeg_ir::features::DraftPull { direction: geometry_1, plane: None, frame: None }),
             },
             angle: Some(value),
             outward: Some(false),
@@ -728,10 +725,7 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
             faces: FaceSelection::Native(faces),
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: FaceSelection::Native(neutral_plane),
-                pull: Some(cadmpeg_ir::features::DraftPull {
-                    direction: geometry_1,
-                    plane: None,
-                }),
+                pull: Some(cadmpeg_ir::features::DraftPull { direction: geometry_1, plane: None, frame: None }),
             },
             angle: None,
             outward: None,

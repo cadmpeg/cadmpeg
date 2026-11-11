@@ -385,15 +385,20 @@ fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -
 
 fn draft_neutral_plane_is_resolved(
     selection: &cadmpeg_ir::features::FaceSelection,
-    pull_plane: Option<&cadmpeg_ir::features::FeatureId>,
-    pull_direction: Option<&cadmpeg_ir::math::Vector3>,
+    pull: Option<&cadmpeg_ir::features::DraftPull>,
 ) -> bool {
     face_selection_is_resolved(selection)
         || match selection {
-            cadmpeg_ir::features::FaceSelection::Native(native) => {
-                pull_plane.is_some_and(|plane| plane.as_str() == *native)
-                    && pull_direction.is_some_and(|direction| direction.unit().is_some())
-            }
+            cadmpeg_ir::features::FaceSelection::Native(native) => pull.is_some_and(|pull| {
+                pull.direction.unit().is_some()
+                    && (pull
+                        .plane
+                        .as_ref()
+                        .is_some_and(|plane| plane.as_str() == *native)
+                        || (pull.plane.is_none()
+                            && pull.frame.is_some()
+                            && pull.frame_matches_direction()))
+            }),
             _ => false,
         }
 }
@@ -813,11 +818,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                             || pull.plane.is_none()
                     }
                     cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, pull } => {
-                        !draft_neutral_plane_is_resolved(
-                            plane,
-                            pull.as_ref().and_then(|pull| pull.plane.as_ref()),
-                            pull.as_ref().map(|pull| &*pull.direction),
-                        )
+                        !draft_neutral_plane_is_resolved(plane, pull.as_ref())
                     }
                 }
         }

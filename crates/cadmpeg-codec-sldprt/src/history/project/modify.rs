@@ -217,10 +217,8 @@ pub(super) fn project_draft(feature: &Feature) -> FeatureDefinition {
         .and_then(cadmpeg_ir::features::FeatureDirection3::new);
     let neutral_plane = property_text(feature, "NeutralPlane")
         .map_or(FaceSelection::Unresolved, FaceSelection::Native);
-    let pull = pull_direction.map(|direction| cadmpeg_ir::features::DraftPull {
-        direction,
-        plane: None,
-    });
+    let pull =
+        pull_direction.map(|direction| cadmpeg_ir::features::DraftPull::new(direction, None));
     let anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
         plane: neutral_plane,
         pull,

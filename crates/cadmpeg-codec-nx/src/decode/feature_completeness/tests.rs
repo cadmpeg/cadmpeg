@@ -1513,13 +1513,13 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-                pull: Some(cadmpeg_ir::features::DraftPull {
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(
-                        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                    )
+                pull: Some(cadmpeg_ir::features::DraftPull::new(
+                    cadmpeg_ir::features::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
                     .unwrap(),
-                    plane: None,
-                }),
+                    None,
+                )),
             },
             angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
             outward: Some(false),
@@ -1541,9 +1541,11 @@ fn nx_body_producing_feature_families_require_history_outputs() {
                     cadmpeg_ir::ids::FaceId::mint("test:model:face#neutral")
                         .expect("identity grammar"),
                 ]),
-                pull: pull_direction.map(|direction| cadmpeg_ir::features::DraftPull {
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(direction).unwrap(),
-                    plane: None,
+                pull: pull_direction.map(|direction| {
+                    cadmpeg_ir::features::DraftPull::new(
+                        cadmpeg_ir::features::FeatureDirection3::new(direction).unwrap(),
+                        None,
+                    )
                 }),
             },
             angle,
@@ -1743,13 +1745,13 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-                pull: Some(cadmpeg_ir::features::DraftPull {
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(
-                        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-                    )
+                pull: Some(cadmpeg_ir::features::DraftPull::new(
+                    cadmpeg_ir::features::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(
+                        0.0, 0.0, 1.0
+                    ))
                     .unwrap(),
-                    plane: None,
-                }),
+                    None
+                )),
             },
             angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
             outward: Some(false),

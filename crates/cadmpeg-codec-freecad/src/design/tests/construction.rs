@@ -1794,10 +1794,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             faces: cadmpeg_ir::features::FaceSelection::Native(faces),
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: cadmpeg_ir::features::FaceSelection::Native(plane),
-                pull: Some(cadmpeg_ir::features::DraftPull {
-                    direction: pull_direction,
-                    plane: None,
-                }),
+                pull: Some(cadmpeg_ir::features::DraftPull { direction: pull_direction, plane: None, frame: None }),
             },
             angle: Some(angle),
             outward: Some(true),
