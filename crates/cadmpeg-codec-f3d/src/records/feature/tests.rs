@@ -245,7 +245,7 @@ fn hole_construction_preserves_tangent_and_input_reference_wire() {
         wire.push_str(r#","input_record_indices":[378,379],"input_record_offsets":[129,134]}"#);
         let result =
             serde_json::from_str::<crate::records::feature::hole::DesignHoleConstruction>(&wire);
-        if mask == 0 || mask == 7 {
+        if mask == 0 || mask == 5 || mask == 7 {
             assert_eq!(
                 serde_json::to_string(&result.expect("complete tangent form")).expect("hole wire"),
                 wire

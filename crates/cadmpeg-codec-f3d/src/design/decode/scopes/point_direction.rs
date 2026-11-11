@@ -65,9 +65,14 @@ pub(super) fn point_direction_carrier_at(
     let reference_type = View::u32_le_at(body, cursor)?;
     cursor = cursor.checked_add(4)?;
     let tangent_point_data = match version {
-        4 => {
-            let prefix = *body.get(cursor)?;
-            cursor = cursor.checked_add(1)?;
+        2 | 4 => {
+            let prefix = if version == 4 {
+                let prefix = *body.get(cursor)?;
+                cursor = cursor.checked_add(1)?;
+                Some(prefix)
+            } else {
+                None
+            };
             let tangent_point_data_at = cursor;
             cursor = cursor.checked_add(24)?;
             Some(DesignHoleTangentPoint {

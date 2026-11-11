@@ -200,10 +200,10 @@ pub(crate) struct DesignHoleScope {
     pub(crate) extent: Option<DesignHoleExtent>,
 }
 
-/// Tangent-point payload of a version-four Hole point carrier.
+/// Tangent-point payload of a Hole point carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignHoleTangentPoint {
-    pub(crate) prefix: u8,
+    pub(crate) prefix: Option<u8>,
     pub(crate) data: Located<[FiniteReal; 3]>,
 }
 
@@ -387,8 +387,8 @@ impl TryFrom<DesignHoleConstructionWire> for DesignHoleConstruction {
             reference_type_offset: wire.reference_type_offset,
             tangent_point_data: match (wire.tangent_point_data, wire.tangent_point_data_prefix, wire.tangent_point_data_offset) {
                 (None, None, None) => None,
-                (Some(value), Some(prefix), Some(offset)) => Some(DesignHoleTangentPoint { prefix, data: Located { value, offset } }),
-                _ => return Err("tangent_point_data, tangent_point_data_prefix and tangent_point_data_offset must occur together".into()),
+                (Some(value), prefix, Some(offset)) => Some(DesignHoleTangentPoint { prefix, data: Located { value, offset } }),
+                _ => return Err("tangent_point_data and tangent_point_data_offset must occur together; tangent_point_data_prefix requires both".into()),
             },
             input_records: wire.input_record_indices.into_iter().zip(wire.input_record_offsets).map(|(value, offset)| Located { value, offset }).collect(),
             face_selection: wire.face_selection,
@@ -462,7 +462,7 @@ impl Serialize for DesignHoleConstruction {
             reference_type: self.reference_type,
             reference_type_offset: self.reference_type_offset,
             tangent_point_data: tangent.map(|value| &value.data.value),
-            tangent_point_data_prefix: tangent.map(|value| value.prefix),
+            tangent_point_data_prefix: tangent.and_then(|value| value.prefix),
             tangent_point_data_offset: tangent.map(|value| value.data.offset),
             input_record_indices: InputRecordIndices(&self.input_records),
             input_record_offsets: InputRecordOffsets(&self.input_records),

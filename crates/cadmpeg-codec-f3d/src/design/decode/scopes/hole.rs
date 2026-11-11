@@ -53,7 +53,7 @@ pub(in crate::design::decode) fn exact_hole_construction(
             let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
                 continue;
             };
-            if *type_guid != POINT_DIRECTION_TYPE_GUID || !matches!(*version, 1 | 4) {
+            if *type_guid != POINT_DIRECTION_TYPE_GUID || !matches!(*version, 1 | 2 | 4) {
                 continue;
             }
             for (start, paired_at) in records.frames(*record_index) {
