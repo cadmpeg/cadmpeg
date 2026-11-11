@@ -33571,3 +33571,29 @@ offset = 34
 type = "u32"
 source = "spec"
 anchor = "The owner-marked extended Thread prefix has the owner-marked prologue through offset 32."
+
+[[record]]
+name = "constructed_plane_entity_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A plane entity record has type GUID `8D424E29-DE23-4B1F-A3AD-84C52A497D1A`"
+size = 134
+note = "Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.gap]]
+offset = 11
+size = 119
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "entity_id_code_unit_count"
+offset = 130
+type = "u32"
+source = "spec"
+anchor = "an LP-UTF16 Design entity ID begins at offset 130 from the indexed header"

@@ -671,6 +671,12 @@ pub(crate) enum F3dLossCode {
     UnindexedRecordsRetained,
     /// Design-intent decoding failed; its sketches, features and history were dropped.
     DesignIntentUndecoded,
+    /// A body presentation display name matches multiple body bindings or conflicts on one body.
+    BodyDisplayNameAmbiguous,
+    /// Constructed planes assign conflicting display names to one `WorkPlane` scope.
+    WorkPlaneDisplayNameAmbiguous,
+    /// Constructed plane display names could not be decoded.
+    WorkPlaneDisplayNameUndecoded,
 }
 
 impl F3dLossCode {
@@ -987,6 +993,9 @@ impl F3dLossCode {
         Self::ArchiveEntryUnreadable,
         Self::UnindexedRecordsRetained,
         Self::DesignIntentUndecoded,
+        Self::BodyDisplayNameAmbiguous,
+        Self::WorkPlaneDisplayNameAmbiguous,
+        Self::WorkPlaneDisplayNameUndecoded,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -1379,6 +1388,9 @@ impl F3dLossCode {
             Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
             Self::UnindexedRecordsRetained => "source.unindexed-records-retained",
             Self::DesignIntentUndecoded => "design.intent-undecoded",
+            Self::BodyDisplayNameAmbiguous => "design.body-display-name-ambiguous",
+            Self::WorkPlaneDisplayNameAmbiguous => "work-plane.display-name-ambiguous",
+            Self::WorkPlaneDisplayNameUndecoded => "work-plane.display-name-undecoded",
         }
     }
 
@@ -1693,7 +1705,10 @@ impl F3dLossCode {
             | Self::KernelHeaderMetadataUnresolved
             | Self::ManifestMetadataUnresolved
             | Self::ArchiveEntryUnreadable
-            | Self::UnindexedRecordsRetained => Severity::Warning,
+            | Self::UnindexedRecordsRetained
+            | Self::BodyDisplayNameAmbiguous
+            | Self::WorkPlaneDisplayNameAmbiguous
+            | Self::WorkPlaneDisplayNameUndecoded => Severity::Warning,
         }
     }
 
@@ -1975,7 +1990,10 @@ impl F3dLossCode {
             | Self::DecalNativeRetained
             | Self::EdgeReferenceLostUnrepaired
             | Self::MeshAttributeNotTransferred
-            | Self::TsplineRadialMapUnresolved => LossTaxonomy::AttributesNotTransferred,
+            | Self::TsplineRadialMapUnresolved
+            | Self::BodyDisplayNameAmbiguous
+            | Self::WorkPlaneDisplayNameAmbiguous
+            | Self::WorkPlaneDisplayNameUndecoded => LossTaxonomy::AttributesNotTransferred,
             Self::BrepBlobUndecoded
             | Self::SurfaceShapeNotDecoded
             | Self::GeometryNotTransferred
@@ -2374,6 +2392,9 @@ mod tests {
                 "source.archive-entry-unreadable",
                 "source.unindexed-records-retained",
                 "design.intent-undecoded",
+                "design.body-display-name-ambiguous",
+                "work-plane.display-name-ambiguous",
+                "work-plane.display-name-undecoded",
             ]
         );
     }

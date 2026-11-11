@@ -3011,7 +3011,11 @@ impl<'a> F3dDecodeSession<'a> {
                 let face_losses =
                     resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
                 apply_appearance_base_colors(&mut self.ir);
-                apply_body_presentation_names(&mut self.ir, scan, &prereqs.design_body_bindings)?;
+                let name_losses = apply_body_presentation_names(
+                    &mut self.ir,
+                    scan,
+                    &prereqs.design_body_bindings,
+                )?;
                 self.ir
                     .model
                     .appearance_bindings
@@ -3022,6 +3026,7 @@ impl<'a> F3dDecodeSession<'a> {
                     materials.has_topology_assignments,
                 );
                 self.report.losses.extend(face_losses);
+                self.report.losses.extend(name_losses);
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
                 match &prereqs.xref {
                     Ok(Some(table)) => {
@@ -5694,7 +5699,9 @@ pub(crate) fn apply_body_presentation_names(
     ir: &mut CadIr,
     scan: &ContainerScan,
     body_bindings: &[crate::records::bodies::DesignBodyBinding],
-) -> Result<(), CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
+    let mut losses = Vec::new();
+    let mut stream_entity_names = std::collections::BTreeMap::<(&str, u64), Option<String>>::new();
     for entry in scan
         .entries
         .iter()
@@ -5712,25 +5719,93 @@ pub(crate) fn apply_body_presentation_names(
             let Some(name) = presentation.name.as_deref() else {
                 continue;
             };
-            if is_default_body_name(name) {
+            if name.trim().is_empty()
+                || name.chars().any(char::is_control)
+                || is_default_body_name(name)
+            {
                 continue;
             }
-            let mut matching = body_bindings.iter().filter(|b| {
-                b.stream() == entry.name && b.entity_suffix == presentation.entity_suffix
-            });
-            let (Some(binding), None) = (matching.next(), matching.next()) else {
-                continue;
-            };
-            if let Some(body_id) = &binding.body {
-                if let Some(body) = ir.model.bodies.iter_mut().find(|b| b.id == *body_id) {
-                    if body.name.is_none() {
-                        body.name = Some(name.to_string());
+            match stream_entity_names.entry((entry.name.as_str(), presentation.entity_suffix)) {
+                std::collections::btree_map::Entry::Vacant(v) => {
+                    v.insert(Some(name.to_string()));
+                }
+                std::collections::btree_map::Entry::Occupied(mut o) => {
+                    if o.get().as_deref() != Some(name) {
+                        o.insert(None);
                     }
                 }
             }
         }
     }
-    Ok(())
+
+    let mut bindings_by_owner = std::collections::HashMap::<
+        (&str, u64),
+        Vec<&crate::records::bodies::DesignBodyBinding>,
+    >::new();
+    for binding in body_bindings {
+        bindings_by_owner
+            .entry((binding.stream(), binding.entity_suffix))
+            .or_default()
+            .push(binding);
+    }
+
+    let mut body_names =
+        std::collections::BTreeMap::<cadmpeg_ir::ids::BodyId, Option<String>>::new();
+    for ((stream, entity_suffix), candidate) in &stream_entity_names {
+        let Some(name) = candidate else {
+            losses.push(F3dLossCode::BodyDisplayNameAmbiguous.note(format!(
+                "Body presentations in {stream} assign conflicting display names to entity suffix {entity_suffix}."
+            )));
+            if let Some(bindings) = bindings_by_owner.get(&(*stream, *entity_suffix)) {
+                for body_id in bindings.iter().filter_map(|b| b.body.as_ref()) {
+                    body_names.insert(body_id.clone(), None);
+                }
+            }
+            continue;
+        };
+        let Some(bindings) = bindings_by_owner.get(&(*stream, *entity_suffix)) else {
+            continue;
+        };
+        if bindings.len() > 1 {
+            if bindings.iter().any(|b| b.body.is_some()) {
+                losses.push(F3dLossCode::BodyDisplayNameAmbiguous.note(format!(
+                    "Body presentation display name {name:?} for {stream} entity suffix {entity_suffix} matches {} body bindings.",
+                    bindings.len()
+                )));
+                for body_id in bindings.iter().filter_map(|b| b.body.as_ref()) {
+                    body_names.insert(body_id.clone(), None);
+                }
+            }
+            continue;
+        }
+        let Some(body_id) = &bindings[0].body else {
+            continue;
+        };
+        match body_names.entry(body_id.clone()) {
+            std::collections::btree_map::Entry::Vacant(v) => {
+                v.insert(Some(name.clone()));
+            }
+            std::collections::btree_map::Entry::Occupied(mut o) => {
+                if let Some(existing) = o.get().as_deref() {
+                    if existing != name {
+                        losses.push(F3dLossCode::BodyDisplayNameAmbiguous.note(format!(
+                            "Model body {body_id} receives conflicting presentation display names {existing:?} and {name:?}."
+                        )));
+                        o.insert(None);
+                    }
+                }
+            }
+        }
+    }
+
+    for body in &mut ir.model.bodies {
+        if let Some(Some(name)) = body_names.get(&body.id) {
+            if body.name.is_none() {
+                body.name = Some(name.clone());
+            }
+        }
+    }
+    Ok(losses)
 }
 
 pub(crate) mod design_intent;

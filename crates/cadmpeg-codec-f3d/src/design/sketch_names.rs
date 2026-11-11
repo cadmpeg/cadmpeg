@@ -38,11 +38,18 @@ pub(crate) fn bind_sketch_names(
         let Some(placement) = exact_scope_placement(scope, placements) else {
             continue;
         };
+        if placement.display_name.is_some() {
+            continue;
+        }
         let mut matching = features
             .iter()
             .filter(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()));
         let name = matching.next().and_then(|feature| feature.name.as_deref());
-        let name = name.filter(|name| !name.is_empty() && matching.next().is_none());
+        let name = name.filter(|name| {
+            !name.is_empty()
+                && matching.next().is_none()
+                && scope.label.as_ref().is_none_or(|l| l.value != *name)
+        });
         owners
             .entry(neutral_sketch_id(placement))
             .and_modify(|owner| *owner = None)
