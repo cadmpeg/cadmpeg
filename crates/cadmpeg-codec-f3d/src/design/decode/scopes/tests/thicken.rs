@@ -165,9 +165,31 @@ fn two_groups_name_ordered_references_in_table_order() {
 }
 
 #[test]
-fn admitted_scope_reports_its_flag_bytes() {
+fn flag_bytes_select_symmetric_sides_and_tangent_chain() {
+    for (flags, symmetric, tangent_chain) in [
+        ([0, 1], false, true),
+        ([1, 1], true, true),
+        ([0, 0], false, false),
+        ([1, 0], true, false),
+    ] {
+        let (operation, losses) = ThickenFrame {
+            flags,
+            ..ThickenFrame::group_first()
+        }
+        .decode();
+        let operation = operation.unwrap();
+        assert_eq!(
+            (operation.symmetric, operation.tangent_chain),
+            (symmetric, tangent_chain)
+        );
+        assert!(losses.is_empty());
+    }
+}
+
+#[test]
+fn six_byte_prologue_reports_only_a_set_prologue_flag() {
     let (operation, losses) = ThickenFrame {
-        flags: [1, 0],
+        prologue: MARKER_ONE_FLAGGED,
         ..ThickenFrame::group_first()
     }
     .decode();
@@ -177,21 +199,16 @@ fn admitted_scope_reports_its_flag_bytes() {
         losses[0].code,
         crate::loss::F3dLossCode::FeatureThickenFlagsAssumed.kind()
     );
-    assert!(losses[0].message.contains("flag bytes 01 00 at byte 44"));
-}
-
-#[test]
-fn six_byte_prologue_reports_its_flag_byte() {
+    assert!(losses[0]
+        .message
+        .contains("prologue flag byte 01 at byte 25"));
     let (operation, losses) = ThickenFrame {
-        prologue: MARKER_ONE_FLAGGED,
-        flags: [1, 1],
+        prologue: MARKER_ONE_PADDED,
         ..ThickenFrame::group_first()
     }
     .decode();
     assert!(operation.is_some());
-    assert!(losses[0]
-        .message
-        .contains("flag bytes 01 01 at byte 45 and prologue flag byte 01 at byte 25"));
+    assert!(losses.is_empty());
 }
 
 #[test]

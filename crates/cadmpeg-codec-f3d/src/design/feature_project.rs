@@ -4220,7 +4220,9 @@ pub(super) fn project_thicken(
 
     let crate::records::feature::scope::DesignScopePayload::Thicken(Some(
         crate::records::feature::direct_face::DesignThickenOperation {
-            signed_thickness, ..
+            signed_thickness,
+            symmetric,
+            ..
         },
     )) = &scope.payload()
     else {
@@ -4249,9 +4251,11 @@ pub(super) fn project_thicken(
         FeatureOperation::Thicken {
             faces,
             thickness: Some(or_none!(cadmpeg_ir::scalar::PositiveLength::new(
-                signed_thickness.get().abs() * 10.0,
+                signed_thickness.get().abs() * if *symmetric { 20.0 } else { 10.0 },
             ))),
-            side: Some(if signed_thickness.get() > 0.0 {
+            side: Some(if *symmetric {
+                ThickenSide::Both
+            } else if signed_thickness.get() > 0.0 {
                 ThickenSide::Forward
             } else {
                 ThickenSide::Reverse

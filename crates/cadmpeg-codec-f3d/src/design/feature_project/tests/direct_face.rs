@@ -26,6 +26,8 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
                 signed_thickness: cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
                 thickness_record_index: 300,
                 thickness_offset: 0,
+                symmetric: false,
+                tangent_chain: true,
             });
         }
         DesignScopePayloadMut::Shell(slot) => {
@@ -102,6 +104,36 @@ fn thicken_projects_native_group() {
         panic!("expected a thicken");
     };
     assert_eq!(faces, FaceSelection::Native(group.id.clone()));
+}
+
+#[test]
+fn a_symmetric_thicken_adds_the_stored_thickness_on_each_side() {
+    let group = group(DesignOperandRole::ROLE_0X5);
+    let project = |symmetric: bool| {
+        let mut scope = scope(DesignFeatureKind::Thicken);
+        if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+            operation.symmetric = symmetric;
+        }
+        let FeatureOperation::Thicken {
+            thickness, side, ..
+        } = projected_operation(super::super::project_thicken(
+            &scope,
+            &[],
+            std::slice::from_ref(&group),
+        ))
+        else {
+            panic!("expected a thicken");
+        };
+        (thickness.map(|thickness| thickness.get()), side)
+    };
+    assert_eq!(
+        project(true),
+        (Some(10.0), Some(cadmpeg_ir::features::ThickenSide::Both))
+    );
+    assert_eq!(
+        project(false),
+        (Some(5.0), Some(cadmpeg_ir::features::ThickenSide::Forward))
+    );
 }
 
 fn thicken_after_state(previous_state: i64) -> DesignParameterScope {
