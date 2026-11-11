@@ -221,6 +221,8 @@ pub(crate) enum SldprtLossCode {
     TopologyPcurveCarrierOffSurface,
     /// Parasolid B-rep geometry was not transferred (no resolved stream).
     GeometryParasolidNotTransferred,
+    /// Mesh bodies whose facet geometry remains unresolved.
+    GeometryMeshBodyNotTransferred,
     /// Imported-feature body streams that do not decode.
     GeometryImportedBodiesNotTransferred,
     /// B-rep topology graph was not built for this file.
@@ -391,6 +393,7 @@ impl SldprtLossCode {
         Self::TopologyVertexRecordUnresolved,
         Self::TopologyPcurveCarrierOffSurface,
         Self::GeometryParasolidNotTransferred,
+        Self::GeometryMeshBodyNotTransferred,
         Self::GeometryImportedBodiesNotTransferred,
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
@@ -512,6 +515,7 @@ impl SldprtLossCode {
             Self::TopologyVertexRecordUnresolved => "topology.vertex-record-unresolved",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
             Self::GeometryParasolidNotTransferred => "geometry.parasolid-not-transferred",
+            Self::GeometryMeshBodyNotTransferred => "geometry.mesh-body-not-transferred",
             Self::GeometryImportedBodiesNotTransferred => {
                 "geometry.imported-bodies-not-transferred"
             }
@@ -583,9 +587,9 @@ impl SldprtLossCode {
             Self::GeometryParasolidNotTransferred
             | Self::TopologyGraphNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
-            Self::ContainerNoParasolidStream | Self::GeometryImportedBodiesNotTransferred => {
-                Severity::Error
-            }
+            Self::ContainerNoParasolidStream
+            | Self::GeometryMeshBodyNotTransferred
+            | Self::GeometryImportedBodiesNotTransferred => Severity::Error,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -765,6 +769,7 @@ impl SldprtLossCode {
             | Self::GeometryConeHalfAngleIdentityRefused
             | Self::GeometryIntersectionLayoutUnknown
             | Self::GeometryParasolidNotTransferred
+            | Self::GeometryMeshBodyNotTransferred
             | Self::ContainerAuxiliaryParasolidRefused
             | Self::GeometryImportedBodiesNotTransferred
             | Self::ContainerParasolidProbeCapped => LossTaxonomy::GeometryNotTransferred,
@@ -1078,6 +1083,7 @@ mod tests {
                 "topology.vertex-record-unresolved",
                 "topology.pcurve-carrier-off-surface",
                 "geometry.parasolid-not-transferred",
+                "geometry.mesh-body-not-transferred",
                 "geometry.imported-bodies-not-transferred",
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",

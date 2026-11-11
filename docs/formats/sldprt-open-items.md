@@ -1023,3 +1023,11 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Known.** `sldprt.md` §2.2 gives the stream framing. The trailing bytes lie outside every top-level object. The specification gives no field that names them.
 
 **Need.** A writer that reemits the stream has to know whether to write them.
+
+### GC-31. Mesh facet payload and ownership
+
+**Question.** How do the mesh receive index and auxiliary partition data select complete vertex and triangle arrays for each mesh-support face?
+
+**Known.** `parasolid.md` §3 defines the type-201 MESH field list and the reciprocal MESH/FACE link through SHELL to BODY. A MESH node can carry null `psm_imesh`, `pff_imesh`, and `rcv_key` pointers with a positive `rcv_index`. The same partition section can contain a separate `: MESH FILE` stream with type-189 PSM_MESH nodes, type-191 integer combs, type-193 vector combs, and their typed teeth. PSM_MESH owner pointers can be null. Its pool and index fields link to comb records; comb teeth arrays link to typed value arrays. The IR admits indexed triangle tessellations with body and face references, and polygonal support surfaces with a chordal-deflection bound. The decoder reports the distinct mesh-body count with `sldprt/geometry.mesh-body-not-transferred` and retains the source image.
+
+**Need.** Establish the cross-stream receive-index mapping, precision and comb encodings, coordinate units, triangle grouping, orientation, and complete per-body ownership. Check each reconstructed mesh against independent body areas and volumes before transfer.
