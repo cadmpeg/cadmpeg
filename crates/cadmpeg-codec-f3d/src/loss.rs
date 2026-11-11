@@ -237,6 +237,8 @@ pub(crate) enum F3dLossCode {
     FeatureScopeUnprojected,
     /// A Move scope has no neutral `MoveBody` feature.
     MoveUnprojected,
+    /// A Modify scope has no neutral `MoveBody` feature.
+    ModifyUnprojected,
     /// Hole extent controls do not define an admitted termination.
     HoleExtentUnproven,
     /// An Extents To Hole ends at the face its extent group member resolves.
@@ -256,6 +258,7 @@ pub(crate) enum F3dLossCode {
     FeatureScopePayloadUninterpreted,
     /// Emboss controls, native pairs, and selected contours have no neutral mapping.
     EmbossControlsNative,
+    FeatureShellAuxiliaryReferencesNative,
     /// An Emboss prefix matches no admitted native construction form.
     EmbossPrefixUnparsed,
     /// A non-equivalent duplicate scope envelope was superseded by the
@@ -373,6 +376,8 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCoincidentDirectionAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
+    /// A stored Cut transition certifies regions with stale curve identities.
+    FeatureProfileRegionIdentitiesStale,
     /// Extrude profile selections assumed that a curve outside the
     /// arrangement makes no island in a selected face.
     FeatureProfileIslandAbsenceAssumed,
@@ -434,6 +439,12 @@ pub(crate) enum F3dLossCode {
     FeatureRevolveLayoutAssumed,
     /// A marked `Move` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record.
     FeatureMoveTransformAssumed,
+    /// A projected `Modify` assumes that its unlisted body groups select the bodies of its listed groups.
+    FeatureModifyUnlistedGroupsAssumed,
+    /// A projected `Modify` stores a reference table outside the body-group run of its family.
+    FeatureModifyTableAssumed,
+    /// A projected `Modify` commits a current history state.
+    FeatureModifyStateAssumed,
     /// A standard `Loft` scope stores a non-null marked reference whose target and setting are unresolved.
     FeatureLoftReferenceUnresolved,
     /// A three-flag `Loft` scope stores flag bytes whose Loft settings are unresolved.
@@ -455,6 +466,10 @@ pub(crate) enum F3dLossCode {
     FeatureRectangularPatternPlacementNotTransferred,
     /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
     FeatureThickenFlagsAssumed,
+    /// A `Shell` reference table stores references outside its face-group members.
+    FeatureShellTableMembersAssumed,
+    /// A compact, marked, or counted `Shell` prefix stores an offset-21 Boolean whose Shell option is unresolved.
+    FeatureShellPrefixFlagAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
     /// `SurfaceTrim` cell tables outside the removal reading retain native entries.
@@ -754,6 +769,7 @@ impl F3dLossCode {
         Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
         Self::MoveUnprojected,
+        Self::ModifyUnprojected,
         Self::HoleExtentUnproven,
         Self::HoleExtentFaceAssumed,
         Self::HolePlacementUnproven,
@@ -763,6 +779,7 @@ impl F3dLossCode {
         Self::AlignConstructionUnparsed,
         Self::FeatureScopePayloadUninterpreted,
         Self::EmbossControlsNative,
+        Self::FeatureShellAuxiliaryReferencesNative,
         Self::EmbossPrefixUnparsed,
         Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
@@ -819,6 +836,7 @@ impl F3dLossCode {
         Self::FeatureProfileCoincidentDirectionAssumed,
         Self::FeatureProfileLoopFlagsAssumed,
         Self::FeatureProfileCutRegionsAssumed,
+        Self::FeatureProfileRegionIdentitiesStale,
         Self::FeatureProfileIslandAbsenceAssumed,
         Self::FeatureProfilePolylineSideAssumed,
         Self::FeatureProfileCapOutlineAssumed,
@@ -846,6 +864,9 @@ impl F3dLossCode {
         Self::FeatureExtrudeTerminationMissing,
         Self::FeatureRevolveLayoutAssumed,
         Self::FeatureMoveTransformAssumed,
+        Self::FeatureModifyUnlistedGroupsAssumed,
+        Self::FeatureModifyTableAssumed,
+        Self::FeatureModifyStateAssumed,
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
         Self::FeatureLoftListsUnresolved,
@@ -857,6 +878,8 @@ impl F3dLossCode {
         Self::FeaturePathPatternPlacementNotTransferred,
         Self::FeatureRectangularPatternPlacementNotTransferred,
         Self::FeatureThickenFlagsAssumed,
+        Self::FeatureShellTableMembersAssumed,
+        Self::FeatureShellPrefixFlagAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureTrimCellTableNative,
         Self::FeatureTrimMemberTypeAssumed,
@@ -1084,6 +1107,9 @@ impl F3dLossCode {
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
+            Self::FeatureShellAuxiliaryReferencesNative => {
+                "feature.shell-auxiliary-references-native"
+            }
             Self::EmbossPrefixUnparsed => "feature.emboss-prefix-unparsed",
             Self::AlignOperandsUnresolved => "feature.align-operands-unresolved",
             Self::AlignEnvelopeUnparsed => "feature.align-envelope-unparsed",
@@ -1096,6 +1122,7 @@ impl F3dLossCode {
             Self::HoleReferenceDimensionsNative => "feature.hole-reference-dimensions-native",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::MoveUnprojected => "feature.move-unprojected",
+            Self::ModifyUnprojected => "feature.modify-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
             Self::ParameterTrailerFlagUninterpreted => "parameter.trailer-flag-uninterpreted",
@@ -1163,6 +1190,7 @@ impl F3dLossCode {
             Self::FeatureProfileCoincidentDirectionAssumed => {
                 "feature.profile-coincident-direction-assumed"
             }
+            Self::FeatureProfileRegionIdentitiesStale => "feature.profile-region-identities-stale",
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
             Self::FeatureProfileIslandAbsenceAssumed => "feature.profile-island-absence-assumed",
             Self::FeatureProfilePolylineSideAssumed => "feature.profile-polyline-side-assumed",
@@ -1199,6 +1227,9 @@ impl F3dLossCode {
             Self::FeatureExtrudeTerminationMissing => "feature.extrude-termination-missing",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
+            Self::FeatureModifyUnlistedGroupsAssumed => "feature.modify-unlisted-groups-assumed",
+            Self::FeatureModifyTableAssumed => "feature.modify-table-assumed",
+            Self::FeatureModifyStateAssumed => "feature.modify-state-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
             Self::FeatureLoftListsUnresolved => "feature.loft-lists-unresolved",
@@ -1220,6 +1251,8 @@ impl F3dLossCode {
                 "feature.rectangular-pattern-placement-not-transferred"
             }
             Self::FeatureThickenFlagsAssumed => "feature.thicken-flags-assumed",
+            Self::FeatureShellTableMembersAssumed => "feature.shell-table-members-assumed",
+            Self::FeatureShellPrefixFlagAssumed => "feature.shell-prefix-flag-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
             Self::FeatureTrimMemberTypeAssumed => "feature.trim-member-type-assumed",
@@ -1466,11 +1499,13 @@ impl F3dLossCode {
             | Self::HoleReferenceDimensionsNative
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
+            | Self::FeatureShellAuxiliaryReferencesNative
             | Self::EmbossPrefixUnparsed
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
             | Self::AlignConstructionUnparsed
             | Self::MoveUnprojected
+            | Self::ModifyUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
@@ -1526,6 +1561,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileLoopFlagsAssumed
+            | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePolylineSideAssumed
@@ -1554,6 +1590,9 @@ impl F3dLossCode {
             | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
+            | Self::FeatureModifyUnlistedGroupsAssumed
+            | Self::FeatureModifyTableAssumed
+            | Self::FeatureModifyStateAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureLoftListsUnresolved
@@ -1565,6 +1604,8 @@ impl F3dLossCode {
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
+            | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
@@ -1741,11 +1782,13 @@ impl F3dLossCode {
             | Self::HoleReferenceDimensionsNative
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
+            | Self::FeatureShellAuxiliaryReferencesNative
             | Self::EmbossPrefixUnparsed
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
             | Self::AlignConstructionUnparsed
             | Self::MoveUnprojected
+            | Self::ModifyUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
@@ -1797,6 +1840,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileLoopFlagsAssumed
+            | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePolylineSideAssumed
@@ -1825,6 +1869,9 @@ impl F3dLossCode {
             | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
+            | Self::FeatureModifyUnlistedGroupsAssumed
+            | Self::FeatureModifyTableAssumed
+            | Self::FeatureModifyStateAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureLoftListsUnresolved
@@ -1836,6 +1883,8 @@ impl F3dLossCode {
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
+            | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
@@ -2085,6 +2134,7 @@ mod tests {
                 "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",
                 "feature.move-unprojected",
+                "feature.modify-unprojected",
                 "feature.hole-extent-unproven",
                 "feature.hole-extent-face-assumed",
                 "feature.hole-placement-unproven",
@@ -2094,6 +2144,7 @@ mod tests {
                 "feature.align-construction-unparsed",
                 "feature.scope-payload-uninterpreted",
                 "feature.emboss-controls-native",
+                "feature.shell-auxiliary-references-native",
                 "feature.emboss-prefix-unparsed",
                 "feature.scope-envelope-superseded",
                 "parameter.unprojected",
@@ -2150,6 +2201,7 @@ mod tests {
                 "feature.profile-coincident-direction-assumed",
                 "feature.profile-loop-flags-assumed",
                 "feature.profile-cut-regions-assumed",
+                "feature.profile-region-identities-stale",
                 "feature.profile-island-absence-assumed",
                 "feature.profile-polyline-side-assumed",
                 "feature.profile-cap-outline-assumed",
@@ -2177,6 +2229,9 @@ mod tests {
                 "feature.extrude-termination-missing",
                 "feature.revolve-layout-assumed",
                 "feature.move-transform-assumed",
+                "feature.modify-unlisted-groups-assumed",
+                "feature.modify-table-assumed",
+                "feature.modify-state-assumed",
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
                 "feature.loft-lists-unresolved",
@@ -2188,6 +2243,8 @@ mod tests {
                 "feature.path-pattern-placement-not-transferred",
                 "feature.rectangular-pattern-placement-not-transferred",
                 "feature.thicken-flags-assumed",
+                "feature.shell-table-members-assumed",
+                "feature.shell-prefix-flag-assumed",
                 "feature.face-operand-unresolved",
                 "feature.trim-cell-table-native",
                 "feature.trim-member-type-assumed",

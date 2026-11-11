@@ -38,7 +38,13 @@ fn node(out: &mut Vec<u8>, kind: u16, index: u16, fields: &[F]) {
 
 /// A node whose first-use schema information is `program`: `ff` for the
 /// base field list, or a field count and an edit program.
-fn node_with_program(out: &mut Vec<u8>, kind: u16, program: &[u8], index: u16, fields: &[F]) {
+pub(crate) fn node_with_program(
+    out: &mut Vec<u8>,
+    kind: u16,
+    program: &[u8],
+    index: u16,
+    fields: &[F],
+) {
     out.extend_from_slice(&kind.to_be_bytes());
     out.extend_from_slice(program);
     let count = fields.iter().find_map(|field| match field {

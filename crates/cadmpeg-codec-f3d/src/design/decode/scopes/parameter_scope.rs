@@ -24,6 +24,7 @@ use super::component_constructions::exact_copy_paste_component_operation;
 use super::component_constructions::exact_derived_instance_construction;
 use super::copy_paste_bodies::exact_copy_paste_bodies_operation;
 use super::direct_face::exact_direct_face_operation;
+use super::direct_face::exact_modify_operation;
 use super::direct_face::exact_move_face_operation;
 use super::direct_face::exact_move_operation;
 use super::direct_face::exact_scale_operation;
@@ -362,7 +363,9 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_direct_face_operation(bytes, &records, &scope);
+                let construction =
+                    exact_direct_face_operation(bytes, &records, &scope, &mut losses);
+                let scope_offset = scope.byte_offset();
                 match (scope.payload_mut(), construction) {
                     (
                         scope::DesignScopePayloadMut::OffsetFaces(slot),
@@ -371,7 +374,20 @@ pub(crate) fn decode_parameter_scopes(
                     (
                         scope::DesignScopePayloadMut::Shell(slot),
                         Some(direct_face::DesignDirectFaceOperation::Shell(value)),
-                    ) => *slot = Some(value),
+                    ) => {
+                        if !value.auxiliary_references.is_empty() {
+                            losses.push(
+                                crate::loss::F3dLossCode::FeatureShellAuxiliaryReferencesNative
+                                    .note(format!(
+                                        "Shell scope at {} in {} projects from its wall slot and face group; its auxiliary references {:?} have no neutral form.",
+                                        scope_offset,
+                                        entry.name,
+                                        value.auxiliary_references
+                                    )),
+                            );
+                        }
+                        *slot = Some(value);
+                    }
                     _ => {}
                 }
             }
@@ -405,6 +421,18 @@ pub(crate) fn decode_parameter_scopes(
                 }
                 if let scope::DesignScopePayloadMut::Move(slot) = scope.payload_mut() {
                     *slot = construction;
+                }
+            }
+            if let Some(operation) = exact_modify_operation(bytes, &records, &scope) {
+                losses.extend(marked_move_transform_loss(
+                    bytes,
+                    &records,
+                    &scope,
+                    &operation.motion,
+                    &class_types,
+                ));
+                if let scope::DesignScopePayloadMut::Modify(slot) = scope.payload_mut() {
+                    *slot = Some(operation);
                 }
             }
             {
