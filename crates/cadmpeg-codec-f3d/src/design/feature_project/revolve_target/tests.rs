@@ -342,7 +342,7 @@ fn plane_selection(primary_identity: u64, secondary: bool) -> DesignEntitySelect
         historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
         next_record_index: MEMBER + 4,
-        next_byte_offset: 29,
+        next_byte_offset: if secondary { 37 } else { 29 },
     })
     .unwrap()
 }
