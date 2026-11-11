@@ -174,6 +174,9 @@ fn generic_loop_integral(
         let mut charge = |units| eval.charge(units);
         let mut integrand = |t: f64| -> Measure<[f64; 2]> {
             let sample = piece.sample(eval, chart, t)?;
+            if sample.duv[0] == 0.0 {
+                return Ok([0.0; 2]);
+            }
             let (column, column_error) =
                 inner(eval, chart, sample.uv[0], [base, sample.uv[1]], scale)?;
             Ok([-column * sample.duv[0], column_error * sample.duv[0].abs()])

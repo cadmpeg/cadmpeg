@@ -3093,7 +3093,7 @@ The all-short Partition form is:
 
 This all-short record is 39 bytes, or 40 bytes with `ff`. The scale field follows distance and belongs to the record. The short deltas form stores each common-header reference and `support` as `[hi][lo][01]` before the distance and scale fields. The fixed layout table applies only when every identity and pointer has the short encoding.
 
-`discriminator` is the validity state: `V` is valid, `I` is invalid, and `U` is unchecked. An invalid record does not define exact transferred geometry. An unchecked record requires independent support, sense, distance, acyclicity and selected-set validation. The distance is nonzero and outside the modeller's linear resolution. `true_offset` is unused. `scale` is nullable internal data, not a distance multiplier. A null scale has the XT null-f64 value; a present scale is finite.
+`discriminator` records the native validity check: `V` is valid, `I` is invalid, and `U` is unchecked. The `V` and `U` states carry the same offset construction. The support, its sense, and the signed distance determine the construction independently of the check state. `true_offset` is an unused logical. `scale` is nullable internal scalar data. Its null value is the XT null real, encoded as `c2 bc 92 8f 99 6e 00 00` in binary and `?` in text. A present scale is finite. The offset equation uses the stored distance directly.
 
 `support` names the underlying surface. For support point `S(u,v)`, natural normal `N = unit(S_u × S_v)` and support sense sign `sigma`, the construction is
 
@@ -3101,7 +3101,7 @@ This all-short record is 39 bytes, or 40 bytes with `ff`. The scale field follow
 O(u,v) = S(u,v) + distance * sigma * N(u,v).
 ```
 
-The offset retains the support parameterization and has the same surface sense as its support. FACE sense is separate and does not negate the stored distance. Nested supports must be acyclic.
+The offset retains the support parameterization and has the same surface sense as its support. FACE sense is separate and does not negate the stored distance. Nested supports must be acyclic. A loop-free FACE on an offset of a NURBS support periodic in both parameters covers the complete closed surface. Its BODY, REGION and SHELL links retain their ownership roles.
 
 ### 7.6 Tolerant edges and surface-parameter curves
 
