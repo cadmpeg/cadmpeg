@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Thread constructions, forms, diameters and nominal sizes.
 
+use crate::layout::thread_compact_owned_scope_prefix as compact_owned;
 use crate::layout::thread_extended_scope_prefix as extended_prefix;
 use crate::layout::thread_owner_marked_scope_prefix as owner_prefix;
 use crate::layout::thread_standard_scope_prefix as direct_prefix;
@@ -60,6 +61,8 @@ pub(crate) enum DesignThreadForm {
     StandardCompact,
     /// Extended standard prefix with offset and length owner references.
     StandardExtended,
+    CompactOwnersLeading,
+    CompactOwnersTrailing,
     /// Extended compact prefix with two owners before its face-selection pairs.
     CompactExtended(Located<NonZeroU32>),
 }
@@ -69,7 +72,9 @@ impl DesignThreadForm {
         match self {
             Self::StandardLegacy => class == "334" && paired == "262",
             Self::CompactLegacy => class == "414" && paired == "263",
-            Self::Standard
+            Self::CompactOwnersLeading
+            | Self::CompactOwnersTrailing
+            | Self::Standard
             | Self::Compact(_)
             | Self::CompactExtended(_)
             | Self::StandardCompact
@@ -85,6 +90,7 @@ impl DesignThreadForm {
             return false;
         };
         match self {
+            Self::CompactOwnersLeading | Self::CompactOwnersTrailing => delta == compact_owned::LEN,
             Self::StandardExtended | Self::CompactExtended(_) => {
                 delta >= extended_prefix::LEN + SHORTEST_EXTENDED_CLASS_AND_COPY
             }
@@ -95,7 +101,9 @@ impl DesignThreadForm {
     pub(crate) fn reference_count_holds(self, count: usize) -> bool {
         count.is_multiple_of(2)
             && match self {
-                Self::StandardExtended => count >= 4,
+                Self::StandardExtended
+                | Self::CompactOwnersLeading
+                | Self::CompactOwnersTrailing => count >= 4,
                 Self::CompactExtended(_) => count >= 4,
                 _ => count >= 2,
             }
@@ -108,11 +116,13 @@ impl DesignThreadForm {
     ) -> bool {
         let count = scope.reference_members().len();
         let (offset_ordinal, length_ordinal) = match self {
-            Self::StandardExtended => match (count.checked_sub(2), count.checked_sub(1)) {
-                (Some(offset), Some(length)) => (offset, length),
-                _ => return false,
-            },
-            Self::CompactExtended(_) => (0, 1),
+            Self::StandardExtended | Self::CompactOwnersTrailing => {
+                match (count.checked_sub(2), count.checked_sub(1)) {
+                    (Some(offset), Some(length)) => (offset, length),
+                    _ => return false,
+                }
+            }
+            Self::CompactExtended(_) | Self::CompactOwnersLeading => (0, 1),
             _ => return true,
         };
         let owner_at = |ordinal| {
@@ -138,7 +148,7 @@ impl DesignThreadForm {
 
     pub(crate) const fn face_reference_start(self) -> usize {
         match self {
-            Self::CompactExtended(_) => 2,
+            Self::CompactExtended(_) | Self::CompactOwnersLeading => 2,
             _ => 0,
         }
     }
@@ -152,6 +162,8 @@ impl DesignThreadForm {
             Self::Compact(_)
             | Self::CompactExtended(_)
             | Self::CompactLegacy
+            | Self::CompactOwnersLeading
+            | Self::CompactOwnersTrailing
             | Self::StandardExtended => false,
         }
     }
@@ -159,7 +171,7 @@ impl DesignThreadForm {
     /// The face-selection group of each face in the ordered scope references.
     pub(crate) fn face_groups(self, references: &[u32]) -> Vec<u32> {
         match self {
-            Self::StandardExtended => references
+            Self::StandardExtended | Self::CompactOwnersTrailing => references
                 .len()
                 .checked_sub(2)
                 .and_then(|pairs| references.get(..pairs))
@@ -285,6 +297,12 @@ impl Serialize for DesignThreadConstruction {
             DesignThreadForm::CompactLegacy => (DesignThreadFormWire::CompactLegacy, None),
             DesignThreadForm::StandardCompact => (DesignThreadFormWire::StandardCompact, None),
             DesignThreadForm::StandardExtended => (DesignThreadFormWire::StandardExtended, None),
+            DesignThreadForm::CompactOwnersLeading => {
+                (DesignThreadFormWire::CompactOwnersLeading, None)
+            }
+            DesignThreadForm::CompactOwnersTrailing => {
+                (DesignThreadFormWire::CompactOwnersTrailing, None)
+            }
         };
         let mut fields = serializer.serialize_struct(
             "DesignThreadConstructionWire",
@@ -327,6 +345,8 @@ enum DesignThreadFormWire {
     /// Standard prefix with the compact construction marker and a reference trailer.
     StandardCompact,
     StandardExtended,
+    CompactOwnersLeading,
+    CompactOwnersTrailing,
     CompactExtended,
 }
 
@@ -417,6 +437,12 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
             (DesignThreadFormWire::CompactLegacy, None) => DesignThreadForm::CompactLegacy,
             (DesignThreadFormWire::StandardCompact, None) => DesignThreadForm::StandardCompact,
             (DesignThreadFormWire::StandardExtended, None) => DesignThreadForm::StandardExtended,
+            (DesignThreadFormWire::CompactOwnersLeading, None) => {
+                DesignThreadForm::CompactOwnersLeading
+            }
+            (DesignThreadFormWire::CompactOwnersTrailing, None) => {
+                DesignThreadForm::CompactOwnersTrailing
+            }
             _ => {
                 return Err("trailing_reference_record_index is only valid for compact form".into())
             }

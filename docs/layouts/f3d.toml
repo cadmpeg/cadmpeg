@@ -32995,3 +32995,82 @@ offset = 184
 type = "bytes[11]"
 source = "spec"
 anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record]]
+name = "thread_compact_owned_scope_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact owned Thread prefix has the owner-marked prologue through offset 32."
+size = 46
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact owned Thread prefix has the owner-marked prologue through offset 32."
+
+[[record.field]]
+name = "prologue"
+offset = 11
+type = "bytes[22]"
+source = "spec"
+anchor = "The compact owned Thread prefix has the owner-marked prologue through offset 32."
+
+[[record.field]]
+name = "prefix_word"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "The compact owned Thread prefix has the owner-marked prologue through offset 32."
+
+[[record.field]]
+name = "form_marker"
+offset = 37
+type = "bytes[5]"
+source = "spec"
+anchor = "The compact owned Thread prefix has the owner-marked prologue through offset 32."
+
+[[record.field]]
+name = "form_token"
+offset = 42
+type = "bytes[4]"
+source = "spec"
+anchor = "The compact owned Thread prefix has the owner-marked prologue through offset 32."
+
+[[record]]
+name = "thread_owner_extended_scope_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The owner-marked extended Thread prefix has the owner-marked prologue through offset 32."
+size = 38
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The owner-marked extended Thread prefix has the owner-marked prologue through offset 32."
+
+[[record.field]]
+name = "prologue"
+offset = 11
+type = "bytes[22]"
+source = "spec"
+anchor = "The owner-marked extended Thread prefix has the owner-marked prologue through offset 32."
+
+[[record.field]]
+name = "external_flag"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "The owner-marked extended Thread prefix has the owner-marked prologue through offset 32."
+
+[[record.field]]
+name = "entry_count"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "The owner-marked extended Thread prefix has the owner-marked prologue through offset 32."
