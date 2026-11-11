@@ -2476,6 +2476,22 @@ fn transition_profile_selection_step(
                     || historical_face_points(*face, topology).is_none_or(|pts| pts.len() <= 2)
             });
     if only_circular_faces {
+        let rings = BodyCircleRings {
+            sketch,
+            entities,
+            topology,
+            previous: prev_topology_opt,
+            inserted_faces,
+            cyl_loops: &cyl_loops,
+            tolerance,
+            angular_tolerance: resolution.angular_tolerance,
+        };
+        if let Some(regions) = rings_from_body_to_sketch_circle(rings) {
+            return Ok(Some(ResolvedProfileSelection::Regions(regions)));
+        }
+        if let Some(regions) = rings_from_sketch_circle_in_to_body(rings) {
+            return Ok(Some(ResolvedProfileSelection::Regions(regions)));
+        }
         return Ok(Some(ResolvedProfileSelection::Loops(cyl_loops)));
     }
     let mut inserted_selections = Vec::new();
@@ -2766,6 +2782,445 @@ fn points_share_sketch_offset(
     points
         .iter()
         .all(|point| (offset(point) - first).abs() <= tolerance)
+}
+
+/// Profile indices of the concentric circles strictly outside `inner` and at
+/// most `outer`, nearest first. `None` when that is not at least two circles
+/// with one on `outer`: a single ring is the cylinder match the caller
+/// already has.
+///
+/// `circles` are `(profile index, radius)` of one center. A circle on the
+/// body radius is not strictly outside it, so it stays out of the result.
+pub(super) fn circle_indices_outside_body(
+    circles: &[(u32, f64)],
+    inner: f64,
+    outer: f64,
+    tolerance: f64,
+) -> Option<Vec<u32>> {
+    let mut chosen: Vec<(u32, f64)> = circles
+        .iter()
+        .copied()
+        .filter(|(_, radius)| *radius > inner + tolerance && *radius <= outer + tolerance)
+        .collect();
+    if chosen.len() < 2
+        || !chosen
+            .iter()
+            .any(|(_, radius)| (radius - outer).abs() <= tolerance)
+    {
+        return None;
+    }
+    chosen.sort_by(|left, right| left.1.total_cmp(&right.1).then(left.0.cmp(&right.0)));
+    Some(chosen.into_iter().map(|(index, _)| index).collect())
+}
+
+/// Profile indices of the concentric circles that cover an inward shoulder
+/// from the new circle `inner` out to the body cylinder `body`, nearest first.
+///
+/// The shoulder ends on the body, which is not a sketch circle. Every full
+/// sketch circle strictly outside `inner`, through the first circle strictly
+/// outside `body`, is material. That circle is included only when its radius
+/// is at most `wall`, the next solid cylinder outside the body: past that
+/// wall the ring would add material beyond the solid. `None` when no sketch
+/// circle lies outside the body, or that circle passes `wall`.
+pub(super) fn circle_indices_inward_shoulder(
+    circles: &[(u32, f64)],
+    inner: f64,
+    body: f64,
+    wall: f64,
+    tolerance: f64,
+) -> Option<Vec<u32>> {
+    if body <= inner + tolerance || wall <= body + tolerance {
+        return None;
+    }
+    let mut outside: Option<(u32, f64)> = None;
+    for &(index, radius) in circles {
+        if radius > body + tolerance && outside.is_none_or(|(_, have)| radius < have) {
+            outside = Some((index, radius));
+        }
+    }
+    let (_, outer_radius) = outside?;
+    if outer_radius > wall + tolerance {
+        return None;
+    }
+    let mut chosen: Vec<(u32, f64)> = circles
+        .iter()
+        .copied()
+        .filter(|(_, radius)| *radius > inner + tolerance && *radius <= outer_radius + tolerance)
+        .collect();
+    if chosen.is_empty()
+        || !chosen
+            .iter()
+            .any(|(_, radius)| (radius - outer_radius).abs() <= tolerance)
+    {
+        return None;
+    }
+    chosen.sort_by(|left, right| left.1.total_cmp(&right.1).then(left.0.cmp(&right.0)));
+    Some(chosen.into_iter().map(|(index, _)| index).collect())
+}
+
+struct ConcentricCircle<'a> {
+    index: u32,
+    center: Point2,
+    radius: f64,
+    use_: &'a cadmpeg_ir::sketches::SketchEntityUse,
+}
+
+/// Sketch circles and the body cylinder a cap can fill with one region per circle.
+#[derive(Clone, Copy)]
+struct BodyCircleRings<'a> {
+    sketch: &'a cadmpeg_ir::sketches::Sketch,
+    entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+    topology: &'a crate::history_records::AsmHistoricalTopology,
+    previous: Option<&'a crate::history_records::AsmHistoricalTopology>,
+    inserted_faces: &'a [i64],
+    cyl_loops: &'a [u32],
+    tolerance: f64,
+    angular_tolerance: f64,
+}
+
+/// Rings that fill a new cap from an existing body cylinder out to one new
+/// sketch circle.
+///
+/// The cap's inner edge is the body, so it is not a sketch curve. Every full
+/// sketch circle strictly outside that radius, through the new outer circle,
+/// is material. Each is emitted as its own curve ring. Nesting those circles
+/// as one loop with holes would keep only the outermost ring and leave the
+/// body short of the cap.
+fn rings_from_body_to_sketch_circle(
+    rings: BodyCircleRings<'_>,
+) -> Option<Vec<cadmpeg_ir::features::SketchProfileRegion>> {
+    use cadmpeg_ir::features::{SketchProfileBoundaryUse, SketchProfileRegion};
+    use cadmpeg_ir::geometry::DirectedParameterRange;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let BodyCircleRings {
+        sketch,
+        entities,
+        topology,
+        previous,
+        inserted_faces,
+        cyl_loops,
+        tolerance,
+        angular_tolerance,
+    } = rings;
+    let previous = previous?;
+    let (_, sketch_normal, _) = sketch.resolved_placement()?;
+    let normal = *sketch_normal.as_raw();
+    let mut circles = Vec::new();
+    for (index, profile) in sketch.profiles.iter().enumerate() {
+        let [use_] = profile.as_slice() else {
+            continue;
+        };
+        let Some(entity) = entities.iter().find(|entity| {
+            entity.sketch == sketch.id && entity.id() == &use_.entity && !entity.construction
+        }) else {
+            continue;
+        };
+        let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition()
+        else {
+            continue;
+        };
+        let Ok(index) = u32::try_from(index) else {
+            continue;
+        };
+        circles.push(ConcentricCircle {
+            index,
+            center: *center,
+            radius: radius.get(),
+            use_,
+        });
+    }
+    let mut agreed: Option<(f64, f64, u32)> = None;
+    for face in inserted_faces {
+        let mut carriers = topology
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == *face);
+        let carrier = carriers.next()?.carrier;
+        if carriers.next().is_some() {
+            return None;
+        }
+        let mut planes = topology
+            .surface_planes
+            .iter()
+            .filter(|plane| plane.surface == carrier);
+        let Some(plane) = planes.next() else {
+            continue;
+        };
+        if planes.next().is_some() {
+            return None;
+        }
+        let align =
+            plane.normal.x * normal.x + plane.normal.y * normal.y + plane.normal.z * normal.z;
+        if align.abs() < angular_tolerance.cos() {
+            continue;
+        }
+        let mut projected = Vec::new();
+        for point in historical_face_all_points(*face, topology) {
+            projected.push(project_to_sketch(sketch, point)?);
+        }
+        if projected.is_empty() {
+            return None;
+        }
+        let mut found = None;
+        for circle in circles
+            .iter()
+            .filter(|circle| cyl_loops.contains(&circle.index))
+        {
+            let mut radii = Vec::new();
+            for point in &projected {
+                let radius = (point.u - circle.center.u).hypot(point.v - circle.center.v);
+                if !radii
+                    .iter()
+                    .any(|have: &f64| (have - radius).abs() <= tolerance)
+                {
+                    radii.push(radius);
+                }
+            }
+            if radii.len() != 2 {
+                continue;
+            }
+            radii.sort_by(f64::total_cmp);
+            let (inner, outer) = (radii[0], radii[1]);
+            if (outer - circle.radius).abs() > tolerance {
+                continue;
+            }
+            if found.replace((inner, outer, circle.index)).is_some() {
+                return None;
+            }
+        }
+        let found = found?;
+        if let Some((inner, outer, profile)) = agreed {
+            if (inner - found.0).abs() > tolerance
+                || (outer - found.1).abs() > tolerance
+                || profile != found.2
+            {
+                return None;
+            }
+        } else {
+            agreed = Some(found);
+        }
+    }
+    let (inner, outer, outer_profile) = agreed?;
+    let outer_circle = circles
+        .iter()
+        .find(|circle| circle.index == outer_profile)?;
+    let same_center = |circle: &ConcentricCircle<'_>| {
+        (circle.center.u - outer_circle.center.u).hypot(circle.center.v - outer_circle.center.v)
+            <= tolerance
+    };
+    let body = previous.surface_cylinders.iter().any(|cylinder| {
+        let align =
+            cylinder.axis.x * normal.x + cylinder.axis.y * normal.y + cylinder.axis.z * normal.z;
+        (cylinder.radius - inner).abs() <= tolerance && align.abs() >= angular_tolerance.cos()
+    });
+    if !body {
+        return None;
+    }
+    let concentric: Vec<(u32, f64)> = circles
+        .iter()
+        .filter(|circle| same_center(circle))
+        .map(|circle| (circle.index, circle.radius))
+        .collect();
+    let indices = circle_indices_outside_body(&concentric, inner, outer, tolerance)?;
+    let mut regions = Vec::new();
+    for index in indices {
+        let circle = circles.iter().find(|circle| circle.index == index)?;
+        let region = SketchProfileRegion::trimmed(
+            vec![SketchProfileBoundaryUse {
+                entity: circle.use_.entity.clone(),
+                parameter_range: DirectedParameterRange::new([0.0, std::f64::consts::TAU]).ok()?,
+                reversed: circle.use_.reversed,
+            }],
+            Vec::new(),
+        )
+        .ok()?;
+        regions.push(region);
+    }
+    Some(regions)
+}
+
+/// Rings that fill a new cap from one new sketch circle out to an existing
+/// body cylinder.
+///
+/// The cap's outer edge is the body, so it is not a sketch curve. Every full
+/// sketch circle strictly outside the new circle, through the first circle
+/// strictly outside the body, is material. That outer circle stays in the
+/// selection only when its radius is at most the next solid cylinder: the
+/// ring past the body is already solid. Each circle is its own region.
+/// Nesting them as one loop with holes would keep only the outermost ring.
+fn rings_from_sketch_circle_in_to_body(
+    rings: BodyCircleRings<'_>,
+) -> Option<Vec<cadmpeg_ir::features::SketchProfileRegion>> {
+    use cadmpeg_ir::features::{SketchProfileBoundaryUse, SketchProfileRegion};
+    use cadmpeg_ir::geometry::DirectedParameterRange;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let BodyCircleRings {
+        sketch,
+        entities,
+        topology,
+        previous,
+        inserted_faces,
+        cyl_loops,
+        tolerance,
+        angular_tolerance,
+    } = rings;
+    let previous = previous?;
+    let (_, sketch_normal, _) = sketch.resolved_placement()?;
+    let normal = *sketch_normal.as_raw();
+    let mut circles = Vec::new();
+    for (index, profile) in sketch.profiles.iter().enumerate() {
+        let [use_] = profile.as_slice() else {
+            continue;
+        };
+        let Some(entity) = entities.iter().find(|entity| {
+            entity.sketch == sketch.id && entity.id() == &use_.entity && !entity.construction
+        }) else {
+            continue;
+        };
+        let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition()
+        else {
+            continue;
+        };
+        let Ok(index) = u32::try_from(index) else {
+            continue;
+        };
+        circles.push(ConcentricCircle {
+            index,
+            center: *center,
+            radius: radius.get(),
+            use_,
+        });
+    }
+    let mut agreed: Option<(f64, f64, u32)> = None;
+    for face in inserted_faces {
+        let mut carriers = topology
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == *face);
+        let carrier = carriers.next()?.carrier;
+        if carriers.next().is_some() {
+            return None;
+        }
+        let mut planes = topology
+            .surface_planes
+            .iter()
+            .filter(|plane| plane.surface == carrier);
+        let Some(plane) = planes.next() else {
+            continue;
+        };
+        if planes.next().is_some() {
+            return None;
+        }
+        let align =
+            plane.normal.x * normal.x + plane.normal.y * normal.y + plane.normal.z * normal.z;
+        if align.abs() < angular_tolerance.cos() {
+            continue;
+        }
+        let mut projected = Vec::new();
+        for point in historical_face_all_points(*face, topology) {
+            projected.push(project_to_sketch(sketch, point)?);
+        }
+        if projected.is_empty() {
+            return None;
+        }
+        let mut found = None;
+        for circle in circles
+            .iter()
+            .filter(|circle| cyl_loops.contains(&circle.index))
+        {
+            let mut radii = Vec::new();
+            for point in &projected {
+                let radius = (point.u - circle.center.u).hypot(point.v - circle.center.v);
+                if !radii
+                    .iter()
+                    .any(|have: &f64| (have - radius).abs() <= tolerance)
+                {
+                    radii.push(radius);
+                }
+            }
+            if radii.len() != 2 {
+                continue;
+            }
+            radii.sort_by(f64::total_cmp);
+            let (inner, outer) = (radii[0], radii[1]);
+            if (inner - circle.radius).abs() > tolerance || outer <= inner + tolerance {
+                continue;
+            }
+            if found.replace((inner, outer, circle.index)).is_some() {
+                return None;
+            }
+        }
+        let found = found?;
+        if let Some((inner, outer, profile)) = agreed {
+            if (inner - found.0).abs() > tolerance
+                || (outer - found.1).abs() > tolerance
+                || profile != found.2
+            {
+                return None;
+            }
+        } else {
+            agreed = Some(found);
+        }
+    }
+    let (inner, body, inner_profile) = agreed?;
+    let inner_circle = circles
+        .iter()
+        .find(|circle| circle.index == inner_profile)?;
+    let same_center = |circle: &ConcentricCircle<'_>| {
+        (circle.center.u - inner_circle.center.u).hypot(circle.center.v - inner_circle.center.v)
+            <= tolerance
+    };
+    let centered = |cylinder: &crate::history_records::AsmHistoricalCylinder| {
+        let align =
+            cylinder.axis.x * normal.x + cylinder.axis.y * normal.y + cylinder.axis.z * normal.z;
+        align.abs() >= angular_tolerance.cos()
+            && cylinder.radius.is_finite()
+            && project_to_sketch(sketch, cylinder.origin).is_some_and(|point| {
+                (point.u - inner_circle.center.u).hypot(point.v - inner_circle.center.v)
+                    <= tolerance
+            })
+    };
+    if !previous
+        .surface_cylinders
+        .iter()
+        .any(|cylinder| centered(cylinder) && (cylinder.radius - body).abs() <= tolerance)
+    {
+        return None;
+    }
+    let mut wall = None;
+    for cylinder in &previous.surface_cylinders {
+        if !centered(cylinder) || cylinder.radius <= body + tolerance {
+            continue;
+        }
+        wall = Some(match wall {
+            Some(have) if have < cylinder.radius => have,
+            _ => cylinder.radius,
+        });
+    }
+    let wall = wall?;
+    let concentric: Vec<(u32, f64)> = circles
+        .iter()
+        .filter(|circle| same_center(circle))
+        .map(|circle| (circle.index, circle.radius))
+        .collect();
+    let indices = circle_indices_inward_shoulder(&concentric, inner, body, wall, tolerance)?;
+    let mut regions = Vec::new();
+    for index in indices {
+        let circle = circles.iter().find(|circle| circle.index == index)?;
+        let region = SketchProfileRegion::trimmed(
+            vec![SketchProfileBoundaryUse {
+                entity: circle.use_.entity.clone(),
+                parameter_range: DirectedParameterRange::new([0.0, std::f64::consts::TAU]).ok()?,
+                reversed: circle.use_.reversed,
+            }],
+            Vec::new(),
+        )
+        .ok()?;
+        regions.push(region);
+    }
+    Some(regions)
 }
 
 fn inserted_cylindrical_profile_selection(

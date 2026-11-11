@@ -54,3 +54,57 @@ fn numerical_0922_different_circle_planes_fail_tight_tolerance() {
     println!("Fusion circle planes at1e-8 with angular tolerance1e-9 agree={agrees}");
     assert!(!agrees);
 }
+
+#[test]
+fn circles_outside_a_body_fill_every_ring_out_to_the_new_circle() {
+    let circles = [(0, 9.1), (1, 11.25), (2, 9.5), (3, 10.9)];
+    assert_eq!(
+        circle_indices_outside_body(&circles, 9.9, 11.25, LINEAR_TOLERANCE),
+        Some(vec![3, 1])
+    );
+}
+
+#[test]
+fn circles_outside_a_body_leave_one_ring_to_the_cylinder_match() {
+    let tube = [(0, 9.1), (1, 9.9)];
+    assert_eq!(
+        circle_indices_outside_body(&tube, 9.1, 9.9, LINEAR_TOLERANCE),
+        None
+    );
+    let outer_ring = [(1, 11.25), (3, 10.9)];
+    assert_eq!(
+        circle_indices_outside_body(&outer_ring, 10.9, 11.25, LINEAR_TOLERANCE),
+        None
+    );
+}
+
+#[test]
+fn circles_inward_of_a_body_fill_every_ring_out_to_the_first_circle_past_it() {
+    let circles = [(1, 8.25), (0, 9.0), (2, 9.596_940_582_174_966), (4, 10.5)];
+    assert_eq!(
+        circle_indices_inward_shoulder(&circles, 8.25, 9.1, 9.9, LINEAR_TOLERANCE),
+        Some(vec![0, 2])
+    );
+}
+
+#[test]
+fn circles_inward_of_a_body_stop_without_a_circle_past_the_body() {
+    let circles = [(1, 8.25), (0, 9.0)];
+    assert_eq!(
+        circle_indices_inward_shoulder(&circles, 8.25, 9.1, 9.9, LINEAR_TOLERANCE),
+        None
+    );
+}
+
+#[test]
+fn circles_inward_of_a_body_stop_when_the_next_circle_passes_the_wall() {
+    let circles = [(1, 8.25), (0, 9.0), (2, 10.5)];
+    assert_eq!(
+        circle_indices_inward_shoulder(&circles, 8.25, 9.1, 9.9, LINEAR_TOLERANCE),
+        None
+    );
+    assert_eq!(
+        circle_indices_inward_shoulder(&circles, 9.1, 8.25, 9.9, LINEAR_TOLERANCE),
+        None
+    );
+}
