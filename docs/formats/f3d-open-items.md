@@ -1515,7 +1515,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** Two other public frames of this form store zero at offset 29.
+**Note.** Two other public frames of this form store zero at offset 29. Unbound result references remain a native body selection of a neutral Base Feature and report `feature.stored-bodies-unbound`.
 
 ### DR-251. Compact null-owner parameters: owner and trailer byte 3
 
@@ -2302,7 +2302,27 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The transition travels along `+Z` and agrees with direction reversal `0`. The decoder source property `extrude_to_distance = 7.5` equals the start-plane offset in this transition.
 
-### DR-464. Controls of the wider SurfaceDeleteFace prologue
+### DR-465. Matrix Scale prologue word
+
+**Question.** What does a nonzero matrix Scale prologue word control?
+
+**Known.** The matrix supplies positive axis factors and translation consistent with its point-data center.
+
+**Need.** Paired saves that change the word and preserve the factors and center.
+
+**Note.** The decoder applies the stored matrix and records `feature.scale-matrix-word-assumed` for a nonzero word.
+
+### DR-464. Matrix Scale body groups outside the prologue
+
+**Question.** How do owned body groups absent from the matrix prologue contribute to the operation?
+
+**Known.** The prologue lists the body groups for the stored transform. A scope can own additional body groups with the same body-selection role.
+
+**Need.** Paired saves that vary the listed and additional selections independently.
+
+**Note.** The decoder selects the listed groups and assumes that the additional groups select the same bodies. It records `feature.scale-unlisted-groups-assumed`.
+
+### DR-466. Controls of the wider SurfaceDeleteFace prologue
 
 **Question.** Which settings do the controls before the ordered-reference count of the wide surface-delete prologue encode?
 

@@ -429,6 +429,8 @@ pub(crate) enum F3dLossCode {
     /// A legacy Scale form is selected by the frame length of its English
     /// spelling; its payload length matches no form.
     FeatureScaleFrameLengthFormAssumed,
+    FeatureScaleMatrixWordAssumed,
+    FeatureScaleUnlistedGroupsAssumed,
     FeatureWorkAxisRuleUnassigned,
     FeatureWorkAxisEndpointToleranceAssumed,
     /// Feature body selections retain native identities; no unique body.
@@ -897,6 +899,8 @@ impl F3dLossCode {
         Self::FeatureFormCageOrderAssumed,
         Self::FeatureFormEmptyCagesAssumed,
         Self::FeatureScaleFrameLengthFormAssumed,
+        Self::FeatureScaleMatrixWordAssumed,
+        Self::FeatureScaleUnlistedGroupsAssumed,
         Self::FeatureWorkAxisRuleUnassigned,
         Self::FeatureWorkAxisEndpointToleranceAssumed,
         Self::FeatureBodySelectionNative,
@@ -1284,6 +1288,8 @@ impl F3dLossCode {
             Self::FeatureFormCageOrderAssumed => "feature.form-cage-order-assumed",
             Self::FeatureFormEmptyCagesAssumed => "feature.form-empty-cages-assumed",
             Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
+            Self::FeatureScaleMatrixWordAssumed => "feature.scale-matrix-word-assumed",
+            Self::FeatureScaleUnlistedGroupsAssumed => "feature.scale-unlisted-groups-assumed",
             Self::FeatureWorkAxisRuleUnassigned => "feature.work-axis-rule-unassigned",
             Self::FeatureWorkAxisEndpointToleranceAssumed => {
                 "feature.work-axis-endpoint-tolerance-assumed"
@@ -1673,6 +1679,8 @@ impl F3dLossCode {
             | Self::FeatureFormCageOrderAssumed
             | Self::FeatureFormEmptyCagesAssumed
             | Self::FeatureScaleFrameLengthFormAssumed
+            | Self::FeatureScaleMatrixWordAssumed
+            | Self::FeatureScaleUnlistedGroupsAssumed
             | Self::FeatureWorkAxisRuleUnassigned
             | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
@@ -1970,6 +1978,8 @@ impl F3dLossCode {
             | Self::FeatureFormCageOrderAssumed
             | Self::FeatureFormEmptyCagesAssumed
             | Self::FeatureScaleFrameLengthFormAssumed
+            | Self::FeatureScaleMatrixWordAssumed
+            | Self::FeatureScaleUnlistedGroupsAssumed
             | Self::FeatureWorkAxisRuleUnassigned
             | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
@@ -2351,6 +2361,8 @@ mod tests {
                 "feature.form-cage-order-assumed",
                 "feature.form-empty-cages-assumed",
                 "feature.scale-frame-length-form-assumed",
+                "feature.scale-matrix-word-assumed",
+                "feature.scale-unlisted-groups-assumed",
                 "feature.work-axis-rule-unassigned",
                 "feature.work-axis-endpoint-tolerance-assumed",
                 "feature.body-selection-native",

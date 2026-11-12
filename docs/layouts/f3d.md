@@ -9997,6 +9997,33 @@ Unstated regions:
 - `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
 - `11..130` (119 B): The specification states no field in this range.
 
+## `scale_matrix_marker_zero_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 40 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A matrix Scale scope has nine zero bytes |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | A matrix Scale scope has nine zero bytes |
+| 20 | 1 | `marker` | `u8` | little | spec | A matrix Scale scope has nine zero bytes · value `0` |
+| 21 | 4 | `word` | `u32` | little | spec | A matrix Scale scope has nine zero bytes |
+| 25 | 4 | `body_count` | `u32` | little | spec | A matrix Scale scope has nine zero bytes |
+| 29 | 11 | `first_body_group` | `bytes[11]` | little | spec | A matrix Scale scope has nine zero bytes |
+
+## `scale_matrix_marker_one_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 44 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A matrix Scale scope has nine zero bytes |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | A matrix Scale scope has nine zero bytes |
+| 20 | 1 | `marker` | `u8` | little | spec | A matrix Scale scope has nine zero bytes · value `1` |
+| 21 | 4 | `zero_word` | `u32` | little | spec | A matrix Scale scope has nine zero bytes · value `0` |
+| 25 | 4 | `word` | `u32` | little | spec | A matrix Scale scope has nine zero bytes |
+| 29 | 4 | `body_count` | `u32` | little | spec | A matrix Scale scope has nine zero bytes |
+| 33 | 11 | `first_body_group` | `bytes[11]` | little | spec | A matrix Scale scope has nine zero bytes |
+
 ## `surface_delete_face_wide_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 132 B
@@ -10010,7 +10037,7 @@ Parsed by:
 
 Unstated regions:
 
-- `0..128` (128 B): Indexed scope header and operation prologue; control semantics are tracked in DR-464.
+- `0..128` (128 B): Indexed scope header and operation prologue; control semantics are tracked in DR-466.
 
 ## Not tabulated
 

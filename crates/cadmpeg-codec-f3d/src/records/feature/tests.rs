@@ -653,9 +653,12 @@ fn scale_center_preserves_wire_and_rejects_partial_location() {
             body_group_record_index: 102,
             center_record_index: 105,
             center_position: center,
-            uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(2.5)
-                .expect("checked fixture value"),
-            uniform_factor_offset: 21,
+            further_body_group_record_indices: Vec::new(),
+            factors: crate::records::feature::body_ops::DesignScaleFactors::Uniform {
+                factor: cadmpeg_ir::scalar::PositiveReal::new(2.5).expect("checked fixture value"),
+                offset: 21,
+            },
+            matrix_offset: None,
         };
         let expected = match center {
             None => {
@@ -1268,7 +1271,6 @@ fn coil_selection_preserves_wire_and_rejects_dependent_fields_without_identity()
         .to_string();
     assert!(error.contains("secondary_identity"));
     assert!(error.contains("curve_secondary_identity"));
-
     let face = r#"{"kind":"face_recipe","asset_id":"00000001-1111-4111-8111-111111111111","context_id":"00000002-1111-4111-8111-111111111111","recipe_record_index":3,"recipe_record_byte_offset":40,"recipe_id":"recipe","recipe_kind":"#;
     for kind in ["face", "bounded_face"] {
         for fields in [
@@ -1567,7 +1569,6 @@ fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
     use crate::records::feature::work_geometry::{
         DesignVertexRecipe, DesignVertexResolution, DesignWorkPlaneConstruction,
     };
-
     let base = serde_json::json!({
         "record_index": 2, "byte_offset": 10, "class_tag": "369",
         "paired_byte_offset": 20, "paired_class_tag": "261",
@@ -1970,7 +1971,6 @@ mod work_points;
 #[test]
 fn a_path_pattern_scope_keeps_its_kind_through_serialization() {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-
     let scope = |kind: DesignFeatureKind, source_kind: Option<&str>| {
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#10",
