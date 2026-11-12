@@ -69,7 +69,7 @@ fn conflicts(native: &crate::native::F3dNative) -> bool {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_extrude_parameter_operands(&ctx, &mut findings);
+        super::super::extrude_operands::validate_extrude_parameter_operands(&ctx, &mut findings);
         findings.iter().any(|finding| finding.message == CONFLICT)
     })
 }
@@ -95,7 +95,7 @@ fn geometry_depth_does_not_require_omitted_extrude_face_groups() {
         let ir = serde_json::from_value(value).unwrap();
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
-        super::super::validate_extrude_parameter_operands(&ctx, &mut findings);
+        super::super::extrude_operands::validate_extrude_parameter_operands(&ctx, &mut findings);
         assert!(!findings.iter().any(|finding| finding.message == CONFLICT));
     });
 }
@@ -349,7 +349,7 @@ fn a_new_body_distance_extrude_can_store_a_selected_face_start_without_a_group()
 #[test]
 fn a_one_sided_face_target_can_lack_only_its_termination_group() {
     use crate::records::topology::extrude_selection::DesignExtrudeFaceRole::{Start, Termination};
-    use crate::validate::one_sided_face_target_lacks_only_its_termination as lacks;
+    use crate::validate::extrude_operands::one_sided_face_target_lacks_only_its_termination as lacks;
     use DesignExtrudeExtent::{OneSidedToFace, TwoSidedDistanceToFace, TwoSidedToFaces};
     assert!(lacks(
         OneSidedToFace,

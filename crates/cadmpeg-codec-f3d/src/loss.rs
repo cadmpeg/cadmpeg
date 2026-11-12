@@ -359,6 +359,15 @@ pub(crate) enum F3dLossCode {
     FeatureProfileSelectionNative,
     /// Multiple Sketch-profile operands retain an unresolved group composition.
     FeatureExtrudeProfileGroupNative,
+    FeatureExtrudeSurfaceProfileAssumed,
+    FeatureExtrudeSymmetricDistanceAssumed,
+    FeatureExtrudeWallThicknessNative,
+    FeatureExtrudeAuxiliarySelectionNative,
+    FeatureExtrudeFaceControlAssumed,
+    FeatureExtrudeSketchPlacementNative,
+    FeatureExtrudeTargetOptionAssumed,
+    FeatureExtrudeStartFaceAbsentAssumed,
+    FeatureExtrudeZeroSideTaperIgnored,
     /// An Extrude face profile's inferred face set lists unresolved members in face-slot order.
     FeatureExtrudeProfileFaceOrderAssumed,
     /// An Extrude face profile's end-cap search stopped at a local cap.
@@ -851,6 +860,15 @@ impl F3dLossCode {
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
         Self::FeatureExtrudeProfileGroupNative,
+        Self::FeatureExtrudeSurfaceProfileAssumed,
+        Self::FeatureExtrudeSymmetricDistanceAssumed,
+        Self::FeatureExtrudeWallThicknessNative,
+        Self::FeatureExtrudeAuxiliarySelectionNative,
+        Self::FeatureExtrudeFaceControlAssumed,
+        Self::FeatureExtrudeSketchPlacementNative,
+        Self::FeatureExtrudeTargetOptionAssumed,
+        Self::FeatureExtrudeStartFaceAbsentAssumed,
+        Self::FeatureExtrudeZeroSideTaperIgnored,
         Self::FeatureExtrudeProfileFaceOrderAssumed,
         Self::FeatureExtrudeProfileFaceSearchCapped,
         Self::FeatureExtrudeProfileCapFacesInferred,
@@ -1207,6 +1225,21 @@ impl F3dLossCode {
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureSketchProfileFlagsAssumed => "feature.sketch-profile-flags-assumed",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
+            Self::FeatureExtrudeSurfaceProfileAssumed => "feature.extrude-surface-profile-assumed",
+            Self::FeatureExtrudeSymmetricDistanceAssumed => {
+                "feature.extrude-symmetric-distance-assumed"
+            }
+            Self::FeatureExtrudeWallThicknessNative => "feature.extrude-wall-thickness-native",
+            Self::FeatureExtrudeAuxiliarySelectionNative => {
+                "feature.extrude-auxiliary-selection-native"
+            }
+            Self::FeatureExtrudeFaceControlAssumed => "feature.extrude-face-control-assumed",
+            Self::FeatureExtrudeSketchPlacementNative => "feature.extrude-sketch-placement-native",
+            Self::FeatureExtrudeTargetOptionAssumed => "feature.extrude-target-option-assumed",
+            Self::FeatureExtrudeStartFaceAbsentAssumed => {
+                "feature.extrude-start-face-absent-assumed"
+            }
+            Self::FeatureExtrudeZeroSideTaperIgnored => "feature.extrude-zero-side-taper-ignored",
             Self::FeatureExtrudeProfileFaceOrderAssumed => {
                 "feature.extrude-profile-face-order-assumed"
             }
@@ -1605,6 +1638,15 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeSurfaceProfileAssumed
+            | Self::FeatureExtrudeSymmetricDistanceAssumed
+            | Self::FeatureExtrudeWallThicknessNative
+            | Self::FeatureExtrudeAuxiliarySelectionNative
+            | Self::FeatureExtrudeFaceControlAssumed
+            | Self::FeatureExtrudeSketchPlacementNative
+            | Self::FeatureExtrudeTargetOptionAssumed
+            | Self::FeatureExtrudeStartFaceAbsentAssumed
+            | Self::FeatureExtrudeZeroSideTaperIgnored
             | Self::FeatureExtrudeProfileFaceOrderAssumed
             | Self::FeatureExtrudeProfileFaceSearchCapped
             | Self::FeatureExtrudeProfileCapFacesInferred
@@ -1896,6 +1938,15 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeSurfaceProfileAssumed
+            | Self::FeatureExtrudeSymmetricDistanceAssumed
+            | Self::FeatureExtrudeWallThicknessNative
+            | Self::FeatureExtrudeAuxiliarySelectionNative
+            | Self::FeatureExtrudeFaceControlAssumed
+            | Self::FeatureExtrudeSketchPlacementNative
+            | Self::FeatureExtrudeTargetOptionAssumed
+            | Self::FeatureExtrudeStartFaceAbsentAssumed
+            | Self::FeatureExtrudeZeroSideTaperIgnored
             | Self::FeatureExtrudeProfileFaceOrderAssumed
             | Self::FeatureExtrudeProfileFaceSearchCapped
             | Self::FeatureExtrudeProfileCapFacesInferred
@@ -2270,6 +2321,15 @@ mod tests {
                 "dimension.unprojected",
                 "feature.profile-selection-native",
                 "feature.extrude-profile-group-native",
+                "feature.extrude-surface-profile-assumed",
+                "feature.extrude-symmetric-distance-assumed",
+                "feature.extrude-wall-thickness-native",
+                "feature.extrude-auxiliary-selection-native",
+                "feature.extrude-face-control-assumed",
+                "feature.extrude-sketch-placement-native",
+                "feature.extrude-target-option-assumed",
+                "feature.extrude-start-face-absent-assumed",
+                "feature.extrude-zero-side-taper-ignored",
                 "feature.extrude-profile-face-order-assumed",
                 "feature.extrude-profile-face-search-capped",
                 "feature.extrude-profile-cap-faces-inferred",
