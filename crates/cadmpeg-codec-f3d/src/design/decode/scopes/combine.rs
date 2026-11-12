@@ -423,9 +423,8 @@ fn combine_operation_with(
                 unconfirmed.middle_list_assumed =
                     stored.middle.len() == 2 && lists.companions.is_empty();
                 if lists.new_component == 1 {
-                    let nodes = match &stored.middle[..] {
-                        [_, nodes, _] | [nodes, _] => nodes,
-                        _ => return None,
+                    let ([_, nodes, _] | [nodes, _]) = &stored.middle[..] else {
+                        return None;
                     };
                     destination = DesignCombineDestination::NewComponent {
                         browser_node_record_index: nodes.first().copied(),
