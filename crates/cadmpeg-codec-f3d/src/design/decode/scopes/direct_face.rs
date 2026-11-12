@@ -576,6 +576,18 @@ pub(crate) fn move_operation_links_hold(
                     .values()
                     .any(|index| *index == operation.transform_record_index)
                 && header.record_index == operation.transform_record_index
+                && operation.prefix.as_ref().is_none_or(|prefix| {
+                    (operation.form != direct_face::DesignMoveForm::Form2
+                        || prefix.full_references())
+                        && (!prefix.matrix_omitted
+                            || operation.form == direct_face::DesignMoveForm::Form5
+                                && prefix.codes == [0; 2]
+                                && prefix.references.iter().all(|reference| {
+                                    matches!(reference, direct_face::DesignMoveReference::Null)
+                                })
+                                && operation.transform
+                                    == crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY)
+                })
                 && operation.relative_form_offset().is_some_and(|offset| {
                     header.byte_offset.checked_add(u64_from_index(offset))
                         == Some(operation.form_offset)

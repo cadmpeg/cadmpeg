@@ -184,3 +184,39 @@ fn a_marked_move_transform_needs_no_listed_class() {
     operation.transform_reference_offset = Some(marked + 1);
     assert!(!move_operation_links_hold(&scope, Some(&header)));
 }
+
+#[test]
+fn move_prefix_validator_rejects_inconsistent_native_claims() {
+    use crate::records::feature::direct_face::{DesignMovePrefix, DesignMoveReference};
+
+    let (mut scope, header) = fixture("452");
+    let DesignScopePayloadMut::Move(Some(operation)) = scope.payload_mut() else {
+        panic!("Move payload");
+    };
+    operation.prefix = Some(DesignMovePrefix {
+        references: std::array::from_fn(|_| DesignMoveReference::Null),
+        codes: [0; 2],
+        matrix_omitted: true,
+    });
+    assert!(move_operation_links_hold(&scope, Some(&header)));
+    for violation in 0..3 {
+        let mut changed = scope.clone();
+        let DesignScopePayloadMut::Move(Some(operation)) = changed.payload_mut() else {
+            panic!("Move payload");
+        };
+        if violation == 0 {
+            let mut matrix = operation.transform.rows();
+            matrix[0][3] = 1.0;
+            operation.transform = matrix.try_into().unwrap();
+        } else if violation == 1 {
+            operation.prefix.as_mut().unwrap().codes[0] = 1;
+        } else {
+            operation.form = DesignMoveForm::Form2;
+            operation.prefix.as_mut().unwrap().matrix_omitted = false;
+        }
+        assert!(!move_operation_links_hold(&changed, Some(&header)));
+    }
+    let mut wire = serde_json::to_value(scope.move_operation().unwrap()).unwrap();
+    wire["prefix"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<DesignMoveOperation>(wire).is_err());
+}

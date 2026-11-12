@@ -136,7 +136,7 @@ fn nullable_transform_slots_preserve_references_codes_matrix_and_source_links() 
                 match (reference, present, typed) {
                     (DesignMoveReference::Null, false, _) => {}
                     (DesignMoveReference::Local { record_index }, true, false) => {
-                        assert_eq!(*record_index, index)
+                        assert_eq!(*record_index, index);
                     }
                     (
                         DesignMoveReference::Typed {
