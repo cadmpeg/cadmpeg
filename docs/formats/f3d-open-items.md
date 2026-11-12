@@ -190,15 +190,15 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 ### DR-259. Owner of a scope that several timeline objects name
 
-**Question.** Which object owns a `Base Feature` scope that two or more paste or body-to-component objects name?
+**Question.** Which object owns a `Base Feature` scope that two or more paste or body-to-component objects name, and which fields bind an object without a later same-index header?
 
-**Known.** `f3d.md` §3.1 "A paste or body-to-component timeline object owns" gives the owner fields; each object stores its reference to the owned scope after its counted body references. The owned scope takes its owner's timeline position. The decoder gives the scope to the object with the lowest record index whose owned runs read and reads no copy sources for it.
+**Known.** `f3d.md` §3.1 "A paste or body-to-component timeline object owns" gives the owner fields; each object stores its reference to the owned scope after its counted body references. The owned scope takes its owner's timeline position. The decoder gives the scope to the object with the lowest record index whose owned runs read and reads no copy sources for it. For an unpaired object, it reads the count and references as the owned scope and leaves the copy form unread.
 
 **Need.** A save in which two objects name one scope, with the timeline position and the body set that Fusion shows for that scope.
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.timeline-owner-competing`.
+**Note.** The decoder reports `feature.timeline-owner-competing` or `feature.timeline-owner-unpaired` for the respective cases.
 
 ### DR-260. Placement of a pasted copy
 
@@ -328,14 +328,11 @@ at `x = 138.5` mm and `x = 162.5` mm, which is `12` mm on each side. The
 prologue stores travel direction `3`, face-extend option `2`, and side extents
 `[1, 0]`.
 
-**Need.** The neutral symmetric extent states the whole travel. A reader must
-know the measurement form to convert the stored distance. Without a
-measurement word, the decoder keeps the native feature when a fixed lane
-carries a symmetric distance.
+**Need.** Controlled symmetric Extrudes with a fixed lane or an indexed distance must establish the measurement when the word is absent.
 
-**Conflict.** Without a measurement word, the decoder converts an
-`AlongDistance` parameter of a single-lane symmetric `Extrude` to the whole
-travel.
+**Conflict.** The fixed-lane reading uses the distance on each side. The single-lane indexed-parameter reading uses the distance as the whole travel.
+
+**Note.** The decoder retains the chosen reading with `feature.extrude-symmetric-distance-assumed`.
 
 ### DR-79. Typed-reference Design record grammars
 
@@ -798,7 +795,11 @@ The first closing reference run identifies a direct contained child by its local
 
 **Known.** `f3d.md` §3.1 "An attributed local component occurrence carries a counted attribute run and an occurrence key." gives the frame. The two bytes are `00 00` in most frames and `01 00` in one. The reference names a different record in each frame, in increasing order.
 
-**Need.** The two bytes can be a grounding or visibility state of the occurrence.
+**Need.** The two bytes can be a grounding or visibility state of the occurrence. A controlled attributed occurrence must identify the marked source reference when its target has no type registration.
+
+**Conflict.** None.
+
+**Note.** The decoder reads an unregistered source as a component occurrence and reports `assembly.local-occurrence-source-unregistered`.
 
 ### DR-84. Occurrence identity lists of a typed path
 
@@ -962,15 +963,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-117. Current mixed face and distance extent payload
 
-**Question.** Which reference assignments and orientation fields define a first-side face termination with a second-side distance, and what does target option zero select?
+**Question.** Which reference assignments and orientation fields define a first-side face termination with a second-side distance, and what do target options zero and two select?
 
-**Known.** The current seven-slot prologue can carry direction two, first-side extent two, and a payload second-side extent one. Target option zero also occurs with a payload second-side extent one or two. The final zero word before the scope reference count does not identify the second-side termination.
+**Known.** The current seven-slot prologue can carry direction two, first-side extent two, and a payload second-side extent one. Target option zero also occurs with a payload second-side extent one or two. Target option two occurs with a payload second-side extent two. The final zero word before the scope reference count does not identify the second-side termination. The decoder reads target options zero and two with the side terminations of target option one and reports `feature.extrude-target-option-assumed`.
 
 **Need.** Controlled face-then-distance changes with both direction states and independent side tapers.
 
 **Conflict.** None.
 
-**Note.** The scope and ordered references stay native with `feature.extrude-extent-native` until the complete assignment is defined.
+**Note.** The scope and ordered references remain native.
 
 ### DR-118. Split tool face without a tool group
 
@@ -2004,7 +2005,7 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** What does start-support byte `2` mean for an `Extrude` scope that stores no start-face group?
 
-**Known.** `f3d.md` §3.1 gives start-support byte `2` as a selected-face start that stores a `ProfileOffset` and a profile-from-entity reference. A selected-face start adds one role-`0x0000001100000000` start group; a role-`0x0000000500000000` group is a start-face group only when the start support is selected face. A new-body `Extrude` scope exists with start-support byte `2`, one-sided distance extent, and a `ProfileOffset` owner, whose reference table holds three fixed scalar lanes, one further record, the profile group, and its profile. It stores no start group of any role. Its reference slots and frame length are those of an offset-profile-plane new-body scope with the same reference count. Selected-face start scopes of other operations store the start group.
+**Known.** `f3d.md` §3.1 gives start-support byte `2` as a selected-face start that stores a `ProfileOffset` and a profile-from-entity reference. A selected-face start adds one role-`0x0000001100000000` start group; a role-`0x0000000500000000` group is a start-face group only when the start support is selected face. A new-body `Extrude` scope exists with start-support byte `2`, one-sided distance extent, and a `ProfileOffset` owner, whose reference table holds three fixed scalar lanes, one further record, the profile group, and its profile. It stores no start group of any role. Its reference slots and frame length are those of an offset-profile-plane new-body scope with the same reference count. Selected-face start scopes of other operations store the start group. A one-sided to-face `Extrude` scope with start-support byte `2` stores one role-`0x0000001100000000` face group, which its seventh reference slot names, and a `ProfileOffset` reference in its first slot. When the seventh reference slot names the single face group, the decoder reads that group as the termination and the start as the offset profile plane, and reports `feature.extrude-start-face-absent-assumed`. A single face group that the seventh slot does not name is the start group.
 
 **Need.** Saves of a new-body `Extrude` that start from a selected face, from an offset plane, and from a selected face that is later deleted, each with the start-support byte and the scope reference table recorded.
 
@@ -2031,6 +2032,30 @@ when the operation transition carries no candidate for the group members?
 **Known.** The 129-byte two-wrapper form stores two zero bytes there, and the 130-byte form stores `u8 1` and two zero bytes, with every later field one byte later. The 220-byte rectangular-pattern direction record stores the same `u8 1` and two zero bytes between the same two references. The decoder projects a pattern whose axis comes from the 130-byte form only when its total angle is a full turn, where the instance set does not depend on the direction of travel. In a 130-byte record whose pattern repeats an Extrude twenty times over a full turn, both wrappers carry the same persistent identity. No ASM history topology holds that identity. The design type table lists it among the entity identities of the body-visibility browser-node member type `D26351F0-5940-4D23-AA20-2C35475A6D9E`. It is one less than the record index of the seed Extrude's scope. The axis stays unresolved.
 
 **Need.** Saves of one circular pattern of a body about an edge axis, with a total angle of 90 degrees and three instances, once in each direction of travel, plus the same pattern as a full turn. Save the full-turn pattern once about a linear edge, once about a circular edge, and once about a construction axis. Each save needs the axis record frame, its wrapper records, the parameter owners, and the ASM history.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-328. Extrude auxiliary and surface selections
+
+**Question.** What geometry and ordering does a role-`0x0000004300000000` group select in a surface Extrude, and what does a role-`0x0000000500000000` group select in a distance and through-all Extrude?
+
+**Known.** A surface Extrude scope can reference one such group with multiple members. The decoder retains the group and reads it as the profile with `feature.extrude-surface-profile-assumed`. A distance and through-all scope can carry a role-`0x0000000500000000` group; its selection stays native with `feature.extrude-auxiliary-selection-native`.
+
+**Need.** Controlled surface Extrudes that vary the selected curves and their ordering, and distance and through-all Extrudes that vary the auxiliary selection.
+
+**Conflict.** None.
+
+**Note.** The group and its member references remain in the native model.
+
+### DR-329. Extrude second-side face control
+
+**Question.** What does the byte after the second-side extent of a distance-to-face Extrude control?
+
+**Known.** A two-sided distance-to-face extent stores byte `0` or `1` after its second-side extent. The decoder retains the byte in the native extent, reads byte `1` with the face termination of byte `0`, and reports `feature.extrude-face-control-assumed`.
+
+**Need.** Distance-to-face Extrudes that differ only in the second-side control.
 
 **Conflict.** None.
 
@@ -2142,7 +2167,7 @@ when the operation transition carries no candidate for the group members?
 
 **Conflict.** The Mini AfterSherpa V6 Zodiac BMO part stores a one-sided Cut scope with a selected-face start, one start face group, a `Side1Offset` owner, no termination group, and no shape-target group.
 
-**Note.** None.
+**Note.** The Conflict scope has the DR-322 form: its seventh reference slot names its single face group.
 
 ### DR-361. Treated edges in executed treatment transitions
 
