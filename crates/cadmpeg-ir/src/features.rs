@@ -3684,6 +3684,12 @@ pub enum FeatureOperation {
         /// Whether tool bodies remain present after the Boolean result is created.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         keep_tools: bool,
+        #[doc = "Component creation requested for the Boolean result."]
+        #[serde(
+            default,
+            skip_serializing_if = "COMBINE_DESTINATION_IS_TARGET_COMPONENT"
+        )]
+        destination: CombineDestination,
     },
     /// Creates solid bodies from selected cells enclosed by boundary bodies.
     BoundaryFill {
@@ -4105,6 +4111,21 @@ pub enum UnresolvedFamily {
     /// The `move_object` operation family.
     MoveObject,
 }
+
+#[doc = "Component creation mode of a Boolean combination."]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum CombineDestination {
+    #[doc = "Keep the result in the target body's component."]
+    #[default]
+    TargetComponent,
+    #[doc = "Create a component that contains the combined result."]
+    NewComponent,
+}
+
+const COMBINE_DESTINATION_IS_TARGET_COMPONENT: fn(&CombineDestination) -> bool =
+    |destination| matches!(destination, CombineDestination::TargetComponent);
 
 impl FeatureOperation {
     /// Family name of an operation whose replay produces body geometry, and `None` for

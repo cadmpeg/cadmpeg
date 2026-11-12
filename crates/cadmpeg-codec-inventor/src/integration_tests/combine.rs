@@ -41,6 +41,7 @@ fn combine_decode_dispatches_slots_and_retains_the_target_result() {
                 operands,
                 op,
                 keep_tools,
+                ..
             }) = feature.evaluation.definition()
             else {
                 panic!("neutral Combine");
