@@ -1909,6 +1909,28 @@ impl std::fmt::Display for IncompleteFamilyCounts<'_> {
     }
 }
 
+/// Restate the `feature.definition-incomplete` note from the current features
+/// after a later pass completed some of them.
+fn refresh_incomplete_feature_loss(
+    ir: &CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let kind = F3dLossCode::FeatureDefinitionIncomplete.kind();
+    let Some(at) = losses.iter().position(|loss| loss.code == kind) else {
+        return;
+    };
+    let families = incomplete_feature_families(ir);
+    let count = families.values().sum::<usize>();
+    if count == 0 {
+        losses.remove(at);
+        return;
+    }
+    losses[at] = F3dLossCode::FeatureDefinitionIncomplete.note(format!(
+        "{count} feature scope(s) have no complete neutral feature definition: {}.",
+        IncompleteFamilyCounts(&families)
+    ));
+}
+
 fn push_loss_vec(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     code: F3dLossCode,
@@ -3398,6 +3420,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 &mut decoded.ir,
                 &mut decoded.body.losses,
             )?;
+            refresh_incomplete_feature_loss(&decoded.ir, &mut decoded.body.losses);
             let poses = crate::xref::operation_pose::collect(
                 ctx,
                 &scan,
