@@ -13,22 +13,19 @@ use crate::records::feature::scope::DesignParameterScope;
 const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
 pub(crate) fn matches_frame(
-    class: &str,
-    paired_class: &str,
     length: u64,
     reference_count_offset: u64,
     reference_count: usize,
 ) -> bool {
-    class == "349"
-        && paired_class == "262"
-        && length == u64_from_index(layout::LEN)
+    length == u64_from_index(layout::LEN)
         && reference_count_offset == u64_from_index(layout::REFERENCE_COUNT)
         && u32::try_from(reference_count) == Ok(layout::REFERENCE_COUNT_VALUE)
 }
 
 pub(crate) fn matches_scope(scope: &DesignParameterScope) -> bool {
     if !matches!(scope.extrude_prologue(), Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker_offset: None, operation_offset, ..
+        operation_prefix_marker_offset: None, operation_offset,
+        extent: Some(DesignExtrudeExtent::TwoSidedThroughAll), ..
     }) if scope.byte_offset().checked_add(u64_from_index(layout::OPERATION)) == Some(operation_offset))
     {
         return false;
@@ -38,8 +35,6 @@ pub(crate) fn matches_scope(scope: &DesignParameterScope) -> bool {
         .checked_sub(scope.byte_offset())
         .is_some_and(|offset| {
             matches_frame(
-                scope.class_tag.as_str(),
-                scope.paired_class_tag.as_str(),
                 scope.frame_length(),
                 offset,
                 scope.reference_members().len(),
