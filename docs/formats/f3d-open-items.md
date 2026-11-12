@@ -72,13 +72,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the u32 word before the Hole extent controls in type versions 5 and 7 encode?
 
-**Known.** Type versions 3 and 4 do not store the word, and type version 3 stores no extent control. Every observed word is `0`, on Distance and non-distance holes.
+**Known.** Type versions 3 and 4 omit the word, and type version 3 omits the extent control. The word can be nonzero on Distance and non-distance holes.
 
-**Need.** A Hole of type version 5 or 7 with a nonzero word, and the hole type, tap, or position setting that produces it.
+**Need.** Controlled Holes of type version 5 or 7 that vary the hole, tap, and position settings independently and bind each word value to one setting.
 
 **Conflict.** None.
 
-**Note.** The decoder records the word on the native Hole extent and does not use it for projection.
+**Note.** The decoder retains the word on the native extent and in Hole source properties. A nonzero word reports `feature.hole-extent-leading-word-assumed` for the reading that the stored scalar geometry remains independent of it.
 
 ### DR-220. Hole carrier placement forms
 
@@ -1175,13 +1175,37 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which role-`0x0000002100000000` group does each of `RefDim1` and `RefDim2` measure from, and does a distance carry a sign?
 
-**Known.** A Hole placed by distances from two edges stores both parameters and two role-`0x0000002100000000` groups, and its carrier point stores the resulting position. In the control both distances are 10 mm from two perpendicular edges.
+**Known.** A Hole placed by reference-edge distances stores `RefDim1` and optionally `RefDim2`. One distance has one role-`0x0000002100000000` group, and two distances have two such groups. Its carrier point stores the resulting position.
 
 **Need.** Controls with two different distances, with the edges selected in both orders, and with a hole on the other side of an edge.
 
 **Conflict.** None.
 
-**Note.** The Hole projects from its carrier point and reports `feature.hole-reference-dimensions-native`.
+**Note.** The Hole projects from its carrier point and reports `feature.hole-reference-dimensions-native`. Unproved distance-to-group associations retain the scalar dimensions and report `feature.hole-parameters-independent-assumed`.
+
+### DR-470. Independent parameters of a partial Hole
+
+**Question.** Which Hole parameters remain active when the extent controls, parameter associations, or entry-treatment dimensions leave the complete construction unresolved, and which standard sizing controls define a neutral clearance or thread specification?
+
+**Known.** Extent control `1` can coexist with a `HoleDepth` owner and an absent saved-depth property. The parameter owners retain the diameter, tip, treatment and reference-distance expressions and evaluated values. The sizing block retains four ordered names for standard, fit, size and fastener, followed by the entry-type word for simple, counterbore or countersink form.
+
+**Need.** Controlled non-distance Holes that vary the stored depth independently of the target, partial and competing treatment parameter sets, and standard sizing controls that establish modeled, cosmetic, handedness and depth settings.
+
+**Conflict.** None.
+
+**Note.** The decoder retains independently admitted dimensions, parameter expressions and extent metadata on a neutral Hole. A readable entry-type word selects the active form; unmatched treatment parameters remain attached. An unresolved extent, entry-type or parameter association reports `feature.hole-parameters-independent-assumed`; an incomplete or conflicting shape reports `feature.hole-shape-partial-assumed`. Native sizing names remain source properties and report `feature.hole-standard-sizing-assumed`.
+
+### DR-471. Hole drilling direction with an unavailable control
+
+**Question.** Which drilling direction applies when a Hole retains its carrier and entry points while its direction control is unavailable?
+
+**Known.** The carrier stores a model-space normal, and its admitted point forms give the entry positions. Direction controls `0` and `1` orient the drill against and along that normal respectively. Legacy extent forms can retain these placements while omitting the direction control.
+
+**Need.** Controlled legacy Holes with opposite drill directions at the same entry points and support plane.
+
+**Conflict.** None.
+
+**Note.** The decoder retains each entry position and carrier normal as an unoriented Hole axis and reports `feature.hole-carrier-axis-assumed`.
 
 ### DR-124. Partial-curve operands in profile selections
 

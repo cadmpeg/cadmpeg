@@ -1544,8 +1544,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 source_properties: if matches!(
                     &definition,
                     FeatureDefinition::Operation(FeatureOperation::Native { .. })
-                ) {
-                    scope_properties(scope, native_scope, placements)?
+                ) || matches!(family, Some(DesignFeatureFamily::Hole))
+                {
+                    scope_properties(scope, native_scope, placements, &parameters)?
                 } else {
                     BTreeMap::new()
                 },
@@ -2405,6 +2406,7 @@ fn scope_properties(
     scope: &DesignParameterScope,
     native_scope: &str,
     placements: &[DesignSketchPlacement],
+    parameters: &[(u32, &DesignParameter)],
 ) -> Result<std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     let mut properties = std::collections::BTreeMap::new();
     for (ordinal, record_index) in scope.reference_members().values().enumerate() {
@@ -2429,6 +2431,73 @@ fn scope_properties(
         }) {
             let id = crate::ids::neutral_sketch_id(placement);
             properties.insert(cadmpeg_core::nonblank_literal!("profile"), id.into_string());
+        }
+    }
+    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Hole {
+        for (_, parameter) in parameters {
+            let key =
+                cadmpeg_core::text::NonBlankString::new(format!("parameter:{}", parameter.name()))
+                    .ok_or_else(|| CodecError::malformed("Hole parameter property key is blank"))?;
+            let key = if properties.contains_key(&key) {
+                cadmpeg_core::text::NonBlankString::new(format!(
+                    "parameter-native:{}",
+                    parameter.id
+                ))
+                .ok_or_else(|| CodecError::malformed("Hole native parameter key is blank"))?
+            } else {
+                key
+            };
+            properties.insert(key, parameter.expression().to_owned());
+        }
+        if let Some(extent) = scope.hole_extent() {
+            if let Some(hole_type) = &extent.hole_type {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("hole:type"),
+                    hole_type.value.to_string(),
+                );
+            }
+            if let Some(word) = &extent.leading_word {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("hole:extent_leading_word"),
+                    word.value.to_string(),
+                );
+            }
+            if let Some(control) = extent.extent_control {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("hole:extent_control"),
+                    control.to_string(),
+                );
+            }
+            if let Some(depth) = &extent.saved_non_distance_depth {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("hole:saved_non_distance_depth_cm"),
+                    depth.value.get().to_string(),
+                );
+            }
+            if let Some(control) = &extent.direction_control {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("hole:direction_control"),
+                    control.value.to_string(),
+                );
+            }
+            if let Some(standard) = &extent.standard {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("hole:standard"),
+                    standard.standard.clone(),
+                );
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("hole:fit"),
+                    standard.fit.clone(),
+                );
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("hole:size"),
+                    standard.size.clone(),
+                );
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("hole:fastener"),
+                    standard.fastener.clone(),
+                );
+            }
         }
     }
     Ok(properties)
@@ -7787,40 +7856,42 @@ fn hole_start_faces_only(
     })
 }
 
-/// One directed placement per Hole entry point, in model millimetres.
 fn hole_placements(
     scope: &DesignParameterScope,
 ) -> Option<Vec<cadmpeg_ir::features::holes::HolePlacement>> {
     let construction = scope.hole_construction()?;
-    let control = scope.hole_extent()?.direction_control.as_ref()?.value;
-    let [x, y, z] = construction.drilling_direction(control)?;
+    let control = scope
+        .hole_extent()
+        .and_then(|extent| extent.direction_control.as_ref())
+        .map(|control| control.value);
+    let [x, y, z] = match control {
+        Some(control) => construction.drilling_direction(control)?,
+        None => construction
+            .direction
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+    };
     let direction = cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(x, y, z))?;
     construction
         .entry_points()?
         .into_iter()
         .map(|point| {
-            Some(cadmpeg_ir::features::holes::HolePlacement::Directed {
-                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                    point[0].get() * 10.0,
-                    point[1].get() * 10.0,
-                    point[2].get() * 10.0,
-                ))?,
-                direction,
+            let position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                point[0].get() * DESIGN_LENGTH_TO_MILLIMETRE,
+                point[1].get() * DESIGN_LENGTH_TO_MILLIMETRE,
+                point[2].get() * DESIGN_LENGTH_TO_MILLIMETRE,
+            ))?;
+            Some(match control {
+                Some(_) => cadmpeg_ir::features::holes::HolePlacement::Directed {
+                    position,
+                    direction,
+                },
+                None => cadmpeg_ir::features::holes::HolePlacement::Axis {
+                    origin: position,
+                    axis: direction,
+                },
             })
         })
         .collect()
-}
-
-/// The entry treatment that a Hole's parameters state.
-enum HoleEntry {
-    Counterbore(
-        cadmpeg_ir::scalar::PositiveLength,
-        cadmpeg_ir::scalar::PositiveLength,
-    ),
-    Countersink(
-        cadmpeg_ir::scalar::PositiveLength,
-        cadmpeg_ir::scalar::InteriorAngle,
-    ),
 }
 
 fn project_hole(
@@ -7831,17 +7902,17 @@ fn project_hole(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
-        holes::{HoleBottom, HoleKind},
+        holes::{HoleBottom, HoleForm, HoleKind, PartialPair},
         FaceSelection, FeatureDefinition, FeatureOperation, LinearTermination,
     };
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Hole {
         return Ok(None);
     }
-    let Some(extent) = hole_termination(scope, parameters, groups, face_operands) else {
+    let extent = hole_termination(scope, parameters, groups, face_operands).unwrap_or_else(|| {
         losses.push(hole_extent_loss(scope));
-        return Ok(None);
-    };
+        LinearTermination::Unresolved {}
+    });
     if let LinearTermination::ToFace {
         face: FaceSelection::Historical { native, .. },
         ..
@@ -7851,9 +7922,6 @@ fn project_hole(
             "Hole scope {} ends at the face that the member of its Extents To group {native} resolves.",
             scope.id
         )));
-    }
-    if !matches!(parameters.len(), 2..=7) {
-        return Ok(None);
     }
     let parameter = |source_kind: &str| {
         let mut matches = parameters
@@ -7867,114 +7935,176 @@ fn project_hole(
         LinearTermination::Blind { length } => Some(length.get()),
         _ => None,
     };
-    let placed_by_reference_dimensions = match (parameter("RefDim1"), parameter("RefDim2")) {
-        (Some(first), Some(second)) => {
-            let edge_groups = groups
-                .iter()
-                .filter(|group| {
-                    native_stream(&group.id) == native_stream(&scope.id)
-                        && group.scope_record_index == scope.record_index
-                        && group.role() == DesignOperandRole::ROLE_0X21
-                })
-                .count();
-            if edge_groups != 2
-                || design_positive_length(first).is_none()
-                || design_positive_length(second).is_none()
-            {
-                return Ok(None);
-            }
-            true
+    let diameter = parameter("HoleDiameter").and_then(design_positive_length);
+    let tip_angle = parameter("TipAngle")
+        .and_then(design_angle)
+        .filter(|angle| angle.get() > 0.0 && angle.get() <= std::f64::consts::PI);
+    let drill_point_angle =
+        tip_angle.and_then(|angle| cadmpeg_ir::scalar::InteriorAngle::try_from(angle).ok());
+    let bottom = tip_angle.map(|_| {
+        drill_point_angle.map_or(HoleBottom::Flat, |included_angle| HoleBottom::Angled {
+            included_angle,
+            depth_to_tip: false,
+        })
+    });
+    let has_role = |roles: &[&str]| {
+        parameters
+            .iter()
+            .any(|(_, parameter)| roles.contains(&parameter.source_kind_str()))
+    };
+    let counterbore_parameters = has_role(&["CBDiameter", "CBDepth"]);
+    let countersink_parameters = has_role(&["CSDiameter", "CSAngle"]);
+    let hole_type = scope
+        .hole_extent()
+        .and_then(|extent| extent.hole_type.as_ref())
+        .map(|hole_type| hole_type.value);
+    let (counterbore, countersink) = match hole_type {
+        Some(0) => (false, false),
+        Some(1) => (true, false),
+        Some(2) => (false, true),
+        _ => (counterbore_parameters, countersink_parameters),
+    };
+    let type_association = match hole_type {
+        Some(0) => !counterbore_parameters && !countersink_parameters,
+        Some(1) => !countersink_parameters,
+        Some(2) => !counterbore_parameters,
+        _ => scope
+            .hole_extent()
+            .is_none_or(|extent| extent.leading_word.is_none()),
+    };
+    let kind = match (counterbore, countersink) {
+        (false, false) if diameter.is_none() && tip_angle.is_none() && hole_type.is_none() => {
+            HoleKind::Unresolved(None)
         }
-        _ => false,
-    };
-    let base_count =
-        if depth.is_some() { 3 } else { 2 } + if placed_by_reference_dimensions { 2 } else { 0 };
-    let diameter = or_none!(design_positive_length(or_none!(parameter("HoleDiameter"))));
-    let tip_angle = or_none!(design_angle(or_none!(parameter("TipAngle"))));
-    if tip_angle.get() <= 0.0 || tip_angle.get() > std::f64::consts::PI {
-        return Ok(None);
-    }
-    let entry = match parameters.len().checked_sub(base_count) {
-        Some(0) => None,
-        Some(2) => match (
-            (parameter("CBDepth"), parameter("CBDiameter")),
-            (parameter("CSDiameter"), parameter("CSAngle")),
+        (false, false) => drill_point_angle.map_or(HoleKind::Simple, |drill_point_angle| {
+            HoleKind::SimpleDrilled { drill_point_angle }
+        }),
+        (true, false) => match (
+            parameter("CBDiameter").and_then(design_positive_length),
+            parameter("CBDepth").and_then(design_positive_length),
         ) {
-            ((Some(counterbore_depth), Some(counterbore_diameter)), _) => {
-                let counterbore_depth = or_none!(design_positive_length(counterbore_depth));
-                let counterbore_diameter = or_none!(design_positive_length(counterbore_diameter));
-                if depth.is_some_and(|depth| counterbore_depth.get() > depth)
-                    || counterbore_diameter.get() <= diameter.get()
-                {
-                    return Ok(None);
-                }
-                Some(HoleEntry::Counterbore(
-                    counterbore_diameter,
-                    counterbore_depth,
-                ))
-            }
-            (_, (Some(countersink_diameter), Some(countersink_angle))) => {
-                let countersink_diameter = or_none!(design_positive_length(countersink_diameter));
-                let countersink_angle = or_none!(cadmpeg_ir::scalar::InteriorAngle::try_from(
-                    or_none!(design_angle(countersink_angle))
+            (Some(entry_diameter), Some(entry_depth))
+                if diameter.is_some_and(|bore| entry_diameter.get() > bore.get())
+                    && depth.is_none_or(|depth| entry_depth.get() <= depth) =>
+            {
+                drill_point_angle.map_or(
+                    HoleKind::Counterbore {
+                        diameter: entry_diameter,
+                        depth: entry_depth,
+                    },
+                    |drill_point_angle| HoleKind::CounterboreDrilled {
+                        diameter: entry_diameter,
+                        depth: entry_depth,
+                        drill_point_angle,
+                    },
                 )
-                .ok());
-                Some(HoleEntry::Countersink(
-                    countersink_diameter,
-                    countersink_angle,
-                ))
             }
-            _ => return Ok(None),
+            (Some(diameter), None) => HoleKind::PartialCounterbore(PartialPair::First(diameter)),
+            (None, Some(depth)) => HoleKind::PartialCounterbore(PartialPair::Second(depth)),
+            _ => HoleKind::Unresolved(Some(HoleForm::Counterbore)),
         },
-        _ => return Ok(None),
+        (false, true) => match (
+            parameter("CSDiameter").and_then(design_positive_length),
+            parameter("CSAngle")
+                .and_then(design_angle)
+                .and_then(|angle| cadmpeg_ir::scalar::InteriorAngle::try_from(angle).ok()),
+        ) {
+            (Some(entry_diameter), Some(angle))
+                if diameter.is_some_and(|bore| entry_diameter.get() > bore.get()) =>
+            {
+                HoleKind::Countersink {
+                    diameter: entry_diameter,
+                    angle,
+                }
+            }
+            (Some(diameter), None) => HoleKind::PartialCountersink(PartialPair::First(diameter)),
+            (None, Some(angle)) => HoleKind::PartialCountersink(PartialPair::Second(angle)),
+            _ => HoleKind::Unresolved(Some(HoleForm::Countersink)),
+        },
+        (true, true) => HoleKind::Unresolved(None),
     };
-    // The tip angle lies in (0, pi]. Pi states a flat bottom; every smaller
-    // tip angle is an interior drill-point angle.
-    let drill_point_angle = cadmpeg_ir::scalar::InteriorAngle::try_from(tip_angle).ok();
-    let (kind, bottom) = match (entry, drill_point_angle) {
-        (Some(HoleEntry::Countersink(diameter, angle)), None) => (
-            HoleKind::Countersink { diameter, angle },
-            Some(HoleBottom::Flat),
-        ),
-        (Some(HoleEntry::Countersink(diameter, angle)), Some(included_angle)) => (
-            HoleKind::Countersink { diameter, angle },
-            Some(HoleBottom::Angled {
-                included_angle,
-                depth_to_tip: false,
-            }),
-        ),
-        (None, None) => (HoleKind::Simple, Some(HoleBottom::Flat)),
-        (None, Some(drill_point_angle)) => (
-            HoleKind::SimpleDrilled { drill_point_angle },
-            Some(HoleBottom::Angled {
-                included_angle: drill_point_angle,
-                depth_to_tip: false,
-            }),
-        ),
-        (Some(HoleEntry::Counterbore(diameter, depth)), None) => (
-            HoleKind::Counterbore { diameter, depth },
-            Some(HoleBottom::Flat),
-        ),
-        (Some(HoleEntry::Counterbore(diameter, depth)), Some(drill_point_angle)) => (
-            HoleKind::CounterboreDrilled {
-                diameter,
-                depth,
-                drill_point_angle,
-            },
-            Some(HoleBottom::Angled {
-                included_angle: drill_point_angle,
-                depth_to_tip: false,
-            }),
-        ),
+    if diameter.is_none() || bottom.is_none() || kind.is_unresolved() {
+        losses.push(crate::loss::F3dLossCode::HoleShapePartialAssumed.note(format!(
+            "Hole {} assumes its admitted dimensions can be retained independently while its complete entry or bottom form remains unresolved (DR-470).", scope.id
+        )));
+    }
+    let reference_dimensions = has_role(&["RefDim1", "RefDim2"]);
+    let edge_groups = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == native_stream(&scope.id)
+                && group.scope_record_index == scope.record_index
+                && group.role() == DesignOperandRole::ROLE_0X21
+        })
+        .count();
+    let reference_constraints = match (parameter("RefDim1"), parameter("RefDim2")) {
+        (None, None) => !reference_dimensions && edge_groups == 0,
+        (Some(first), None) => edge_groups == 1 && design_positive_length(first).is_some(),
+        (Some(first), Some(second)) => {
+            edge_groups == 2
+                && design_positive_length(first).is_some()
+                && design_positive_length(second).is_some()
+        }
+        (None, Some(_)) => false,
     };
+    let mut roles = HashSet::new();
+    let mut names = HashSet::new();
+    let independent_parameters = parameters.iter().any(|(_, parameter)| {
+        !matches!(
+            parameter.source_kind_str(),
+            "HoleDepth"
+                | "HoleDiameter"
+                | "TipAngle"
+                | "CBDiameter"
+                | "CBDepth"
+                | "CSDiameter"
+                | "CSAngle"
+                | "RefDim1"
+                | "RefDim2"
+        ) || !roles.insert(parameter.source_kind_str())
+            || !names.insert(parameter.name())
+    });
+    if matches!(&extent, LinearTermination::Unresolved {})
+        || independent_parameters
+        || !reference_constraints
+        || !type_association
+    {
+        losses.push(crate::loss::F3dLossCode::HoleParametersIndependentAssumed.note(format!(
+            "Hole {} projects its admitted dimensions independently of unresolved extent, entry-type or parameter associations; its encoded entry type governs the active treatment and all parameter values and expressions are retained (DR-470).", scope.id
+        )));
+    }
+    if let Some(extent) = scope.hole_extent() {
+        if let Some(word) = extent.leading_word.as_ref().filter(|word| word.value != 0) {
+            losses.push(crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed.note(format!(
+                "Hole {} assumes its scalar geometry is independent of extent leading word {} (DR-106).", scope.id, word.value
+            )));
+        }
+        if extent.standard.is_some() {
+            losses.push(crate::loss::F3dLossCode::HoleStandardSizingAssumed.note(format!(
+                "Hole {} assumes its scalar geometry is independent of its native standard sizing names, which remain source properties (DR-470).", scope.id
+            )));
+        }
+    }
     let face = match resolved_direct_face_selection(scope, face_operands)? {
         Some(face) => face,
         None => FaceSelection::Native(scope.id.clone()),
     };
     let placements = hole_placements(scope);
-    if placed_by_reference_dimensions {
+    if reference_dimensions {
         losses.push(crate::loss::F3dLossCode::HoleReferenceDimensionsNative.note(format!(
-            "Hole {} retains its two reference-edge distances natively; its placement is the carrier point.", scope.id
+            "Hole {} assumes its carrier point gives the reference-edge-distance placement; its source parameters and references retain the distance constraints (DR-254).", scope.id
+        )));
+    }
+    if placements.as_ref().is_some_and(|placements| {
+        placements.iter().any(|placement| {
+            matches!(
+                placement,
+                cadmpeg_ir::features::holes::HolePlacement::Axis { .. }
+            )
+        })
+    }) {
+        losses.push(crate::loss::F3dLossCode::HoleCarrierAxisAssumed.note(format!(
+            "Hole {} reads its carrier normal as an unoriented drill axis because its direction control is unavailable (DR-471).", scope.id
         )));
     }
     if placements.is_none() {
@@ -7988,15 +8118,15 @@ fn project_hole(
         face: Some(face),
         direction: None,
         placements,
-        shape: or_none!(cadmpeg_ir::features::holes::HoleShape::new(
+        shape: cadmpeg_ir::features::holes::HoleShape::new(
             cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind,
                 specification: None,
             },
             None,
-            Some(diameter),
+            diameter,
         )
-        .ok()),
+        .map_err(CodecError::malformed)?,
 
         extent: Some(extent),
         bottom,
