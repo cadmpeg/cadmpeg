@@ -10,10 +10,121 @@ fn scope_properties_record_reference_members() {
         10,
     );
 
-    let properties = scope_properties(&scope, "f3d:Design/BulkStream.dat", &[]).unwrap();
+    let properties = scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &[]).unwrap();
     assert_eq!(properties.len(), 1);
     assert_eq!(
         properties[&cadmpeg_core::nonblank_literal!("reference:0")],
         "10"
+    );
+}
+
+#[test]
+fn hole_properties_retain_expressions_controls_cache_and_sizing_names() {
+    use crate::design::decode::parameters::parse_design_parameter_record;
+    use crate::design::test_support::parameter_record;
+    use crate::records::feature::hole::{DesignHoleExtent, DesignHoleStandard};
+    use crate::records::identity::Located;
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#32",
+        DesignFeatureKind::Hole,
+        32,
+    );
+    if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
+        slot.extent = Some(DesignHoleExtent {
+            leading_word: Some(Located {
+                value: 2,
+                offset: 1,
+            }),
+            extent_control: Some(1),
+            saved_non_distance_depth: Some(Located {
+                value: cadmpeg_ir::scalar::FiniteReal::new(0.75).unwrap(),
+                offset: 2,
+            }),
+            direction_control: Some(Located {
+                value: 0,
+                offset: 3,
+            }),
+            standard: Some(DesignHoleStandard {
+                offset: 4,
+                standard: "ISO".into(),
+                fit: "Close".into(),
+                size: "M3".into(),
+                fastener: "Socket".into(),
+            }),
+        });
+    }
+    let parameter = parse_design_parameter_record(&parameter_record(
+        Some(94),
+        "10 mm",
+        "HoleDepth",
+        Some("mm"),
+        "d4",
+        1.0,
+    ))
+    .unwrap();
+    let properties =
+        scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &[(0, &parameter)]).unwrap();
+    for (key, value) in [
+        ("reference:0", "32"),
+        ("parameter:d4", "10 mm"),
+        ("hole:extent_leading_word", "2"),
+        ("hole:extent_control", "1"),
+        ("hole:saved_non_distance_depth_cm", "0.75"),
+        ("hole:direction_control", "0"),
+        ("hole:standard", "ISO"),
+        ("hole:fit", "Close"),
+        ("hole:size", "M3"),
+        ("hole:fastener", "Socket"),
+    ] {
+        assert_eq!(properties.get(key).map(String::as_str), Some(value));
+    }
+    assert_eq!(properties.len(), 10);
+}
+
+#[test]
+fn a_duplicate_hole_parameter_name_keeps_both_expressions() {
+    use crate::design::decode::parameters::parse_design_parameter_record;
+    use crate::design::test_support::parameter_record;
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#32",
+        DesignFeatureKind::Hole,
+        32,
+    );
+    let mut first = parse_design_parameter_record(&parameter_record(
+        Some(94),
+        "10 mm",
+        "HoleDepth",
+        Some("mm"),
+        "d4",
+        1.0,
+    ))
+    .unwrap();
+    let mut second = parse_design_parameter_record(&parameter_record(
+        Some(104),
+        "4 mm",
+        "HoleDiameter",
+        Some("mm"),
+        "d4",
+        0.4,
+    ))
+    .unwrap();
+    first.id = "synthetic:first".into();
+    second.id = "synthetic:second".into();
+    let properties = scope_properties(
+        &scope,
+        "f3d:Design/BulkStream.dat",
+        &[],
+        &[(0, &first), (1, &second)],
+    )
+    .unwrap();
+    assert_eq!(
+        properties.get("parameter:d4").map(String::as_str),
+        Some("10 mm")
+    );
+    assert_eq!(
+        properties
+            .get("parameter-native:synthetic:second")
+            .map(String::as_str),
+        Some("4 mm")
     );
 }

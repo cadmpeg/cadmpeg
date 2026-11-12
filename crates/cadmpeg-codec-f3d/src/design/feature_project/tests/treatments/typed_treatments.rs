@@ -399,27 +399,56 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     hole_parameters[2]
         .try_set_unit_value("deg".to_owned())
         .unwrap();
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&scopes[2]);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: &hole_parameters,
-                    owners: &[
-                        owner(94, 32, 95, 0),
-                        owner(104, 32, 105, 1),
-                        owner(114, 32, 115, 2),
-                    ],
-                    scopes,
-                    face_operands: &hole_face_operands,
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters: neutral_hole_parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&scopes[2]);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &hole_parameters,
+                owners: &[
+                    owner(94, 32, 95, 0),
+                    owner(104, 32, 105, 1),
+                    owner(114, 32, 115, 2),
+                ],
+                scopes,
+                face_operands: &hole_face_operands,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    for (name, expression, value) in [("d4", "10 mm", 10.0), ("d5", "4 mm", 4.0)] {
+        let parameter = neutral_hole_parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap();
+        assert_eq!(parameter.expression, expression);
+        assert_eq!(parameter.owner.as_ref(), Some(&features[0].id));
+        assert!(
+            matches!(parameter.value,Some(cadmpeg_ir::features::ParameterValue::Length(length)) if length.get()==value)
+        );
+        assert_eq!(
+            features[0]
+                .source_properties
+                .get(format!("parameter:{name}").as_str())
+                .map(String::as_str),
+            Some(expression)
+        );
+    }
+    let tip = neutral_hole_parameters
+        .iter()
+        .find(|parameter| parameter.name == "d6")
+        .unwrap();
+    assert_eq!(tip.expression, "180 deg");
+    assert!(
+        matches!(tip.value,Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) if angle.get()==std::f64::consts::PI)
+    );
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             face: Some(FaceSelection::Resolved { faces, native }),
