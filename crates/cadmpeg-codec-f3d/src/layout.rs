@@ -4,6 +4,46 @@
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
+/// Byte offsets for the `named_parameter_scope_tail` record.
+///
+/// Spec §3.1. Record length 78 B.
+///
+/// ```text
+/// Offsets use an empty label, no associated references and null middle/closing references. Variable fields shift subsequent offsets by their serialized widths.
+/// ```
+pub(crate) mod named_parameter_scope_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 78;
+    /// Offset of `zero_word` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_WORD: usize = 4;
+    /// Offset of `label_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LABEL_LENGTH: usize = 8;
+    /// Offset of `associated_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ASSOCIATED_COUNT: usize = 12;
+    /// Offset of `padding` (`bytes[3]`). Spec §3.1.
+    pub(crate) const PADDING: usize = 16;
+    /// Offset of `first_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FIRST_REFERENCE: usize = 19;
+    /// Offset of `middle_reference` (`u8`). Spec §3.1.
+    pub(crate) const MIDDLE_REFERENCE: usize = 30;
+    /// Offset of `opaque_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPAQUE_WORD: usize = 31;
+    /// Offset of `lane_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LANE_WORD: usize = 35;
+    /// Offset of `lane_scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const LANE_SCALAR: usize = 39;
+    /// Offset of `repeated_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REPEATED_WORD: usize = 47;
+    /// Offset of `second_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SECOND_REFERENCE: usize = 51;
+    /// Offset of `lane_flags` (`bytes[3]`). Spec §3.1.
+    pub(crate) const LANE_FLAGS: usize = 62;
+    /// Offset of `third_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const THIRD_REFERENCE: usize = 65;
+    /// Offset of `closing_reference` (`u8`). Spec §3.1.
+    pub(crate) const CLOSING_REFERENCE: usize = 76;
+}
+
 /// Byte offsets for the `indexed_design_record_header` record.
 ///
 /// Spec §3.1. Record length 11 B.

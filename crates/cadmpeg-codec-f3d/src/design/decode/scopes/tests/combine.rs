@@ -258,7 +258,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
         scope.payload_mut()
     {
-        *slot = Some(operation);
+        slot.operation = Some(operation);
     }
     assert_eq!(
         project_combine(&scope, "Design1/BulkStream.dat"),
@@ -1339,7 +1339,7 @@ fn a_combine_that_places_its_result_in_a_new_component_keeps_main_reading() {
         if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
             scope.payload_mut()
         {
-            *slot = Some(operation);
+            slot.operation = Some(operation);
         }
         assert!(matches!(
             project_combine(&scope, "f3d:Design/BulkStream.dat"),
@@ -1419,6 +1419,96 @@ fn combine_two_middle_lists_preserve_consumed_tools_in_source_order() {
             );
         }
     }
+}
+
+#[test]
+fn named_combine_tail_keeps_component_reference_separate_from_destination_node() {
+    let mut fixture = OperandListFixture::new(0, 1);
+    fixture.property_block = true;
+    fixture.new_component = 1;
+    fixture.middle_lists[1] = vec![194];
+    let mut bytes = fixture.bytes();
+    let parse = |bytes: &[u8]| {
+        parse_parameter_scope_with_type_guid(
+            bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+            90,
+            &"412".to_owned().try_into().unwrap(),
+            0,
+            Some("2A94257F-2020-4B19-9A68-103A2672F1B7"),
+        )
+        .unwrap()
+        .unwrap()
+    };
+    let original = parse(&bytes);
+    let mut tail = Vec::new();
+    tail.extend_from_slice(&2u32.to_le_bytes());
+    tail.extend_from_slice(&0u32.to_le_bytes());
+    lp_utf16(&mut tail, "NewBody");
+    tail.extend_from_slice(&0u32.to_le_bytes());
+    tail.extend_from_slice(&[0; 3]);
+    push_reference_u64(&mut tail, 602);
+    push_reference_u64(&mut tail, 900);
+    tail.extend_from_slice(&4u32.to_le_bytes());
+    tail.extend_from_slice(&257u32.to_le_bytes());
+    tail.extend_from_slice(&1.25f64.to_le_bytes());
+    tail.extend_from_slice(&257u32.to_le_bytes());
+    push_reference_u64(&mut tail, 601);
+    tail.extend_from_slice(&[1, 0, 0]);
+    push_reference_u64(&mut tail, 600);
+    tail.extend_from_slice(&[0; 2]);
+    assert_eq!(tail.len(), 102);
+    bytes.splice(
+        usize::try_from(original.feature_ordinal_offset()).unwrap()
+            ..usize::try_from(original.paired_byte_offset()).unwrap(),
+        tail,
+    );
+    let mut scope = parse(&bytes);
+    assert_eq!(
+        scope
+            .combine_named_tail()
+            .unwrap()
+            .middle
+            .as_ref()
+            .unwrap()
+            .value,
+        900
+    );
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let mut losses = Vec::new();
+    let operation = exact_combine_operation(&bytes, &records, &scope, &HashMap::new(), &mut losses)
+        .unwrap()
+        .unwrap();
+    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Join);
+    assert_eq!(
+        operation.destination,
+        crate::records::feature::combine::DesignCombineDestination::NewComponent {
+            browser_node_record_index: Some(194)
+        }
+    );
+    assert!(operation.keep_tools);
+    if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
+        scope.payload_mut()
+    {
+        slot.operation = Some(operation);
+    }
+    assert!(matches!(
+        project_combine(&scope, "f3d:Design/BulkStream.dat"),
+        Some(cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Combine {
+                destination: cadmpeg_ir::features::CombineDestination::NewComponent,
+                keep_tools: true,
+                ..
+            }
+        ))
+    ));
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>(),
+        [F3dLossCode::FeatureCombineComponentDestinationAssumed.kind()]
+    );
 }
 
 #[test]

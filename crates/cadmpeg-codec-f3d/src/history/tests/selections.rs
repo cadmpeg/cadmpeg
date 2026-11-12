@@ -740,7 +740,7 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
     if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
         scope.payload_mut()
     {
-        *slot = Some(crate::records::feature::combine::DesignCombineOperation {
+        slot.operation = Some(crate::records::feature::combine::DesignCombineOperation {
             form: crate::records::feature::combine::DesignCombineForm::ExtendedReference,
             operation: cadmpeg_ir::features::BooleanKind::Join,
             operation_offset: 0,

@@ -95,7 +95,7 @@ pub(super) fn exact_combine_operation(
                     DesignCombineDestination::NewComponent { .. }
                 ) {
                     losses.push(F3dLossCode::FeatureCombineComponentDestinationAssumed.note(format!(
-                        "{}: the Boolean result requests a new component; its unresolved destination placement assumes the input component frame",
+                        "{}: the Boolean result requests a new component; its browser node and named-tail references do not determine destination placement, which assumes the input component frame (DR-472)",
                         scope.id
                     )));
                 }

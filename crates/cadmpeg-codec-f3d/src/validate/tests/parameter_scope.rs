@@ -139,7 +139,7 @@ fn operand_list_combine_requires_its_own_offsets() {
             })
             .unwrap();
         if let DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
-            *slot = Some(DesignCombineOperation {
+            slot.operation = Some(DesignCombineOperation {
                 form: DesignCombineForm::OperandLists,
                 operation: cadmpeg_ir::features::BooleanKind::Join,
                 operation_offset,

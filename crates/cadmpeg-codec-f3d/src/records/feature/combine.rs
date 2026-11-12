@@ -7,6 +7,12 @@ use crate::records::identity::Located;
 use crate::records::mesh::DesignRelaxedGuidText;
 use serde::{Deserialize, Deserializer, Serialize};
 
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct DesignCombineScope {
+    pub(crate) operation: Option<DesignCombineOperation>,
+    pub(crate) named_tail: Option<super::scope::DesignNamedScopeReferences>,
+}
+
 cadmpeg_core::named_optional_field!(
     deserialize_external_identity,
     DesignCombineExternalBodyIdentity,

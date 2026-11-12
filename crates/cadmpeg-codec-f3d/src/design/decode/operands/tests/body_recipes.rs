@@ -235,7 +235,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
         combine_scope.payload_mut()
     {
-        *slot = Some(crate::records::feature::combine::DesignCombineOperation {
+        slot.operation = Some(crate::records::feature::combine::DesignCombineOperation {
             form: crate::records::feature::combine::DesignCombineForm::Standard,
             operation: cadmpeg_ir::features::BooleanKind::Join,
             operation_offset: 0,
