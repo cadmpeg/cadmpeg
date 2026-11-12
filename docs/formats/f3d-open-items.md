@@ -2346,7 +2346,7 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder selects the listed groups and assumes that the additional groups select the same bodies. It records `feature.scale-unlisted-groups-assumed`.
 
-### DR-466. DerivedInstance sources without a local occurrence join
+### DR-469. DerivedInstance sources without a local occurrence join
 
 **Question.** How does a `DerivedInstance` scope identify its inserted components when its ordered references do not give a unique local relation and occurrence carrier?
 

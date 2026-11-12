@@ -1555,7 +1555,7 @@ pub(crate) fn project_derived_instance_features(
             let components = cadmpeg_ir::features::InsertedComponents::native(scope.id.clone())
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             losses.push(F3dLossCode::FeatureDerivedInstanceComponentInsertAssumed.note(format!(
-                "{} is represented as a component insertion with unresolved source membership and placement; its native scope reference is retained (DR-466).", scope.id
+                "{} is represented as a component insertion with unresolved source membership and placement; its native scope reference is retained (DR-469).", scope.id
             )));
             FeatureOperation::InsertComponents { components }
         };
