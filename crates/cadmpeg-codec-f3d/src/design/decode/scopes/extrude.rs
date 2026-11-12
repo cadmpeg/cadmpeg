@@ -11,8 +11,7 @@ use super::shared_frames::extrude_operation_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
 use crate::design::decode::text::fixed_guid_end;
-use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_54 as class_296_legacy_scalar_54;
-use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_70 as class_296_legacy_scalar_70;
+use crate::layout::class_296_261_legacy_extrude_prefix as class_296_legacy_prefix;
 use crate::layout::class_296_261_legacy_one_sided_distance_tail as class_296_legacy_distance;
 use crate::layout::class_296_261_legacy_one_sided_to_face_tail as class_296_legacy_to_face;
 use crate::layout::class_296_261_one_sided_to_face_extrude_prefix as class_296_to_face;
@@ -28,6 +27,7 @@ use crate::layout::early_distance_extrude_absent_prefix as early_absent;
 use crate::layout::early_distance_extrude_present_prefix as early_present;
 use crate::layout::legacy_class_338_two_sided_distance_extrude_frame as class_338_legacy;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
+use crate::layout::legacy_reference_extrude_profile_normal as legacy_reference_normal;
 use crate::layout::offset_24_extrude_prologue;
 use crate::layout::shifted_extrude_offset_283_two_sided_tail as shifted_283;
 use crate::layout::shifted_extrude_offset_profile_extent_lane as offset_lane;
@@ -36,10 +36,12 @@ use crate::layout::shifted_reference_aware_extrude_class_323_symmetric_prefix as
 use crate::layout::shifted_reference_aware_extrude_class_323_tail as shifted_reference_aware_323_tail;
 use crate::layout::shifted_reference_aware_extrude_scope_prefix as shifted_reference_aware;
 use crate::layout::shifted_typed_reference_extrude_prologue as shifted_typed;
+use crate::layout::typed_reference_extrude_anchor_prefix as typed_reference_anchor;
 use crate::layout::typed_reference_extrude_prologue as typed_prologue;
 use crate::records::feature::extrude::DesignExtrudeExtent;
 use crate::records::feature::extrude::DesignExtrudePrologue;
 use crate::records::feature::extrude::DesignExtrudePrologueReference;
+use crate::records::feature::extrude::DesignExtrudeReferenceType;
 use crate::records::feature::extrude::DesignExtrudeStart;
 use crate::records::feature::extrude::DesignExtrudeTargetOrdinal;
 use crate::records::feature::extrude::{DesignExtrudeDistanceTail, DesignExtrudeMeasurement};
@@ -72,6 +74,30 @@ pub(super) fn exact_extrude_prologue(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
+    if paired_at
+        .checked_sub(start)
+        .zip(reference_count_at.checked_sub(start))
+        .is_some_and(|(length, count_offset)| {
+            through_all::matches_frame(
+                u64_from_index(length),
+                u64_from_index(count_offset),
+                reference_members.len(),
+            )
+        })
+    {
+        use crate::layout::class_349_two_sided_through_all_extrude_frame as through_all_frame;
+        let first = start
+            .checked_add(through_all_frame::FIRST_SIDE_EXTENT)
+            .and_then(|offset| View::u32_le_at(bytes, offset));
+        let second = start
+            .checked_add(through_all_frame::SECOND_SIDE_EXTENT)
+            .and_then(|offset| View::u32_le_at(bytes, offset));
+        if (first == Some(4) && !matches!(second, Some(1..=3)))
+            || (second == Some(4) && !matches!(first, Some(1..=3)))
+        {
+            return through_all::exact(bytes, start, reference_members);
+        }
+    }
     let legacy_class_415 = paired_at
         .checked_sub(start)
         .zip(reference_count_at.checked_sub(start))
@@ -105,38 +131,23 @@ pub(super) fn exact_extrude_prologue(
             reference_members,
         );
     }
-    let current = exact_current_extrude_prologue(
+    let current = exact_shifted_reference_aware_extrude_prologue(
         bytes,
         start,
         reference_count_at,
         reference_members,
-        legacy_class_415,
     )
     .or_else(|| {
-        exact_shifted_reference_aware_extrude_prologue(
+        exact_current_extrude_prologue(
             bytes,
             start,
             reference_count_at,
             reference_members,
+            legacy_class_415,
         )
     });
     if current.is_some() {
         return current;
-    }
-    if paired_at
-        .checked_sub(start)
-        .zip(reference_count_at.checked_sub(start))
-        .is_some_and(|(length, count_offset)| {
-            through_all::matches_frame(
-                class_tag,
-                paired_class_tag,
-                u64_from_index(length),
-                u64_from_index(count_offset),
-                reference_members.len(),
-            )
-        })
-    {
-        return through_all::exact(bytes, start, reference_members);
     }
     legacy_class_397::exact_symmetric_extrude_prologue(
         bytes,
@@ -161,7 +172,9 @@ pub(super) fn exact_extrude_prologue(
     .or_else(|| {
         exact_legacy_shifted_extrude_prologue(bytes, start, reference_count_at, reference_members)
     })
-    .or_else(|| exact_compact_shifted_extrude_prologue(bytes, start, reference_count_at))
+    .or_else(|| {
+        exact_compact_shifted_extrude_prologue(bytes, start, reference_count_at, reference_members)
+    })
     .or_else(|| {
         exact_compact_shifted_extrude_mixed_prologue(
             bytes,
@@ -175,8 +188,6 @@ pub(super) fn exact_extrude_prologue(
             bytes,
             start,
             paired_at,
-            class_tag,
-            paired_class_tag,
             reference_count_at,
             reference_members,
         )
@@ -208,25 +219,69 @@ pub(super) fn exact_extrude_prologue(
             bytes,
             start,
             paired_at,
-            class_tag,
-            paired_class_tag,
             reference_count_at,
             reference_members,
         )
     })
     .or_else(|| exact_legacy_distance_extrude_prologue(bytes, start, reference_count_at))
+    .or_else(|| exact_slotted_extrude_prologue(bytes, start, reference_count_at, reference_members))
+}
+
+pub(crate) fn extrude_seventh_slot_record_index(
+    bytes: &[u8],
+    prologue: DesignExtrudePrologue,
+) -> Option<u32> {
+    let (operation_offset, first_side_extent_offset) = match prologue {
+        DesignExtrudePrologue::ReferenceAware {
+            operation_offset,
+            side_extent_discriminator_offsets: [first_side_extent_offset, _],
+            ..
+        }
+        | DesignExtrudePrologue::ShiftedReferenceAware {
+            operation_offset,
+            side_extent_discriminator_offsets: [first_side_extent_offset, _],
+            ..
+        }
+        | DesignExtrudePrologue::LegacyShifted {
+            operation_offset,
+            side_extent_discriminator_offsets: [first_side_extent_offset, _],
+            ..
+        } => (
+            usize::try_from(operation_offset).ok()?,
+            usize::try_from(first_side_extent_offset).ok()?,
+        ),
+        DesignExtrudePrologue::LegacyDistance { .. } => return None,
+    };
+    let mut cursor = operation_offset
+        .checked_add(extrude_fields::PROFILE_NORMAL)?
+        .checked_add(24)?;
+    let mut seventh = None;
+    for ordinal in 0..7 {
+        match bytes.get(cursor)? {
+            0 => cursor = cursor.checked_add(1)?,
+            1 => {
+                let record_index = marked_record_reference(bytes, cursor)?;
+                if ordinal == 6 {
+                    seventh = Some(record_index);
+                }
+                cursor = cursor.checked_add(11)?;
+            }
+            _ => return None,
+        }
+    }
+    if cursor == first_side_extent_offset {
+        seventh
+    } else {
+        None
+    }
 }
 
 pub(crate) fn is_class_296_one_sided_to_face_layout(
-    class_tag: &str,
-    paired_class_tag: &str,
     frame_length: u64,
     reference_count_delta: u64,
     reference_member_count: usize,
 ) -> bool {
-    class_tag == "296"
-        && paired_class_tag == "261"
-        && reference_count_delta == u64_from_index(class_296_to_face::REFERENCE_COUNT)
+    reference_count_delta == u64_from_index(class_296_to_face::REFERENCE_COUNT)
         && matches!(
             (frame_length, reference_member_count),
             (440, 7) | (462, 9) | (473, 10)
@@ -279,28 +334,20 @@ pub(crate) fn is_class_296_two_sided_to_faces_scope(scope: &DesignParameterScope
 }
 
 pub(crate) fn is_class_296_legacy_one_sided_to_face_layout(
-    class_tag: &str,
-    paired_class_tag: &str,
     frame_length: u64,
     reference_count_delta: u64,
     reference_member_count: usize,
 ) -> bool {
-    class_tag == "296"
-        && paired_class_tag == "261"
-        && reference_count_delta == u64_from_index(class_296_legacy_to_face::REFERENCE_COUNT)
+    reference_count_delta == u64_from_index(class_296_legacy_to_face::REFERENCE_COUNT)
         && (frame_length, reference_member_count) == (515, 12)
 }
 
 pub(crate) fn is_class_296_legacy_one_sided_distance_layout(
-    class_tag: &str,
-    paired_class_tag: &str,
     frame_length: u64,
     reference_count_delta: u64,
     reference_member_count: usize,
 ) -> bool {
-    class_tag == "296"
-        && paired_class_tag == "261"
-        && reference_count_delta == u64_from_index(class_296_legacy_distance::REFERENCE_COUNT)
+    reference_count_delta == u64_from_index(class_296_legacy_distance::REFERENCE_COUNT)
         && (frame_length, reference_member_count) == (483, 10)
 }
 
@@ -308,13 +355,13 @@ fn exact_compact_shifted_extrude_prologue(
     bytes: &[u8],
     start: usize,
     reference_count_at: usize,
+    reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
     if View::u32_le_at(bytes, start.checked_add(compact_extrude::PREFIX_CONSTANT)?)? != 1
         || bytes.get(
             start.checked_add(compact_extrude::ZERO_RUN_2)?
                 ..start.checked_add(compact_extrude::OPERATION)?,
         )? != [0; 2]
-        || reference_count_at.checked_sub(start)? != compact_extrude_extent::REFERENCE_COUNT
     {
         return None;
     }
@@ -331,9 +378,51 @@ fn exact_compact_shifted_extrude_prologue(
     if !matches!(direction_face_extend_values[0], 1 | 3) {
         return None;
     }
+    let first_side_offset = if reference_count_at.checked_sub(start)?
+        == compact_extrude_extent::REFERENCE_COUNT
+    {
+        start.checked_add(compact_extrude_extent::FIRST_SIDE_EXTENT)?
+    } else {
+        const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
+        let normal_offset = operation_offset.checked_add(extrude_fields::PROFILE_NORMAL)?;
+        if bytes.get(operation_offset.checked_add(extrude_fields::ZERO_RUN_3)?..normal_offset)?
+            != [0; 3]
+        {
+            return None;
+        }
+        let normal = f64s_at::<3>(bytes, normal_offset)?;
+        if normal.iter().any(|value| !value.is_finite())
+            || (normal.iter().map(|value| value * value).sum::<f64>() - 1.0).abs()
+                > PROFILE_NORMAL_UNIT_EPS
+        {
+            return None;
+        }
+        let mut cursor = normal_offset.checked_add(24)?;
+        for _ in 0..7 {
+            match bytes.get(cursor)? {
+                0 => cursor = cursor.checked_add(1)?,
+                1 => {
+                    if !reference_members.contains(&marked_record_reference(bytes, cursor)?) {
+                        return None;
+                    }
+                    cursor = cursor.checked_add(11)?;
+                }
+                _ => return None,
+            }
+        }
+        if cursor.checked_add(
+            compact_extrude_extent::REFERENCE_COUNT - compact_extrude_extent::FIRST_SIDE_EXTENT,
+        )? != reference_count_at
+        {
+            return None;
+        }
+        cursor
+    };
     let side_extent_discriminator_offsets = [
-        start.checked_add(compact_extrude_extent::FIRST_SIDE_EXTENT)?,
-        start.checked_add(compact_extrude_extent::SECOND_SIDE_EXTENT)?,
+        first_side_offset,
+        first_side_offset.checked_add(
+            compact_extrude_extent::SECOND_SIDE_EXTENT - compact_extrude_extent::FIRST_SIDE_EXTENT,
+        )?,
     ];
     let side_extent_discriminators = [
         View::u32_le_at(bytes, side_extent_discriminator_offsets[0])?,
@@ -447,15 +536,11 @@ fn exact_class_296_one_sided_to_face_extrude_prologue(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    class_tag: &str,
-    paired_class_tag: &str,
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
     let frame_length = paired_at.checked_sub(start)?;
     if !is_class_296_one_sided_to_face_layout(
-        class_tag,
-        paired_class_tag,
         u64::try_from(frame_length).ok()?,
         u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
         reference_members.len(),
@@ -748,8 +833,6 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    class_tag: &str,
-    paired_class_tag: &str,
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
@@ -757,16 +840,12 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
 
     let frame_length = paired_at.checked_sub(start)?;
     let (is_to_face, face_extend, first_extent) = if is_class_296_legacy_one_sided_to_face_layout(
-        class_tag,
-        paired_class_tag,
         u64::try_from(frame_length).ok()?,
         u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
         reference_members.len(),
     ) {
         (true, 1, 2)
     } else if is_class_296_legacy_one_sided_distance_layout(
-        class_tag,
-        paired_class_tag,
         u64::try_from(frame_length).ok()?,
         u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
         reference_members.len(),
@@ -777,30 +856,30 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
     };
     if View::u32_le_at(
         bytes,
-        start.checked_add(class_296_legacy_scalar_54::PREFIX_CONSTANT)?,
+        start.checked_add(class_296_legacy_prefix::PREFIX_CONSTANT)?,
     )? != 1
         || bytes.get(
-            start.checked_add(class_296_legacy_scalar_54::ZERO_BEFORE_REFERENCE)?
-                ..start.checked_add(class_296_legacy_scalar_54::REFERENCE)?,
+            start.checked_add(class_296_legacy_prefix::ZERO_BEFORE_REFERENCE)?
+                ..start.checked_add(class_296_legacy_prefix::REFERENCE)?,
         )? != [0]
         || !reference_members.contains(&marked_record_reference(
             bytes,
-            start.checked_add(class_296_legacy_scalar_54::REFERENCE)?,
+            start.checked_add(class_296_legacy_prefix::REFERENCE)?,
         )?)
         || bytes.get(
             start
-                .checked_add(class_296_legacy_scalar_54::REFERENCE)?
+                .checked_add(class_296_legacy_prefix::REFERENCE)?
                 .checked_add(5)?
-                ..start.checked_add(class_296_legacy_scalar_54::OPERATION)?,
+                ..start.checked_add(class_296_legacy_prefix::OPERATION)?,
         )? != [0; 6]
     {
         return None;
     }
-    let operation_offset = start.checked_add(class_296_legacy_scalar_54::OPERATION)?;
+    let operation_offset = start.checked_add(class_296_legacy_prefix::OPERATION)?;
     let operation = extrude_operation_at(bytes, operation_offset)?;
     let direction_face_extend_offsets = [
-        start.checked_add(class_296_legacy_scalar_54::DIRECTION)?,
-        start.checked_add(class_296_legacy_scalar_54::FACE_EXTEND)?,
+        start.checked_add(class_296_legacy_prefix::DIRECTION)?,
+        start.checked_add(class_296_legacy_prefix::FACE_EXTEND)?,
     ];
     let direction_face_extend_values = [
         View::u32_le_at(bytes, direction_face_extend_offsets[0])?,
@@ -810,47 +889,35 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
         return None;
     }
     let direction_reversed_offset =
-        start.checked_add(class_296_legacy_scalar_54::DIRECTION_REVERSED)?;
+        start.checked_add(class_296_legacy_prefix::DIRECTION_REVERSED)?;
     let direction_reversed = flag_byte_at(bytes, direction_reversed_offset)?;
-    let solid_operation_offset = start.checked_add(class_296_legacy_scalar_54::GEOMETRY_KIND)?;
+    let solid_operation_offset = start.checked_add(class_296_legacy_prefix::GEOMETRY_KIND)?;
     let solid_operation = flag_byte_at(bytes, solid_operation_offset)?;
-    let start_offset = start.checked_add(class_296_legacy_scalar_54::START_SUPPORT)?;
+    let start_offset = start.checked_add(class_296_legacy_prefix::START_SUPPORT)?;
     let start_support = extrude_start_at(bytes, start_offset)?;
     if bytes.get(
-        start.checked_add(class_296_legacy_scalar_54::ZERO_AFTER_START)?
-            ..start.checked_add(class_296_legacy_scalar_54::PROFILE_SCALAR_AT_54)?,
+        start.checked_add(class_296_legacy_prefix::ZERO_AFTER_START)?
+            ..start.checked_add(class_296_legacy_prefix::PROFILE_NORMAL)?,
     )? != [0; 3]
     {
         return None;
     }
-    let profile_scalar_at_54 = f64s_at::<1>(
+    let profile_normal = f64s_at::<3>(
         bytes,
-        start.checked_add(class_296_legacy_scalar_54::PROFILE_SCALAR_AT_54)?,
-    )?
-    .into_iter()
-    .next()?;
-    let profile_scalar_at_70 = f64s_at::<1>(
-        bytes,
-        start.checked_add(class_296_legacy_scalar_70::PROFILE_SCALAR_AT_70)?,
-    )?
-    .into_iter()
-    .next()?;
-    let scalar_at_54 = profile_scalar_at_54.is_finite()
-        && (profile_scalar_at_54.abs() - 1.0).abs() <= PROFILE_NORMAL_UNIT_EPS
-        && bytes.get(
-            start.checked_add(class_296_legacy_scalar_54::ZERO_AFTER_SCALAR_AT_54)?
-                ..start.checked_add(class_296_legacy_scalar_54::REFERENCE_SLOTS)?,
-        )? == [0; 16];
-    let scalar_at_70 = profile_scalar_at_70.is_finite()
-        && (profile_scalar_at_70.abs() - 1.0).abs() <= PROFILE_NORMAL_UNIT_EPS
-        && bytes.get(
-            start.checked_add(class_296_legacy_scalar_70::ZERO_BEFORE_SCALAR_AT_70)?
-                ..start.checked_add(class_296_legacy_scalar_70::PROFILE_SCALAR_AT_70)?,
-        )? == [0; 16];
-    if !scalar_at_54 && !scalar_at_70 {
+        start.checked_add(legacy_reference_normal::PROFILE_NORMAL)?,
+    )?;
+    if profile_normal.iter().any(|value| !value.is_finite())
+        || (profile_normal
+            .iter()
+            .map(|value| value * value)
+            .sum::<f64>()
+            - 1.0)
+            .abs()
+            > PROFILE_NORMAL_UNIT_EPS
+    {
         return None;
     }
-    let mut slot_offset = start.checked_add(class_296_legacy_scalar_54::REFERENCE_SLOTS)?;
+    let mut slot_offset = start.checked_add(legacy_reference_normal::LEN)?;
     let slot_presence = if is_to_face {
         [true, false, false, true, false, true, true]
     } else {
@@ -871,8 +938,7 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
             slot_offset = slot_offset.checked_add(1)?;
         }
     }
-    let first_side_extent_offset =
-        start.checked_add(class_296_legacy_scalar_54::FIRST_SIDE_EXTENT)?;
+    let first_side_extent_offset = start.checked_add(class_296_legacy_prefix::FIRST_SIDE_EXTENT)?;
     if slot_offset != first_side_extent_offset
         || View::u32_le_at(bytes, first_side_extent_offset)? != first_extent
     {
@@ -978,6 +1044,26 @@ fn exact_current_extrude_prologue(
         reference_members,
         legacy_class_415_symmetric_distance,
         false,
+        false,
+    )
+}
+
+/// The current Extrude prologue at the compact or shifted operation offset
+/// with any travel direction.
+fn exact_slotted_extrude_prologue(
+    bytes: &[u8],
+    start: usize,
+    reference_count_at: usize,
+    reference_members: &[u32],
+) -> Option<DesignExtrudePrologue> {
+    exact_current_extrude_prologue_with(
+        bytes,
+        start,
+        reference_count_at,
+        reference_members,
+        false,
+        false,
+        true,
     )
 }
 
@@ -996,6 +1082,7 @@ pub(super) fn exact_typed_extrude_prologue(
         reference_members,
         false,
         true,
+        false,
     )
 }
 
@@ -1009,6 +1096,7 @@ fn exact_current_extrude_prologue_with(
     reference_members: &[u32],
     legacy_class_415_symmetric_distance: bool,
     typed: bool,
+    any_direction: bool,
 ) -> Option<DesignExtrudePrologue> {
     const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
@@ -1038,9 +1126,55 @@ fn exact_current_extrude_prologue_with(
             )? == [0; 2]
         {
             start.checked_add(shifted_typed::OPERATION)?
+        } else if bytes.get(start.checked_add(shifted_typed::ZERO_RUN_9)?..marker)? == [0; 9]
+            && View::u32_le_at(bytes, marker)? == 1
+            && bytes.get(start.checked_add(shifted_typed::ZERO_RUN_2)?) == Some(&0)
+            && crate::bytes::typed_local_reference(
+                bytes,
+                start.checked_add(typed_reference_anchor::CONSTRUCTION_GROUP_REFERENCE)?,
+            )
+            .is_some_and(|(record_index, guid)| {
+                guid == "2CA5A1CD-C99B-4C9B-91AF-57989148E841"
+                    && reference_members.contains(&record_index)
+            })
+        {
+            start.checked_add(typed_reference_anchor::LEN)?
         } else {
             return None;
         }
+    } else if View::u32_le_at(bytes, start.checked_add(shifted_extrude::PREFIX_CONSTANT)?)
+        == Some(1)
+        && bytes.get(
+            start.checked_add(shifted_extrude::ZERO_RUN_3)?
+                ..start.checked_add(shifted_extrude::OPERATION)?,
+        ) == Some(&[0; 3])
+        && View::u32_le_at(
+            bytes,
+            start
+                .checked_add(shifted_extrude::OPERATION)?
+                .checked_add(extrude_fields::DIRECTION)?,
+        )
+        .is_some_and(|direction| direction == 2 || (any_direction && matches!(direction, 1 | 3)))
+        && exact_legacy_shifted_extrude_prologue(
+            bytes,
+            start,
+            reference_count_at,
+            reference_members,
+        )
+        .is_none()
+    {
+        start.checked_add(shifted_extrude::OPERATION)?
+    } else if View::u32_le_at(bytes, start.checked_add(compact_extrude::PREFIX_CONSTANT)?)
+        == Some(1)
+        && bytes.get(
+            start.checked_add(compact_extrude::ZERO_RUN_2)?
+                ..start.checked_add(compact_extrude::OPERATION)?,
+        ) == Some(&[0; 2])
+        && View::u32_le_at(bytes, start.checked_add(compact_extrude::DIRECTION)?).is_some_and(
+            |direction| direction == 2 || (any_direction && matches!(direction, 1 | 3)),
+        )
+    {
+        start.checked_add(compact_extrude::OPERATION)?
     } else if bytes.get(
         start.checked_add(offset_24_extrude_prologue::ZERO_RUN_13)?
             ..start.checked_add(offset_24_extrude_prologue::OPERATION)?,
@@ -1057,19 +1191,36 @@ fn exact_current_extrude_prologue_with(
     } else {
         start.checked_add(28)?
     };
-    let reference = if !typed
+    let reference = if typed && direct_offset == start.checked_add(typed_reference_anchor::LEN)? {
+        let reference_offset =
+            start.checked_add(typed_reference_anchor::CONSTRUCTION_GROUP_REFERENCE)?;
+        let (record_index, _) = crate::bytes::typed_local_reference(bytes, reference_offset)?;
+        Some((
+            direct_offset,
+            DesignExtrudePrologueReference {
+                record_index,
+                type_guid: Some(DesignExtrudeReferenceType::ConstructionGroup),
+                record_index_offset: u64_from_index(reference_offset.checked_add(1)?),
+                trailing_zero_count: 0,
+                operation_prefix_marker_offset: None,
+            },
+        ))
+    } else if !typed
         && direct_offset != start.checked_add(offset_24_extrude_prologue::OPERATION)?
         && bytes.get(start.checked_add(25)?) == Some(&1)
     {
         let reference_record_index_offset = start.checked_add(26)?;
         let record_index = View::u32_le_at(bytes, reference_record_index_offset)?;
         let prefix_tail = start.checked_add(30)?;
+        let six_zero_operation = start.checked_add(36)?;
         let mut candidates = [
+            (six_zero_operation, None),
             (start.checked_add(37)?, None),
             (start.checked_add(38)?, None),
             (start.checked_add(38)?, Some(start.checked_add(37)?)),
         ]
         .into_iter()
+        .filter(|(operation_offset, _)| any_direction || *operation_offset != six_zero_operation)
         .filter(|(operation_offset, marker_offset)| {
             let padding_end = marker_offset.unwrap_or(*operation_offset);
             bytes
@@ -1117,6 +1268,7 @@ fn exact_current_extrude_prologue_with(
             operation_offset,
             DesignExtrudePrologueReference {
                 record_index,
+                type_guid: None,
                 record_index_offset: u64_from_index(reference_record_index_offset),
                 trailing_zero_count,
                 operation_prefix_marker_offset: operation_marker_offset
@@ -1220,10 +1372,34 @@ fn exact_current_extrude_prologue_with(
     }
     let first_side_extent_offset = extent_cursor;
     let first_side_extent = View::u32_le_at(bytes, first_side_extent_offset)?;
+    let first_target_option = (first_side_extent == 2)
+        .then(|| {
+            first_side_extent_offset
+                .checked_add(crate::layout::current_extrude_face_target_payload::TARGET_OPTION)
+                .and_then(|offset| View::u32_le_at(bytes, offset))
+        })
+        .flatten();
+    if !typed
+        && (direct_offset == start.checked_add(compact_extrude::OPERATION)?
+            || direct_offset == start.checked_add(shifted_extrude::OPERATION)?)
+        && first_side_extent != 1
+        && !(any_direction && direction_face_extend_values[0] == 1 && first_side_extent == 2)
+        && !(any_direction
+            && direction_face_extend_values[0] == 2
+            && first_side_extent == 2
+            && direct_offset == start.checked_add(shifted_extrude::OPERATION)?
+            && first_target_option == Some(1)
+            && reference_count_at.checked_sub(start)? != shifted_reference_aware::REFERENCE_COUNT)
+        && !(direction_face_extend_values[0] == 2
+            && (first_side_extent == 4
+                || (first_side_extent == 2
+                    && direct_offset == start.checked_add(shifted_extrude::OPERATION)?
+                    && matches!(first_target_option, Some(0 | 2)))))
+    {
+        return None;
+    }
     let second_side_extent_offset = if first_side_extent == 2 {
-        let target_option = first_side_extent_offset
-            .checked_add(crate::layout::current_extrude_face_target_payload::TARGET_OPTION)
-            .and_then(|at| View::u32_le_at(bytes, at));
+        let target_option = first_target_option;
         let payload_second = first_side_extent_offset
             .checked_add(crate::layout::current_extrude_face_target_payload::SECOND_SIDE_EXTENT);
         let payload_second_value = payload_second.and_then(|at| View::u32_le_at(bytes, at));
@@ -1238,12 +1414,33 @@ fn exact_current_extrude_prologue_with(
             }
         } else if direction_face_extend_values[0] == 2
             && first_side_target_ordinal.is_none()
-            && target_option == Some(0)
-            && payload_second_value.is_some_and(|value| value != 0)
+            && matches!(target_option, Some(0 | 2))
+            && matches!(payload_second_value, Some(1 | 2))
         {
-            // Target option zero with a second-side payload has no settled
-            // assignment (DR-117); the scope stays native.
-            return None;
+            use crate::layout::current_extrude_face_target_payload as target_payload;
+            let first_offset = first_side_extent_offset
+                .checked_add(target_payload::FIRST_SIDE_OFFSET_REFERENCE)?;
+            if first_offset.checked_add(11)? > reference_count_at
+                || !marked_record_reference(bytes, first_offset)
+                    .is_some_and(|record_index| reference_members.contains(&record_index))
+            {
+                return None;
+            }
+            if payload_second_value == Some(2) {
+                for offset in [
+                    target_payload::SECOND_SIDE_OFFSET_REFERENCE,
+                    target_payload::SECOND_SIDE_TAPER_REFERENCE,
+                ] {
+                    let at = first_side_extent_offset.checked_add(offset)?;
+                    if at.checked_add(11)? > reference_count_at
+                        || !marked_record_reference(bytes, at)
+                            .is_some_and(|record_index| reference_members.contains(&record_index))
+                    {
+                        return None;
+                    }
+                }
+            }
+            payload_second?
         } else {
             reference_count_at.checked_sub(4)?
         }
@@ -1268,6 +1465,35 @@ fn exact_current_extrude_prologue_with(
         first_side_extent,
         View::u32_le_at(bytes, second_side_extent_offset)?,
     ];
+    let mixed_to_face_control = if !typed
+        && direction_face_extend_values[0] == 2
+        && matches!(side_extent_discriminators, [1 | 4, 2])
+    {
+        use crate::layout::current_extrude_face_target_payload as target_payload;
+        let offset_at = second_side_extent_offset.checked_add(
+            target_payload::SECOND_SIDE_OFFSET_REFERENCE - target_payload::SECOND_SIDE_EXTENT,
+        )?;
+        let taper_at = second_side_extent_offset.checked_add(
+            target_payload::SECOND_SIDE_TAPER_REFERENCE - target_payload::SECOND_SIDE_EXTENT,
+        )?;
+        let offset_end = offset_at.checked_add(11)?;
+        let taper_end = taper_at.checked_add(11)?;
+        let control = *bytes.get(second_side_extent_offset.checked_add(4)?)?;
+        (View::u32_le_at(
+            bytes,
+            first_side_extent_offset.checked_add(extrude_extent_pair::TARGET_OPTION)?,
+        ) == Some(1)
+            && matches!(control, 0 | 1)
+            && bytes.get(offset_end..taper_at) == Some(&[0; 4])
+            && taper_end <= reference_count_at
+            && [offset_at, taper_at].into_iter().all(|at| {
+                marked_record_reference(bytes, at)
+                    .is_some_and(|record_index| reference_members.contains(&record_index))
+            }))
+        .then_some(control)
+    } else {
+        None
+    };
     let distance_tail = if first_side_extent == 2 {
         None
     } else {
@@ -1289,6 +1515,7 @@ fn exact_current_extrude_prologue_with(
         match (target_option, tail) {
             (0, tail) => tail,
             (1, Some(tail)) => Some(tail),
+            (1, None) if mixed_to_face_control.is_some() => None,
             _ => return None,
         }
     };
@@ -1302,7 +1529,37 @@ fn exact_current_extrude_prologue_with(
     {
         return None;
     }
-    let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)
+    let target_option = (first_side_extent == 2 && first_side_target_ordinal.is_none())
+        .then(|| {
+            first_side_extent_offset
+                .checked_add(crate::layout::current_extrude_face_target_payload::TARGET_OPTION)
+                .and_then(|offset| View::u32_le_at(bytes, offset))
+        })
+        .flatten();
+    let unsettled_target = match (
+        direction_face_extend_values[0],
+        side_extent_discriminators,
+        target_option,
+    ) {
+        (2, [2, 1], Some(0)) => Some(DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero),
+        (2, [2, 2], Some(0)) => Some(DesignExtrudeExtent::TwoSidedToTargetsOptionZero),
+        (2, [2, 2], Some(2)) => Some(DesignExtrudeExtent::TwoSidedToTargetsOptionTwo),
+        _ => None,
+    };
+    let extent = unsettled_target
+        .or_else(|| {
+            exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)
+        })
+        .or(match mixed_to_face_control {
+            Some(0) if first_side_extent == 1 => Some(DesignExtrudeExtent::TwoSidedDistanceToFace),
+            Some(1) if first_side_extent == 1 => {
+                Some(DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne)
+            }
+            Some(0) if first_side_extent == 4 => {
+                Some(DesignExtrudeExtent::TwoSidedThroughAllToFace)
+            }
+            _ => None,
+        })
         .or_else(|| {
             (legacy_class_415_symmetric_distance
                 && direction_face_extend_values == [3, 2]
@@ -1770,6 +2027,7 @@ pub(crate) fn exact_extrude_extent(
         (1, [4, 0]) => Some(DesignExtrudeExtent::OneSidedThroughAll),
         (2, [2, 0 | 2]) => Some(DesignExtrudeExtent::TwoSidedToFaces),
         (2, [1, 1]) => Some(DesignExtrudeExtent::TwoSidedDistance),
+        (2, [1, 4]) => Some(DesignExtrudeExtent::TwoSidedDistanceThroughAll),
         (3, [1, 0]) => Some(DesignExtrudeExtent::SymmetricDistance),
         (3, [4, 4]) => Some(DesignExtrudeExtent::SymmetricThroughAll),
         _ => None,

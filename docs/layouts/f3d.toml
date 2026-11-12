@@ -15139,13 +15139,13 @@ source = "spec"
 anchor = "ordered reference count is `13` at `+291`"
 
 [[record]]
-name = "class_296_261_legacy_extrude_prefix_scalar_at_54"
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+name = "class_296_261_legacy_extrude_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs"
 kind = "byte"
 section = "3.1"
-anchor = "The 515-byte class-`296`/`261` legacy one-sided-to-face frame stores its profile scalar at `+54`"
+anchor = "The 515-byte class-`296`/`261` legacy one-sided-to-face frame stores u32 `1` at `+20`"
 size = 129
-note = "Offsets are relative to the class-296 primary indexed header. This prefix is shared by the 515-byte one-sided-to-face and 483-byte one-sided-distance legacy envelopes; the scalar lane is at +54 in this variant."
+note = "Offsets are relative to the class-296 primary indexed header. The 515-byte one-sided-to-face and 483-byte one-sided-distance legacy envelopes share this prefix."
 
 [[record.gap]]
 offset = 0
@@ -15226,18 +15226,11 @@ source = "spec"
 anchor = "three zero bytes at `+51..+53`"
 
 [[record.field]]
-name = "profile_scalar_at_54"
+name = "profile_normal"
 offset = 54
-type = "f64"
+type = "f64[3]"
 source = "spec"
-anchor = "its profile scalar at `+54`"
-
-[[record.field]]
-name = "zero_after_scalar_at_54"
-offset = 62
-type = "bytes[16]"
-source = "spec"
-anchor = "`+62..+77` are zero"
+anchor = "unit profile normal as three f64 values at offset 54"
 
 [[record.field]]
 name = "reference_slots"
@@ -15252,121 +15245,6 @@ offset = 125
 type = "u32"
 source = "spec"
 anchor = "first-side extent discriminator is `u32 2` at `+125`"
-
-[[record]]
-name = "class_296_261_legacy_extrude_prefix_scalar_at_70"
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-kind = "byte"
-section = "3.1"
-anchor = "The 483-byte class-`296`/`261` legacy one-sided-distance frame stores its profile scalar at `+70`"
-size = 129
-note = "Offsets are relative to the class-296 primary indexed header. This prefix uses the alternate scalar lane at +70 and is admitted only with the exact legacy class, frame, and reference-count tuple."
-
-[[record.gap]]
-offset = 0
-size = 20
-note = "The indexed header and preceding scope envelope are outside this fixed prefix."
-
-[[record.field]]
-name = "prefix_constant"
-offset = 20
-type = "u32"
-source = "spec"
-anchor = "u32 `1` at `+20`"
-value = 1
-
-[[record.field]]
-name = "zero_before_reference"
-offset = 24
-type = "u8"
-source = "spec"
-anchor = "a zero byte at `+24`"
-value = 0
-
-[[record.field]]
-name = "reference"
-offset = 25
-type = "bytes[11]"
-source = "spec"
-anchor = "a marked reference at `+25` with six trailing zero bytes through `+35`"
-
-[[record.field]]
-name = "operation"
-offset = 36
-type = "u32"
-source = "spec"
-anchor = "the result operation at `+36`"
-
-[[record.field]]
-name = "direction"
-offset = 40
-type = "u32"
-source = "spec"
-anchor = "direction `1` at `+40`"
-value = 1
-
-[[record.field]]
-name = "face_extend"
-offset = 44
-type = "u32"
-source = "spec"
-anchor = "face-extend option `2` at `+44`"
-
-[[record.field]]
-name = "direction_reversed"
-offset = 48
-type = "u8"
-source = "spec"
-anchor = "direction reversal at `+48`"
-
-[[record.field]]
-name = "geometry_kind"
-offset = 49
-type = "u8"
-source = "spec"
-anchor = "geometry kind at `+49`"
-
-[[record.field]]
-name = "start_support"
-offset = 50
-type = "u8"
-source = "spec"
-anchor = "start support at `+50`"
-
-[[record.field]]
-name = "zero_after_start"
-offset = 51
-type = "bytes[3]"
-source = "spec"
-anchor = "three zero bytes at `+51..+53`"
-
-[[record.field]]
-name = "zero_before_scalar_at_70"
-offset = 54
-type = "bytes[16]"
-source = "spec"
-anchor = "`+54..+69` are zero"
-
-[[record.field]]
-name = "profile_scalar_at_70"
-offset = 70
-type = "f64"
-source = "spec"
-anchor = "its profile scalar at `+70`"
-
-[[record.field]]
-name = "reference_slots"
-offset = 78
-type = "bytes[47]"
-source = "spec"
-anchor = "seven nullable slots at `+78`"
-
-[[record.field]]
-name = "first_side_extent"
-offset = 125
-type = "u32"
-source = "spec"
-anchor = "first-side extent discriminator is `u32 1` at `+125`"
 
 [[record]]
 name = "class_296_261_legacy_one_sided_to_face_tail"
@@ -28958,7 +28836,7 @@ anchor = "a u64 indexed record identity"
 
 [[record]]
 name = "current_extrude_face_target_payload"
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fixed_parameters.rs"
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/fixed_parameters.rs", "crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs"]
 kind = "byte"
 section = "3.1"
 anchor = "The current face-target payload starts at the first-side extent"
@@ -28989,7 +28867,6 @@ offset = 19
 type = "u32"
 source = "spec"
 anchor = "target option at offset 19 is one"
-value = 1
 
 [[record.field]]
 name = "second_side_extent"
@@ -33402,6 +33279,131 @@ offset = 11
 type = "u64"
 source = "spec"
 anchor = "a positive u64 entry value at entry offset 11"
+
+[[record]]
+name = "legacy_reference_extrude_profile_normal"
+kind = "byte"
+section = "3.1"
+anchor = "A reference-prefixed legacy Extrude stores its unit profile normal as three f64 values at offset 54"
+size = 78
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs"
+
+[[record.gap]]
+offset = 0
+size = 54
+note = "The indexed header and operation fields precede the profile normal."
+
+[[record.field]]
+name = "profile_normal"
+offset = 54
+type = "f64[3]"
+source = "spec"
+anchor = "unit profile normal as three f64 values at offset 54"
+
+[[record]]
+name = "typed_reference_extrude_anchor_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A reference-prefixed typed Extrude stores a 51-byte typed construction-group reference at offset 25"
+size = 76
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs"
+
+[[record.gap]]
+offset = 0
+size = 25
+note = "The indexed header and prefix precede the typed reference."
+
+[[record.field]]
+name = "construction_group_reference"
+offset = 25
+type = "bytes[51]"
+source = "spec"
+anchor = "a 51-byte typed construction-group reference at offset 25"
+
+[[record]]
+name = "typed_fixed_extrude_scalar_frame"
+kind = "byte"
+section = "3.1"
+anchor = "A typed fixed Extrude scalar frame has 303 bytes"
+size = 303
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/shared_frames.rs"
+
+[[record.gap]]
+offset = 0
+size = 24
+note = "The indexed header and scalar prefix precede the owner reference."
+
+[[record.field]]
+name = "owner_reference"
+offset = 24
+type = "bytes[51]"
+source = "spec"
+anchor = "typed owner reference is at offset 24"
+
+[[record.field]]
+name = "ordinal"
+offset = 75
+type = "u8"
+source = "spec"
+anchor = "lane ordinal is at offset 75"
+
+[[record.field]]
+name = "zero_run"
+offset = 76
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes follow"
+value = [0, 0, 0, 0]
+
+[[record.field]]
+name = "value"
+offset = 80
+type = "f64"
+source = "spec"
+anchor = "finite f64 value is at offset 80"
+
+[[record.field]]
+name = "parameter_reference"
+offset = 88
+type = "bytes[51]"
+source = "spec"
+anchor = "typed parameter reference at offset 88"
+
+[[record.gap]]
+offset = 139
+size = 8
+note = "The scalar trailer precedes the repeated owner reference."
+
+[[record.field]]
+name = "repeated_owner_reference"
+offset = 147
+type = "bytes[51]"
+source = "spec"
+anchor = "Typed references at offsets 147 and 252 repeat the owning Extrude scope"
+
+[[record.gap]]
+offset = 198
+size = 2
+note = "Two trailer bytes precede the presentation reference."
+
+[[record.field]]
+name = "presentation_reference"
+offset = 200
+type = "bytes[51]"
+source = "spec"
+anchor = "typed presentation reference at offset 200"
+
+[[record.gap]]
+offset = 251
+size = 1
+note = "One trailer byte precedes the final owner reference."
+
+[[record.field]]
+name = "trailing_owner_reference"
+offset = 252
+type = "bytes[51]"
+source = "spec"
+anchor = "Typed references at offsets 147 and 252 repeat the owning Extrude scope"
 
 [[record]]
 name = "rectangular_pattern_compact_spacing_direction_record"
