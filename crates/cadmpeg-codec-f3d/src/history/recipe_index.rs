@@ -5,7 +5,42 @@ use crate::history_records::AsmHistoricalTopology;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use std::collections::{HashMap, HashSet};
 
-type TokenReferences<'a> = HashMap<&'a str, HashMap<i64, Vec<usize>>>;
+pub(super) struct ReferenceLaneFaces {
+    pub(super) faces: Vec<cadmpeg_ir::ids::FaceId>,
+    pub(super) disjoint_names: bool,
+}
+
+pub(super) fn reference_lane_faces(
+    lane: &[crate::records::dimensions::DesignRecipeReference],
+) -> ReferenceLaneFaces {
+    let mut names: std::collections::BTreeMap<_, Vec<_>> = std::collections::BTreeMap::new();
+    for reference in lane {
+        let faces = names.entry(reference.selector_offset).or_default();
+        for face in super::effective_faces(reference) {
+            if !faces.contains(face) {
+                faces.push(face.clone());
+            }
+        }
+    }
+    let mut names = names.into_values().filter(|faces| !faces.is_empty());
+    let mut faces = names.next().unwrap_or_default();
+    let mut union = faces.clone();
+    for name in names {
+        faces.retain(|face| name.contains(face));
+        for face in name {
+            if !union.contains(&face) {
+                union.push(face);
+            }
+        }
+    }
+    let disjoint_names = faces.is_empty() && !union.is_empty();
+    ReferenceLaneFaces {
+        faces: if disjoint_names { union } else { faces },
+        disjoint_names,
+    }
+}
+
+type TokenReferences<'a> = HashMap<&'a str, HashMap<u32, HashMap<i64, Vec<usize>>>>;
 
 pub(super) struct RecipeTopologyIndex<'a> {
     pub(super) topology: &'a AsmHistoricalTopology,
@@ -27,7 +62,11 @@ impl<'a> RecipeTopologyIndex<'a> {
             if !live || tag.design_references.is_empty() {
                 continue;
             }
-            let references = tokens.entry(tag.token.as_str()).or_default();
+            let references = tokens
+                .entry(tag.token.as_str())
+                .or_default()
+                .entry(tag.token_integer)
+                .or_default();
             for reference in &tag.design_references {
                 let rows = references.entry(*reference).or_default();
                 // One tag can repeat its Design reference; the old membership query
@@ -44,9 +83,15 @@ impl<'a> RecipeTopologyIndex<'a> {
         }
     }
 
-    pub(super) fn matching_tags(&self, token: &str, reference: i64) -> &[usize] {
+    pub(super) fn matching_tags(
+        &self,
+        token: &str,
+        token_integer: u32,
+        reference: i64,
+    ) -> &[usize] {
         self.tokens
             .get(token)
+            .and_then(|integers| integers.get(&token_integer))
             .and_then(|references| references.get(&reference))
             .map_or(&[], Vec::as_slice)
     }
@@ -56,7 +101,7 @@ impl<'a> RecipeTopologyIndex<'a> {
         self.faces
             .get_or_insert_with(|| {
                 let mut faces: HashMap<_, Vec<_>> = HashMap::new();
-                for references in tokens.values() {
+                for references in tokens.values().flat_map(|integers| integers.values()) {
                     for (reference, tags) in references {
                         for tag_index in tags {
                             if topology.persistent_subentity_tags[*tag_index].entity_kind
@@ -100,6 +145,51 @@ mod tests {
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
     #[test]
+    fn recipe_reference_aliases_union_references_and_intersect_live_names() {
+        use crate::records::dimensions::DesignRecipeReference;
+        use cadmpeg_ir::ids::FaceId;
+        let face = |slot| FaceId::mint(format!("f3d:brep:entity#{slot}")).unwrap();
+        let reference = |selector_offset, design_reference, slots: &[i64]| DesignRecipeReference {
+            selector: 1,
+            selector_offset,
+            token: "2".into(),
+            token_integer: 0,
+            token_offset: selector_offset + 8,
+            design_reference,
+            design_reference_offset: selector_offset + 17,
+            candidate_faces: slots.iter().map(|slot| face(*slot)).collect(),
+            candidate_edges: Vec::new(),
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
+            operand_offset: Some(0),
+        };
+        let lane = [
+            reference(0, 301, &[10, 20]),
+            reference(0, 302, &[30]),
+            reference(40, 303, &[20, 30, 40]),
+        ];
+        assert_eq!(
+            super::reference_lane_faces(&lane).faces,
+            [face(20), face(30)]
+        );
+        assert_eq!(
+            super::reference_lane_faces(&lane[..2]).faces,
+            [face(10), face(20), face(30)]
+        );
+        let missing = [lane[0].clone(), reference(40, 303, &[])];
+        assert_eq!(
+            super::reference_lane_faces(&missing).faces,
+            [face(10), face(20)]
+        );
+        let conflict = [lane[0].clone(), reference(40, 303, &[40])];
+        let conflict = super::reference_lane_faces(&conflict);
+        assert_eq!(conflict.faces, [face(10), face(20), face(40)]);
+        assert!(conflict.disjoint_names);
+        assert!(!super::reference_lane_faces(&lane).disjoint_names);
+        assert!(super::reference_lane_faces(&[]).faces.is_empty());
+    }
+
+    #[test]
     fn recipe_queries_reuse_indexes_and_keep_snapshots_separate() {
         let topology = |entity_ref| AsmHistoricalTopology {
             faces: vec![entity_ref],
@@ -108,6 +198,7 @@ mod tests {
                 entity_ref,
                 selector: 0,
                 token: "rim".into(),
+                token_integer: 0,
                 design_references: vec![301, 301],
                 ordinal: 0,
             }],
@@ -118,23 +209,57 @@ mod tests {
         dead.entity_ref = 999;
         dead.token = "dead".into();
         first.persistent_subentity_tags.push(dead);
+        let mut other_integer = first.persistent_subentity_tags[0].clone();
+        other_integer.token_integer = 4012;
+        first.persistent_subentity_tags.push(other_integer);
         let second = topology(20);
         let mut cache = RecipeTopologyCache::default();
         for _ in 0..1_000 {
             for (topology, entity) in [(&first, 10), (&second, 20)] {
                 let index = cache.get(topology);
-                assert_eq!(index.matching_tags("rim", 301), &[0]);
-                assert_eq!(index.face_tags(301), &[0]);
+                assert_eq!(index.matching_tags("rim", 0, 301), &[0]);
+                if entity == 10 {
+                    assert_eq!(index.matching_tags("rim", 4012, 301), &[2]);
+                }
+                assert!(index.matching_tags("rim", 4013, 301).is_empty());
+                assert_eq!(
+                    index.face_tags(301),
+                    if entity == 10 { &[0, 2][..] } else { &[0][..] }
+                );
                 assert_eq!(
                     index.topology.persistent_subentity_tags[0].entity_ref,
                     entity
                 );
-                assert!(index.matching_tags("rim", 302).is_empty());
-                assert!(index.matching_tags("other", 301).is_empty());
-                assert!(index.matching_tags("dead", 301).is_empty());
+                assert!(index.matching_tags("rim", 0, 302).is_empty());
+                assert!(index.matching_tags("other", 0, 301).is_empty());
+                assert!(index.matching_tags("dead", 0, 301).is_empty());
             }
         }
     }
+    #[test]
+    fn token_integer_recipe_queries_separate_entities_and_keep_fragments() {
+        let tag = |entity_ref, token_integer| AsmHistoricalPersistentSubentityTag {
+            entity_kind: AsmHistoricalEntityKind::Face,
+            entity_ref,
+            selector: 1,
+            token: "10".into(),
+            token_integer,
+            design_references: vec![328],
+            ordinal: 0,
+        };
+        let topology = AsmHistoricalTopology {
+            faces: vec![10, 20, 30],
+            persistent_subentity_tags: vec![tag(10, 0), tag(20, 4012), tag(30, 4012)],
+            ..Default::default()
+        };
+        let mut cache = RecipeTopologyCache::default();
+        let index = cache.get(&topology);
+        assert_eq!(index.matching_tags("10", 0, 328), &[0]);
+        assert_eq!(index.matching_tags("10", 4012, 328), &[1, 2]);
+        assert!(index.matching_tags("10", 4013, 328).is_empty());
+        assert_eq!(index.face_tags(328), &[0, 1, 2]);
+    }
+
     #[test]
     fn token_only_recipe_queries_match_tags_without_a_face_index() {
         let topology = AsmHistoricalTopology {
@@ -144,6 +269,7 @@ mod tests {
                 entity_ref: 10,
                 selector: 0,
                 token: "rim".into(),
+                token_integer: 0,
                 design_references: vec![301],
                 ordinal: 0,
             }],
@@ -151,7 +277,7 @@ mod tests {
         };
         let mut cache = RecipeTopologyCache::default();
         for _ in 0..1_000 {
-            assert_eq!(cache.get(&topology).matching_tags("rim", 301), &[0]);
+            assert_eq!(cache.get(&topology).matching_tags("rim", 0, 301), &[0]);
         }
     }
 }

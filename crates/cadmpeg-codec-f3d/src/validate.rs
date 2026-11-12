@@ -7450,6 +7450,7 @@ fn recipe_reference_frames_match(
             actual.selector == expected.selector
                 && actual.selector_offset == expected.selector_offset
                 && actual.token == expected.token
+                && actual.token_integer == expected.token_integer
                 && actual.token_offset == expected.token_offset
                 && actual.design_reference == expected.design_reference
                 && actual.design_reference_offset == expected.design_reference_offset

@@ -331,6 +331,8 @@ pub(crate) struct AsmHistoricalPersistentSubentityTag {
     pub(crate) entity_ref: i64,
     pub(crate) selector: i64,
     pub(crate) token: String,
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
+    pub(crate) token_integer: u32,
     pub(crate) design_references: Vec<i64>,
     pub(crate) ordinal: u32,
 }

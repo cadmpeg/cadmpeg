@@ -495,12 +495,15 @@ fn persistent_subentity_tags(
     let mut groups = Vec::new();
     for ordinal in 0..group_count {
         let Some(
-            [AttributeValue::Integer(selector), AttributeValue::String(token), AttributeValue::Integer(0), AttributeValue::Integer(reference_count)],
+            [AttributeValue::Integer(selector), AttributeValue::String(token), AttributeValue::Integer(token_integer), AttributeValue::Integer(reference_count)],
         ) = rest.get(position..position + 4)
         else {
             return Ok(Vec::new());
         };
         let Some(token) = cadmpeg_core::text::NonBlankString::new(token.to_owned()) else {
+            return Ok(Vec::new());
+        };
+        let Ok(token_integer) = u32::try_from(*token_integer) else {
             return Ok(Vec::new());
         };
         if *reference_count < 0 {
@@ -542,6 +545,7 @@ fn persistent_subentity_tags(
             target: attribute.target.clone(),
             selector: *selector,
             token,
+            token_integer,
             design_references,
             ordinal,
         };

@@ -583,6 +583,7 @@ fn recipe_reference(candidate_edges: &[i64]) -> DesignRecipeReference {
         selector: 1,
         selector_offset: 0,
         token: "97".into(),
+        token_integer: 0,
         token_offset: 0,
         design_reference: 1,
         design_reference_offset: 0,

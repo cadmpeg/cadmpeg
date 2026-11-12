@@ -2,8 +2,8 @@
 
 #[cfg(test)]
 use super::{
-    effective_faces, face_boundary_contexts_for_slots, selection, stable_ref,
-    AsmHistoricalTopology, SideOneEdge, TopologyQueryCache,
+    face_boundary_contexts_for_slots, selection, stable_ref, AsmHistoricalTopology, SideOneEdge,
+    TopologyQueryCache,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -16,12 +16,8 @@ fn side_one_reference_face_edge<'a>(
     topology_queries: &mut TopologyQueryCache<'a>,
 ) -> Option<SideOneEdge> {
     let lanes = crate::records::dimensions::reference_lanes(references);
-    common_edge(structure, candidate_boundary_edges, |ordinal| {
-        let lane: Vec<cadmpeg_ir::ids::FaceId> = lanes
-            .get(ordinal)?
-            .iter()
-            .flat_map(|reference| effective_faces(reference).iter().cloned())
-            .collect();
+    common_edge(structure, candidate_boundary_edges, None, |ordinal| {
+        let lane = super::recipe_index::reference_lane_faces(lanes.get(ordinal)?).faces;
         let mut faces = selection::faces_in_topology(&lane, topology);
         faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
         faces.dedup();
@@ -32,11 +28,9 @@ fn side_one_reference_face_edge<'a>(
     })
 }
 
-fn common_edge(
+fn side_one_ordinals(
     structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
-    candidate_boundary_edges: &[i64],
-    mut lane: impl FnMut(usize) -> Option<BTreeMap<i64, BTreeSet<i64>>>,
-) -> Option<super::SideOneEdge> {
+) -> Option<BTreeSet<usize>> {
     let structure = structure?;
     if structure.root != 2 || structure.sides.len() != 2 {
         return None;
@@ -52,6 +46,16 @@ fn common_edge(
     if ordinals.len() < 2 {
         return None;
     }
+    Some(ordinals)
+}
+
+fn common_edge(
+    structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
+    candidate_boundary_edges: &[i64],
+    required_edges: Option<&[i64]>,
+    mut lane: impl FnMut(usize) -> Option<BTreeMap<i64, BTreeSet<i64>>>,
+) -> Option<super::SideOneEdge> {
+    let ordinals = side_one_ordinals(structure)?;
     let mut common: Option<BTreeMap<i64, BTreeSet<i64>>> = None;
     for ordinal in ordinals {
         let edges = lane(ordinal)?;
@@ -70,7 +74,11 @@ fn common_edge(
     let common: Vec<i64> = common?
         .into_iter()
         .filter_map(|(edge, supports)| (supports.len() >= 2).then_some(edge))
+        .filter(|edge| required_edges.is_none_or(|required| required.contains(edge)))
         .collect();
+    if required_edges.is_some() && common.len() != 1 {
+        return None;
+    }
     let mut proven = common
         .iter()
         .copied()
@@ -128,9 +136,15 @@ pub(crate) fn context_edge(
         &crate::records::topology::historical_context::AsmFaceBoundary,
     >,
 ) -> Option<super::SideOneEdge> {
+    let lanes = crate::records::dimensions::reference_lanes(&operand.recipe_references);
+    let disjoint_names = side_one_ordinals(operand.recipe_structure.as_ref())?
+        .into_iter()
+        .filter_map(|ordinal| lanes.get(ordinal))
+        .any(|lane| super::recipe_index::reference_lane_faces(lane).disjoint_names);
     common_edge(
         operand.recipe_structure.as_ref(),
         &operand.preceding_boundary_edge_slots,
+        disjoint_names.then_some(operand.transition_deleted_edge_slots.as_slice()),
         |ordinal| {
             let context = operand.recipe_reference_contexts.get(ordinal)?;
             if usize::try_from(context.reference_ordinal).ok()? != ordinal
@@ -164,6 +178,10 @@ pub(crate) fn context_edge(
             Some(edges)
         },
     )
+    .map(|mut edge| {
+        edge.inferred |= disjoint_names;
+        edge
+    })
 }
 
 #[cfg(test)]
@@ -172,6 +190,76 @@ mod tests {
     use crate::history_records::{AsmHistoricalCoedge, AsmHistoricalRelation};
     use crate::records::dimensions::DesignRecipeReference;
     use cadmpeg_ir::ids::FaceId;
+
+    #[test]
+    fn recipe_reference_disjoint_names_require_one_deleted_common_edge() {
+        let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
+            serde_json::from_value(serde_json::json!({
+                "id":"f3d:Design/BulkStream.dat:edge-operand#7", "scope_record_index":42,
+                "scope_reference_ordinal":0, "record_index":7, "byte_offset":0, "class_tag":"297",
+                "paired_byte_offset":16, "paired_class_tag":"259", "recipe_record_index":10,
+                "recipe_record_byte_offset":32, "recipe_id":"f3d:test:recipe", "recipe_prefix_offset":43,
+                "recipe_prefix_bytes":"", "recipe_references":[], "recipe_program_offset":0,
+                "recipe_program":[], "next_record_index":11, "next_byte_offset":160,
+            })).unwrap();
+        let program = [
+            -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 1, -1, 0, -1, 2, -1, 0, 0, -1, 3, 0, -1, 0, -1, 0,
+            -1, 0, 0, -1,
+        ];
+        operand.recipe_structure = crate::design::decode::operands::edge_recipe_structure(
+            &cadmpeg_test_support::service_decode_context(),
+            &program,
+        )
+        .unwrap();
+        operand.recipe_references = [(0, 0, 10), (0, 40, 20), (80, 80, 40)]
+            .into_iter()
+            .map(
+                |(operand_offset, selector_offset, face)| DesignRecipeReference {
+                    selector: 1,
+                    selector_offset,
+                    operand_offset: Some(operand_offset),
+                    token: "2".into(),
+                    token_integer: 0,
+                    token_offset: selector_offset + 8,
+                    design_reference: 301,
+                    design_reference_offset: selector_offset + 17,
+                    candidate_faces: vec![FaceId::mint(crate::ids::brep_entity_id(face)).unwrap()],
+                    candidate_edges: vec![],
+                    alternate_selector_faces: vec![],
+                    alternate_selector_edges: vec![],
+                },
+            )
+            .collect();
+        operand.recipe_reference_contexts = crate::records::dimensions::reference_lanes(&operand.recipe_references)
+            .into_iter().enumerate().map(|(ordinal, lane)| {
+                let faces = super::super::recipe_index::reference_lane_faces(lane).faces;
+                serde_json::from_value(serde_json::json!({
+                    "reference_ordinal":ordinal, "result_faces":[], "result_shared_edge_slots":[],
+                    "preceding_face_boundary_ids":faces.iter().map(|f| format!("boundary-{}", super::super::stable_ref(f.as_str()).unwrap())).collect::<Vec<_>>(),
+                    "preceding_faces":faces, "shared_edge_slots":[], "changed_shared_edge_slots":[],
+                })).unwrap()
+            }).collect();
+        let boundaries: Vec<crate::records::topology::historical_context::AsmFaceBoundary> =
+            [(10, vec![31]), (20, vec![32]), (40, vec![31,32])].into_iter().map(|(face, edges)| {
+                serde_json::from_value(serde_json::json!({
+                    "id":format!("boundary-{face}"), "parent":"state-1", "face_slot":face,
+                    "loops":[{"loop_slot":face,"coedge_slots":edges.iter().map(|e| e*10+face).collect::<Vec<_>>(),"edge_slots":edges}],
+                })).unwrap()
+            }).collect();
+        let index = boundaries.iter().map(|b| (b.id.as_str(), b)).collect();
+        for (deleted, expected) in [
+            (vec![31], Some((31, true))),
+            (vec![32], Some((32, true))),
+            (vec![], None),
+            (vec![31, 32], None),
+        ] {
+            operand.transition_deleted_edge_slots = deleted;
+            assert_eq!(
+                context_edge(&operand, &index).map(|e| (e.slot, e.inferred)),
+                expected
+            );
+        }
+    }
 
     #[test]
     fn fragment_lane_union_selects_one_edge_and_retains_multiple_edges_native() {
@@ -220,6 +308,7 @@ mod tests {
                     selector: 1,
                     selector_offset: ordinal * 100,
                     token: ordinal.to_string(),
+                    token_integer: 0,
                     token_offset: ordinal * 100 + 8,
                     design_reference: 50,
                     design_reference_offset: 0,

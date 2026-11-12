@@ -17,6 +17,7 @@ fn reference() -> DesignRecipeReference {
         selector: 2,
         selector_offset: 0,
         token: "37".into(),
+        token_integer: 0,
         token_offset: 4,
         design_reference: -73,
         design_reference_offset: 8,
