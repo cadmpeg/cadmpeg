@@ -170,9 +170,12 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
                 value: crate::test_support::reals([1.25, -2.5, 3.75]),
                 offset: 40,
             }),
-            uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(2.5)
-                .expect("checked fixture value"),
-            uniform_factor_offset: 20,
+            further_body_group_record_indices: Vec::new(),
+            factors: crate::records::feature::body_ops::DesignScaleFactors::Uniform {
+                factor: cadmpeg_ir::scalar::PositiveReal::new(2.5).expect("checked fixture value"),
+                offset: 20,
+            },
+            matrix_offset: None,
         });
     }
 
@@ -212,6 +215,70 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
         factors,
         cadmpeg_ir::features::ScaleFactors::Uniform { factor: uniform }
             if (uniform.get() - 2.5).abs() < f64::EPSILON
+    ));
+}
+
+#[test]
+fn dispatcher_projects_per_axis_scale_point_center_in_neutral_units() {
+    let mut scale = DesignParameterScope::empty(
+        "f3d:native/BulkStream.dat:parameter-scope#4",
+        crate::records::feature::scope::DesignFeatureKind::Scale,
+        4,
+    );
+    if let crate::records::feature::scope::DesignScopePayloadMut::Scale(slot) = scale.payload_mut()
+    {
+        *slot = Some(DesignScaleOperation {
+            body_group_record_index: 5,
+            center_record_index: 6,
+            center_position: Some(crate::records::identity::Located {
+                value: crate::test_support::reals([1.25, -2.5, 3.75]),
+                offset: 40,
+            }),
+            further_body_group_record_indices: Vec::new(),
+            factors: crate::records::feature::body_ops::DesignScaleFactors::PerAxis {
+                factors: [1.0, 2.0, 3.0].map(|v| cadmpeg_ir::scalar::PositiveReal::new(v).unwrap()),
+                offsets: [20, 60, 100],
+            },
+            matrix_offset: None,
+        });
+    }
+
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = &[scale];
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
+    let FeatureDefinition::Operation(FeatureOperation::Scale {
+        bodies,
+        center: Some(cadmpeg_ir::features::ScaleCenter::Point(center)),
+        factors,
+    }) = features[0].evaluation.definition()
+    else {
+        panic!("scale feature with explicit center");
+    };
+    assert!(matches!(
+        bodies,
+        cadmpeg_ir::features::BodySelection::Unresolved
+    ));
+    for (actual, expected) in [center.x, center.y, center.z]
+        .into_iter()
+        .zip([12.5, -25.0, 37.5])
+    {
+        assert!((actual - expected).abs() < f64::EPSILON);
+    }
+    assert!(matches!(
+        factors,
+        cadmpeg_ir::features::ScaleFactors::PerAxis { factors }
+            if factors.map(|v| v.get()) == [1.0, 2.0, 3.0]
     ));
 }
 

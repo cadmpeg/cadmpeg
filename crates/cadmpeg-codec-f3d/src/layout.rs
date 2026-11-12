@@ -9794,3 +9794,37 @@ pub(crate) mod constructed_plane_entity_prefix {
     /// Offset of `entity_id_code_unit_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const ENTITY_ID_CODE_UNIT_COUNT: usize = 130;
 }
+
+/// Byte offsets for the `scale_matrix_marker_zero_prologue` record.
+///
+/// Spec §3.1. Record length 40 B.
+pub(crate) mod scale_matrix_marker_zero_prologue {
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 20;
+    /// Stated value of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER_VALUE: u8 = 0;
+    /// Offset of `word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const WORD: usize = 21;
+    /// Offset of `body_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_COUNT: usize = 25;
+    /// Offset of `first_body_group` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FIRST_BODY_GROUP: usize = 29;
+}
+
+/// Byte offsets for the `scale_matrix_marker_one_prologue` record.
+///
+/// Spec §3.1. Record length 44 B.
+pub(crate) mod scale_matrix_marker_one_prologue {
+    /// Stated value of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER_VALUE: u8 = 1;
+    /// Offset of `zero_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_WORD: usize = 21;
+    /// Offset of `word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const WORD: usize = 25;
+    /// Offset of `body_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_COUNT: usize = 29;
+    /// Offset of `first_body_group` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FIRST_BODY_GROUP: usize = 33;
+}

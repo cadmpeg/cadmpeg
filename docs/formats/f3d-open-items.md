@@ -2264,3 +2264,23 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The projected z=0 target and a signed displacement of magnitude 1.5 mm give termination planes at z=-1.5 or z=+1.5 mm. The transition terminates at z=18.5 mm. The z=20 candidate gives that plane with a displacement of -1.5 mm along `+Z`.
 
 **Note.** The transition travels along `+Z` and agrees with direction reversal `0`. The decoder source property `extrude_to_distance = 7.5` equals the start-plane offset in this transition.
+
+### DR-463. Matrix Scale prologue word
+
+**Question.** What does a nonzero matrix Scale prologue word control?
+
+**Known.** The matrix supplies positive axis factors and translation consistent with its point-data center.
+
+**Need.** Paired saves that change the word and preserve the factors and center.
+
+**Note.** The decoder applies the stored matrix and records `feature.scale-matrix-word-assumed` for a nonzero word.
+
+### DR-464. Matrix Scale body groups outside the prologue
+
+**Question.** How do owned body groups absent from the matrix prologue contribute to the operation?
+
+**Known.** The prologue lists the body groups for the stored transform. A scope can own additional body groups with the same body-selection role.
+
+**Need.** Paired saves that vary the listed and additional selections independently.
+
+**Note.** The decoder selects the listed groups and assumes that the additional groups select the same bodies. It records `feature.scale-unlisted-groups-assumed`.

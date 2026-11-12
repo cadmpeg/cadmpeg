@@ -18,8 +18,21 @@ cadmpeg_core::named_optional_field!(
     u64,
     "center_position_offset"
 );
-/// Fixed construction carried by a uniform body-scale scope.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+cadmpeg_core::named_optional_field!(deserialize_uniform_factor, f64, "uniform_factor");
+cadmpeg_core::named_optional_field!(
+    deserialize_uniform_factor_offset,
+    u64,
+    "uniform_factor_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_axis_factors, [f64; 3], "axis_factors");
+cadmpeg_core::named_optional_field!(
+    deserialize_axis_factor_offsets,
+    [u64; 3],
+    "axis_factor_offsets"
+);
+cadmpeg_core::named_optional_field!(deserialize_matrix_offset, u64, "matrix_offset");
+/// Fixed construction carried by a body-scale scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     try_from = "DesignScaleOperationWire",
     into = "DesignScaleOperationWire"
@@ -27,21 +40,44 @@ cadmpeg_core::named_optional_field!(
 pub(crate) struct DesignScaleOperation {
     /// Counted construction group selecting the transformed bodies.
     pub(crate) body_group_record_index: u32,
+    pub(crate) further_body_group_record_indices: Vec<u32>,
     /// Native reference selecting the fixed scale center.
     pub(crate) center_record_index: u32,
     /// Explicit center position carried by legacy point-data centers, in source
     /// model centimetres.
     pub(crate) center_position: Option<Located<[FiniteReal; 3]>>,
-    /// Uniform scale factor.
-    pub(crate) uniform_factor: PositiveReal,
-    /// Byte offset of `uniform_factor`.
-    pub(crate) uniform_factor_offset: u64,
+    pub(crate) factors: DesignScaleFactors,
+    pub(crate) matrix_offset: Option<u64>,
+}
+
+impl DesignScaleOperation {
+    #[cfg(test)]
+    pub(crate) fn uniform(&self) -> Option<(PositiveReal, u64)> {
+        match self.factors {
+            DesignScaleFactors::Uniform { factor, offset } => Some((factor, offset)),
+            DesignScaleFactors::PerAxis { .. } => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum DesignScaleFactors {
+    Uniform {
+        factor: PositiveReal,
+        offset: u64,
+    },
+    PerAxis {
+        factors: [PositiveReal; 3],
+        offsets: [u64; 3],
+    },
 }
 
 #[derive(Serialize, Deserialize)]
 struct DesignScaleOperationWire {
     /// Counted construction group selecting the transformed bodies.
     body_group_record_index: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    further_body_group_record_indices: Vec<u32>,
     /// Native reference selecting the fixed scale center.
     center_record_index: u32,
     /// Explicit center position carried by legacy point-data centers, in source
@@ -60,20 +96,64 @@ struct DesignScaleOperationWire {
     )]
     center_position_offset: Option<u64>,
     /// Positive uniform scale factor.
-    uniform_factor: f64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_uniform_factor"
+    )]
+    uniform_factor: Option<f64>,
     /// Byte offset of `uniform_factor`.
-    uniform_factor_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_uniform_factor_offset"
+    )]
+    uniform_factor_offset: Option<u64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_axis_factors"
+    )]
+    axis_factors: Option<[f64; 3]>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_axis_factor_offsets"
+    )]
+    axis_factor_offsets: Option<[u64; 3]>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_matrix_offset"
+    )]
+    matrix_offset: Option<u64>,
 }
 
 impl From<DesignScaleOperation> for DesignScaleOperationWire {
     fn from(value: DesignScaleOperation) -> Self {
+        let (uniform_factor, uniform_factor_offset, axis_factors, axis_factor_offsets) =
+            match value.factors {
+                DesignScaleFactors::Uniform { factor, offset } => {
+                    (Some(factor.get()), Some(offset), None, None)
+                }
+                DesignScaleFactors::PerAxis { factors, offsets } => (
+                    None,
+                    None,
+                    Some(factors.map(PositiveReal::get)),
+                    Some(offsets),
+                ),
+            };
         Self {
             body_group_record_index: value.body_group_record_index,
+            further_body_group_record_indices: value.further_body_group_record_indices,
             center_record_index: value.center_record_index,
             center_position: value.center_position.map(|center| center.value),
             center_position_offset: value.center_position.map(|center| center.offset),
-            uniform_factor: value.uniform_factor.get(),
-            uniform_factor_offset: value.uniform_factor_offset,
+            uniform_factor,
+            uniform_factor_offset,
+            axis_factors,
+            axis_factor_offsets,
+            matrix_offset: value.matrix_offset,
         }
     }
 }
@@ -81,17 +161,44 @@ impl From<DesignScaleOperation> for DesignScaleOperationWire {
 impl TryFrom<DesignScaleOperationWire> for DesignScaleOperation {
     type Error = String;
     fn try_from(value: DesignScaleOperationWire) -> Result<Self, Self::Error> {
+        let positive =
+            |factor: f64, refusal: &'static str| PositiveReal::new(factor).ok_or(refusal);
+        let factors = match (
+            value.uniform_factor,
+            value.uniform_factor_offset,
+            value.axis_factors,
+            value.axis_factor_offsets,
+        ) {
+            (Some(factor), Some(offset), None, None) => DesignScaleFactors::Uniform {
+                factor: positive(factor, "uniform_factor must be positive and finite")?,
+                offset,
+            },
+            (None, None, Some([x, y, z]), Some(offsets)) => DesignScaleFactors::PerAxis {
+                factors: [
+                    positive(x, "axis_factors must be positive and finite")?,
+                    positive(y, "axis_factors must be positive and finite")?,
+                    positive(z, "axis_factors must be positive and finite")?,
+                ],
+                offsets,
+            },
+            _ => {
+                return Err(
+                    "a scale stores either uniform_factor with its offset or axis_factors with their offsets"
+                        .to_owned(),
+                )
+            }
+        };
         Ok(Self {
             body_group_record_index: value.body_group_record_index,
+            further_body_group_record_indices: value.further_body_group_record_indices,
             center_record_index: value.center_record_index,
             center_position: Located::from_wire(
                 value.center_position,
                 value.center_position_offset,
                 "center_position",
             )?,
-            uniform_factor: PositiveReal::new(value.uniform_factor)
-                .ok_or("uniform_factor must be positive and finite")?,
-            uniform_factor_offset: value.uniform_factor_offset,
+            factors,
+            matrix_offset: value.matrix_offset,
         })
     }
 }
