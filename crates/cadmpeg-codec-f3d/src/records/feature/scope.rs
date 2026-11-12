@@ -77,6 +77,7 @@ cadmpeg_core::named_optional_field!(
     crate::records::identity::Located<String>,
     "label"
 );
+cadmpeg_core::named_optional_field!(deserialize_display_name, String, "display_name");
 cadmpeg_core::named_optional_field!(
     deserialize_deleted_members,
     super::deleted_members::DesignDeletedMembers,
@@ -757,6 +758,9 @@ pub(crate) struct DesignParameterScope {
     /// Label and offset of its UTF-16LE code units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) label: Option<crate::records::identity::Located<String>>,
+    /// Display name bound from a companion `WorkPlane` entity record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) display_name: Option<String>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     history_state_id: Option<i64>,
@@ -884,6 +888,13 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_label"
     )]
     label: Option<crate::records::identity::Located<String>>,
+    /// Display name bound from a companion `WorkPlane` entity record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_display_name"
+    )]
+    display_name: Option<String>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(
         default,
@@ -2204,7 +2215,24 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 "occurrence_transfer disagrees with scope".into(),
             ));
         }
+        if let Some(name) = wire.display_name.as_deref() {
+            let units = name.encode_utf16().count();
+            if wire.kind != DesignFeatureKind::WorkPlane
+                || name.trim().is_empty()
+                || !(1..=256).contains(&units)
+                || name.chars().any(char::is_control)
+                || admitted
+                    .label
+                    .as_ref()
+                    .is_some_and(|label| label.value != name)
+            {
+                return Err(DesignParameterScopePayloadError(
+                    "invalid display_name".into(),
+                ));
+            }
+        }
         admitted.source_kind = wire.source_kind;
+        admitted.display_name = wire.display_name;
         admitted.occurrence_transfer = occurrence_transfer;
         Ok(admitted)
     }
@@ -2231,6 +2259,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             feature_ordinal: scope.feature_ordinal.get(),
             feature_ordinal_offset: scope.feature_ordinal_offset,
             label: scope.label,
+            display_name: scope.display_name,
             history_state_id: scope.history_state_id,
             history_state_id_offset,
             previous_history_state_id: scope.previous_history_state_id,
@@ -2638,6 +2667,7 @@ impl DesignParameterScope {
             feature_ordinal: draft.feature_ordinal,
             feature_ordinal_offset: draft.feature_ordinal_offset,
             label: draft.label,
+            display_name: None,
             history_state_id: draft.history_state_id,
             previous_history_state_id: draft.previous_history_state_id,
             previous_history_state_id_offset: draft.previous_history_state_id_offset,

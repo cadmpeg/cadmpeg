@@ -26,6 +26,7 @@ use cadmpeg_ir::sketches::SketchId;
 fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,

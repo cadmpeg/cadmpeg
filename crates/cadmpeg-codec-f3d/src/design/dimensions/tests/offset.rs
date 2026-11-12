@@ -756,6 +756,7 @@ fn offset_parameter_factor_preserves_curve_direction() {
 #[test]
 fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
     let placement = |stream: &str, suffix| DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,

@@ -374,6 +374,7 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
 #[test]
 fn occurrence_merge_remaps_and_retains_native_records() {
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             42,
             crate::records::sketch_placement::DesignSketchFrameForm::MemberCompact {

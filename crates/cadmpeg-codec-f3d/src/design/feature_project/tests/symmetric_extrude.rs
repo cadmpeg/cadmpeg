@@ -143,6 +143,7 @@ fn dual_lane_symmetric_extrude_doubles_whole_travel() {
                 .expect("valid entity ID"),
 
             visibility: None,
+            display_name: None,
 
             class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
                 .unwrap(),

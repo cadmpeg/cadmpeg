@@ -672,3 +672,26 @@ fn chamfer_sets_round_trip_and_belong_to_chamfer_scopes() {
     invalid["chamfer_sets"] = serde_json::Value::Null;
     assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
 }
+
+#[test]
+fn work_plane_scope_display_name_wire_validates_bounds_and_kind() {
+    use super::{DesignFeatureKind, DesignParameterScope, DesignParameterScopeSerde};
+    let mut scope = crate::test_support::work_plane::scope_referencing(&[73]);
+    scope.display_name = Some("Body Split".into());
+    let wire = serde_json::to_value(&scope).unwrap();
+    let owned = serde_json::to_value(DesignParameterScopeSerde::from(scope.clone())).unwrap();
+    assert_eq!(wire, owned);
+    let loaded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(loaded, scope);
+
+    for bad in ["", "   ", "Bad\nName", &"x".repeat(257)] {
+        let mut invalid = wire.clone();
+        invalid["display_name"] = serde_json::json!(bad);
+        assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
+    }
+
+    let mut non_work_plane = DesignParameterScope::empty("scope", DesignFeatureKind::Extrude, 1);
+    non_work_plane.display_name = Some("Body Split".into());
+    let bad_kind = serde_json::to_value(&non_work_plane).unwrap();
+    assert!(serde_json::from_value::<DesignParameterScope>(bad_kind).is_err());
+}

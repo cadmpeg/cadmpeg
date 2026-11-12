@@ -728,6 +728,7 @@ fn counted_linear_graph_projects_exact_auxiliary_relations() {
 fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
@@ -1474,6 +1475,7 @@ fn diagonal_annotation_dimension_projects_only_distinct_point_loci() {
     let project = |value_mm: f64, operands: [u32; 2]| {
         let stream = "f3d:A";
         let placement = DesignSketchPlacement {
+            display_name: None,
             frame: crate::records::sketch_placement::DesignSketchFrame::new(
                 0,
                 crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,

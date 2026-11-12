@@ -503,6 +503,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         ),
     );
     losses.extend(
+        crate::design::decode::placement_construction::work_planes::bind_feature_names(
+            scan,
+            &mut design.design_parameter_scopes,
+        ),
+    );
+    losses.extend(
         crate::design::decode::placement_construction::cylinders::bind(
             &mut design.design_parameter_scopes,
             &design.design_placement_constructions,

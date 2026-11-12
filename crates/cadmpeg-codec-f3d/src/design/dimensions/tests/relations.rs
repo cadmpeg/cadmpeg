@@ -1183,6 +1183,7 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
 fn counted_angular_group_projects_unique_point_selected_line() {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,

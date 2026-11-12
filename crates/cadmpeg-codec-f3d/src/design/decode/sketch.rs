@@ -166,6 +166,7 @@ pub(crate) fn decode_sketch_placements(
         record_offsets.insert(scope, IndexedRecordOffsets::build(bytes));
     }
     let mut visibilities = HashMap::new();
+    let mut display_names = HashMap::new();
     for entry in scan
         .entries
         .iter()
@@ -179,7 +180,7 @@ pub(crate) fn decode_sketch_placements(
         let Some((key, _)) = record_offsets.get_key_value(&scope) else {
             continue;
         };
-        for (entity_suffix, visibility) in
+        for (entity_suffix, visibility, display_name) in
             decode_sketch_visibilities_in_stream(bytes, &metadata, losses)?
         {
             if visibilities.contains_key(&(key.as_str(), entity_suffix)) {
@@ -190,6 +191,9 @@ pub(crate) fn decode_sketch_placements(
             }
 
             visibilities.insert((key.as_str(), entity_suffix), visibility);
+            if let Some(name) = display_name {
+                display_names.insert((key.as_str(), entity_suffix), name);
+            }
         }
     }
     for scope in scopes
@@ -324,6 +328,9 @@ pub(crate) fn decode_sketch_placements(
         placement.visibility = visibilities
             .get(&(stream, placement.entity_id.suffix()))
             .copied();
+        placement.display_name = display_names
+            .get(&(stream, placement.entity_id.suffix()))
+            .cloned();
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
@@ -341,7 +348,7 @@ fn decode_sketch_visibilities_in_stream(
     bytes: &[u8],
     metadata: &crate::metastream::MetaStream,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
+) -> Result<Vec<(u64, DesignSketchVisibility, Option<String>)>, CodecError> {
     let mut out = Vec::new();
     for frame in super::meta::typed_primary_frames(
         bytes,
@@ -432,12 +439,17 @@ fn decode_sketch_visibilities_in_stream(
             )));
         };
 
-        out.push((entity_suffix, visibility));
+        let display_name = decode_sketch_member_display_name(&bytes[..frame.end], member_at);
+
+        out.push((entity_suffix, visibility, display_name));
     }
     if out.is_empty() {
         return Ok(out);
     }
-    let visibilities = out.iter().copied().collect::<HashMap<_, _>>();
+    let visibilities = out
+        .iter()
+        .map(|&(suffix, vis, _)| (suffix, vis))
+        .collect::<HashMap<_, _>>();
     let mut collections = std::collections::BTreeMap::new();
     for frame in super::meta::typed_primary_frames(
         bytes,
@@ -534,7 +546,7 @@ fn decode_sketch_visibilities_in_stream(
             }
         }
     }
-    for (entity, visibility) in &mut out {
+    for (entity, visibility, _) in &mut out {
         let direct = visibility.ordinal_collection.map(std::num::NonZeroU64::get);
         let root = direct.and_then(|id| {
             if collections.contains_key(&id) {
@@ -722,6 +734,21 @@ fn decode_sketch_visibility_member(
     Some(visibility)
 }
 
+pub(super) fn decode_sketch_member_display_name(bytes: &[u8], member_at: usize) -> Option<String> {
+    let mut collection_at = member_at + visibility_member::TAIL_MARKER;
+    let reference = take_reference(bytes, &mut collection_at)?;
+    match reference {
+        Reference::Null => {}
+        Reference::Local {
+            target,
+            inline_type_guid: None,
+        } if target != 0 => {}
+        _ => return None,
+    }
+    let (name, _) = lp_utf16_bounded(bytes, collection_at, 1..=256)?;
+    (!name.trim().is_empty() && !name.chars().any(char::is_control)).then_some(name)
+}
+
 /// Byte length of a member-run head carrying an explicit 4×4 transform.
 const MEMBER_RUN_HEAD_FRAME: usize = 162;
 
@@ -859,6 +886,7 @@ fn parse_member_run_head_placement(
         id: String::new(),
         scope_record_index: None,
         entity_id: entity_id.clone(),
+        display_name: None,
         visibility: None,
         frame,
         class_tag,
@@ -980,6 +1008,7 @@ fn parse_sketch_placement_candidates(
             id: String::new(),
             scope_record_index: Some(scope_record_index),
             entity_id: entity_id.clone(),
+            display_name: None,
             visibility: None,
             frame,
             class_tag,

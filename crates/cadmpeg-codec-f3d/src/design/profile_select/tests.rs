@@ -166,6 +166,7 @@ fn placement() -> DesignSketchPlacement {
             .expect("valid entity ID"),
 
         visibility: None,
+        display_name: None,
 
         class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 20,

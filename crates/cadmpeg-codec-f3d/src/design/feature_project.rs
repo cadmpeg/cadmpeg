@@ -1477,11 +1477,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 product_definition: None,
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
-                name: Some(format!(
-                    "{} {}",
-                    scope.source_kind_name(),
-                    scope.feature_ordinal
-                )),
+                name: Some(
+                    scope
+                        .display_name
+                        .as_deref()
+                        .or_else(|| scope.label.as_ref().map(|l| l.value.as_str()))
+                        .map_or_else(
+                            || format!("{} {}", scope.source_kind_name(), scope.feature_ordinal),
+                            str::to_owned,
+                        ),
+                ),
                 suppressed: Some(
                     family.is_some_and(stateless_scope_is_suppressed)
                         && scope.history_state_id().is_none()
@@ -2936,6 +2941,7 @@ pub(crate) fn bind_sketch_feature_geometry(
     };
 
     for feature in features.iter_mut() {
+        let mut display_name_to_apply = None;
         feature.evaluation.edit(|definition, _| {
             if !matches!(
                 definition,
@@ -2957,6 +2963,9 @@ pub(crate) fn bind_sketch_feature_geometry(
             else {
                 return;
             };
+            if let Some(name) = placement.display_name.as_deref() {
+                display_name_to_apply = Some(name.to_owned());
+            }
             let planar = crate::ids::neutral_sketch_id(placement);
             let spatial = crate::ids::neutral_spatial_sketch_id(placement);
             let has_planar = sketches.iter().any(|sketch| sketch.id == planar);
@@ -2973,6 +2982,9 @@ pub(crate) fn bind_sketch_feature_geometry(
                 }),
             };
         });
+        if let Some(custom_name) = display_name_to_apply {
+            feature.name = Some(custom_name);
+        }
     }
     for feature in features.iter_mut() {
         feature.evaluation.edit(|definition, _| {

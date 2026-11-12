@@ -296,6 +296,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             .expect("valid entity ID"),
 
         visibility: None,
+        display_name: None,
 
         class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned()).unwrap(),
         record_index: 10,

@@ -280,3 +280,427 @@ fn class_pair_frame_with_nonzero_inferred_axis_bytes_keeps_matrix_and_reports_as
     )
     .is_empty());
 }
+
+fn append_work_plane_frame(
+    bulk: &mut Vec<u8>,
+    record_start: usize,
+    entity_id: u64,
+    feature_record_index: u64,
+    marker: [u8; 2],
+    marked_ref_byte: u8,
+    display_name: &str,
+) {
+    if bulk.len() < record_start + 130 {
+        bulk.resize(record_start + 130, 0);
+    }
+    let entity_id_str = format!("0_{entity_id}");
+    bulk.extend_from_slice(&u32::try_from(entity_id_str.len()).unwrap().to_le_bytes());
+    for unit in entity_id_str.encode_utf16() {
+        bulk.extend_from_slice(&unit.to_le_bytes());
+    }
+    crate::test_support::push_reference_u64(bulk, 12);
+    bulk.extend_from_slice(&1u32.to_le_bytes());
+    bulk.extend_from_slice(&[0u8; 5]);
+    bulk.push(marked_ref_byte);
+    bulk.extend_from_slice(&feature_record_index.to_le_bytes());
+    bulk.extend_from_slice(&[0, 0]);
+    bulk.extend_from_slice(&marker);
+    bulk.extend_from_slice(&u32::try_from(display_name.len()).unwrap().to_le_bytes());
+    for unit in display_name.encode_utf16() {
+        bulk.extend_from_slice(&unit.to_le_bytes());
+    }
+}
+
+type WorkPlaneTestSpec<'a> = (&'a str, u64, u64, [u8; 2], u8, &'a str);
+
+fn build_work_plane_test_archive(planes: &[WorkPlaneTestSpec<'_>]) -> Vec<u8> {
+    use crate::test_support::lp_ascii;
+    use crate::test_support::manifest_test::write_synthetic_manifests;
+    use crate::test_support::streams_test::design_metastream_with_records;
+    use cadmpeg_core::decode::u64_from_index;
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+
+    let mut stream_names = Vec::new();
+    for &(stream, _, _, _, _, _) in planes {
+        if !stream_names.contains(&stream) {
+            stream_names.push(stream);
+        }
+    }
+
+    for stream in stream_names {
+        let stream_planes: Vec<_> = planes.iter().filter(|p| p.0 == stream).copied().collect();
+
+        let mut bulk = Vec::new();
+        let mut records = Vec::new();
+        let mut entity_ids = Vec::new();
+
+        for &(_, entity_id, feature_rec, marker, marked_byte, name) in &stream_planes {
+            let offset = bulk.len();
+            lp_ascii(&mut bulk, "256");
+            bulk.extend_from_slice(&entity_id.to_le_bytes());
+            append_work_plane_frame(
+                &mut bulk,
+                offset,
+                entity_id,
+                feature_rec,
+                marker,
+                marked_byte,
+                name,
+            );
+
+            records.push((entity_id, u64_from_index(offset)));
+            entity_ids.push(entity_id);
+        }
+
+        zip.start_file(stream, stored).unwrap();
+        zip.write_all(&bulk).unwrap();
+
+        let meta_name = stream.replace("BulkStream.dat", "MetaStream.dat");
+        zip.start_file(&meta_name, stored).unwrap();
+        let meta_bytes = design_metastream_with_records(
+            &[(
+                super::WORK_PLANE_FEATURE_NAME_TYPE_GUID,
+                super::WORK_PLANE_FEATURE_NAME_BASE_TYPE_GUID,
+                super::WORK_PLANE_FEATURE_NAME_VERSION,
+                "Geometry",
+                &entity_ids,
+            )],
+            &records,
+        );
+        zip.write_all(&meta_bytes).unwrap();
+    }
+
+    zip.finish().unwrap().into_inner()
+}
+
+#[test]
+fn work_plane_feature_name_decodes_cleanly() {
+    use crate::test_support::zip_test::with_scan;
+
+    let archive = build_work_plane_test_archive(&[(
+        "FusionAssetName[Active]/Design1/BulkStream.dat",
+        405,
+        407,
+        [0, 1],
+        1,
+        "Body Split",
+    )]);
+
+    with_scan(&archive, |scan| {
+        let names = super::decode_work_plane_feature_names(scan).unwrap();
+        assert_eq!(
+            names.get(&(
+                "FusionAssetName[Active]/Design1/BulkStream.dat".to_string(),
+                407
+            )),
+            Some(&super::WorkPlaneFeatureName::Unique(Some(
+                "Body Split".to_string()
+            )))
+        );
+    });
+}
+
+#[test]
+fn work_plane_feature_name_conflicts_fail_closed_and_emit_loss() {
+    use crate::test_support::zip_test::with_scan;
+
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let archive = build_work_plane_test_archive(&[
+        (stream, 405, 407, [0, 1], 1, "Body Split"),
+        (stream, 406, 407, [0, 1], 1, "Conflicting Floor"),
+    ]);
+
+    with_scan(&archive, |scan| {
+        let mut scope = crate::test_support::work_plane::scope_referencing(&[73]);
+        scope.id = format!("f3d:{stream}:design-parameter-scope#407");
+        scope.record_index = 407;
+        let losses = super::bind_feature_names(scan, std::slice::from_mut(&mut scope));
+        assert_eq!(scope.display_name, None);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::WorkPlaneDisplayNameAmbiguous
+                .note("")
+                .code
+        );
+    });
+}
+
+#[test]
+fn work_plane_feature_name_supports_typed_references_and_skips_origin_planes() {
+    use crate::test_support::lp_ascii;
+    use crate::test_support::manifest_test::write_synthetic_manifests;
+    use crate::test_support::streams_test::design_metastream_with_records;
+    use crate::test_support::zip_test::with_scan;
+    use cadmpeg_core::decode::u64_from_index;
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut bulk = Vec::new();
+    let origin_offset = bulk.len();
+    lp_ascii(&mut bulk, "256");
+    bulk.extend_from_slice(&42u64.to_le_bytes());
+    bulk.resize(origin_offset + 130, 0);
+    bulk.extend_from_slice(&0u32.to_le_bytes());
+    bulk.extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x01]);
+    crate::test_support::lp_utf16(&mut bulk, "XY");
+
+    let push_typed_ref = |out: &mut Vec<u8>, target: u64, guid: &str| {
+        out.push(1);
+        out.extend_from_slice(&target.to_le_bytes());
+        lp_ascii(out, guid);
+        out.extend_from_slice(&[0, 0]);
+    };
+
+    let constructed_offset = bulk.len();
+    lp_ascii(&mut bulk, "256");
+    bulk.extend_from_slice(&406u64.to_le_bytes());
+    bulk.resize(constructed_offset + 130, 0);
+    crate::test_support::lp_utf16(&mut bulk, "12_406");
+    push_typed_ref(&mut bulk, 12, "A7AEA631-985B-4DD1-8CE2-DE2C14B54081");
+    bulk.extend_from_slice(&2u32.to_le_bytes());
+    bulk.extend_from_slice(&[0; 5]);
+    push_typed_ref(&mut bulk, 407, "D869265F-F339-4751-A066-91D30F81FF08");
+    bulk.extend_from_slice(&[0, 1]);
+    crate::test_support::lp_utf16(&mut bulk, "Typed Plane");
+
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&bulk).unwrap();
+    let meta_name = stream.replace("BulkStream.dat", "MetaStream.dat");
+    zip.start_file(&meta_name, stored).unwrap();
+    let meta_bytes = design_metastream_with_records(
+        &[(
+            super::WORK_PLANE_FEATURE_NAME_TYPE_GUID,
+            super::WORK_PLANE_FEATURE_NAME_BASE_TYPE_GUID,
+            super::WORK_PLANE_FEATURE_NAME_VERSION,
+            "Geometry",
+            &[42, 406],
+        )],
+        &[
+            (42, u64_from_index(origin_offset)),
+            (406, u64_from_index(constructed_offset)),
+        ],
+    );
+    zip.write_all(&meta_bytes).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    with_scan(&archive, |scan| {
+        let mut scope = crate::test_support::work_plane::scope_referencing(&[73]);
+        scope.id = format!("f3d:{stream}:design-parameter-scope#407");
+        scope.record_index = 407;
+        let losses = super::bind_feature_names(scan, std::slice::from_mut(&mut scope));
+        assert!(losses.is_empty());
+        assert_eq!(scope.display_name.as_deref(), Some("Typed Plane"));
+    });
+}
+
+#[test]
+fn work_plane_feature_name_isolated_by_stream() {
+    use crate::test_support::zip_test::with_scan;
+
+    let archive = build_work_plane_test_archive(&[
+        (
+            "FusionAssetName[Active]/Design1/BulkStream.dat",
+            405,
+            407,
+            [0, 1],
+            1,
+            "Stream1 Feature",
+        ),
+        (
+            "FusionAssetName[Active]/FusionDesignSegmentType2/BulkStream.dat",
+            405,
+            407,
+            [0, 1],
+            1,
+            "Stream2 Feature",
+        ),
+    ]);
+
+    with_scan(&archive, |scan| {
+        let names = super::decode_work_plane_feature_names(scan).unwrap();
+        assert_eq!(
+            names.get(&(
+                "FusionAssetName[Active]/Design1/BulkStream.dat".to_string(),
+                407
+            )),
+            Some(&super::WorkPlaneFeatureName::Unique(Some(
+                "Stream1 Feature".to_string()
+            )))
+        );
+        assert_eq!(
+            names.get(&(
+                "FusionAssetName[Active]/FusionDesignSegmentType2/BulkStream.dat".to_string(),
+                407
+            )),
+            Some(&super::WorkPlaneFeatureName::Unique(Some(
+                "Stream2 Feature".to_string()
+            )))
+        );
+    });
+}
+
+#[test]
+fn work_plane_feature_name_rejects_corrupt_marker_safely() {
+    use crate::test_support::zip_test::with_scan;
+
+    let archive = build_work_plane_test_archive(&[(
+        "FusionAssetName[Active]/Design1/BulkStream.dat",
+        405,
+        407,
+        [0, 2],
+        1,
+        "Should Not Decode",
+    )]);
+
+    with_scan(&archive, |scan| {
+        let names = super::decode_work_plane_feature_names(scan).unwrap();
+        assert!(!names.contains_key(&(
+            "FusionAssetName[Active]/Design1/BulkStream.dat".to_string(),
+            407
+        )));
+    });
+}
+
+#[test]
+fn work_plane_bind_feature_names_handles_metadata_mismatch_without_failing() {
+    use crate::test_support::manifest_test::write_synthetic_manifests;
+    use crate::test_support::streams_test::design_metastream_with_records;
+    use crate::test_support::zip_test::with_scan;
+    use cadmpeg_core::decode::u64_from_index;
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut bulk = Vec::new();
+    let constructed_offset = bulk.len();
+    crate::test_support::lp_ascii(&mut bulk, "256");
+    bulk.extend_from_slice(&406u64.to_le_bytes());
+    bulk.resize(constructed_offset + 130, 0);
+    crate::test_support::lp_utf16(&mut bulk, "12_406");
+    bulk.push(1);
+    bulk.extend_from_slice(&12u64.to_le_bytes());
+    crate::test_support::lp_ascii(&mut bulk, "A7AEA631-985B-4DD1-8CE2-DE2C14B54081");
+    bulk.extend_from_slice(&[0, 0]);
+    bulk.extend_from_slice(&2u32.to_le_bytes());
+    bulk.extend_from_slice(&[0; 5]);
+    bulk.push(1);
+    bulk.extend_from_slice(&407u64.to_le_bytes());
+    crate::test_support::lp_ascii(&mut bulk, "D869265F-F339-4751-A066-91D30F81FF08");
+    bulk.extend_from_slice(&[0, 0, 0, 1]);
+    crate::test_support::lp_utf16(&mut bulk, "Typed Plane");
+
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&bulk).unwrap();
+    let meta_name = stream.replace("BulkStream.dat", "MetaStream.dat");
+    zip.start_file(&meta_name, stored).unwrap();
+    // Register with a mismatched base GUID
+    let meta_bytes = design_metastream_with_records(
+        &[(
+            super::WORK_PLANE_FEATURE_NAME_TYPE_GUID,
+            "00000000-0000-0000-0000-000000000000",
+            super::WORK_PLANE_FEATURE_NAME_VERSION,
+            "Geometry",
+            &[406],
+        )],
+        &[(406, u64_from_index(constructed_offset))],
+    );
+    zip.write_all(&meta_bytes).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    with_scan(&archive, |scan| {
+        let mut scope = crate::test_support::work_plane::scope_referencing(&[73]);
+        scope.id = format!("f3d:{stream}:design-parameter-scope#407");
+        scope.record_index = 407;
+        let losses = super::bind_feature_names(scan, std::slice::from_mut(&mut scope));
+        assert!(losses.is_empty());
+        assert_eq!(scope.display_name, None);
+    });
+}
+
+#[test]
+fn work_plane_bind_feature_names_reports_undecoded_loss_on_corrupt_entry() {
+    use crate::test_support::manifest_test::write_synthetic_manifests;
+    use crate::test_support::streams_test::design_metastream_with_records;
+    use crate::test_support::zip_test::with_scan;
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(b"short").unwrap();
+    // Missing MetaStream causes decode_work_plane_feature_names to fail or skip
+    let archive = zip.finish().unwrap().into_inner();
+
+    with_scan(&archive, |scan| {
+        let mut scope = crate::test_support::work_plane::scope_referencing(&[73]);
+        scope.id = format!("f3d:{stream}:design-parameter-scope#407");
+        scope.record_index = 407;
+        let losses = super::bind_feature_names(scan, std::slice::from_mut(&mut scope));
+        // With missing MetaStream, metadata_for_bulk_stream returns Ok(None), so no failure
+        assert!(losses.is_empty());
+    });
+
+    // An archive with duplicate plane entity registration to cause typed_primary_frames to fail
+    let mut bulk = Vec::new();
+    crate::test_support::lp_ascii(&mut bulk, "256");
+    bulk.extend_from_slice(&406u64.to_le_bytes());
+
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&bulk).unwrap();
+    let meta_name = stream.replace("BulkStream.dat", "MetaStream.dat");
+    zip.start_file(&meta_name, stored).unwrap();
+    let meta_bytes = design_metastream_with_records(
+        &[
+            (
+                super::WORK_PLANE_FEATURE_NAME_TYPE_GUID,
+                super::WORK_PLANE_FEATURE_NAME_BASE_TYPE_GUID,
+                super::WORK_PLANE_FEATURE_NAME_VERSION,
+                "Geometry",
+                &[406],
+            ),
+            (
+                super::WORK_PLANE_FEATURE_NAME_TYPE_GUID,
+                super::WORK_PLANE_FEATURE_NAME_BASE_TYPE_GUID,
+                super::WORK_PLANE_FEATURE_NAME_VERSION,
+                "Geometry",
+                &[406],
+            ),
+        ],
+        &[(406, 0)],
+    );
+    zip.write_all(&meta_bytes).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    with_scan(&archive, |scan| {
+        let mut scope = crate::test_support::work_plane::scope_referencing(&[73]);
+        scope.id = format!("f3d:{stream}:design-parameter-scope#407");
+        scope.record_index = 407;
+        let losses = super::bind_feature_names(scan, std::slice::from_mut(&mut scope));
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::WorkPlaneDisplayNameUndecoded
+                .note("")
+                .code
+        );
+        assert_eq!(scope.display_name, None);
+    });
+}

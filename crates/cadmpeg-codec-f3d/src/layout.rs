@@ -9780,3 +9780,17 @@ pub(crate) mod thread_owner_extended_scope_prefix {
     /// Offset of `entry_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const ENTRY_COUNT: usize = 34;
 }
+
+/// Byte offsets for the `constructed_plane_entity_prefix` record.
+///
+/// Spec §3.1. Record length 134 B.
+///
+/// ```text
+/// Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count.
+/// ```
+pub(crate) mod constructed_plane_entity_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 134;
+    /// Offset of `entity_id_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ENTITY_ID_CODE_UNIT_COUNT: usize = 130;
+}

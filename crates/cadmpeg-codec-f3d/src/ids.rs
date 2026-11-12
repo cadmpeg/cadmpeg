@@ -1154,6 +1154,7 @@ mod tests {
             class_tag: "330".to_owned().try_into().unwrap(),
             record_index: 4,
             paired_class_tag: "330".to_owned().try_into().unwrap(),
+            display_name: None,
             frame: crate::records::sketch_placement::DesignSketchFrame::new(
                 0,
                 crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
