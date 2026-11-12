@@ -1,0 +1,3 @@
+.gitattributes diff merge text eol=lf
+*.md diff merge text eol=lf
+*.py diff merge text eol=lf
