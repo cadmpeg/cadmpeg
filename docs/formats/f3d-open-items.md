@@ -1067,25 +1067,25 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Keep the group as the native selection.
 
-### DR-126. Move transform envelopes with leading references
+### DR-126. Auxiliary references of a Move scope
 
-**Question.** In the Move envelope with leading references, is the matrix an absolute transform or a transform relative to a referenced frame?
+**Question.** How do the ordered references beyond the body group, its members, and the transform record affect the motion of a `Move` scope?
 
-**Known.** A Move scope can reference a matrix-bearing record with references before its form word. This envelope does not satisfy the zero prefix of the fixed rigid-matrix frames.
+**Known.** `f3d.md` §3.1 defines the marked transform in the marker-zero, marker-one, and inline-typed prologues. The decoder applies the stored matrix to the group's whole bodies and records `feature.move-scope-references-assumed` with the auxiliary reference indices. A form-2 transform also records `feature.move-transform-references-assumed` for its four construction references (DR-375).
 
-**Need.** Independent files that vary the referenced frame and the transform separately, and files that vary the form word.
+**Need.** Controlled saves that change the pivot, source and target constructions, and auxiliary selections independently while preserving the stored matrix.
 
 **Conflict.** None.
 
-**Note.** Keep this envelope native. Emit `feature.move-unprojected` when no admitted transform defines the Move feature.
+**Note.** The auxiliary references are assumed to leave the stored motion unchanged.
 
 ### DR-306. Marked Move transform records outside the rigid-transform rules
 
-**Question.** What does a transform record that the marked reference of a `Move` or `Modify` scope selects store when its class type is not the rigid-transform type, its frame is not 253, 254, 273, 274, 283, 284, or 293 bytes, or its form word is not the form word of its frame length?
+**Question.** What do the nullable reference slots, unsigned prefix codes, and source form six, and omitted-matrix marker of a rigid-transform record control, and what does a transform record that the marked reference of a `Move` or `Modify` scope selects store when its class type is not the rigid-transform type, its frame is not 253, 254, 273, 274, 283, 284, or 293 bytes, or its form word is not the form word of its frame length?
 
-**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the rigid-transform type, the form word of each of the seven frame lengths, and the marked reference that selects the transform record. A marked reference selects a 256-byte record with form word `5`, the zero run, and a rigid matrix at offset 48. The decoder keeps the matrix of each marked record that has the zero run, form word `0`, `1`, or `5`, and a rigid matrix, or the fields of the form-2 frame, and records `feature.move-transform-assumed` with each rule that the record breaks.
+**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the rigid-transform type, the form word of each of the seven frame lengths, and the marked reference that selects the transform record. A marked reference selects a 256-byte record with form word `5`, the zero run, and a rigid matrix at offset 48. The decoder keeps the matrix of each marked record that has the zero run, form word `0`, `1`, `5`, or `6`, and a rigid matrix, or the plain or inline-typed fields of the form-2 frame, and records `feature.move-transform-assumed` with each rule that the record breaks. The general prefix has four nullable local references and two unsigned code words. A partially populated reference run or nonzero code words project with `feature.move-transform-prefix-assumed`. Form six projects with `feature.move-transform-mode-assumed`. These fields are assumed to leave the stored matrix motion unchanged. The native operation retains the references, inline type GUIDs, code words, and matrix-omission flag. A one matrix-presence marker omits 128 matrix bytes and preserves the common tail. The decoder takes identity motion with `feature.move-transform-identity-assumed`.
 
-**Need.** Controlled saves of one `Move` that change the transform type between translation, rotation, and point-to-point, each recording the class type, frame length, and form word of the marked record and the bytes from offset 176 to the paired header.
+**Need.** Controlled saves of one `Move` that change the transform type between translation, rotation, free move, and point-to-point, each recording the class type, frame length, and form word of the marked record and the bytes from offset 176 to the paired header.
 
 **Conflict.** None.
 
@@ -1107,7 +1107,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** What do the four marked references of a 293-byte form-2 rigid-transform record name, and do they change the motion that its matrix stores?
 
-**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the 293-byte frame: four marked references, form word `2`, and a rigid matrix at offset 88. The decoder projects the matrix as the motion of the `Move`, `Modify`, or `MoveFace` scope that selects the record, and records `feature.move-transform-references-assumed`.
+**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the 293-byte frame: four marked references, form word `2`, and a rigid matrix at offset 88. The inline-typed spelling has four 51-byte references and its matrix at offset 248. The decoder projects the matrix as the motion of the `Move`, `Modify`, or `MoveFace` scope that selects the record, and records `feature.move-transform-references-assumed`.
 
 **Need.** Controlled saves of one `Move` that use point-to-point and other reference-based motion types, each recording the records that the four references name.
 
