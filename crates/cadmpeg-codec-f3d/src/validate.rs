@@ -1760,7 +1760,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             && matches!(
                                 neutral.evaluation.definition(),
                                 cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MeshImport { tessellations: cadmpeg_ir::features::mesh::MeshSelection::Tessellations(tessellations) })
-                                    if tessellations.iter().map(|id| id.as_str()).eq(projected())
+                                    if tessellations.iter().map(cadmpeg_ir::tessellation::TessellationId::as_str).eq(projected())
                             )
                     })
                 });

@@ -11,7 +11,10 @@ fn resolved_mesh_selection_preserves_the_tessellation_array_wire_form() {
         panic!("resolved tessellations");
     };
     assert_eq!(
-        values.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
+        values
+            .iter()
+            .map(crate::tessellation::TessellationId::as_str)
+            .collect::<Vec<_>>(),
         [
             "test:mesh:tessellation#first",
             "test:mesh:tessellation#second"
