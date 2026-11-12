@@ -203,6 +203,7 @@ fn hole_extent_payload(
     };
     let mut direction_control = None;
     let mut standard = None;
+    let mut hole_type = None;
     let extent_control = if layout.control {
         let [1, 1, control, flag, ..] = bytes.get(cursor..)? else {
             return None;
@@ -216,6 +217,7 @@ fn hole_extent_payload(
                 if let Some(block) = hole_standard_block(bytes, cursor, *flag) {
                     direction_control = block.direction_control;
                     standard = block.standard;
+                    hole_type = Some(block.hole_type);
                 }
             }
             _ => return None,
@@ -236,6 +238,7 @@ fn hole_extent_payload(
         saved_non_distance_depth: prologue.saved_hole_depth,
         direction_control,
         standard,
+        hole_type,
     })
 }
 
@@ -243,6 +246,7 @@ fn hole_extent_payload(
 struct HoleStandardBlock {
     standard: Option<hole::DesignHoleStandard>,
     direction_control: Option<crate::records::identity::Located<u8>>,
+    hole_type: crate::records::identity::Located<u32>,
 }
 
 /// Read the block after the extent controls at `controls`: u32 `1`, four
@@ -262,7 +266,11 @@ fn hole_standard_block(bytes: &[u8], controls: usize, flag: u8) -> Option<HoleSt
         names.push(name);
         at = end;
     }
-    if !hole::valid_hole_type(View::u32_le_at(bytes, at)?) {
+    let hole_type = crate::records::identity::Located {
+        value: View::u32_le_at(bytes, at)?,
+        offset: u64::try_from(at).ok()?,
+    };
+    if !hole::valid_hole_type(hole_type.value) {
         return None;
     }
     at = at.checked_add(4)?;
@@ -292,6 +300,7 @@ fn hole_standard_block(bytes: &[u8], controls: usize, flag: u8) -> Option<HoleSt
     Some(HoleStandardBlock {
         standard,
         direction_control,
+        hole_type,
     })
 }
 
