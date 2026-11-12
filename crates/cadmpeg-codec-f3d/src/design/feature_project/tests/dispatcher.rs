@@ -1458,3 +1458,104 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
         );
     }
 }
+
+#[test]
+fn matrix_scale_selects_listed_groups_and_names_additional_group_assumption() {
+    for additional in [false, true] {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:test:scope#12",
+            crate::records::feature::scope::DesignFeatureKind::Scale,
+            12,
+        );
+        let crate::records::feature::scope::DesignScopePayloadMut::Scale(slot) =
+            scope.payload_mut()
+        else {
+            panic!("Scale payload");
+        };
+        *slot = Some(DesignScaleOperation {
+            body_group_record_index: 54,
+            further_body_group_record_indices: vec![56],
+            center_record_index: 70,
+            center_position: None,
+            factors: crate::records::feature::body_ops::DesignScaleFactors::Uniform {
+                factor: cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
+                offset: 100,
+            },
+            matrix_offset: Some(100),
+        });
+        let indices = if additional {
+            vec![50, 52, 54, 56]
+        } else {
+            vec![54, 56]
+        };
+        let groups = indices
+            .into_iter()
+            .map(|index| {
+                serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
+                    "id": format!("f3d:test:group#{index}"),
+                    "scope_record_index": 12,
+                    "scope_reference_ordinal": 0,
+                    "record_index": index,
+                    "byte_offset": 1000,
+                    "class_tag": "359",
+                    "members": [71],
+                    "member_offsets": [1026],
+                    "frame": {
+                        "member_count_offset": 1021,
+                        "opaque_index": 1,
+                        "opaque_index_offset": 1072,
+                        "opaque_scalar": 0.0,
+                        "opaque_scalar_offset": 1076,
+                        "variant": false
+                    },
+                    "role": DesignOperandRole::BODIES_A.raw(),
+                    "role_offset": 1054,
+                    "paired_class_tag": "261",
+                    "paired_byte_offset": 1125
+                }))
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let projected = crate::test_support::with_decode_context(|ctx| {
+            let scopes = [scope];
+            let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
+            project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes: &scopes,
+                    timelines: &timelines,
+                    construction_groups: &groups,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        });
+        let FeatureDefinition::Operation(FeatureOperation::Scale { bodies, .. }) =
+            projected.features[0].evaluation.definition()
+        else {
+            panic!("Scale feature");
+        };
+        assert_eq!(
+            *bodies,
+            cadmpeg_ir::features::BodySelection::NativeSet(
+                vec![
+                    "f3d:test:group#54".to_owned(),
+                    "f3d:test:group#56".to_owned()
+                ]
+                .try_into()
+                .unwrap()
+            )
+        );
+        let assumptions = projected
+            .projection_losses
+            .iter()
+            .filter(|loss| {
+                loss.code == crate::loss::F3dLossCode::FeatureScaleUnlistedGroupsAssumed.kind()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(assumptions.len(), usize::from(additional));
+        if additional {
+            assert_eq!(assumptions[0].message, "Scale scope f3d:test:scope#12 scales the bodies of its listed body groups [54, 56]; its unlisted body groups [50, 52] are assumed to select the same bodies (DR-464).");
+        }
+    }
+}
