@@ -160,9 +160,8 @@ fn fill_history(
         return Ok(());
     };
     let states = history.states();
-    let Some(archive) = super::decode_record_archive(ctx, states, bytes, header.width)? else {
-        return Ok(());
-    };
+    let mut archive = None;
+    let mut archive_attempted = false;
     let Some(active_count) = super::archived_active_record_count(states)?
         .or_else(|| super::insert_only_active_record_count(states))
         .and_then(|count| i64::try_from(count).ok())
@@ -199,6 +198,19 @@ fn fill_history(
                 {
                     continue;
                 }
+                if !archive_attempted {
+                    archive_attempted = true;
+                    match super::decode_record_archive(ctx, states, bytes, header.width) {
+                        Ok(records) => archive = records,
+                        Err(error) => {
+                            failure = Some(error);
+                            break;
+                        }
+                    }
+                }
+                let Some(archive) = archive.as_ref() else {
+                    continue;
+                };
                 if bodies.len() >= MAX_HISTORY_BODIES
                     || !work.charge_by(work_units(versions.len()))
                     || (subtypes.is_none() && !work.charge_by(work_units(archive.len())))
@@ -210,11 +222,11 @@ fn fill_history(
                     continue;
                 }
                 let subtypes = subtypes.get_or_insert_with(|| {
-                    archive_subtypes(&archive, header.metadata.save_format_version)
+                    archive_subtypes(archive, header.metadata.save_format_version)
                 });
                 match build(
                     ctx,
-                    &archive,
+                    archive,
                     versions,
                     bytes,
                     (&header.metadata, subtypes),
