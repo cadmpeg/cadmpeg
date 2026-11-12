@@ -134,7 +134,7 @@ fn component_owner(
     found
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct CopyPastePrefix {
     relation_record_index: Option<u32>,
     table_relation_record_index: Option<u32>,
@@ -289,22 +289,6 @@ fn partial_copy_paste_prefix(
         second
     } else {
         CopyPastePrefix::default()
-    }
-}
-
-impl Default for CopyPastePrefix {
-    fn default() -> Self {
-        Self {
-            relation_record_index: None,
-            table_relation_record_index: None,
-            source_transform: None,
-            source_matrix_at: None,
-            target_transform: None,
-            target_matrix_at: None,
-            table_at: None,
-            complete: false,
-            progress: 0,
-        }
     }
 }
 

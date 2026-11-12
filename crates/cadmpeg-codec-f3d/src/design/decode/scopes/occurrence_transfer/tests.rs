@@ -91,7 +91,13 @@ fn copy_placement_fixture(
     (bytes, scope)
 }
 fn cut_88_byte_tail_fixture() -> (Vec<u8>, DesignParameterScope) {
-    let (mut bytes, scope) = fixture(true, false, 4);
+    let (bytes, scope) = fixture(true, false, 4);
+    with_extended_scope_tail(bytes, &scope)
+}
+fn with_extended_scope_tail(
+    mut bytes: Vec<u8>,
+    scope: &DesignParameterScope,
+) -> (Vec<u8>, DesignParameterScope) {
     let start = usize::try_from(scope.byte_offset()).unwrap();
     let kind_at = usize::try_from(scope.reference_count_offset()).unwrap() + 4 + 11 + 4;
     let units = usize::try_from(View::u32_le_at(&bytes, kind_at).unwrap()).unwrap();
@@ -282,8 +288,8 @@ fn occurrence_transfer_intent_keeps_cut_mode_and_target_after_source_owner_loss(
 fn identity_and_matrix_copy_prefixes_keep_both_placements() {
     for (source_identity, target_identity, localized, frame_length) in [
         (true, true, false, 269),
-        (true, false, true, 398),
-        (false, false, true, 526),
+        (true, false, true, 404),
+        (false, false, true, 532),
     ] {
         let (bytes, scope) = copy_placement_fixture(source_identity, target_identity, localized);
         assert_eq!(
@@ -313,7 +319,7 @@ fn localized_cut_prefix_selects_cutpaste_from_the_shared_type() {
     let (bytes, scope) = localized_fixture(true, 4);
     assert_eq!(scope.kind_name(), "CutPaste");
     assert_eq!(scope.source_kind_name(), "CouperColler");
-    assert_eq!(scope.frame_length(), 410);
+    assert_eq!(scope.frame_length(), 418);
     let records = IndexedRecordOffsets::build(&bytes);
     let intent = occurrence_transfer_intent(&bytes, &records, &scope, &types()).unwrap();
     assert_eq!(intent.mode, DesignOccurrenceTransferMode::Reparent);
@@ -336,6 +342,24 @@ fn cutpaste_with_one_more_scope_tail_byte_keeps_the_shifted_prefix() {
     assert_eq!(intent.source_owner_component_record_index, Some(2));
     assert_eq!(intent.target_owner_component_record_index, Some(3));
     assert_eq!(intent.target_transform.unwrap()[0][3], 3.0);
+}
+
+#[test]
+fn english_copy_prefixes_keep_identity_source_and_extended_tail_lengths() {
+    for (source_identity, frame_length) in [(true, 398), (false, 526)] {
+        let (bytes, scope) = copy_placement_fixture(source_identity, false, false);
+        let (bytes, scope) = with_extended_scope_tail(bytes, &scope);
+        assert_eq!(scope.frame_length(), frame_length);
+        let records = IndexedRecordOffsets::build(&bytes);
+        let intent = occurrence_transfer_intent(&bytes, &records, &scope, &types()).unwrap();
+        assert_eq!(intent.mode, DesignOccurrenceTransferMode::Copy);
+        assert_eq!(intent.occurrence_record_index, Some(10));
+        assert_eq!(intent.target_transform.unwrap()[0][3], 3.0);
+        assert_eq!(
+            intent.source_transform.unwrap()[0][3],
+            if source_identity { 0.0 } else { 2.0 }
+        );
+    }
 }
 
 #[test]
