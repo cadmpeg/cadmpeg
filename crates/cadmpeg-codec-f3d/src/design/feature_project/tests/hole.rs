@@ -81,6 +81,7 @@ fn set_extent(scope: &mut DesignParameterScope, control: u8, saved: bool) {
                 offset: 6,
             }),
             standard: None,
+            hole_type: None,
         });
     }
 }
@@ -588,6 +589,7 @@ fn hole_without_an_extent_control_is_distance_only_with_its_depth() {
             saved_non_distance_depth: None,
             direction_control: None,
             standard: None,
+            hole_type: None,
         });
     }
     let parameters = hole_parameters();
@@ -1474,4 +1476,97 @@ fn competing_bore_parameters_keep_both_expressions_and_an_unresolved_diameter() 
     ] {
         assert!(losses.iter().any(|loss| loss.code == code.kind()));
     }
+}
+
+#[test]
+fn encoded_entry_types_retain_partial_counterbore_and_countersink_families() {
+    use cadmpeg_ir::features::holes::{HoleConstruction, HoleForm, HoleKind};
+    for (value, expected) in [
+        (0, HoleKind::Simple),
+        (1, HoleKind::Unresolved(Some(HoleForm::Counterbore))),
+        (2, HoleKind::Unresolved(Some(HoleForm::Countersink))),
+    ] {
+        let mut scope = hole_scope();
+        if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) =
+            scope.payload_mut()
+        {
+            slot.extent.as_mut().unwrap().hole_type =
+                Some(crate::records::identity::Located { value, offset: 7 });
+        }
+        let Some(FeatureOperation::Hole {
+            shape,
+            extent,
+            bottom,
+            ..
+        }) = projected_hole(&scope, &hole_parameters(), &[])
+        else {
+            panic!("Hole")
+        };
+        assert_eq!(shape.construction(), &HoleConstruction::form(expected));
+        assert_eq!(shape.diameter().unwrap().get(), 4.0);
+        assert!(
+            matches!(extent,Some(cadmpeg_ir::features::LinearTermination::Blind { length }) if length.get()==10.0)
+        );
+        assert_eq!(bottom, Some(cadmpeg_ir::features::holes::HoleBottom::Flat));
+    }
+}
+
+#[test]
+fn an_encoded_simple_form_retains_unmatched_counterbore_parameters() {
+    use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind};
+    let mut scope = hole_scope();
+    if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
+        slot.extent.as_mut().unwrap().hole_type = Some(crate::records::identity::Located {
+            value: 0,
+            offset: 7,
+        });
+    }
+    let mut parameters = hole_parameters().to_vec();
+    for (owner, name, role, expression, value) in [
+        (124, "d7", "CBDepth", "3 mm", 0.3),
+        (134, "d8", "CBDiameter", "10 mm", 1.0),
+    ] {
+        parameters.push(
+            parse_design_parameter_record(&parameter_record(
+                Some(owner),
+                expression,
+                role,
+                Some("mm"),
+                name,
+                value,
+            ))
+            .unwrap(),
+        );
+    }
+    let indexed: Vec<_> = parameters
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (u32::try_from(i).unwrap(), p))
+        .collect();
+    let mut losses = Vec::new();
+    let Some(FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. })) =
+        project_hole(&scope, &indexed, &[], &[], &mut losses).unwrap()
+    else {
+        panic!("Hole")
+    };
+    assert_eq!(
+        shape.construction(),
+        &HoleConstruction::form(HoleKind::Simple)
+    );
+    assert_eq!(shape.diameter().unwrap().get(), 4.0);
+    let properties =
+        super::super::scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &indexed).unwrap();
+    for (key, value) in [
+        ("hole:type", "0"),
+        ("parameter:d7", "3 mm"),
+        ("parameter:d8", "10 mm"),
+    ] {
+        assert_eq!(properties.get(key).map(String::as_str), Some(value));
+    }
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::F3dLossCode::HoleParametersIndependentAssumed.kind())
+    );
 }

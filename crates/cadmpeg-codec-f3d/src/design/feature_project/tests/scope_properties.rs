@@ -31,6 +31,10 @@ fn hole_properties_retain_expressions_controls_cache_and_sizing_names() {
     );
     if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
         slot.extent = Some(DesignHoleExtent {
+            hole_type: Some(Located {
+                value: 2,
+                offset: 5,
+            }),
             leading_word: Some(Located {
                 value: 2,
                 offset: 1,
@@ -68,6 +72,7 @@ fn hole_properties_retain_expressions_controls_cache_and_sizing_names() {
         ("reference:0", "32"),
         ("parameter:d4", "10 mm"),
         ("hole:extent_leading_word", "2"),
+        ("hole:type", "2"),
         ("hole:extent_control", "1"),
         ("hole:saved_non_distance_depth_cm", "0.75"),
         ("hole:direction_control", "0"),
@@ -78,7 +83,7 @@ fn hole_properties_retain_expressions_controls_cache_and_sizing_names() {
     ] {
         assert_eq!(properties.get(key).map(String::as_str), Some(value));
     }
-    assert_eq!(properties.len(), 10);
+    assert_eq!(properties.len(), 11);
 }
 
 #[test]

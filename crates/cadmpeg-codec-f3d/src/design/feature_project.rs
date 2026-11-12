@@ -2399,6 +2399,12 @@ fn scope_properties(
             properties.insert(key, parameter.expression().to_owned());
         }
         if let Some(extent) = scope.hole_extent() {
+            if let Some(hole_type) = &extent.hole_type {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("hole:type"),
+                    hole_type.value.to_string(),
+                );
+            }
             if let Some(word) = &extent.leading_word {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("hole:extent_leading_word"),
@@ -7895,10 +7901,30 @@ fn project_hole(
             .iter()
             .any(|(_, parameter)| roles.contains(&parameter.source_kind_str()))
     };
-    let counterbore = has_role(&["CBDiameter", "CBDepth"]);
-    let countersink = has_role(&["CSDiameter", "CSAngle"]);
+    let counterbore_parameters = has_role(&["CBDiameter", "CBDepth"]);
+    let countersink_parameters = has_role(&["CSDiameter", "CSAngle"]);
+    let hole_type = scope
+        .hole_extent()
+        .and_then(|extent| extent.hole_type.as_ref())
+        .map(|hole_type| hole_type.value);
+    let (counterbore, countersink) = match hole_type {
+        Some(0) => (false, false),
+        Some(1) => (true, false),
+        Some(2) => (false, true),
+        _ => (counterbore_parameters, countersink_parameters),
+    };
+    let type_association = match hole_type {
+        Some(0) => !counterbore_parameters && !countersink_parameters,
+        Some(1) => !countersink_parameters,
+        Some(2) => !counterbore_parameters,
+        _ => scope
+            .hole_extent()
+            .is_none_or(|extent| extent.leading_word.is_none()),
+    };
     let kind = match (counterbore, countersink) {
-        (false, false) if diameter.is_none() && tip_angle.is_none() => HoleKind::Unresolved(None),
+        (false, false) if diameter.is_none() && tip_angle.is_none() && hole_type.is_none() => {
+            HoleKind::Unresolved(None)
+        }
         (false, false) => drill_point_angle.map_or(HoleKind::Simple, |drill_point_angle| {
             HoleKind::SimpleDrilled { drill_point_angle }
         }),
@@ -7990,9 +8016,10 @@ fn project_hole(
     if matches!(&extent, LinearTermination::Unresolved {})
         || independent_parameters
         || !reference_constraints
+        || !type_association
     {
         losses.push(crate::loss::F3dLossCode::HoleParametersIndependentAssumed.note(format!(
-            "Hole {} assumes its decoded diameter, tip and treatment parameters remain independent of its unresolved extent or parameter associations; all parameter values and expressions are retained (DR-470).", scope.id
+            "Hole {} projects its admitted dimensions independently of unresolved extent, entry-type or parameter associations; its encoded entry type governs the active treatment and all parameter values and expressions are retained (DR-470).", scope.id
         )));
     }
     if let Some(extent) = scope.hole_extent() {

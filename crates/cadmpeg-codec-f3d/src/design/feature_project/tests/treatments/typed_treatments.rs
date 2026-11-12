@@ -126,6 +126,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                 offset: 9,
             }),
             standard: None,
+            hole_type: None,
         });
         slot.point = Some(DesignHoleConstruction {
             point_record_index: 378,
