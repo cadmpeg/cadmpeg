@@ -1515,7 +1515,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** Two other public frames of this form store zero at offset 29.
+**Note.** Two other public frames of this form store zero at offset 29. Unbound result references remain a native body selection of a neutral Base Feature and report `feature.stored-bodies-unbound`.
 
 ### DR-251. Compact null-owner parameters: owner and trailer byte 3
 

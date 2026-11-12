@@ -162,10 +162,25 @@ pub(super) fn bind_history_outputs(
     true
 }
 
-pub(super) fn finalize_body_sets(feature: &mut Feature) {
+pub(super) fn finalize_body_sets(feature: &mut Feature, base_scope: Option<&str>) {
     if let Some(bodies) = bound_result_bodies(feature) {
         let outputs = bodies.clone();
         feature.evaluation.set_outputs(outputs);
+        return;
+    }
+    if let Some(scope) = base_scope {
+        if matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        ) {
+            feature
+                .evaluation
+                .set_definition(FeatureDefinition::Operation(
+                    FeatureOperation::BaseFeature {
+                        bodies: BodySelection::Native(scope.to_owned()),
+                    },
+                ));
+        }
         return;
     }
     if matches!(

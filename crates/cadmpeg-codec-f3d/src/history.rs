@@ -2018,8 +2018,19 @@ pub(crate) fn bind_feature_outputs(
             }
         }
     }
+    let base_scopes = scopes
+        .iter()
+        .filter(|scope| {
+            scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFeature
+        })
+        .map(|scope| scope.id.as_str())
+        .collect::<HashSet<_>>();
     for feature in features {
-        stored_bodies::finalize_body_sets(feature);
+        let base_scope = feature
+            .native_ref
+            .as_deref()
+            .and_then(|id| base_scopes.get(id).copied());
+        stored_bodies::finalize_body_sets(feature, base_scope);
     }
     Ok(losses)
 }
