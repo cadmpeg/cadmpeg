@@ -32,6 +32,7 @@ pub(super) struct NeutralFeatureEncoding {
 }
 
 pub(super) struct NeutralFeatureEncoder<'context, 'feature_key, 'source> {
+    pub(super) contradicted_travel: bool,
     pub(super) feature: &'context cadmpeg_ir::features::Feature,
     pub(super) existing: Option<&'context Feature>,
     pub(super) principal_planes_by_record:
