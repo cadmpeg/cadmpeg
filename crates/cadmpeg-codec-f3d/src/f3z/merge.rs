@@ -861,9 +861,6 @@ struct JointRows<'a> {
     features: &'a mut Vec<cadmpeg_ir::features::Feature>,
 }
 
-/// Complete the operand descent of the joints of `model` and bind the
-/// features of the joints that complete. A joint of a complete scope whose
-/// path does not complete is removed and reported.
 fn rebind_joints(
     model: &mut JointRows<'_>,
     children: &JointChildren<'_>,
