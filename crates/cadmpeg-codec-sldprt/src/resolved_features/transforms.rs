@@ -115,6 +115,57 @@ impl MarkerTransform {
     }
 }
 
+const MARKER_COORDINATE_SYSTEM: &str = "MarkerCoordinateSystem";
+const PRINCIPAL_TOP_COMPONENT: &str = "principal-top-component";
+
+pub(super) fn record_top_marker_coordinates(
+    feature: &mut cadmpeg_ir::features::Feature,
+    top: bool,
+) {
+    if top {
+        feature.source_properties.insert(
+            cadmpeg_core::nonblank_literal!("MarkerCoordinateSystem"),
+            PRINCIPAL_TOP_COMPONENT.to_owned(),
+        );
+    }
+}
+
+pub(super) fn component_sketch_marker_transform(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    quantum: f64,
+    top: bool,
+) -> Option<MarkerTransform> {
+    if top
+        && sketch
+            .resolved_placement()
+            .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
+            == Some(super::compact_reference_planes::principal_top_component_frame())
+    {
+        Some(MarkerTransform {
+            axes: Axes::Aligned {
+                swap: false,
+                u: Sign::Positive,
+                v: Sign::Positive,
+            },
+            translation: (0, 0),
+        })
+    } else {
+        sketch_frame_marker_transform(sketch, quantum)
+    }
+}
+
+pub(super) fn feature_sketch_marker_transform(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    quantum: f64,
+    features: &[cadmpeg_ir::features::Feature],
+) -> Option<MarkerTransform> {
+    let top = features.iter().any(|feature| {
+        matches!(feature.evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)) }) if id == &sketch.id)
+            && feature.source_properties.get(MARKER_COORDINATE_SYSTEM).is_some_and(|value| value == PRINCIPAL_TOP_COMPONENT)
+    });
+    component_sketch_marker_transform(sketch, quantum, top)
+}
+
 pub(super) fn sketch_frame_marker_transform(
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
@@ -280,9 +331,10 @@ pub(super) fn marker_transforms_with_frame_fallback(
     candidates: Vec<MarkerTransform>,
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
+    features: &[cadmpeg_ir::features::Feature],
 ) -> Vec<MarkerTransform> {
     if candidates.is_empty() {
-        sketch_frame_marker_transform(sketch, quantum)
+        feature_sketch_marker_transform(sketch, quantum, features)
             .into_iter()
             .collect()
     } else {

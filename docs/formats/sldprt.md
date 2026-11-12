@@ -746,7 +746,7 @@ An `moRevolution_c` or `moRevCut_c` object consumes the immediately preceding pr
 
 The compact `moCompRefPlane_c` record binds profiles to a principal plane. Its nonzero little-endian u32 feature source identifier precedes an opaque u32 identity, `00 00 03 00`, 27 zero bytes, the little-endian f64 value `1`, three zero bytes, a roster count from `2` through `4`, three zero bytes, one byte `f9`, `fb`, or `ff`, three `ff` bytes, four zero bytes, and an object-kind byte of at least `65`. A record inside the profile object applies to that profile. Otherwise a record spanning the immediately preceding object through the profile applies. A sole declared record in the complete feature-input lane is the lane default. A profile-local or immediately preceding component reference overrides that default; component references belonging to other profile objects do not make the declared default ambiguous. Source identifiers `2`, `3`, and `4` select the Front, Top, and Right principal planes. The Front model-space `(origin, normal, u-axis)` frame is `((0,0,0),(0,0,1),(1,0,0))`. The Right frame is `((0,0,0),(1,0,0),(0,0,-1))`. The v-axis is `normal × u-axis`. The Front compact profile stores its sketch coordinates `(u,v) = (x,y)`. A sketch point maps to `origin + u*u-axis + v*v-axis`.
 
-A principal-plane component record has the 138-byte extent in `compact_principal_plane_component` in `docs/layouts/sldprt.toml`. Its source identifier and selector are `(4,1)` for Right. Reserved fields are zero. The matrix-present byte is `1`. The trailer-kind word is `4`, and the trailer-sentinel word is `0xffffffff`. Its f64 matrix is row-major, with the principal frame's u-axis, v-axis, and normal as columns. Its translation is zero and its homogeneous scale is `1`. This record stores the referenced Right plane frame.
+A principal-plane component record has the 138-byte extent in `compact_principal_plane_component` in `docs/layouts/sldprt.toml`. Its source identifier and selector are `(3,2)` for Top and `(4,1)` for Right. Reserved fields are zero. The matrix-present byte is `1`. The trailer-kind word is `4`, and the trailer-sentinel word is `0xffffffff`. Its f64 matrix is row-major, with the principal frame's u-axis, v-axis, and normal as columns. Its translation is zero and its homogeneous scale is `1`. The Top matrix is `[1,0,0,0,0,1,0,-1,0]`, with U=+X, V=-Z and N=+Y. This record stores the referenced principal-plane frame. Section 3.3 defines its local profile placement.
 
 An offset reference-plane object has a length-valued `D1`. An angular `D1` does not carry offset distance; a reference-plane object with angular `D1` and a complete frame carries that frame as direct datum-plane placement. An offset reference-plane object identifies its source plane with the unique nonzero little-endian u32 source identifier immediately followed by `02 00 00 00 00 05 00 00 00 00 00 00 00 00 00 2d 80 2b 80`. The typed 46-byte form stores the source identifier at +0. A principal-plane target has signature `79 2a e1 3b` at +4, zero u16 at +8, and principal selector u32 `1` or `2` at +10. A constructed-plane target has signature `30 92 ab 53` at +4 and six zero bytes at +8. Both forms store u32 `1` at +14, u32 zero at +18, an identity word at +22, twelve zero bytes at +26, and terminator `c7 cf ff ff c7 cf ff ff` at +38. Exactly one known non-self source across the compact and typed forms identifies the reference. The object may instead carry one complete plane frame whose plane is parallel to exactly one decoded datum frame at the absolute `D1` distance; that datum is the source plane. Coincident or multiply matching frames do not identify a source. The offset plane inherits the source plane normal and u-axis and translates its origin by the signed dimension along the normal. A legacy face-alias reference stores the support-face point, normal, and u-axis as its reference frame. A surface-component face selection stores the resulting plane frame; its support frame is that result frame translated by signed `D1` along the normal. Explicit face-frame records store the support frame directly.
 
@@ -2364,6 +2364,27 @@ sentinel or a real value. FACE permits `0.0` and valued tolerances in partition 
 streams. A FACE or EDGE header frames on the sentinel, `0.0`, or a tolerance in
 `[1e-12, 1e-2]` m. A two-byte big-endian integer pair read as one f64 is a NORMAL value near
 1e-302, below that range.
+
+#### Principal-plane profile placement
+
+A marker or compact sketch profile in model space selects its local Top
+component when these conditions hold:
+
+- The declared reference selects the principal Front source `2`.
+- A complete declared reference record lies inside the profile object or its
+  immediately preceding context.
+- One or more complete principal component records lie inside the profile
+  object's byte interval. Each has source/selector `(3,2)`.
+- The generic component-placement count in the profile and enclosing context
+  is zero.
+
+The frame is
+`origin=(0,0,0)`, `u=(1,0,0)`, `v=(0,0,-1)`, `normal=(0,1,0)`.
+The stored marker pair `(a,b)` supplies sketch coordinates `(u,v)=(a,b)`.
+A profile point maps to `(a,0,-b)` in model space. The local component selects
+this frame before the declared plane frame. The same coordinate mapping applies
+to profile curves, construction points, dimensions, constraints and
+profile-derived axes.
 
 ---
 
