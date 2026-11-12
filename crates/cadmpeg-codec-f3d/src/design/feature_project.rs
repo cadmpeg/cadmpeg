@@ -1033,8 +1033,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     project_offset_faces(scope, &parameters, face_operands, construction_groups)?
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
-                Some(DesignFeatureFamily::Move) => project_move(scope, construction_groups)
-                    .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                Some(DesignFeatureFamily::Move) => {
+                    project_move(scope, construction_groups, &mut projection_losses)
+                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                }
                 Some(DesignFeatureFamily::Shell) => {
                     projection_losses.extend(shell_table_member_loss(scope, construction_groups));
                     project_shell(scope, face_operands, construction_groups)?
@@ -4349,12 +4351,30 @@ pub(super) fn project_shell(
 fn project_move(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::BodySelection;
 
     let operation = scope.move_operation()?;
     let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
-    move_body(operation, BodySelection::Native(group.id.clone()))
+    let definition = move_body(operation, BodySelection::Native(group.id.clone()))?;
+    let auxiliary = scope
+        .reference_members()
+        .values()
+        .copied()
+        .filter(|index| {
+            *index != group.record_index
+                && *index != operation.transform_record_index
+                && !group.members().iter().any(|member| member.value == *index)
+        })
+        .collect::<Vec<_>>();
+    if !auxiliary.is_empty() {
+        losses.push(crate::loss::F3dLossCode::FeatureMoveScopeReferencesAssumed.note(format!(
+            "Move scope {} applies its stored matrix to body group {}; auxiliary scope references {auxiliary:?} are assumed to leave that motion unchanged (DR-126).",
+            scope.id, group.record_index
+        )));
+    }
+    Some(definition)
 }
 
 fn move_body(

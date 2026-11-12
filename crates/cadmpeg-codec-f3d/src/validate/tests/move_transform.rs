@@ -34,6 +34,7 @@ fn fixture(class: &str) -> (DesignParameterScope, DesignRecordHeader) {
         },
         form_offset: 443,
         transform_reference_offset: None,
+        prefix: None,
     });
     (
         scope,
@@ -99,6 +100,7 @@ fn move_face_scope(kind: DesignFeatureKind, form: DesignMoveForm) -> DesignParam
         form,
         form_offset: 443,
         transform_reference_offset: None,
+        prefix: None,
     });
     scope
 }
