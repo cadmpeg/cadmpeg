@@ -20,6 +20,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-463. Analytic sketch-curve tail flag frames
+
+**Question.** Which analytic sketch-curve tail frames carry the construction flag, and how does the type version select each frame?
+
+**Known.** `f3d.md` §3.1 "Immediately after the 96-byte analytic payload, a planar sketch-curve record stores" describes one tail frame. The two-reference tails of the six public regression inputs start after the references with three zero bytes, byte `1`, a variable Boolean byte, and five or six further bytes before a u32 `1`. Eight curves reported as unprofiled have that variable byte set: two curves in z_mounts_front and six in standoff. The current reader's guard does not admit these frames.
+
+**Need.** A type-version mapping and controlled construction/reference toggles that identify the Boolean byte and the complete tail boundary for each frame.
+
+**Conflict.** The specified guard position differs from these stored tails.
+
+**Note.** The decoder retains each curve and applies the admitted construction-tail rule. Endpoint incidence and geometric closure remain independent of the unresolved Boolean.
+
 ### DR-319. WorkAxis point-and-direction construction rules
 
 **Question.** What do the position, direction, construction rules, and input roles encode for the other `refType` values of a WorkAxis point-and-direction carrier?
