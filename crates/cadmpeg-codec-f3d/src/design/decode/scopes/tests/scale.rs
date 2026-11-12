@@ -204,6 +204,16 @@ fn matrix_scale_rejects_invalid_transform_and_guid() {
                 .is_none()
         );
     }
+    let (mut bytes, scope, at) = matrix_scale_fixture(0, true);
+    bytes[at + 40..at + 48].copy_from_slice(&1.0f64.to_le_bytes());
+    bytes[at + 56..at + 64].copy_from_slice(&0.0f64.to_le_bytes());
+    bytes[at + 80..at + 88].copy_from_slice(&1.0e308f64.to_le_bytes());
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    assert!(
+        exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new())
+            .unwrap()
+            .is_none()
+    );
     let (mut bytes, scope, at) = matrix_scale_fixture(0, false);
     bytes[at + 132] = b'1';
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);

@@ -705,9 +705,10 @@ fn matrix_scale(
     if let Some(point) = &center {
         let holds = (0..3).all(|axis| {
             let expected = (1.0 - diagonal[axis]) * point.position[axis].get();
-            (translation[axis] - expected).abs()
-                <= SCALE_MATRIX_CENTER_TOLERANCE
-                    * translation[axis].abs().max(expected.abs()).max(1.0)
+            expected.is_finite()
+                && (translation[axis] - expected).abs()
+                    <= SCALE_MATRIX_CENTER_TOLERANCE
+                        * translation[axis].abs().max(expected.abs()).max(1.0)
         });
         if !holds {
             return None;
