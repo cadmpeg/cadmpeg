@@ -1710,14 +1710,10 @@ pub(crate) fn project_copy_paste_transfer_features(
                 )
             });
         let source_transform = match intent.mode {
-            DesignOccurrenceTransferMode::Copy => intent
-                .source_transform
-                .and_then(|transform| neutral_affine(transform)),
+            DesignOccurrenceTransferMode::Copy => intent.source_transform.and_then(neutral_affine),
             DesignOccurrenceTransferMode::Reparent => None,
         };
-        let target_transform = intent
-            .target_transform
-            .and_then(|transform| neutral_affine(transform));
+        let target_transform = intent.target_transform.and_then(neutral_affine);
         let placement_unresolved = target_transform.is_none()
             || (intent.mode == DesignOccurrenceTransferMode::Copy && source_transform.is_none());
         feature

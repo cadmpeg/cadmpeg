@@ -283,12 +283,10 @@ fn partial_copy_paste_prefix(
         second.complete = false;
         second.table_relation_record_index = None;
     }
-    if first.progress > second.progress {
-        first
-    } else if second.progress > first.progress {
-        second
-    } else {
-        CopyPastePrefix::default()
+    match first.progress.cmp(&second.progress) {
+        std::cmp::Ordering::Greater => first,
+        std::cmp::Ordering::Less => second,
+        std::cmp::Ordering::Equal => CopyPastePrefix::default(),
     }
 }
 
@@ -464,9 +462,8 @@ fn copy_paste_prefix_with_shift(
     };
     prefix.target_transform = target_transform;
     prefix.progress = 10;
-    let (key, after_key) = match lp_utf16_bounded(bytes, view.position(), 36..=36) {
-        Some(value) => value,
-        None => return prefix,
+    let Some((key, after_key)) = lp_utf16_bounded(bytes, view.position(), 36..=36) else {
+        return prefix;
     };
     all_valid &= key == "00000000-0000-0000-0000-000000000000";
     if view.seek(after_key).is_none() {
@@ -744,7 +741,12 @@ pub(super) fn occurrence_transfer_intent(
                 links.byte_offset,
                 scope_at,
             )
-            .map(|component| (links.occurrence_record_index, component))
+            .map(|carrier| {
+                (
+                    links.occurrence_record_index,
+                    carrier.component_record_index,
+                )
+            })
         })
     });
     let occurrence_record_index = carrier.as_ref().map(|(index, _)| *index);
@@ -836,12 +838,10 @@ fn partial_cut_paste_prefix(
         second.complete = false;
         second.table_relation_record_index = None;
     }
-    if first.progress > second.progress {
-        first
-    } else if second.progress > first.progress {
-        second
-    } else {
-        CutPastePrefix::default()
+    match first.progress.cmp(&second.progress) {
+        std::cmp::Ordering::Greater => first,
+        std::cmp::Ordering::Less => second,
+        std::cmp::Ordering::Equal => CutPastePrefix::default(),
     }
 }
 
@@ -864,10 +864,8 @@ fn cut_paste_prefix_with_shift(
         return prefix;
     }
     prefix.progress = 1;
-    if shift != 0 {
-        if view.u8() != Some(1) || zero_field(&mut view, 4) != Some(true) {
-            return prefix;
-        }
+    if shift != 0 && (view.u8() != Some(1) || zero_field(&mut view, 4) != Some(true)) {
+        return prefix;
     }
     let Some(removal_at) = start.checked_add(cut_prefix::REMOVAL_REFERENCE + shift) else {
         return prefix;
@@ -948,9 +946,8 @@ fn cut_paste_prefix_with_shift(
     };
     prefix.target_transform = target_transform;
     prefix.progress = 9;
-    let (key, after_key) = match lp_utf16_bounded(bytes, view.position(), 36..=36) {
-        Some(value) => value,
-        None => return prefix,
+    let Some((key, after_key)) = lp_utf16_bounded(bytes, view.position(), 36..=36) else {
+        return prefix;
     };
     prefix.occurrence_key = Some(key);
     if view.seek(after_key).is_none() {
@@ -1002,10 +999,8 @@ fn relation_targets(
         let Some(occurrence_record_index) = reference(&mut view) else {
             continue;
         };
-        if bytes.get(view.position()) == Some(&1) {
-            if !admit_marked_gap || view.take(1).is_none() {
-                continue;
-            }
+        if bytes.get(view.position()) == Some(&1) && (!admit_marked_gap || view.take(1).is_none()) {
+            continue;
         }
         if zeros(&mut view, 2).is_none()
             || reference(&mut view).is_none()
@@ -1043,6 +1038,10 @@ fn relation_targets(
     found
 }
 
+struct CarrierComponent {
+    component_record_index: Option<u64>,
+}
+
 fn occurrence_carrier_component(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -1050,7 +1049,7 @@ fn occurrence_carrier_component(
     occurrence_record_index: u32,
     relation_at: usize,
     scope_at: usize,
-) -> Option<Option<u64>> {
+) -> Option<CarrierComponent> {
     if !types
         .get(&u64::from(occurrence_record_index))
         .is_some_and(|(type_guid, _)| {
@@ -1090,7 +1089,9 @@ fn occurrence_carrier_component(
         if found.is_some() {
             return None;
         }
-        found = Some(component);
+        found = Some(CarrierComponent {
+            component_record_index: component,
+        });
     }
     found
 }
@@ -1207,9 +1208,8 @@ fn cut_source_owner_component(
         let Some(source_relation_index) = reference(&mut removed) else {
             continue;
         };
-        let (key, after_key) = match lp_utf16_bounded(bytes, removed.position(), 36..=36) {
-            Some(value) => value,
-            None => continue,
+        let Some((key, after_key)) = lp_utf16_bounded(bytes, removed.position(), 36..=36) else {
+            continue;
         };
         if key != occurrence_key
             || removed.seek(after_key).is_none()
@@ -1218,9 +1218,8 @@ fn cut_source_owner_component(
         {
             continue;
         }
-        let (kind, after_kind) = match lp_utf16_bounded(bytes, removed.position(), 14..=14) {
-            Some(value) => value,
-            None => continue,
+        let Some((kind, after_kind)) = lp_utf16_bounded(bytes, removed.position(), 14..=14) else {
+            continue;
         };
         if kind != "RemoveInstance" {
             continue;
