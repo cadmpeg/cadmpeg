@@ -65,7 +65,7 @@ fn known_delete_face_frame(scope: &DesignParameterScope) -> bool {
         .ok()
         .and_then(|units| units.checked_mul(2))
         .and_then(|bytes| tail_length.checked_sub(bytes))
-        .is_some_and(|tail| matches!(tail, 76 | 77 | 78))
+        .is_some_and(|tail| matches!(tail, 76..=78))
 }
 
 pub(super) fn project_delete_face(

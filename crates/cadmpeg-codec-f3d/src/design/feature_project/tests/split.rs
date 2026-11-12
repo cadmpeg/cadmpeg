@@ -330,23 +330,35 @@ fn delete_face_with_typed_references_projects() {
         scope
     };
     let selected = group(77, 0, 100, vec![200], DesignOperandRole::ROLE_0X10);
-    for (count_offset, admitted) in [(163, true), (167, true), (159, false)] {
+    for (count_offset, known) in [
+        (163, true),
+        (167, true),
+        (159, false),
+        (161, false),
+        (165, false),
+    ] {
+        let mut losses = Vec::new();
         let projected = project_delete_face(
             &scope(count_offset),
             std::slice::from_ref(&selected),
             &[],
-            &mut Vec::new(),
+            &mut losses,
         )
         .unwrap();
+        assert!(matches!(
+            projected,
+            Some(FeatureDefinition::Operation(FeatureOperation::DeleteFace {
+                heal: true,
+                ..
+            }))
+        ));
         assert_eq!(
-            matches!(
-                projected,
-                Some(FeatureDefinition::Operation(FeatureOperation::DeleteFace {
-                    heal: true,
-                    ..
-                }))
-            ),
-            admitted,
+            losses
+                .iter()
+                .filter(|loss| loss.code
+                    == crate::loss::F3dLossCode::DeleteFaceFrameControlsAssumed.kind())
+                .count(),
+            usize::from(!known),
             "count offset {count_offset}"
         );
     }
