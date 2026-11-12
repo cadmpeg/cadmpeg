@@ -3107,6 +3107,18 @@ fn check_feature_references(
                     );
                 }
             }
+            FeatureOperation::InsertComponents { components } => {
+                for occurrence in components.occurrences() {
+                    if !occurrence_ids.contains(occurrence.as_str()) {
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "inserted component occurrence",
+                            occurrence.as_str(),
+                        );
+                    }
+                }
+            }
             FeatureOperation::AssemblyJoint { joint } => {
                 if !assembly_joint_ids.contains(joint.as_str()) {
                     ref_error(

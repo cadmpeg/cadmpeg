@@ -2751,6 +2751,11 @@ pub enum FeatureOperation {
         /// Placed occurrence created by this history operation.
         occurrence: OccurrenceId,
     },
+    #[doc = "Component occurrences introduced by one construction feature."]
+    InsertComponents {
+        #[doc = "Resolved membership and its retained native selection."]
+        components: InsertedComponents,
+    },
     /// Assembly constraint introduced into the product structure.
     AssemblyJoint {
         /// Joint created by this history operation.
@@ -6970,6 +6975,118 @@ pub enum InsertedBodies {
         /// Format-native selection expression.
         native: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[doc = "Invalid membership or native reference of a component insertion."]
+pub enum InsertedComponentsError {
+    #[doc = "A resolved or partial insertion has no known occurrence."]
+    #[error("resolved or partial component insertion must select an occurrence")]
+    Empty,
+    #[doc = "The known membership repeats an occurrence."]
+    #[error("component insertion repeats an occurrence")]
+    RepeatedOccurrence,
+    #[doc = "The retained native selection is blank."]
+    #[error("component insertion native reference must not be blank")]
+    BlankNative,
+    #[doc = "The allocator refused selection storage."]
+    #[error("component insertion allocation failed")]
+    Allocation,
+}
+
+impl From<BodySelectionError> for InsertedComponentsError {
+    fn from(error: BodySelectionError) -> Self {
+        match error {
+            BodySelectionError::Empty => Self::Empty,
+            BodySelectionError::RepeatedBody | BodySelectionError::RepeatedNativeMember => {
+                Self::RepeatedOccurrence
+            }
+            BodySelectionError::BlankNativeMember => Self::BlankNative,
+            BodySelectionError::Allocation => Self::Allocation,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[doc = "Occurrence membership of an insertion with its complete native selection."]
+pub enum InsertedComponents {
+    #[doc = "Insertion membership remains in its native selection."]
+    Native {
+        #[doc = "Format-native selection expression."]
+        native: SelectionReference,
+    },
+    #[doc = "Every inserted occurrence resolves to the neutral model."]
+    Resolved {
+        #[doc = "Nonempty distinct occurrences in source order."]
+        occurrences: SelectionMembers<OccurrenceId>,
+        #[doc = "Format-native selection expression."]
+        native: SelectionReference,
+    },
+    #[doc = "Known inserted occurrences accompany unresolved native membership."]
+    Partial {
+        #[doc = "Nonempty distinct known occurrences in source order."]
+        occurrences: SelectionMembers<OccurrenceId>,
+        #[doc = "Format-native expression retaining the complete selection."]
+        native: SelectionReference,
+    },
+}
+
+impl InsertedComponents {
+    #[doc = "Retain unresolved membership through a nonblank native selection."]
+    pub fn native(native: String) -> Result<Self, InsertedComponentsError> {
+        Ok(Self::Native {
+            native: SelectionReference::new(native)?,
+        })
+    }
+
+    #[doc = "Admit complete nonempty distinct membership and its native selection."]
+    pub fn resolved(
+        occurrences: Vec<OccurrenceId>,
+        native: String,
+    ) -> Result<Self, InsertedComponentsError> {
+        Ok(Self::Resolved {
+            occurrences: SelectionMembers::try_from(occurrences)?,
+            native: SelectionReference::new(native)?,
+        })
+    }
+
+    #[doc = "Admit nonempty distinct known membership and the complete native selection."]
+    pub fn partial(
+        occurrences: Vec<OccurrenceId>,
+        native: String,
+    ) -> Result<Self, InsertedComponentsError> {
+        Ok(Self::Partial {
+            occurrences: SelectionMembers::try_from(occurrences)?,
+            native: SelectionReference::new(native)?,
+        })
+    }
+
+    #[must_use]
+    #[doc = "Whether every inserted occurrence is resolved."]
+    pub const fn is_resolved(&self) -> bool {
+        matches!(self, Self::Resolved { .. })
+    }
+
+    #[must_use]
+    #[doc = "Known occurrence identities in source order."]
+    pub fn occurrences(&self) -> &[OccurrenceId] {
+        match self {
+            Self::Native { .. } => &[],
+            Self::Resolved { occurrences, .. } | Self::Partial { occurrences, .. } => occurrences,
+        }
+    }
+
+    #[must_use]
+    #[doc = "The retained format-native expression for the complete insertion."]
+    pub fn native_reference(&self) -> &SelectionReference {
+        match self {
+            Self::Native { native }
+            | Self::Resolved { native, .. }
+            | Self::Partial { native, .. } => native,
+        }
+    }
 }
 
 impl InsertedBodies {

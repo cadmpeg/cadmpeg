@@ -213,6 +213,37 @@ pub(crate) fn bind_feature_paths(
                     })
                     .is_some()
             }
+            FeatureDefinition::Operation(FeatureOperation::InsertComponents { components }) => {
+                let mut seen = BTreeSet::new();
+                let mapped = components
+                    .occurrences()
+                    .iter()
+                    .filter_map(resolve)
+                    .filter(|id| seen.insert(id.clone()))
+                    .collect::<Vec<_>>();
+                let mapping_complete = mapped.len() == components.occurrences().len();
+                let complete = components.is_resolved() && mapping_complete;
+                let native = components.native_reference().clone();
+                *components = match cadmpeg_ir::features::SelectionMembers::try_from(mapped) {
+                    Ok(occurrences) if complete => {
+                        cadmpeg_ir::features::InsertedComponents::Resolved {
+                            occurrences,
+                            native,
+                        }
+                    }
+                    Ok(occurrences) => cadmpeg_ir::features::InsertedComponents::Partial {
+                        occurrences,
+                        native,
+                    },
+                    Err(_) => cadmpeg_ir::features::InsertedComponents::Native { native },
+                };
+                if !mapping_complete {
+                    losses.push(crate::loss::F3dLossCode::FeatureOccurrencePathUnresolved.note(
+                        "a component insertion retains native membership for occurrence paths without a unique expanded target",
+                    ));
+                }
+                true
+            }
             FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => {
                 seeds.iter_mut().all(|seed| {
                     let PatternSeed::Occurrences(ids) = seed else {
@@ -320,6 +351,58 @@ mod tests {
         assert!(paths.refuses_residual_keys(stream, &local));
         assert!(!paths.refuses_residual_keys(stream, &external));
         assert!(!LocalOccurrencePaths::default().refuses_residual_keys(stream, &local));
+    }
+
+    #[test]
+    fn component_set_paths_keep_known_members_when_another_path_is_ambiguous() {
+        use cadmpeg_ir::features::InsertedComponents;
+        let stream = "f3d:Design/BulkStream.dat";
+        let first = OccurrenceId::mint("f3d:model:occurrence#34").unwrap();
+        let second = OccurrenceId::mint("f3d:model:occurrence#35").unwrap();
+        let mapped = OccurrenceId::mint("f3d:model:occurrence#nested").unwrap();
+        let paths = LocalOccurrencePaths {
+            paths: BTreeMap::from([
+                (
+                    (stream.to_owned(), vec!["34".to_owned()]),
+                    Some(mapped.clone()),
+                ),
+                ((stream.to_owned(), vec!["35".to_owned()]), None),
+            ]),
+            ..Default::default()
+        };
+        let mut feature = Feature {
+            product_definition: None,
+            id: cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#derive").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("DerivedInstance".into()),
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::InsertComponents {
+                    components: InsertedComponents::resolved(
+                        vec![first, second],
+                        "fixture:scope#10".into(),
+                    )
+                    .unwrap(),
+                }),
+            ),
+            native_ref: Some(format!("{stream}:design-parameter-scope#1")),
+        };
+        let losses = bind_feature_paths(std::slice::from_mut(&mut feature), &paths);
+        assert!(
+            matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::InsertComponents {
+            components: InsertedComponents::Partial { occurrences, native }
+        }) if occurrences.as_slice() == [mapped] && native.as_str() == "fixture:scope#10")
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::FeatureOccurrencePathUnresolved.kind()
+        );
     }
 
     #[test]

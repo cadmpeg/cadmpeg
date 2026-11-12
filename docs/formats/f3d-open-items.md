@@ -2345,3 +2345,15 @@ when the operation transition carries no candidate for the group members?
 **Need.** Paired saves that vary the listed and additional selections independently.
 
 **Note.** The decoder selects the listed groups and assumes that the additional groups select the same bodies. It records `feature.scale-unlisted-groups-assumed`.
+
+### DR-466. DerivedInstance sources without a local occurrence join
+
+**Question.** How does a `DerivedInstance` scope identify its inserted components when its ordered references do not give a unique local relation and occurrence carrier?
+
+**Known.** The canonical scope kind identifies the derivation family. Its ordered reference run retains the source record indices. A local three-reference relation links an occurrence carrier to its owning scope. Source membership and placement can remain unresolved when this join fails.
+
+**Need.** Identify the construction fields and definition references of the other scope generations and of references whose target records are absent.
+
+**Conflict.** None.
+
+**Note.** An unresolved scope keeps a native component selection inside a neutral component insertion and reports `feature.derived-instance-component-insert-assumed`. Its native scope reference and ordered reference properties remain present.

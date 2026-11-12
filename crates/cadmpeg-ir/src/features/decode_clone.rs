@@ -10,18 +10,18 @@ use super::{
     FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
     FilledSurfaceContinuity, FilledSurfaceContinuityState, GeneratedBodyRef, GeneratedCurveRef,
     GeneratedEdgeRef, GeneratedFaceRef, GeneratedSweepSection, GeneratedVertexRef,
-    GeometryImportPath, HelicalSweepConstruction, InsertedBodies, LinearTermination, LoftGuidance,
-    LoftPointSection, LoftSection, NativeFeatureKind, NativeSelections, NonEmptyMembers,
-    PartialRevolveConstruction, PathRef, PlanarProfileRef, PrimitiveSolid, PrimitiveSolidKind,
-    ProfileRef, ReplaceFaceOperands, RevolutionAxis, RevolveConstruction, RevolveExtent,
-    RibConstruction, RuledSurfaceMode, ScaleCenter, SectionOperands, SelectionMembers,
-    SelectionReference, SewBodySelection, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight,
-    SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
-    SheetMetalHemForm, SketchFeatureBinding, SketchPointSelection, SketchProfileBoundaryUse,
-    SketchProfileLoops, SketchProfileRegion, SketchProfileRegions, SplitBodyTool, SplitFacePlanes,
-    SplitFaceTool, SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
-    ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
-    VertexSelection,
+    GeometryImportPath, HelicalSweepConstruction, InsertedBodies, InsertedComponents,
+    LinearTermination, LoftGuidance, LoftPointSection, LoftSection, NativeFeatureKind,
+    NativeSelections, NonEmptyMembers, PartialRevolveConstruction, PathRef, PlanarProfileRef,
+    PrimitiveSolid, PrimitiveSolidKind, ProfileRef, ReplaceFaceOperands, RevolutionAxis,
+    RevolveConstruction, RevolveExtent, RibConstruction, RuledSurfaceMode, ScaleCenter,
+    SectionOperands, SelectionMembers, SelectionReference, SewBodySelection,
+    SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
+    SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding,
+    SketchPointSelection, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion,
+    SketchProfileRegions, SplitBodyTool, SplitFacePlanes, SplitFaceTool, SurfaceBoundary,
+    SweepGuideRail, SweepOrientation, SweepSection, SweepShape, ThreePointSelection, TreeChildren,
+    TrimBodyOperands, TrimCellSelection, TrimRegion, VertexSelection,
 };
 
 rewrite_enum!(AngularTermination, []; {
@@ -193,6 +193,7 @@ rewrite_enum!(FeatureOperation, []; {
     MeshImport { tessellations },
     InsertBodies { bodies },
     InsertComponent { occurrence },
+    InsertComponents { components },
     AssemblyJoint { joint },
     Form { cages },
     CosmeticThread { face, standard, designation, diameter, pitch, modeled, extent },
@@ -315,6 +316,12 @@ rewrite_record!(HelicalSweepConstruction, []; { profile, axis_origin, axis_direc
 rewrite_enum!(InsertedBodies, []; {
     Native(field0),
     Resolved { native },
+});
+
+rewrite_enum!(InsertedComponents, []; {
+    Native { native },
+    Resolved { occurrences, native },
+    Partial { occurrences, native },
 });
 
 rewrite_enum!(LinearTermination, []; {
