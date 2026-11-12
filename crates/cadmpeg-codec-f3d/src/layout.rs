@@ -1058,6 +1058,14 @@ pub(crate) mod scale_legacy_uniform_tail {
     pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 31;
 }
 
+/// Byte offsets for the `paramesh_compact_v6_body_prefix` record.
+///
+/// Spec §3.1. Record length 38 B.
+pub(crate) mod paramesh_compact_v6_body_prefix {
+    /// Offset of `first_presence` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_PRESENCE: usize = 37;
+}
+
 /// Byte offsets for the `paramesh_entry_name_prefix` record.
 ///
 /// Spec §3.1. Record length 32 B.

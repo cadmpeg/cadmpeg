@@ -15,9 +15,9 @@
 use cadmpeg_test_support::wire;
 
 use super::super::{
-    bind_mesh_feature_definitions, face_selection_is_resolved, feature_definition_is_incomplete,
-    incomplete_feature_families, mesh_attribute_channels, mesh_texture_asset,
-    mesh_texture_assignments, report_design_projection_gaps, MeshProjection,
+    face_selection_is_resolved, feature_definition_is_incomplete, incomplete_feature_families,
+    mesh_attribute_channels, mesh_texture_asset, mesh_texture_assignments,
+    report_design_projection_gaps, MeshProjection,
 };
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
@@ -359,18 +359,45 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         count: 2,
         tessellations_by_scope: std::collections::HashMap::from([(
             ("f3d:Design/BulkStream.dat".into(), 10),
-            vec!["tessellation:z-body".into(), "tessellation:a-body".into()],
+            vec![
+                "test:model:tessellation#z-body".into(),
+                "test:model:tessellation#a-body".into(),
+            ],
         )]),
     };
 
-    bind_mesh_feature_definitions(&mut features, &[scope], &projection).unwrap();
+    let archive = crate::test_support::zip_test::synthetic_f3d(false);
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        with_test_ctx(|ctx| {
+            super::super::mesh_import::bind_features(
+                ctx,
+                scan,
+                &mut features,
+                &[scope],
+                &projection,
+                &mut Vec::new(),
+            )
+            .unwrap();
+        });
+    });
 
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::MeshImport {
-            tessellations: vec!["tessellation:z-body".into(), "tessellation:a-body".into(),]
+            tessellations: cadmpeg_ir::features::mesh::MeshSelection::Tessellations(
+                vec![
+                    cadmpeg_ir::tessellation::TessellationId::mint(
+                        "test:model:tessellation#z-body"
+                    )
+                    .unwrap(),
+                    cadmpeg_ir::tessellation::TessellationId::mint(
+                        "test:model:tessellation#a-body"
+                    )
+                    .unwrap(),
+                ]
                 .try_into()
-                .unwrap(),
+                .unwrap()
+            ),
         })
     );
     assert!(!feature_definition_is_incomplete(

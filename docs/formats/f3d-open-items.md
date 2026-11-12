@@ -1798,6 +1798,18 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder reports `mesh.scope-prefix-uninterpreted`.
 
+### DR-463. Empty mesh-import source lists
+
+**Question.** Does an empty body-reference run identify an import whose source was removed, or an import that introduced no body?
+
+**Known.** A Base Mesh Feature can store body count zero while its operation scope remains in the timeline. Its scope identity identifies the retained import source.
+
+**Need.** Controlled saves of a newly created empty import and an import whose last body was removed, with their operation scopes compared.
+
+**Conflict.** None.
+
+**Note.** The decoder keeps a native mesh source selection and reports `feature.mesh-import-empty-source-assumed`. Unjoined nonempty body runs report `feature.mesh-import-tessellations-unresolved`. Unreadable source frames report `feature.mesh-import-source-unparsed`. DR-292 tracks the operation GUID bindings.
+
 ### DR-373. Mesh body and collection-owner payload fields
 
 **Question.** What do the compact matrix flags, the further mesh-body reference slot, and the remaining mesh-body, mesh-wrapper, and collection-owner payload fields mean?
