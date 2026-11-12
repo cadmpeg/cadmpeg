@@ -625,6 +625,8 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                     },
                     additional: vec![],
                 },
+
+                destination: Default::default(),
             });
         }
         scopes.push(scope);

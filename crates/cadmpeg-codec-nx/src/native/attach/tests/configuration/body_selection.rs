@@ -490,6 +490,8 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
 
             op: BooleanKind::Cut,
             keep_tools: false,
+
+            destination: Default::default(),
         })
     );
     let feature = Feature {
@@ -562,6 +564,8 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
 
             op: BooleanKind::Join,
             keep_tools: false,
+
+            destination: Default::default(),
         })
     );
 }
@@ -631,6 +635,8 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
 
         op: BooleanKind::Join,
         keep_tools: false,
+
+        destination: Default::default(),
     });
     assert_eq!(
         boolean_target_writer(&native_definition, 401),

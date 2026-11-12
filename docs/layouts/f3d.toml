@@ -7205,7 +7205,7 @@ kind = "byte"
 section = "3.1"
 anchor = "It stores nine zero bytes at offsets 11 through 19 and the property-block presence byte at offset 20"
 size = 58
-note = "Offsets are relative to the primary indexed scope header, for a prologue without a property block and with an empty companion list. An empty property block moves every field after the presence byte four bytes on; each companion reference moves every field after the companion list eleven bytes on. The tool list count is the last fixed field; the lists after it have variable length."
+note = "Offsets are relative to the primary indexed scope header, without a property block or companion references, and with an ordinary present local reference. An empty property block moves later fields four bytes on; each companion advances later fields by its complete reference width. The tool list count is the last fixed field; the lists after it have variable length."
 
 [[record.field]]
 name = "indexed_header"
@@ -7297,6 +7297,43 @@ offset = 54
 type = "u32"
 source = "spec"
 anchor = "the tool list at offset 54"
+
+[[record]]
+name = "combine_null_reference_operation_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The null-reference form stores a zero reference marker at offset 35"
+size = 48
+note = "The common operand-list fields precede the null reference. Offsets apply without a property block or companion references."
+
+[[record.field]]
+name = "common_prefix"
+offset = 0
+type = "bytes[35]"
+source = "spec"
+anchor = "The null-reference form shares the first 35 bytes of the operand-list prologue"
+
+[[record.field]]
+name = "reference_marker"
+offset = 35
+type = "u8"
+value = 0
+source = "spec"
+anchor = "zero reference marker at offset 35"
+
+[[record.field]]
+name = "stamp"
+offset = 36
+type = "u64"
+source = "spec"
+anchor = "the u64 operation identity at offset 36"
+
+[[record.field]]
+name = "tool_count"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "the tool count at offset 44"
 
 [[record]]
 name = "combine_body_selection_prefix"
