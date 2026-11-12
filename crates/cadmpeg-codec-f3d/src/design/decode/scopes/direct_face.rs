@@ -28,8 +28,10 @@ use crate::layout::move_transform_frame_293 as move_frame_293;
 use crate::layout::move_transform_omitted_matrix_frame_125 as omitted_move_125;
 use crate::layout::move_transform_omitted_matrix_frame_126 as omitted_move_126;
 use crate::layout::scale_legacy_uniform_tail as scale_tail;
+use crate::layout::scale_matrix_marker_one_prologue as scale_matrix_one;
+use crate::layout::scale_matrix_marker_zero_prologue as scale_matrix_zero;
 use crate::records::entity_header::SegmentType;
-use crate::records::feature::body_ops::DesignScaleOperation;
+use crate::records::feature::body_ops::{DesignScaleFactors, DesignScaleOperation};
 use crate::records::feature::direct_face;
 use crate::records::feature::direct_face::DesignDirectFaceOperation;
 use crate::records::feature::direct_face::DesignModifyOperation;
@@ -597,6 +599,231 @@ pub(crate) fn move_operation_links_hold(
     })
 }
 
+const SCALE_MATRIX_CENTER_TOLERANCE: f64 = 1e-9;
+
+fn group_member_indices(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+) -> Option<Vec<u32>> {
+    let (start, paired) = records.frames(record_index).next()?;
+    let count = usize::try_from(View::u32_le_at(bytes, start + 21)?).ok()?;
+    if count == 0 || count > paired.checked_sub(start.checked_add(25)?)? / 11 {
+        return None;
+    }
+    (0..count)
+        .map(|ordinal| marked_record_reference(bytes, start + 25 + 11 * ordinal))
+        .collect()
+}
+
+fn long_modern_scale(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<DesignScaleOperation> {
+    if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Scale) {
+        return None;
+    }
+    let references = scope
+        .reference_members()
+        .values()
+        .copied()
+        .collect::<Vec<_>>();
+    let [factor_record_index, body_group_record_index, ..] = references.as_slice() else {
+        return None;
+    };
+    let center_record_index = *references.last()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    if references.len() <= 5
+        || View::u32_le_at(bytes, start + 20)? != 1
+        || bytes.get(start + 24) != Some(&0)
+        || marked_record_reference(bytes, start + 33)? != center_record_index
+        || marked_record_reference(bytes, start + 44)? != *factor_record_index
+        || View::u32_le_at(bytes, start + 55)? != 1
+        || bytes.get(start + 59) != Some(&0)
+        || View::u32_le_at(bytes, start + 60)? != 1
+        || View::u32_le_at(bytes, start + 64)? != 1
+        || marked_record_reference(bytes, start + 68)? != *body_group_record_index
+    {
+        return None;
+    }
+    let members = group_member_indices(bytes, records, *body_group_record_index)?;
+    if references.len() != members.len() + 4
+        || references.get(2..2 + members.len())? != members.as_slice()
+    {
+        return None;
+    }
+    let center = exact_point_data_construction(
+        bytes,
+        records,
+        std::slice::from_ref(&center_record_index),
+        stream_types,
+    )
+    .map(|point| crate::records::identity::Located {
+        value: point.position,
+        offset: point.position_offset,
+    });
+    Some(DesignScaleOperation {
+        body_group_record_index: *body_group_record_index,
+        further_body_group_record_indices: Vec::new(),
+        center_record_index,
+        center_position: center,
+        factors: DesignScaleFactors::Uniform {
+            factor: cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, start + 25)?)?,
+            offset: u64_from_index(start + 25),
+        },
+        matrix_offset: None,
+    })
+}
+
+fn matrix_scale(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<(DesignScaleOperation, u32)> {
+    if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Scale) {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    if bytes.get(start + scale_matrix_zero::ZERO_RUN_9..start + scale_matrix_zero::MARKER)?
+        != [0; 9]
+    {
+        return None;
+    }
+    let (word_at, count_at, groups_at) = match *bytes.get(start + scale_matrix_zero::MARKER)? {
+        scale_matrix_zero::MARKER_VALUE => (
+            scale_matrix_zero::WORD,
+            scale_matrix_zero::BODY_COUNT,
+            scale_matrix_zero::FIRST_BODY_GROUP,
+        ),
+        scale_matrix_one::MARKER_VALUE
+            if View::u32_le_at(bytes, start + scale_matrix_one::ZERO_WORD)? == 0 =>
+        {
+            (
+                scale_matrix_one::WORD,
+                scale_matrix_one::BODY_COUNT,
+                scale_matrix_one::FIRST_BODY_GROUP,
+            )
+        }
+        _ => return None,
+    };
+    let word = View::u32_le_at(bytes, start + word_at)?;
+    let references = scope
+        .reference_members()
+        .values()
+        .copied()
+        .collect::<Vec<_>>();
+    let count = usize::try_from(View::u32_le_at(bytes, start + count_at)?).ok()?;
+    if count == 0 || count > references.len() {
+        return None;
+    }
+    let mut at = start + groups_at;
+    let mut groups = Vec::with_capacity(count);
+    for _ in 0..count {
+        groups.push(marked_record_reference(bytes, at)?);
+        at += 11;
+    }
+    let center_record_index = marked_record_reference(bytes, at)?;
+    at += 11;
+    let mut slots = [None; 4];
+    for slot in &mut slots {
+        match *bytes.get(at)? {
+            0 => at += 1,
+            1 => {
+                *slot = Some(marked_record_reference(bytes, at)?);
+                at += 11;
+            }
+            _ => return None,
+        }
+    }
+    if bytes.get(at) != Some(&0) {
+        return None;
+    }
+    at += 1;
+    let named = groups
+        .iter()
+        .chain([&center_record_index])
+        .chain(slots.iter().flatten());
+    if named.into_iter().any(|index| !references.contains(index)) {
+        return None;
+    }
+    if u64_from_index(at.checked_add(204)?) > scope.paired_byte_offset() {
+        return None;
+    }
+    let mut view = View::over_retained(bytes.get(at..)?);
+    let mut matrix = [0.0; 16];
+    for value in &mut matrix {
+        *value = view.f64_le()?;
+    }
+    let (guid, _) = crate::bytes::lp_utf16_bounded_view(bytes, at + 128, 36..=36)?;
+    if !guid.eq_str("00000000-0000-0000-0000-000000000000")
+        || matrix.iter().any(|value| !value.is_finite())
+        || matrix[12..] != [0.0, 0.0, 0.0, 1.0]
+        || [1, 2, 4, 6, 8, 9]
+            .into_iter()
+            .any(|cell| matrix[cell] != 0.0)
+    {
+        return None;
+    }
+    let diagonal = [matrix[0], matrix[5], matrix[10]];
+    let translation = [matrix[3], matrix[7], matrix[11]];
+    let positive = diagonal.map(cadmpeg_ir::scalar::PositiveReal::new);
+    let [Some(x), Some(y), Some(z)] = positive else {
+        return None;
+    };
+    let factors = match slots {
+        [Some(_), None, None, None] if diagonal[0] == diagonal[1] && diagonal[1] == diagonal[2] => {
+            DesignScaleFactors::Uniform {
+                factor: x,
+                offset: u64_from_index(at),
+            }
+        }
+        [None, Some(_), Some(_), Some(_)] => DesignScaleFactors::PerAxis {
+            factors: [x, y, z],
+            offsets: [
+                u64_from_index(at),
+                u64_from_index(at + 40),
+                u64_from_index(at + 80),
+            ],
+        },
+        _ => return None,
+    };
+    let center = exact_point_data_construction(
+        bytes,
+        records,
+        std::slice::from_ref(&center_record_index),
+        stream_types,
+    );
+    if let Some(point) = &center {
+        let holds = (0..3).all(|axis| {
+            let expected = (1.0 - diagonal[axis]) * point.position[axis].get();
+            expected.is_finite()
+                && (translation[axis] - expected).abs()
+                    <= SCALE_MATRIX_CENTER_TOLERANCE
+                        * translation[axis].abs().max(expected.abs()).max(1.0)
+        });
+        if !holds {
+            return None;
+        }
+    }
+    Some((
+        DesignScaleOperation {
+            body_group_record_index: groups[0],
+            further_body_group_record_indices: groups[1..].to_vec(),
+            center_record_index,
+            center_position: center.map(|point| crate::records::identity::Located {
+                value: point.position,
+                offset: point.position_offset,
+            }),
+            factors,
+            matrix_offset: Some(u64_from_index(at)),
+        },
+        word,
+    ))
+}
+
 pub(super) fn exact_scale_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -727,14 +954,33 @@ pub(super) fn exact_scale_operation(
             cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, uniform_factor_offset)?)?;
         Some(Ok(DesignScaleOperation {
             body_group_record_index,
+            further_body_group_record_indices: Vec::new(),
             center_record_index,
             center_position: center
                 .map(|(value, offset)| crate::records::identity::Located { value, offset }),
-            uniform_factor,
-            uniform_factor_offset: u64_from_index(uniform_factor_offset),
+            factors: DesignScaleFactors::Uniform {
+                factor: uniform_factor,
+                offset: u64_from_index(uniform_factor_offset),
+            },
+            matrix_offset: None,
         }))
     })()
     .transpose()?;
+    let operation = match operation {
+        Some(operation) => Some(operation),
+        None => long_modern_scale(bytes, records, scope, stream_types).or_else(|| {
+            let (operation, word) = matrix_scale(bytes, records, scope, stream_types)?;
+            if word != 0 {
+                losses.push(crate::loss::F3dLossCode::FeatureScaleMatrixWordAssumed.note(
+                    format!(
+                        "{} stores word {word:#010x} in its matrix Scale prologue; the Scale assumes that the word leaves the stored matrix unchanged (DR-465).",
+                        scope.id
+                    ),
+                ));
+            }
+            Some(operation)
+        }),
+    };
     if operation.is_some() && read_by_english_frame {
         losses.push(
             crate::loss::F3dLossCode::FeatureScaleFrameLengthFormAssumed.note(format!(

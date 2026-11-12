@@ -33601,6 +33601,114 @@ source = "spec"
 anchor = "an LP-UTF16 Design entity ID begins at offset 130 from the indexed header"
 
 [[record]]
+name = "scale_matrix_marker_zero_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "A matrix Scale scope has nine zero bytes"
+size = 40
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A matrix Scale scope has nine zero bytes"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "A matrix Scale scope has nine zero bytes"
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "A matrix Scale scope has nine zero bytes"
+value = 0
+
+[[record.field]]
+name = "word"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "A matrix Scale scope has nine zero bytes"
+
+[[record.field]]
+name = "body_count"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "A matrix Scale scope has nine zero bytes"
+
+[[record.field]]
+name = "first_body_group"
+offset = 29
+type = "bytes[11]"
+source = "spec"
+anchor = "A matrix Scale scope has nine zero bytes"
+
+[[record]]
+name = "scale_matrix_marker_one_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "A matrix Scale scope has nine zero bytes"
+size = 44
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A matrix Scale scope has nine zero bytes"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "A matrix Scale scope has nine zero bytes"
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "A matrix Scale scope has nine zero bytes"
+value = 1
+
+[[record.field]]
+name = "zero_word"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "A matrix Scale scope has nine zero bytes"
+value = 0
+
+[[record.field]]
+name = "word"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "A matrix Scale scope has nine zero bytes"
+
+[[record.field]]
+name = "body_count"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "A matrix Scale scope has nine zero bytes"
+
+[[record.field]]
+name = "first_body_group"
+offset = 33
+type = "bytes[11]"
+source = "spec"
+anchor = "A matrix Scale scope has nine zero bytes"
+
+[[record]]
 name = "move_transform_typed_form_two_prefix"
 kind = "byte"
 section = "3.1"
