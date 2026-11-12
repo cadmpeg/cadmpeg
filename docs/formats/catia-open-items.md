@@ -258,6 +258,15 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 In FTC-07, treating consecutive operand values as one parameter representation joins source operands `7687` and `7688`, whose stored source intervals are approximately `[-58.658, 58.658]` and `[0, 0.901]`. The adjacent use-pair framing supplies no parameter transform between those operands. Two candidate map-to-side matches have matching source intervals and adjacent face carriers. Their chart-side operands are `2` and `6`, and their respective map source operands are `7650` and `7659`. A single additive offset would require both `7648` and `7653` to hold both matches. The 80 chart-side frames and 439 distinct source-scoped records selected by resolved edge endpoint references form disjoint sets.
 
+### SN-40. Overlapping three-reference endpoint station tags
+
+**Question.** Which layout applies to an 18-byte lead-`80` incidence tail when both the first scalar's tag position and the final tag position hold a compact code?
+
+**Known.** `catia.md` §6.4 "The following incidence tails preserve separate parameter gauges" defines the first-tag and final-tag layouts when each has a unique tag position. Both guards match the tail `80 <0.5:f64le> 05 <f64le bits 3d00000000000000>`. The decoder keeps a valid first-tag reading, otherwise takes a valid final-tag reading, and reports `topology.endpoint-station-reading-inferred` with the selected reading and parameter.
+
+**Need.** Obtain a real-file witness with an independently established endpoint station that distinguishes the two valid readings. Determine whether an owner relation or an additional selector identifies the layout.
+
+
 ### SN-09. A8 parameter-map interpolation and additional operand productions
 
 **Question.** Which interpolation rule does `81 15` select between stored parameter pairs, and what do A8 class-`25` payloads beginning `84` encode?
