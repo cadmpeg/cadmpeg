@@ -1462,10 +1462,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 ),
                             })
                         } else {
-                            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-                                bodies: cadmpeg_ir::features::BodySelection::Native(
-                                    scope.id.clone(),
-                                ),
+                            FeatureDefinition::Operation(FeatureOperation::Native {
+                                kind: scope.kind_name().into(),
+                                parameters: BTreeMap::new(),
                             })
                         }
                     } else {
