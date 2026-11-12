@@ -131,7 +131,7 @@ fn operand_list_combine_requires_its_own_offsets() {
         scope
             .try_edit(|draft| {
                 draft.reference_members = ReferenceRun::unlocated(vec![301, 302, 303, 304]);
-                draft.reference_count_offset = 240;
+                draft.reference_count_offset = 126;
                 draft.layout_fixture_references();
                 draft.paired_byte_offset = draft.kind_offset + 22 + 78;
                 draft.frame_length = draft.paired_byte_offset;
@@ -155,8 +155,6 @@ fn operand_list_combine_requires_its_own_offsets() {
                     },
                     additional: Vec::new(),
                 },
-
-                destination: Default::default(),
             });
         }
         let mut native = crate::native::F3dNative::default();
@@ -180,16 +178,7 @@ fn operand_list_combine_requires_its_own_offsets() {
     assert_eq!(findings(21, 29, false), 0);
     assert_eq!(findings(20, 29, false), 1);
     assert_eq!(findings(21, 25, false), 1);
-    for (operation_offset, keep_tools_offset) in [
-        (25, 33),
-        (21, 40),
-        (25, 44),
-        (21, 51),
-        (21, 80),
-        (25, 84),
-        (21, 91),
-        (21, 131),
-    ] {
+    for (operation_offset, keep_tools_offset) in [(25, 33), (21, 40), (25, 44), (21, 51)] {
         assert_eq!(
             findings(operation_offset, keep_tools_offset, false),
             0,
@@ -207,8 +196,6 @@ fn operand_list_combine_requires_its_own_offsets() {
     assert_eq!(findings(25, 33, true), 0);
     assert_eq!(findings(21, 40, true), 1);
     assert_eq!(findings(25, 44, true), 1);
-    assert_eq!(findings(21, 80, true), 1);
-    assert_eq!(findings(21, 79, false), 1);
 }
 
 #[test]

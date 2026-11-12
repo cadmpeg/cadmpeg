@@ -1210,37 +1210,9 @@ fn combine_omits_the_default_keep_tools_flag_from_json() {
 
         op: BooleanKind::Join,
         keep_tools: false,
-
-        destination: Default::default(),
     });
     let json = serde_json::to_value(definition).unwrap();
     assert_eq!(json.get("keep_tools"), None);
-    assert_eq!(json.get("destination"), None);
-}
-
-#[test]
-fn combine_new_component_destination_round_trips() {
-    use crate::features::{
-        BodySelection, BooleanKind, CombineDestination, CombineOperands, FeatureDefinition,
-        FeatureOperation,
-    };
-
-    let definition = FeatureDefinition::Operation(FeatureOperation::Combine {
-        operands: CombineOperands::new(
-            BodySelection::Native("body:17".into()),
-            BodySelection::Native("body:18".into()),
-        )
-        .unwrap(),
-        op: BooleanKind::Join,
-        keep_tools: true,
-        destination: CombineDestination::NewComponent,
-    });
-    let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(wire["destination"], serde_json::json!("new_component"));
-    assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
-        definition
-    );
 }
 
 /// `new_body` is one solid sweep operation among four, so it has exactly one

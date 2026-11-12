@@ -752,8 +752,6 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
                 first: tool(12, 500),
                 additional: vec![tool(13, 501)],
             },
-
-            destination: Default::default(),
         });
     }
     scope
@@ -1694,8 +1692,6 @@ mod operand_list_combine {
                 first: selections.next().unwrap(),
                 additional: selections.collect(),
             },
-
-            destination: Default::default(),
         }
     }
 
