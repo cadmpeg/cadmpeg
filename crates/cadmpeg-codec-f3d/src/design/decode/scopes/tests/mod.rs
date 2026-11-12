@@ -26,6 +26,7 @@ mod legacy_class_397;
 mod legacy_frames;
 mod legacy_work_planes;
 mod move_transform;
+mod named_delete_face;
 mod named_empty_label;
 mod named_variable_tail;
 mod offset_faces;

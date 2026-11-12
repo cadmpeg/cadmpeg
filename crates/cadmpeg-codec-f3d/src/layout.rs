@@ -9822,3 +9822,11 @@ pub(crate) mod constructed_plane_entity_prefix {
     /// Offset of `entity_id_code_unit_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const ENTITY_ID_CODE_UNIT_COUNT: usize = 130;
 }
+
+/// Byte offsets for the `surface_delete_face_wide_prologue` record.
+///
+/// Spec §3.1. Record length 132 B.
+pub(crate) mod surface_delete_face_wide_prologue {
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 128;
+}

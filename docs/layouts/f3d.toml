@@ -33599,3 +33599,23 @@ offset = 130
 type = "u32"
 source = "spec"
 anchor = "an LP-UTF16 Design entity ID begins at offset 130 from the indexed header"
+
+[[record]]
+name = "surface_delete_face_wide_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "wide surface-delete prologue"
+size = 132
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/feature_project/delete_face.rs"
+
+[[record.gap]]
+offset = 0
+size = 128
+note = "Indexed scope header and operation prologue; control semantics are tracked in DR-464."
+
+[[record.field]]
+name = "reference_count"
+offset = 128
+type = "u32"
+source = "spec"
+anchor = "which is 123, 127, 128, 131, 134, 138, or 142"

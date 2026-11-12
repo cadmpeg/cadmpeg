@@ -2301,3 +2301,13 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The projected z=0 target and a signed displacement of magnitude 1.5 mm give termination planes at z=-1.5 or z=+1.5 mm. The transition terminates at z=18.5 mm. The z=20 candidate gives that plane with a displacement of -1.5 mm along `+Z`.
 
 **Note.** The transition travels along `+Z` and agrees with direction reversal `0`. The decoder source property `extrude_to_distance = 7.5` equals the start-plane offset in this transition.
+
+### DR-464. Controls of the wider SurfaceDeleteFace prologue
+
+**Question.** Which settings do the controls before the ordered-reference count of the wide surface-delete prologue encode?
+
+**Known.** `f3d.md` §3.1 "Unhealed surface-face removal" defines the ordered-reference partition. The scope names one role-`0x10` face group followed by its ordered members. Its fixed tail uses the common parameter-scope grammar. The wider prologue precedes the same reference partition.
+
+**Need.** Saves that change one face-deletion setting at a time and identify the corresponding prologue control.
+
+**Note.** The decoder reads the group as an unhealed face deletion and records `feature.surface-delete-face-wide-prologue-assumed`.

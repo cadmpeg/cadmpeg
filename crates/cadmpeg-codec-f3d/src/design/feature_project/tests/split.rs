@@ -215,9 +215,14 @@ fn delete_face_falls_back_to_group_id() {
         })
         .unwrap();
     let selected = group(77, 0, 100, vec![200], DesignOperandRole::ROLE_0X10);
-    let definition = project_delete_face(&scope, std::slice::from_ref(&selected), &[])
-        .unwrap()
-        .unwrap();
+    let definition = project_delete_face(
+        &scope,
+        std::slice::from_ref(&selected),
+        &[],
+        &mut Vec::new(),
+    )
+    .unwrap()
+    .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
@@ -237,9 +242,14 @@ fn delete_face_falls_back_to_group_id() {
             })
             .unwrap();
         assert_eq!(
-            project_delete_face(&longer, std::slice::from_ref(&selected), &[])
-                .unwrap()
-                .is_some(),
+            project_delete_face(
+                &longer,
+                std::slice::from_ref(&selected),
+                &[],
+                &mut Vec::new()
+            )
+            .unwrap()
+            .is_some(),
             admitted
         );
     }
@@ -261,9 +271,14 @@ fn delete_face_falls_back_to_group_id() {
             })
             .unwrap();
         assert_eq!(
-            project_delete_face(&legacy, std::slice::from_ref(&selected), &[])
-                .unwrap()
-                .is_some(),
+            project_delete_face(
+                &legacy,
+                std::slice::from_ref(&selected),
+                &[],
+                &mut Vec::new()
+            )
+            .unwrap()
+            .is_some(),
             admitted
         );
     }
@@ -277,11 +292,14 @@ fn delete_face_falls_back_to_group_id() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(
-        project_delete_face(&extended, std::slice::from_ref(&selected), &[])
-            .unwrap()
-            .is_some()
-    );
+    assert!(project_delete_face(
+        &extended,
+        std::slice::from_ref(&selected),
+        &[],
+        &mut Vec::new()
+    )
+    .unwrap()
+    .is_some());
 }
 
 #[test]
@@ -313,9 +331,13 @@ fn delete_face_with_typed_references_projects() {
     };
     let selected = group(77, 0, 100, vec![200], DesignOperandRole::ROLE_0X10);
     for (count_offset, admitted) in [(163, true), (167, true), (159, false)] {
-        let projected =
-            project_delete_face(&scope(count_offset), std::slice::from_ref(&selected), &[])
-                .unwrap();
+        let projected = project_delete_face(
+            &scope(count_offset),
+            std::slice::from_ref(&selected),
+            &[],
+            &mut Vec::new(),
+        )
+        .unwrap();
         assert_eq!(
             matches!(
                 projected,
@@ -355,9 +377,14 @@ fn surface_delete_face_layouts_project_with_other_class_tags() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let definition = project_delete_face(&scope, std::slice::from_ref(&selected), &[])
-            .unwrap()
-            .unwrap();
+        let definition = project_delete_face(
+            &scope,
+            std::slice::from_ref(&selected),
+            &[],
+            &mut Vec::new(),
+        )
+        .unwrap()
+        .unwrap();
         assert!(matches!(
             definition,
             FeatureDefinition::Operation(FeatureOperation::DeleteFace {
@@ -377,8 +404,9 @@ fn surface_delete_face_checks_count_position_kind_position_and_tail() {
         (134, 77, true),
         (138, 77, true),
         (142, 77, true),
-        (123, 76, false),
-        (128, 77, false),
+        (123, 76, true),
+        (123, 75, false),
+        (128, 77, true),
     ] {
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:scope#77",
@@ -397,18 +425,26 @@ fn surface_delete_face_checks_count_position_kind_position_and_tail() {
             })
             .unwrap();
         assert_eq!(
-            project_delete_face(&scope, std::slice::from_ref(&selected), &[])
-                .unwrap()
-                .is_some(),
+            project_delete_face(
+                &scope,
+                std::slice::from_ref(&selected),
+                &[],
+                &mut Vec::new()
+            )
+            .unwrap()
+            .is_some(),
             admitted
         );
         if count_offset == 123 && tail_length == 77 {
             scope.set_fixture_kind_offset(scope.kind_offset() + 9);
-            assert!(
-                project_delete_face(&scope, std::slice::from_ref(&selected), &[])
-                    .unwrap()
-                    .is_none()
-            );
+            assert!(project_delete_face(
+                &scope,
+                std::slice::from_ref(&selected),
+                &[],
+                &mut Vec::new()
+            )
+            .unwrap()
+            .is_none());
         }
     }
 }

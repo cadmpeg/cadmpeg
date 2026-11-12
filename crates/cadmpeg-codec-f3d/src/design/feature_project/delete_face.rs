@@ -47,6 +47,7 @@ pub(super) fn project_delete_face(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
@@ -57,12 +58,23 @@ pub(super) fn project_delete_face(
         let (count_offset, tail_length) = or_none!(face_scope_frame(scope));
         let heal = match scope.kind_name() {
             "DeleteFace" if matches!(count_offset, 123 | 127 | 131) => true,
-            "SurfaceDeleteFace" if matches!(count_offset, 123 | 127 | 131 | 134 | 138 | 142) => {
+            "SurfaceDeleteFace"
+                if matches!(count_offset, 123 | 127 | 128 | 131 | 134 | 138 | 142) =>
+            {
                 false
             }
             _ => return Ok(None),
         };
-        if !matches!(tail_length, 77 | 78) {
+        let label_bytes = u64::try_from(
+            scope
+                .label
+                .as_ref()
+                .map_or(0, |label| label.value.encode_utf16().count()),
+        )
+        .ok()
+        .and_then(|units| units.checked_mul(2));
+        let tail_length = or_none!(label_bytes.and_then(|bytes| tail_length.checked_sub(bytes)));
+        if !matches!(tail_length, 76 | 77 | 78) {
             return Ok(None);
         }
         heal
@@ -108,6 +120,16 @@ pub(super) fn project_delete_face(
         Some(faces) => faces,
         None => FaceSelection::Native(group.id.clone()),
     };
+    if !heal
+        && scope
+            .reference_count_offset()
+            .checked_sub(scope.byte_offset())
+            == u64::try_from(crate::layout::surface_delete_face_wide_prologue::REFERENCE_COUNT).ok()
+    {
+        losses.push(crate::loss::F3dLossCode::SurfaceDeleteFaceWidePrologueAssumed.note(format!(
+            "SurfaceDeleteFace {} treats the wider prologue as preserving unhealed deletion of its role-0x10 face group.", scope.id
+        )));
+    }
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::DeleteFace { faces, heal },
     )))

@@ -9997,6 +9997,21 @@ Unstated regions:
 - `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
 - `11..130` (119 B): The specification states no field in this range.
 
+## `surface_delete_face_wide_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 132 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/feature_project/delete_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 128 | 4 | `reference_count` | `u32` | little | spec | which is 123, 127, 128, 131, 134, 138, or 142 |
+
+Unstated regions:
+
+- `0..128` (128 B): Indexed scope header and operation prologue; control semantics are tracked in DR-464.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
