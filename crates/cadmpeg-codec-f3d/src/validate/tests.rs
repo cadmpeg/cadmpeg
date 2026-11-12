@@ -67,6 +67,7 @@ fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
         selector: 1,
         selector_offset: 20,
         token: "3".into(),
+        token_integer: 0,
         token_offset: 28,
         design_reference: 329,
         design_reference_offset: 37,

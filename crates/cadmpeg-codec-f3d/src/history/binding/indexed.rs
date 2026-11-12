@@ -214,6 +214,7 @@ mod tests {
             entity_ref: 1,
             selector: 7,
             token: "face".into(),
+            token_integer: 0,
             design_references: vec![8],
             ordinal,
         };

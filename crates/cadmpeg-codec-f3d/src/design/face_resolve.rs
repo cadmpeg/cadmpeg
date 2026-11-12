@@ -842,6 +842,7 @@ fn loft_edge_profile_face_slot(
                 .filter(|candidate| {
                     candidate.selector == reference.selector
                         && candidate.token == reference.token
+                        && candidate.token_integer == reference.token_integer
                         && candidate.design_reference == reference.design_reference
                         && candidate.candidate_faces.len() == 1
                         && candidate.alternate_selector_faces.is_empty()
@@ -856,6 +857,7 @@ fn loft_edge_profile_face_slot(
                 != (
                     reference.selector,
                     &reference.token,
+                    reference.token_integer,
                     reference.design_reference,
                 )
             {
@@ -865,11 +867,12 @@ fn loft_edge_profile_face_slot(
             common_clause = Some((
                 reference.selector,
                 &reference.token,
+                reference.token_integer,
                 reference.design_reference,
             ));
         }
     }
-    let (selector, token, design_reference) = common_clause?;
+    let (selector, token, token_integer, design_reference) = common_clause?;
     let mut evidence = None;
     for operand in operands {
         let (candidate, slot, count) = (|| {
@@ -888,6 +891,7 @@ fn loft_edge_profile_face_slot(
                 .filter(|(_, reference)| {
                     reference.selector == selector
                         && reference.token == *token
+                        && reference.token_integer == token_integer
                         && reference.design_reference == design_reference
                         && reference.candidate_faces.len() == 1
                         && reference.alternate_selector_faces.is_empty()
@@ -2886,6 +2890,7 @@ mod tests {
             selector: 1,
             selector_offset: 0,
             token: token.into(),
+            token_integer: 0,
             token_offset: 0,
             design_reference,
             design_reference_offset: 0,
