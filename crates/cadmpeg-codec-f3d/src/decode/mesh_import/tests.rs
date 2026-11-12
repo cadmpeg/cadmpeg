@@ -144,7 +144,11 @@ fn imports_without_native_scopes_retain_typed_originating_features() {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
     let archive = zip.finish().unwrap().into_inner();
-    for native_ref in [None, Some(" ".to_owned())] {
+    for native_ref in [
+        None,
+        Some(" ".to_owned()),
+        Some("f3d:Synthetic/BulkStream.dat:design-parameter-scope#7".to_owned()),
+    ] {
         let mut feature = import_feature(native_ref);
         let mut losses = Vec::new();
         let selection = crate::test_support::zip_test::with_scan(&archive, |scan| {
