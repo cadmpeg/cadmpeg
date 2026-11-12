@@ -7648,8 +7648,6 @@ pub(crate) mod cut_paste_prefix {
     pub(crate) const REMOVAL_REFERENCE: usize = 21;
     /// Offset of `relation_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const RELATION_REFERENCE: usize = 59;
-    /// Offset of `placement_flag` (`u8`). Spec §3.1.
-    pub(crate) const PLACEMENT_FLAG: usize = 70;
     /// Offset of `identity_flag` (`u8`). Spec §3.1.
     pub(crate) const IDENTITY_FLAG: usize = 71;
 }

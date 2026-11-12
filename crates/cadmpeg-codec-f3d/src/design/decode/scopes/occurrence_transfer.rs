@@ -147,99 +147,16 @@ struct CopyPastePrefix {
     progress: u8,
 }
 
-pub(super) struct CompactCopyPastePrefix {
-    relation_record_index: u32,
-    source_at: usize,
-    source_transform: SketchPlacementMatrix,
-    target_at: usize,
-    target_transform: SketchPlacementMatrix,
-    pub(super) table_at: usize,
-}
-
-/// Read the compact `CopyPaste` prefix, or its form with four more prologue
-/// zero bytes, through its one-member reference table.
-pub(super) fn compact_copy_paste_prefix(
-    bytes: &[u8],
-    start: usize,
-) -> Option<CompactCopyPastePrefix> {
-    let prefix = copy_paste_prefix(bytes, start)?;
-    let source_at = prefix.source_matrix_at?;
-    let source_transform = prefix.source_transform?;
-    let target_at = prefix.target_matrix_at?;
-    let target_transform = prefix.target_transform?;
-    Some(CompactCopyPastePrefix {
-        relation_record_index: prefix.relation_record_index?,
-        source_at,
-        source_transform,
-        target_at,
-        target_transform,
-        table_at: prefix.table_at?,
-    })
-}
-
 pub(super) fn copy_paste_prefix_table(bytes: &[u8], start: usize) -> Option<usize> {
     copy_paste_prefix(bytes, start)?.table_at
 }
 
 pub(super) fn cut_paste_prefix_table(bytes: &[u8], start: usize) -> Option<usize> {
-    let mut candidates = [0, 4]
-        .into_iter()
-        .filter_map(|shift| cut_paste_prefix_table_with_shift(bytes, start, shift));
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
-}
-
-fn cut_paste_prefix_table_with_shift(bytes: &[u8], start: usize, shift: usize) -> Option<usize> {
-    let mut view = View::over_retained(bytes);
-    view.seek(start.checked_add(indexed_header::LEN)?)?;
-    zeros(
-        &mut view,
-        cut_prefix::REMOVAL_REFERENCE - indexed_header::LEN - usize::from(shift != 0),
-    )?;
-    if shift != 0 {
-        if view.u8()? != 1 {
-            return None;
-        }
-        zeros(&mut view, 4)?;
-    }
-    if view.position() != start.checked_add(cut_prefix::REMOVAL_REFERENCE + shift)? {
+    let prefix = partial_cut_paste_prefix(bytes, start, None);
+    if !prefix.complete {
         return None;
     }
-    reference(&mut view)?;
-    reference(&mut view)?;
-    if view.u8()? != 1 {
-        return None;
-    }
-    reference(&mut view)?;
-    zeros(&mut view, 4)?;
-    if view.position() != start.checked_add(cut_prefix::RELATION_REFERENCE + shift)? {
-        return None;
-    }
-    let relation = reference(&mut view)?;
-    if view.position() != start.checked_add(cut_prefix::PLACEMENT_FLAG + shift)? {
-        return None;
-    }
-    if view.u8()? != 1 {
-        return None;
-    }
-    if view.position() != start.checked_add(cut_prefix::IDENTITY_FLAG + shift)? {
-        return None;
-    }
-    match view.u8()? {
-        1 => {}
-        0 => {
-            view.take(128)?;
-        }
-        _ => return None,
-    }
-    let (_, after_key) = lp_utf16_bounded(bytes, view.position(), 36..=36)?;
-    view.seek(after_key)?;
-    zeros(&mut view, 3)?;
-    let table_at = view.position();
-    if view.u32_le()? != 1 || reference(&mut view)? != relation {
-        return None;
-    }
-    Some(table_at)
+    prefix.table_at
 }
 
 fn copy_paste_prefix(bytes: &[u8], start: usize) -> Option<CopyPastePrefix> {
@@ -609,17 +526,17 @@ pub(super) fn exact_occurrence_transfer(
         )
     } else {
         let paired_at = usize::try_from(scope.paired_byte_offset()).ok()?;
-        let prefix = compact_copy_paste_prefix(bytes.get(..paired_at)?, start)?;
-        if prefix.relation_record_index != relation_index {
+        let prefix = copy_paste_prefix(bytes.get(..paired_at)?, start)?;
+        if prefix.relation_record_index != Some(relation_index) {
             return None;
         }
-        view.seek(prefix.table_at)?;
+        view.seek(prefix.table_at?)?;
         (
-            prefix.target_transform,
-            Some(u64::try_from(prefix.target_at).ok()?),
+            prefix.target_transform?,
+            Some(u64::try_from(prefix.target_matrix_at?).ok()?),
             DesignOccurrenceTransferSource::Copy {
-                source_transform: prefix.source_transform,
-                source_transform_offset: u64::try_from(prefix.source_at).ok()?,
+                source_transform: prefix.source_transform?,
+                source_transform_offset: u64::try_from(prefix.source_matrix_at?).ok()?,
             },
         )
     };
