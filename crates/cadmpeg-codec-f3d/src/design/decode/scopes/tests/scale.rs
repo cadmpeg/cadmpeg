@@ -236,7 +236,7 @@ fn matrix_scale_names_nonzero_prologue_word_assumption() {
             .is_some()
     );
     assert_eq!(losses, vec![crate::loss::F3dLossCode::FeatureScaleMatrixWordAssumed.note(
-        "generated:scale#100 stores word 0x00000007 in its matrix Scale prologue; the Scale assumes that the word leaves the stored matrix unchanged (DR-463)."
+        "generated:scale#100 stores word 0x00000007 in its matrix Scale prologue; the Scale assumes that the word leaves the stored matrix unchanged (DR-465)."
     )]);
 }
 

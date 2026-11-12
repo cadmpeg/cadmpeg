@@ -879,7 +879,7 @@ pub(super) fn exact_scale_operation(
             if word != 0 {
                 losses.push(crate::loss::F3dLossCode::FeatureScaleMatrixWordAssumed.note(
                     format!(
-                        "{} stores word {word:#010x} in its matrix Scale prologue; the Scale assumes that the word leaves the stored matrix unchanged (DR-463).",
+                        "{} stores word {word:#010x} in its matrix Scale prologue; the Scale assumes that the word leaves the stored matrix unchanged (DR-465).",
                         scope.id
                     ),
                 ));

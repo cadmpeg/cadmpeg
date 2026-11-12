@@ -2302,7 +2302,7 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The transition travels along `+Z` and agrees with direction reversal `0`. The decoder source property `extrude_to_distance = 7.5` equals the start-plane offset in this transition.
 
-### DR-463. Matrix Scale prologue word
+### DR-465. Matrix Scale prologue word
 
 **Question.** What does a nonzero matrix Scale prologue word control?
 
