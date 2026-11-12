@@ -489,6 +489,9 @@ pub(crate) enum F3dLossCode {
     FeatureTrimMemberTypeAssumed,
     /// An Extrude bounded-face operand drops fallback faces that one recipe operand contradicts.
     FeatureFaceOperandFallbackContradicted,
+    /// An Extrude to-face termination keeps its native group: its recipe face and
+    /// the derived preceding-face set disagree and no stored cap decides.
+    FeatureExtrudeTargetDisputed,
     /// Edge-treatment selections retain native recipes; no historical edge.
     FeatureEdgeSelectionNative,
     /// Edge-treatment operands stay unresolved inside historical selections.
@@ -900,6 +903,7 @@ impl F3dLossCode {
         Self::FeatureTrimCellTableNative,
         Self::FeatureTrimMemberTypeAssumed,
         Self::FeatureFaceOperandFallbackContradicted,
+        Self::FeatureExtrudeTargetDisputed,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
         Self::FeatureEdgeSelectionLost,
@@ -1279,6 +1283,7 @@ impl F3dLossCode {
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
             Self::FeatureTrimMemberTypeAssumed => "feature.trim-member-type-assumed",
+            Self::FeatureExtrudeTargetDisputed => "feature.extrude-target-disputed",
             Self::FeatureFaceOperandFallbackContradicted => {
                 "feature.face-operand-fallback-contradicted"
             }
@@ -1638,6 +1643,7 @@ impl F3dLossCode {
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
             | Self::FeatureFaceOperandFallbackContradicted
+            | Self::FeatureExtrudeTargetDisputed
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
@@ -1921,6 +1927,7 @@ impl F3dLossCode {
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
             | Self::FeatureFaceOperandFallbackContradicted
+            | Self::FeatureExtrudeTargetDisputed
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
@@ -2287,6 +2294,7 @@ mod tests {
                 "feature.trim-cell-table-native",
                 "feature.trim-member-type-assumed",
                 "feature.face-operand-fallback-contradicted",
+                "feature.extrude-target-disputed",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",
                 "feature.edge-selection-lost",

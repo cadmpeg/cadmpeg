@@ -480,6 +480,18 @@ fn extrude_target_geometry_requires_one_forward_parallel_plane() {
     assert_eq!(candidate(&[1, 3, 4]), Some(face(1)));
     assert!(candidate(&[1, 2, 3, 4]).is_none());
     assert!(candidate(&[3, 4]).is_none());
+
+    let mut operands = [target_plane_operand(&[1])];
+    operands[0].recipe_references = vec![super::reference(3, "selected", 201)];
+    let resolution = ExtrudeFaceResolution {
+        faces: &faces,
+        surfaces: &surfaces,
+        groups: &[],
+        operands: &mut operands,
+        linear_tolerance: TARGET_LINEAR_TOLERANCE,
+        angular_tolerance: TARGET_ANGULAR_TOLERANCE,
+    };
+    assert!(extrude_target_plane_candidate(&group, &resolution, origin, sweep_direction).is_none());
 }
 
 fn extrude_root_fixture() -> (DesignParameterScope, [DesignConstructionOperandGroup; 2]) {

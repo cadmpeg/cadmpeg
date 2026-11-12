@@ -1060,6 +1060,19 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &model.sketch_entities,
         ),
     );
+    losses.extend(crate::history::extrude_target::bind(
+        &mut model.features,
+        &model.sketches,
+        &mut crate::history::extrude_target::Inputs {
+            scopes: &design.design_parameter_scopes,
+            groups: &design.design_construction_operand_groups,
+            operands: &mut design.design_face_operands,
+            histories: &design.asm_histories,
+            scope_histories: &scope_histories,
+            linear_tolerance: geometry.tolerances.linear.get(),
+            angular_tolerance: geometry.tolerances.angular.get(),
+        },
+    ));
     if matches!(geometry.path, DesignPath::Geometry) {
         crate::history::discard_projection_caches(&mut design.asm_histories);
     }

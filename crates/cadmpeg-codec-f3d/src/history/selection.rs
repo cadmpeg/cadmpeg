@@ -354,6 +354,19 @@ pub(super) fn bind_face_selection(
         if matches.next().is_some() {
             return;
         }
+        let termination = group.extrude_face_role()
+            == Some(
+                crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
+            );
+        if termination && !operand.resolved_face_slots.is_empty() {
+            for slot in &operand.resolved_face_slots {
+                let candidate = crate::ids::brep_face_id(*slot);
+                if !faces.contains(&candidate) {
+                    faces.push(candidate);
+                }
+            }
+            continue;
+        }
         let previous_candidates = &operand.preceding_candidate_faces;
         let candidate = match previous_candidates.as_slice() {
             [face] => face,
@@ -364,6 +377,21 @@ pub(super) fn bind_face_selection(
                 face
             }
         };
+        if termination {
+            let referenced: HashSet<_> = operand
+                .recipe_references
+                .iter()
+                .flat_map(|reference| {
+                    reference
+                        .candidate_faces
+                        .iter()
+                        .chain(&reference.alternate_selector_faces)
+                })
+                .collect();
+            if !referenced.is_empty() && !referenced.contains(candidate) {
+                return;
+            }
+        }
         if faces.contains(candidate) {
             continue;
         }
