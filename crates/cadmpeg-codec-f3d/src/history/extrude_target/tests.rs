@@ -50,6 +50,7 @@ fn fixture() -> (
         selector: 1,
         selector_offset: 0,
         token: "2".into(),
+        token_integer: 0,
         token_offset: 0,
         design_reference: 305,
         design_reference_offset: 0,
