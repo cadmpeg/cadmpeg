@@ -16,10 +16,11 @@ const STREAM: &str = "f3d:Design/BulkStream.dat";
 const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:design-parameter-scope#0";
 
 #[test]
-fn plain_scope_starts_its_operation_at_24_or_28() {
-    assert!(direct_extrude_operation_valid(100, false, 124));
-    assert!(direct_extrude_operation_valid(100, false, 128));
-    for operation in [122, 123, 125, 126, 127, 129] {
+fn plain_scope_starts_its_operation_at_24_26_27_or_28() {
+    for operation in [124, 126, 127, 128] {
+        assert!(direct_extrude_operation_valid(100, false, operation));
+    }
+    for operation in [122, 123, 125, 129] {
         assert!(!direct_extrude_operation_valid(100, false, operation));
     }
 }
@@ -100,10 +101,10 @@ fn has_invalid_frame(scope: DesignParameterScope) -> bool {
 }
 
 #[test]
-fn plain_scope_frame_admits_operation_at_24_or_28() {
+fn plain_scope_frame_rejects_operation_at_22_or_25() {
     assert!(!has_invalid_frame(plain_one_sided_scope(24)));
     assert!(!has_invalid_frame(plain_one_sided_scope(28)));
-    for operation_offset in [22, 26] {
+    for operation_offset in [22, 25] {
         assert!(has_invalid_frame(plain_one_sided_scope(operation_offset)));
     }
 }
@@ -173,6 +174,7 @@ fn class_349_reference_aware_prefix_keeps_its_frame_rule() {
                     *reference = Some(DesignExtrudePrologueReference {
                         record_index: 11,
                         record_index_offset: 26,
+                        type_guid: None,
                         trailing_zero_count: 7,
                         operation_prefix_marker_offset: None,
                     });

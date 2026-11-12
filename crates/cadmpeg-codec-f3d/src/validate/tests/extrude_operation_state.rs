@@ -59,7 +59,7 @@ fn conflicts(native: &crate::native::F3dNative) -> bool {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_extrude_parameter_operands(&ctx, &mut findings);
+        super::super::extrude_operands::validate_extrude_parameter_operands(&ctx, &mut findings);
         findings.iter().any(|finding| finding.message == CONFLICT)
     })
 }

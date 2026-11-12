@@ -275,6 +275,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     crate::design::decode::operands::assign_extrude_face_roles(
         &from_face_scope,
         std::slice::from_mut(&mut start_face),
+        None,
     );
     assert_eq!(
         start_face.extrude_role(),
@@ -324,6 +325,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     crate::design::decode::operands::assign_extrude_face_roles(
         &to_face_scope,
         std::slice::from_mut(&mut legacy_to_face),
+        None,
     );
     assert_eq!(
         legacy_to_face.extrude_role(),
@@ -331,6 +333,61 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignExtrudeFaceRole::Termination
         ))
     );
+
+    let face_start_to_face = |seventh_slot_record_index: Option<u32>| {
+        let mut scope = from_face_scope.clone();
+        if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
+            scope.payload_mut()
+        {
+            slot.get_or_insert_with(Default::default).extrude_prologue =
+                Some(DesignExtrudePrologue::ReferenceAware {
+                    reference: None,
+                    operation: DesignExtrudeOperation::Cut,
+                    operation_offset: 1028,
+                    direction_face_extend_values: [1, 2],
+                    side_extent_discriminators: [2, 0],
+                    side_extent_discriminator_offsets: [1077, 1090],
+                    first_side_target_ordinal: None,
+                    distance_tail: None,
+                    extent: DesignExtrudeExtent::OneSidedToFace,
+                    direction_face_extend_offsets: [1032, 1036],
+                    direction_reversed: false,
+                    direction_reversed_offset: 1040,
+                    solid_operation: true,
+                    solid_operation_offset: 1041,
+                    start: DesignExtrudeStart::FromFace,
+                    start_offset: 1042,
+                });
+        }
+        let mut group = parse_construction_operand_group(
+            &start_face_bytes,
+            &scope,
+            0,
+            &RecordFrame::from(&record),
+        )
+        .complete()
+        .expect("counted Extrude face group");
+        crate::design::decode::operands::assign_extrude_face_roles(
+            &scope,
+            std::slice::from_mut(&mut group),
+            seventh_slot_record_index,
+        );
+        group.extrude_role()
+    };
+    assert_eq!(
+        face_start_to_face(Some(start_face.record_index)),
+        Some(DesignExtrudeOperandRole::Faces(
+            DesignExtrudeFaceRole::Termination
+        ))
+    );
+    for seventh_slot_record_index in [None, Some(start_face.record_index + 1)] {
+        assert_eq!(
+            face_start_to_face(seventh_slot_record_index),
+            Some(DesignExtrudeOperandRole::Faces(
+                DesignExtrudeFaceRole::Start
+            ))
+        );
+    }
 
     let tail_at = 11 + 10 + 4 + 2 * 11;
     let mut flagless = bytes[..tail_at + 62].to_vec();
@@ -497,6 +554,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     crate::design::decode::operands::assign_extrude_face_roles(
         &scope,
         std::slice::from_mut(&mut auxiliary),
+        None,
     );
     assert_eq!(
         auxiliary.extrude_role(),

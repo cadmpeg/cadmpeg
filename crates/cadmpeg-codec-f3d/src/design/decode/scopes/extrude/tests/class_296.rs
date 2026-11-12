@@ -114,13 +114,13 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
         .copy_from_slice(&1u32.to_le_bytes());
     assert!(parse(&invalid_side, "296").extrude_prologue().is_none());
 
-    let mut invalid_pair = make_bytes(473, 10);
-    invalid_pair[473 + 4..473 + 7].copy_from_slice(b"260");
-    assert!(parse(&invalid_pair, "296").extrude_prologue().is_none());
+    let mut alternate_pair = make_bytes(473, 10);
+    alternate_pair[473 + 4..473 + 7].copy_from_slice(b"260");
+    assert!(parse(&alternate_pair, "296").extrude_prologue().is_some());
 
     assert!(parse(&make_bytes(462, 9), "414")
         .extrude_prologue()
-        .is_none());
+        .is_some());
 }
 
 #[test]
@@ -391,8 +391,7 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
 
 #[test]
 fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
-    use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_54 as scalar_54;
-    use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_70 as scalar_70;
+    use crate::layout::class_296_261_legacy_extrude_prefix as prefix;
     use crate::layout::class_296_261_legacy_one_sided_distance_tail as distance_tail;
     use crate::layout::class_296_261_legacy_one_sided_to_face_tail as to_face_tail;
 
@@ -412,32 +411,28 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
                  slot_references: [u32; 4],
                  face_extend: u32,
                  first_extent: u32,
-                 scalar_offset: usize,
-                 scalar_value: f64,
+                 normal_component: usize,
+                 normal_value: f64,
                  direction_reversed: u8| {
         let mut bytes = vec![0; reference_count_offset + 4];
         bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
         bytes[4..7].copy_from_slice(b"296");
         bytes[7..11].copy_from_slice(&RECORD_INDEX.to_le_bytes());
-        bytes[scalar_54::PREFIX_CONSTANT..scalar_54::PREFIX_CONSTANT + 4]
+        bytes[prefix::PREFIX_CONSTANT..prefix::PREFIX_CONSTANT + 4]
             .copy_from_slice(&1u32.to_le_bytes());
-        bytes[scalar_54::REFERENCE] = 1;
-        bytes[scalar_54::REFERENCE + 1..scalar_54::REFERENCE + 5]
+        bytes[prefix::REFERENCE] = 1;
+        bytes[prefix::REFERENCE + 1..prefix::REFERENCE + 5]
             .copy_from_slice(&reference_members[0].to_le_bytes());
-        bytes[scalar_54::OPERATION..scalar_54::OPERATION + 4].copy_from_slice(&2u32.to_le_bytes());
-        bytes[scalar_54::DIRECTION..scalar_54::DIRECTION + 4].copy_from_slice(&1u32.to_le_bytes());
-        bytes[scalar_54::FACE_EXTEND..scalar_54::FACE_EXTEND + 4]
+        bytes[prefix::OPERATION..prefix::OPERATION + 4].copy_from_slice(&2u32.to_le_bytes());
+        bytes[prefix::DIRECTION..prefix::DIRECTION + 4].copy_from_slice(&1u32.to_le_bytes());
+        bytes[prefix::FACE_EXTEND..prefix::FACE_EXTEND + 4]
             .copy_from_slice(&face_extend.to_le_bytes());
-        bytes[scalar_54::DIRECTION_REVERSED] = direction_reversed;
-        bytes[scalar_54::GEOMETRY_KIND] = 1;
-        bytes[scalar_54::START_SUPPORT] = 2;
-        bytes[scalar_54::PROFILE_SCALAR_AT_54..scalar_54::PROFILE_SCALAR_AT_54 + 8]
-            .copy_from_slice(&0.0f64.to_le_bytes());
-        bytes[scalar_70::PROFILE_SCALAR_AT_70..scalar_70::PROFILE_SCALAR_AT_70 + 8]
-            .copy_from_slice(&0.0f64.to_le_bytes());
-        bytes[scalar_offset..scalar_offset + 8].copy_from_slice(&scalar_value.to_le_bytes());
+        bytes[prefix::DIRECTION_REVERSED] = direction_reversed;
+        bytes[prefix::GEOMETRY_KIND] = 1;
+        bytes[prefix::START_SUPPORT] = 2;
+        bytes[normal_component..normal_component + 8].copy_from_slice(&normal_value.to_le_bytes());
 
-        let mut slot_offset = scalar_54::REFERENCE_SLOTS;
+        let mut slot_offset = prefix::REFERENCE_SLOTS;
         let mut slot_reference = slot_references.into_iter();
         for expected_present in slot_presence {
             if expected_present {
@@ -449,8 +444,8 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
                 slot_offset += 1;
             }
         }
-        assert_eq!(slot_offset, scalar_54::FIRST_SIDE_EXTENT);
-        bytes[scalar_54::FIRST_SIDE_EXTENT..scalar_54::FIRST_SIDE_EXTENT + 4]
+        assert_eq!(slot_offset, prefix::FIRST_SIDE_EXTENT);
+        bytes[prefix::FIRST_SIDE_EXTENT..prefix::FIRST_SIDE_EXTENT + 4]
             .copy_from_slice(&first_extent.to_le_bytes());
         bytes[reference_count_offset - 4..reference_count_offset]
             .copy_from_slice(&0u32.to_le_bytes());
@@ -528,7 +523,7 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
             Some(DesignExtrudePrologue::LegacyShifted {
                 operation_prefix_marker_offset: None,
                 operation: DesignExtrudeOperation::Cut,
-                operation_offset: u64_from_index(scalar_54::OPERATION),
+                operation_offset: u64_from_index(prefix::OPERATION),
                 direction_face_extend_values: [1, face_extend],
                 side_extent_discriminators: [
                     if matches!(extent, DesignExtrudeExtent::OneSidedToFace) {
@@ -539,7 +534,7 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
                     0,
                 ],
                 side_extent_discriminator_offsets: [
-                    u64_from_index(scalar_54::FIRST_SIDE_EXTENT),
+                    u64_from_index(prefix::FIRST_SIDE_EXTENT),
                     if matches!(extent, DesignExtrudeExtent::OneSidedToFace) {
                         u64_from_index(to_face_tail::SECOND_SIDE_EXTENT)
                     } else {
@@ -548,20 +543,20 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
                 ],
                 extent: Some(extent),
                 direction_face_extend_offsets: [
-                    u64_from_index(scalar_54::DIRECTION),
-                    u64_from_index(scalar_54::FACE_EXTEND),
+                    u64_from_index(prefix::DIRECTION),
+                    u64_from_index(prefix::FACE_EXTEND),
                 ],
                 direction_reversed,
-                direction_reversed_offset: u64_from_index(scalar_54::DIRECTION_REVERSED),
+                direction_reversed_offset: u64_from_index(prefix::DIRECTION_REVERSED),
                 solid_operation: true,
-                solid_operation_offset: u64_from_index(scalar_54::GEOMETRY_KIND),
+                solid_operation_offset: u64_from_index(prefix::GEOMETRY_KIND),
                 start: DesignExtrudeStart::FromFace,
-                start_offset: u64_from_index(scalar_54::START_SUPPORT),
+                start_offset: u64_from_index(prefix::START_SUPPORT),
             })
         );
     };
 
-    let to_face_scalar_54 = build(
+    let to_face_normal_x = build(
         515,
         to_face_tail::REFERENCE_COUNT,
         &TO_FACE_REFERENCES,
@@ -574,12 +569,12 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
         ],
         1,
         2,
-        scalar_54::PROFILE_SCALAR_AT_54,
+        prefix::PROFILE_NORMAL,
         1.0,
         1,
     );
     assert_valid(
-        &to_face_scalar_54,
+        &to_face_normal_x,
         515,
         to_face_tail::REFERENCE_COUNT,
         &TO_FACE_REFERENCES,
@@ -588,7 +583,7 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
         true,
     );
 
-    let to_face_scalar_70 = build(
+    let to_face_normal_z = build(
         515,
         to_face_tail::REFERENCE_COUNT,
         &TO_FACE_REFERENCES,
@@ -601,12 +596,12 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
         ],
         1,
         2,
-        scalar_70::PROFILE_SCALAR_AT_70,
+        prefix::PROFILE_NORMAL + 16,
         1.0,
         0,
     );
     assert_valid(
-        &to_face_scalar_70,
+        &to_face_normal_z,
         515,
         to_face_tail::REFERENCE_COUNT,
         &TO_FACE_REFERENCES,
@@ -615,7 +610,7 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
         false,
     );
 
-    let distance_scalar_70 = build(
+    let distance_normal_z = build(
         483,
         distance_tail::REFERENCE_COUNT,
         &DISTANCE_REFERENCES,
@@ -628,12 +623,12 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
         ],
         2,
         1,
-        scalar_70::PROFILE_SCALAR_AT_70,
+        prefix::PROFILE_NORMAL + 16,
         -1.0,
         0,
     );
     assert_valid(
-        &distance_scalar_70,
+        &distance_normal_z,
         483,
         distance_tail::REFERENCE_COUNT,
         &DISTANCE_REFERENCES,
@@ -642,30 +637,60 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
         false,
     );
 
-    let mut invalid_profile = to_face_scalar_54.clone();
-    invalid_profile[scalar_54::PROFILE_SCALAR_AT_54..scalar_54::PROFILE_SCALAR_AT_54 + 8]
+    let distance_normal_y = build(
+        483,
+        distance_tail::REFERENCE_COUNT,
+        &DISTANCE_REFERENCES,
+        [true, false, true, true, false, true, false],
+        [
+            DISTANCE_REFERENCES[0],
+            DISTANCE_REFERENCES[2],
+            DISTANCE_REFERENCES[3],
+            DISTANCE_REFERENCES[5],
+        ],
+        2,
+        1,
+        62,
+        1.0,
+        0,
+    );
+    assert_valid(
+        &distance_normal_y,
+        483,
+        distance_tail::REFERENCE_COUNT,
+        &DISTANCE_REFERENCES,
+        DesignExtrudeExtent::OneSidedDistance,
+        2,
+        false,
+    );
+
+    let mut invalid_profile = to_face_normal_x.clone();
+    invalid_profile[prefix::PROFILE_NORMAL..prefix::PROFILE_NORMAL + 8]
         .copy_from_slice(&2.0f64.to_le_bytes());
     assert!(prologue(&invalid_profile).is_none());
 
-    let mut invalid_scalar_lane = to_face_scalar_54.clone();
-    invalid_scalar_lane[scalar_54::ZERO_AFTER_SCALAR_AT_54] = 1;
-    assert!(prologue(&invalid_scalar_lane).is_none());
+    let mut invalid_normal_length = to_face_normal_x.clone();
+    invalid_normal_length[62..70].copy_from_slice(&1.0f64.to_le_bytes());
+    assert!(prologue(&invalid_normal_length).is_none());
 
-    let mut invalid_slot = to_face_scalar_54.clone();
-    invalid_slot[scalar_54::REFERENCE_SLOTS] = 0;
+    let mut invalid_slot = to_face_normal_x.clone();
+    invalid_slot[prefix::REFERENCE_SLOTS] = 0;
     assert!(prologue(&invalid_slot).is_none());
 
-    let mut invalid_face_extend = to_face_scalar_54.clone();
-    invalid_face_extend[scalar_54::FACE_EXTEND..scalar_54::FACE_EXTEND + 4]
+    let mut invalid_face_extend = to_face_normal_x.clone();
+    invalid_face_extend[prefix::FACE_EXTEND..prefix::FACE_EXTEND + 4]
         .copy_from_slice(&2u32.to_le_bytes());
-    assert!(prologue(&invalid_face_extend).is_none());
+    assert!(!matches!(
+        prologue(&invalid_face_extend),
+        Some(DesignExtrudePrologue::LegacyShifted { .. })
+    ));
 
-    let mut invalid_reference_count = to_face_scalar_54.clone();
+    let mut invalid_reference_count = to_face_normal_x.clone();
     invalid_reference_count[to_face_tail::REFERENCE_COUNT..to_face_tail::REFERENCE_COUNT + 4]
         .copy_from_slice(&11u32.to_le_bytes());
     assert!(prologue(&invalid_reference_count).is_none());
 
-    let mut invalid_pair = to_face_scalar_54;
-    invalid_pair[515 + 4..515 + 7].copy_from_slice(b"260");
-    assert!(prologue(&invalid_pair).is_none());
+    let mut alternate_pair = to_face_normal_x;
+    alternate_pair[515 + 4..515 + 7].copy_from_slice(b"260");
+    assert!(prologue(&alternate_pair).is_some());
 }

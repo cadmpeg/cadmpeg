@@ -6,6 +6,7 @@ use crate::bytes::f64s_at;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::layout::typed_fixed_extrude_scalar_frame as typed_extrude_scalar;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -55,6 +56,55 @@ pub(super) fn exact_fixed_scalar(
 ) -> Option<FixedScalarFrame> {
     let mut candidates = records.frames(record_index).filter_map(|(start, end)| {
         let frame_length = end.checked_sub(start)?;
+        if frame_length == typed_extrude_scalar::LEN {
+            let owner = crate::bytes::typed_local_reference(
+                bytes,
+                start.checked_add(typed_extrude_scalar::OWNER_REFERENCE)?,
+            )?;
+            let parameter = crate::bytes::typed_local_reference(
+                bytes,
+                start.checked_add(typed_extrude_scalar::PARAMETER_REFERENCE)?,
+            )?;
+            let repeated_owner = crate::bytes::typed_local_reference(
+                bytes,
+                start.checked_add(typed_extrude_scalar::REPEATED_OWNER_REFERENCE)?,
+            )?;
+            let presentation = crate::bytes::typed_local_reference(
+                bytes,
+                start.checked_add(typed_extrude_scalar::PRESENTATION_REFERENCE)?,
+            )?;
+            let trailing_owner = crate::bytes::typed_local_reference(
+                bytes,
+                start.checked_add(typed_extrude_scalar::TRAILING_OWNER_REFERENCE)?,
+            )?;
+            if bytes.get(start + 11..start + 19) != Some(&[0; 8])
+                || bytes.get(start + 19..start + 24) != Some(&[1, 1, 0, 0, 0])
+                || owner.1 != "DD405BC2-D673-44F0-8833-5CB2A1C186C7"
+                || repeated_owner != owner
+                || trailing_owner != owner
+                || parameter.0 != record_index.checked_add(1)?
+                || parameter.1 != "7A6A3D31-BE74-4E19-9115-20642944C2E4"
+                || presentation.0 != record_index.checked_add(2)?
+                || !matches!(
+                    presentation.1,
+                    "6CCF41D5-40BE-48ED-A834-18F3EAED6C57" | "8C780195-72C0-4A56-A911-E43AB14357F2"
+                )
+                || bytes.get(
+                    start + typed_extrude_scalar::ZERO_RUN..start + typed_extrude_scalar::VALUE,
+                ) != Some(&[0; 4])
+            {
+                return None;
+            }
+            let value_offset = start.checked_add(typed_extrude_scalar::VALUE)?;
+            return Some(FixedScalarFrame {
+                start: u64::try_from(start).ok()?,
+                end: u64::try_from(end).ok()?,
+                owner_record_index: Some(owner.0),
+                ordinal: *bytes.get(start.checked_add(typed_extrude_scalar::ORDINAL)?)?,
+                value: FiniteReal::new(View::f64_le_at(bytes, value_offset)?)?,
+                value_offset: u64::try_from(value_offset).ok()?,
+            });
+        }
         matches!(frame_length, 100 | 103 | 104 | 105).then_some(())?;
         if frame_length == 100 || frame_length == 103 {
             let (_, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
@@ -114,5 +164,44 @@ pub(super) fn extrude_operation_at(bytes: &[u8], offset: usize) -> Option<Design
         3 => Some(DesignExtrudeOperation::Intersect),
         4 => Some(DesignExtrudeOperation::NewBody),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::exact_fixed_scalar;
+
+    #[test]
+    fn typed_fixed_scalar_keeps_its_owner_ordinal_and_value() {
+        let mut bytes = vec![0; 303];
+        bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+        bytes[4..7].copy_from_slice(b"326");
+        bytes[7..11].copy_from_slice(&30u32.to_le_bytes());
+        bytes[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+        let mut reference = |offset: usize, target: u64, guid: &[u8; 36]| {
+            bytes[offset] = 1;
+            bytes[offset + 1..offset + 9].copy_from_slice(&target.to_le_bytes());
+            bytes[offset + 9..offset + 13].copy_from_slice(&36u32.to_le_bytes());
+            bytes[offset + 13..offset + 49].copy_from_slice(guid);
+        };
+        reference(24, 10, b"DD405BC2-D673-44F0-8833-5CB2A1C186C7");
+        reference(88, 31, b"7A6A3D31-BE74-4E19-9115-20642944C2E4");
+        reference(147, 10, b"DD405BC2-D673-44F0-8833-5CB2A1C186C7");
+        reference(200, 32, b"6CCF41D5-40BE-48ED-A834-18F3EAED6C57");
+        reference(252, 10, b"DD405BC2-D673-44F0-8833-5CB2A1C186C7");
+        bytes[75] = 1;
+        bytes[80..88].copy_from_slice(&(-2.5f64).to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"260");
+        bytes.extend_from_slice(&30u32.to_le_bytes());
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let scalar = exact_fixed_scalar(&bytes, &records, 30).expect("typed fixed scalar");
+        assert_eq!(scalar.owner_record_index, Some(10));
+        assert_eq!(scalar.ordinal, 1);
+        assert_eq!(scalar.value.get(), -2.5);
+        assert_eq!(scalar.value_offset, 80);
+        bytes[265] = b'0';
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        assert!(exact_fixed_scalar(&bytes, &records, 30).is_none());
     }
 }

@@ -3,7 +3,7 @@ use crate::design::decode::operands::assign_extrude_face_roles;
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::face_resolve::resolved_body_recipe_shape;
-use crate::design::feature_project::project_extrude;
+use crate::design::feature_project::extrude::project_extrude;
 use crate::design::geometry::ProfileGeometryWork;
 use crate::design::profile_select::bind_extrude_profile_selections;
 use crate::design::test_support::parameter_owner_frame;
@@ -87,7 +87,13 @@ fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExt
                 DesignExtrudeExtent::TwoSidedToFaces => (2, [2, 0]),
                 DesignExtrudeExtent::TwoSidedDistance => (2, [1, 1]),
                 DesignExtrudeExtent::TwoSidedThroughAll => (2, [4, 4]),
-                DesignExtrudeExtent::TwoSidedDistanceToFace => (2, [1, 2]),
+                DesignExtrudeExtent::TwoSidedDistanceToFace
+                | DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne => (2, [1, 2]),
+                DesignExtrudeExtent::TwoSidedDistanceThroughAll => (2, [1, 4]),
+                DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero => (2, [2, 1]),
+                DesignExtrudeExtent::TwoSidedToTargetsOptionZero
+                | DesignExtrudeExtent::TwoSidedToTargetsOptionTwo => (2, [2, 2]),
+                DesignExtrudeExtent::TwoSidedThroughAllToFace => (2, [4, 2]),
                 DesignExtrudeExtent::SymmetricDistance => (3, [1, 0]),
                 DesignExtrudeExtent::SymmetricThroughAll => (3, [4, 4]),
             };
@@ -110,7 +116,13 @@ fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExt
                 DesignExtrudeExtent::TwoSidedToFaces => ([2, 0], [2, 0]),
                 DesignExtrudeExtent::TwoSidedDistance => ([2, 0], [1, 1]),
                 DesignExtrudeExtent::TwoSidedThroughAll => ([2, 0], [4, 4]),
-                DesignExtrudeExtent::TwoSidedDistanceToFace => ([2, 0], [1, 2]),
+                DesignExtrudeExtent::TwoSidedDistanceToFace
+                | DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne => ([2, 0], [1, 2]),
+                DesignExtrudeExtent::TwoSidedDistanceThroughAll => ([2, 0], [1, 4]),
+                DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero => ([2, 0], [2, 1]),
+                DesignExtrudeExtent::TwoSidedToTargetsOptionZero
+                | DesignExtrudeExtent::TwoSidedToTargetsOptionTwo => ([2, 0], [2, 2]),
+                DesignExtrudeExtent::TwoSidedThroughAllToFace => ([2, 0], [4, 2]),
                 DesignExtrudeExtent::SymmetricDistance => ([3, 0], [1, 0]),
                 DesignExtrudeExtent::SymmetricThroughAll => ([3, 0], [4, 4]),
             };
@@ -1360,7 +1372,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             };
         let mut ordered_faces = [face_group.clone(), face_group.clone()];
         set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
-        assign_extrude_face_roles(&scope, &mut ordered_faces);
+        assign_extrude_face_roles(&scope, &mut ordered_faces, None);
         assert_eq!(
             ordered_faces.map(|group| group.extrude_face_role()),
             [
@@ -1770,43 +1782,48 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         ));
         set_extrude_direction_reversed(&mut scope, false);
 
-        set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistanceToFace);
-        let mixed_two_sided = crate::test_support::with_decode_context(|decode_ctx| {
-            project_extrude(
-                decode_ctx,
-                &scope,
-                &[(0, &along), (1, &second_side_offset), (2, &side_two_taper)],
-                &[body_group.clone(), face_group.clone()],
-                &[],
-                std::slice::from_ref(&placement),
-                &[],
-            )
-        })
-        .expect("project the extrude feature")
-        .expect("typed mixed two-sided Extrude");
-        assert!(matches!(
-            mixed_two_sided,
-            FeatureDefinition::Operation(FeatureOperation::Extrude {
-                direction: ExtrudeDirection::ProfileNormal {},
-                extent: ExtrudeExtent::TwoSided {
-                    first: ExtrudeSide {
-                        termination: LinearTermination::Blind {
-                            length: actual_length
+        for extent in [
+            DesignExtrudeExtent::TwoSidedDistanceToFace,
+            DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne,
+        ] {
+            set_extrude_extent(&mut scope, extent);
+            let mixed_two_sided = crate::test_support::with_decode_context(|decode_ctx| {
+                project_extrude(
+                    decode_ctx,
+                    &scope,
+                    &[(0, &along), (1, &second_side_offset), (2, &side_two_taper)],
+                    &[body_group.clone(), face_group.clone()],
+                    &[],
+                    std::slice::from_ref(&placement),
+                    &[],
+                )
+            })
+            .expect("project the extrude feature")
+            .expect("typed mixed two-sided Extrude");
+            assert!(matches!(
+                mixed_two_sided,
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    direction: ExtrudeDirection::ProfileNormal {},
+                    extent: ExtrudeExtent::TwoSided {
+                        first: ExtrudeSide {
+                            termination: LinearTermination::Blind {
+                                length: actual_length
+                            },
+                            ..
                         },
-                        ..
-                    },
-                    second: ExtrudeSide {
-                        termination: LinearTermination::ToFace {
-                            face: FaceSelection::Native(ref id),
-                            offset: Some(actual_offset),
+                        second: ExtrudeSide {
+                            termination: LinearTermination::ToFace {
+                                face: FaceSelection::Native(ref id),
+                                offset: Some(actual_offset),
+                            },
+                            draft: Some(actual_draft),
+                            ..
                         },
-                        draft: Some(actual_draft),
-                        ..
                     },
-                },
-                ..
-            }) if (id == &face_group.id) && actual_length.get() == 5.5 && actual_offset.get() == 0.5 && actual_draft.get() == -0.3
-        ));
+                    ..
+                }) if (id == &face_group.id) && actual_length.get() == 5.5 && actual_offset.get() == 0.5 && actual_draft.get() == -0.3
+            ));
+        }
 
         set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
         set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);

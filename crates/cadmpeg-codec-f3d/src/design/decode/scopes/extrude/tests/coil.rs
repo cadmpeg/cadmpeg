@@ -224,6 +224,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                 crate::records::feature::extrude::DesignExtrudePrologueReference {
                     record_index: 77,
                     record_index_offset: 26,
+                    type_guid: None,
                     trailing_zero_count: 8,
                     operation_prefix_marker_offset: None,
                 }
@@ -271,6 +272,36 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::TwoSidedToFaces)
     );
+    let short_reference = scope(
+        "Extrude",
+        2,
+        (1, 2),
+        0,
+        1,
+        2,
+        Some(6),
+        false,
+        Some(((1, 0), false)),
+        None,
+        None,
+    );
+    let Some(DesignExtrudePrologue::ReferenceAware {
+        reference: Some(reference),
+        operation_offset,
+        ..
+    }) = short_reference.extrude_prologue()
+    else {
+        panic!("short referenced Extrude prologue");
+    };
+    assert_eq!(reference.record_index, 77);
+    assert_eq!(reference.trailing_zero_count, 6);
+    assert_eq!(operation_offset, 36);
+    let serialized = serde_json::to_value(reference).unwrap();
+    assert_eq!(serialized["trailing_zero_count"], 6);
+    let decoded: crate::records::feature::extrude::DesignExtrudePrologueReference =
+        serde_json::from_value(serialized).unwrap();
+    assert_eq!(decoded.trailing_zero_count, 6);
+
     let compact_reference = scope(
         "Extrude",
         2,
@@ -1509,7 +1540,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
     }
 
     let mut invalid_class_397 = make_bytes(b"397", b"262", 2);
-    invalid_class_397[135..139].copy_from_slice(&2u32.to_le_bytes());
+    invalid_class_397[135..139].copy_from_slice(&3u32.to_le_bytes());
     let invalid_scope = parse_parameter_scope(
         &invalid_class_397,
         &crate::design::test_support::indexed_record_offsets_for_test(&invalid_class_397),
@@ -1522,7 +1553,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
     assert!(invalid_scope.extrude_prologue().is_none());
 
     let mut invalid_tail = make_bytes(b"357", b"258", 2);
-    invalid_tail[135..139].copy_from_slice(&0u32.to_le_bytes());
+    invalid_tail[135..139].copy_from_slice(&3u32.to_le_bytes());
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: RECORD_INDEX,
