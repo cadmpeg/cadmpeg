@@ -221,7 +221,7 @@ fn recipe_side_search_past_its_work_cap_reports_a_loss() {
         .expect("face operand");
     // One counted side with 3,000 payload-prefix splits needs more search
     // work than the cap allows.
-    let mut program = vec![-1, -1, 2, 1, -1, 0, -1, 0, -1, 2, 5, -1, 7, -1];
+    let mut program = vec![-1, -1, 2, 1, -1, 0, -1, 1, -1, 2, 5, -1, 7, -1];
     program.extend_from_slice(&[0; 3000]);
     operand
         .recipe_nodes
@@ -1312,6 +1312,55 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
         incomplete_feature_families(&ir),
         std::collections::BTreeMap::from([("EdgeFlange", 2), ("Hem", 1)])
     );
+}
+
+#[test]
+fn incomplete_feature_loss_restates_the_current_features() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+
+    let feature = |id: &str, kind: &str| Feature {
+        product_definition: None,
+        id: FeatureId::mint(id).expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: Some(kind.to_owned()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: kind.into(),
+                parameters: std::collections::BTreeMap::new(),
+            }),
+        ),
+        native_ref: None,
+    };
+    let stale = || {
+        vec![F3dLossCode::FeatureDefinitionIncomplete
+            .note("3 feature scope(s) have no complete neutral feature definition: Assemble=3.")]
+    };
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model
+        .features
+        .push(feature("synthetic:test:id#feature:1", "Assemble"));
+    let mut losses = stale();
+    crate::decode::refresh_incomplete_feature_loss(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].message,
+        "1 feature scope(s) have no complete neutral feature definition: Assemble=1."
+    );
+
+    ir.model.features.clear();
+    let mut losses = stale();
+    crate::decode::refresh_incomplete_feature_loss(&ir, &mut losses);
+    assert!(losses.is_empty());
+
+    let mut losses = Vec::new();
+    crate::decode::refresh_incomplete_feature_loss(&ir, &mut losses);
+    assert!(losses.is_empty());
 }
 
 #[test]

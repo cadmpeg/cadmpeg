@@ -13,6 +13,7 @@ use super::base_feature::{
     exact_base_feature_construction, timeline_body_owners, timeline_owned_base_feature,
     TimelineBodyOwner,
 };
+use super::chamfer_set::chamfer_set_list;
 use super::coil::bind_coil_extent_from_parameters;
 use super::coil::exact_coil_discriminators;
 use super::coil::exact_coil_placement;
@@ -24,13 +25,16 @@ use super::component_constructions::exact_copy_paste_component_operation;
 use super::component_constructions::exact_derived_instance_construction;
 use super::copy_paste_bodies::exact_copy_paste_bodies_operation;
 use super::direct_face::exact_direct_face_operation;
+use super::direct_face::exact_modify_operation;
 use super::direct_face::exact_move_face_operation;
 use super::direct_face::exact_move_operation;
 use super::direct_face::exact_scale_operation;
 use super::direct_face::marked_move_transform_loss;
+use super::direct_face::move_transform_references_loss;
 use super::draft::exact_draft_operation_with_owners;
 use super::emboss::exact_emboss_construction;
 use super::extrude::{exact_extrude_prologue, exact_typed_extrude_prologue};
+use super::fillet_set::fillet_set_list;
 use super::fixed_parameters::exact_fixed_chamfer_parameters;
 use super::fixed_parameters::exact_fixed_extrude_parameters;
 use super::fixed_parameters::exact_fixed_fillet_parameters;
@@ -417,13 +421,30 @@ pub(crate) fn decode_parameter_scopes(
                         operation,
                         &class_types,
                     ));
+                    losses.extend(move_transform_references_loss(&scope, operation));
                 }
                 if let scope::DesignScopePayloadMut::Move(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }
+            if let Some(operation) = exact_modify_operation(bytes, &records, &scope) {
+                losses.extend(marked_move_transform_loss(
+                    bytes,
+                    &records,
+                    &scope,
+                    &operation.motion,
+                    &class_types,
+                ));
+                losses.extend(move_transform_references_loss(&scope, &operation.motion));
+                if let scope::DesignScopePayloadMut::Modify(slot) = scope.payload_mut() {
+                    *slot = Some(operation);
+                }
+            }
             {
                 let construction = exact_move_face_operation(bytes, &records, &scope);
+                if let Some(operation) = &construction {
+                    losses.extend(move_transform_references_loss(&scope, operation));
+                }
                 if let scope::DesignScopePayloadMut::MoveFace(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -486,15 +507,23 @@ pub(crate) fn decode_parameter_scopes(
                     parameters,
                     parameter_owners,
                 );
+                let sets = fillet_set_list(bytes, &records, &scope, parameters, parameter_owners);
                 if let scope::DesignScopePayloadMut::Fillet(slot) = scope.payload_mut() {
-                    *slot = construction;
+                    *slot = crate::records::feature::fillet_set::DesignFilletScope::admit(
+                        construction,
+                        sets,
+                    );
                 }
             }
             {
                 let construction =
                     exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
+                let sets = chamfer_set_list(bytes, &records, &scope, parameters, parameter_owners);
                 if let scope::DesignScopePayloadMut::Chamfer(slot) = scope.payload_mut() {
-                    *slot = construction;
+                    *slot = crate::records::feature::chamfer_set::DesignChamferScope::admit(
+                        construction,
+                        sets,
+                    );
                 }
             }
             if let Some(construction) =

@@ -50,14 +50,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the link grammar that walks such a ring.
 
-### BC-11. Vertexless ring-edge admission
-
-**Question.** Which native record admits a vertexless ring edge onto its carrier?
-
-**Known.** `decode.rs` admits a vertexless ring edge only with reciprocal opposite FINs on the same unbounded circle carrier, a face-owned single-FIN loop, and at most one sheet dummy; every other vertexless ring edge stays native under `TopologyRingEdgeWithheld`, with vertices as stored (#517).
-
-**Need.** We must know the native admission record that places such an edge on its carrier.
-
 ## 2. Geometry carriers
 
 ### GC-02. Missing intersection witnesses
@@ -70,11 +62,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### GC-04. Offset-surface admission
 
-**Question.** Which complete support and selected-set relation validates an unchecked offset for exact transfer, including negative support sense and full canonical indexes?
+**Question.** Which sense relation, distance band and bounded support domain admit an unchecked offset with negative support sense, a distance within model resolution or a partially typed support graph?
 
-**Known.** `sldprt.md` §7.5 defines the complete status, unused logical, support, distance and scale fields. The current short grammar requires the scale lane and withholds invalid, unchecked and zero-distance offsets while retaining their raw source and index claims. Scale does not multiply distance; FACE sense does not change its sign.
+**Known.** `sldprt.md` §7.5 defines the validity-check state, unused logical, support, distance and nullable scale. A complete node graph with unique positively sensed supports carries the unchecked offset equation through typed analytic, NURBS and swept supports. The node reader resolves canonical pointer indexes. Unchecked transfer requires a distance beyond model resolution. Negative support sense, opaque support dependencies and bounded faces with intersection-chart trims retain unresolved validity.
 
-**Need.** Exact unchecked admission needs a selected typed support, equal carrier/support senses, nonzero distance outside modeller resolution, an acyclic support graph and a valid selected surface set. Wide identities and pointers need one canonical index domain across every dependent carrier.
+**Need.** Resolve negative support orientation against the neutral carrier normal, the validity of offsets within model resolution, and the selected parameter domain when the support graph contains an opaque dependency.
 
 ### GC-05. Variable-radius law and result parameterization
 
@@ -143,6 +135,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `sldprt.md` §7.1 "The line direction is unit length." gives each field in the open interval (0, 1), the cone identity within `1e-9`, and the half-angle `atan2(sin, cos)`. `siemens_nx.md` §6.1 gives the same rule. The SLDPRT decoder omits a CONE node with a negative field and reports `geometry.cone-half-angle-sign-unresolved`; the NX decoder reports `carrier.cone-half-angle-sign-unresolved`.
 
 **Need.** We must know whether a signed half-angle is a valid cone or a different surface before a negative field can transfer as exact geometry.
+
+### GC-51. Intersection guide parameterization
+
+**Question.** Which guide constraint binds a chart parameter to the exact intersection of its two support surfaces?
+
+**Known.** §7.3 defines the support pointers, chart interval, terminators and optional support-UV caches. The three-dimensional chart bounds its positional approximation with `chordal_error`. A bounded offset FACE can use these intersection edges.
+
+**Need.** Derive the exact parameterization and branch selection from the chart and supports. The neutral representation needs a guide-curve relation or certified coincident support pcurves.
+
+**Conflict.** A positional cache evaluates the interpolated chart. The exact intersection lies on both supports.
+
+**Note.** An unchecked offset face with these trims keeps opaque geometry and `geometry.offset-validity-unresolved`.
 
 ## 3. Container metadata
 
@@ -1031,3 +1035,33 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Known.** `sldprt.md` §2.2 gives the stream framing. The trailing bytes lie outside every top-level object. The specification gives no field that names them.
 
 **Need.** A writer that reemits the stream has to know whether to write them.
+
+### GC-31. Mesh facet payload and ownership
+
+**Question.** How do the mesh receive index and auxiliary partition data select complete vertex and triangle arrays for each mesh-support face?
+
+**Known.** `parasolid.md` §3 defines the type-201 MESH field list and the reciprocal MESH/FACE link through SHELL to BODY. A MESH node can carry null `psm_imesh`, `pff_imesh`, and `rcv_key` pointers with a positive `rcv_index`. The same partition section can contain a separate `: MESH FILE` stream with type-189 PSM_MESH nodes, type-191 integer combs, type-193 vector combs, and their typed teeth. PSM_MESH owner pointers can be null. Its pool and index fields link to comb records; comb teeth arrays link to typed value arrays. The IR admits indexed triangle tessellations with body and face references, and polygonal support surfaces with a chordal-deflection bound. The decoder reports the distinct mesh-body count with `sldprt/geometry.mesh-body-not-transferred` and retains the source image.
+
+**Need.** Establish the cross-stream receive-index mapping, precision and comb encodings, coordinate units, triangle grouping, orientation, and complete per-body ownership. Check each reconstructed mesh against independent body areas and volumes before transfer.
+
+### SF-01. Remaining Top reference forms and profile coordinates
+
+**Question.** Which placement and coordinate convention applies to declared Top references, lane-default Front references, mixed or enclosing-context component records, lane component references, block definitions, and nested profile streams?
+
+**Known.** `sldprt.md` §3.3 defines local Top component placement and intrinsic marker coordinates for marker and compact profile objects with a profile or immediate-context Front reference. The declared Top fallback retains U=+X and N=+Z. The retained Front lane fallback uses N=-Y and U=-Z. Nested profile streams carry their own coordinate records.
+
+**Need.** Determine the byte fields that bind each remaining reference form to its profile coordinates and normal direction. Establish each complete rule with independent profile and mirrored-polarity controls.
+
+**Conflict.** The local component's N=+Y and the declared fallback's N=+Z select different normal axes.
+
+### SF-02. Right component ownership and profile coordinates
+
+**Question.** Which field distinguishes a sketch support-plane component from a reference to another plane within the sketch object?
+
+**Known.** A profile context can contain a declared plane source and a Right component with another source. The complete component matrix identifies its referenced frame. The existing profile binding remains selected when the component source conflicts with it.
+
+**Need.** Establish component ownership and the profile coordinate rule from explicit fields. Preserve prior carrier incidence across independent designs.
+
+**Conflict.** Selecting the component through interval enclosure changes a public fixture's complete carrier support from eighteen sampled points to sixteen. A scoped component mapping gains carrier support in three designs and changes another profile from three carrier hits to two.
+
+**Note.** Right component mappings retain their current interpretation. Their scoped and lane Front fallback retains its original frame. Section 3.3 defines local Top component profile placement.

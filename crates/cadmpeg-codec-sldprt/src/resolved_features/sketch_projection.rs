@@ -38,6 +38,22 @@ pub(crate) fn sketches(
         let Some(section) = source.name() else {
             continue;
         };
+        if crate::container::is_stock_bodies_section(section) {
+            let count = source
+                .ps_streams()
+                .iter()
+                .filter(|stream| crate::parasolid::is_body_stream(&stream.header))
+                .count();
+            if count > 0 {
+                losses.push(crate::loss::SldprtLossCode::FeatureInputSolidBodyRetained.note(
+                    format!(
+                        "{count} stock-body partition stream(s) remain in {} as derived-feature inputs.",
+                        source.native_id()
+                    ),
+                ));
+            }
+            continue;
+        }
         if !contains_ascii_case_insensitive(section, "resolvedfeatures") {
             continue;
         }

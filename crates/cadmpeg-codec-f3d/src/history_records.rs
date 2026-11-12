@@ -331,6 +331,8 @@ pub(crate) struct AsmHistoricalPersistentSubentityTag {
     pub(crate) entity_ref: i64,
     pub(crate) selector: i64,
     pub(crate) token: String,
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
+    pub(crate) token_integer: u32,
     pub(crate) design_references: Vec<i64>,
     pub(crate) ordinal: u32,
 }
@@ -381,7 +383,7 @@ pub(crate) struct AsmHistoricalPoint {
     pub(crate) position: Point3,
 }
 
-/// Point and unit tangent of one edge at the midpoint of its carrier interval.
+/// Carrier midpoint, unit tangent, and box of evaluated interval samples.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalEdgeSample {
     pub(crate) edge: i64,
@@ -392,6 +394,12 @@ pub(crate) struct AsmHistoricalEdgeSample {
         deserialize_with = "deserialize_edge_sample_tangent"
     )]
     pub(crate) tangent: Option<Vector3>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_sample_bounds"
+    )]
+    pub(crate) bounds: Option<[Point3; 2]>,
 }
 
 /// Ordered stable entity-slot relation in a historical B-rep.
@@ -1058,6 +1066,7 @@ mod tests {
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_stream_size, i64, "stream_size");
 cadmpeg_core::named_optional_field!(deserialize_edge_sample_tangent, Vector3, "tangent");
+cadmpeg_core::named_optional_field!(deserialize_edge_sample_bounds, [Point3; 2], "bounds");
 cadmpeg_core::named_optional_field!(deserialize_history_entry_count, i64, "history_entry_count");
 cadmpeg_core::named_optional_field!(deserialize_previous_ref, i64, "previous_ref");
 cadmpeg_core::named_optional_field!(deserialize_next_ref, i64, "next_ref");

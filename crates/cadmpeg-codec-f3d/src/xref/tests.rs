@@ -1591,6 +1591,7 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
             occurrence_identity: None,
             neutron_role: "role".into(),
             neutron_role_offset: 0,
+            occurrence_key: None,
             placement: Some(
                 crate::records::feature::assembly_features::DesignComponentInsertMatrix {
                     scope: crate::records::identity::Located {

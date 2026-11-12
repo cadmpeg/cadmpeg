@@ -10,6 +10,7 @@
 //! generic IR validation report.
 
 mod body_ownership;
+mod chamfer_sets;
 mod emboss;
 mod extrude_operands;
 mod path_pattern;
@@ -1091,6 +1092,8 @@ fn validate_loaded(
     validate_construction_operand_groups(&ctx, &mut findings);
     validate_path_feature_operand_roles(&ctx, &mut findings);
     extrude_operands::validate_extrude_parameter_operands(&ctx, &mut findings);
+    validate_fillet_sets(&ctx, &mut findings);
+    chamfer_sets::validate(&ctx, &mut findings);
     let fillet_radius_group_records = validate_fillet_radius_groups(&ctx, &mut findings);
     validate_fillet_operand_groups(&ctx, &mut findings, &fillet_radius_group_records);
     let operand_identity_groups = validate_construction_operand_identities(&ctx, &mut findings);
@@ -3325,7 +3328,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         | records::feature::thread::DesignThreadForm::StandardLegacy
                         | records::feature::thread::DesignThreadForm::StandardExtended
                         | records::feature::thread::DesignThreadForm::StandardCompact
-                        | records::feature::thread::DesignThreadForm::CompactLegacy => true,
+                        | records::feature::thread::DesignThreadForm::CompactLegacy
+                        | records::feature::thread::DesignThreadForm::CompactOwnersLeading
+                        | records::feature::thread::DesignThreadForm::CompactOwnersTrailing => true,
                     }
                     && construction
                         .face_group_record_indices
@@ -3339,6 +3344,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                         _
                                     )
                                     | records::feature::thread::DesignThreadForm::CompactLegacy
+                                    | records::feature::thread::DesignThreadForm::CompactOwnersLeading
+                                    | records::feature::thread::DesignThreadForm::CompactOwnersTrailing
                             ) {
                                 let Some(reference_ordinal) =
                                     group_ordinal.checked_mul(2).and_then(|ordinal| {
@@ -5313,6 +5320,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     scope.kind(),
                     crate::records::feature::scope::DesignFeatureKind::RemoveBody
                         | crate::records::feature::scope::DesignFeatureKind::ReverseNormal
+                        | crate::records::feature::scope::DesignFeatureKind::Modify
                 ) =>
                 {
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
@@ -5384,6 +5392,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     crate::records::feature::scope::DesignFeatureKind::Emboss
                         | crate::records::feature::scope::DesignFeatureKind::RemoveBody
                         | crate::records::feature::scope::DesignFeatureKind::ReverseNormal
+                        | crate::records::feature::scope::DesignFeatureKind::Modify
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
                         | crate::records::feature::scope::DesignFeatureKind::SplitFace
                         | crate::records::feature::scope::DesignFeatureKind::PathPattern
@@ -5781,6 +5790,24 @@ fn validate_fillet_radius_groups<'a>(
                         parameter.source_kind() == "TangencyWeight" && parameter.unit().is_none()
                     })
                 })
+            && scope
+                .and_then(|scope| scope.fillet_sets())
+                .is_none_or(|list| {
+                    list.sets
+                        .iter()
+                        .filter(|set| set.group_record_index == assignment.group_record_index)
+                        .all(|set| {
+                            design::decode::scopes::fillet_set::fillet_set_matches_radius_group(
+                                set,
+                                assignment,
+                                |owner_record_index| {
+                                    ctx.owners_by_index
+                                        .get(&(native_stream, owner_record_index))
+                                        .map(|owner| owner.parameter_record_index())
+                                },
+                            )
+                        })
+                })
             && fillet_radius_group_records.insert((native_stream, assignment.group_record_index))
             && fillet_radius_group_slots.insert((
                 native_stream,
@@ -5797,6 +5824,56 @@ fn validate_fillet_radius_groups<'a>(
         }
     }
     fillet_radius_group_records
+}
+
+/// Every fillet set names a reference-table member of its scope as its edge
+/// group, and owners of its scope whose parameters have the source kinds of
+/// its law and of `TangencyWeight`.
+fn validate_fillet_sets(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
+    use records::feature::fillet_set::DesignFilletSetLaw;
+    for scope in &ctx.native.design_parameter_scopes {
+        let Some(list) = scope.fillet_sets() else {
+            continue;
+        };
+        let native_stream = design_stream(&scope.id);
+        let owned_kind = |owner_record_index: u32, kind: &str| {
+            ctx.owners_by_index
+                .get(&(native_stream, owner_record_index))
+                .filter(|owner| owner.scope_record_index() == scope.record_index)
+                .and_then(|owner| {
+                    ctx.parameters_by_index
+                        .get(&(native_stream, owner.parameter_record_index()))
+                        .filter(|parameter| {
+                            parameter.owner_record_index() == Some(owner.record_index())
+                        })
+                })
+                .is_some_and(|parameter| parameter.source_kind() == kind)
+        };
+        let valid = list.sets.iter().all(|set| {
+            let law = match set.law {
+                DesignFilletSetLaw::Constant {
+                    radius_owner_record_index,
+                } => owned_kind(radius_owner_record_index, "Radius"),
+                DesignFilletSetLaw::Chordal {
+                    chord_length_owner_record_index,
+                } => owned_kind(chord_length_owner_record_index, "ChordLen"),
+            };
+            law && owned_kind(set.tangency_weight_owner_record_index, "TangencyWeight")
+                && scope
+                    .reference_members()
+                    .values()
+                    .any(|member| *member == set.group_record_index)
+        }) && design::design_feature_family(&scope.kind())
+            == Some(design::DesignFeatureFamily::Fillet);
+        if !valid {
+            push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design Fillet set names a record outside its scope or an owner of another parameter kind",
+                Some(scope.id.clone()),
+            );
+        }
+    }
 }
 
 /// Whether a Mirror scope owns an operand group of this role: faces or
@@ -6921,6 +6998,7 @@ fn recipe_reference_frames_match(
             actual.selector == expected.selector
                 && actual.selector_offset == expected.selector_offset
                 && actual.token == expected.token
+                && actual.token_integer == expected.token_integer
                 && actual.token_offset == expected.token_offset
                 && actual.design_reference == expected.design_reference
                 && actual.design_reference_offset == expected.design_reference_offset

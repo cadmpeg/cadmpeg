@@ -136,6 +136,7 @@ impl Serialize for DesignParameterScope {
         emit!("feature_ordinal", self.feature_ordinal.get());
         emit!("feature_ordinal_offset", self.feature_ordinal_offset);
         emit_opt!("label", self.label.as_ref());
+        emit_opt!("display_name", self.display_name.as_deref());
         emit_opt!("history_state_id", self.history_state_id);
         emit!("history_state_id_offset", self.history_state_id_offset());
         emit_opt!("previous_history_state_id", self.previous_history_state_id);
@@ -180,6 +181,7 @@ impl Serialize for DesignParameterScope {
 
         emit_opt!("align_envelope", self.align_envelope());
         emit_opt!("move_operation", self.move_operation());
+        emit_opt!("modify_operation", self.modify_operation());
         emit_opt!("scale_operation", self.scale_operation());
         emit_opt!("reverse_normal_operation", self.reverse_normal_operation());
         emit_opt!("path_pattern_settings", self.path_pattern_settings());
@@ -207,7 +209,9 @@ impl Serialize for DesignParameterScope {
         emit_opt!("edge_flange_operation", self.edge_flange_operation());
         emit_opt!("hem_operation", self.hem_operation());
         emit_opt!("fixed_fillet_parameters", self.fixed_fillet_parameters());
+        emit_opt!("fillet_sets", self.fillet_sets());
         emit_opt!("fixed_chamfer_parameters", self.fixed_chamfer_parameters());
+        emit_opt!("chamfer_sets", self.chamfer_sets());
 
         match &self.payload {
             DesignScopePayload::Revolve(Some(value)) => {

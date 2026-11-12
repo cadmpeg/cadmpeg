@@ -789,7 +789,7 @@ fn native_persistent_subentity_attribute(
     for tag in tags {
         native_i64(records, tag.selector);
         native_string(records, tag.token.as_str())?;
-        native_i64(records, 0);
+        native_i64(records, i64::from(tag.token_integer));
         native_i64(
             records,
             i64::try_from(tag.design_references.len()).map_err(|_| {

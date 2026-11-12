@@ -302,6 +302,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 .expect("valid entity ID"),
 
             visibility: None,
+            display_name: None,
 
             class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
                 .unwrap(),

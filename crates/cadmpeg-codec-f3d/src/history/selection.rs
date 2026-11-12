@@ -354,6 +354,19 @@ pub(super) fn bind_face_selection(
         if matches.next().is_some() {
             return;
         }
+        let termination = group.extrude_face_role()
+            == Some(
+                crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
+            );
+        if termination && !operand.resolved_face_slots.is_empty() {
+            for slot in &operand.resolved_face_slots {
+                let candidate = crate::ids::brep_face_id(*slot);
+                if !faces.contains(&candidate) {
+                    faces.push(candidate);
+                }
+            }
+            continue;
+        }
         let previous_candidates = &operand.preceding_candidate_faces;
         let candidate = match previous_candidates.as_slice() {
             [face] => face,
@@ -364,6 +377,21 @@ pub(super) fn bind_face_selection(
                 face
             }
         };
+        if termination {
+            let referenced: HashSet<_> = operand
+                .recipe_references
+                .iter()
+                .flat_map(|reference| {
+                    reference
+                        .candidate_faces
+                        .iter()
+                        .chain(&reference.alternate_selector_faces)
+                })
+                .collect();
+            if !referenced.is_empty() && !referenced.contains(candidate) {
+                return;
+            }
+        }
         if faces.contains(candidate) {
             continue;
         }
@@ -1512,6 +1540,21 @@ pub(crate) fn design_geometry_origin_plane(ordinal: usize) -> Option<HistoricalM
     })
 }
 
+/// Model-space frame of a Design Geometry origin plane: the XY, XZ, and YZ
+/// planes take u axes `+x`, `+z`, and `+y`.
+pub(crate) fn design_geometry_origin_plane_frame(
+    ordinal: usize,
+) -> Option<cadmpeg_ir::features::FeatureSupportPlaneFrame> {
+    let u_axis = match ordinal {
+        0 => cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        1 => cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        2 => cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        _ => return None,
+    };
+    let plane = design_geometry_origin_plane(ordinal)?;
+    cadmpeg_ir::features::FeatureSupportPlaneFrame::new(plane.origin, plane.normal, u_axis)
+}
+
 pub(super) fn historical_mirror_plane(
     candidate: &crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate,
     preferred_state_id: i64,
@@ -2473,4 +2516,85 @@ fn historical_identity_faces(
         faces.insert(face);
     }
     faces
+}
+
+pub(super) fn feature_selected_input_state_id(
+    feature: &cadmpeg_ir::features::Feature,
+) -> Option<i64> {
+    use cadmpeg_ir::features::{
+        BodySelection, EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation,
+    };
+    let parse_state = |state: &cadmpeg_ir::ids::FeatureInputTopologyId| {
+        state
+            .as_str()
+            .rsplit_once(':')
+            .and_then(|(_, s)| s.parse::<i64>().ok())
+    };
+    let op = match feature.evaluation.definition() {
+        FeatureDefinition::Operation(op) => op,
+        FeatureDefinition::PostProcess { operation, .. } => operation,
+    };
+    match op {
+        FeatureOperation::Fillet { groups } => {
+            for g in groups {
+                if let EdgeSelection::Historical { state, .. }
+                | EdgeSelection::HistoricalPartial { state, .. } = &g.edges
+                {
+                    if let Some(id) = parse_state(state) {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+        FeatureOperation::Chamfer { groups, .. } => {
+            for g in groups {
+                if let EdgeSelection::Historical { state, .. }
+                | EdgeSelection::HistoricalPartial { state, .. } = &g.edges
+                {
+                    if let Some(id) = parse_state(state) {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+        FeatureOperation::SplitBody {
+            targets:
+                BodySelection::Historical { state, .. } | BodySelection::HistoricalSet { state, .. },
+            ..
+        } => {
+            if let Some(id) = parse_state(state) {
+                return Some(id);
+            }
+        }
+        FeatureOperation::SplitFace {
+            targets: FaceSelection::Historical { state, .. },
+            ..
+        } => {
+            if let Some(id) = parse_state(state) {
+                return Some(id);
+            }
+        }
+        FeatureOperation::Shell {
+            removed_faces,
+            bodies,
+            ..
+        } => {
+            if let FaceSelection::Historical { state, .. } = removed_faces {
+                if let Some(id) = parse_state(state) {
+                    return Some(id);
+                }
+            }
+            if let Some(
+                BodySelection::Historical { state, .. }
+                | BodySelection::HistoricalSet { state, .. },
+            ) = bodies
+            {
+                if let Some(id) = parse_state(state) {
+                    return Some(id);
+                }
+            }
+        }
+        _ => {}
+    }
+    None
 }

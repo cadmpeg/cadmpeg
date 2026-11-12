@@ -106,7 +106,7 @@ rewrite_enum!(DraftAnchor, []; {
     PartingLine { tool, pull },
 });
 
-rewrite_record!(DraftPull, []; { direction, plane });
+rewrite_record!(DraftPull, []; { direction, plane, frame });
 
 rewrite_enum!(DraftSecondSide, []; {
     Symmetric {},

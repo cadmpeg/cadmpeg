@@ -467,3 +467,43 @@ fn compact_profile_selection_preserves_the_counted_member_reading() {
     assert_eq!(counted.regions[1].members[0].curve_primary_id.get(), 13);
     assert!(parse(&bytes).is_none());
 }
+
+#[test]
+fn marked_profile_selection_decodes_region_loops_from_the_operand_chain() {
+    let (archive, _, headers, _) =
+        crate::test_support::multiple_profiles::fixture_with_curve_regions(
+            1,
+            Some(([0, 0], 93)),
+            Some(&[(11, 115, true), (12, 0, false)]),
+        );
+    let mut group = group();
+    group.id = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-group#90".into();
+    let selections = crate::test_support::zip_test::with_scan(&archive, |scan| {
+        super::super::decode_profile_curve_selections(
+            &cadmpeg_test_support::service_decode_context(),
+            scan,
+            &[group],
+            &headers,
+        )
+        .unwrap()
+    });
+    let [selection] = selections.as_slice() else {
+        panic!("one stored profile selection");
+    };
+    assert!(selection.compact_references());
+    assert_eq!(selection.owner_text, "172");
+    assert_eq!(selection.sketch_scope_record_index, 7);
+    assert_eq!(selection.record_index, 100);
+    assert_eq!(selection.group_record_index, 90);
+    assert_eq!(selection.scope_record_index, 80);
+    assert!(selection.valid_layout());
+    assert_eq!(selection.groups.len(), 1);
+    assert!(selection.groups[0].further.is_empty());
+    let loops = &selection.groups[0].region;
+    assert_eq!(loops.len(), 2);
+    assert_eq!(loops[0].entries[0].primary_id, 11);
+    assert_eq!(loops[0].entries[0].secondary_id, 115);
+    assert!(loops[0].outer);
+    assert_eq!(loops[1].entries[0].primary_id, 12);
+    assert!(!loops[1].outer);
+}

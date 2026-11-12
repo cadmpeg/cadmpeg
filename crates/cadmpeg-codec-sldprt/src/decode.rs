@@ -2254,6 +2254,7 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
         let name = section.name().unwrap_or("");
         if contains_ascii_case_insensitive(name, "ghost")
             || contains_ascii_case_insensitive(name, "resolvedfeatures")
+            || container::is_stock_bodies_section(name)
             || crate::container::is_embedded_document(name)
             || crate::container::virtual_component_key(name).is_some()
         {
@@ -2462,6 +2463,7 @@ fn try_decode_brep(
         selected_is_empty_model && (resolved_active_site.is_some() || !any_site_has_geometry);
     if resolved_active_site.is_some() {
         if !selected_is_empty_model && !selected_has_geometry {
+            fallback_losses.extend(decoded_sites[selected_site].2.losses.iter().cloned());
             append_topology_record_losses(&decoded_sites[selected_site].2.stats, fallback_losses);
             return Ok(None);
         }
@@ -2480,6 +2482,7 @@ fn try_decode_brep(
         });
         if !any_site_has_geometry && !any_empty_model {
             for (_, _, decoded) in &decoded_sites {
+                fallback_losses.extend(decoded.losses.iter().cloned());
                 append_topology_record_losses(&decoded.stats, fallback_losses);
             }
             return Ok(None);
@@ -4235,7 +4238,7 @@ fn append_topology_record_losses(
     }
     if stats.withheld_ring_edges > 0 {
         losses.push(SldprtLossCode::TopologyRingEdgeWithheld.note(format!(
-            "{} vertexless ring edge(s) fail strict reciprocal-circle single-loop admission; no vertex is invented and the edge is withheld.",
+            "{} vertexless ring edge(s) fail reciprocal closed-carrier single-loop admission.",
             stats.withheld_ring_edges,
         )));
     }

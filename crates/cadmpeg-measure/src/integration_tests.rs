@@ -4,6 +4,7 @@
 mod acceptance;
 mod aggregates;
 mod boundaries;
+mod closed_nurbs;
 mod compare;
 mod cone_apex_rings;
 mod cones;
@@ -15,6 +16,7 @@ mod findings;
 mod mass;
 mod nurbs;
 mod occurrences;
+mod offsets;
 mod pcurves;
 mod serialization;
 mod spheres;

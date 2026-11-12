@@ -928,6 +928,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         selector: 1,
         selector_offset: 0,
         token: "23".into(),
+        token_integer: 0,
         token_offset: 0,
         design_reference: 332,
         design_reference_offset: 0,

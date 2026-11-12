@@ -15,6 +15,7 @@ cadmpeg_core::named_optional_field!(
     std::num::NonZeroU64,
     "ordinal_collection"
 );
+cadmpeg_core::named_optional_field!(deserialize_display_name, String, "display_name");
 /// Typed sketch-container visibility bound to a Design sketch entity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -116,6 +117,8 @@ pub(crate) struct DesignSketchPlacement {
     pub(crate) scope_record_index: Option<u32>,
     /// Full Design entity id of the placed sketch.
     pub(crate) entity_id: DesignEntityId,
+    /// User-assigned browser display name when distinct from `entity_id`.
+    pub(crate) display_name: Option<String>,
     /// Typed sketch-container visibility for the placed sketch entity.
     pub(crate) visibility: Option<DesignSketchVisibility>,
     /// Source dynamic three-digit ASCII primary class tag.
@@ -141,6 +144,7 @@ impl Clone for DesignSketchPlacement {
             id: self.id.clone(),
             scope_record_index: self.scope_record_index,
             entity_id: self.entity_id.clone(),
+            display_name: self.display_name.clone(),
             visibility: self.visibility,
             class_tag: self.class_tag.clone(),
             record_index: self.record_index,
@@ -377,6 +381,12 @@ struct DesignSketchPlacementWire {
     scope_record_index: Option<u32>,
     /// Full Design entity id of the placed sketch.
     entity_id: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_display_name"
+    )]
+    display_name: Option<String>,
     /// Typed sketch-container visibility for the placed sketch entity.
     #[serde(
         default,
@@ -421,6 +431,8 @@ impl Serialize for DesignSketchPlacement {
             scope_record_index: Option<u32>,
             entity_id: &'a str,
             #[serde(skip_serializing_if = "Option::is_none")]
+            display_name: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             visibility: Option<DesignSketchVisibility>,
             byte_offset: u64,
             class_tag: &'a str,
@@ -438,6 +450,7 @@ impl Serialize for DesignSketchPlacement {
             id: &self.id,
             scope_record_index: self.scope_record_index,
             entity_id: self.entity_id.as_str(),
+            display_name: self.display_name.as_deref(),
             visibility: self.visibility,
             byte_offset: self.byte_offset(),
             class_tag: self.class_tag.as_str(),
@@ -458,6 +471,18 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
     fn try_from(wire: DesignSketchPlacementWire) -> Result<Self, Self::Error> {
         use DesignSketchFrameForm as Form;
         let entity_id = DesignEntityId::try_from(wire.entity_id)?;
+        if let Some(name) = wire.display_name.as_deref() {
+            let units = name.encode_utf16().count();
+            if name.trim().is_empty()
+                || !(1..=256).contains(&units)
+                || name.chars().any(char::is_control)
+            {
+                return Err(
+                    "display_name must be a non-blank 1..=256 UTF-16 string without control characters"
+                        .into(),
+                );
+            }
+        }
 
         let form = match (wire.member_run_head, wire.frame_length) {
             (false, 201) => Form::ScopeCompact,
@@ -503,6 +528,7 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
             id: wire.id,
             scope_record_index: wire.scope_record_index,
             entity_id,
+            display_name: wire.display_name,
             visibility: wire.visibility,
             class_tag: DesignClassTag::try_from(wire.class_tag)?,
             record_index: wire.record_index,
@@ -526,6 +552,7 @@ impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
             id: value.id,
             scope_record_index: value.scope_record_index,
             entity_id: value.entity_id.into_string(),
+            display_name: value.display_name,
             visibility: value.visibility,
             byte_offset,
             class_tag: value.class_tag.into(),

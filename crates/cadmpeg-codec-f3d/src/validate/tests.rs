@@ -29,6 +29,7 @@ use crate::F3dCodec;
 mod act_document_root;
 mod arithmetic;
 mod body_ownership;
+mod chamfer_sets;
 mod component_insert;
 mod component_occurrences;
 mod configurations;
@@ -66,6 +67,7 @@ fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
         selector: 1,
         selector_offset: 20,
         token: "3".into(),
+        token_integer: 0,
         token_offset: 28,
         design_reference: 329,
         design_reference_offset: 37,
@@ -152,6 +154,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
             occurrence_identity: Some(17),
             neutron_role: "cccccccc-dddd-eeee-ffff-000000000000".into(),
             neutron_role_offset: 259,
+            occurrence_key: None,
             placement: None,
         });
     }

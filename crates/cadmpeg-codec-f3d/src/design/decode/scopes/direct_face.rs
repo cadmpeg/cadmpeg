@@ -13,16 +13,22 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::layout::indexed_design_record_header as indexed_header;
+use crate::layout::modify_marker_one_prologue as modify_one;
+use crate::layout::modify_marker_zero_prologue as modify_zero;
 use crate::layout::move_marked_transform_prologue as marked_move;
 use crate::layout::move_transform_frame_253 as move_frame;
 use crate::layout::move_transform_frame_254 as move_frame_254;
 use crate::layout::move_transform_frame_273 as move_frame_273;
 use crate::layout::move_transform_frame_274 as move_frame_274;
+use crate::layout::move_transform_frame_283 as move_frame_283;
+use crate::layout::move_transform_frame_284 as move_frame_284;
+use crate::layout::move_transform_frame_293 as move_frame_293;
 use crate::layout::scale_legacy_uniform_tail as scale_tail;
 use crate::records::entity_header::SegmentType;
 use crate::records::feature::body_ops::DesignScaleOperation;
 use crate::records::feature::direct_face;
 use crate::records::feature::direct_face::DesignDirectFaceOperation;
+use crate::records::feature::direct_face::DesignModifyOperation;
 use crate::records::feature::direct_face::DesignMoveOperation;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
@@ -231,19 +237,48 @@ fn move_face_transform(
     candidate
 }
 
-/// The form and matrix of the transform frame at `start`, or `None` when its
-/// reserved bytes, form, or matrix are not those of a rigid transform.
-fn move_transform_at(bytes: &[u8], start: usize, record_index: u32) -> Option<DesignMoveOperation> {
+fn move_form_offsets(form: direct_face::DesignMoveForm) -> (usize, usize) {
+    match form {
+        direct_face::DesignMoveForm::Form2 => (move_frame_293::FORM, move_frame_293::TRANSFORM),
+        _ => (move_frame::FORM, move_frame::TRANSFORM),
+    }
+}
+
+fn standard_move_form(bytes: &[u8], start: usize) -> Option<direct_face::DesignMoveForm> {
     if bytes.get(start + indexed_header::LEN..start + move_frame::FORM)
         != Some(&[0; move_frame::FORM - indexed_header::LEN])
         || bytes.get(start + move_frame::RESERVED_ZERO) != Some(&0)
     {
         return None;
     }
-    let form =
-        direct_face::DesignMoveForm::try_from(View::u32_le_at(bytes, start + move_frame::FORM)?)
-            .ok()?;
-    let mut view = View::over_retained(bytes.get(start + move_frame::TRANSFORM..)?);
+    direct_face::DesignMoveForm::try_from(View::u32_le_at(bytes, start + move_frame::FORM)?)
+        .ok()
+        .filter(|form| *form != direct_face::DesignMoveForm::Form2)
+}
+
+fn referenced_move_form(bytes: &[u8], start: usize) -> Option<direct_face::DesignMoveForm> {
+    let holds = bytes.get(start + indexed_header::LEN..start + move_frame_293::FIRST_REFERENCE)
+        == Some(&[0; move_frame_293::FIRST_REFERENCE - indexed_header::LEN])
+        && [
+            move_frame_293::FIRST_REFERENCE,
+            move_frame_293::SECOND_REFERENCE,
+            move_frame_293::THIRD_REFERENCE,
+            move_frame_293::FOURTH_REFERENCE,
+        ]
+        .into_iter()
+        .all(|at| marked_record_reference(bytes, start + at).is_some())
+        && View::u32_le_at(bytes, start + move_frame_293::ZERO_WORD) == Some(0)
+        && bytes.get(start + move_frame_293::FOURTH_REFERENCE + 11..start + move_frame_293::FORM)
+            == Some(&[0; move_frame_293::FORM - move_frame_293::FOURTH_REFERENCE - 11])
+        && View::u32_le_at(bytes, start + move_frame_293::FORM) == Some(move_frame_293::FORM_VALUE)
+        && bytes.get(start + move_frame_293::RESERVED_ZERO) == Some(&0);
+    holds.then_some(direct_face::DesignMoveForm::Form2)
+}
+
+fn move_transform_at(bytes: &[u8], start: usize, record_index: u32) -> Option<DesignMoveOperation> {
+    let form = standard_move_form(bytes, start).or_else(|| referenced_move_form(bytes, start))?;
+    let (form_at, transform_at) = move_form_offsets(form);
+    let mut view = View::over_retained(bytes.get(start + transform_at..)?);
     let mut transform = [[0.0; 4]; 4];
     for row in &mut transform {
         for value in row {
@@ -254,11 +289,25 @@ fn move_transform_at(bytes: &[u8], start: usize, record_index: u32) -> Option<De
         crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform).ok()?;
     Some(DesignMoveOperation {
         transform,
-        transform_offset: u64_from_index(start + move_frame::TRANSFORM),
+        transform_offset: u64_from_index(start + transform_at),
         transform_record_index: record_index,
         form,
-        form_offset: u64_from_index(start + move_frame::FORM),
+        form_offset: u64_from_index(start + form_at),
         transform_reference_offset: None,
+    })
+}
+
+pub(super) fn move_transform_references_loss(
+    scope: &DesignParameterScope,
+    operation: &DesignMoveOperation,
+) -> Option<LossNote> {
+    (operation.form == direct_face::DesignMoveForm::Form2).then(|| {
+        crate::loss::F3dLossCode::FeatureMoveTransformReferencesAssumed.note(format!(
+            "{} scope {} takes the rigid matrix of its form-2 transform record {}; the four references of the record are assumed to leave that motion unchanged (DR-375).",
+            scope.kind().as_str(),
+            scope.id,
+            operation.transform_record_index
+        ))
     })
 }
 
@@ -325,6 +374,8 @@ fn rigid_transform_rule_breaks(
     let length_form = match frame_length {
         move_frame::LEN | move_frame_254::LEN => direct_face::DesignMoveForm::Form5,
         move_frame_273::LEN | move_frame_274::LEN => direct_face::DesignMoveForm::Form1,
+        move_frame_283::LEN | move_frame_284::LEN => direct_face::DesignMoveForm::Form0,
+        move_frame_293::LEN => direct_face::DesignMoveForm::Form2,
         _ => {
             breaks.push(format!("a {frame_length}-byte frame"));
             return breaks;
@@ -349,18 +400,76 @@ pub(super) fn marked_move_transform_loss(
     operation.transform_reference_offset?;
     let start = usize::try_from(operation.form_offset)
         .ok()?
-        .checked_sub(move_frame::FORM)?;
+        .checked_sub(move_form_offsets(operation.form).0)?;
     let (_, paired) = records
         .frames(operation.transform_record_index)
         .find(|(frame_start, _)| *frame_start == start)?;
     let breaks = rigid_transform_rule_breaks(bytes, start, paired, operation.form, class_types);
     (!breaks.is_empty()).then(|| {
         crate::loss::F3dLossCode::FeatureMoveTransformAssumed.note(format!(
-            "Move scope {} keeps the rigid matrix of its marked transform record {}, which has {} (DR-306).",
+            "{} scope {} keeps the rigid matrix of its marked transform record {}, which has {} (DR-306).",
+            scope.kind().as_str(),
             scope.id,
             operation.transform_record_index,
             breaks.join(" and ")
         ))
+    })
+}
+
+pub(super) fn exact_modify_operation(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignModifyOperation> {
+    if scope.kind() != scope::DesignFeatureKind::Modify {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    if bytes.get(start + modify_zero::ZERO_RUN_9..start + modify_zero::MARKER)? != [0; 9] {
+        return None;
+    }
+    let (transform_at, count_at, groups_at) = match *bytes.get(start + modify_zero::MARKER)? {
+        modify_zero::MARKER_VALUE => (
+            modify_zero::TRANSFORM_REFERENCE,
+            modify_zero::BODY_COUNT,
+            modify_zero::FIRST_BODY_GROUP,
+        ),
+        modify_one::MARKER_VALUE if View::u32_le_at(bytes, start + modify_one::ZERO_WORD)? == 0 => {
+            (
+                modify_one::TRANSFORM_REFERENCE,
+                modify_one::BODY_COUNT,
+                modify_one::FIRST_BODY_GROUP,
+            )
+        }
+        _ => return None,
+    };
+    let transform_record_index = marked_record_reference(bytes, start + transform_at)?;
+    let references = scope
+        .reference_members()
+        .values()
+        .copied()
+        .collect::<Vec<_>>();
+    let count = usize::try_from(View::u32_le_at(bytes, start + count_at)?).ok()?;
+    if count == 0 || references.len() < 1 + 4 * count {
+        return None;
+    }
+    let mut body_group_record_indices = Vec::with_capacity(count);
+    for ordinal in 0..count {
+        let group = marked_record_reference(bytes, start + groups_at + 11 * ordinal)?;
+        if references.get(1 + 2 * count + 2 * ordinal) != Some(&group) {
+            return None;
+        }
+        body_group_record_indices.push(group);
+    }
+    if references.first() != Some(&transform_record_index) {
+        return None;
+    }
+    let mut motion = move_face_transform(bytes, records, transform_record_index)?;
+    motion.transform_reference_offset = Some(u64_from_index(start + transform_at));
+    Some(DesignModifyOperation {
+        motion,
+        body_group_record_indices,
+        body_count_offset: u64_from_index(start + count_at),
     })
 }
 
@@ -384,11 +493,11 @@ pub(crate) fn move_operation_links_hold(
                 && header.record_index == operation.transform_record_index
                 && header
                     .byte_offset
-                    .checked_add(u64_from_index(move_frame::FORM))
+                    .checked_add(u64_from_index(move_form_offsets(operation.form).0))
                     == Some(operation.form_offset)
                 && header
                     .byte_offset
-                    .checked_add(u64_from_index(move_frame::TRANSFORM))
+                    .checked_add(u64_from_index(move_form_offsets(operation.form).1))
                     == Some(operation.transform_offset)
         })
     })

@@ -163,8 +163,10 @@ impl DesignMoveOperation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u32", into = "u32")]
 pub(crate) enum DesignMoveForm {
+    Form0,
     /// Source form 1.
     Form1,
+    Form2,
     /// Source form 5.
     Form5,
 }
@@ -173,9 +175,11 @@ impl TryFrom<u32> for DesignMoveForm {
     type Error = String;
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
+            0 => Ok(Self::Form0),
             1 => Ok(Self::Form1),
+            2 => Ok(Self::Form2),
             5 => Ok(Self::Form5),
-            _ => Err(format!("form must be 1 or 5, not {value}")),
+            _ => Err(format!("form must be 0, 1, 2 or 5, not {value}")),
         }
     }
 }
@@ -183,10 +187,19 @@ impl TryFrom<u32> for DesignMoveForm {
 impl From<DesignMoveForm> for u32 {
     fn from(form: DesignMoveForm) -> Self {
         match form {
+            DesignMoveForm::Form0 => 0,
             DesignMoveForm::Form1 => 1,
+            DesignMoveForm::Form2 => 2,
             DesignMoveForm::Form5 => 5,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignModifyOperation {
+    pub(crate) motion: DesignMoveOperation,
+    pub(crate) body_group_record_indices: Vec<u32>,
+    pub(crate) body_count_offset: u64,
 }
 
 /// Exact signed-angle lanes carried by a `Draft` scope.

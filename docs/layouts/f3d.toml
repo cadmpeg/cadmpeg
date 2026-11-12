@@ -1520,6 +1520,829 @@ source = "spec"
 anchor = "The slots start at offset 26"
 
 [[record]]
+name = "chamfer_scope_prologue"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A parameter-owned `Chamfer` scope names its chamfer sets in a prefix"
+size = 21
+note = "Offsets are relative to the primary indexed header. Prologue byte 0 ends the prologue at offset 21; prologue byte 1 is followed by u32 0 and ends it at offset 25."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Offsets are relative to the primary indexed header"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "prologue_byte"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "a chamfer prologue byte at offset 20"
+
+[[record]]
+name = "chamfer_set_equal"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "`+36: u32 spec kind 1`"
+size = 83
+note = "Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A chamfer set is one indexed record"
+
+[[record.field]]
+name = "zero_run_10_at_11"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "flag"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "`+21: u8 flag`"
+
+[[record.field]]
+name = "zero_run_2_at_22"
+offset = 22
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "distance_owner_reference"
+offset = 24
+type = "bytes[11]"
+source = "spec"
+anchor = "`+24: distance owner reference`"
+
+[[record.field]]
+name = "zero_run_1_at_35"
+offset = 35
+type = "bytes[1]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "spec_kind"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "`+36: u32 spec kind 1`"
+value = 1
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 40
+type = "bytes[11]"
+source = "spec"
+anchor = "`+40: edge-group reference`"
+
+[[record.field]]
+name = "zero_run_2_at_51"
+offset = 51
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "fixed_word"
+offset = 53
+type = "u32"
+source = "spec"
+anchor = "`+53: u32 1`"
+value = 1
+
+[[record.field]]
+name = "fixed_byte"
+offset = 57
+type = "u8"
+source = "spec"
+anchor = "`+57: u8 1`"
+value = 1
+
+[[record.field]]
+name = "zero_run_2_at_58"
+offset = 58
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 60
+type = "bytes[11]"
+source = "spec"
+anchor = "`+60: auxiliary reference`"
+
+[[record.field]]
+name = "zero_run_1_at_71"
+offset = 71
+type = "bytes[1]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "scope_reference"
+offset = 72
+type = "bytes[11]"
+source = "spec"
+anchor = "`+72: scope reference`"
+
+[[record]]
+name = "chamfer_set_two_distances"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "`+46: u32 spec kind 2`"
+size = 93
+note = "Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A chamfer set is one indexed record"
+
+[[record.field]]
+name = "zero_run_10_at_11"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "flag"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "`+21: u8 flag`"
+
+[[record.field]]
+name = "zero_run_2_at_22"
+offset = 22
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "first_distance_owner_reference"
+offset = 24
+type = "bytes[11]"
+source = "spec"
+anchor = "`+24: first distance owner reference`"
+
+[[record.field]]
+name = "second_distance_owner_reference"
+offset = 35
+type = "bytes[11]"
+source = "spec"
+anchor = "`+35: second distance owner reference`"
+
+[[record.field]]
+name = "spec_kind"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "`+46: u32 spec kind 2`"
+value = 2
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 50
+type = "bytes[11]"
+source = "spec"
+anchor = "`+50: edge-group reference`"
+
+[[record.field]]
+name = "zero_run_2_at_61"
+offset = 61
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "fixed_word"
+offset = 63
+type = "u32"
+source = "spec"
+anchor = "`+63: u32 1`"
+value = 1
+
+[[record.field]]
+name = "fixed_byte"
+offset = 67
+type = "u8"
+source = "spec"
+anchor = "`+67: u8 1`"
+value = 1
+
+[[record.field]]
+name = "zero_run_2_at_68"
+offset = 68
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 70
+type = "bytes[11]"
+source = "spec"
+anchor = "`+70: auxiliary reference`"
+
+[[record.field]]
+name = "zero_run_1_at_81"
+offset = 81
+type = "bytes[1]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "scope_reference"
+offset = 82
+type = "bytes[11]"
+source = "spec"
+anchor = "`+82: scope reference`"
+
+[[record]]
+name = "chamfer_set_distance_angle"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "`+46: u32 spec kind 3`"
+size = 93
+note = "Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A chamfer set is one indexed record"
+
+[[record.field]]
+name = "zero_run_10_at_11"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "flag"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "`+21: u8 flag`"
+
+[[record.field]]
+name = "zero_run_1_at_22"
+offset = 22
+type = "bytes[1]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "angle_owner_reference"
+offset = 23
+type = "bytes[11]"
+source = "spec"
+anchor = "`+23: angle owner reference`"
+
+[[record.field]]
+name = "distance_owner_reference"
+offset = 34
+type = "bytes[11]"
+source = "spec"
+anchor = "`+34: distance owner reference`"
+
+[[record.field]]
+name = "zero_run_1_at_45"
+offset = 45
+type = "bytes[1]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "spec_kind"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "`+46: u32 spec kind 3`"
+value = 3
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 50
+type = "bytes[11]"
+source = "spec"
+anchor = "`+50: edge-group reference`"
+
+[[record.field]]
+name = "zero_run_2_at_61"
+offset = 61
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "fixed_word"
+offset = 63
+type = "u32"
+source = "spec"
+anchor = "`+63: u32 1`"
+value = 1
+
+[[record.field]]
+name = "fixed_byte"
+offset = 67
+type = "u8"
+source = "spec"
+anchor = "`+67: u8 1`"
+value = 1
+
+[[record.field]]
+name = "zero_run_2_at_68"
+offset = 68
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 70
+type = "bytes[11]"
+source = "spec"
+anchor = "`+70: auxiliary reference`"
+
+[[record.field]]
+name = "zero_run_1_at_81"
+offset = 81
+type = "bytes[1]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "scope_reference"
+offset = 82
+type = "bytes[11]"
+source = "spec"
+anchor = "`+82: scope reference`"
+
+[[record]]
+name = "chamfer_set_compact_equal"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "`+59: auxiliary reference`"
+size = 82
+note = "Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A chamfer set is one indexed record"
+
+[[record.field]]
+name = "zero_run_10_at_11"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "flag"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "`+21: u8 flag`"
+
+[[record.field]]
+name = "zero_run_2_at_22"
+offset = 22
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "distance_owner_reference"
+offset = 24
+type = "bytes[11]"
+source = "spec"
+anchor = "`+24: distance owner reference`"
+
+[[record.field]]
+name = "zero_run_1_at_35"
+offset = 35
+type = "bytes[1]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "spec_kind"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "`+36: u32 spec kind 1`"
+value = 1
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 40
+type = "bytes[11]"
+source = "spec"
+anchor = "`+40: edge-group reference`"
+
+[[record.field]]
+name = "zero_run_2_at_51"
+offset = 51
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "fixed_word"
+offset = 53
+type = "u32"
+source = "spec"
+anchor = "`+53: u32 1`"
+value = 1
+
+[[record.field]]
+name = "zero_run_2_at_57"
+offset = 57
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 59
+type = "bytes[11]"
+source = "spec"
+anchor = "`+59: auxiliary reference`"
+
+[[record.field]]
+name = "zero_run_1_at_70"
+offset = 70
+type = "bytes[1]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "scope_reference"
+offset = 71
+type = "bytes[11]"
+source = "spec"
+anchor = "`+71: scope reference`"
+
+[[record]]
+name = "fillet_scope_prologue"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A parameter-owned `Fillet` scope names its fillet sets in a prefix"
+size = 21
+note = "Offsets are relative to the primary indexed header. Prologue byte 0 ends the prologue at offset 21; prologue byte 1 is followed by u32 0 and ends it at offset 25. The counted set and edge-group lists follow."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Offsets are relative to the primary indexed header"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "prologue_byte"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "a prologue byte at offset 20"
+
+[[record]]
+name = "fillet_set_constant"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "`+29: edge-group reference`"
+size = 97
+note = "Offsets are relative to the set record indexed header; the frame ends at the next indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A fillet set is one indexed record"
+
+[[record.field]]
+name = "zero_run_12_at_11"
+offset = 11
+type = "bytes[12]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "form_marker"
+offset = 23
+type = "u8"
+source = "spec"
+anchor = "`+23: u8 1`"
+value = 1
+
+[[record.field]]
+name = "zero_run_2_at_24"
+offset = 24
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "flag"
+offset = 26
+type = "u8"
+source = "spec"
+anchor = "`+26: u8 flag`"
+
+[[record.field]]
+name = "zero_run_2_at_27"
+offset = 27
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 29
+type = "bytes[11]"
+source = "spec"
+anchor = "`+29: edge-group reference`"
+
+[[record.field]]
+name = "zero_run_23_at_40"
+offset = 40
+type = "bytes[23]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "radius_owner_reference"
+offset = 63
+type = "bytes[11]"
+source = "spec"
+anchor = "`+63: Radius owner reference`"
+
+[[record.field]]
+name = "zero_run_4_at_74"
+offset = 74
+type = "bytes[4]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "set_ordinal"
+offset = 78
+type = "u32"
+source = "spec"
+anchor = "`+78: u32 set ordinal`"
+
+[[record.field]]
+name = "tangency_weight_owner_reference"
+offset = 82
+type = "bytes[11]"
+source = "spec"
+anchor = "`+82: TangencyWeight owner reference`"
+
+[[record.field]]
+name = "zero_run_4_at_93"
+offset = 93
+type = "bytes[4]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record]]
+name = "fillet_set_chordal"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "`+28: ChordLen owner reference`"
+size = 97
+note = "Offsets are relative to the set record indexed header; the frame ends at the next indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A fillet set is one indexed record"
+
+[[record.field]]
+name = "zero_run_11_at_11"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "form_marker"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "`+22: u8 1`; `+26: u8 flag`"
+value = 1
+
+[[record.field]]
+name = "zero_run_3_at_23"
+offset = 23
+type = "bytes[3]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "flag"
+offset = 26
+type = "u8"
+source = "spec"
+anchor = "`+26: u8 flag`"
+
+[[record.field]]
+name = "zero_run_1_at_27"
+offset = 27
+type = "bytes[1]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "chord_length_owner_reference"
+offset = 28
+type = "bytes[11]"
+source = "spec"
+anchor = "`+28: ChordLen owner reference`"
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 39
+type = "bytes[11]"
+source = "spec"
+anchor = "`+39: edge-group reference`"
+
+[[record.field]]
+name = "zero_run_28_at_50"
+offset = 50
+type = "bytes[28]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "set_ordinal"
+offset = 78
+type = "u32"
+source = "spec"
+anchor = "`+78: u32 set ordinal`"
+
+[[record.field]]
+name = "tangency_weight_owner_reference"
+offset = 82
+type = "bytes[11]"
+source = "spec"
+anchor = "`+82: TangencyWeight owner reference`"
+
+[[record.field]]
+name = "zero_run_4_at_93"
+offset = 93
+type = "bytes[4]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record]]
+name = "fillet_set_compact_constant"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "`+27: edge-group reference`"
+size = 93
+note = "Offsets are relative to the set record indexed header; the frame ends at the next indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A fillet set is one indexed record"
+
+[[record.field]]
+name = "zero_run_11_at_11"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "form_marker"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "`+22: u8 1`; `+24: u8 flag`"
+value = 1
+
+[[record.field]]
+name = "zero_run_1_at_23"
+offset = 23
+type = "bytes[1]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "flag"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "`+24: u8 flag`"
+
+[[record.field]]
+name = "zero_run_2_at_25"
+offset = 25
+type = "bytes[2]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 27
+type = "bytes[11]"
+source = "spec"
+anchor = "`+27: edge-group reference`"
+
+[[record.field]]
+name = "zero_run_21_at_38"
+offset = 38
+type = "bytes[21]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "radius_owner_reference"
+offset = 59
+type = "bytes[11]"
+source = "spec"
+anchor = "`+59: Radius owner reference`"
+
+[[record.field]]
+name = "zero_run_4_at_70"
+offset = 70
+type = "bytes[4]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "set_ordinal"
+offset = 74
+type = "u32"
+source = "spec"
+anchor = "`+74: u32 set ordinal`"
+
+[[record.field]]
+name = "tangency_weight_owner_reference"
+offset = 78
+type = "bytes[11]"
+source = "spec"
+anchor = "`+78: TangencyWeight owner reference`"
+
+[[record.field]]
+name = "zero_run_4_at_89"
+offset = 89
+type = "bytes[4]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record]]
 name = "thicken_scope_prologue"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs"
 kind = "byte"
@@ -2677,6 +3500,92 @@ offset = 93
 type = "u32"
 source = "spec"
 anchor = "the counted input-reference count at offset `93`"
+
+[[record]]
+name = "design_hole_point_data_v2_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/point_direction.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Version `2` stores a tangent triple at offset `93`"
+size = 121
+note = "Offsets are relative to the version-two Hole point-data primary indexed header. The counted non-null reference run follows the fixed prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the point-data primary indexed header"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at offsets `11` through `18`"
+
+[[record.field]]
+name = "leading_block_presence"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "a leading-block presence byte at offset `19`"
+
+[[record.field]]
+name = "property_block_presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "a property-block presence byte at offset `20`"
+
+[[record.field]]
+name = "bounding_box_index"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a bounding-box index at offset `21`"
+
+[[record.field]]
+name = "position"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "The position triple is at offset `25`"
+
+[[record.field]]
+name = "direction"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "the model-space direction triple at offset `49`"
+
+[[record.field]]
+name = "point_parameters"
+offset = 73
+type = "f64[2]"
+source = "spec"
+anchor = "the two construction parameters at offset `73`"
+
+[[record.field]]
+name = "reference_type"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "`refType` at offset `89`"
+
+[[record.field]]
+name = "tangent_point_data"
+offset = 93
+type = "f64[3]"
+source = "spec"
+anchor = "Version `2` stores a tangent triple at offset `93`"
+
+[[record.field]]
+name = "input_count"
+offset = 117
+type = "u32"
+source = "spec"
+anchor = "the counted input-reference count at offset `117`"
 
 [[record]]
 name = "design_hole_point_data_v4_prefix"
@@ -16969,7 +17878,7 @@ name = "form"
 offset = 43
 type = "u32"
 source = "spec"
-anchor = "offset 43 stores u32 form `1` or `5`"
+anchor = "offset 43 stores u32 form `0`, `1`, or `5`"
 
 [[record.field]]
 name = "reserved_zero"
@@ -17015,7 +17924,7 @@ name = "form"
 offset = 43
 type = "u32"
 source = "spec"
-anchor = "offset 43 stores u32 form `1` or `5`"
+anchor = "offset 43 stores u32 form `0`, `1`, or `5`"
 
 [[record.field]]
 name = "reserved_zero"
@@ -17108,7 +18017,7 @@ name = "form"
 offset = 43
 type = "u32"
 source = "spec"
-anchor = "offset 43 stores u32 form `1` or `5`"
+anchor = "offset 43 stores u32 form `0`, `1`, or `5`"
 
 [[record.field]]
 name = "reserved_zero"
@@ -17128,6 +18037,296 @@ anchor = "sixteen row-major f64 values begin at offset 48"
 offset = 176
 size = 98
 note = "The transform record's tail precedes the same-index paired header at offset 274."
+
+[[record]]
+name = "move_transform_frame_283"
+kind = "byte"
+section = "3.1"
+anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
+size = 283
+note = "Offsets are relative to the transform record's primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A 283- or 284-byte frame stores form word `0`"
+
+[[record.gap]]
+offset = 11
+size = 32
+note = "Offsets 11 through 42 are zero."
+
+[[record.field]]
+name = "form"
+offset = 43
+type = "u32"
+value = 0
+source = "spec"
+anchor = "A 283- or 284-byte frame stores form word `0`"
+
+[[record.field]]
+name = "reserved_zero"
+offset = 47
+type = "u8"
+source = "spec"
+anchor = "offset 47 is zero"
+
+[[record.field]]
+name = "transform"
+offset = 48
+type = "f64[16]"
+source = "spec"
+anchor = "sixteen row-major f64 values begin at offset 48"
+
+[[record.gap]]
+offset = 176
+size = 107
+note = "The transform record's tail precedes the same-index paired header at offset 283."
+
+[[record]]
+name = "move_transform_frame_284"
+kind = "byte"
+section = "3.1"
+anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
+size = 284
+note = "Offsets are relative to the transform record's primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A 283- or 284-byte frame stores form word `0`"
+
+[[record.gap]]
+offset = 11
+size = 32
+note = "Offsets 11 through 42 are zero."
+
+[[record.field]]
+name = "form"
+offset = 43
+type = "u32"
+value = 0
+source = "spec"
+anchor = "A 283- or 284-byte frame stores form word `0`"
+
+[[record.field]]
+name = "reserved_zero"
+offset = 47
+type = "u8"
+source = "spec"
+anchor = "offset 47 is zero"
+
+[[record.field]]
+name = "transform"
+offset = 48
+type = "f64[16]"
+source = "spec"
+anchor = "sixteen row-major f64 values begin at offset 48"
+
+[[record.gap]]
+offset = 176
+size = 108
+note = "The transform record's tail precedes the same-index paired header at offset 284."
+
+[[record]]
+name = "move_transform_frame_293"
+kind = "byte"
+section = "3.1"
+anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
+size = 293
+note = "Offsets are relative to the transform record's primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A 293-byte frame stores form word `2`"
+
+[[record.gap]]
+offset = 11
+size = 20
+note = "Offsets 11 through 30 are zero."
+
+[[record.field]]
+name = "first_reference"
+offset = 31
+type = "bytes[11]"
+source = "spec"
+anchor = "marked references start at offsets 31, 42, and 53"
+
+[[record.field]]
+name = "second_reference"
+offset = 42
+type = "bytes[11]"
+source = "spec"
+anchor = "marked references start at offsets 31, 42, and 53"
+
+[[record.field]]
+name = "third_reference"
+offset = 53
+type = "bytes[11]"
+source = "spec"
+anchor = "marked references start at offsets 31, 42, and 53"
+
+[[record.field]]
+name = "zero_word"
+offset = 64
+type = "u32"
+source = "spec"
+anchor = "offset 64 stores u32 zero"
+
+[[record.field]]
+name = "fourth_reference"
+offset = 68
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference starts at offset 68"
+
+[[record.gap]]
+offset = 79
+size = 4
+note = "Offsets 79 through 82 are zero."
+
+[[record.field]]
+name = "form"
+offset = 83
+type = "u32"
+value = 2
+source = "spec"
+anchor = "offset 83 stores the u32 form word"
+
+[[record.field]]
+name = "reserved_zero"
+offset = 87
+type = "u8"
+source = "spec"
+anchor = "offset 87 is zero"
+
+[[record.field]]
+name = "transform"
+offset = 88
+type = "f64[16]"
+source = "spec"
+anchor = "the sixteen row-major f64 values begin at offset 88"
+
+[[record.gap]]
+offset = 216
+size = 77
+note = "The transform record's tail precedes the same-index paired header at offset 293."
+
+[[record]]
+name = "modify_marker_zero_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "A `Modify` scope moves whole bodies by one rigid transform"
+size = 47
+note = "Offsets are relative to the Modify scope's primary indexed header. The group references continue in steps of eleven bytes."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its primary bytes 11 through 19 are zero"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "Its primary bytes 11 through 19 are zero"
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u8"
+value = 0
+source = "spec"
+anchor = "byte 20 is a prologue marker"
+
+[[record.field]]
+name = "transform_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to its rigid-transform record at offset 21, u32 body count `N` at offset 32"
+
+[[record.field]]
+name = "body_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "u32 body count `N` at offset 32"
+
+[[record.field]]
+name = "first_body_group"
+offset = 36
+type = "bytes[11]"
+source = "spec"
+anchor = "`N` marked references to construction groups from offset 36"
+
+[[record]]
+name = "modify_marker_one_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "A `Modify` scope moves whole bodies by one rigid transform"
+size = 51
+note = "Offsets are relative to the Modify scope's primary indexed header. The group references continue in steps of eleven bytes."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its primary bytes 11 through 19 are zero"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "Its primary bytes 11 through 19 are zero"
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u8"
+value = 1
+source = "spec"
+anchor = "When the marker is `1`"
+
+[[record.field]]
+name = "zero_word"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "offsets 21 through 24 store u32 zero"
+
+[[record.field]]
+name = "transform_reference"
+offset = 25
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked transform reference is at offset 25"
+
+[[record.field]]
+name = "body_count"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "`N` is at offset 36"
+
+[[record.field]]
+name = "first_body_group"
+offset = 40
+type = "bytes[11]"
+source = "spec"
+anchor = "the `N` marked group references start at offset 40"
 
 [[record]]
 name = "legacy_body_group_frame_123"
@@ -32295,3 +33494,108 @@ offset = 184
 type = "bytes[11]"
 source = "spec"
 anchor = "The compact spacing direction form is a 195-byte frame."
+
+[[record]]
+name = "thread_compact_owned_scope_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact owned Thread prefix has the owner-marked prologue through offset 32."
+size = 46
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact owned Thread prefix has the owner-marked prologue through offset 32."
+
+[[record.field]]
+name = "prologue"
+offset = 11
+type = "bytes[22]"
+source = "spec"
+anchor = "The compact owned Thread prefix has the owner-marked prologue through offset 32."
+
+[[record.field]]
+name = "prefix_word"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "The compact owned Thread prefix has the owner-marked prologue through offset 32."
+
+[[record.field]]
+name = "form_marker"
+offset = 37
+type = "bytes[5]"
+source = "spec"
+anchor = "The compact owned Thread prefix has the owner-marked prologue through offset 32."
+
+[[record.field]]
+name = "form_token"
+offset = 42
+type = "bytes[4]"
+source = "spec"
+anchor = "The compact owned Thread prefix has the owner-marked prologue through offset 32."
+
+[[record]]
+name = "thread_owner_extended_scope_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The owner-marked extended Thread prefix has the owner-marked prologue through offset 32."
+size = 38
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The owner-marked extended Thread prefix has the owner-marked prologue through offset 32."
+
+[[record.field]]
+name = "prologue"
+offset = 11
+type = "bytes[22]"
+source = "spec"
+anchor = "The owner-marked extended Thread prefix has the owner-marked prologue through offset 32."
+
+[[record.field]]
+name = "external_flag"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "The owner-marked extended Thread prefix has the owner-marked prologue through offset 32."
+
+[[record.field]]
+name = "entry_count"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "The owner-marked extended Thread prefix has the owner-marked prologue through offset 32."
+
+[[record]]
+name = "constructed_plane_entity_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A plane entity record has type GUID `8D424E29-DE23-4B1F-A3AD-84C52A497D1A`"
+size = 134
+note = "Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.gap]]
+offset = 11
+size = 119
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "entity_id_code_unit_count"
+offset = 130
+type = "u32"
+source = "spec"
+anchor = "an LP-UTF16 Design entity ID begins at offset 130 from the indexed header"

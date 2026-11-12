@@ -22,7 +22,7 @@ use super::coil::{
 };
 use super::combine::DesignCombineOperation;
 use super::direct_face::{
-    DesignDirectFaceOperation, DesignDraftOperation, DesignMoveOperation,
+    DesignDirectFaceOperation, DesignDraftOperation, DesignModifyOperation, DesignMoveOperation,
     DesignOffsetFacesOperation, DesignShellOperation, DesignThickenOperation,
 };
 use super::emboss::DesignEmbossConstruction;
@@ -77,6 +77,7 @@ cadmpeg_core::named_optional_field!(
     crate::records::identity::Located<String>,
     "label"
 );
+cadmpeg_core::named_optional_field!(deserialize_display_name, String, "display_name");
 cadmpeg_core::named_optional_field!(
     deserialize_deleted_members,
     super::deleted_members::DesignDeletedMembers,
@@ -165,6 +166,11 @@ cadmpeg_core::named_optional_field!(
     "extrude_native_profiles"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_chamfer_sets,
+    super::chamfer_set::DesignChamferSetList,
+    "chamfer_sets"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_extrude_prologue,
     DesignExtrudePrologue,
     "extrude_prologue"
@@ -183,6 +189,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_fixed_fillet_parameters,
     DesignFixedFilletParameters,
     "fixed_fillet_parameters"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_fillet_sets,
+    super::fillet_set::DesignFilletSetList,
+    "fillet_sets"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_hem_operation,
@@ -229,6 +240,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_move_operation,
     DesignMoveOperation,
     "move_operation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_modify_operation,
+    DesignModifyOperation,
+    "modify_operation"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_path_feature_construction,
@@ -397,6 +413,18 @@ impl<T> ScopePayloadCompleteness for Vec<T> {
 impl ScopePayloadCompleteness for crate::records::feature::hole::DesignHoleScope {
     fn is_uninterpreted(&self) -> bool {
         self.point.is_none() && self.extent.is_none()
+    }
+}
+
+impl ScopePayloadCompleteness for super::chamfer_set::DesignChamferScope {
+    fn is_uninterpreted(&self) -> bool {
+        self.fixed.is_none() && self.sets.is_none()
+    }
+}
+
+impl ScopePayloadCompleteness for super::fillet_set::DesignFilletScope {
+    fn is_uninterpreted(&self) -> bool {
+        self.fixed.is_none() && self.sets.is_none()
     }
 }
 
@@ -595,8 +623,8 @@ design_feature_kinds! {
         Assemble => "Assemble": Option<DesignAssemblyAlignment>,
         AsBuilt => "As-built": Option<DesignAssemblyAlignment>,
         Extrude => "Extrude": Option<DesignExtrudeScope>,
-        Fillet => "Fillet": Option<DesignFixedFilletParameters>,
-        Chamfer => "Chamfer": Option<DesignFixedChamferParameters>,
+        Fillet => "Fillet": super::fillet_set::DesignFilletScope,
+        Chamfer => "Chamfer": super::chamfer_set::DesignChamferScope,
         Combine => "Combine": Option<DesignCombineOperation>,
         Draft => "Draft": Option<DesignDraftOperation>,
         CPattern => "C-Pattern": Option<DesignCircularPatternConstruction>,
@@ -608,6 +636,7 @@ design_feature_kinds! {
         Align => "Align": Option<DesignAlignEnvelope>,
         Move => "Move": Option<DesignMoveOperation>,
         MoveFace => "MoveFace": Option<DesignMoveOperation>,
+        Modify => "Modify": Option<DesignModifyOperation>,
         OffsetFaces => "OffsetFaces": Option<DesignOffsetFacesOperation>,
         Shell => "Shell": Option<DesignShellOperation>,
         Thicken => "Thicken": Option<DesignThickenOperation>,
@@ -729,6 +758,9 @@ pub(crate) struct DesignParameterScope {
     /// Label and offset of its UTF-16LE code units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) label: Option<crate::records::identity::Located<String>>,
+    /// Display name bound from a companion `WorkPlane` entity record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) display_name: Option<String>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     history_state_id: Option<i64>,
@@ -856,6 +888,13 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_label"
     )]
     label: Option<crate::records::identity::Located<String>>,
+    /// Display name bound from a companion `WorkPlane` entity record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_display_name"
+    )]
+    display_name: Option<String>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(
         default,
@@ -906,6 +945,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_move_operation"
     )]
     move_operation: Option<DesignMoveOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_modify_operation"
+    )]
+    modify_operation: Option<DesignModifyOperation>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1004,6 +1049,13 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_fixed_fillet_parameters"
     )]
     fixed_fillet_parameters: Option<DesignFixedFilletParameters>,
+    /// Fillet sets named by the prefix of a parameter-owned Fillet scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_fillet_sets"
+    )]
+    fillet_sets: Option<super::fillet_set::DesignFilletSetList>,
     /// Exact fixed scalar lane carried by an equal-distance Chamfer scope.
     #[serde(
         default,
@@ -1011,6 +1063,13 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_fixed_chamfer_parameters"
     )]
     fixed_chamfer_parameters: Option<DesignFixedChamferParameters>,
+    /// Chamfer sets named by the prefix of a parameter-owned Chamfer scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_chamfer_sets"
+    )]
+    chamfer_sets: Option<super::chamfer_set::DesignChamferSetList>,
     /// Path-feature construction and Sweep sketch profile.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1672,6 +1731,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.move_operation.is_some() {
             present.push("move_operation");
         }
+        if wire.modify_operation.is_some() {
+            present.push("modify_operation");
+        }
         if wire.scale_operation.is_some() {
             present.push("scale_operation");
         }
@@ -1708,8 +1770,14 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.fixed_fillet_parameters.is_some() {
             present.push("fixed_fillet_parameters");
         }
+        if wire.fillet_sets.is_some() {
+            present.push("fillet_sets");
+        }
         if wire.fixed_chamfer_parameters.is_some() {
             present.push("fixed_chamfer_parameters");
+        }
+        if wire.chamfer_sets.is_some() {
+            present.push("chamfer_sets");
         }
         if wire.combine_operation.is_some() {
             present.push("combine_operation");
@@ -1778,10 +1846,16 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
             DesignFeatureKind::Extrude => DesignScopePayload::Extrude(wire.extrude.take()),
             DesignFeatureKind::Fillet => {
-                DesignScopePayload::Fillet(wire.fixed_fillet_parameters.take())
+                DesignScopePayload::Fillet(super::fillet_set::DesignFilletScope {
+                    fixed: wire.fixed_fillet_parameters.take(),
+                    sets: wire.fillet_sets.take(),
+                })
             }
             DesignFeatureKind::Chamfer => {
-                DesignScopePayload::Chamfer(wire.fixed_chamfer_parameters.take())
+                DesignScopePayload::Chamfer(super::chamfer_set::DesignChamferScope {
+                    fixed: wire.fixed_chamfer_parameters.take(),
+                    sets: wire.chamfer_sets.take(),
+                })
             }
             DesignFeatureKind::Combine => {
                 DesignScopePayload::Combine(wire.combine_operation.take())
@@ -1806,6 +1880,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::Align => DesignScopePayload::Align(wire.align_envelope.take()),
             DesignFeatureKind::Move => DesignScopePayload::Move(wire.move_operation.take()),
             DesignFeatureKind::MoveFace => DesignScopePayload::MoveFace(wire.move_operation.take()),
+            DesignFeatureKind::Modify => DesignScopePayload::Modify(wire.modify_operation.take()),
             DesignFeatureKind::OffsetFaces => {
                 DesignScopePayload::OffsetFaces(match wire.direct_face_operation.take() {
                     None => None,
@@ -2050,6 +2125,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.direct_face_operation.is_some()
             || wire.align_envelope.is_some()
             || wire.move_operation.is_some()
+            || wire.modify_operation.is_some()
             || wire.scale_operation.is_some()
             || wire.reverse_normal_operation.is_some()
             || wire.path_pattern_settings.is_some()
@@ -2063,7 +2139,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.edge_flange_operation.is_some()
             || wire.hem_operation.is_some()
             || wire.fixed_fillet_parameters.is_some()
+            || wire.fillet_sets.is_some()
             || wire.fixed_chamfer_parameters.is_some()
+            || wire.chamfer_sets.is_some()
             || wire.combine_operation.is_some()
             || wire.emboss_construction.is_some()
             || wire.thread_construction.is_some()
@@ -2137,7 +2215,24 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 "occurrence_transfer disagrees with scope".into(),
             ));
         }
+        if let Some(name) = wire.display_name.as_deref() {
+            let units = name.encode_utf16().count();
+            if wire.kind != DesignFeatureKind::WorkPlane
+                || name.trim().is_empty()
+                || !(1..=256).contains(&units)
+                || name.chars().any(char::is_control)
+                || admitted
+                    .label
+                    .as_ref()
+                    .is_some_and(|label| label.value != name)
+            {
+                return Err(DesignParameterScopePayloadError(
+                    "invalid display_name".into(),
+                ));
+            }
+        }
         admitted.source_kind = wire.source_kind;
+        admitted.display_name = wire.display_name;
         admitted.occurrence_transfer = occurrence_transfer;
         Ok(admitted)
     }
@@ -2164,6 +2259,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             feature_ordinal: scope.feature_ordinal.get(),
             feature_ordinal_offset: scope.feature_ordinal_offset,
             label: scope.label,
+            display_name: scope.display_name,
             history_state_id: scope.history_state_id,
             history_state_id_offset,
             previous_history_state_id: scope.previous_history_state_id,
@@ -2175,6 +2271,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             direct_face_operation: None,
             align_envelope: None,
             move_operation: None,
+            modify_operation: None,
             scale_operation: None,
             reverse_normal_operation: None,
             path_pattern_settings: None,
@@ -2189,7 +2286,9 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             edge_flange_operation: None,
             hem_operation: None,
             fixed_fillet_parameters: None,
+            fillet_sets: None,
             fixed_chamfer_parameters: None,
+            chamfer_sets: None,
             path_feature: None,
             combine_operation: None,
             thread_construction: None,
@@ -2278,6 +2377,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::Move(value) | DesignScopePayload::MoveFace(value) => {
                 wire.move_operation = value;
             }
+            DesignScopePayload::Modify(value) => wire.modify_operation = value,
             DesignScopePayload::Scale(value) => {
                 wire.scale_operation = value;
             }
@@ -2296,9 +2396,13 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             }
             DesignScopePayload::EdgeFlange(value) => wire.edge_flange_operation = value,
             DesignScopePayload::Hem(value) => wire.hem_operation = value,
-            DesignScopePayload::Fillet(value) => wire.fixed_fillet_parameters = value,
+            DesignScopePayload::Fillet(value) => {
+                wire.fixed_fillet_parameters = value.fixed;
+                wire.fillet_sets = value.sets;
+            }
             DesignScopePayload::Chamfer(value) => {
-                wire.fixed_chamfer_parameters = value;
+                wire.fixed_chamfer_parameters = value.fixed;
+                wire.chamfer_sets = value.sets;
             }
             DesignScopePayload::Combine(value) => wire.combine_operation = value,
             DesignScopePayload::Thread(value) => wire.thread_construction = value,
@@ -2563,6 +2667,7 @@ impl DesignParameterScope {
             feature_ordinal: draft.feature_ordinal,
             feature_ordinal_offset: draft.feature_ordinal_offset,
             label: draft.label,
+            display_name: None,
             history_state_id: draft.history_state_id,
             previous_history_state_id: draft.previous_history_state_id,
             previous_history_state_id_offset: draft.previous_history_state_id_offset,
@@ -2790,6 +2895,13 @@ impl DesignParameterScope {
         }
     }
 
+    pub(crate) fn modify_operation(&self) -> Option<&DesignModifyOperation> {
+        match &self.payload {
+            DesignScopePayload::Modify(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
     pub(crate) fn path_pattern_settings(
         &self,
     ) -> Option<&crate::records::feature::patterns::DesignPathPatternSettings> {
@@ -2857,14 +2969,28 @@ impl DesignParameterScope {
 
     pub(crate) fn fixed_fillet_parameters(&self) -> Option<&DesignFixedFilletParameters> {
         match &self.payload {
-            DesignScopePayload::Fillet(value) => value.as_ref(),
+            DesignScopePayload::Fillet(value) => value.fixed.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn chamfer_sets(&self) -> Option<&super::chamfer_set::DesignChamferSetList> {
+        match &self.payload {
+            DesignScopePayload::Chamfer(value) => value.sets.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn fillet_sets(&self) -> Option<&super::fillet_set::DesignFilletSetList> {
+        match &self.payload {
+            DesignScopePayload::Fillet(value) => value.sets.as_ref(),
             _ => None,
         }
     }
 
     pub(crate) fn fixed_chamfer_parameters(&self) -> Option<&DesignFixedChamferParameters> {
         match &self.payload {
-            DesignScopePayload::Chamfer(value) => value.as_ref(),
+            DesignScopePayload::Chamfer(value) => value.fixed.as_ref(),
             _ => None,
         }
     }

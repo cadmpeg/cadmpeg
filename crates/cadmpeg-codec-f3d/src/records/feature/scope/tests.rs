@@ -599,3 +599,99 @@ fn native_profile_wire_round_trips_and_rejects_null() {
         assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
     });
 }
+
+#[test]
+fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
+    use super::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut};
+    use crate::records::feature::fillet_set::{
+        DesignFilletSet, DesignFilletSetLaw, DesignFilletSetList, DesignFilletSetListForm,
+    };
+    let mut scope = DesignParameterScope::empty("f3d:scope#1", DesignFeatureKind::Fillet, 1);
+    if let DesignScopePayloadMut::Fillet(slot) = scope.payload_mut() {
+        slot.sets = Some(DesignFilletSetList {
+            form: DesignFilletSetListForm::Current,
+            sets: vec![DesignFilletSet {
+                record_index: 2,
+                byte_offset: 300,
+                frame_length: 97,
+                group_record_index: 3,
+                law: DesignFilletSetLaw::Constant {
+                    radius_owner_record_index: 4,
+                },
+                tangency_weight_owner_record_index: 5,
+                flag: false,
+            }],
+        });
+    }
+    let wire = serde_json::to_value(&scope).unwrap();
+    assert_eq!(wire["fillet_sets"]["sets"][0]["group_record_index"], 3);
+    let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(decoded.fillet_sets(), scope.fillet_sets());
+    assert!(!decoded.payload().is_uninterpreted());
+    let mut invalid = wire.clone();
+    invalid["kind"] = serde_json::json!("Chamfer");
+    assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
+    let mut invalid = wire;
+    invalid["fillet_sets"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
+}
+
+#[test]
+fn chamfer_sets_round_trip_and_belong_to_chamfer_scopes() {
+    use super::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut};
+    use crate::records::feature::chamfer_set::{
+        DesignChamferSet, DesignChamferSetList, DesignChamferSetListForm, DesignChamferSetSpec,
+    };
+    let mut scope = DesignParameterScope::empty("f3d:scope#1", DesignFeatureKind::Chamfer, 1);
+    if let DesignScopePayloadMut::Chamfer(slot) = scope.payload_mut() {
+        slot.sets = Some(DesignChamferSetList {
+            form: DesignChamferSetListForm::Compact,
+            entry_count: 6,
+            sets: vec![DesignChamferSet {
+                record_index: 2,
+                byte_offset: 300,
+                frame_length: 82,
+                group_record_index: 3,
+                spec: DesignChamferSetSpec::EqualDistance {
+                    distance_owner_record_index: 4,
+                },
+                auxiliary_record_index: 5,
+                flag: true,
+            }],
+        });
+    }
+    let wire = serde_json::to_value(&scope).unwrap();
+    assert_eq!(wire["chamfer_sets"]["sets"][0]["group_record_index"], 3);
+    let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(decoded.chamfer_sets(), scope.chamfer_sets());
+    assert!(!decoded.payload().is_uninterpreted());
+    let mut invalid = wire.clone();
+    invalid["kind"] = serde_json::json!("Fillet");
+    assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
+    let mut invalid = wire;
+    invalid["chamfer_sets"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
+}
+
+#[test]
+fn work_plane_scope_display_name_wire_validates_bounds_and_kind() {
+    use super::{DesignFeatureKind, DesignParameterScope, DesignParameterScopeSerde};
+    let mut scope = crate::test_support::work_plane::scope_referencing(&[73]);
+    scope.display_name = Some("Body Split".into());
+    let wire = serde_json::to_value(&scope).unwrap();
+    let owned = serde_json::to_value(DesignParameterScopeSerde::from(scope.clone())).unwrap();
+    assert_eq!(wire, owned);
+    let loaded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(loaded, scope);
+
+    for bad in ["", "   ", "Bad\nName", &"x".repeat(257)] {
+        let mut invalid = wire.clone();
+        invalid["display_name"] = serde_json::json!(bad);
+        assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
+    }
+
+    let mut non_work_plane = DesignParameterScope::empty("scope", DesignFeatureKind::Extrude, 1);
+    non_work_plane.display_name = Some("Body Split".into());
+    let bad_kind = serde_json::to_value(&non_work_plane).unwrap();
+    assert!(serde_json::from_value::<DesignParameterScope>(bad_kind).is_err());
+}

@@ -1422,6 +1422,7 @@ fn merge_framed_records<T>(
 pub(crate) struct Tables {
     bridges: HashMap<u32, Bridge>,
     bridge_frames: HashMap<u32, RecordFrame>,
+    looped_bridge_attrs: HashSet<u32>,
     loops: HashMap<u32, Loop>,
     loop_frames: HashMap<u32, RecordFrame>,
     edge_uses: HashMap<u32, EdgeUse>,
@@ -1445,6 +1446,7 @@ impl Tables {
         let keep = |attr: &u32| !attrs.contains(attr);
         self.bridges.retain(|attr, _| keep(attr));
         self.bridge_frames.retain(|attr, _| keep(attr));
+        self.looped_bridge_attrs.retain(keep);
         self.loops.retain(|attr, _| keep(attr));
         self.loop_frames.retain(|attr, _| keep(attr));
         self.edge_uses.retain(|attr, _| keep(attr));
@@ -1484,13 +1486,27 @@ impl Tables {
         &self.bridges
     }
 
+    pub(super) fn has_looped_bridge_frame(&self, attr: u32) -> bool {
+        self.looped_bridge_attrs.contains(&attr)
+    }
+
+    pub(super) fn record_looped_bridge_attrs(&mut self, attrs: &HashSet<u32>) {
+        self.looped_bridge_attrs.extend(attrs.iter().copied());
+    }
+
     #[cfg(test)]
     pub(super) fn insert_bridge(&mut self, record: Bridge) {
+        if record.refs[2] > 1 {
+            self.looped_bridge_attrs.insert(record.attr);
+        }
         self.bridges.insert(record.attr, record);
     }
 
     fn merge_bridge_frame(&mut self, record: Bridge, frame: RecordFrame) {
         let attr = record.attr;
+        if record.refs[2] > 1 {
+            self.looped_bridge_attrs.insert(attr);
+        }
         merge_record_frame(
             &mut self.bridges,
             &mut self.bridge_frames,
@@ -1639,6 +1655,7 @@ impl Tables {
             deltas.bridge_frames.contains_key(attr)
                 || (!self.bridges.contains_key(attr) && may_add(attr))
         });
+        self.looped_bridge_attrs.extend(deltas.looped_bridge_attrs);
         merge_framed_records(
             &mut self.bridges,
             &mut self.bridge_frames,
@@ -2227,6 +2244,39 @@ fn scan_deltas_with_curve_attrs_excluding(
     let mut owners = super::typed::topology_owner_attrs_for_streams([(&owner_facts, body, true)]);
     owners.extend(base.owner_classes.iter().copied());
     scan_deltas_with_owner_attrs(body, curves, excluded, base, &owners)
+}
+
+pub(super) fn framed_looped_bridge_attrs(body: &[u8], deltas: bool, plain: bool) -> HashSet<u32> {
+    let scopes = topology_scopes(body, deltas);
+    let mut payload_index = 0;
+    let mut attrs = HashSet::new();
+    let mut offset = 0;
+    while offset + 14 <= body.len() {
+        while scopes
+            .excluded_starts
+            .get(payload_index)
+            .is_some_and(|range| range.end <= offset)
+        {
+            payload_index += 1;
+        }
+        if let Some(range) = scopes
+            .excluded_starts
+            .get(payload_index)
+            .filter(|range| range.contains(&offset))
+        {
+            offset = range.end;
+            continue;
+        }
+        if View::u16_be_at(body, offset) == Some(0x000e) {
+            if let Some(record) =
+                parse_bridge(body, offset, plain).filter(|record| record.refs[2] > 1)
+            {
+                attrs.insert(record.attr);
+            }
+        }
+        offset += 1;
+    }
+    attrs
 }
 
 fn scan_records(

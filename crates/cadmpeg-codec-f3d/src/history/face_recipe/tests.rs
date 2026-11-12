@@ -75,6 +75,7 @@ fn operand() -> DesignFaceOperand {
                 selector: 1,
                 selector_offset: ordinal,
                 token: format!("face{ordinal}"),
+                token_integer: 0,
                 token_offset: ordinal,
                 design_reference: i64::try_from(ordinal).unwrap(),
                 design_reference_offset: ordinal,
@@ -439,4 +440,14 @@ fn bounded_face_nodes_bind_two_edge_loops_with_two_shared_vertices() {
         }
     }
     assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), Some(100));
+}
+
+#[test]
+fn a_one_clause_node_leaves_the_bounded_face_member_unresolved() {
+    let topology = topology();
+    let mut operand = operand();
+    let structure = operand.recipe_nodes[0].recipe_structure.as_mut().unwrap();
+    structure.prelude[1] = 1;
+    structure.sides.truncate(1);
+    assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), None);
 }

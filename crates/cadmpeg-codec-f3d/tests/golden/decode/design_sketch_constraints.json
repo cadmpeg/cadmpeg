@@ -291,7 +291,7 @@
       "sketches": [
         {
           "id": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
-          "name": "0_277",
+          "name": "Sketch 1",
           "placement": {
             "kind": "resolved",
             "frame": {
@@ -2145,6 +2145,16 @@
         },
         "severity": "warning",
         "message": "sketch entity f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277c440:0: curve is not part of any closed profile loop"
+      },
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
+          "code": "sketch.name-composed-from-feature-ordinal",
+          "kind": "attributes_not_transferred"
+        },
+        "severity": "warning",
+        "message": "1 sketch name(s) use the projected Feature name composed from the stored scope kind spelling and feature ordinal; this assumes the default timeline name."
       },
       {
         "code": {

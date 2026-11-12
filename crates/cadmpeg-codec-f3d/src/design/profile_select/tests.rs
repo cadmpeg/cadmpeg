@@ -166,6 +166,7 @@ fn placement() -> DesignSketchPlacement {
             .expect("valid entity ID"),
 
         visibility: None,
+        display_name: None,
 
         class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 20,
@@ -200,6 +201,7 @@ fn planar_resolution<'a>(
     sketch_entities: &'a [SketchEntity],
 ) -> SketchProfileResolution<'a> {
     SketchProfileResolution {
+        profile_curves: &[],
         entities: &[],
         entity_selection_operands: operands,
         placements,
@@ -525,6 +527,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     .unwrap();
     let placements = [placement];
     let resolution = SketchProfileResolution {
+        profile_curves: &[],
         entities: &[],
         entity_selection_operands: &[],
         placements: &placements,

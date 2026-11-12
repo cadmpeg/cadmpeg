@@ -1575,6 +1575,31 @@ face with no `FACE_OUTER_BOUND` follows the same rule, and a single
 `PLANE`, the region to the left of one bound that runs clockwise about `n` is
 not finite, so that bound set is not a face.
 
+An `ADVANCED_FACE` in an advanced BREP retains the nonempty `FACE.bounds`
+cardinality. A whole spherical face can have a `VERTEX_LOOP` at a pole. A
+whole ring-torus face can have one seam loop: two closed edges meet at one
+vertex, and the loop uses each edge once in each direction. Each seam curve
+has two pcurves on the face surface, one at each end of the corresponding
+periodic parameter interval. A `SEAM_EDGE` selects the pcurve of its use.
+The same topology applies to a doubly periodic B-spline surface, with exact
+B-spline isolines as the seam curves. A periodic B-spline surface whose two
+remaining domain sides collapse to poles has vertex boundaries at those
+poles. A closed shell over one such whole face has zero open edge uses.
+
+A `DEGENERATE_TOROIDAL_SURFACE` has positive major radius `R`, tube radius
+`r > R`, and a boolean `select_outer`. Its parameterization is
+`P(u,v) = C + (R + r cos v)(cos u X + sin u Y) + r sin v Z`.
+For `a = acos(-R/r)`, the outer sheet has `v` in `[-a,a]`; the inner sheet
+has `v` in `[a,2π-a]`. Each sheet has full angular range `u` in `[0,2π]`
+and poles at `C ± sqrt(r²-R²) Z`. The natural normal points outward on
+the outer sheet and inward on the inner sheet. A whole sheet has two
+`VERTEX_LOOP` bounds and a seam loop. The seam loop uses one exact circular
+meridian edge twice in opposite directions. Its two pcurves have constant
+`u` values zero and `2π`. The meridian and both pcurves are trimmed to
+the selected profile interval. Each `SEAM_EDGE` selects its corresponding pcurve. The resulting
+face is a closed two-dimensional manifold with singular surface parameters
+at its poles.
+
 Section §5.5.17 defines the inherited `FACE_BOUND` attributes `bound` and
 `orientation`. Section §5.5.18 declares `FACE_OUTER_BOUND` as a subtype with
 no additional explicit attributes. Therefore, in a complex instance, the

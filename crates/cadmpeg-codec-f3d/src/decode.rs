@@ -385,15 +385,20 @@ fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -
 
 fn draft_neutral_plane_is_resolved(
     selection: &cadmpeg_ir::features::FaceSelection,
-    pull_plane: Option<&cadmpeg_ir::features::FeatureId>,
-    pull_direction: Option<&cadmpeg_ir::math::Vector3>,
+    pull: Option<&cadmpeg_ir::features::DraftPull>,
 ) -> bool {
     face_selection_is_resolved(selection)
         || match selection {
-            cadmpeg_ir::features::FaceSelection::Native(native) => {
-                pull_plane.is_some_and(|plane| plane.as_str() == *native)
-                    && pull_direction.is_some_and(|direction| direction.unit().is_some())
-            }
+            cadmpeg_ir::features::FaceSelection::Native(native) => pull.is_some_and(|pull| {
+                pull.direction.unit().is_some()
+                    && (pull
+                        .plane
+                        .as_ref()
+                        .is_some_and(|plane| plane.as_str() == *native)
+                        || (pull.plane.is_none()
+                            && pull.frame.is_some()
+                            && pull.frame_matches_direction()))
+            }),
             _ => false,
         }
 }
@@ -813,11 +818,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                             || pull.plane.is_none()
                     }
                     cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, pull } => {
-                        !draft_neutral_plane_is_resolved(
-                            plane,
-                            pull.as_ref().and_then(|pull| pull.plane.as_ref()),
-                            pull.as_ref().map(|pull| &*pull.direction),
-                        )
+                        !draft_neutral_plane_is_resolved(plane, pull.as_ref())
                     }
                 }
         }
@@ -1908,6 +1909,28 @@ impl std::fmt::Display for IncompleteFamilyCounts<'_> {
     }
 }
 
+/// Restate the `feature.definition-incomplete` note from the current features
+/// after a later pass completed some of them.
+fn refresh_incomplete_feature_loss(
+    ir: &CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let kind = F3dLossCode::FeatureDefinitionIncomplete.kind();
+    let Some(at) = losses.iter().position(|loss| loss.code == kind) else {
+        return;
+    };
+    let families = incomplete_feature_families(ir);
+    let count = families.values().sum::<usize>();
+    if count == 0 {
+        losses.remove(at);
+        return;
+    }
+    losses[at] = F3dLossCode::FeatureDefinitionIncomplete.note(format!(
+        "{count} feature scope(s) have no complete neutral feature definition: {}.",
+        IncompleteFamilyCounts(&families)
+    ));
+}
+
 fn push_loss_vec(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     code: F3dLossCode,
@@ -2291,6 +2314,21 @@ fn report_design_projection_gaps(
             report.losses.push(
                 F3dLossCode::MoveUnprojected
                     .note(format!("Move {} remains native: {reason}.", scope.id)),
+            );
+        }
+        if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Modify
+            && !projected_moves.contains(scope.id.as_str())
+        {
+            let reason = match scope.modify_operation() {
+                None => "no admitted prologue, body groups and rigid-transform record",
+                Some(operation) if !operation.motion.preserves_orientation() => {
+                    "stored basis reverses orientation"
+                }
+                Some(_) => "no complete body group for each listed group",
+            };
+            report.losses.push(
+                F3dLossCode::ModifyUnprojected
+                    .note(format!("Modify {} remains native: {reason}.", scope.id)),
             );
         }
     }
@@ -3276,7 +3314,11 @@ impl<'a> F3dDecodeSession<'a> {
                 let face_losses =
                     resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
                 apply_appearance_base_colors(&mut self.ir);
-                apply_body_presentation_names(&mut self.ir, scan, &prereqs.design_body_bindings)?;
+                let name_losses = apply_body_presentation_names(
+                    &mut self.ir,
+                    scan,
+                    &prereqs.design_body_bindings,
+                )?;
                 self.ir
                     .model
                     .appearance_bindings
@@ -3287,6 +3329,7 @@ impl<'a> F3dDecodeSession<'a> {
                     materials.has_topology_assignments,
                 );
                 self.report.losses.extend(face_losses);
+                self.report.losses.extend(name_losses);
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
                 match &prereqs.xref {
                     Ok(Some(table)) => {
@@ -3409,6 +3452,7 @@ impl<'a> F3dDecodeSession<'a> {
                     .xref_table()
                     .map_or(&[], |table| table.references.as_slice()),
                 &self.ir.model.occurrences,
+                &prereqs.design_parameter_scopes,
             ),
         );
         self.ir.model.assembly_joints = joints.joints;
@@ -3662,6 +3706,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 &mut decoded.ir,
                 &mut decoded.body.losses,
             )?;
+            refresh_incomplete_feature_loss(&decoded.ir, &mut decoded.body.losses);
             let poses = crate::xref::operation_pose::collect(
                 ctx,
                 &scan,
@@ -5958,7 +6003,9 @@ pub(crate) fn apply_body_presentation_names(
     ir: &mut CadIr,
     scan: &ContainerScan,
     body_bindings: &[crate::records::bodies::DesignBodyBinding],
-) -> Result<(), CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
+    let mut losses = Vec::new();
+    let mut stream_entity_names = std::collections::BTreeMap::<(&str, u64), Option<String>>::new();
     for entry in scan
         .entries
         .iter()
@@ -5976,25 +6023,93 @@ pub(crate) fn apply_body_presentation_names(
             let Some(name) = presentation.name.as_deref() else {
                 continue;
             };
-            if is_default_body_name(name) {
+            if name.trim().is_empty()
+                || name.chars().any(char::is_control)
+                || is_default_body_name(name)
+            {
                 continue;
             }
-            let mut matching = body_bindings.iter().filter(|b| {
-                b.stream() == entry.name && b.entity_suffix == presentation.entity_suffix
-            });
-            let (Some(binding), None) = (matching.next(), matching.next()) else {
-                continue;
-            };
-            if let Some(body_id) = &binding.body {
-                if let Some(body) = ir.model.bodies.iter_mut().find(|b| b.id == *body_id) {
-                    if body.name.is_none() {
-                        body.name = Some(name.to_string());
+            match stream_entity_names.entry((entry.name.as_str(), presentation.entity_suffix)) {
+                std::collections::btree_map::Entry::Vacant(v) => {
+                    v.insert(Some(name.to_string()));
+                }
+                std::collections::btree_map::Entry::Occupied(mut o) => {
+                    if o.get().as_deref() != Some(name) {
+                        o.insert(None);
                     }
                 }
             }
         }
     }
-    Ok(())
+
+    let mut bindings_by_owner = std::collections::HashMap::<
+        (&str, u64),
+        Vec<&crate::records::bodies::DesignBodyBinding>,
+    >::new();
+    for binding in body_bindings {
+        bindings_by_owner
+            .entry((binding.stream(), binding.entity_suffix))
+            .or_default()
+            .push(binding);
+    }
+
+    let mut body_names =
+        std::collections::BTreeMap::<cadmpeg_ir::ids::BodyId, Option<String>>::new();
+    for ((stream, entity_suffix), candidate) in &stream_entity_names {
+        let Some(name) = candidate else {
+            losses.push(F3dLossCode::BodyDisplayNameAmbiguous.note(format!(
+                "Body presentations in {stream} assign conflicting display names to entity suffix {entity_suffix}."
+            )));
+            if let Some(bindings) = bindings_by_owner.get(&(*stream, *entity_suffix)) {
+                for body_id in bindings.iter().filter_map(|b| b.body.as_ref()) {
+                    body_names.insert(body_id.clone(), None);
+                }
+            }
+            continue;
+        };
+        let Some(bindings) = bindings_by_owner.get(&(*stream, *entity_suffix)) else {
+            continue;
+        };
+        if bindings.len() > 1 {
+            if bindings.iter().any(|b| b.body.is_some()) {
+                losses.push(F3dLossCode::BodyDisplayNameAmbiguous.note(format!(
+                    "Body presentation display name {name:?} for {stream} entity suffix {entity_suffix} matches {} body bindings.",
+                    bindings.len()
+                )));
+                for body_id in bindings.iter().filter_map(|b| b.body.as_ref()) {
+                    body_names.insert(body_id.clone(), None);
+                }
+            }
+            continue;
+        }
+        let Some(body_id) = &bindings[0].body else {
+            continue;
+        };
+        match body_names.entry(body_id.clone()) {
+            std::collections::btree_map::Entry::Vacant(v) => {
+                v.insert(Some(name.clone()));
+            }
+            std::collections::btree_map::Entry::Occupied(mut o) => {
+                if let Some(existing) = o.get().as_deref() {
+                    if existing != name {
+                        losses.push(F3dLossCode::BodyDisplayNameAmbiguous.note(format!(
+                            "Model body {body_id} receives conflicting presentation display names {existing:?} and {name:?}."
+                        )));
+                        o.insert(None);
+                    }
+                }
+            }
+        }
+    }
+
+    for body in &mut ir.model.bodies {
+        if let Some(Some(name)) = body_names.get(&body.id) {
+            if body.name.is_none() {
+                body.name = Some(name.clone());
+            }
+        }
+    }
+    Ok(losses)
 }
 
 pub(crate) mod design_intent;

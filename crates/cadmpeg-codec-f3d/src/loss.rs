@@ -93,6 +93,9 @@ pub(crate) enum F3dLossCode {
     FeatureOccurrencePathUnresolved,
     /// A sketch collection owner does not bind one component definition.
     SketchOwnerUnresolved,
+    /// Sketches take the Feature label composed from the scope kind spelling
+    /// and feature ordinal instead of a stored name.
+    SketchNameComposedFromFeatureOrdinal,
     SketchMembershipConflict,
     SketchFolderClosingReference,
     SketchFolderUnprojected,
@@ -160,6 +163,9 @@ pub(crate) enum F3dLossCode {
     AssemblyOperandDescentAmbiguous,
     /// A complete joint occurrence path has no unique merged insertion instance.
     AssemblyOperandDescentUnresolved,
+    /// A joint operand path continues inside an unmerged inserted document; the
+    /// remaining keys stay a nested occurrence path.
+    AssemblyOperandNestedPathRetained,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
     /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
@@ -234,6 +240,8 @@ pub(crate) enum F3dLossCode {
     FeatureScopeUnprojected,
     /// A Move scope has no neutral `MoveBody` feature.
     MoveUnprojected,
+    /// A Modify scope has no neutral `MoveBody` feature.
+    ModifyUnprojected,
     /// Hole extent controls do not define an admitted termination.
     HoleExtentUnproven,
     /// An Extents To Hole ends at the face its extent group member resolves.
@@ -251,6 +259,10 @@ pub(crate) enum F3dLossCode {
     AlignConstructionUnparsed,
     /// A decoded native feature envelope has no interpreted specialized payload.
     FeatureScopePayloadUninterpreted,
+    /// A Fillet set list contradicts the radius group that the indexed-owner path projects.
+    FeatureFilletSetConflict,
+    /// A Chamfer set list pairs groups and specifications against owner order.
+    FeatureChamferSetConflict,
     /// Emboss controls, native pairs, and selected contours have no neutral mapping.
     EmbossControlsNative,
     FeatureShellAuxiliaryReferencesNative,
@@ -285,6 +297,8 @@ pub(crate) enum F3dLossCode {
     HistoryDependencyAmbiguous,
     /// A historical face selection cannot bind uniquely to emitted input topology members.
     HistoricalFaceSelectionUnbound,
+    /// A healed `DeleteFace` group assumes member order from selected face stable-slot order.
+    HistoryDeleteFaceMemberOrderAssumed,
     /// Historical edge midpoint geometry could not be resolved from feature selections.
     HistoricalEdgeMidpointsUnresolved,
     /// A `Fillet` edge is inferred from blend geometry; no two supports share it.
@@ -380,6 +394,8 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCoincidentDirectionAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
+    /// A stored Cut transition certifies regions with stale curve identities.
+    FeatureProfileRegionIdentitiesStale,
     /// Extrude profile selections assumed that a curve outside the
     /// arrangement makes no island in a selected face.
     FeatureProfileIslandAbsenceAssumed,
@@ -441,6 +457,14 @@ pub(crate) enum F3dLossCode {
     FeatureRevolveLayoutAssumed,
     /// A marked `Move` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record.
     FeatureMoveTransformAssumed,
+    /// A form-2 rigid-transform record stores four references whose effect on its stored motion is unresolved.
+    FeatureMoveTransformReferencesAssumed,
+    /// A projected `Modify` assumes that its unlisted body groups select the bodies of its listed groups.
+    FeatureModifyUnlistedGroupsAssumed,
+    /// A projected `Modify` stores a reference table outside the body-group run of its family.
+    FeatureModifyTableAssumed,
+    /// A projected `Modify` commits a current history state.
+    FeatureModifyStateAssumed,
     /// A standard `Loft` scope stores a non-null marked reference whose target and setting are unresolved.
     FeatureLoftReferenceUnresolved,
     /// A three-flag `Loft` scope stores flag bytes whose Loft settings are unresolved.
@@ -474,6 +498,9 @@ pub(crate) enum F3dLossCode {
     FeatureTrimMemberTypeAssumed,
     /// An Extrude bounded-face operand drops fallback faces that one recipe operand contradicts.
     FeatureFaceOperandFallbackContradicted,
+    /// An Extrude to-face termination keeps its native group: its recipe face and
+    /// the derived preceding-face set disagree and no stored cap decides.
+    FeatureExtrudeTargetDisputed,
     /// Edge-treatment selections retain native recipes; no historical edge.
     FeatureEdgeSelectionNative,
     /// Edge-treatment operands stay unresolved inside historical selections.
@@ -656,6 +683,12 @@ pub(crate) enum F3dLossCode {
     UnindexedRecordsRetained,
     /// Design-intent decoding failed; its sketches, features and history were dropped.
     DesignIntentUndecoded,
+    /// A body presentation display name matches multiple body bindings or conflicts on one body.
+    BodyDisplayNameAmbiguous,
+    /// Constructed planes assign conflicting display names to one `WorkPlane` scope.
+    WorkPlaneDisplayNameAmbiguous,
+    /// Constructed plane display names could not be decoded.
+    WorkPlaneDisplayNameUndecoded,
 }
 
 impl F3dLossCode {
@@ -697,6 +730,7 @@ impl F3dLossCode {
         Self::LocalOccurrenceExpansionLimit,
         Self::FeatureOccurrencePathUnresolved,
         Self::SketchOwnerUnresolved,
+        Self::SketchNameComposedFromFeatureOrdinal,
         Self::SketchMembershipConflict,
         Self::SketchFolderClosingReference,
         Self::SketchFolderUnprojected,
@@ -726,6 +760,7 @@ impl F3dLossCode {
         Self::AssemblyRootPathIdentitiesNative,
         Self::AssemblyOperandDescentAmbiguous,
         Self::AssemblyOperandDescentUnresolved,
+        Self::AssemblyOperandNestedPathRetained,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryBindingWorkExceeded,
@@ -764,6 +799,7 @@ impl F3dLossCode {
         Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
         Self::MoveUnprojected,
+        Self::ModifyUnprojected,
         Self::HoleExtentUnproven,
         Self::HoleExtentFaceAssumed,
         Self::HolePlacementUnproven,
@@ -772,6 +808,8 @@ impl F3dLossCode {
         Self::AlignEnvelopeUnparsed,
         Self::AlignConstructionUnparsed,
         Self::FeatureScopePayloadUninterpreted,
+        Self::FeatureFilletSetConflict,
+        Self::FeatureChamferSetConflict,
         Self::EmbossControlsNative,
         Self::FeatureShellAuxiliaryReferencesNative,
         Self::EmbossPrefixUnparsed,
@@ -789,6 +827,7 @@ impl F3dLossCode {
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
+        Self::HistoryDeleteFaceMemberOrderAssumed,
         Self::HistoricalEdgeMidpointsUnresolved,
         Self::HistoricalFilletEdgeInferred,
         Self::HistoricalEdgeSelectionInferred,
@@ -839,6 +878,7 @@ impl F3dLossCode {
         Self::FeatureProfileCoincidentDirectionAssumed,
         Self::FeatureProfileLoopFlagsAssumed,
         Self::FeatureProfileCutRegionsAssumed,
+        Self::FeatureProfileRegionIdentitiesStale,
         Self::FeatureProfileIslandAbsenceAssumed,
         Self::FeatureProfilePolylineSideAssumed,
         Self::FeatureProfileCapOutlineAssumed,
@@ -866,6 +906,10 @@ impl F3dLossCode {
         Self::FeatureExtrudeTerminationMissing,
         Self::FeatureRevolveLayoutAssumed,
         Self::FeatureMoveTransformAssumed,
+        Self::FeatureMoveTransformReferencesAssumed,
+        Self::FeatureModifyUnlistedGroupsAssumed,
+        Self::FeatureModifyTableAssumed,
+        Self::FeatureModifyStateAssumed,
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
         Self::FeatureLoftListsUnresolved,
@@ -883,6 +927,7 @@ impl F3dLossCode {
         Self::FeatureTrimCellTableNative,
         Self::FeatureTrimMemberTypeAssumed,
         Self::FeatureFaceOperandFallbackContradicted,
+        Self::FeatureExtrudeTargetDisputed,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
         Self::FeatureEdgeSelectionLost,
@@ -970,6 +1015,9 @@ impl F3dLossCode {
         Self::ArchiveEntryUnreadable,
         Self::UnindexedRecordsRetained,
         Self::DesignIntentUndecoded,
+        Self::BodyDisplayNameAmbiguous,
+        Self::WorkPlaneDisplayNameAmbiguous,
+        Self::WorkPlaneDisplayNameUndecoded,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -1015,6 +1063,9 @@ impl F3dLossCode {
             Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
             Self::FeatureOccurrencePathUnresolved => "feature.occurrence-path-unresolved",
             Self::SketchOwnerUnresolved => "sketch.component-owner-unresolved",
+            Self::SketchNameComposedFromFeatureOrdinal => {
+                "sketch.name-composed-from-feature-ordinal"
+            }
             Self::SketchMembershipConflict => "sketch.membership-conflict",
             Self::SketchFolderClosingReference => "sketch.folder-closing-reference",
             Self::SketchFolderUnprojected => "sketch.folder-unprojected",
@@ -1056,6 +1107,7 @@ impl F3dLossCode {
             Self::AssemblyRootPathIdentitiesNative => "assembly.root-path-identities-native",
             Self::AssemblyOperandDescentAmbiguous => "assembly.operand-descent-ambiguous",
             Self::AssemblyOperandDescentUnresolved => "assembly.operand-descent-unresolved",
+            Self::AssemblyOperandNestedPathRetained => "assembly.operand-nested-path-retained",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
@@ -1111,6 +1163,8 @@ impl F3dLossCode {
             Self::AlignEnvelopeUnparsed => "feature.align-envelope-unparsed",
             Self::AlignConstructionUnparsed => "feature.align-construction-unparsed",
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
+            Self::FeatureFilletSetConflict => "feature.fillet-set-conflict",
+            Self::FeatureChamferSetConflict => "feature.chamfer-set-conflict",
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
             Self::HoleExtentFaceAssumed => "feature.hole-extent-face-assumed",
@@ -1118,6 +1172,7 @@ impl F3dLossCode {
             Self::HoleReferenceDimensionsNative => "feature.hole-reference-dimensions-native",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::MoveUnprojected => "feature.move-unprojected",
+            Self::ModifyUnprojected => "feature.modify-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
             Self::ParameterTrailerFlagUninterpreted => "parameter.trailer-flag-uninterpreted",
@@ -1130,6 +1185,7 @@ impl F3dLossCode {
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
+            Self::HistoryDeleteFaceMemberOrderAssumed => "history.delete-face-member-order-assumed",
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
             Self::HistoricalFilletEdgeInferred => "history.fillet-edge-inferred",
             Self::HistoricalEdgeSelectionInferred => "history.edge-selection-inferred",
@@ -1200,6 +1256,7 @@ impl F3dLossCode {
             Self::FeatureProfileCoincidentDirectionAssumed => {
                 "feature.profile-coincident-direction-assumed"
             }
+            Self::FeatureProfileRegionIdentitiesStale => "feature.profile-region-identities-stale",
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
             Self::FeatureProfileIslandAbsenceAssumed => "feature.profile-island-absence-assumed",
             Self::FeatureProfilePolylineSideAssumed => "feature.profile-polyline-side-assumed",
@@ -1236,6 +1293,12 @@ impl F3dLossCode {
             Self::FeatureExtrudeTerminationMissing => "feature.extrude-termination-missing",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
+            Self::FeatureMoveTransformReferencesAssumed => {
+                "feature.move-transform-references-assumed"
+            }
+            Self::FeatureModifyUnlistedGroupsAssumed => "feature.modify-unlisted-groups-assumed",
+            Self::FeatureModifyTableAssumed => "feature.modify-table-assumed",
+            Self::FeatureModifyStateAssumed => "feature.modify-state-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
             Self::FeatureLoftListsUnresolved => "feature.loft-lists-unresolved",
@@ -1262,6 +1325,7 @@ impl F3dLossCode {
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
             Self::FeatureTrimMemberTypeAssumed => "feature.trim-member-type-assumed",
+            Self::FeatureExtrudeTargetDisputed => "feature.extrude-target-disputed",
             Self::FeatureFaceOperandFallbackContradicted => {
                 "feature.face-operand-fallback-contradicted"
             }
@@ -1362,6 +1426,9 @@ impl F3dLossCode {
             Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
             Self::UnindexedRecordsRetained => "source.unindexed-records-retained",
             Self::DesignIntentUndecoded => "design.intent-undecoded",
+            Self::BodyDisplayNameAmbiguous => "design.body-display-name-ambiguous",
+            Self::WorkPlaneDisplayNameAmbiguous => "work-plane.display-name-ambiguous",
+            Self::WorkPlaneDisplayNameUndecoded => "work-plane.display-name-undecoded",
         }
     }
 
@@ -1440,6 +1507,7 @@ impl F3dLossCode {
             | Self::FeatureOccurrencePathUnresolved
             | Self::LocalOccurrenceUnplaced
             | Self::SketchOwnerUnresolved
+            | Self::SketchNameComposedFromFeatureOrdinal
             | Self::SketchMembershipConflict
             | Self::SketchFolderClosingReference
             | Self::SketchFolderUnprojected
@@ -1467,6 +1535,7 @@ impl F3dLossCode {
             | Self::AssemblyJointActivationAssumed
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
+            | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::DrawingDocumentOmitted
@@ -1510,7 +1579,10 @@ impl F3dLossCode {
             | Self::AlignEnvelopeUnparsed
             | Self::AlignConstructionUnparsed
             | Self::MoveUnprojected
+            | Self::ModifyUnprojected
             | Self::FeatureScopePayloadUninterpreted
+            | Self::FeatureFilletSetConflict
+            | Self::FeatureChamferSetConflict
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnparsed
@@ -1525,6 +1597,7 @@ impl F3dLossCode {
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
+            | Self::HistoryDeleteFaceMemberOrderAssumed
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
             | Self::HistoricalEdgeSelectionInferred
@@ -1574,6 +1647,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileLoopFlagsAssumed
+            | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePolylineSideAssumed
@@ -1602,6 +1676,10 @@ impl F3dLossCode {
             | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
+            | Self::FeatureMoveTransformReferencesAssumed
+            | Self::FeatureModifyUnlistedGroupsAssumed
+            | Self::FeatureModifyTableAssumed
+            | Self::FeatureModifyStateAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureLoftListsUnresolved
@@ -1619,6 +1697,7 @@ impl F3dLossCode {
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
             | Self::FeatureFaceOperandFallbackContradicted
+            | Self::FeatureExtrudeTargetDisputed
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
@@ -1674,7 +1753,10 @@ impl F3dLossCode {
             | Self::KernelHeaderMetadataUnresolved
             | Self::ManifestMetadataUnresolved
             | Self::ArchiveEntryUnreadable
-            | Self::UnindexedRecordsRetained => Severity::Warning,
+            | Self::UnindexedRecordsRetained
+            | Self::BodyDisplayNameAmbiguous
+            | Self::WorkPlaneDisplayNameAmbiguous
+            | Self::WorkPlaneDisplayNameUndecoded => Severity::Warning,
         }
     }
 
@@ -1797,7 +1879,10 @@ impl F3dLossCode {
             | Self::AlignEnvelopeUnparsed
             | Self::AlignConstructionUnparsed
             | Self::MoveUnprojected
+            | Self::ModifyUnprojected
             | Self::FeatureScopePayloadUninterpreted
+            | Self::FeatureFilletSetConflict
+            | Self::FeatureChamferSetConflict
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnrecognized
@@ -1808,6 +1893,7 @@ impl F3dLossCode {
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
+            | Self::HistoryDeleteFaceMemberOrderAssumed
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
             | Self::HistoricalEdgeSelectionInferred
@@ -1857,6 +1943,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileLoopFlagsAssumed
+            | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePolylineSideAssumed
@@ -1885,6 +1972,10 @@ impl F3dLossCode {
             | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
+            | Self::FeatureMoveTransformReferencesAssumed
+            | Self::FeatureModifyUnlistedGroupsAssumed
+            | Self::FeatureModifyTableAssumed
+            | Self::FeatureModifyStateAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureLoftListsUnresolved
@@ -1902,6 +1993,7 @@ impl F3dLossCode {
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
             | Self::FeatureFaceOperandFallbackContradicted
+            | Self::FeatureExtrudeTargetDisputed
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
@@ -1916,6 +2008,7 @@ impl F3dLossCode {
             | Self::AssemblyJointActivationAssumed
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
+            | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::HistoryOnlyBodyOmitted => LossTaxonomy::FeatureHistoryRetained,
@@ -1949,12 +2042,16 @@ impl F3dLossCode {
             | Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
-            Self::ReferenceImageNativeRetained
+            Self::SketchNameComposedFromFeatureOrdinal
+            | Self::ReferenceImageNativeRetained
             | Self::ReferenceImageFlagAssumed
             | Self::DecalNativeRetained
             | Self::EdgeReferenceLostUnrepaired
             | Self::MeshAttributeNotTransferred
-            | Self::TsplineRadialMapUnresolved => LossTaxonomy::AttributesNotTransferred,
+            | Self::TsplineRadialMapUnresolved
+            | Self::BodyDisplayNameAmbiguous
+            | Self::WorkPlaneDisplayNameAmbiguous
+            | Self::WorkPlaneDisplayNameUndecoded => LossTaxonomy::AttributesNotTransferred,
             Self::BrepBlobUndecoded
             | Self::SurfaceShapeNotDecoded
             | Self::GeometryNotTransferred
@@ -2078,6 +2175,7 @@ mod tests {
                 "assembly.local-occurrence-expansion-limit",
                 "feature.occurrence-path-unresolved",
                 "sketch.component-owner-unresolved",
+                "sketch.name-composed-from-feature-ordinal",
                 "sketch.membership-conflict",
                 "sketch.folder-closing-reference",
                 "sketch.folder-unprojected",
@@ -2107,6 +2205,7 @@ mod tests {
                 "assembly.root-path-identities-native",
                 "assembly.operand-descent-ambiguous",
                 "assembly.operand-descent-unresolved",
+                "assembly.operand-nested-path-retained",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",
@@ -2145,6 +2244,7 @@ mod tests {
                 "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",
                 "feature.move-unprojected",
+                "feature.modify-unprojected",
                 "feature.hole-extent-unproven",
                 "feature.hole-extent-face-assumed",
                 "feature.hole-placement-unproven",
@@ -2153,6 +2253,8 @@ mod tests {
                 "feature.align-envelope-unparsed",
                 "feature.align-construction-unparsed",
                 "feature.scope-payload-uninterpreted",
+                "feature.fillet-set-conflict",
+                "feature.chamfer-set-conflict",
                 "feature.emboss-controls-native",
                 "feature.shell-auxiliary-references-native",
                 "feature.emboss-prefix-unparsed",
@@ -2170,6 +2272,7 @@ mod tests {
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
                 "history.face-selection-unbound",
+                "history.delete-face-member-order-assumed",
                 "history.edge-midpoints-unresolved",
                 "history.fillet-edge-inferred",
                 "history.edge-selection-inferred",
@@ -2220,6 +2323,7 @@ mod tests {
                 "feature.profile-coincident-direction-assumed",
                 "feature.profile-loop-flags-assumed",
                 "feature.profile-cut-regions-assumed",
+                "feature.profile-region-identities-stale",
                 "feature.profile-island-absence-assumed",
                 "feature.profile-polyline-side-assumed",
                 "feature.profile-cap-outline-assumed",
@@ -2247,6 +2351,10 @@ mod tests {
                 "feature.extrude-termination-missing",
                 "feature.revolve-layout-assumed",
                 "feature.move-transform-assumed",
+                "feature.move-transform-references-assumed",
+                "feature.modify-unlisted-groups-assumed",
+                "feature.modify-table-assumed",
+                "feature.modify-state-assumed",
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
                 "feature.loft-lists-unresolved",
@@ -2264,6 +2372,7 @@ mod tests {
                 "feature.trim-cell-table-native",
                 "feature.trim-member-type-assumed",
                 "feature.face-operand-fallback-contradicted",
+                "feature.extrude-target-disputed",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",
                 "feature.edge-selection-lost",
@@ -2351,6 +2460,9 @@ mod tests {
                 "source.archive-entry-unreadable",
                 "source.unindexed-records-retained",
                 "design.intent-undecoded",
+                "design.body-display-name-ambiguous",
+                "work-plane.display-name-ambiguous",
+                "work-plane.display-name-undecoded",
             ]
         );
     }
