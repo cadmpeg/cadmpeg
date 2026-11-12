@@ -252,11 +252,22 @@ fn move_face_transform_refuses_a_short_frame_reserved_bytes_and_a_broken_matrix(
     short.remove(175);
     let (short, short_scope, _) = move_face_over(short, DesignFeatureKind::MoveFace, false);
     refused(&short, &short_scope);
-    for (at, value) in [(11, 1), (42, 1), (43, 2), (47, 1)] {
+    for (at, value) in [(11, 1), (30, 1), (43, 2), (47, 1)] {
         let mut changed = bytes.clone();
         changed[at] = value;
         refused(&changed, &scope);
     }
+    let mut coded = bytes.clone();
+    coded[42] = 1;
+    let operation = decoded_move_face(&coded, &scope).unwrap();
+    assert_eq!(operation.prefix.as_ref().unwrap().codes, [0, 1 << 24]);
+    let notes = crate::design::decode::scopes::direct_face::move_transform_prefix_losses(
+        &scope, &operation,
+    );
+    assert_eq!(
+        notes[0].code,
+        crate::loss::F3dLossCode::FeatureMoveTransformPrefixAssumed.kind()
+    );
     let mut changed = bytes.clone();
     changed[168..176].copy_from_slice(&2.0f64.to_le_bytes());
     refused(&changed, &scope);
@@ -690,9 +701,9 @@ fn a_form_two_transform_record_stores_its_matrix_after_four_references() {
 fn a_form_two_transform_record_with_a_broken_field_is_refused() {
     let row = super::move_transform_type("84E6245F-1CDC-4FB8-8048-163A85FAD3F0", 2);
     let class_types = super::move_transform_types(&row, &[424]);
-    for at in [20, 31, 42, 53, 64, 68, 80, 83, 87] {
+    for at in [20, 31, 42, 53, 68, 83, 87] {
         let (mut bytes, scope) = form_two_fixture();
-        bytes[at] ^= 0x04;
+        bytes[at] = if at == 83 { 3 } else { bytes[at] ^ 0x04 };
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         assert!(
             exact_move_operation(&bytes, &records, &scope, &class_types).is_none(),
