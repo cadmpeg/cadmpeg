@@ -1529,13 +1529,8 @@ pub(crate) fn project_derived_instance_features(
                     | cadmpeg_ir::features::InsertedComponents::Resolved { native, .. }
                     | cadmpeg_ir::features::InsertedComponents::Partial { native, .. } => native,
                 };
-                *native = cadmpeg_ir::features::SelectionReference::new(scope.id.clone()).map_err(
-                    |error| {
-                        cadmpeg_core::CodecError::Malformed(format!(
-                            "F3D derived component selection: {error}"
-                        ))
-                    },
-                )?;
+                *native = cadmpeg_ir::features::SelectionReference::new(scope.id.clone())
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 feature
                     .evaluation
                     .set_definition(FeatureDefinition::Operation(
@@ -1558,11 +1553,7 @@ pub(crate) fn project_derived_instance_features(
             }
         } else {
             let components = cadmpeg_ir::features::InsertedComponents::native(scope.id.clone())
-                .map_err(|error| {
-                    cadmpeg_core::CodecError::Malformed(format!(
-                        "F3D derived component selection: {error}"
-                    ))
-                })?;
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             losses.push(F3dLossCode::FeatureDerivedInstanceComponentInsertAssumed.note(format!(
                 "{} is represented as a component insertion with unresolved source membership and placement; its native scope reference is retained (DR-466).", scope.id
             )));
