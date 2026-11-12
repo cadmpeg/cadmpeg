@@ -1061,6 +1061,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         )?,
     );
     losses.extend(profile_work.losses());
+    let unprofiled = crate::design::profile_select::unprofiled_region_losses(
+        ctx,
+        unprofiled,
+        &model.sketches,
+        &model.sketch_entities,
+        geometry.tolerances.linear.get(),
+    )?;
     losses.splice(
         unprofiled_at..unprofiled_at,
         crate::design::profile_select::unprofiled_curve_losses(

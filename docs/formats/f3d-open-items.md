@@ -20,6 +20,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-463. Analytic sketch-curve tail flag frames
+
+**Question.** Which analytic sketch-curve tail frames carry the construction flag, and how does the type version select each frame?
+
+**Known.** `f3d.md` §3.1 "Immediately after the 96-byte analytic payload, a planar sketch-curve record stores" describes one tail frame. The two-reference tails of the six public regression inputs start after the references with three zero bytes, byte `1`, a variable Boolean byte, and five or six further bytes before a u32 `1`. Eight curves reported as unprofiled have that variable byte set: two curves in z_mounts_front and six in standoff. The current reader's guard does not admit these frames.
+
+**Need.** A type-version mapping and controlled construction/reference toggles that identify the Boolean byte and the complete tail boundary for each frame.
+
+**Conflict.** The specified guard position differs from these stored tails.
+
+**Note.** The decoder retains each curve and applies the admitted construction-tail rule. Endpoint incidence and geometric closure remain independent of the unresolved Boolean.
+
 ### DR-319. WorkAxis point-and-direction construction rules
 
 **Question.** What do the position, direction, construction rules, and input roles encode for the other `refType` values of a WorkAxis point-and-direction carrier?
@@ -1503,7 +1515,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** Two other public frames of this form store zero at offset 29.
+**Note.** Two other public frames of this form store zero at offset 29. Unbound result references remain a native body selection of a neutral Base Feature and report `feature.stored-bodies-unbound`.
 
 ### DR-251. Compact null-owner parameters: owner and trailer byte 3
 
@@ -2289,3 +2301,23 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The projected z=0 target and a signed displacement of magnitude 1.5 mm give termination planes at z=-1.5 or z=+1.5 mm. The transition terminates at z=18.5 mm. The z=20 candidate gives that plane with a displacement of -1.5 mm along `+Z`.
 
 **Note.** The transition travels along `+Z` and agrees with direction reversal `0`. The decoder source property `extrude_to_distance = 7.5` equals the start-plane offset in this transition.
+
+### DR-465. Matrix Scale prologue word
+
+**Question.** What does a nonzero matrix Scale prologue word control?
+
+**Known.** The matrix supplies positive axis factors and translation consistent with its point-data center.
+
+**Need.** Paired saves that change the word and preserve the factors and center.
+
+**Note.** The decoder applies the stored matrix and records `feature.scale-matrix-word-assumed` for a nonzero word.
+
+### DR-464. Matrix Scale body groups outside the prologue
+
+**Question.** How do owned body groups absent from the matrix prologue contribute to the operation?
+
+**Known.** The prologue lists the body groups for the stored transform. A scope can own additional body groups with the same body-selection role.
+
+**Need.** Paired saves that vary the listed and additional selections independently.
+
+**Note.** The decoder selects the listed groups and assumes that the additional groups select the same bodies. It records `feature.scale-unlisted-groups-assumed`.

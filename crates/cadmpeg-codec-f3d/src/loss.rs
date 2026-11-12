@@ -356,6 +356,8 @@ pub(crate) enum F3dLossCode {
     SketchCurveUnprofiled,
     /// A sketch curve outside every closed profile loop bounds a region an Extrude selects.
     SketchCurveUnprofiledSelected,
+    /// A sketch curve outside whole-entity loops bounds a closed planar region.
+    SketchCurveRegionBoundary,
     /// Design dimension parameters have no parameter-backed sketch constraint.
     DimensionUnprojected,
     /// Feature profile selections retain native identities; no unique profile.
@@ -429,6 +431,8 @@ pub(crate) enum F3dLossCode {
     /// A legacy Scale form is selected by the frame length of its English
     /// spelling; its payload length matches no form.
     FeatureScaleFrameLengthFormAssumed,
+    FeatureScaleMatrixWordAssumed,
+    FeatureScaleUnlistedGroupsAssumed,
     FeatureWorkAxisRuleUnassigned,
     FeatureWorkAxisEndpointToleranceAssumed,
     /// Feature body selections retain native identities; no unique body.
@@ -859,6 +863,7 @@ impl F3dLossCode {
         Self::SketchProfileSearchCapped,
         Self::SketchCurveUnprofiled,
         Self::SketchCurveUnprofiledSelected,
+        Self::SketchCurveRegionBoundary,
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
         Self::FeatureExtrudeProfileGroupNative,
@@ -898,6 +903,8 @@ impl F3dLossCode {
         Self::FeatureFormCageOrderAssumed,
         Self::FeatureFormEmptyCagesAssumed,
         Self::FeatureScaleFrameLengthFormAssumed,
+        Self::FeatureScaleMatrixWordAssumed,
+        Self::FeatureScaleUnlistedGroupsAssumed,
         Self::FeatureWorkAxisRuleUnassigned,
         Self::FeatureWorkAxisEndpointToleranceAssumed,
         Self::FeatureBodySelectionNative,
@@ -1225,6 +1232,7 @@ impl F3dLossCode {
             Self::SketchProfileSearchCapped => "sketch.profile-search-capped",
             Self::SketchCurveUnprofiled => "sketch.curve-unprofiled",
             Self::SketchCurveUnprofiledSelected => "sketch.curve-unprofiled-selected",
+            Self::SketchCurveRegionBoundary => "sketch.curve-region-boundary",
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureSketchProfileFlagsAssumed => "feature.sketch-profile-flags-assumed",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
@@ -1286,6 +1294,8 @@ impl F3dLossCode {
             Self::FeatureFormCageOrderAssumed => "feature.form-cage-order-assumed",
             Self::FeatureFormEmptyCagesAssumed => "feature.form-empty-cages-assumed",
             Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
+            Self::FeatureScaleMatrixWordAssumed => "feature.scale-matrix-word-assumed",
+            Self::FeatureScaleUnlistedGroupsAssumed => "feature.scale-unlisted-groups-assumed",
             Self::FeatureWorkAxisRuleUnassigned => "feature.work-axis-rule-unassigned",
             Self::FeatureWorkAxisEndpointToleranceAssumed => {
                 "feature.work-axis-endpoint-tolerance-assumed"
@@ -1474,6 +1484,7 @@ impl F3dLossCode {
             | Self::MeshOwnerBytesUninterpreted
             | Self::MeshScopePrefixUninterpreted
             | Self::SketchRegionBodyOmitted
+            | Self::SketchCurveRegionBoundary
             | Self::SketchCurveUnprofiledSelected
             | Self::ThreadLiveFaceUnproven
             | Self::ReferenceImageFlagAssumed => Severity::Info,
@@ -1676,6 +1687,8 @@ impl F3dLossCode {
             | Self::FeatureFormCageOrderAssumed
             | Self::FeatureFormEmptyCagesAssumed
             | Self::FeatureScaleFrameLengthFormAssumed
+            | Self::FeatureScaleMatrixWordAssumed
+            | Self::FeatureScaleUnlistedGroupsAssumed
             | Self::FeatureWorkAxisRuleUnassigned
             | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
@@ -1975,6 +1988,8 @@ impl F3dLossCode {
             | Self::FeatureFormCageOrderAssumed
             | Self::FeatureFormEmptyCagesAssumed
             | Self::FeatureScaleFrameLengthFormAssumed
+            | Self::FeatureScaleMatrixWordAssumed
+            | Self::FeatureScaleUnlistedGroupsAssumed
             | Self::FeatureWorkAxisRuleUnassigned
             | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
@@ -2088,6 +2103,7 @@ impl F3dLossCode {
             | Self::MeshSurfaceSentinel => LossTaxonomy::CarrierSummary,
             Self::VertexToleranceWidened
             | Self::SketchRegionBodyOmitted
+            | Self::SketchCurveRegionBoundary
             | Self::SketchCurveUnprofiledSelected => LossTaxonomy::DecodeDiagnostic,
             Self::ProceduralCurveUndecoded
             | Self::ProceduralSupportChartUnresolved
@@ -2318,6 +2334,7 @@ mod tests {
                 "sketch.profile-search-capped",
                 "sketch.curve-unprofiled",
                 "sketch.curve-unprofiled-selected",
+                "sketch.curve-region-boundary",
                 "dimension.unprojected",
                 "feature.profile-selection-native",
                 "feature.extrude-profile-group-native",
@@ -2357,6 +2374,8 @@ mod tests {
                 "feature.form-cage-order-assumed",
                 "feature.form-empty-cages-assumed",
                 "feature.scale-frame-length-form-assumed",
+                "feature.scale-matrix-word-assumed",
+                "feature.scale-unlisted-groups-assumed",
                 "feature.work-axis-rule-unassigned",
                 "feature.work-axis-endpoint-tolerance-assumed",
                 "feature.body-selection-native",
