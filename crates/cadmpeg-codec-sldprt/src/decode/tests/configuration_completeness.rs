@@ -156,6 +156,8 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
                 .unwrap(),
                 op: cadmpeg_ir::features::BooleanKind::Join,
                 keep_tools: false,
+
+                destination: Default::default(),
             }),
         ),
         (

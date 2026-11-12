@@ -2159,7 +2159,7 @@ pub(crate) mod combine_extended_reference_operation_prefix {
 /// Spec §3.1. Record length 58 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed scope header, for a prologue without a property block and with an empty companion list. An empty property block moves every field after the presence byte four bytes on; each companion reference moves every field after the companion list eleven bytes on. The tool list count is the last fixed field; the lists after it have variable length.
+/// Offsets are relative to the primary indexed scope header, without a property block or companion references, and with an ordinary present local reference. An empty property block moves later fields four bytes on; each companion advances later fields by its complete reference width. The tool list count is the last fixed field; the lists after it have variable length.
 /// ```
 pub(crate) mod combine_operand_list_operation_prefix {
     /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
@@ -2178,10 +2178,6 @@ pub(crate) mod combine_operand_list_operation_prefix {
     pub(crate) const CONSTANT_ONE: usize = 31;
     /// Offset of `reference_marker` (`u8`). Spec §3.1.
     pub(crate) const REFERENCE_MARKER: usize = 35;
-    /// Offset of `reference_value` (`u64`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_VALUE: usize = 36;
-    /// Offset of `reference_tail` (`bytes[2]`). Spec §3.1.
-    pub(crate) const REFERENCE_TAIL: usize = 44;
     /// Offset of `stamp` (`u64`, little-endian). Spec §3.1.
     pub(crate) const STAMP: usize = 46;
     /// Offset of `tool_count` (`u32`, little-endian). Spec §3.1.

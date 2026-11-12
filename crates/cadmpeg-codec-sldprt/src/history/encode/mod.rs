@@ -309,10 +309,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 operands,
                 op,
                 keep_tools,
+                destination,
             }) => {
                 let target = operands.target();
                 let tools = operands.tools();
-                self.encode_combine(target, tools, *op, *keep_tools)
+                match destination {
+                    cadmpeg_ir::features::CombineDestination::TargetComponent => {
+                        self.encode_combine(target, tools, *op, *keep_tools)
+                    }
+                    cadmpeg_ir::features::CombineDestination::NewComponent => {
+                        self.encode_unsupported()
+                    }
+                }
             }
             FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
                 targets,

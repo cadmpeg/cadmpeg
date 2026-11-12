@@ -7169,6 +7169,8 @@ fn boolean_definition(
             operands,
             op,
             keep_tools: false,
+
+            destination: Default::default(),
         },
     )))
 }

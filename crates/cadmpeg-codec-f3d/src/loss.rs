@@ -434,6 +434,8 @@ pub(crate) enum F3dLossCode {
     FeatureReverseNormalBodyUnverified,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
+    FeatureCombineMiddleListOmittedAssumed,
+    FeatureCombineComponentDestinationAssumed,
     /// A Combine frame that matches the fixed fields of the operand-list
     /// prologue is read in the standard prologue.
     FeatureCombinePrologueAssumed,
@@ -441,8 +443,6 @@ pub(crate) enum F3dLossCode {
     /// the operand-list prologue or cannot be checked, and which no prologue
     /// reads stays native.
     FeatureCombineOperandListRefused,
-    /// A Combine that places its result in a new component stays native.
-    FeatureCombineNewComponentNative,
     /// A Combine with a companion `RemoveBody` scope reads every tool as
     /// removed, though the companion body selections do not name exactly the
     /// tools.
@@ -897,9 +897,10 @@ impl F3dLossCode {
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
         Self::FeatureCombineSelectionNative,
+        Self::FeatureCombineMiddleListOmittedAssumed,
+        Self::FeatureCombineComponentDestinationAssumed,
         Self::FeatureCombinePrologueAssumed,
         Self::FeatureCombineOperandListRefused,
-        Self::FeatureCombineNewComponentNative,
         Self::FeatureCombineToolConsumptionAssumed,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
@@ -1282,9 +1283,14 @@ impl F3dLossCode {
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
+            Self::FeatureCombineMiddleListOmittedAssumed => {
+                "feature.combine-middle-list-omitted-assumed"
+            }
+            Self::FeatureCombineComponentDestinationAssumed => {
+                "feature.combine-component-destination-assumed"
+            }
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
-            Self::FeatureCombineNewComponentNative => "feature.combine-new-component-native",
             Self::FeatureCombineToolConsumptionAssumed => {
                 "feature.combine-tool-consumption-assumed"
             }
@@ -1667,9 +1673,10 @@ impl F3dLossCode {
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureCombineSelectionNative
+            | Self::FeatureCombineMiddleListOmittedAssumed
+            | Self::FeatureCombineComponentDestinationAssumed
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
-            | Self::FeatureCombineNewComponentNative
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
@@ -1963,9 +1970,10 @@ impl F3dLossCode {
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureCombineSelectionNative
+            | Self::FeatureCombineMiddleListOmittedAssumed
+            | Self::FeatureCombineComponentDestinationAssumed
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
-            | Self::FeatureCombineNewComponentNative
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
@@ -2342,9 +2350,10 @@ mod tests {
                 "feature.body-selection-native",
                 "feature.reverse-normal-body-unverified",
                 "feature.combine-selection-native",
+                "feature.combine-middle-list-omitted-assumed",
+                "feature.combine-component-destination-assumed",
                 "feature.combine-prologue-assumed",
                 "feature.combine-operand-list-refused",
-                "feature.combine-new-component-native",
                 "feature.combine-tool-consumption-assumed",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",

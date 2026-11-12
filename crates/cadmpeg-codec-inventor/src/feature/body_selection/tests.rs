@@ -27,6 +27,8 @@ fn combine(tools: BodySelection) -> FeatureDefinition {
             .expect("distinct operands"),
         op: BooleanKind::Cut,
         keep_tools: false,
+
+        destination: Default::default(),
     })
 }
 

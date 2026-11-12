@@ -1216,6 +1216,8 @@ fn combine_join_test_feature(scope_id: &str, target: Option<i64>, tool: Option<i
                 operands: CombineOperands::new(target_sel, tool_sel).unwrap(),
                 op: BooleanKind::Join,
                 keep_tools: false,
+
+                destination: Default::default(),
             }),
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
