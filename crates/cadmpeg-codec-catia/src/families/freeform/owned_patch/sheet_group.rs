@@ -430,7 +430,7 @@ pub(super) fn patches(
             let Some(decoded) = trim_source.decode(ir, face, member, carriers, refusal) else {
                 continue;
             };
-            for site @ (vertex, _, point, explicit) in decoded.endpoint_sites() {
+            for site @ (vertex, _, point, explicit, _) in decoded.endpoint_sites() {
                 if explicit {
                     primary.record(member.body, face_pos, std::iter::once((vertex, point)));
                 }
@@ -520,14 +520,19 @@ pub(super) fn patches(
                 let (face, member) = native_faces[&patch.face];
                 let recovered = trim_source
                     .decode(ir, face, member, carriers, refusal)
-                    .and_then(|face| face.patch(ir, Some(sites)))
+                    .and_then(|face| {
+                        face.patch(ir, Some(sites))
+                            .filter(|refitted| !witnesses::disagrees(refitted, sites))
+                            .or_else(|| face.recover_rolling_boundary(ir, Some(sites)))
+                    })
                     .filter(|refitted| !witnesses::disagrees(refitted, sites))
                     .or_else(|| witnesses::repair_boundary(patch, sites, edges.get(&patch.body)?));
                 replacements.push((index, recovered));
             }
             for (index, replacement) in replacements {
                 let patch = &mut output[start + index];
-                if let Some(refitted) = replacement {
+                if let Some(mut refitted) = replacement {
+                    refitted.priority = patch.priority;
                     *patch = refitted;
                 } else {
                     patch.priority = patch
@@ -542,7 +547,7 @@ pub(super) fn patches(
         output.extend(
             pending
                 .iter()
-                .filter_map(|face| face.recover_rolling_boundary(ir)),
+                .filter_map(|face| face.recover_rolling_boundary(ir, None)),
         );
         endpoints.resolve(&mut output[start..]);
     }

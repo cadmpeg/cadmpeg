@@ -246,6 +246,17 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** Resolve scalar operands through an independently bound source-local owner before applying the parameter relation to a carrier. Obtain a complete witness before admitting any selector outside the listed grammar, including `0986`.
 
+### SN-39. Scalar parameter-map fit-tolerance units
+
+**Question.** Does the scalar class-`25` fit tolerance bound Cartesian displacement, a representation parameter, or a scaled error measure?
+
+**Known.** `catia.md` §6.3 "Every scalar is finite. Lead `0a` appends" defines a finite nonnegative fit-tolerance field distinct from signed accuracy. The operands select parameter representations. For corroborated planar shared edges the decoder interprets that tolerance as a model-space bound in mm and reports `geometry.parameter-map-accuracy-inferred`.
+
+**Need.** Author controlled changes to geometric scale and parameter scale independently. Determine which scale changes the tolerance before assigning it a physical unit in the format model.
+
+**Conflict.** The decoder's planar repair uses a model-space interpretation while the format model leaves the field's unit unresolved.
+
+
 ### SN-08. Class-`0x25` remaining allocation forms
 
 **Question.** Which allocation identities do the remaining scalar class-`0x25` operand forms select, and what do the separate multi-operand productions encode?
