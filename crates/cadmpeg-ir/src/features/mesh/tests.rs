@@ -46,6 +46,8 @@ fn mesh_selections_reject_empty_repeated_blank_and_mixed_members() {
         serde_json::json!({"native":"mesh:source", "members":[" "]}),
         serde_json::json!({"native":"mesh:source", "members":["7", "7"]}),
         serde_json::json!({"native":"mesh:source", "tessellations":["mesh:second"]}),
+        serde_json::json!({"feature":" "}),
+        serde_json::json!({"feature":"test:model:feature#import", "native":"mesh:source"}),
     ] {
         assert!(serde_json::from_value::<MeshSelection>(wire).is_err());
     }
@@ -98,6 +100,21 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
             serde_json::json!({
                 "native":target_scope, "members":["7", "3"]
             })
+        );
+        let unresolved: MeshSelection = serde_json::from_value(serde_json::json!({
+            "feature":"test:model:feature#import"
+        }))
+        .unwrap();
+        let mut visited = Vec::new();
+        unresolved.visit_identity_references(ctx, &mut |id| {
+            visited.push(id.to_owned());
+            Ok(())
+        })?;
+        assert_eq!(visited, ["test:model:feature#import"]);
+        let unresolved = unresolved.rewrite_identities(ctx, &mut map)?;
+        assert_eq!(
+            serde_json::to_value(unresolved).unwrap(),
+            serde_json::json!({"feature":"scoped:test:model:feature#import"})
         );
         map.finish()
     })

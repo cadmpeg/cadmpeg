@@ -2738,7 +2738,7 @@ pub enum FeatureOperation {
     },
     /// Mesh geometry imported into the parametric timeline.
     MeshImport {
-        /// Tessellation identities supplied by the mesh-body records.
+        #[doc = "Resolved tessellations or a retained mesh source."]
         #[serde(deserialize_with = "deserialize_local_tessellations")]
         tessellations: mesh::MeshSelection,
     },

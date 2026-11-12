@@ -96,12 +96,19 @@ fn native_source(
     scope: Option<&DesignParameterScope>,
     losses: &mut Vec<LossNote>,
 ) -> Result<MeshSelection, CodecError> {
-    let source = feature
+    let Some(source) = feature
         .native_ref
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or(feature.id.as_str())
-        .to_owned();
+    else {
+        losses.push(F3dLossCode::FeatureMeshImportSourceUnparsed.note(format!(
+            "Mesh import {} retains its originating feature identity because its native scope source is unavailable.", feature.id
+        )));
+        return Ok(MeshSelection::Unresolved {
+            feature: feature.id.clone(),
+        });
+    };
+    let source = source.to_owned();
     let parsed = scope
         .and_then(|scope| scope_view(scan, scope))
         .map(|view| read_bodies(ctx, view));

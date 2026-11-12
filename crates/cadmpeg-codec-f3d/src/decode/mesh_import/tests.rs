@@ -19,6 +19,28 @@ fn prefix(flagged: bool, bodies: &[u32]) -> Vec<u8> {
     bytes
 }
 
+fn import_feature(native_ref: Option<String>) -> Feature {
+    Feature {
+        product_definition: None,
+        id: cadmpeg_ir::features::FeatureId::mint("synthetic:model:feature#import").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("Base Mesh Feature".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "Base Mesh Feature".into(),
+                parameters: Default::default(),
+            }),
+        ),
+        native_ref,
+    }
+}
+
 #[test]
 fn import_body_prefix_preserves_order_and_flagged_word() {
     for flagged in [false, true] {
@@ -74,25 +96,7 @@ fn unjoined_imports_retain_decoded_body_sources_and_named_losses() {
         let archive = zip.finish().unwrap().into_inner();
         let scope_id = format!("f3d:{ENTRY}:design-parameter-scope#0");
         let scope = DesignParameterScope::empty(&scope_id, DesignFeatureKind::BaseMeshFeature, 7);
-        let feature = Feature {
-            product_definition: None,
-            id: cadmpeg_ir::features::FeatureId::mint("synthetic:model:feature#import").unwrap(),
-            ordinal: 0,
-            name: None,
-            suppressed: None,
-            dependencies: Default::default(),
-            source_properties: Default::default(),
-            source_tag: Some("Base Mesh Feature".into()),
-            source_text: None,
-            source_content: Default::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: "Base Mesh Feature".into(),
-                    parameters: Default::default(),
-                }),
-            ),
-            native_ref: Some(scope_id.clone()),
-        };
+        let feature = import_feature(Some(scope_id.clone()));
         let mut features = vec![feature];
         let projection = MeshProjection {
             count: 0,
@@ -129,5 +133,36 @@ fn unjoined_imports_retain_decoded_body_sources_and_named_losses() {
             }
         }
         assert_eq!(features[0].source_tag.as_deref(), Some("Base Mesh Feature"));
+    }
+}
+
+#[test]
+fn imports_without_native_scopes_retain_typed_originating_features() {
+    use std::io::Cursor;
+
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    let archive = zip.finish().unwrap().into_inner();
+    for native_ref in [None, Some(" ".to_owned())] {
+        let mut feature = import_feature(native_ref);
+        let mut losses = Vec::new();
+        let selection = crate::test_support::zip_test::with_scan(&archive, |scan| {
+            crate::test_support::with_decode_context(|ctx| {
+                native_source(ctx, scan, &mut feature, None, &mut losses)
+            })
+            .unwrap()
+        });
+        assert_eq!(
+            selection,
+            MeshSelection::Unresolved {
+                feature: feature.id.clone()
+            }
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "feature.mesh-import-source-unparsed"
+        );
     }
 }

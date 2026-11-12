@@ -1,10 +1,10 @@
-use super::{NativeSelections, SelectionMembers, SelectionReference};
+use super::{FeatureId, NativeSelections, SelectionMembers, SelectionReference};
 use crate::tessellation::TessellationId;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[doc = "Resolved tessellations or retained native mesh source selections."]
+#[doc = "Resolved tessellations or retained mesh source selections."]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(untagged, deny_unknown_fields)]
@@ -18,6 +18,11 @@ pub enum MeshSelection {
         #[doc = "Ordered member selectors relative to the native source."]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         members: Option<NativeSelections>,
+    },
+    #[doc = "Unavailable source identified by the feature that retains its construction."]
+    Unresolved {
+        #[doc = "Originating feature whose mesh source remains unavailable."]
+        feature: FeatureId,
     },
 }
 

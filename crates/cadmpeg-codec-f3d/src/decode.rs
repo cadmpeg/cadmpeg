@@ -598,7 +598,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             FeatureOperation::ReferenceImage { .. } | FeatureOperation::DatumPrincipalPlane { .. },
         ) => false,
         FeatureDefinition::Operation(FeatureOperation::MeshImport { tessellations }) => {
-            matches!(tessellations, cadmpeg_ir::features::mesh::MeshSelection::Native { .. })
+            !matches!(tessellations, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
         }
         FeatureDefinition::Operation(FeatureOperation::Decal { faces, .. }) => {
             !face_selection_is_resolved(faces)
