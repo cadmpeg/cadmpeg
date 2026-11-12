@@ -2226,6 +2226,7 @@ mod tests {
                 "assembly.root-path-identities-native",
                 "assembly.operand-descent-ambiguous",
                 "assembly.operand-descent-unresolved",
+                "assembly.joint-source-binding-assumed",
                 "assembly.operand-nested-path-retained",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
