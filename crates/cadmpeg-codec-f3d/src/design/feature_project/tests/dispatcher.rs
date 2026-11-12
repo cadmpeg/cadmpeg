@@ -278,7 +278,7 @@ fn dispatcher_projects_per_axis_scale_point_center_in_neutral_units() {
     assert!(matches!(
         factors,
         cadmpeg_ir::features::ScaleFactors::PerAxis { factors }
-            if factors.map(|v| v.get()) == [1.0, 2.0, 3.0]
+            if factors.map(cadmpeg_ir::scalar::NonZeroReal::get) == [1.0, 2.0, 3.0]
     ));
 }
 

@@ -170,7 +170,10 @@ fn matrix_scale_decodes_uniform_and_axis_factors_with_center() {
             assert_eq!(operation.center_record_index, 105);
             assert_eq!(operation.matrix_offset, Some(u64_from_index(matrix_at)));
             let center = operation.center_position.unwrap();
-            assert_eq!(center.value.map(|v| v.get()), [1.25, -2.5, 3.75]);
+            assert_eq!(
+                center.value.map(cadmpeg_ir::scalar::FiniteReal::get),
+                [1.25, -2.5, 3.75]
+            );
             match operation.factors {
                 DesignScaleFactors::Uniform { factor, .. } => {
                     assert!(!per_axis);
@@ -178,7 +181,10 @@ fn matrix_scale_decodes_uniform_and_axis_factors_with_center() {
                 }
                 DesignScaleFactors::PerAxis { factors, .. } => {
                     assert!(per_axis);
-                    assert_eq!(factors.map(|v| v.get()), [1.0, 2.0, 3.0]);
+                    assert_eq!(
+                        factors.map(cadmpeg_ir::scalar::PositiveReal::get),
+                        [1.0, 2.0, 3.0]
+                    );
                 }
             }
             assert!(losses.is_empty());
