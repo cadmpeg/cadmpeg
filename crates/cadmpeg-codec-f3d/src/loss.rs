@@ -466,6 +466,10 @@ pub(crate) enum F3dLossCode {
     FeatureMoveTransformAssumed,
     /// A form-2 rigid-transform record stores four references whose effect on its stored motion is unresolved.
     FeatureMoveTransformReferencesAssumed,
+    FeatureMoveScopeReferencesAssumed,
+    FeatureMoveTransformModeAssumed,
+    FeatureMoveTransformPrefixAssumed,
+    FeatureMoveTransformIdentityAssumed,
     /// A projected `Modify` assumes that its unlisted body groups select the bodies of its listed groups.
     FeatureModifyUnlistedGroupsAssumed,
     /// A projected `Modify` stores a reference table outside the body-group run of its family.
@@ -922,6 +926,10 @@ impl F3dLossCode {
         Self::FeatureRevolveLayoutAssumed,
         Self::FeatureMoveTransformAssumed,
         Self::FeatureMoveTransformReferencesAssumed,
+        Self::FeatureMoveScopeReferencesAssumed,
+        Self::FeatureMoveTransformModeAssumed,
+        Self::FeatureMoveTransformPrefixAssumed,
+        Self::FeatureMoveTransformIdentityAssumed,
         Self::FeatureModifyUnlistedGroupsAssumed,
         Self::FeatureModifyTableAssumed,
         Self::FeatureModifyStateAssumed,
@@ -1319,6 +1327,10 @@ impl F3dLossCode {
             Self::FeatureMoveTransformReferencesAssumed => {
                 "feature.move-transform-references-assumed"
             }
+            Self::FeatureMoveTransformIdentityAssumed => "feature.move-transform-identity-assumed",
+            Self::FeatureMoveTransformPrefixAssumed => "feature.move-transform-prefix-assumed",
+            Self::FeatureMoveTransformModeAssumed => "feature.move-transform-mode-assumed",
+            Self::FeatureMoveScopeReferencesAssumed => "feature.move-scope-references-assumed",
             Self::FeatureModifyUnlistedGroupsAssumed => "feature.modify-unlisted-groups-assumed",
             Self::FeatureModifyTableAssumed => "feature.modify-table-assumed",
             Self::FeatureModifyStateAssumed => "feature.modify-state-assumed",
@@ -1708,6 +1720,10 @@ impl F3dLossCode {
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureMoveTransformReferencesAssumed
+            | Self::FeatureMoveScopeReferencesAssumed
+            | Self::FeatureMoveTransformModeAssumed
+            | Self::FeatureMoveTransformPrefixAssumed
+            | Self::FeatureMoveTransformIdentityAssumed
             | Self::FeatureModifyUnlistedGroupsAssumed
             | Self::FeatureModifyTableAssumed
             | Self::FeatureModifyStateAssumed
@@ -2011,6 +2027,10 @@ impl F3dLossCode {
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureMoveTransformReferencesAssumed
+            | Self::FeatureMoveScopeReferencesAssumed
+            | Self::FeatureMoveTransformModeAssumed
+            | Self::FeatureMoveTransformPrefixAssumed
+            | Self::FeatureMoveTransformIdentityAssumed
             | Self::FeatureModifyUnlistedGroupsAssumed
             | Self::FeatureModifyTableAssumed
             | Self::FeatureModifyStateAssumed
@@ -2399,6 +2419,10 @@ mod tests {
                 "feature.revolve-layout-assumed",
                 "feature.move-transform-assumed",
                 "feature.move-transform-references-assumed",
+                "feature.move-scope-references-assumed",
+                "feature.move-transform-mode-assumed",
+                "feature.move-transform-prefix-assumed",
+                "feature.move-transform-identity-assumed",
                 "feature.modify-unlisted-groups-assumed",
                 "feature.modify-table-assumed",
                 "feature.modify-state-assumed",

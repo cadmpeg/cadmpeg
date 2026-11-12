@@ -370,6 +370,7 @@ fn move_face_scope(transform: [[f64; 4]; 4]) -> DesignParameterScope {
         form: DesignMoveForm::Form5,
         form_offset: 443,
         transform_reference_offset: None,
+        prefix: None,
     });
     scope
         .try_edit(|draft| {
@@ -596,6 +597,7 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
         form: DesignMoveForm::Form1,
         form_offset: 443,
         transform_reference_offset: None,
+        prefix: None,
     });
     let group = group(DesignOperandRole::BODIES_A);
     let Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
@@ -603,7 +605,7 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
         translation,
         rotation: Some(rotation),
         copies,
-    })) = super::super::project_move(&scope, std::slice::from_ref(&group))
+    })) = super::super::project_move(&scope, std::slice::from_ref(&group), &mut Vec::new())
     else {
         panic!("MoveBody");
     };
@@ -619,8 +621,31 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
     assert_eq!(rotation.direction.z, -1.);
     assert!((rotation.angle.get() - std::f64::consts::FRAC_PI_2).abs() <= f64::EPSILON);
     assert_eq!(copies, 0);
-    assert!(super::super::project_move(&scope, &[]).is_none());
-    assert!(super::super::project_move(&scope, &[group.clone(), group.clone()]).is_none());
+    assert!(super::super::project_move(&scope, &[], &mut Vec::new()).is_none());
+    assert!(
+        super::super::project_move(&scope, &[group.clone(), group.clone()], &mut Vec::new())
+            .is_none()
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_count_offset = 50;
+            draft.frame_length = 350;
+            draft.paired_byte_offset = 350;
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![100, 200, 71, 900, 901]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut losses = Vec::new();
+    assert!(
+        super::super::project_move(&scope, std::slice::from_ref(&group), &mut losses).is_some()
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::FeatureMoveScopeReferencesAssumed.kind()
+    );
     let DesignScopePayloadMut::Move(Some(operation)) = scope.payload_mut() else {
         panic!("Move payload");
     };
@@ -632,7 +657,7 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
     ]
     .try_into()
     .unwrap();
-    assert!(super::super::project_move(&scope, &[group]).is_none());
+    assert!(super::super::project_move(&scope, &[group], &mut Vec::new()).is_none());
 }
 
 /// A bounded-face member of group 100 whose candidate lanes resolve face 27.

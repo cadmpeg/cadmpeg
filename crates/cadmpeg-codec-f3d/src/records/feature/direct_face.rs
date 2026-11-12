@@ -122,12 +122,61 @@ pub(crate) struct DesignThickenOperation {
     pub(crate) thickness_offset: u64,
 }
 
+cadmpeg_core::named_optional_field!(deserialize_move_prefix, DesignMovePrefix, "prefix");
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignMovePrefix {
+    pub(crate) references: [DesignMoveReference; 4],
+    pub(crate) codes: [u32; 2],
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) matrix_omitted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub(crate) enum DesignMoveReference {
+    Null,
+    Local {
+        record_index: u32,
+    },
+    Typed {
+        record_index: u32,
+        type_guid: String,
+    },
+}
+
+impl DesignMovePrefix {
+    pub(crate) fn form_offset(&self) -> Option<usize> {
+        self.references.iter().try_fold(
+            crate::layout::move_transform_frame_293::FIRST_REFERENCE + 8,
+            |offset, reference| {
+                offset.checked_add(match reference {
+                    DesignMoveReference::Null => 1,
+                    DesignMoveReference::Local { .. } => 11,
+                    DesignMoveReference::Typed { type_guid, .. } => {
+                        if !crate::bytes::is_guid_hyphenated(type_guid) {
+                            return None;
+                        }
+                        crate::bytes::TYPED_LOCAL_REFERENCE_LEN
+                    }
+                })
+            },
+        )
+    }
+
+    pub(crate) fn full_references(&self) -> bool {
+        self.references
+            .iter()
+            .all(|reference| !matches!(reference, DesignMoveReference::Null))
+    }
+}
+
 /// Exact rigid transform carried by a Move feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignMoveOperation {
     /// Row-major model-space rigid transform in source centimetres.
     pub(crate) transform: SketchPlacementMatrix,
-    /// Byte offset of the first matrix scalar.
+    /// Byte offset of the optional matrix payload.
     pub(crate) transform_offset: u64,
     /// Indexed record carrying `transform`.
     pub(crate) transform_record_index: u32,
@@ -143,9 +192,28 @@ pub(crate) struct DesignMoveOperation {
         deserialize_with = "deserialize_transform_reference_offset"
     )]
     pub(crate) transform_reference_offset: Option<u64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_move_prefix"
+    )]
+    pub(crate) prefix: Option<DesignMovePrefix>,
 }
 
 impl DesignMoveOperation {
+    pub(crate) fn relative_form_offset(&self) -> Option<usize> {
+        self.prefix.as_ref().map_or_else(
+            || {
+                Some(if self.form == DesignMoveForm::Form2 {
+                    crate::layout::move_transform_frame_293::FORM
+                } else {
+                    crate::layout::move_transform_frame_253::FORM
+                })
+            },
+            DesignMovePrefix::form_offset,
+        )
+    }
+
     pub(crate) fn preserves_orientation(&self) -> bool {
         use cadmpeg_ir::math::Vector3;
         let column = |index: usize| {
@@ -169,6 +237,7 @@ pub(crate) enum DesignMoveForm {
     Form2,
     /// Source form 5.
     Form5,
+    Form6,
 }
 
 impl TryFrom<u32> for DesignMoveForm {
@@ -179,7 +248,8 @@ impl TryFrom<u32> for DesignMoveForm {
             1 => Ok(Self::Form1),
             2 => Ok(Self::Form2),
             5 => Ok(Self::Form5),
-            _ => Err(format!("form must be 0, 1, 2 or 5, not {value}")),
+            6 => Ok(Self::Form6),
+            _ => Err(format!("form must be 0, 1, 2, 5 or 6, not {value}")),
         }
     }
 }
@@ -191,6 +261,7 @@ impl From<DesignMoveForm> for u32 {
             DesignMoveForm::Form1 => 1,
             DesignMoveForm::Form2 => 2,
             DesignMoveForm::Form5 => 5,
+            DesignMoveForm::Form6 => 6,
         }
     }
 }
