@@ -84,6 +84,23 @@ pub(crate) struct TorusChart {
     pub(crate) axis: Vector3,
     pub(crate) major: f64,
     pub(crate) minor: f64,
+    pub(crate) sheet: Option<bool>,
+}
+
+impl TorusChart {
+    pub(crate) fn sheet_domain(&self) -> Option<[f64; 2]> {
+        if self.minor <= self.major {
+            return None;
+        }
+        let angle = (-self.major / self.minor).acos();
+        self.sheet.map(|outer| {
+            if outer {
+                [-angle, angle]
+            } else {
+                [angle, std::f64::consts::TAU - angle]
+            }
+        })
+    }
 }
 
 /// The axis of a cylinder or cone chart: `v` runs along `direction` from
@@ -415,7 +432,14 @@ impl Chart<'_> {
         match self {
             Self::Plane(_) => [None, None],
             Self::Cylinder(_) | Self::Cone(_) | Self::Sphere(_) => [tau, None],
-            Self::Torus(_) => [tau, tau],
+            Self::Torus(torus) => [
+                tau,
+                if torus.sheet_domain().is_some() {
+                    None
+                } else {
+                    tau
+                },
+            ],
             Self::Nurbs(nurbs) => nurbs.periods,
             Self::Extrusion(extrusion) => [extrusion.period(), None],
         }
@@ -605,14 +629,27 @@ impl Chart<'_> {
                 [y.atan2(x), z.atan2(x.hypot(y))]
             }
             Self::Torus(torus) => {
-                let d = point.vector_from(torus.center);
-                let x = d.dot(torus.e1);
-                let y = d.dot(torus.e2);
-                let u = y.atan2(x);
+                let offset = point.vector_from(torus.center);
+                let x = offset.dot(torus.e1);
+                let y = offset.dot(torus.e2);
+                let u = y.atan2(x)
+                    + if torus.sheet == Some(false) {
+                        std::f64::consts::PI
+                    } else {
+                        0.0
+                    };
                 let (sine, cosine) = u.sin_cos();
                 let radial = x * cosine + y * sine - torus.major;
-                let axial = d.dot(torus.axis);
-                [u, (axial / torus.minor).atan2(radial / torus.minor)]
+                let axial = offset.dot(torus.axis);
+                let profile = (axial / torus.minor).atan2(radial / torus.minor);
+                [
+                    u,
+                    if torus.sheet == Some(false) {
+                        profile.rem_euclid(std::f64::consts::TAU)
+                    } else {
+                        profile
+                    },
+                ]
             }
             Self::Nurbs(_) | Self::Extrusion(_) => return None,
         })
@@ -637,7 +674,14 @@ impl Chart<'_> {
                 }
             }
             Self::Sphere(sphere) => -sphere.radius * sphere.radius * v.sin(),
-            Self::Torus(torus) => -torus.minor.abs() * (torus.major * v + torus.minor * v.sin()),
+            Self::Torus(torus) => {
+                let sign = if torus.sheet == Some(false) {
+                    -1.0
+                } else {
+                    1.0
+                };
+                -sign * torus.minor.abs() * (torus.major * v + torus.minor * v.sin())
+            }
             Self::Nurbs(_) | Self::Extrusion(_) => return None,
         })
     }
@@ -656,10 +700,17 @@ impl Chart<'_> {
         }
     }
 
-    /// The sphere poles: the `v` and the model point of the south and the
-    /// north pole. `None` on other charts.
+    /// The singular endpoints of a closed chart.
     pub(crate) fn poles(&self) -> Option<[(f64, Point3); 2]> {
         match self {
+            Self::Torus(torus) => torus.sheet_domain().map(|range| {
+                range.map(|v| {
+                    (
+                        v,
+                        offset(torus.center, torus.axis.scale(torus.minor * v.sin())),
+                    )
+                })
+            }),
             Self::Sphere(sphere) => {
                 let half = std::f64::consts::FRAC_PI_2;
                 Some([-1.0, 1.0].map(|side| {
@@ -685,25 +736,34 @@ impl Chart<'_> {
             })
     }
 
-    /// The `v` extent of a closed domain from its lower edge `base`: `π` on
-    /// a sphere, one period on a torus. `None` on other charts.
+    /// The profile span of a closed chart.
     pub(crate) fn closed_span(&self) -> Option<f64> {
         match self {
             Self::Sphere(_) => Some(std::f64::consts::PI),
-            Self::Torus(_) => Some(std::f64::consts::TAU),
+            Self::Torus(torus) => Some(
+                torus
+                    .sheet_domain()
+                    .map_or(std::f64::consts::TAU, |[low, high]| high - low),
+            ),
             _ => None,
         }
     }
 
-    /// The area of a whole sphere or ring torus, `4πR²` or `4π²R|r|`.
+    /// The area of a whole closed chart.
     pub(crate) fn closed_area(&self) -> Option<f64> {
         match self {
             Self::Sphere(sphere) => {
                 Some(4.0 * std::f64::consts::PI * sphere.radius * sphere.radius)
             }
-            Self::Torus(torus) => Some(
-                std::f64::consts::TAU * std::f64::consts::TAU * torus.major * torus.minor.abs(),
-            ),
+            Self::Torus(torus) => match torus.sheet_domain() {
+                Some([low, high]) => Some(
+                    std::f64::consts::TAU
+                        * (self.area_antiderivative(low)? - self.area_antiderivative(high)?),
+                ),
+                None => Some(
+                    std::f64::consts::TAU * std::f64::consts::TAU * torus.major * torus.minor.abs(),
+                ),
+            },
             _ => None,
         }
     }
@@ -738,6 +798,20 @@ impl Chart<'_> {
                         let (sine, cosine) = u.sin_cos();
                         let v_star = d3.atan2(cosine * d1 + sine * d2);
                         for v in [v_star, v_star + std::f64::consts::PI] {
+                            let v = match torus.sheet {
+                                Some(false) => v.rem_euclid(std::f64::consts::TAU),
+                                Some(true) => {
+                                    (v + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
+                                        - std::f64::consts::PI
+                                }
+                                None => v,
+                            };
+                            if torus
+                                .sheet_domain()
+                                .is_some_and(|[low, high]| v < low || v > high)
+                            {
+                                continue;
+                            }
                             if let Some(partials) = self.closed_partials(u, v) {
                                 points.push(([u, v], partials.point));
                             }
@@ -746,6 +820,9 @@ impl Chart<'_> {
                 }
             }
             _ => {}
+        }
+        if let (Self::Torus(_), Some(poles)) = (self, self.poles()) {
+            points.extend(poles.map(|(v, point)| ([0.0, v], point)));
         }
         points
     }
@@ -762,10 +839,9 @@ impl Chart<'_> {
         aabb
     }
 
-    /// Whether a torus chart is a horn or spindle torus, whose minor radius
-    /// reaches the axis.
+    /// Whether a torus chart needs a manifold sheet selection.
     pub(crate) fn self_intersecting(&self) -> bool {
-        matches!(self, Self::Torus(torus) if torus.minor.abs() >= torus.major)
+        matches!(self, Self::Torus(torus) if torus.minor.abs() >= torus.major && torus.sheet_domain().is_none())
     }
 
     /// The axis of a cylinder or cone.
@@ -864,8 +940,49 @@ mod tests {
                 axis: z(),
                 major: 10.0,
                 minor: -2.0,
+                sheet: None,
             }),
         ]
+    }
+
+    #[test]
+    fn spindle_sheets_have_distinct_inverses_areas_and_extrema() {
+        use std::f64::consts::PI;
+        let height = 21.0_f64.sqrt();
+        let angle = (-2.0_f64 / 5.0).acos();
+        for outer in [true, false] {
+            let chart = Chart::Torus(TorusChart {
+                center: Point3::new(0.0, 0.0, 0.0),
+                e1: x(),
+                e2: y(),
+                axis: z(),
+                major: 2.0,
+                minor: 5.0,
+                sheet: Some(outer),
+            });
+            let v = if outer { 0.4 } else { PI + 0.4 };
+            let point = chart.closed_partials(0.7, v).unwrap().point;
+            let uv = chart.closed_invert(point).unwrap();
+            assert!((uv[0] - 0.7).abs() < 1.0e-12);
+            assert!((uv[1] - v).abs() < 1.0e-12);
+            let expected_area = 20.0
+                * PI
+                * if outer {
+                    2.0 * angle + height
+                } else {
+                    height - 2.0 * (PI - angle)
+                };
+            assert!((chart.closed_area().unwrap() - expected_area).abs() < 1.0e-10);
+            let bbox = chart.critical_box().unwrap();
+            let radius = if outer { 7.0 } else { 3.0 };
+            let axial = if outer { 5.0 } else { height };
+            for axis in [0, 1] {
+                assert!((bbox.min[axis] + radius).abs() < 1.0e-12);
+                assert!((bbox.max[axis] - radius).abs() < 1.0e-12);
+            }
+            assert!((bbox.min[2] + axial).abs() < 1.0e-12);
+            assert!((bbox.max[2] - axial).abs() < 1.0e-12);
+        }
     }
 
     #[test]

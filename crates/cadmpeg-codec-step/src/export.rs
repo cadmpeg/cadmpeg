@@ -3064,7 +3064,19 @@ impl<'a> Builder<'a> {
 
         // Surface emission admits either a writable construction or a solved
         // carrier. An absent or opaque solved cache cannot veto a construction.
-        let Some(surf_ref) = self.emit_surface(surface_id) else {
+        let spindle = match self.implicit_outer_bounds.get(face_id).cloned() {
+            Some(implicit_outer::OuterBound::Closed(bound)) => match *bound {
+                closed_surfaces::ClosedBound::Spindle(spindle) => Some(spindle),
+                _ => None,
+            },
+            _ => None,
+        };
+        let surface = if let Some(spindle) = spindle {
+            self.emit_spindle_surface(surface_id, &spindle)
+        } else {
+            self.emit_surface(surface_id)
+        };
+        let Some(surf_ref) = surface else {
             self.unknown_surface_faces.insert(face_id.to_string());
             return None;
         };
