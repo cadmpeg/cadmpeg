@@ -1050,12 +1050,58 @@ pub(crate) fn bind_extrude_profile_selections(
     Ok(losses)
 }
 
-/// Loss notes for sketch curves that lie in no closed profile loop.
-///
-/// A curve that is a boundary ring member of a region in an Extrude's exact
-/// region union, in the same sketch, is part of the selection the feature
-/// records. The curve reports `SketchCurveUnprofiledSelected`. Any other curve
-/// keeps its `SketchCurveUnprofiled` note.
+pub(crate) fn unprofiled_region_losses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    mut unprofiled: Vec<(
+        cadmpeg_ir::sketches::SketchEntityId,
+        cadmpeg_ir::report::loss::LossNote,
+    )>,
+    sketches: &[cadmpeg_ir::sketches::Sketch],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> Result<
+    Vec<(
+        cadmpeg_ir::sketches::SketchEntityId,
+        cadmpeg_ir::report::loss::LossNote,
+    )>,
+    cadmpeg_core::CodecError,
+> {
+    if unprofiled.is_empty() {
+        return Ok(unprofiled);
+    }
+    let sketch_of: HashMap<_, _> = entities
+        .iter()
+        .map(|entity| (entity.id(), &entity.sketch))
+        .collect();
+    let candidates: HashSet<_> = unprofiled
+        .iter()
+        .filter_map(|(id, _)| sketch_of.get(id).copied())
+        .collect();
+    let work = crate::design::geometry::ProfileGeometryWork::new();
+    let mut boundaries = HashSet::new();
+    for sketch in sketches
+        .iter()
+        .filter(|sketch| candidates.contains(&sketch.id))
+    {
+        if let Some(regions) =
+            crate::design::geometry::atomic_sketch_regions(sketch, entities, tolerance, &work, ctx)?
+        {
+            for region in regions {
+                boundaries.extend(region.boundary.into_iter().map(|use_| use_.entity));
+            }
+        }
+    }
+    for (id, note) in &mut unprofiled {
+        if boundaries.contains(id) {
+            *note = crate::loss::F3dLossCode::SketchCurveRegionBoundary.note(format!(
+                "sketch entity {id}: a stored curve parameter interval bounds a closed planar region"
+            ));
+        }
+    }
+    Ok(unprofiled)
+}
+
+/// Give explicit Extrude region selections precedence over geometric diagnostics.
 pub(crate) fn unprofiled_curve_losses(
     unprofiled: Vec<(
         cadmpeg_ir::sketches::SketchEntityId,
