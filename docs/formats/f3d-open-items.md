@@ -1811,7 +1811,7 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder reports `mesh.scope-prefix-uninterpreted`.
 
-### DR-463. Empty mesh-import source lists
+### DR-466. Empty mesh-import source lists
 
 **Question.** Does an empty body-reference run identify an import whose source was removed, or an import that introduced no body?
 
