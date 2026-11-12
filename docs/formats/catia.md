@@ -934,6 +934,35 @@ An edge's class-`25` sampled relation also carries separate active ranges
 for its two curve representations. A line incidence can supply a spline
 station through an exact sample pair or a sampled identity relation.
 
+An extended spline-span tag is `04 <span:u8>`. The span byte is
+`44 + i`, where `i` is the zero-based index in the complete distinct-knot
+array. The station is `knots[i] + t` and `t` lies in
+`[0, knots[i+1] - knots[i]]`. This tag uses the complete knot array's
+index independently of the compact arc-number base.
+
+For compact arc tags, the first active span follows the leading
+extrapolation sites when their stored count equals the number of negative
+knots preceding a zero knot. The compact span index includes that leading
+count. The scalar remains local to the selected span.
+
+The following incidence tails preserve separate parameter gauges for each
+referenced curve. Lane indices are zero-based.
+
+| References | Tail | Assigned lanes |
+| --- | --- | --- |
+| 2 | `80 t:f64le 04 span:u8` | Lane 1 uses the extended spline-span tag. |
+| 3 | `81 t:f64le 04 span:u8` | Lane 1 uses the extended spline-span tag. |
+| 3 | `80 a:f64le b:f64le compact:u8` | When only the final tag position holds a compact code, lane 1 uses absolute `a`; lane 2 uses compact-tagged `b`. |
+| 3 | `10 a:f64le compact:u8 b:f64le` | Lane 1 uses compact-tagged `a`; lane 2 uses absolute `b`. |
+| 3 | `80 a:f64le compact:u8 b:f64le` | When only the first scalar's tag position holds a compact code, lane 1 uses compact-tagged `a`; lane 2 uses absolute `b`. |
+| 3 | `80 a:f64le 04 span:u8 b:f64le` | Lane 1 uses extended-tagged `a`; lane 2 uses absolute `b`. |
+| 3 | `00 a:f64le 04 first:u8 b:f64le c:f64le 04 last:u8` | Lanes 0 and 2 use the extended tags; lane 1 uses absolute `b`. |
+
+Each addressed spline station lies in its selected knot span. An incidence
+that names one curve twice supplies no unique lane for that curve.
+A parameter-map companion spline uses its own knot array and extrapolation
+count before its station is mapped through the affine or sampled relation.
+
 The sheet class-`21` pcurve stores a compact operand, a chart prefix,
 degree and distinct-knot count as inline compact integers, `0c`,
 the increasing f64 knots, and the UV pole pairs. Prefix
