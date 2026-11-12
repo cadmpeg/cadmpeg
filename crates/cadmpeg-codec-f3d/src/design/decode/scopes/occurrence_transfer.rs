@@ -736,7 +736,10 @@ fn partial_cut_paste_prefix(
         [0, 4].map(|shift| cut_paste_prefix_with_shift(bytes, start, shift, scope_table_at));
     let mut complete = candidates
         .iter()
-        .filter(|candidate| candidate.complete && candidate.table_at == scope_table_at)
+        .filter(|candidate| {
+            candidate.complete
+                && scope_table_at.is_none_or(|table_at| candidate.table_at == Some(table_at))
+        })
         .cloned();
     if let Some(candidate) = complete.next() {
         if complete.next().is_none() {
@@ -747,11 +750,11 @@ fn partial_cut_paste_prefix(
     let mut candidates = candidates.into_iter();
     let mut first = candidates.next().unwrap_or_default();
     let mut second = candidates.next().unwrap_or_default();
-    if first.table_at != scope_table_at {
+    if scope_table_at.is_some_and(|table_at| first.table_at != Some(table_at)) {
         first.complete = false;
         first.table_relation_record_index = None;
     }
-    if second.table_at != scope_table_at {
+    if scope_table_at.is_some_and(|table_at| second.table_at != Some(table_at)) {
         second.complete = false;
         second.table_relation_record_index = None;
     }
