@@ -69,7 +69,11 @@ pub(super) fn classify(
         ));
     }
     let torus = matches!(chart, Chart::Torus(_));
-    let lower = if torus { -PI } else { -FRAC_PI_2 };
+    let sheet = match chart {
+        Chart::Torus(torus) => torus.sheet_domain(),
+        _ => None,
+    };
+    let lower = sheet.map_or(if torus { -PI } else { -FRAC_PI_2 }, |range| range[0]);
     let mut loops = vec![
         LoopRegion {
             role: LoopRole::Vertex,
@@ -125,6 +129,13 @@ pub(super) fn classify(
                 membership: Membership::Whole,
             }),
         });
+    }
+    if sheet.is_some() {
+        return Err(MeasureFailure::unavailable(
+            UnavailableReason::RegionDomainUnsupported,
+            Some(face.id.as_str()),
+            "trimmed spindle sheets require a whole-sheet boundary",
+        ));
     }
     let sign = match input.context.declared {
         NormalReading::Reversed => -1.0,
