@@ -167,3 +167,74 @@ fn fixed_surface_delete_faces_project_and_charge_the_wide_prologue() {
         );
     }
 }
+
+#[test]
+fn delete_faces_preserve_unknown_frames_and_missing_group_definitions() {
+    for (kind, heal) in [("DeleteFace", true), ("SurfaceDeleteFace", false)] {
+        for unfamiliar_frame in [false, true] {
+            for missing_group in [false, true] {
+                let mut bytes = named_delete_scope(kind, "Remove faces");
+                if unfamiliar_frame {
+                    bytes.splice(127..127, [0; 73]);
+                }
+                let mut scope = parse_parameter_scope(
+                    &bytes,
+                    &indexed_record_offsets_for_test(&bytes),
+                    77,
+                    &"361".to_owned().try_into().unwrap(),
+                    0,
+                )
+                .unwrap()
+                .unwrap();
+                scope.id = "f3d:Design/BulkStream.dat:scope#77".into();
+                let scopes = [scope];
+                let groups = if missing_group {
+                    Vec::new()
+                } else {
+                    vec![face_group()]
+                };
+                let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
+                let projected = with_test_decode_context(|ctx| {
+                    project_parameter_design_with_edge_identities(
+                        ctx,
+                        &ProjectInputs {
+                            scopes: &scopes,
+                            timelines: &timelines,
+                            construction_groups: &groups,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap()
+                });
+                assert_eq!(projected.features.len(), 1);
+                let expected_source = if missing_group {
+                    "f3d:Design/BulkStream.dat:scope#77"
+                } else {
+                    "f3d:Design/BulkStream.dat:group#100"
+                };
+                assert!(matches!(projected.features[0].evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::DeleteFace {
+                        faces: FaceSelection::Native(native), heal: actual,
+                    }) if native == expected_source && *actual == heal));
+                assert_eq!(
+                    projected
+                        .projection_losses
+                        .iter()
+                        .filter(|loss| loss.code
+                            == crate::loss::F3dLossCode::DeleteFaceFrameControlsAssumed.kind())
+                        .count(),
+                    usize::from(unfamiliar_frame)
+                );
+                assert_eq!(
+                    projected
+                        .projection_losses
+                        .iter()
+                        .filter(|loss| loss.code
+                            == crate::loss::F3dLossCode::DeleteFaceGroupSelectionAssumed.kind())
+                        .count(),
+                    usize::from(missing_group)
+                );
+            }
+        }
+    }
+}

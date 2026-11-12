@@ -395,9 +395,9 @@ fn surface_delete_face_layouts_project_with_other_class_tags() {
 }
 
 #[test]
-fn surface_delete_face_checks_count_position_kind_position_and_tail() {
+fn surface_delete_face_reports_unfamiliar_count_position_kind_position_and_tail() {
     let selected = group(77, 0, 100, vec![200], DesignOperandRole::ROLE_0X10);
-    for (count_offset, tail_length, admitted) in [
+    for (count_offset, tail_length, known) in [
         (123, 77, true),
         (127, 77, true),
         (131, 77, true),
@@ -424,27 +424,32 @@ fn surface_delete_face_checks_count_position_kind_position_and_tail() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
+        let mut losses = Vec::new();
+        assert!(
+            project_delete_face(&scope, std::slice::from_ref(&selected), &[], &mut losses)
+                .unwrap()
+                .is_some()
+        );
         assert_eq!(
-            project_delete_face(
-                &scope,
-                std::slice::from_ref(&selected),
-                &[],
-                &mut Vec::new()
-            )
-            .unwrap()
-            .is_some(),
-            admitted
+            losses
+                .iter()
+                .filter(|loss| loss.code
+                    == crate::loss::F3dLossCode::DeleteFaceFrameControlsAssumed.kind())
+                .count(),
+            usize::from(!known)
         );
         if count_offset == 123 && tail_length == 77 {
             scope.set_fixture_kind_offset(scope.kind_offset() + 9);
-            assert!(project_delete_face(
-                &scope,
-                std::slice::from_ref(&selected),
-                &[],
-                &mut Vec::new()
-            )
-            .unwrap()
-            .is_none());
+            losses.clear();
+            assert!(
+                project_delete_face(&scope, std::slice::from_ref(&selected), &[], &mut losses)
+                    .unwrap()
+                    .is_some()
+            );
+            assert!(losses
+                .iter()
+                .any(|loss| loss.code
+                    == crate::loss::F3dLossCode::DeleteFaceFrameControlsAssumed.kind()));
         }
     }
 }
