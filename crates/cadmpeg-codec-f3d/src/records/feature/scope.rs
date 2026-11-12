@@ -70,6 +70,11 @@ cadmpeg_core::named_optional_field!(
     super::occurrence_transfer::DesignOccurrenceTransfer,
     "occurrence_transfer"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_occurrence_transfer_intent,
+    super::occurrence_transfer::DesignOccurrenceTransferIntent,
+    "occurrence_transfer_intent"
+);
 
 cadmpeg_core::named_optional_field!(deserialize_source_kind, String, "source_kind");
 cadmpeg_core::named_optional_field!(
@@ -849,7 +854,11 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_occurrence_transfer"
     )]
     occurrence_transfer: Option<super::occurrence_transfer::DesignOccurrenceTransfer>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_occurrence_transfer_intent"
+    )]
     occurrence_transfer_intent: Option<super::occurrence_transfer::DesignOccurrenceTransferIntent>,
     /// Globally unique deterministic identifier for this native record.
     id: String,
