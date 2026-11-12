@@ -601,7 +601,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
             scope.payload_mut()
         {
-            slot.operation = (!hole_scope).then_some(DesignCombineOperation {
+            *slot = (!hole_scope).then_some(DesignCombineOperation {
                 form: DesignCombineForm::Standard,
                 operation: cadmpeg_ir::features::BooleanKind::Join,
                 operation_offset: 0,
@@ -625,8 +625,6 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                     },
                     additional: vec![],
                 },
-
-                destination: Default::default(),
             });
         }
         scopes.push(scope);

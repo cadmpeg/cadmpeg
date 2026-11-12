@@ -7,12 +7,6 @@ use crate::records::identity::Located;
 use crate::records::mesh::DesignRelaxedGuidText;
 use serde::{Deserialize, Deserializer, Serialize};
 
-#[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct DesignCombineScope {
-    pub(crate) operation: Option<DesignCombineOperation>,
-    pub(crate) named_tail: Option<super::scope::DesignNamedScopeReferences>,
-}
-
 cadmpeg_core::named_optional_field!(
     deserialize_external_identity,
     DesignCombineExternalBodyIdentity,
@@ -520,20 +514,6 @@ pub(crate) struct DesignCombineBodyNode {
     pub(crate) creating_scope_record_index: u32,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum DesignCombineDestination {
-    #[default]
-    TargetComponent,
-    NewComponent {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        browser_node_record_index: Option<u32>,
-    },
-}
-
-const DESTINATION_IS_TARGET_COMPONENT: fn(&DesignCombineDestination) -> bool =
-    |destination| matches!(destination, DesignCombineDestination::TargetComponent);
-
 /// Exact Boolean construction carried by a `Combine` scope.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "DesignCombineOperationWire")]
@@ -548,7 +528,6 @@ pub(crate) struct DesignCombineOperation {
     pub(crate) keep_tools: bool,
     /// Byte offset of the keep-tools Boolean.
     pub(crate) keep_tools_offset: u64,
-    pub(crate) destination: DesignCombineDestination,
     /// Boolean target body selector.
     pub(crate) target_record_index: u32,
     /// Browser node that the target selector names in the operand-list form.
@@ -572,7 +551,6 @@ impl Clone for DesignCombineOperation {
             operation_offset: self.operation_offset,
             keep_tools: self.keep_tools,
             keep_tools_offset: self.keep_tools_offset,
-            destination: self.destination,
             target_record_index: self.target_record_index,
             target_body_node: self.target_body_node,
             tools: self.tools.clone(),
@@ -595,8 +573,6 @@ struct DesignCombineOperationRef<'a> {
     operation_offset: u64,
     keep_tools: bool,
     keep_tools_offset: u64,
-    #[serde(skip_serializing_if = "DESTINATION_IS_TARGET_COMPONENT")]
-    destination: DesignCombineDestination,
     target: DesignCombineBodySelection,
     tools: DesignCombineToolsRef<'a>,
 }
@@ -609,7 +585,6 @@ impl Serialize for DesignCombineOperation {
             operation_offset: self.operation_offset,
             keep_tools: self.keep_tools,
             keep_tools_offset: self.keep_tools_offset,
-            destination: self.destination,
             target: DesignCombineBodySelection {
                 record_index: self.target_record_index,
                 external_identity: None,
@@ -648,8 +623,6 @@ struct DesignCombineOperationWire {
     keep_tools: bool,
     /// Byte offset of the keep-tools Boolean.
     keep_tools_offset: u64,
-    #[serde(default, skip_serializing_if = "DESTINATION_IS_TARGET_COMPONENT")]
-    destination: DesignCombineDestination,
     /// Boolean target body selector.
     target: DesignCombineBodySelection,
     /// Boolean tool body selectors in source order.
@@ -679,7 +652,6 @@ impl TryFrom<DesignCombineOperationWire> for DesignCombineOperation {
             operation_offset: wire.operation_offset,
             keep_tools: wire.keep_tools,
             keep_tools_offset: wire.keep_tools_offset,
-            destination: wire.destination,
             target_record_index: wire.target.record_index,
             target_body_node: wire.target.body_node,
             tools: DesignCombineTools {
@@ -699,7 +671,6 @@ impl From<DesignCombineOperation> for DesignCombineOperationWire {
             operation_offset: operation.operation_offset,
             keep_tools: operation.keep_tools,
             keep_tools_offset: operation.keep_tools_offset,
-            destination: operation.destination,
             target: DesignCombineBodySelection {
                 record_index: operation.target_record_index,
                 external_identity: None,
@@ -724,30 +695,6 @@ mod tests {
     struct NestedRecord<'a, T: serde::Serialize> {
         id: &'static str,
         value: &'a T,
-    }
-
-    #[test]
-    fn combine_destination_preserves_component_intent_and_browser_node() {
-        for browser_node_record_index in [None, Some(777)] {
-            let mut value = operation(false);
-            value.destination = super::DesignCombineDestination::NewComponent {
-                browser_node_record_index,
-            };
-            let wire = serde_json::to_value(&value).unwrap();
-            assert_eq!(wire["destination"]["kind"], "new_component");
-            if browser_node_record_index.is_some() {
-                assert_eq!(wire["destination"]["browser_node_record_index"], 777);
-            } else {
-                assert!(wire["destination"]
-                    .get("browser_node_record_index")
-                    .is_none());
-            }
-            assert_eq!(
-                serde_json::from_value::<DesignCombineOperation>(wire).unwrap(),
-                value
-            );
-            assert_eq!(value.clone().destination, value.destination);
-        }
     }
 
     fn external_identity(version: bool) -> DesignCombineExternalBodyIdentity {

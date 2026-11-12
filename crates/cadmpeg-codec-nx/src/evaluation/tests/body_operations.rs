@@ -76,8 +76,6 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
 
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
-
-            destination: Default::default(),
         }),
     ));
 
@@ -128,8 +126,6 @@ fn combine_preserves_tools_when_requested() {
 
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: true,
-
-            destination: Default::default(),
         }),
     ));
 
@@ -160,8 +156,6 @@ fn combine_with_exact_local_tools_preserves_its_retained_target() {
 
             op: cadmpeg_ir::features::BooleanKind::Cut,
             keep_tools: false,
-
-            destination: Default::default(),
         }),
     );
     combine.suppressed = None;
@@ -189,8 +183,6 @@ fn output_free_combine_with_exact_native_operands_is_local_to_history() {
 
             op: cadmpeg_ir::features::BooleanKind::Intersect,
             keep_tools: false,
-
-            destination: Default::default(),
         }),
     );
     combine.suppressed = None;
@@ -519,8 +511,6 @@ fn combine_rejects_a_tool_absent_from_prior_history() {
 
             op: cadmpeg_ir::features::BooleanKind::Cut,
             keep_tools: false,
-
-            destination: Default::default(),
         }),
     ));
 

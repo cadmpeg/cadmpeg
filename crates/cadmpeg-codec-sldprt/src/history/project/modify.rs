@@ -256,8 +256,6 @@ pub(super) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
         operands,
         op,
         keep_tools: false,
-
-        destination: Default::default(),
     }))
 }
 
