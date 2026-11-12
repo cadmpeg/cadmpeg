@@ -173,7 +173,8 @@ pub(super) fn finalize_body_sets(feature: &mut Feature) {
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Native(_) | BodySelection::Unresolved,
         })
-    ) {
+    ) && feature.source_tag.as_deref() != Some("Base Feature")
+    {
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {

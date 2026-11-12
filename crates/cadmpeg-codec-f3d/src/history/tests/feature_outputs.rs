@@ -555,7 +555,7 @@ fn stored_body_scope_reports_recipe_absence_from_snapshot_kind() {
 }
 
 #[test]
-fn stored_body_scope_without_any_proof_keeps_native_definition() {
+fn stored_body_scope_without_any_proof_keeps_its_neutral_snapshot() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut feature, scope, _, _) = output_binding_inputs();
     feature.evaluation.set_outputs(Default::default());
@@ -569,8 +569,9 @@ fn stored_body_scope_without_any_proof_keeps_native_definition() {
     )
     .unwrap();
     assert!(matches!(feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
-        if kind.as_str() == "Base Feature"));
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+        }) if native == "native:scope"));
 }
 
 fn history_in_source(source: &str, bodies: &[i64]) -> crate::history_records::AsmHistory {
