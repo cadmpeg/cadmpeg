@@ -1507,7 +1507,10 @@ fn named_combine_tail_keeps_component_reference_separate_from_destination_node()
             .iter()
             .map(|loss| loss.code.clone())
             .collect::<Vec<_>>(),
-        [F3dLossCode::FeatureCombineComponentDestinationAssumed.kind()]
+        [
+            F3dLossCode::FeatureCombineNamedTailPrologueAssumed.kind(),
+            F3dLossCode::FeatureCombineComponentDestinationAssumed.kind(),
+        ]
     );
 }
 

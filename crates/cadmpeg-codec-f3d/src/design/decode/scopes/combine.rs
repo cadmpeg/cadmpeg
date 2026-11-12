@@ -66,11 +66,18 @@ pub(super) fn exact_combine_operation(
                 if operation.form == DesignCombineForm::OperandLists
                     && standard_fields_read(bytes, start)
                 {
-                    operand_list_refusal = Some(
-                        "its lists name its operands, and the standard prologue also reads it"
-                            .to_owned(),
-                    );
-                    continue;
+                    if scope.combine_named_tail().is_some() {
+                        losses.push(F3dLossCode::FeatureCombineNamedTailPrologueAssumed.note(format!(
+                            "{}: its expanded named tail is read with the complete operand-list prologue despite the overlapping standard prefix (DR-473)",
+                            scope.id
+                        )));
+                    } else {
+                        operand_list_refusal = Some(
+                            "its lists name its operands, and the standard prologue also reads it"
+                                .to_owned(),
+                        );
+                        continue;
+                    }
                 }
                 if let Some(reason) = &operand_list_refusal {
                     losses.push(F3dLossCode::FeatureCombinePrologueAssumed.note(format!(
@@ -168,10 +175,10 @@ fn combine_prologues(
     let extended_reference = scope.class_tag.as_str() == "329"
         && scope.paired_class_tag.as_str() == "261"
         && scope.frame_length() == 363;
-    if compact {
+    if compact && scope.combine_named_tail().is_none() {
         return compact_prologue(bytes, start).into_iter().collect();
     }
-    if extended_reference {
+    if extended_reference && scope.combine_named_tail().is_none() {
         return extended_reference_prologue(bytes, start)
             .into_iter()
             .collect();

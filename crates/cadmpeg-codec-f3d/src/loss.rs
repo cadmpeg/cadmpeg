@@ -443,6 +443,7 @@ pub(crate) enum F3dLossCode {
     FeatureCombineSelectionNative,
     FeatureCombineMiddleListOmittedAssumed,
     FeatureCombineComponentDestinationAssumed,
+    FeatureCombineNamedTailPrologueAssumed,
     /// A Combine frame that matches the fixed fields of the operand-list
     /// prologue is read in the standard prologue.
     FeatureCombinePrologueAssumed,
@@ -914,6 +915,7 @@ impl F3dLossCode {
         Self::FeatureCombineSelectionNative,
         Self::FeatureCombineMiddleListOmittedAssumed,
         Self::FeatureCombineComponentDestinationAssumed,
+        Self::FeatureCombineNamedTailPrologueAssumed,
         Self::FeatureCombinePrologueAssumed,
         Self::FeatureCombineOperandListRefused,
         Self::FeatureCombineToolConsumptionAssumed,
@@ -1312,6 +1314,9 @@ impl F3dLossCode {
             Self::FeatureCombineComponentDestinationAssumed => {
                 "feature.combine-component-destination-assumed"
             }
+            Self::FeatureCombineNamedTailPrologueAssumed => {
+                "feature.combine-named-tail-prologue-assumed"
+            }
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
             Self::FeatureCombineToolConsumptionAssumed => {
@@ -1706,6 +1711,7 @@ impl F3dLossCode {
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombineMiddleListOmittedAssumed
             | Self::FeatureCombineComponentDestinationAssumed
+            | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
@@ -2010,6 +2016,7 @@ impl F3dLossCode {
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombineMiddleListOmittedAssumed
             | Self::FeatureCombineComponentDestinationAssumed
+            | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
@@ -2399,6 +2406,7 @@ mod tests {
                 "feature.combine-selection-native",
                 "feature.combine-middle-list-omitted-assumed",
                 "feature.combine-component-destination-assumed",
+                "feature.combine-named-tail-prologue-assumed",
                 "feature.combine-prologue-assumed",
                 "feature.combine-operand-list-refused",
                 "feature.combine-tool-consumption-assumed",
