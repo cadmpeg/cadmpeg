@@ -1297,13 +1297,13 @@ fn single_entry_dimensions_keep_their_specification_units() {
         match (role, kind) {
             ("CBDiameter", HoleKind::PartialCounterbore(PartialPair::First(diameter)))
             | ("CSDiameter", HoleKind::PartialCountersink(PartialPair::First(diameter))) => {
-                assert_eq!(diameter.get(), 10.0)
+                assert_eq!(diameter.get(), 10.0);
             }
             ("CBDepth", HoleKind::PartialCounterbore(PartialPair::Second(depth))) => {
-                assert_eq!(depth.get(), 3.0)
+                assert_eq!(depth.get(), 3.0);
             }
             ("CSAngle", HoleKind::PartialCountersink(PartialPair::Second(angle))) => {
-                assert_eq!(angle.get(), std::f64::consts::FRAC_PI_2)
+                assert_eq!(angle.get(), std::f64::consts::FRAC_PI_2);
             }
             _ => panic!("partial entry dimension"),
         }
