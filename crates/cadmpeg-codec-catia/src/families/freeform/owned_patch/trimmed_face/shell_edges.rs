@@ -9,7 +9,7 @@ use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point2, Point3};
 
-use super::super::{edge_alignment, Patch, Use, GAP_MM};
+use super::super::{edge_alignment, Patch, SheetBoundaryRecovery, Use, GAP_MM};
 use super::{
     contains_hole, cycle, delta, det, Carrier, DecodedFace, Ring, Trim, TRIM_STEPS, UV_AREA,
 };
@@ -92,6 +92,7 @@ pub(super) fn recover(face: &DecodedFace<'_>, edges: &BTreeMap<usize, &Use>) -> 
     }
     Some(Patch {
         face: face.face_pos,
+        recovery: SheetBoundaryRecovery::default(),
         body: face.member.body,
         forward,
         sense_inferred: carrier.roster_sense_inferred(),
@@ -197,6 +198,8 @@ fn ring(
         let pcurve = project(trim, edge)?;
         sides.push(Use {
             pcurve,
+            inferred_accuracy: trim.inferred_accuracy,
+            lift_error_mm: 0.0,
             ..edge.clone()
         });
     }
