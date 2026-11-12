@@ -370,7 +370,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What do the flag byte at offset 20 and the u32 at offset 25 of a flagged mesh collection store, and what does the u32 of each flagged body entry store?
 
-**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. The u32 at offset 25 is `1` in every empty flagged collection, and in collections with bodies it is at least the body count: it equals the body count in six collections and in DR-337's collection 173, and it is 6 and 4 in two collections with two bodies and 3 in one collection with one body. Every body entry stores `1`. DR-337 records a flagged collection whose nested record lists two mesh bodies.
+**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. The u32 at offset 25 is `1` in an empty flagged collection. A nonempty flagged collection can store its body count in this word, or store 6 or 4 with two bodies and 3 with one body. Every counted body entry stores `1`. A flagged collection can terminate its nested body-reference run with a direct owner reference.
 
 **Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, establishes the meanings of these fields.
 
@@ -2084,18 +2084,6 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The direct-construction 421-byte layout places scalar owners at reference positions four through seven and its solved frame at position eight. This scope places scalar owners at positions five through eight and stores a selection record at position four. Frame length selects two distinct layouts.
 
 **Note.** The decoder retains the scope and its six parameter values. Neutral projection requires the placement-owner layout and its motion binding together.
-
-### DR-337. Version-six mesh-body graph and flagged collection counts
-
-**Question.** What do the two prefix words of a flagged mesh collection select when its nested record lists mesh bodies, and how does that collection bind version-six mesh-body records?
-
-**Known.** One public strain-relief part stores collection 173, type `443807AD-8025-41A3-8A50-5157579C3D78` version 0, with flag 1, prefix words 0 and 2, and nested body members 177 and 563. Base Mesh Feature scopes 184 and 570 name body records 177 and 563 in their prefixes and records 188 and 574 in their reference tables. Both body records have type `EA90DA22-556C-4C61-89BB-20C2681B7A9D` version 6. The archive contains two `.paramesh` entries. Collection validation fails before body decoding with a mesh-body reader that admits only version 7. The mesh-body reader admits versions 6 and 7; `f3d.md` §3.1 "The mesh-body class" gives the version-6 layout, and DR-373 tracks its retained fields.
-
-**Need.** Define the two collection prefix words, the nested collection layout, the version-six body fields, and the reciprocal joins from each feature to its container. Preserve each body's affine placement and container identity through the join.
-
-**Conflict.** The specified flagged empty collection has equal first and nested body counts. Collection 173 has first count zero and two nested body references.
-
-**Note.** Collection validation failure prevents both mesh feature definitions from receiving tessellation references. DR-85 tracks the flagged-collection word. This part has not been decoded with the version-6 mesh-body reader.
 
 ### DR-338. Extended circular-pattern axis controls and selection runs
 
