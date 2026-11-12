@@ -251,9 +251,12 @@ pub(crate) enum F3dLossCode {
     HoleExtentFaceAssumed,
     /// A Hole carrier and its point-data records do not define an admitted placement.
     HolePlacementUnproven,
-    /// A Hole placed by distances from two reference edges retains those
-    /// distances natively; its placement is the carrier point.
     HoleReferenceDimensionsNative,
+    HoleParametersIndependentAssumed,
+    HoleShapePartialAssumed,
+    HoleExtentLeadingWordAssumed,
+    HoleStandardSizingAssumed,
+    HoleCarrierAxisAssumed,
     /// Align operand roles and motion have no neutral binding.
     AlignOperandsUnresolved,
     /// Align has no admitted specialized prefix.
@@ -814,6 +817,11 @@ impl F3dLossCode {
         Self::HoleExtentFaceAssumed,
         Self::HolePlacementUnproven,
         Self::HoleReferenceDimensionsNative,
+        Self::HoleParametersIndependentAssumed,
+        Self::HoleShapePartialAssumed,
+        Self::HoleExtentLeadingWordAssumed,
+        Self::HoleStandardSizingAssumed,
+        Self::HoleCarrierAxisAssumed,
         Self::AlignOperandsUnresolved,
         Self::AlignEnvelopeUnparsed,
         Self::AlignConstructionUnparsed,
@@ -1188,6 +1196,11 @@ impl F3dLossCode {
             Self::HoleExtentFaceAssumed => "feature.hole-extent-face-assumed",
             Self::HolePlacementUnproven => "feature.hole-placement-unproven",
             Self::HoleReferenceDimensionsNative => "feature.hole-reference-dimensions-native",
+            Self::HoleParametersIndependentAssumed => "feature.hole-parameters-independent-assumed",
+            Self::HoleShapePartialAssumed => "feature.hole-shape-partial-assumed",
+            Self::HoleExtentLeadingWordAssumed => "feature.hole-extent-leading-word-assumed",
+            Self::HoleStandardSizingAssumed => "feature.hole-standard-sizing-assumed",
+            Self::HoleCarrierAxisAssumed => "feature.hole-carrier-axis-assumed",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::MoveUnprojected => "feature.move-unprojected",
             Self::ModifyUnprojected => "feature.modify-unprojected",
@@ -1596,6 +1609,11 @@ impl F3dLossCode {
             | Self::HoleExtentFaceAssumed
             | Self::HolePlacementUnproven
             | Self::HoleReferenceDimensionsNative
+            | Self::HoleParametersIndependentAssumed
+            | Self::HoleShapePartialAssumed
+            | Self::HoleExtentLeadingWordAssumed
+            | Self::HoleStandardSizingAssumed
+            | Self::HoleCarrierAxisAssumed
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::FeatureShellAuxiliaryReferencesNative
@@ -1901,6 +1919,11 @@ impl F3dLossCode {
             | Self::HoleExtentFaceAssumed
             | Self::HolePlacementUnproven
             | Self::HoleReferenceDimensionsNative
+            | Self::HoleParametersIndependentAssumed
+            | Self::HoleShapePartialAssumed
+            | Self::HoleExtentLeadingWordAssumed
+            | Self::HoleStandardSizingAssumed
+            | Self::HoleCarrierAxisAssumed
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::FeatureShellAuxiliaryReferencesNative
@@ -2285,6 +2308,11 @@ mod tests {
                 "feature.hole-extent-face-assumed",
                 "feature.hole-placement-unproven",
                 "feature.hole-reference-dimensions-native",
+                "feature.hole-parameters-independent-assumed",
+                "feature.hole-shape-partial-assumed",
+                "feature.hole-extent-leading-word-assumed",
+                "feature.hole-standard-sizing-assumed",
+                "feature.hole-carrier-axis-assumed",
                 "feature.align-operands-unresolved",
                 "feature.align-envelope-unparsed",
                 "feature.align-construction-unparsed",
