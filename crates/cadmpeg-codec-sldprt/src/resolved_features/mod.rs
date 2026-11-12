@@ -99,6 +99,7 @@ pub(crate) mod operations;
 
 pub(crate) mod parameters;
 
+pub(crate) mod profile_data;
 pub(crate) mod profiles;
 
 pub(crate) mod projections;

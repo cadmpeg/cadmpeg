@@ -456,7 +456,7 @@ fn has_incoherent_refs<T: Eq + Hash>(references: &[T], known: &HashSet<&T>) -> b
     false
 }
 
-fn append_design_losses(
+pub(crate) fn append_design_losses(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     report: &mut DecodeBody,
@@ -1179,6 +1179,7 @@ fn append_design_losses(
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,
     };
+    let profile_data = crate::resolved_features::profile_data::FeatureProfileData::new(&ir.model);
     let incomplete_planar_profile = |profile: &PlanarProfileRef| match profile {
         PlanarProfileRef::Faces(faces) => faces.is_empty(),
         PlanarProfileRef::Unresolved(_) | PlanarProfileRef::Native(_) => true,
@@ -1188,8 +1189,8 @@ fn append_design_losses(
         | PlanarProfileRef::SketchEntities { .. }
         | PlanarProfileRef::SketchSelection { .. }
         | PlanarProfileRef::HistoricalFaces { .. }
-        | PlanarProfileRef::Sketch(_)
-        | PlanarProfileRef::Feature(_) => false,
+        | PlanarProfileRef::Sketch(_) => false,
+        PlanarProfileRef::Feature(feature) => !profile_data.has_curves(feature),
     };
     let incomplete_profile = |profile: &ProfileRef| match profile {
         ProfileRef::SpatialSketchProfiles { .. } | ProfileRef::SpatialSketchSelection { .. } => {
@@ -1842,6 +1843,13 @@ fn append_design_losses(
     if incomplete_typed_features > 0 {
         report.losses.push(SldprtLossCode::FeatureTypedOperandIncomplete.note(format!(
             "{incomplete_typed_features} typed feature(s) retain native or unresolved required operation operands."
+        )));
+    }
+
+    let missing_profile_curves = profile_data.missing_extrudes(&ir.model).count();
+    if missing_profile_curves > 0 {
+        report.losses.push(SldprtLossCode::FeatureProfileCurvesUnavailable.note(format!(
+            "{missing_profile_curves} extrusion feature-reference profile(s) lack decoded non-construction curves."
         )));
     }
 

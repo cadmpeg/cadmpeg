@@ -3837,6 +3837,20 @@ Unstated regions:
 - `4..8` (4 B): Opaque identity.
 - `130..138` (8 B): Opaque continuation.
 
+## `sketch_array_first_entry_prefix`
+
+Spec §2 · layout: byte offsets · size: 14 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/relation_table.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `count` | `u32` | little | spec | array count u32 at prefix +0 |
+| 4 | 2 | `external_reference` | `u16` | little | spec | external-reference flag u16 at prefix +4 |
+| 6 | 4 | `contour_ordinal` | `u32` | little | spec | contour ordinal u32 at prefix +6 |
+| 10 | 4 | `identifier` | `u32` | little | spec | identifier u32 at prefix +10 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
