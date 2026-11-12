@@ -1463,7 +1463,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
 fn matrix_scale_selects_listed_groups_and_names_additional_group_assumption() {
     for additional in [false, true] {
         let mut scope = DesignParameterScope::empty(
-            "f3d:test:scope#12",
+            "f3d:native/BulkStream.dat:scope#12",
             crate::records::feature::scope::DesignFeatureKind::Scale,
             12,
         );
@@ -1492,7 +1492,7 @@ fn matrix_scale_selects_listed_groups_and_names_additional_group_assumption() {
             .into_iter()
             .map(|index| {
                 serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
-                    "id": format!("f3d:test:group#{index}"),
+                    "id": format!("f3d:native/BulkStream.dat:group#{index}"),
                     "scope_record_index": 12,
                     "scope_reference_ordinal": 0,
                     "record_index": index,
@@ -1539,8 +1539,8 @@ fn matrix_scale_selects_listed_groups_and_names_additional_group_assumption() {
             *bodies,
             cadmpeg_ir::features::BodySelection::NativeSet(
                 vec![
-                    "f3d:test:group#54".to_owned(),
-                    "f3d:test:group#56".to_owned()
+                    "f3d:native/BulkStream.dat:group#54".to_owned(),
+                    "f3d:native/BulkStream.dat:group#56".to_owned()
                 ]
                 .try_into()
                 .unwrap()
@@ -1555,7 +1555,7 @@ fn matrix_scale_selects_listed_groups_and_names_additional_group_assumption() {
             .collect::<Vec<_>>();
         assert_eq!(assumptions.len(), usize::from(additional));
         if additional {
-            assert_eq!(assumptions[0].message, "Scale scope f3d:test:scope#12 scales the bodies of its listed body groups [54, 56]; its unlisted body groups [50, 52] are assumed to select the same bodies (DR-464).");
+            assert_eq!(assumptions[0].message, "Scale scope f3d:native/BulkStream.dat:scope#12 scales the bodies of its listed body groups [54, 56]; its unlisted body groups [50, 52] are assumed to select the same bodies (DR-464).");
         }
     }
 }
