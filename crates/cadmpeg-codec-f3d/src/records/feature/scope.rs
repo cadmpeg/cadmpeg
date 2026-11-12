@@ -775,6 +775,9 @@ pub(crate) struct DesignParameterScope {
     reference_members: ReferenceRun<u32>,
     /// Component ownership and placement recorded by paste operations.
     pub(crate) occurrence_transfer: Option<super::occurrence_transfer::DesignOccurrenceTransfer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) occurrence_transfer_intent:
+        Option<super::occurrence_transfer::DesignOccurrenceTransferIntent>,
     /// Family-specific construction records.
     payload: DesignScopePayload,
     /// Reference members whose records open a construction-operand group the
@@ -846,6 +849,8 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_occurrence_transfer"
     )]
     occurrence_transfer: Option<super::occurrence_transfer::DesignOccurrenceTransfer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    occurrence_transfer_intent: Option<super::occurrence_transfer::DesignOccurrenceTransferIntent>,
     /// Globally unique deterministic identifier for this native record.
     id: String,
     /// Byte offset of the primary indexed record header.
@@ -2173,6 +2178,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             ));
         }
         let occurrence_transfer = wire.occurrence_transfer.take();
+        let occurrence_transfer_intent = wire.occurrence_transfer_intent.take();
         let mut admitted = Self::try_new(DesignParameterScopeDraft {
             id: wire.id,
             byte_offset: wire.byte_offset,
@@ -2215,6 +2221,14 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 "occurrence_transfer disagrees with scope".into(),
             ));
         }
+        if occurrence_transfer_intent
+            .as_ref()
+            .is_some_and(|value| !value.valid_for_scope(&admitted))
+        {
+            return Err(DesignParameterScopePayloadError(
+                "occurrence_transfer_intent disagrees with scope".into(),
+            ));
+        }
         if let Some(name) = wire.display_name.as_deref() {
             let units = name.encode_utf16().count();
             if wire.kind != DesignFeatureKind::WorkPlane
@@ -2234,6 +2248,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         admitted.source_kind = wire.source_kind;
         admitted.display_name = wire.display_name;
         admitted.occurrence_transfer = occurrence_transfer;
+        admitted.occurrence_transfer_intent = occurrence_transfer_intent;
         Ok(admitted)
     }
 }
@@ -2246,6 +2261,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
         let (reference_members, reference_member_offsets) = scope.reference_members.into_wire();
         let mut wire = DesignParameterScopeSerde {
             occurrence_transfer: scope.occurrence_transfer,
+            occurrence_transfer_intent: scope.occurrence_transfer_intent,
             id: scope.id,
             byte_offset: scope.byte_offset,
             class_tag: scope.class_tag.into(),
@@ -2674,6 +2690,7 @@ impl DesignParameterScope {
             reference_count_offset: draft.reference_count_offset,
             reference_members: draft.reference_members,
             occurrence_transfer: None,
+            occurrence_transfer_intent: None,
             payload: draft.payload,
             unclosed_construction_operand_groups: draft.unclosed_construction_operand_groups,
             deleted_members: draft.deleted_members,

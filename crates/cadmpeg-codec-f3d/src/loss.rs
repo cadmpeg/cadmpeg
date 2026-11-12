@@ -201,6 +201,10 @@ pub(crate) enum F3dLossCode {
     FeatureStoredBodiesUnbound,
     /// A paste keeps its bodies; its source pairs or a source node do not resolve.
     FeaturePasteSourcesUnresolved,
+    FeatureOccurrenceTransferSourceUnresolved,
+    FeatureOccurrenceTransferOwnerUnresolved,
+    FeatureOccurrenceTransferOccurrenceUnresolved,
+    FeatureOccurrenceTransferPlacementUnresolved,
     /// Several timeline objects name one owned scope; the lowest readable record owns it.
     FeatureTimelineOwnerCompeting,
     /// A timeline owner has no same-index paired header; its copy form stays unread.
@@ -770,6 +774,10 @@ impl F3dLossCode {
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureStoredBodiesUnbound,
         Self::FeaturePasteSourcesUnresolved,
+        Self::FeatureOccurrenceTransferSourceUnresolved,
+        Self::FeatureOccurrenceTransferOwnerUnresolved,
+        Self::FeatureOccurrenceTransferOccurrenceUnresolved,
+        Self::FeatureOccurrenceTransferPlacementUnresolved,
         Self::FeatureTimelineOwnerCompeting,
         Self::FeatureTimelineOwnerUnpaired,
         Self::FeaturePasteCopyPlacementAssumed,
@@ -1106,6 +1114,18 @@ impl F3dLossCode {
             Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
             Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
             Self::FeaturePasteSourcesUnresolved => "feature.paste-sources-unresolved",
+            Self::FeatureOccurrenceTransferSourceUnresolved => {
+                "feature.occurrence-transfer-source-unresolved"
+            }
+            Self::FeatureOccurrenceTransferOwnerUnresolved => {
+                "feature.occurrence-transfer-owner-unresolved"
+            }
+            Self::FeatureOccurrenceTransferOccurrenceUnresolved => {
+                "feature.occurrence-transfer-occurrence-unresolved"
+            }
+            Self::FeatureOccurrenceTransferPlacementUnresolved => {
+                "feature.occurrence-transfer-placement-unresolved"
+            }
             Self::FeatureTimelineOwnerCompeting => "feature.timeline-owner-competing",
             Self::FeatureTimelineOwnerUnpaired => "feature.timeline-owner-unpaired",
             Self::FeaturePasteCopyPlacementAssumed => "feature.paste-copy-placement-assumed",
@@ -1517,6 +1537,10 @@ impl F3dLossCode {
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
             | Self::FeaturePasteSourcesUnresolved
+            | Self::FeatureOccurrenceTransferSourceUnresolved
+            | Self::FeatureOccurrenceTransferOwnerUnresolved
+            | Self::FeatureOccurrenceTransferOccurrenceUnresolved
+            | Self::FeatureOccurrenceTransferPlacementUnresolved
             | Self::FeatureTimelineOwnerCompeting
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
@@ -1804,6 +1828,10 @@ impl F3dLossCode {
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
             | Self::FeaturePasteSourcesUnresolved
+            | Self::FeatureOccurrenceTransferSourceUnresolved
+            | Self::FeatureOccurrenceTransferOwnerUnresolved
+            | Self::FeatureOccurrenceTransferOccurrenceUnresolved
+            | Self::FeatureOccurrenceTransferPlacementUnresolved
             | Self::FeatureTimelineOwnerCompeting
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed

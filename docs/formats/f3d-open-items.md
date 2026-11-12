@@ -278,6 +278,16 @@ it can bind a shorter run. The decoder binds only a run whose cardinality
 equals the operand count. The records of any other run stay unrepaired lost
 edge references.
 
+### DR-463. CopyPaste source occurrence identity
+
+**Question.** Which persistent identity selects the source occurrence of a CopyPaste scope whose occurrence key is the null GUID?
+
+**Known.** `f3d.md` §3.1 "A CopyPaste scope whose occurrence relation has an owner collection" gives the target occurrence relation and the source and target local placements. Identity flags can omit either placement matrix. A component definition can have several occurrences with equal local placements.
+
+**Need.** Join the source placement to one occurrence and its containing component through a persistent source reference.
+
+**Note.** The transfer retains its source placement and target operands. `feature.occurrence-transfer-source-unresolved` records the unresolved source occurrence identity.
+
 ### DR-75. Local occurrence carrier GUID
 
 **Question.** What does the LP-UTF16 carrier GUID at offset 44 of a local
