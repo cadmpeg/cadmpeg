@@ -236,7 +236,7 @@ fn fill_history(
                     Ok(Some(body)) => bodies.push(body),
                     Ok(None) => {
                         losses.push(F3dLossCode::FeatureHistoryBodyUndecoded.note(format!(
-                            "{} body slot {} state {state_id} has an incomplete geometry closure",
+                            "{} body slot {} state {state_id} has an incomplete or invalid geometry closure",
                             want.feature.id, want.slot
                         )));
                     }
@@ -329,18 +329,42 @@ fn build(
         cadmpeg_core::decode::u64_from_index(topology.record_count()),
         "admit history body records",
     )?;
-    Ok(Some(HistoryBody {
-        id: HistoryBodyId::mint(format!("f3d:history-body:nest#h{nest_index:04}"))
-            .map_err(|error| CodecError::malformed(format_args!("{error}")))?,
-        produced_by: Some(want.feature.id.clone()),
-        consumed_by: None,
-        state: HistoryStateRef {
-            ordinal: u32::try_from(ordinal)
-                .map_err(|_| CodecError::malformed("history ordinal"))?,
-            identifier: want.state,
+    admit(
+        ctx,
+        HistoryBody {
+            id: HistoryBodyId::mint(format!("f3d:history-body:nest#h{nest_index:04}"))
+                .map_err(|error| CodecError::malformed(format_args!("{error}")))?,
+            produced_by: Some(want.feature.id.clone()),
+            consumed_by: None,
+            state: HistoryStateRef {
+                ordinal: u32::try_from(ordinal)
+                    .map_err(|_| CodecError::malformed("history ordinal"))?,
+                identifier: want.state,
+            },
+            topology,
         },
-        topology,
-    }))
+    )
+}
+
+fn admit(
+    ctx: &DecodeContext<'_>,
+    mut body: HistoryBody,
+) -> Result<Option<HistoryBody>, CodecError> {
+    let producer = body.produced_by.take();
+    let consumer = body.consumed_by.take();
+    let mut scratch = CadIr::empty();
+    scratch.model.history_bodies.push(body);
+    let report = cadmpeg_ir::validate::validate_neutral_for_decode(ctx, &scratch, Vec::new())?;
+    let valid = !report
+        .findings
+        .iter()
+        .any(|finding| finding.severity == cadmpeg_ir::report::Severity::Error);
+    let Some(mut body) = scratch.model.history_bodies.pop() else {
+        return Err(CodecError::malformed("history body admission"));
+    };
+    body.produced_by = producer;
+    body.consumed_by = consumer;
+    Ok(valid.then_some(body))
 }
 
 enum Extract {

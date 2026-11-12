@@ -582,6 +582,7 @@ fn frame_impl(
         let mut name_done = false;
         let mut is_delta = false;
         let mut embedded_history_name = None;
+        let mut embedded_history_parts = Vec::new();
         let mut payload_start = true;
 
         loop {
@@ -626,16 +627,25 @@ fn frame_impl(
                             .iter()
                             .map(String::as_str)
                             .eq(["End", "of", "ASM", "History", "Section"])
-                        && matches!(identifier, "body" | "edge" | "face")
                     {
-                        embedded_history_name = Some(identifier.to_owned());
+                        embedded_history_parts.push(identifier.to_owned());
+                        embedded_history_name = Some(embedded_history_parts.join("-"));
                     }
                     payload_start = false;
                     let owned = identifier.to_owned();
                     tokens.push(Token::Ident(owned));
                 }
                 Lexed::SubIdent(identifier) => {
-                    payload_start = false;
+                    if payload_start
+                        && name_parts
+                            .iter()
+                            .map(String::as_str)
+                            .eq(["End", "of", "ASM", "History", "Section"])
+                    {
+                        embedded_history_parts.push(identifier.to_owned());
+                    } else {
+                        payload_start = false;
+                    }
                     let owned = identifier.to_owned();
                     tokens.push(Token::SubIdent(owned));
                 }
@@ -1015,6 +1025,58 @@ mod tests {
         bytes.splice(face_offset..face_offset, [0x02, 0]);
         let records = frame_history(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
         assert_eq!(records[0].name, "End-of-ASM-History-Section");
+    }
+
+    #[test]
+    fn history_marker_dispatches_embedded_name_chains() {
+        use super::Token;
+
+        for parts in [
+            vec!["plane", "surface"],
+            vec!["intcurve"],
+            vec!["custom", "carrier"],
+        ] {
+            let mut bytes = Vec::new();
+            for part in ["End", "of", "ASM", "History"] {
+                bytes.extend_from_slice(&[0x0e, u8::try_from(part.len()).unwrap()]);
+                bytes.extend_from_slice(part.as_bytes());
+            }
+            bytes.extend_from_slice(&[0x0d, 7]);
+            bytes.extend_from_slice(b"Section");
+            let embedded_offset = bytes.len();
+            let mut expected_tokens = Vec::new();
+            for (index, part) in parts.iter().enumerate() {
+                let terminal = index + 1 == parts.len();
+                bytes.extend_from_slice(&[
+                    if terminal { 0x0d } else { 0x0e },
+                    u8::try_from(part.len()).unwrap(),
+                ]);
+                bytes.extend_from_slice(part.as_bytes());
+                expected_tokens.push(if terminal {
+                    Token::Ident((*part).into())
+                } else {
+                    Token::SubIdent((*part).into())
+                });
+            }
+            bytes.push(0x0c);
+            bytes.extend_from_slice(&7_i64.to_le_bytes());
+            bytes.push(0x11);
+            expected_tokens.push(Token::Ref(7));
+            for records in [
+                frame(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap(),
+                frame_history(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap(),
+            ] {
+                assert_eq!(records.len(), 1);
+                assert_eq!(records[0].name, parts.join("-"));
+                assert_eq!(records[0].tokens.as_ref(), expected_tokens);
+                assert_eq!(records[0].ref_at(0), Some(7));
+                assert_eq!(records[0].offset, 0);
+                assert_eq!(records[0].len, bytes.len());
+            }
+            bytes.splice(embedded_offset..embedded_offset, [0x02, 0]);
+            let records = frame_history(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
+            assert_eq!(records[0].name, "End-of-ASM-History-Section");
+        }
     }
 
     #[test]
