@@ -1457,6 +1457,26 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** None.
 
+### DR-472. Destination of a Combine new-component result
+
+**Question.** How does a Combine's new-component request identify the product definition and placement that contain its result?
+
+**Known.** The operand-list prologue stores a new-component Boolean. The three-middle-list form names one browser node when that Boolean is one. A two-middle-list request can omit that node. The named tail can carry a distinct middle reference; it is separate from that browser node and remains located in the native scope. The Boolean operation and ordered target and tool selections remain readable.
+
+**Need.** A complete identity join from the result browser node and named-tail references to the component and placement, including a request whose middle lists omit the node.
+
+**Note.** The neutral Combine retains the new-component request, and the native operation retains its browser-node reference when present. The decoder reports `feature.combine-component-destination-assumed` for the unresolved destination placement and assumes the input component frame.
+
+### DR-473. Prologue of a Combine with an expanded named tail
+
+**Question.** Does an expanded named tail select the complete operand-list prologue whenever its fixed prefix also matches the standard prologue?
+
+**Known.** The expanded tail retains references outside the operand table. The complete operand-list reading supplies independent operation, keep-tools and new-component fields. The standard prefix can match only the initial bytes and give different control values. A component-Join control has zero-based operation zero, keep-tools one and new-component one.
+
+**Need.** Independent saves with expanded named tails across Boolean operations and tool-retention modes, including a frame whose complete operand lists contradict the standard-prefix reading.
+
+**Note.** The decoder uses the complete operand-list reading for the expanded named tail and reports `feature.combine-named-tail-prologue-assumed`. The synthetic control test preserves the independent destination node and tail reference while requiring the Join, keep-tools and component-request values.
+
 ### DR-202. Fields of the older Shell frames
 
 **Question.** Do the fixed-length `Shell` frames with a Boolean at offset 21 store the fields of the wall-slot form?
@@ -2345,23 +2365,3 @@ when the operation transition carries no candidate for the group members?
 **Need.** Paired saves that vary the listed and additional selections independently.
 
 **Note.** The decoder selects the listed groups and assumes that the additional groups select the same bodies. It records `feature.scale-unlisted-groups-assumed`.
-
-### DR-472. Destination of a Combine new-component result
-
-**Question.** How does a Combine's new-component request identify the product definition and placement that contain its result?
-
-**Known.** The operand-list prologue stores a new-component Boolean. The three-middle-list form names one browser node when that Boolean is one. A two-middle-list request can omit that node. The named tail can carry a distinct middle reference; it is separate from that browser node and remains located in the native scope. The Boolean operation and ordered target and tool selections remain readable.
-
-**Need.** A complete identity join from the result browser node and named-tail references to the component and placement, including a request whose middle lists omit the node.
-
-**Note.** The neutral Combine retains the new-component request, and the native operation retains its browser-node reference when present. The decoder reports `feature.combine-component-destination-assumed` for the unresolved destination placement and assumes the input component frame.
-
-### DR-473. Prologue of a Combine with an expanded named tail
-
-**Question.** Does an expanded named tail select the complete operand-list prologue whenever its fixed prefix also matches the standard prologue?
-
-**Known.** The expanded tail retains references outside the operand table. The complete operand-list reading supplies independent operation, keep-tools and new-component fields. The standard prefix can match only the initial bytes and give different control values. A component-Join control has zero-based operation zero, keep-tools one and new-component one.
-
-**Need.** Independent saves with expanded named tails across Boolean operations and tool-retention modes, including a frame whose complete operand lists contradict the standard-prefix reading.
-
-**Note.** The decoder uses the complete operand-list reading for the expanded named tail and reports `feature.combine-named-tail-prologue-assumed`. The synthetic control test preserves the independent destination node and tail reference while requiring the Join, keep-tools and component-request values.

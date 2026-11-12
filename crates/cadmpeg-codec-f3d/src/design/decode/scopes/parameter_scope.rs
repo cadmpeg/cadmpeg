@@ -1999,23 +1999,35 @@ const NAMED_LANE_VALUE_MAX: u64 = 0xff;
 /// a named-scope lane block.
 const NAMED_LANE_CLASS_WORDS: std::ops::RangeInclusive<u32> = 100..=999;
 
-fn named_scope_reference(
-    bytes: &[u8],
-    cursor: &mut usize,
-    nullable: bool,
-) -> Option<Option<crate::records::identity::Located<u32>>> {
+enum NamedScopeReference {
+    Null,
+    Local(crate::records::identity::Located<u32>),
+}
+
+impl NamedScopeReference {
+    fn into_local(self) -> Option<crate::records::identity::Located<u32>> {
+        match self {
+            Self::Null => None,
+            Self::Local(reference) => Some(reference),
+        }
+    }
+}
+
+fn named_scope_reference(bytes: &[u8], cursor: &mut usize) -> Option<NamedScopeReference> {
     let start = *cursor;
     match crate::bytes::take_reference(bytes, cursor)? {
-        crate::bytes::Reference::Null if nullable => Some(None),
+        crate::bytes::Reference::Null => Some(NamedScopeReference::Null),
         crate::bytes::Reference::Local {
             target,
             inline_type_guid: None,
         } if cursor.checked_sub(start) == Some(11) => {
             let value = u32::try_from(target).ok().filter(|value| *value != 0)?;
-            Some(Some(crate::records::identity::Located {
-                value,
-                offset: u64_from_index(start.checked_add(1)?),
-            }))
+            Some(NamedScopeReference::Local(
+                crate::records::identity::Located {
+                    value,
+                    offset: u64_from_index(start.checked_add(1)?),
+                },
+            ))
         }
         _ => None,
     }
@@ -2047,15 +2059,15 @@ fn named_parameter_scope_references(
     }
     let mut associated = Vec::with_capacity(count);
     for _ in 0..count {
-        associated.push(named_scope_reference(bytes, &mut cursor, false)??);
+        associated.push(named_scope_reference(bytes, &mut cursor)?.into_local()?);
     }
     let padding_end = cursor.checked_add(named_tail::FIRST_REFERENCE - named_tail::PADDING)?;
     if bytes.get(cursor..padding_end)? != [0; 3] {
         return None;
     }
     cursor = padding_end;
-    named_scope_reference(bytes, &mut cursor, false)??;
-    let middle = named_scope_reference(bytes, &mut cursor, true)?;
+    named_scope_reference(bytes, &mut cursor)?.into_local()?;
+    let middle = named_scope_reference(bytes, &mut cursor)?.into_local();
     let word = View::u32_le_at(
         bytes,
         cursor.checked_add(named_tail::LANE_WORD - named_tail::OPAQUE_WORD)?,
@@ -2072,14 +2084,14 @@ fn named_parameter_scope_references(
         return None;
     }
     cursor = cursor.checked_add(named_tail::SECOND_REFERENCE - named_tail::OPAQUE_WORD)?;
-    named_scope_reference(bytes, &mut cursor, false)??;
+    named_scope_reference(bytes, &mut cursor)?.into_local()?;
     let flags_end = cursor.checked_add(named_tail::THIRD_REFERENCE - named_tail::LANE_FLAGS)?;
     if bytes.get(cursor..flags_end)? != [1, 0, 0] {
         return None;
     }
     cursor = flags_end;
-    named_scope_reference(bytes, &mut cursor, false)??;
-    let closing = named_scope_reference(bytes, &mut cursor, true)?;
+    named_scope_reference(bytes, &mut cursor)?.into_local()?;
+    let closing = named_scope_reference(bytes, &mut cursor)?.into_local();
     if bytes.get(cursor) != Some(&0) || cursor.checked_add(1)? != paired_at {
         return None;
     }
