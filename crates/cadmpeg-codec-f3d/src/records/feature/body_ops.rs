@@ -31,7 +31,6 @@ cadmpeg_core::named_optional_field!(
     "axis_factor_offsets"
 );
 cadmpeg_core::named_optional_field!(deserialize_matrix_offset, u64, "matrix_offset");
-/// Fixed construction carried by a body-scale scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     try_from = "DesignScaleOperationWire",
