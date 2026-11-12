@@ -176,6 +176,10 @@ pub(super) struct DesignNative {
     design_surface_trim_operations: Vec<DesignSurfaceTrimOperation>,
     design_sheet_metal_settings:
         Vec<crate::records::sheet_metal_settings::DesignSheetMetalSettings>,
+    /// Extrudes whose profile frames may name sketch text. Confirmed after text decode.
+    pending_sketch_text_extrudes: Vec<crate::design::decode::operands::SketchTextExtrudeCandidate>,
+    /// Extrudes whose operands name neutral sketch text on one sketch.
+    sketch_text_extrudes: Vec<crate::design::decode::operands::ConfirmedSketchTextExtrude>,
 }
 
 impl DesignNative {
@@ -226,6 +230,8 @@ impl DesignNative {
             design_record_headers,
             design_surface_trim_operations,
             design_sheet_metal_settings,
+            pending_sketch_text_extrudes: _,
+            sketch_text_extrudes: _,
         } = self;
         native.asm_histories = asm_histories;
         native.asm_face_boundaries = asm_face_boundaries;
@@ -612,6 +618,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.design_construction_operand_groups,
         ),
     );
+    let (sketch_text_extrudes, sketch_text_losses) =
+        crate::design::decode::operands::confirm_sketch_text_extrudes(
+            &design.design_parameter_scopes,
+            &design.sketch_texts,
+            &design.pending_sketch_text_extrudes,
+        );
+    losses.extend(sketch_text_losses);
+    design.sketch_text_extrudes = sketch_text_extrudes;
     let projected = crate::design::feature_project::project_parameter_design_with_edge_identities(
         ctx,
         &crate::design::feature_project::ProjectInputs {
@@ -635,6 +649,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             histories: &design.asm_histories,
             face_boundaries: &design.asm_face_boundaries,
             sheet_metal_settings: &design.design_sheet_metal_settings,
+            sketch_text_extrudes: &design.sketch_text_extrudes,
+            sketch_texts: &design.sketch_texts,
         },
     )?;
     losses.extend(
@@ -1409,11 +1425,12 @@ fn extend_related_design_records(
         &mut design.design_parameter_scopes,
         &mut design.design_record_headers,
     )?;
-    let mut profile_losses = crate::design::decode::operands::bind_sketch_profiles(
+    let mut profile_losses = crate::design::decode::operands::bind_sketch_profiles_recording(
         scan,
         &mut design.design_parameter_scopes,
         &design.design_record_headers,
         &prereqs.design_entity_headers,
+        &mut design.pending_sketch_text_extrudes,
     )?;
     design.design_construction_operand_groups =
         crate::design::decode::operands::decode_construction_operand_groups(

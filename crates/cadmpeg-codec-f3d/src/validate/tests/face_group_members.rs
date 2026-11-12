@@ -71,11 +71,12 @@ fn retained_sketch_profiles_resolve_members_in_their_own_scope() {
     let (archive, mut scope, headers, entities) =
         crate::test_support::multiple_profiles::fixture(2);
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let losses = crate::design::decode::operands::bind_sketch_profiles(
+        let losses = crate::design::decode::operands::bind_sketch_profiles_recording(
             scan,
             std::slice::from_mut(&mut scope),
             &headers,
             &entities,
+            &mut Vec::new(),
         )
         .unwrap();
         assert_eq!(losses.len(), 1);

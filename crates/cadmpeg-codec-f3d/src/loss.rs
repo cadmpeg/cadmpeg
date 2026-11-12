@@ -359,6 +359,8 @@ pub(crate) enum F3dLossCode {
     FeatureProfileSelectionNative,
     /// Multiple Sketch-profile operands retain an unresolved group composition.
     FeatureExtrudeProfileGroupNative,
+    /// An extrude selects only sketch text and its cut was not projected.
+    FeatureExtrudeSketchTextSkipped,
     /// An Extrude face profile's inferred face set lists unresolved members in face-slot order.
     FeatureExtrudeProfileFaceOrderAssumed,
     /// An Extrude face profile's end-cap search stopped at a local cap.
@@ -847,6 +849,7 @@ impl F3dLossCode {
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
         Self::FeatureExtrudeProfileGroupNative,
+        Self::FeatureExtrudeSketchTextSkipped,
         Self::FeatureExtrudeProfileFaceOrderAssumed,
         Self::FeatureExtrudeProfileFaceSearchCapped,
         Self::FeatureExtrudeProfileCapFacesInferred,
@@ -1199,6 +1202,7 @@ impl F3dLossCode {
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureSketchProfileFlagsAssumed => "feature.sketch-profile-flags-assumed",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
+            Self::FeatureExtrudeSketchTextSkipped => "feature.extrude-sketch-text-skipped",
             Self::FeatureExtrudeProfileFaceOrderAssumed => {
                 "feature.extrude-profile-face-order-assumed"
             }
@@ -1593,6 +1597,7 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeSketchTextSkipped
             | Self::FeatureExtrudeProfileFaceOrderAssumed
             | Self::FeatureExtrudeProfileFaceSearchCapped
             | Self::FeatureExtrudeProfileCapFacesInferred
@@ -1880,6 +1885,7 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeSketchTextSkipped
             | Self::FeatureExtrudeProfileFaceOrderAssumed
             | Self::FeatureExtrudeProfileFaceSearchCapped
             | Self::FeatureExtrudeProfileCapFacesInferred
@@ -2250,6 +2256,7 @@ mod tests {
                 "dimension.unprojected",
                 "feature.profile-selection-native",
                 "feature.extrude-profile-group-native",
+                "feature.extrude-sketch-text-skipped",
                 "feature.extrude-profile-face-order-assumed",
                 "feature.extrude-profile-face-search-capped",
                 "feature.extrude-profile-cap-faces-inferred",

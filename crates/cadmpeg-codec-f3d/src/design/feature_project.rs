@@ -35,7 +35,7 @@ use crate::records::{
     },
     parameters::{DesignParameter, DesignParameterKind, DesignParameterOwner},
     recipes::ConstructionRecipeKind,
-    sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity},
+    sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity, SketchText},
     sketch_placement::DesignSketchPlacement,
     topology::{
         body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
@@ -124,6 +124,11 @@ pub(crate) struct ProjectInputs<'a> {
         &'a [crate::records::topology::historical_context::AsmFaceBoundary],
     pub(crate) sheet_metal_settings:
         &'a [crate::records::sheet_metal_settings::DesignSheetMetalSettings],
+    /// Extrudes whose operands name neutral sketch text, in operand order.
+    pub(crate) sketch_text_extrudes:
+        &'a [crate::design::decode::operands::ConfirmedSketchTextExtrude],
+    /// Sketch text records used to name the entities those extrudes select.
+    pub(crate) sketch_texts: &'a [SketchText],
 }
 
 /// Authored construction ordinal of every parameter scope represented by a
@@ -670,6 +675,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         histories,
         face_boundaries,
         sheet_metal_settings,
+        sketch_text_extrudes,
+        sketch_texts,
         ..
     } = inputs;
     let mut projection_losses = Vec::new();
@@ -734,16 +741,59 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 // after product projection has emitted it.
                 Some(DesignFeatureFamily::Assemble) => native_scope_definition(scope, &parameters)?,
                 Some(DesignFeatureFamily::Extrude) => {
-                    let mut definition = project_extrude(
-                        ctx,
-                        scope,
-                        &parameters,
-                        construction_groups,
-                        face_operands,
-                        placements,
-                        body_recipe_operands,
-                    )?
-                    .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?;
+                    let mut definition = if let Some(confirmed) = sketch_text_extrudes
+                        .iter()
+                        .find(|confirmed| confirmed.scope_id == scope.id)
+                    {
+                        let mut skipped = || {
+                            projection_losses.push(
+                                crate::loss::F3dLossCode::FeatureExtrudeSketchTextSkipped.note(
+                                    format!(
+                                        "{} sketch-text extrude profile(s) were skipped.",
+                                        confirmed.text_records.len(),
+                                    ),
+                                ),
+                            );
+                            FeatureDefinition::Operation(FeatureOperation::Native {
+                                kind: "SketchTextExtrude".into(),
+                                parameters: BTreeMap::new(),
+                            })
+                        };
+                        match sketch_text_extrude_profile(
+                            scope,
+                            confirmed,
+                            sketch_texts,
+                            placements,
+                        ) {
+                            Some(profile) => {
+                                match project_extrude_projection(ExtrudeProjection {
+                                    ctx,
+                                    scope,
+                                    parameters: &parameters,
+                                    construction_groups,
+                                    face_operands,
+                                    placements,
+                                    body_recipe_operands,
+                                    text_profile: Some(profile),
+                                })? {
+                                    Some(definition) => definition,
+                                    None => skipped(),
+                                }
+                            }
+                            None => skipped(),
+                        }
+                    } else {
+                        project_extrude(
+                            ctx,
+                            scope,
+                            &parameters,
+                            construction_groups,
+                            face_operands,
+                            placements,
+                            body_recipe_operands,
+                        )?
+                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                    };
                     bind_extrude_work_plane_targets(
                         &mut definition,
                         scope,
@@ -8590,6 +8640,66 @@ fn move_face_motion(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::F
     })
 }
 
+struct ExtrudeProjection<'a, 'b> {
+    ctx: &'a DecodeContext<'b>,
+    scope: &'a DesignParameterScope,
+    parameters: &'a [(u32, &'a DesignParameter)],
+    construction_groups: &'a [DesignConstructionOperandGroup],
+    face_operands: &'a [DesignFaceOperand],
+    placements: &'a [DesignSketchPlacement],
+    body_recipe_operands: &'a [DesignBodyRecipeOperand],
+    text_profile: Option<cadmpeg_ir::features::PlanarProfileRef>,
+}
+
+/// Sketch-entity profile of a confirmed text extrude.
+///
+/// Entity keys match sketch projection: a persistent id uses the text key,
+/// and a record without one uses the record key. Every text must be neutral
+/// and share the sketch named by the placement of that owner.
+fn sketch_text_extrude_profile(
+    scope: &DesignParameterScope,
+    confirmed: &crate::design::decode::operands::ConfirmedSketchTextExtrude,
+    texts: &[SketchText],
+    placements: &[DesignSketchPlacement],
+) -> Option<cadmpeg_ir::features::PlanarProfileRef> {
+    let stream = native_stream(&scope.id)?;
+    if confirmed.text_records.is_empty() {
+        return None;
+    }
+    let mut matched = Vec::with_capacity(confirmed.text_records.len());
+    for record in &confirmed.text_records {
+        let text = texts
+            .iter()
+            .find(|text| native_stream(&text.id) == Some(stream) && text.record_index == *record)?;
+        if crate::design::decode::sketch::sketch_text_neutral_state(text) != Some(true) {
+            return None;
+        }
+        matched.push(text);
+    }
+    let owner = matched.first()?.owner_reference;
+    if matched.iter().any(|text| text.owner_reference != owner) {
+        return None;
+    }
+    let mut placement = None;
+    for candidate in placements {
+        if native_stream(&candidate.id) == Some(stream)
+            && u32::try_from(candidate.entity_id.suffix()).ok() == Some(owner)
+        {
+            placement = Some(candidate);
+        }
+    }
+    let placement = placement?;
+    let sketch = crate::ids::neutral_sketch_id(placement);
+    let mut entities = Vec::with_capacity(matched.len());
+    for text in &matched {
+        entities.push(match text.persistent_id {
+            Some(persistent_id) => crate::ids::neutral_sketch_text_id(&sketch, persistent_id),
+            None => crate::ids::neutral_sketch_record_id(&sketch, text.record_index),
+        });
+    }
+    cadmpeg_ir::features::PlanarProfileRef::sketch_entities(sketch, entities).ok()
+}
+
 fn project_extrude(
     ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
@@ -8598,6 +8708,21 @@ fn project_extrude(
     face_operands: &[DesignFaceOperand],
     placements: &[DesignSketchPlacement],
     body_recipe_operands: &[DesignBodyRecipeOperand],
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
+    project_extrude_projection(ExtrudeProjection {
+        ctx,
+        scope,
+        parameters,
+        construction_groups,
+        face_operands,
+        placements,
+        body_recipe_operands,
+        text_profile: None,
+    })
+}
+
+fn project_extrude_projection(
+    inputs: ExtrudeProjection<'_, '_>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
@@ -8620,7 +8745,17 @@ fn project_extrude(
         PrologueReversal,
     }
 
-    if scope.extrude_native_profiles().is_some() {
+    let ExtrudeProjection {
+        ctx,
+        scope,
+        parameters,
+        construction_groups,
+        face_operands,
+        placements,
+        body_recipe_operands,
+        text_profile,
+    } = inputs;
+    if text_profile.is_none() && scope.extrude_native_profiles().is_some() {
         return Ok(None);
     }
     let supported_parameter = |source_kind: &str| {
@@ -8648,86 +8783,90 @@ fn project_extrude(
     }) {
         scope_groups.push(group);
     }
-    let profile_groups = or_none!(extrude_profile_group_roots(
-        ctx,
-        scope,
-        construction_groups
-    )?);
     let prologue = or_none!(scope.extrude_prologue());
-    let profile_ref = match scope.extrude_profile() {
-        Some(profile) => {
-            let placement = or_none!(placements.iter().find(|placement| {
-                native_stream(&placement.id) == native_stream(&scope.id)
-                    && placement.entity_id == profile.entity_id
-            }));
-            ProfileRef::Planar(PlanarProfileRef::Sketch(crate::ids::neutral_sketch_id(
-                placement,
-            )))
-        }
-        None => {
-            let [first, rest @ ..] = profile_groups.as_slice() else {
-                return Ok(None);
-            };
-            if rest.is_empty() {
-                match resolved_extrude_profile_face_group(
-                    ctx,
-                    scope,
-                    first,
-                    construction_groups,
-                    face_operands,
-                )? {
-                    Some(profile) => profile,
-                    None => ProfileRef::Planar(PlanarProfileRef::Native(first.id.clone())),
-                }
-            } else {
-                let mut state = None;
-                let mut faces = Vec::new();
-                let mut native = Vec::new();
-                let mut complete = true;
-                for group in &profile_groups {
-                    let Some(selection) = resolved_extrude_profile_face_group(
+    let profile_ref = if let Some(text_profile) = text_profile {
+        ProfileRef::Planar(text_profile)
+    } else {
+        let profile_groups = or_none!(extrude_profile_group_roots(
+            ctx,
+            scope,
+            construction_groups
+        )?);
+        match scope.extrude_profile() {
+            Some(profile) => {
+                let placement = or_none!(placements.iter().find(|placement| {
+                    native_stream(&placement.id) == native_stream(&scope.id)
+                        && placement.entity_id == profile.entity_id
+                }));
+                ProfileRef::Planar(PlanarProfileRef::Sketch(crate::ids::neutral_sketch_id(
+                    placement,
+                )))
+            }
+            None => {
+                let [first, rest @ ..] = profile_groups.as_slice() else {
+                    return Ok(None);
+                };
+                if rest.is_empty() {
+                    match resolved_extrude_profile_face_group(
                         ctx,
                         scope,
-                        group,
+                        first,
                         construction_groups,
                         face_operands,
-                    )?
-                    else {
-                        complete = false;
-                        break;
-                    };
-                    let ProfileRef::Planar(PlanarProfileRef::HistoricalFaces {
-                        state: selected_state,
-                        faces: selected_faces,
-                        native: selected_native,
-                    }) = selection
-                    else {
-                        complete = false;
-                        break;
-                    };
-                    if state.as_ref().is_some_and(|state| state != &selected_state) {
-                        complete = false;
-                        break;
+                    )? {
+                        Some(profile) => profile,
+                        None => ProfileRef::Planar(PlanarProfileRef::Native(first.id.clone())),
                     }
-                    state = Some(selected_state);
-                    for face in selected_faces {
-                        if !faces.contains(&face) {
-                            faces.push(face);
+                } else {
+                    let mut state = None;
+                    let mut faces = Vec::new();
+                    let mut native = Vec::new();
+                    let mut complete = true;
+                    for group in &profile_groups {
+                        let Some(selection) = resolved_extrude_profile_face_group(
+                            ctx,
+                            scope,
+                            group,
+                            construction_groups,
+                            face_operands,
+                        )?
+                        else {
+                            complete = false;
+                            break;
+                        };
+                        let ProfileRef::Planar(PlanarProfileRef::HistoricalFaces {
+                            state: selected_state,
+                            faces: selected_faces,
+                            native: selected_native,
+                        }) = selection
+                        else {
+                            complete = false;
+                            break;
+                        };
+                        if state.as_ref().is_some_and(|state| state != &selected_state) {
+                            complete = false;
+                            break;
+                        }
+                        state = Some(selected_state);
+                        for face in selected_faces {
+                            if !faces.contains(&face) {
+                                faces.push(face);
+                            }
+                        }
+                        for id in selected_native {
+                            native.push(id);
                         }
                     }
-                    for id in selected_native {
-                        native.push(id);
-                    }
+                    ProfileRef::Planar(match (complete, state) {
+                        (true, Some(state)) if !faces.is_empty() => {
+                            match PlanarProfileRef::historical_faces(state, faces, native) {
+                                Ok(profile) => profile,
+                                Err(_) => PlanarProfileRef::Native(scope.id.clone()),
+                            }
+                        }
+                        _ => PlanarProfileRef::Native(scope.id.clone()),
+                    })
                 }
-                ProfileRef::Planar(match (complete, state) {
-                    (true, Some(state)) if !faces.is_empty() => {
-                        match PlanarProfileRef::historical_faces(state, faces, native) {
-                            Ok(profile) => profile,
-                            Err(_) => PlanarProfileRef::Native(scope.id.clone()),
-                        }
-                    }
-                    _ => PlanarProfileRef::Native(scope.id.clone()),
-                })
             }
         }
     };

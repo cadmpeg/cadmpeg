@@ -13,6 +13,7 @@ mod dispatcher;
 mod draft_pull;
 mod extrude;
 mod extrude_fallbacks;
+mod extrude_text;
 mod extrude_work_planes;
 mod fixed_extrude;
 mod hole;
