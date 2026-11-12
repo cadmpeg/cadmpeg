@@ -32,8 +32,8 @@ fn legacy_scale_with_78_byte_tail_resolves_center_and_history_states() {
             .expect("uniform Scale with 78-byte fixed tail");
         assert_eq!(operation.body_group_record_index, 102);
         assert_eq!(operation.center_record_index, 105);
-        assert_eq!(operation.uniform_factor_offset, offset + 21);
-        assert!((operation.uniform_factor.get() - 2.5).abs() < EPS_SCALE_VALUE);
+        assert_eq!(operation.uniform().unwrap().1, offset + 21);
+        assert!((operation.uniform().unwrap().0.get() - 2.5).abs() < EPS_SCALE_VALUE);
         let center = operation.center_position.expect("point-data center");
         assert_eq!(center.offset, u64_from_index(position_at));
         for (actual, expected) in center.value.into_iter().zip([1.25, -2.5, 3.75]) {
@@ -139,8 +139,8 @@ fn a_legacy_scale_form_is_selected_by_payload_length_under_any_kind_spelling() {
             english.body_group_record_index
         );
         assert_eq!(french.center_record_index, english.center_record_index);
-        assert_eq!(french.uniform_factor_offset, english.uniform_factor_offset);
-        assert!((french.uniform_factor.get() - 2.5).abs() < EPS_SCALE_VALUE);
+        assert_eq!(french.uniform().unwrap().1, english.uniform().unwrap().1);
+        assert!((french.uniform().unwrap().0.get() - 2.5).abs() < EPS_SCALE_VALUE);
     }
     for (count, tail_length) in [(5, 77), (6, 78)] {
         let (french, _) = named_scale_fixture("Echelle", count, tail_length, 0);

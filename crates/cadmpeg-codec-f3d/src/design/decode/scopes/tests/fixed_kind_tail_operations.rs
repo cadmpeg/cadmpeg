@@ -264,9 +264,12 @@ pub(super) fn fixed_kind_tail_operations(
             body_group_record_index: 102,
             center_record_index: 105,
             center_position: None,
-            uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(1.5)
-                .expect("checked fixture value"),
-            uniform_factor_offset: u64_from_index(scale_at + 25),
+            further_body_group_record_indices: Vec::new(),
+            factors: crate::records::feature::body_ops::DesignScaleFactors::Uniform {
+                factor: cadmpeg_ir::scalar::PositiveReal::new(1.5).expect("checked fixture value"),
+                offset: u64_from_index(scale_at + 25),
+            },
+            matrix_offset: None,
         })
     );
 

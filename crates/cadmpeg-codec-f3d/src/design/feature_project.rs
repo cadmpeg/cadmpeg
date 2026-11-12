@@ -1050,19 +1050,70 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Scale) => {
                     if let Some(operation) = scope.scale_operation() {
-                        let factor =
-                            cadmpeg_ir::scalar::NonZeroReal::from(operation.uniform_factor);
-                        let body_group = construction_groups.iter().find(|group| {
-                            native_stream(&group.id) == Some(native_scope)
-                                && group.scope_record_index == scope.record_index
-                                && group.record_index == operation.body_group_record_index
-                        });
-                        let bodies = match body_group {
-                            Some(group) => {
-                                cadmpeg_ir::features::BodySelection::Native(group.id.clone())
-                            }
-                            None => cadmpeg_ir::features::BodySelection::Unresolved,
+                        let factors = match operation.factors {
+                            crate::records::feature::body_ops::DesignScaleFactors::Uniform {
+                                factor,
+                                ..
+                            } => cadmpeg_ir::features::ScaleFactors::Uniform {
+                                factor: cadmpeg_ir::scalar::NonZeroReal::from(factor),
+                            },
+                            crate::records::feature::body_ops::DesignScaleFactors::PerAxis {
+                                factors,
+                                ..
+                            } => cadmpeg_ir::features::ScaleFactors::PerAxis {
+                                factors: factors.map(cadmpeg_ir::scalar::NonZeroReal::from),
+                            },
                         };
+                        let scope_body_group = |record_index: u32| {
+                            construction_groups.iter().find(|group| {
+                                native_stream(&group.id) == Some(native_scope)
+                                    && group.scope_record_index == scope.record_index
+                                    && group.record_index == record_index
+                            })
+                        };
+                        let listed = std::iter::once(operation.body_group_record_index)
+                            .chain(operation.further_body_group_record_indices.iter().copied())
+                            .collect::<Vec<_>>();
+                        let selected = listed
+                            .iter()
+                            .map(|record_index| {
+                                scope_body_group(*record_index).map(|group| group.id.clone())
+                            })
+                            .collect::<Option<Vec<_>>>();
+                        let bodies = match selected.as_deref() {
+                            Some([group]) => {
+                                cadmpeg_ir::features::BodySelection::Native(group.clone())
+                            }
+                            Some([_, _, ..]) => cadmpeg_ir::features::NativeSelections::try_from(
+                                selected.clone().unwrap_or_default(),
+                            )
+                            .map_or(
+                                cadmpeg_ir::features::BodySelection::Unresolved,
+                                cadmpeg_ir::features::BodySelection::NativeSet,
+                            ),
+                            _ => cadmpeg_ir::features::BodySelection::Unresolved,
+                        };
+                        if operation.matrix_offset.is_some() {
+                            let unlisted = construction_groups
+                                .iter()
+                                .filter(|group| {
+                                    native_stream(&group.id) == Some(native_scope)
+                                        && group.scope_record_index == scope.record_index
+                                        && group.role() == DesignOperandRole::BODIES_A
+                                        && !listed.contains(&group.record_index)
+                                })
+                                .map(|group| group.record_index)
+                                .collect::<Vec<_>>();
+                            if !unlisted.is_empty() {
+                                projection_losses.push(
+                                    crate::loss::F3dLossCode::FeatureScaleUnlistedGroupsAssumed
+                                        .note(format!(
+                                            "Scale scope {} scales the bodies of its listed body groups {listed:?}; its unlisted body groups {unlisted:?} are assumed to select the same bodies (DR-464).",
+                                            scope.id
+                                        )),
+                                );
+                            }
+                        }
                         let center = match operation.center_position.and_then(|center| {
                             cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                                 center.value[0].get() * 10.0,
@@ -1081,7 +1132,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         FeatureDefinition::Operation(FeatureOperation::Scale {
                             bodies,
                             center: Some(center),
-                            factors: cadmpeg_ir::features::ScaleFactors::Uniform { factor },
+                            factors,
                         })
                     } else {
                         FeatureDefinition::Operation(FeatureOperation::Native {
