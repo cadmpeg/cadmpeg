@@ -251,14 +251,12 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
                     body_node: None,
                 },]
             },
-
-            destination: Default::default(),
         }
     );
     if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
         scope.payload_mut()
     {
-        slot.operation = Some(operation);
+        *slot = Some(operation);
     }
     assert_eq!(
         project_combine(&scope, "Design1/BulkStream.dat"),
@@ -281,8 +279,6 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
 
                 op: cadmpeg_ir::features::BooleanKind::Join,
                 keep_tools: true,
-
-                destination: Default::default(),
             }
         ))
     );
@@ -612,15 +608,6 @@ struct OperandListFixture {
     companion_selections: Option<Vec<u32>>,
     new_component: u8,
     omit_consumed: bool,
-    optional_reference: bool,
-    reference_form: FixtureReferenceForm,
-}
-
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-enum FixtureReferenceForm {
-    #[default]
-    Ordinary,
-    Typed,
 }
 
 impl OperandListFixture {
@@ -649,8 +636,6 @@ impl OperandListFixture {
             companion_selections: None,
             new_component: 0,
             omit_consumed: false,
-            optional_reference: true,
-            reference_form: FixtureReferenceForm::default(),
         }
     }
 
@@ -668,38 +653,17 @@ impl OperandListFixture {
     }
 
     fn bytes(&self) -> Vec<u8> {
-        let marked = |bytes: &mut Vec<u8>, record: u32| {
+        fn marked(bytes: &mut Vec<u8>, record: u32) {
             bytes.push(1);
-            bytes.extend_from_slice(&u64::from(record).to_le_bytes());
-            if self.reference_form == FixtureReferenceForm::Typed {
-                let guid = if self
-                    .table()
-                    .iter()
-                    .any(|(operation, _)| *operation == record)
-                {
-                    "2CA5A1CD-C99B-4C9B-91AF-57989148E841"
-                } else if self
-                    .table()
-                    .iter()
-                    .any(|(_, selection)| *selection == record)
-                {
-                    "9716F783-676D-42E0-93F9-EBF273E7C035"
-                } else if self.companions.contains(&record) {
-                    crate::design::decode::body_consumers::REMOVE_BODY_TYPE_GUID
-                } else {
-                    "D26351F0-5940-4D23-AA20-2C35475A6D9E"
-                };
-                bytes.extend_from_slice(&36u32.to_le_bytes());
-                bytes.extend_from_slice(guid.as_bytes());
-            }
-            bytes.extend_from_slice(&[0; 2]);
-        };
-        let marked_list = |bytes: &mut Vec<u8>, records: &[u32]| {
+            bytes.extend_from_slice(&record.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+        }
+        fn marked_list(bytes: &mut Vec<u8>, records: &[u32]) {
             bytes.extend_from_slice(&(u32::try_from(records.len()).unwrap()).to_le_bytes());
             for record in records {
                 marked(bytes, *record);
             }
-        };
+        }
         let tool_operations: Vec<u32> =
             self.tools.iter().map(|(operation, _)| *operation).collect();
         let consumed = self.consumed.clone().unwrap_or_else(|| {
@@ -726,11 +690,7 @@ impl OperandListFixture {
         bytes.push(self.keep_tools);
         bytes.push(self.new_component);
         bytes.extend_from_slice(&1u32.to_le_bytes());
-        if self.optional_reference {
-            marked(&mut bytes, 377);
-        } else {
-            bytes.push(0);
-        }
+        marked(&mut bytes, 377);
         bytes.extend_from_slice(&306u64.to_le_bytes());
         marked_list(
             &mut bytes,
@@ -759,24 +719,10 @@ impl OperandListFixture {
         }
         bytes.extend_from_slice(&5u32.to_le_bytes());
         lp_utf16(&mut bytes, "Combiner");
-        if self.reference_form == FixtureReferenceForm::Typed {
-            bytes.extend_from_slice(&2u32.to_le_bytes());
-            bytes.extend_from_slice(&[0; 15]);
-            marked(&mut bytes, 97);
-            bytes.extend_from_slice(&4u32.to_le_bytes());
-            bytes.extend_from_slice(&64u32.to_le_bytes());
-            bytes.extend_from_slice(&0.25f64.to_le_bytes());
-            bytes.extend_from_slice(&64u32.to_le_bytes());
-            marked(&mut bytes, 98);
-            bytes.extend_from_slice(&[0; 2]);
-            marked(&mut bytes, 99);
-            bytes.extend_from_slice(&[0; 2]);
-        } else {
-            let mut tail = [0; 78];
-            tail[0..4].copy_from_slice(&2u32.to_le_bytes());
-            tail[31..35].copy_from_slice(&4u32.to_le_bytes());
-            bytes.extend_from_slice(&tail);
-        }
+        let mut tail = [0; 78];
+        tail[0..4].copy_from_slice(&2u32.to_le_bytes());
+        tail[31..35].copy_from_slice(&4u32.to_le_bytes());
+        bytes.extend_from_slice(&tail);
         indexed_header(&mut bytes, *b"258", 90);
         for (operation, selection) in &table {
             indexed_header(&mut bytes, *b"342", *operation);
@@ -1096,6 +1042,8 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
     kept_tools.keep_tools = 1;
     let mut consumed_tools = companion(false, vec![500]);
     consumed_tools.consumed = Some(vec![192, 194]);
+    let mut two_lists_without_companion = OperandListFixture::new(0, 1).two_tools();
+    two_lists_without_companion.omit_consumed = true;
     let mut new_component = companion(true, vec![500]);
     new_component.new_component = 1;
     let mut other_guid = companion(false, vec![500]);
@@ -1109,6 +1057,7 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
         other_type,
         kept_tools,
         consumed_tools,
+        two_lists_without_companion,
         new_component,
         other_guid,
         guid_without_zeros,
@@ -1319,268 +1268,11 @@ fn a_combine_that_places_its_result_in_a_new_component_keeps_main_reading() {
     two_lists.new_component = 1;
     for (name, fixture) in [("companion", companion), ("two lists", two_lists)] {
         let (operation, losses) = fixture.decode_with_losses();
-        let operation = operation.expect("readable component request");
-        assert_eq!(
-            operation.operation,
-            cadmpeg_ir::features::BooleanKind::Join,
-            "{name}"
-        );
-        assert_eq!(
-            operation.destination,
-            crate::records::feature::combine::DesignCombineDestination::NewComponent {
-                browser_node_record_index: if name == "companion" { Some(196) } else { None },
-            }
-        );
-        let mut scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#90",
-            crate::records::feature::scope::DesignFeatureKind::Combine,
-            90,
-        );
-        if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
-            scope.payload_mut()
-        {
-            slot.operation = Some(operation);
-        }
-        assert!(matches!(
-            project_combine(&scope, "f3d:Design/BulkStream.dat"),
-            Some(cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Combine {
-                    destination: cadmpeg_ir::features::CombineDestination::NewComponent,
-                    keep_tools: false,
-                    ..
-                }
-            ))
-        ));
+        assert_eq!(operation, None, "{name}");
         assert_eq!(
             codes(losses),
-            [F3dLossCode::FeatureCombineComponentDestinationAssumed.kind()],
+            [F3dLossCode::FeatureCombineNewComponentNative.kind()],
             "{name}"
         );
-    }
-}
-
-#[test]
-fn combine_two_middle_lists_preserve_consumed_tools_in_source_order() {
-    use cadmpeg_ir::features::BooleanKind;
-
-    for (code, expected) in [
-        (0, BooleanKind::Join),
-        (1, BooleanKind::Cut),
-        (2, BooleanKind::Intersect),
-    ] {
-        for keep in [false, true] {
-            let mut fixture = OperandListFixture::new(code, u8::from(keep)).two_tools();
-            fixture.omit_consumed = true;
-            fixture.middle_lists[1] = if keep { vec![] } else { vec![192, 194] };
-            let (operation, losses) = fixture.decode_with_losses();
-            let operation = operation.unwrap();
-            assert_eq!(operation.form, DesignCombineForm::OperandLists);
-            assert_eq!(operation.operation, expected);
-            assert_eq!(operation.keep_tools, keep);
-            assert_eq!(operation.target_record_index, 96);
-            assert_eq!(
-                operation.target_body_node,
-                Some(DesignCombineBodyNode {
-                    record_index: 196,
-                    body_entity_suffix: 246,
-                    creating_scope_record_index: 296,
-                })
-            );
-            assert_eq!(
-                operation.tools.first.body_node,
-                Some(DesignCombineBodyNode {
-                    record_index: 192,
-                    body_entity_suffix: 242,
-                    creating_scope_record_index: 292,
-                })
-            );
-            assert_eq!(
-                operation.tools.additional[0].body_node,
-                Some(DesignCombineBodyNode {
-                    record_index: 194,
-                    body_entity_suffix: 244,
-                    creating_scope_record_index: 294,
-                })
-            );
-            assert_eq!(
-                operation
-                    .tools
-                    .iter()
-                    .map(|tool| tool.record_index)
-                    .collect::<Vec<_>>(),
-                [92, 94]
-            );
-            assert_eq!(
-                losses
-                    .iter()
-                    .map(|loss| loss.code.clone())
-                    .collect::<Vec<_>>(),
-                [F3dLossCode::FeatureCombineMiddleListOmittedAssumed.kind()]
-            );
-        }
-    }
-}
-
-#[test]
-fn named_combine_tail_keeps_component_reference_separate_from_destination_node() {
-    let mut fixture = OperandListFixture::new(0, 1);
-    fixture.property_block = true;
-    fixture.new_component = 1;
-    fixture.middle_lists[1] = vec![194];
-    let mut bytes = fixture.bytes();
-    let parse = |bytes: &[u8]| {
-        parse_parameter_scope_with_type_guid(
-            bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
-            90,
-            &"412".to_owned().try_into().unwrap(),
-            0,
-            Some("2A94257F-2020-4B19-9A68-103A2672F1B7"),
-        )
-        .unwrap()
-        .unwrap()
-    };
-    let original = parse(&bytes);
-    let mut tail = Vec::new();
-    tail.extend_from_slice(&2u32.to_le_bytes());
-    tail.extend_from_slice(&0u32.to_le_bytes());
-    lp_utf16(&mut tail, "NewBody");
-    tail.extend_from_slice(&0u32.to_le_bytes());
-    tail.extend_from_slice(&[0; 3]);
-    push_reference_u64(&mut tail, 602);
-    push_reference_u64(&mut tail, 900);
-    tail.extend_from_slice(&4u32.to_le_bytes());
-    tail.extend_from_slice(&257u32.to_le_bytes());
-    tail.extend_from_slice(&1.25f64.to_le_bytes());
-    tail.extend_from_slice(&257u32.to_le_bytes());
-    push_reference_u64(&mut tail, 601);
-    tail.extend_from_slice(&[1, 0, 0]);
-    push_reference_u64(&mut tail, 600);
-    tail.extend_from_slice(&[0; 2]);
-    assert_eq!(tail.len(), 102);
-    bytes.splice(
-        usize::try_from(original.feature_ordinal_offset()).unwrap()
-            ..usize::try_from(original.paired_byte_offset()).unwrap(),
-        tail,
-    );
-    let mut scope = parse(&bytes);
-    assert_eq!(
-        scope
-            .combine_named_tail()
-            .unwrap()
-            .middle
-            .as_ref()
-            .unwrap()
-            .value,
-        900
-    );
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let mut losses = Vec::new();
-    let operation = exact_combine_operation(&bytes, &records, &scope, &HashMap::new(), &mut losses)
-        .unwrap()
-        .unwrap();
-    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Join);
-    assert_eq!(
-        operation.destination,
-        crate::records::feature::combine::DesignCombineDestination::NewComponent {
-            browser_node_record_index: Some(194)
-        }
-    );
-    assert!(operation.keep_tools);
-    if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
-        scope.payload_mut()
-    {
-        slot.operation = Some(operation);
-    }
-    assert!(matches!(
-        project_combine(&scope, "f3d:Design/BulkStream.dat"),
-        Some(cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Combine {
-                destination: cadmpeg_ir::features::CombineDestination::NewComponent,
-                keep_tools: true,
-                ..
-            }
-        ))
-    ));
-    assert_eq!(
-        losses
-            .iter()
-            .map(|loss| loss.code.clone())
-            .collect::<Vec<_>>(),
-        [
-            F3dLossCode::FeatureCombineNamedTailPrologueAssumed.kind(),
-            F3dLossCode::FeatureCombineComponentDestinationAssumed.kind(),
-        ]
-    );
-}
-
-#[test]
-fn combine_operand_lists_accept_null_and_typed_local_references() {
-    for typed_references in [false, true] {
-        for optional_reference in [false, true] {
-            for companions in [vec![], vec![500]] {
-                let mut fixture = OperandListFixture::new(2, 0).two_tools();
-                fixture.reference_form = if typed_references {
-                    FixtureReferenceForm::Typed
-                } else {
-                    FixtureReferenceForm::Ordinary
-                };
-                fixture.optional_reference = optional_reference;
-                fixture.companions = companions;
-                let (operation, losses) = fixture.decode_with_losses();
-                let operation = operation.expect("complete operand lists");
-                assert_eq!(operation.form, DesignCombineForm::OperandLists);
-                assert_eq!(
-                    operation.operation,
-                    cadmpeg_ir::features::BooleanKind::Intersect
-                );
-                assert!(!operation.keep_tools);
-                assert_eq!(operation.operation_offset, 21);
-                assert_eq!(
-                    operation.keep_tools_offset,
-                    if fixture.companions.is_empty() {
-                        29
-                    } else if typed_references {
-                        80
-                    } else {
-                        40
-                    }
-                );
-                assert_eq!(operation.target_record_index, 96);
-                assert_eq!(
-                    operation.target_body_node,
-                    Some(DesignCombineBodyNode {
-                        record_index: 196,
-                        body_entity_suffix: 246,
-                        creating_scope_record_index: 296,
-                    })
-                );
-                assert_eq!(
-                    operation.tools.first.body_node,
-                    Some(DesignCombineBodyNode {
-                        record_index: 192,
-                        body_entity_suffix: 242,
-                        creating_scope_record_index: 292,
-                    })
-                );
-                assert_eq!(
-                    operation.tools.additional[0].body_node,
-                    Some(DesignCombineBodyNode {
-                        record_index: 194,
-                        body_entity_suffix: 244,
-                        creating_scope_record_index: 294,
-                    })
-                );
-                assert_eq!(
-                    operation
-                        .tools
-                        .iter()
-                        .map(|tool| tool.record_index)
-                        .collect::<Vec<_>>(),
-                    [92, 94]
-                );
-                assert!(losses.is_empty(), "{losses:?}");
-            }
-        }
     }
 }

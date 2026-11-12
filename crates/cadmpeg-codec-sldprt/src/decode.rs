@@ -1715,19 +1715,10 @@ pub(crate) fn append_design_losses(
                             cadmpeg_ir::features::DraftAnchor::NeutralPlane { .. }
                         ) && outward.is_none())
                 }
-                FeatureOperation::Combine {
-                    operands,
-                    destination,
-                    ..
-                } => {
+                FeatureOperation::Combine { operands, .. } => {
                     let target = operands.target();
                     let tools = operands.tools();
-                    incomplete_body_selection(target)
-                        || incomplete_body_selection(tools)
-                        || matches!(
-                            destination,
-                            cadmpeg_ir::features::CombineDestination::NewComponent
-                        )
+                    incomplete_body_selection(target) || incomplete_body_selection(tools)
                 }
                 FeatureOperation::BoundaryFill { tools, cells } => {
                     incomplete_body_selection(tools) || cells.iter().any(incomplete_body_selection)

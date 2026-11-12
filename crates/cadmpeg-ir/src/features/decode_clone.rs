@@ -3,11 +3,11 @@
 
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
-    BodyMembers, BodySelection, CoilConstruction, CoilPlacement, CoilResult, CombineDestination,
-    CombineOperands, DatumPlaneReference, DatumPointConstruction, DistinctMembers, DraftAnchor,
-    DraftPull, DraftSecondSide, EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
-    ExtrudeStart, ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion,
-    FaceSelection, FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
+    BodyMembers, BodySelection, CoilConstruction, CoilPlacement, CoilResult, CombineOperands,
+    DatumPlaneReference, DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull,
+    DraftSecondSide, EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+    ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion, FaceSelection,
+    FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
     FilledSurfaceContinuity, FilledSurfaceContinuityState, GeneratedBodyRef, GeneratedCurveRef,
     GeneratedEdgeRef, GeneratedFaceRef, GeneratedSweepSection, GeneratedVertexRef,
     GeometryImportPath, HelicalSweepConstruction, InsertedBodies, LinearTermination, LoftGuidance,
@@ -82,8 +82,6 @@ rewrite_enum!(CoilResult, []; {
 });
 
 rewrite_record!(CombineOperands, []; { target, tools });
-
-rewrite_enum!(CombineDestination, []; { TargetComponent, NewComponent });
 
 rewrite_enum!(DatumPlaneReference, []; {
     Feature { feature },
@@ -267,7 +265,7 @@ rewrite_enum!(FeatureOperation, []; {
     ExtendSurface { faces, distance, method },
     RuledSurface { edges, support_faces, mode, angle, alternate_face, corner },
     Draft { faces, anchor, angle, outward, second_side },
-    Combine { operands, op, keep_tools, destination },
+    Combine { operands, op, keep_tools },
     BoundaryFill { tools, cells },
     CutWithSurface { targets, tools, reverse },
     TrimBodies { operands, keep },

@@ -3,9 +3,9 @@
 
 use super::draft::contains_consecutive_guid_pair;
 use super::parameter_scope::parameter_scope_payload_length;
+use super::shared_frames::marked_record_reference;
 use crate::bytes::lp_utf16_bounded;
 use crate::bytes::take_reference;
-use crate::bytes::Reference;
 use crate::design::decode::body_consumers::REMOVE_BODY_TYPE_GUID;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_guid_end;
@@ -24,7 +24,6 @@ use crate::loss::F3dLossCode;
 use crate::records::feature::combine;
 use crate::records::feature::combine::DesignCombineBodyNode;
 use crate::records::feature::combine::DesignCombineBodySelection;
-use crate::records::feature::combine::DesignCombineDestination;
 use crate::records::feature::combine::DesignCombineExternalBodyIdentity;
 use crate::records::feature::combine::DesignCombineExternalBodyIdentityWire;
 use crate::records::feature::combine::DesignCombineForm;
@@ -59,6 +58,7 @@ pub(super) fn exact_combine_operation(
     };
     let mut operand_list_refusal = None;
     let mut contradiction = None;
+    let mut new_component = false;
     for prologue in combine_prologues(bytes, start, scope) {
         let operand_lists = prologue.lists.is_some();
         match combine_operation_with(bytes, records, scope, stream_types, prologue)? {
@@ -66,18 +66,11 @@ pub(super) fn exact_combine_operation(
                 if operation.form == DesignCombineForm::OperandLists
                     && standard_fields_read(bytes, start)
                 {
-                    if scope.combine_named_tail().is_some() {
-                        losses.push(F3dLossCode::FeatureCombineNamedTailPrologueAssumed.note(format!(
-                            "{}: its expanded named tail is read with the complete operand-list prologue despite the overlapping standard prefix (DR-473)",
-                            scope.id
-                        )));
-                    } else {
-                        operand_list_refusal = Some(
-                            "its lists name its operands, and the standard prologue also reads it"
-                                .to_owned(),
-                        );
-                        continue;
-                    }
+                    operand_list_refusal = Some(
+                        "its lists name its operands, and the standard prologue also reads it"
+                            .to_owned(),
+                    );
+                    continue;
                 }
                 if let Some(reason) = &operand_list_refusal {
                     losses.push(F3dLossCode::FeatureCombinePrologueAssumed.note(format!(
@@ -91,22 +84,14 @@ pub(super) fn exact_combine_operation(
                         scope.id
                     )));
                 }
-                if unconfirmed.middle_list_assumed {
-                    losses.push(F3dLossCode::FeatureCombineMiddleListOmittedAssumed.note(format!(
-                        "{}: the two middle lists are read as component-node and consumed-body lists; the omitted list is assumed empty",
-                        scope.id
-                    )));
-                }
-                if matches!(
-                    operation.destination,
-                    DesignCombineDestination::NewComponent { .. }
-                ) {
-                    losses.push(F3dLossCode::FeatureCombineComponentDestinationAssumed.note(format!(
-                        "{}: the Boolean result requests a new component; its browser node and named-tail references do not determine destination placement, which assumes the input component frame (DR-472)",
-                        scope.id
-                    )));
-                }
                 return Ok(Some(*operation));
+            }
+            PrologueReading::NewComponent => {
+                operand_list_refusal = Some(
+                    "its lists name its operands, and its new-component Boolean is one, which the IR cannot name"
+                        .to_owned(),
+                );
+                new_component = true;
             }
             PrologueReading::Contradicted(reason) => {
                 operand_list_refusal = Some(format!("its lists name its operands, but {reason}"));
@@ -121,7 +106,12 @@ pub(super) fn exact_combine_operation(
             }
         }
     }
-    if let Some(reason) = contradiction {
+    if new_component {
+        losses.push(F3dLossCode::FeatureCombineNewComponentNative.note(format!(
+            "{}: the Combine places its result in a new component, which the IR cannot name, and no other prologue reads it; the Combine stays native",
+            scope.id
+        )));
+    } else if let Some(reason) = contradiction {
         losses.push(F3dLossCode::FeatureCombineOperandListRefused.note(format!(
             "{}: the lists of the Combine frame name its operands and {reason}; no prologue reads it, so the Combine stays native",
             scope.id
@@ -156,6 +146,9 @@ struct OperandLists {
 /// The result of reading a frame in one prologue.
 enum PrologueReading {
     Operation(Box<DesignCombineOperation>, UnconfirmedConsumption),
+    /// The lists name the scope's operands, its fields hold, and they place
+    /// the result in a new component.
+    NewComponent,
     /// The lists name the scope's operands, and a field contradicts the
     /// prologue or cannot be checked, for the stated reason.
     Contradicted(&'static str),
@@ -175,10 +168,10 @@ fn combine_prologues(
     let extended_reference = scope.class_tag.as_str() == "329"
         && scope.paired_class_tag.as_str() == "261"
         && scope.frame_length() == 363;
-    if compact && scope.combine_named_tail().is_none() {
+    if compact {
         return compact_prologue(bytes, start).into_iter().collect();
     }
-    if extended_reference && scope.combine_named_tail().is_none() {
+    if extended_reference {
         return extended_reference_prologue(bytes, start)
             .into_iter()
             .collect();
@@ -257,14 +250,14 @@ fn operand_list_prologue(prologue: &[u8], start: usize) -> Option<CombinePrologu
     let companions = take_marked_records(prologue, &mut cursor, companion_limit)?;
     let shift = cursor.checked_sub(start.checked_add(combine_lists::KEEP_TOOLS)?)?;
     let field = |offset: usize| start.checked_add(offset)?.checked_add(shift);
-    if View::u32_le_at(prologue, field(combine_lists::CONSTANT_ONE)?) != Some(1) {
+    if View::u32_le_at(prologue, field(combine_lists::CONSTANT_ONE)?) != Some(1)
+        || prologue.get(field(combine_lists::REFERENCE_MARKER)?) != Some(&1)
+        || View::u64_le_at(prologue, field(combine_lists::REFERENCE_VALUE)?)
+            .is_none_or(|reference| reference == 0)
+        || prologue.get(field(combine_lists::REFERENCE_TAIL)?..field(combine_lists::STAMP)?)?
+            != [0; 2]
+    {
         return None;
-    }
-    let mut reference_end = field(combine_lists::REFERENCE_MARKER)?;
-    match take_reference(prologue, &mut reference_end)? {
-        Reference::Null => {}
-        Reference::Local { target, .. } if target != 0 => {}
-        _ => return None,
     }
     Some(CombinePrologue {
         form: DesignCombineForm::OperandLists,
@@ -273,8 +266,7 @@ fn operand_list_prologue(prologue: &[u8], start: usize) -> Option<CombinePrologu
             .checked_add(property_block)?,
         keep_tools_offset: field(combine_lists::KEEP_TOOLS)?,
         lists: Some(OperandLists {
-            tool_count_offset: reference_end
-                .checked_add(combine_lists::TOOL_COUNT - combine_lists::STAMP)?,
+            tool_count_offset: field(combine_lists::TOOL_COUNT)?,
             companions,
             new_component: *prologue.get(field(combine_lists::NEW_COMPONENT)?)?,
         }),
@@ -392,7 +384,6 @@ fn combine_operation_with(
             first: first_tool?,
             additional: additional_tools,
         };
-        let mut destination = DesignCombineDestination::default();
         let (operation, keep_tools, unconfirmed) = match &lists {
             None => (operation?, keep_tools?, UnconfirmedConsumption::default()),
             Some(lists) => {
@@ -425,18 +416,11 @@ fn combine_operation_with(
                 ) {
                     return Some(Ok(PrologueReading::Contradicted(reason)));
                 }
-                let mut unconfirmed =
-                    unconfirmed_consumption(bytes, records, &lists.companions, stored.guid, &tools);
-                unconfirmed.middle_list_assumed =
-                    stored.middle.len() == 2 && lists.companions.is_empty();
                 if lists.new_component == 1 {
-                    let ([_, nodes, _] | [nodes, _]) = &stored.middle[..] else {
-                        return None;
-                    };
-                    destination = DesignCombineDestination::NewComponent {
-                        browser_node_record_index: nodes.first().copied(),
-                    };
+                    return Some(Ok(PrologueReading::NewComponent));
                 }
+                let unconfirmed =
+                    unconfirmed_consumption(bytes, records, &lists.companions, stored.guid, &tools);
                 (operation, keep_tools, unconfirmed)
             }
         };
@@ -450,8 +434,6 @@ fn combine_operation_with(
                 target_record_index: target,
                 target_body_node,
                 tools,
-
-                destination,
             }),
             unconfirmed,
         )))
@@ -534,10 +516,7 @@ fn operand_list_fields_hold(
         [first, second, consumed] => {
             first.is_empty() && second.len() == browser_nodes && consumed.len() == consumed_count
         }
-        [first, second] => {
-            (has_companion && first.is_empty() && second.is_empty())
-                || (first.len() == browser_nodes && second.len() == consumed_count)
-        }
+        [first, second] => has_companion && first.is_empty() && second.is_empty(),
         _ => false,
     };
     if has_companion && keep_tools {
@@ -599,7 +578,6 @@ fn tables_after_guid(record: &[u8], guid: &[u8]) -> Vec<Vec<u32>> {
 struct UnconfirmedConsumption {
     tools: Vec<u32>,
     companion_selections: Vec<u32>,
-    middle_list_assumed: bool,
 }
 
 impl UnconfirmedConsumption {
@@ -645,7 +623,7 @@ fn unconfirmed_consumption(
     let Some(removed) = companion_body_nodes(bytes, records, companions, guid) else {
         return UnconfirmedConsumption {
             tools: tools.iter().map(|tool| tool.record_index).collect(),
-            ..Default::default()
+            companion_selections: Vec::new(),
         };
     };
     let tool_nodes: HashSet<u32> = tools
@@ -668,7 +646,6 @@ fn unconfirmed_consumption(
             .filter(|(_, node)| !tool_nodes.contains(node))
             .map(|(selection, _)| *selection)
             .collect(),
-        ..Default::default()
     }
 }
 
@@ -728,7 +705,8 @@ fn selection_body_node(
     let mut cursor = start
         .checked_add(combine_selection::CLAUSE_COUNT + 4)?
         .checked_add(clause_count.checked_mul(COMBINE_CLAUSE_LEN)?)?;
-    take_reference(bytes, &mut cursor)?.local()?;
+    marked_record_reference(bytes, cursor)?;
+    cursor = cursor.checked_add(MARKED_REFERENCE_LEN)?;
     if View::u32_le_at(bytes, cursor)? != 1 {
         return None;
     }
@@ -753,20 +731,17 @@ fn selection_body_node(
         return None;
     }
     let guid_end = fixed_guid_end(bytes, *node_at + combine_node::GUID_CODE_UNIT_COUNT)?;
-    let mut cursor = guid_end.checked_add(2)?;
-    if !matches!(bytes.get(guid_end..cursor)?, [0 | 1, 0 | 1]) {
-        return None;
-    }
-    let body_entity_suffix = u32::try_from(take_reference(bytes, &mut cursor)?.local()?.0).ok()?;
-    let creating_scope_record_index =
-        u32::try_from(take_reference(bytes, &mut cursor)?.local()?.0).ok()?;
-    if cursor != *node_end {
+    let entity_at = guid_end.checked_add(2)?;
+    let scope_at = entity_at.checked_add(MARKED_REFERENCE_LEN)?;
+    if !matches!(bytes.get(guid_end..entity_at)?, [0 | 1, 0 | 1])
+        || scope_at.checked_add(MARKED_REFERENCE_LEN)? != *node_end
+    {
         return None;
     }
     Some(DesignCombineBodyNode {
         record_index,
-        body_entity_suffix,
-        creating_scope_record_index,
+        body_entity_suffix: marked_record_reference(bytes, entity_at)?,
+        creating_scope_record_index: marked_record_reference(bytes, scope_at)?,
     })
 }
 
@@ -778,8 +753,8 @@ fn take_marked_records(bytes: &[u8], cursor: &mut usize, limit: usize) -> Option
     *cursor = cursor.checked_add(4)?;
     let mut records = Vec::new();
     for _ in 0..count {
-        let (target, _) = take_reference(bytes, cursor)?.local()?;
-        records.push(u32::try_from(target).ok().filter(|target| *target != 0)?);
+        records.push(marked_record_reference(bytes, *cursor)?);
+        *cursor = cursor.checked_add(MARKED_REFERENCE_LEN)?;
     }
     Some(records)
 }
@@ -1001,9 +976,12 @@ fn combine_operation_identity_role(
     frame: &[u8],
     selection_record_index: u32,
 ) -> Option<CombineOperandRole> {
+    let selection_reference = selection_record_index.to_le_bytes();
     if frame.get(11..21)? == [0; 10]
         && View::u32_le_at(frame, 21)? == 1
-        && operation_identity_selection(frame, 25, selection_record_index)
+        && frame.get(25) == Some(&1)
+        && frame.get(26..30)? == selection_reference
+        && frame.get(30..36)? == [0; 6]
     {
         return Some(CombineOperandRole::Target);
     }
@@ -1015,15 +993,13 @@ fn combine_operation_identity_role(
     let after_property_type = lp_ascii_literal(frame, after_property, b"IntrinsicMetaTypeuint64")?;
     let count_at = after_property_type.checked_add(8)?;
     if View::u32_le_at(frame, count_at)? != 1
-        || !operation_identity_selection(frame, count_at.checked_add(4)?, selection_record_index)
+        || frame.get(count_at + 4) != Some(&1)
+        || frame.get(count_at + 5..count_at + 9)? != selection_reference
+        || frame.get(count_at + 9..count_at + 15)? != [0; 6]
     {
         return None;
     }
     Some(CombineOperandRole::Tool)
-}
-
-fn operation_identity_selection(frame: &[u8], mut cursor: usize, selection: u32) -> bool {
-    matches!(take_reference(frame, &mut cursor), Some(Reference::Local { target, .. }) if target == u64::from(selection))
 }
 
 fn lp_ascii_literal(bytes: &[u8], at: usize, literal: &[u8]) -> Option<usize> {

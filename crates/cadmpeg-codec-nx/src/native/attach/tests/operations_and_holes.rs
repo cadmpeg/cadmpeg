@@ -63,8 +63,6 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
 
             op: BooleanKind::Cut,
             keep_tools: false,
-
-            destination: Default::default(),
         })
     );
     assert_eq!(
@@ -87,8 +85,6 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
 
             op: BooleanKind::Cut,
             keep_tools: false,
-
-            destination: Default::default(),
         })
     );
 
@@ -124,8 +120,6 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
 
             op: BooleanKind::Cut,
             keep_tools: false,
-
-            destination: Default::default(),
         })
     );
 
@@ -162,8 +156,6 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
 
             op: BooleanKind::Join,
             keep_tools: false,
-
-            destination: Default::default(),
         })
     );
 }
@@ -979,8 +971,6 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
 
                 op,
                 keep_tools: false,
-
-                destination: Default::default(),
             })
         );
     }

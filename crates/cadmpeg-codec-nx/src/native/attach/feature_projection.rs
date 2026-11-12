@@ -1084,8 +1084,6 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
 
             op,
             keep_tools: false,
-
-            destination: Default::default(),
         }));
     }
     Ok(match kind {

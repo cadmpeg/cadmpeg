@@ -104,8 +104,6 @@ fn combine_projection_binds_generated_target_and_tool_bodies() {
                 .unwrap(),
                 op: BooleanKind::Join,
                 keep_tools: false,
-
-                destination: Default::default(),
             }),
         ),
     ];

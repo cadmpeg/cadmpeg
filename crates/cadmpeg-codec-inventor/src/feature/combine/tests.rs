@@ -92,7 +92,6 @@ fn combine_projects_boolean_modes_tools_and_retained_target() {
                         operands,
                         op,
                         keep_tools,
-                        ..
                     }) = feature.evaluation.definition()
                     else {
                         panic!("neutral Combine");

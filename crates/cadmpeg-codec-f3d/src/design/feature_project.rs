@@ -2375,10 +2375,7 @@ pub(super) fn project_combine(
     scope: &DesignParameterScope,
     native_scope: &str,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use crate::records::feature::combine::DesignCombineDestination;
-    use cadmpeg_ir::features::{
-        BodySelection, CombineDestination, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
 
     let operation = scope.combine_operation()?;
     let selection = |record_index| {
@@ -2404,11 +2401,6 @@ pub(super) fn project_combine(
         operands,
         op: operation.operation,
         keep_tools: operation.keep_tools,
-
-        destination: match operation.destination {
-            DesignCombineDestination::TargetComponent => CombineDestination::TargetComponent,
-            DesignCombineDestination::NewComponent { .. } => CombineDestination::NewComponent,
-        },
     }))
 }
 

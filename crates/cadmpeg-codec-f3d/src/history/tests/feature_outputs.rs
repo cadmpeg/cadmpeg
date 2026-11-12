@@ -1496,8 +1496,6 @@ fn combine_join_to_cut_deleting_vs_non_deleting() {
                 .unwrap(),
                 op: BooleanKind::Join,
                 keep_tools: true,
-
-                destination: Default::default(),
             }),
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
@@ -1601,7 +1599,7 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
             })
             .unwrap();
         if let DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
-            slot.operation = form.map(|form| DesignCombineOperation {
+            *slot = form.map(|form| DesignCombineOperation {
                 form,
                 operation: BooleanKind::Join,
                 operation_offset: 0,
@@ -1617,8 +1615,6 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
                     },
                     additional: Vec::new(),
                 },
-
-                destination: Default::default(),
             });
         }
         let mut feature = Feature {
@@ -1640,8 +1636,6 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
                     .unwrap(),
                     op: BooleanKind::Join,
                     keep_tools: true,
-
-                    destination: Default::default(),
                 }),
                 DistinctMembers::try_from(vec![]).unwrap(),
             ),
