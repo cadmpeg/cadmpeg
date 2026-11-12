@@ -58,7 +58,7 @@ fn profile_roster_construction_axis_test(
     sketch: &Sketch,
     surfaces: &[Surface],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
-    profile_roster_construction_axis(lane, profile_native, sketch, surfaces)
+    profile_roster_construction_axis(lane, profile_native, sketch, surfaces, &[])
 }
 
 fn temporary_axis_reference(

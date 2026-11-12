@@ -1,6 +1,9 @@
 //! Tests for the `compact_reference_planes` module.
 
-use super::{compact_reference_plane_source, principal_sketch_frame, CompactReferencePlaneIndex};
+use super::{
+    compact_reference_plane_source, principal_sketch_frame, principal_top_component_frame,
+    CompactReferencePlaneIndex,
+};
 use cadmpeg_ir::features::PrincipalPlane;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -154,6 +157,7 @@ fn indexed_profile_frames_resolve_each_record_interval() {
         declared: Vec::new(),
         components: (0..records).map(|i| (i * width, 7)).collect(),
         deferred_principal_components: Vec::new(),
+        top_components: Vec::new(),
         component_frames: (0..records).map(|i| (i * width, frame)).collect(),
     };
     for i in 0..1000 {
@@ -178,6 +182,7 @@ fn indexed_component_frames_keep_complete_boundaries_and_ambiguity() {
         declared: Vec::new(),
         components: vec![(0, 7), (width, 7), (width * 2, 9)],
         deferred_principal_components: Vec::new(),
+        top_components: Vec::new(),
         component_frames: vec![(0, first), (width, first), (width * 2, second)],
     };
     assert_eq!(index.profile_component_frame(0, 0, width - 1), None);
@@ -198,6 +203,90 @@ fn front_frame_uses_model_xy_with_positive_z_normal() {
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(u_axis, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(normal.cross(u_axis), Vector3::new(0.0, 1.0, 0.0));
+}
+
+#[test]
+fn principal_top_uses_positive_y_normal() {
+    assert_eq!(
+        principal_top_component_frame(),
+        (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0)
+        )
+    );
+    assert_eq!(
+        principal_sketch_frame(PrincipalPlane::Right),
+        (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0)
+        )
+    );
+}
+
+#[test]
+fn top_component_frame_requires_a_complete_local_unmixed_record() {
+    use crate::layout::compact_principal_plane_component as layout;
+    let mut record = [0u8; super::COMPACT_COMPONENT_PLANE_RECORD_LEN];
+    record[layout::SOURCE..layout::SOURCE + 4].copy_from_slice(&3u32.to_le_bytes());
+    record[layout::SELECTOR..layout::SELECTOR + 4].copy_from_slice(&2u32.to_le_bytes());
+    record[layout::MATRIX_PRESENT] = 1;
+    for (index, value) in [
+        1.0f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let offset = layout::BASIS + index * 8;
+        record[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    record[layout::TRAILER_KIND..layout::TRAILER_KIND + 4].copy_from_slice(&4u32.to_le_bytes());
+    record[layout::TRAILER_SENTINEL..layout::TRAILER_SENTINEL + 4].fill(0xff);
+    let index = CompactReferencePlaneIndex::new(&record);
+    assert_eq!(
+        index.principal_top_profile_frame(0, record.len()),
+        Some(principal_top_component_frame())
+    );
+    assert_eq!(index.principal_top_profile_frame(1, record.len()), None);
+    assert_eq!(index.principal_top_profile_frame(0, record.len() - 1), None);
+    let top = record;
+    let mut right = record;
+    right[layout::SOURCE..layout::SOURCE + 4].copy_from_slice(&4u32.to_le_bytes());
+    right[layout::SELECTOR..layout::SELECTOR + 4].copy_from_slice(&1u32.to_le_bytes());
+    for (index, value) in [0.0f64, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0]
+        .into_iter()
+        .enumerate()
+    {
+        let offset = layout::BASIS + index * 8;
+        right[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    let mut mixed = top.to_vec();
+    mixed.extend_from_slice(&right);
+    assert_eq!(
+        CompactReferencePlaneIndex::new(&mixed).principal_top_profile_frame(0, mixed.len()),
+        None
+    );
+    let mut custom = top;
+    custom[layout::SELECTOR..layout::SELECTOR + 4].fill(0);
+    for (index, value) in [1.0f64, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0]
+        .into_iter()
+        .enumerate()
+    {
+        let offset = layout::BASIS + index * 8;
+        custom[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    let mut mixed = top.to_vec();
+    mixed.extend_from_slice(&custom);
+    assert_eq!(
+        CompactReferencePlaneIndex::new(&mixed).principal_top_profile_frame(0, mixed.len()),
+        None
+    );
+    record[layout::SELECTOR] = 1;
+    assert_eq!(
+        CompactReferencePlaneIndex::new(&record).principal_top_profile_frame(0, record.len()),
+        None
+    );
 }
 
 #[test]

@@ -20,6 +20,7 @@ pub(super) struct CompactReferencePlaneIndex {
     components: Vec<(usize, u32)>,
     component_frames: Vec<(usize, PlaneFrame)>,
     deferred_principal_components: Vec<usize>,
+    top_components: Vec<usize>,
 }
 
 impl CompactReferencePlaneIndex {
@@ -29,6 +30,7 @@ impl CompactReferencePlaneIndex {
         let mut components = Vec::new();
         let mut component_frames = Vec::new();
         let mut deferred_principal_components = Vec::new();
+        let mut top_components = Vec::new();
         for (offset, byte) in payload.iter().enumerate() {
             if *byte == COMPACT_REFERENCE_PLANE_CLASS[0]
                 && payload.get(offset..offset + COMPACT_REFERENCE_PLANE_CLASS.len())
@@ -54,8 +56,11 @@ impl CompactReferencePlaneIndex {
                     if let Some(bytes) =
                         payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN)
                     {
-                        if compact_principal_reference_plane_record(bytes).is_some() {
+                        if let Some(plane) = compact_principal_reference_plane_record(bytes) {
                             deferred_principal_components.push(start);
+                            if plane == cadmpeg_ir::features::PrincipalPlane::Top {
+                                top_components.push(start);
+                            }
                         }
                         if let Some(source) = compact_component_reference_plane_record(bytes) {
                             components.push((start, source));
@@ -74,7 +79,49 @@ impl CompactReferencePlaneIndex {
             components,
             component_frames,
             deferred_principal_components,
+            top_components,
         }
+    }
+
+    pub(super) fn principal_top_profile_frame(
+        &self,
+        start: usize,
+        end: usize,
+    ) -> Option<PlaneFrame> {
+        let top = records_in_range(
+            &self.top_components,
+            start,
+            end,
+            COMPACT_COMPONENT_PLANE_RECORD_LEN,
+            |offset| *offset,
+        );
+        let principal = records_in_range(
+            &self.deferred_principal_components,
+            start,
+            end,
+            COMPACT_COMPONENT_PLANE_RECORD_LEN,
+            |offset| *offset,
+        );
+        let custom = records_in_range(
+            &self.component_frames,
+            start,
+            end,
+            COMPACT_COMPONENT_PLANE_RECORD_LEN,
+            |(offset, _)| *offset,
+        );
+        (!top.is_empty() && top.len() == principal.len() && custom.is_empty())
+            .then(principal_top_component_frame)
+    }
+
+    pub(super) fn has_component_frame(&self, start: usize, end: usize) -> bool {
+        !records_in_range(
+            &self.component_frames,
+            start,
+            end,
+            COMPACT_COMPONENT_PLANE_RECORD_LEN,
+            |(offset, _)| *offset,
+        )
+        .is_empty()
     }
 
     pub(super) fn preserved_principal_fallback(
@@ -180,6 +227,24 @@ impl CompactReferencePlaneIndex {
         Some((origin, normal, u_axis))
     }
 
+    pub(super) fn profile_declared_source(
+        &self,
+        context_start: usize,
+        profile_start: usize,
+        profile_end: usize,
+    ) -> Option<u32> {
+        let source_in = |start| {
+            unique_indexed_value(records_in_range(
+                &self.declared,
+                start,
+                profile_end,
+                COMPACT_REFERENCE_PLANE_RECORD_LEN,
+                |(offset, _)| *offset,
+            ))
+        };
+        source_in(profile_start).or_else(|| source_in(context_start))
+    }
+
     /// Component frames use the profile interval before its enclosing context.
     pub(super) fn profile_component_frame(
         &self,
@@ -239,7 +304,9 @@ fn unique_indexed_value<T: Copy + PartialEq>(records: &[(usize, T)]) -> Option<T
     Some(*first)
 }
 
-fn compact_principal_reference_plane_record(bytes: &[u8]) -> Option<()> {
+fn compact_principal_reference_plane_record(
+    bytes: &[u8],
+) -> Option<cadmpeg_ir::features::PrincipalPlane> {
     let source = View::u32_le_at(bytes, principal_component::SOURCE)?;
     let selector = View::u32_le_at(bytes, principal_component::SELECTOR)?;
     if !matches!((source, selector), (4, 1) | (3, 2))
@@ -272,7 +339,11 @@ fn compact_principal_reference_plane_record(bytes: &[u8]) -> Option<()> {
             View::f64_le_at(bytes, principal_component::BASIS + index * 8)
                 .is_some_and(|value| value == expected)
         })
-        .then_some(())
+        .then_some(if source == 3 {
+            cadmpeg_ir::features::PrincipalPlane::Top
+        } else {
+            cadmpeg_ir::features::PrincipalPlane::Right
+        })
 }
 
 fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
@@ -393,6 +464,14 @@ fn compact_component_plane_frame_record(bytes: &[u8]) -> Option<PlaneFrame> {
         normal,
         u_axis,
     ))
+}
+
+pub(super) fn principal_top_component_frame() -> PlaneFrame {
+    (
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
 }
 
 pub(crate) fn principal_sketch_frame(
