@@ -1884,27 +1884,11 @@ impl<'a> Builder<'a> {
             "SOLID_ANGLE_UNIT",
             "( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() )",
         );
-        let uncertainty = self
-            .ir
-            .model
-            .edges
-            .iter()
-            .filter_map(|edge| edge.tolerance)
-            .chain(
-                self.ir
-                    .model
-                    .vertices
-                    .iter()
-                    .filter_map(|vertex| vertex.tolerance),
-            )
-            .chain(self.ir.model.faces.iter().filter_map(|face| face.tolerance))
-            .map(cadmpeg_ir::scalar::PositiveReal::get)
-            .fold(self.ir.tolerances.linear.get(), f64::max);
         let unc = self.emitter.emit(
             "UNCERTAINTY_MEASURE_WITH_UNIT",
             &format!(
                 "LENGTH_MEASURE({}),{len},{},{}",
-                self.emitter.real(uncertainty),
+                self.emitter.real(self.ir.tolerances.linear.get()),
                 string("distance_accuracy_value"),
                 string("maximum model space distance")
             ),

@@ -108,8 +108,10 @@ in mm and adds the 0.001 mm model gap. This unit interpretation is inferred;
 the format model retains the scalar separately. The inferred bound is retained
 as edge accuracy. The report records the number of emitted faces and largest
 sampled lift gap with
-`geometry.parameter-map-accuracy-inferred`. STEP representation uncertainty retains
-the largest face, edge, vertex, or document linear tolerance.
+`geometry.parameter-map-accuracy-inferred`. STEP export retains the document
+linear tolerance as its global uncertainty. Larger per-entity tolerances remain
+subject to the exporter's topology-metadata loss reporting; STEP readback can
+therefore reject a recovered boundary at the tighter document tolerance.
 
 For an owned rolling-ball construction, a stored construction radius can
 select a small radial correction of the two rail points at each station.
