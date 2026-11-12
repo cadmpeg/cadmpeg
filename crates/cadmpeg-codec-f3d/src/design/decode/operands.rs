@@ -1736,6 +1736,18 @@ pub(crate) fn edge_operand_candidate_faces(
     faces
 }
 
+/// Several Sketch-profile operands of one Extrude are one selection when they
+/// name the same Sketch and each carries a region selection.
+pub(crate) fn composable_sketch_profiles(profiles: &[DesignSketchProfileOperand]) -> bool {
+    let Some(first) = profiles.first() else {
+        return false;
+    };
+    profiles.len() > 1
+        && profiles.iter().all(|profile| {
+            profile.entity_id == first.entity_id && profile.region_selection.is_some()
+        })
+}
+
 /// Resolve the unique sketch-profile frame named by profile-based scopes.
 pub(crate) fn bind_sketch_profiles(
     scan: &ContainerScan,
@@ -1779,9 +1791,13 @@ pub(crate) fn bind_sketch_profiles(
             if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
                 scope.payload_mut()
             {
-                losses.push(crate::loss::F3dLossCode::FeatureExtrudeProfileGroupNative.note(
-                    format!("{} Sketch-profile operands remain native because their group composition is unresolved.", profiles.len()),
-                ));
+                // A same-sketch region group is composed later. Every other
+                // group stays native.
+                if !composable_sketch_profiles(&profiles) {
+                    losses.push(crate::loss::F3dLossCode::FeatureExtrudeProfileGroupNative.note(
+                        format!("{} Sketch-profile operands remain native because their group composition is unresolved.", profiles.len()),
+                    ));
+                }
                 slot.get_or_insert_with(Default::default)
                     .extrude_native_profiles = Some(profiles);
             }

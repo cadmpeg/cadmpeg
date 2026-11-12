@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Project parameter-design features and dispatch per feature family.
 
-use crate::design::decode::operands::entity_selection_matches_curve;
+use crate::design::decode::operands::{composable_sketch_profiles, entity_selection_matches_curve};
 use crate::design::dimensions::expression_identifiers;
 use crate::design::edge_resolve::{
     project_fixed_fillet_with_corners, resolved_edge_flange_group, resolved_edge_group,
@@ -8620,7 +8620,11 @@ fn project_extrude(
         PrologueReversal,
     }
 
-    if scope.extrude_native_profiles().is_some() {
+    let native_profiles = scope.extrude_native_profiles();
+    let shared_profile = native_profiles
+        .filter(|profiles| composable_sketch_profiles(profiles))
+        .and_then(<[_]>::first);
+    if native_profiles.is_some() && shared_profile.is_none() {
         return Ok(None);
     }
     let supported_parameter = |source_kind: &str| {
@@ -8654,7 +8658,7 @@ fn project_extrude(
         construction_groups
     )?);
     let prologue = or_none!(scope.extrude_prologue());
-    let profile_ref = match scope.extrude_profile() {
+    let profile_ref = match scope.extrude_profile().or(shared_profile) {
         Some(profile) => {
             let placement = or_none!(placements.iter().find(|placement| {
                 native_stream(&placement.id) == native_stream(&scope.id)

@@ -259,6 +259,52 @@ fn multiple_native_sketch_profiles_keep_the_extrude_native() {
     assert!(projected(&scope).is_none());
 }
 
+/// Two region selections of one Sketch project as that Sketch. Profile
+/// selection later replaces the whole Sketch with the merged regions.
+#[test]
+fn same_sketch_profile_group_projects_an_extrude() {
+    let mut scope = fixed_extrude(
+        DesignExtrudeExtent::TwoSidedDistance,
+        DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(distance(1.0, 11))),
+            against_distance: Some(distance(2.0, 17)),
+            ..Default::default()
+        },
+    );
+    let region_selection = |record_index| {
+        crate::records::topology::sketch_profile::DesignSketchProfileRegionSelection {
+            record_index,
+            byte_offset: u64::from(record_index) * 10,
+            class_tag: crate::records::references::DesignClassTag::try_from("309".to_owned())
+                .unwrap(),
+            region_count_offset: u64::from(record_index) * 10 + 8,
+            regions: Vec::new(),
+            companion_class_tag: crate::records::references::DesignClassTag::try_from(
+                "310".to_owned(),
+            )
+            .unwrap(),
+            companion_byte_offset: u64::from(record_index) * 10 + 16,
+        }
+    };
+    let mut first = scope.extrude_profile().unwrap().clone();
+    first.region_selection = Some(region_selection(300));
+    let mut second = first.clone();
+    second.record_index = 200;
+    second.region_selection = Some(region_selection(400));
+    let extrude = scope.extrude_mut().unwrap();
+    extrude.extrude_profile = None;
+    extrude.extrude_native_profiles = Some(vec![first, second]);
+    let definition = projected(&scope).expect("same-sketch profile group");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        profile: ProfileRef::Planar(PlanarProfileRef::Sketch(profile)),
+        ..
+    }) = definition
+    else {
+        panic!("whole-sketch Extrude: {definition:?}");
+    };
+    assert_eq!(profile, neutral_sketch_id(&placement()));
+}
+
 /// The measurement word, when present, states whether each side travels the
 /// stored distance, for a fixed lane and an indexed parameter alike.
 #[test]

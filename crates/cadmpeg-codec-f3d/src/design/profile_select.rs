@@ -4,7 +4,9 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::design::decode::operands::{entity_selection_matches_curve, parse_sketch_profile};
+use crate::design::decode::operands::{
+    composable_sketch_profiles, entity_selection_matches_curve, parse_sketch_profile,
+};
 use crate::design::geometry::{
     arrangement_region_containing_points, historical_member_points_in_state, point_in_polygon,
     point_on_sketch_entity, point_segment_distance, profile_loops_are_independent,
@@ -726,6 +728,29 @@ pub(crate) fn bind_extrude_profile_selections(
                                 prev_state_id,
                             );
                         }
+                    }
+                    if scope
+                        .extrude_native_profiles()
+                        .is_some_and(composable_sketch_profiles)
+                    {
+                        let sketch_key = sketch_id.clone();
+                        if let Some(merged) = compose_same_sketch_profile_group(
+                            scope,
+                            sketch,
+                            &sketch_key,
+                            curve_resolution.curve_identities,
+                            curve_resolution.sketch_entities,
+                            scoped_resolution,
+                        )? {
+                            *profile = merged;
+                        } else {
+                            *profile =
+                                ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()));
+                            scoped_resolution
+                                .profile_work
+                                .note_unresolved_profile_group();
+                        }
+                        break 'feature_edit;
                     }
                     let explicit_profiles = scope
                         .extrude_profile()
@@ -1470,6 +1495,55 @@ fn historical_profile_face_candidates(
         }
     }
     Ok(faces)
+}
+
+/// Merge the region selections of one same-sketch extrude profile group.
+/// `Ok(None)` means the group stays a native profile.
+fn compose_same_sketch_profile_group(
+    scope: &DesignParameterScope,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    sketch_id: &cadmpeg_ir::sketches::SketchId,
+    curve_identities: &[SketchCurveIdentity],
+    sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
+    scoped_resolution: ScopedExtrudeProfileResolution<'_>,
+) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
+    use cadmpeg_ir::features::ProfileRef;
+
+    let assumed_before = scoped_resolution.profile_work.assumed_flags();
+    let inferred_before = scoped_resolution.profile_work.inferred_counts();
+    let outcome = (|| -> Result<Option<ProfileRef>, CodecError> {
+        let Some(stream) = native_stream(&scope.id) else {
+            return Ok(None);
+        };
+        let Some(profiles) = scope.extrude_native_profiles() else {
+            return Ok(None);
+        };
+        let mut resolved = Vec::new();
+        for operand in profiles {
+            let Some(selected) = region_members::resolve(
+                stream,
+                operand,
+                sketch,
+                curve_identities,
+                sketch_entities,
+                scoped_resolution,
+            )?
+            else {
+                return Ok(None);
+            };
+            resolved.push(ProfileRef::Planar(selected));
+        }
+        Ok(merge_resolved_profile_selections(sketch_id, &resolved))
+    })();
+    if !matches!(outcome, Ok(Some(_))) {
+        scoped_resolution
+            .profile_work
+            .set_assumed_flags(assumed_before);
+        scoped_resolution
+            .profile_work
+            .set_inferred_counts(inferred_before);
+    }
+    outcome
 }
 
 #[derive(Debug, Clone, PartialEq)]
