@@ -252,9 +252,12 @@ pub(crate) enum F3dLossCode {
     HoleExtentFaceAssumed,
     /// A Hole carrier and its point-data records do not define an admitted placement.
     HolePlacementUnproven,
-    /// A Hole placed by distances from two reference edges retains those
-    /// distances natively; its placement is the carrier point.
     HoleReferenceDimensionsNative,
+    HoleParametersIndependentAssumed,
+    HoleShapePartialAssumed,
+    HoleExtentLeadingWordAssumed,
+    HoleStandardSizingAssumed,
+    HoleCarrierAxisAssumed,
     /// Align operand roles and motion have no neutral binding.
     AlignOperandsUnresolved,
     /// Align has no admitted specialized prefix.
@@ -432,6 +435,8 @@ pub(crate) enum F3dLossCode {
     /// A legacy Scale form is selected by the frame length of its English
     /// spelling; its payload length matches no form.
     FeatureScaleFrameLengthFormAssumed,
+    FeatureScaleMatrixWordAssumed,
+    FeatureScaleUnlistedGroupsAssumed,
     FeatureWorkAxisRuleUnassigned,
     FeatureWorkAxisEndpointToleranceAssumed,
     /// Feature body selections retain native identities; no unique body.
@@ -814,6 +819,11 @@ impl F3dLossCode {
         Self::HoleExtentFaceAssumed,
         Self::HolePlacementUnproven,
         Self::HoleReferenceDimensionsNative,
+        Self::HoleParametersIndependentAssumed,
+        Self::HoleShapePartialAssumed,
+        Self::HoleExtentLeadingWordAssumed,
+        Self::HoleStandardSizingAssumed,
+        Self::HoleCarrierAxisAssumed,
         Self::AlignOperandsUnresolved,
         Self::AlignEnvelopeUnparsed,
         Self::AlignConstructionUnparsed,
@@ -903,6 +913,8 @@ impl F3dLossCode {
         Self::FeatureFormCageOrderAssumed,
         Self::FeatureFormEmptyCagesAssumed,
         Self::FeatureScaleFrameLengthFormAssumed,
+        Self::FeatureScaleMatrixWordAssumed,
+        Self::FeatureScaleUnlistedGroupsAssumed,
         Self::FeatureWorkAxisRuleUnassigned,
         Self::FeatureWorkAxisEndpointToleranceAssumed,
         Self::FeatureBodySelectionNative,
@@ -1193,6 +1205,11 @@ impl F3dLossCode {
             Self::HoleExtentFaceAssumed => "feature.hole-extent-face-assumed",
             Self::HolePlacementUnproven => "feature.hole-placement-unproven",
             Self::HoleReferenceDimensionsNative => "feature.hole-reference-dimensions-native",
+            Self::HoleParametersIndependentAssumed => "feature.hole-parameters-independent-assumed",
+            Self::HoleShapePartialAssumed => "feature.hole-shape-partial-assumed",
+            Self::HoleExtentLeadingWordAssumed => "feature.hole-extent-leading-word-assumed",
+            Self::HoleStandardSizingAssumed => "feature.hole-standard-sizing-assumed",
+            Self::HoleCarrierAxisAssumed => "feature.hole-carrier-axis-assumed",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::MoveUnprojected => "feature.move-unprojected",
             Self::ModifyUnprojected => "feature.modify-unprojected",
@@ -1299,6 +1316,8 @@ impl F3dLossCode {
             Self::FeatureFormCageOrderAssumed => "feature.form-cage-order-assumed",
             Self::FeatureFormEmptyCagesAssumed => "feature.form-empty-cages-assumed",
             Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
+            Self::FeatureScaleMatrixWordAssumed => "feature.scale-matrix-word-assumed",
+            Self::FeatureScaleUnlistedGroupsAssumed => "feature.scale-unlisted-groups-assumed",
             Self::FeatureWorkAxisRuleUnassigned => "feature.work-axis-rule-unassigned",
             Self::FeatureWorkAxisEndpointToleranceAssumed => {
                 "feature.work-axis-endpoint-tolerance-assumed"
@@ -1600,6 +1619,11 @@ impl F3dLossCode {
             | Self::HoleExtentFaceAssumed
             | Self::HolePlacementUnproven
             | Self::HoleReferenceDimensionsNative
+            | Self::HoleParametersIndependentAssumed
+            | Self::HoleShapePartialAssumed
+            | Self::HoleExtentLeadingWordAssumed
+            | Self::HoleStandardSizingAssumed
+            | Self::HoleCarrierAxisAssumed
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::FeatureShellAuxiliaryReferencesNative
@@ -1691,6 +1715,8 @@ impl F3dLossCode {
             | Self::FeatureFormCageOrderAssumed
             | Self::FeatureFormEmptyCagesAssumed
             | Self::FeatureScaleFrameLengthFormAssumed
+            | Self::FeatureScaleMatrixWordAssumed
+            | Self::FeatureScaleUnlistedGroupsAssumed
             | Self::FeatureWorkAxisRuleUnassigned
             | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
@@ -1904,6 +1930,11 @@ impl F3dLossCode {
             | Self::HoleExtentFaceAssumed
             | Self::HolePlacementUnproven
             | Self::HoleReferenceDimensionsNative
+            | Self::HoleParametersIndependentAssumed
+            | Self::HoleShapePartialAssumed
+            | Self::HoleExtentLeadingWordAssumed
+            | Self::HoleStandardSizingAssumed
+            | Self::HoleCarrierAxisAssumed
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::FeatureShellAuxiliaryReferencesNative
@@ -1991,6 +2022,8 @@ impl F3dLossCode {
             | Self::FeatureFormCageOrderAssumed
             | Self::FeatureFormEmptyCagesAssumed
             | Self::FeatureScaleFrameLengthFormAssumed
+            | Self::FeatureScaleMatrixWordAssumed
+            | Self::FeatureScaleUnlistedGroupsAssumed
             | Self::FeatureWorkAxisRuleUnassigned
             | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
@@ -2287,6 +2320,11 @@ mod tests {
                 "feature.hole-extent-face-assumed",
                 "feature.hole-placement-unproven",
                 "feature.hole-reference-dimensions-native",
+                "feature.hole-parameters-independent-assumed",
+                "feature.hole-shape-partial-assumed",
+                "feature.hole-extent-leading-word-assumed",
+                "feature.hole-standard-sizing-assumed",
+                "feature.hole-carrier-axis-assumed",
                 "feature.align-operands-unresolved",
                 "feature.align-envelope-unparsed",
                 "feature.align-construction-unparsed",
@@ -2376,6 +2414,8 @@ mod tests {
                 "feature.form-cage-order-assumed",
                 "feature.form-empty-cages-assumed",
                 "feature.scale-frame-length-form-assumed",
+                "feature.scale-matrix-word-assumed",
+                "feature.scale-unlisted-groups-assumed",
                 "feature.work-axis-rule-unassigned",
                 "feature.work-axis-endpoint-tolerance-assumed",
                 "feature.body-selection-native",
