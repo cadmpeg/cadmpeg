@@ -203,13 +203,14 @@ pub(super) fn bind_features(
             .filter(|values| !values.is_empty());
         let tessellations = match tessellations {
             Some(values) => {
-                let identities = values
-                    .iter()
-                    .map(|value| {
-                        cadmpeg_ir::tessellation::TessellationId::mint(value.clone())
-                            .map_err(CodecError::malformed)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
+                let first = cadmpeg_ir::tessellation::TessellationId::mint(values[0].clone())
+                    .map_err(CodecError::malformed)?;
+                let mut identities =
+                    ctx.alloc_filled(values.len(), first, "F3D mesh import tessellations")?;
+                for (value, identity) in values.iter().zip(&mut identities) {
+                    *identity = cadmpeg_ir::tessellation::TessellationId::mint(value.clone())
+                        .map_err(CodecError::malformed)?;
+                }
                 MeshSelection::Tessellations(identities.try_into().map_err(CodecError::malformed)?)
             }
             None => native_source(ctx, scan, feature, scope, losses)?,
