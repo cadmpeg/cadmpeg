@@ -246,14 +246,21 @@ fn run(
     count: usize,
     work: usize,
 ) -> (Vec<HistoryBody>, Vec<cadmpeg_ir::report::loss::LossNote>) {
-    let bytes = carrier_bytes(width, changed);
+    run_bytes(&carrier_bytes(width, changed), width, count, work)
+}
+
+fn run_bytes(
+    bytes: &[u8],
+    width: RefWidth,
+    count: usize,
+    work: usize,
+) -> (Vec<HistoryBody>, Vec<cadmpeg_ir::report::loss::LossNote>) {
     let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default()).unwrap();
     let mut allowance = u64::MAX;
     let history = super::super::decode(
         &ctx,
-        &bytes,
+        bytes,
         "test",
         width,
         &mut allowance,
@@ -273,7 +280,7 @@ fn run(
     let mut losses = Vec::new();
     fill_history(
         &ctx,
-        &bytes,
+        bytes,
         &history,
         &wants,
         &mut bodies,
@@ -437,5 +444,112 @@ fn subtype_references_follow_archive_byte_order_across_revisions() {
             .unwrap()
             .unwrap();
         assert_eq!(surface.pole(0, 0).unwrap().get().z, expected_z);
+    }
+}
+
+fn cube_candidate() -> HistoryBody {
+    let model = cadmpeg_ir::examples::unit_cube().expect("cube").model;
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let Extract::Nest(mut topology) =
+        extract(&ctx, &model, model.bodies[0].id.as_str()).expect("extract cube")
+    else {
+        panic!("closed cube")
+    };
+    sort_by_identity(&mut topology);
+    HistoryBody {
+        id: HistoryBodyId::mint("test:history-body:nest#cube").expect("identity"),
+        produced_by: Some(feature("base").id),
+        consumed_by: None,
+        state: HistoryStateRef {
+            ordinal: 0,
+            identifier: 1,
+        },
+        topology,
+    }
+}
+
+#[test]
+fn admission_preserves_a_valid_nest_and_its_producer() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let candidate = cube_candidate();
+    let expected = candidate.clone();
+    assert_eq!(admit(&ctx, candidate).expect("admission"), Some(expected));
+}
+
+#[test]
+fn admission_rejects_a_reference_closed_nest_with_a_radial_ring_crossing_edges() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut candidate = cube_candidate();
+    let first_edge = candidate.topology.coedges[0].edge.clone();
+    let other = candidate
+        .topology
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge != first_edge)
+        .expect("another edge")
+        .id
+        .clone();
+    candidate.topology.coedges[0].radial_next = other;
+    assert!(!escapes(&ctx, &candidate.topology).expect("references"));
+    assert!(admit(&ctx, candidate).expect("admission").is_none());
+}
+
+#[test]
+fn admission_rejects_a_reference_closed_nest_with_displaced_endpoints() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut candidate = cube_candidate();
+    candidate.topology.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(10.0, 10.0, 10.0))
+            .expect("finite position"),
+    );
+    assert!(!escapes(&ctx, &candidate.topology).expect("references"));
+    assert!(admit(&ctx, candidate).expect("admission").is_none());
+}
+
+#[test]
+fn a_wrapped_surface_preserves_the_base_feature_geometry() {
+    for width in [RefWidth::Four, RefWidth::Eight] {
+        let mut bytes = Vec::new();
+        put_header(&mut bytes, width);
+        put_plain(&mut bytes, width, "asmheader", &[]);
+        put_sphere_solid(&mut bytes, width, 1, 7, -1, [10.0, 0.0, 0.0]);
+        put_state(&mut bytes, width, (13, -1, 1, 0), &[(7, 1), (6, 5)]);
+        put_name(&mut bytes, "End-of-ASM-History-Section");
+        put_surface(&mut bytes, width, [0.0, 0.0, 0.0]);
+        put_plain(
+            &mut bytes,
+            width,
+            "body",
+            &[
+                (REF, -1),
+                (INT, 7),
+                (REF, -1),
+                (REF, 2),
+                (REF, -1),
+                (REF, -1),
+            ],
+        );
+        put_state(
+            &mut bytes,
+            width,
+            (12, 0, -1, 1),
+            &[(-1, 1), (-1, 2), (-1, 3), (-1, 4), (-1, 5)],
+        );
+        let (bodies, losses) = run_bytes(&bytes, width, 1, MAX_HISTORY_BODY_WORK);
+        assert!(losses.is_empty(), "{losses:?}");
+        let [body] = bodies.as_slice() else {
+            panic!("one history body")
+        };
+        assert_eq!(body.produced_by, Some(feature("base").id));
+        assert_eq!(body.state.identifier, 12);
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere)) =
+            &body.topology.surfaces[0].geometry
+        else {
+            panic!("sphere")
+        };
+        assert_eq!(
+            sphere.center().get(),
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
+        );
     }
 }
