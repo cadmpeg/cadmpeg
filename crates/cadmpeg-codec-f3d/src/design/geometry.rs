@@ -5072,6 +5072,7 @@ pub(super) fn closed_sketch_profiles(
                         break;
                     }
                 }
+                retain_profile_cycle_edges(&mut pruned, &edge_nodes, endpoints.len(), ctx)?;
                 let mut b_profiles: Vec<Vec<SketchEntityUse>> = Vec::new();
                 for profile in
                     branched_line_profiles(&pruned, &edges, &edge_nodes, linear_tolerance)
@@ -5217,6 +5218,66 @@ pub(super) fn closed_sketch_profiles(
         profiles,
         unprofiled: unprofiled_notes,
     })
+}
+
+fn retain_profile_cycle_edges(
+    component: &mut Vec<usize>,
+    edge_nodes: &[[usize; 2]],
+    node_count: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let mut adjacency = HashMap::<usize, Vec<(usize, usize)>>::new();
+    for &edge in component.iter() {
+        let [start, end] = edge_nodes[edge];
+        adjacency.entry(start).or_default().push((end, edge));
+        adjacency.entry(end).or_default().push((start, edge));
+    }
+    let mut discovery = ctx.alloc_filled(node_count, None, "f3d profile discovery order")?;
+    let mut low = ctx.alloc_filled(node_count, 0usize, "f3d profile low links")?;
+    let mut parents = HashMap::new();
+    let mut bridges = HashSet::new();
+    let mut ordinal = 0usize;
+    for &edge in component.iter() {
+        let root = edge_nodes[edge][0];
+        if discovery[root].is_some() {
+            continue;
+        }
+        discovery[root] = Some(ordinal);
+        low[root] = ordinal;
+        ordinal += 1;
+        let mut pending = vec![(root, 0usize)];
+        while let Some((node, cursor)) = pending.last_mut() {
+            let node = *node;
+            if let Some(&(next, next_edge)) = adjacency[&node].get(*cursor) {
+                *cursor += 1;
+                if parents
+                    .get(&node)
+                    .is_some_and(|&(_, edge)| edge == next_edge)
+                {
+                    continue;
+                }
+                if let Some(order) = discovery[next] {
+                    low[node] = low[node].min(order);
+                } else {
+                    parents.insert(next, (node, next_edge));
+                    discovery[next] = Some(ordinal);
+                    low[next] = ordinal;
+                    ordinal += 1;
+                    pending.push((next, 0));
+                }
+            } else {
+                pending.pop();
+                if let Some(&(parent, edge)) = parents.get(&node) {
+                    if discovery[parent].is_some_and(|order| low[node] > order) {
+                        bridges.insert(edge);
+                    }
+                    low[parent] = low[parent].min(low[node]);
+                }
+            }
+        }
+    }
+    component.retain(|edge| !bridges.contains(edge));
+    Ok(())
 }
 
 /// Direction and signed curvature of a half-edge where it leaves its start node.
