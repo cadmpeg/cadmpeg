@@ -665,6 +665,7 @@ fn matrix_scale(
     }
     let (guid, _) = crate::bytes::lp_utf16_bounded_view(bytes, at + 128, 36..=36)?;
     if !guid.eq_str("00000000-0000-0000-0000-000000000000")
+        || matrix.iter().any(|value| !value.is_finite())
         || matrix[12..] != [0.0, 0.0, 0.0, 1.0]
         || [1, 2, 4, 6, 8, 9]
             .into_iter()
