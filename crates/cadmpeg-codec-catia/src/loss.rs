@@ -113,6 +113,8 @@ pub(crate) enum CatiaLossCode {
     TopologyOwnedPatchSubset,
     /// Non-rolling-ball face sense uses inferred roster and chart parity.
     TopologyOwnedPatchSenseInferred,
+    /// An endpoint station admits both first-scalar and final-scalar tag readings.
+    TopologyEndpointStationReadingInferred,
     /// Disagreeing native shared boundaries were reconciled for sheet transfer.
     TopologySharedBoundaryReconciled,
     /// Two-edge pcurve binding and face sense use inferred relations.
@@ -186,6 +188,7 @@ impl CatiaLossCode {
         Self::TopologyB5GraphUnclosed,
         Self::TopologyOwnedPatchSubset,
         Self::TopologyOwnedPatchSenseInferred,
+        Self::TopologyEndpointStationReadingInferred,
         Self::TopologySharedBoundaryReconciled,
         Self::TopologyTwoEdgeBindingInferred,
         Self::TopologySheetPatchSearchBounded,
@@ -244,6 +247,9 @@ impl CatiaLossCode {
             Self::TopologyB5GraphUnclosed => "topology.b5-graph-unclosed",
             Self::TopologyOwnedPatchSubset => "topology.owned-patch-subset",
             Self::TopologyOwnedPatchSenseInferred => "topology.owned-patch-sense-inferred",
+            Self::TopologyEndpointStationReadingInferred => {
+                "topology.endpoint-station-reading-inferred"
+            }
             Self::TopologySharedBoundaryReconciled => "topology.shared-boundary-reconciled",
             Self::TopologyTwoEdgeBindingInferred => "topology.two-edge-binding-inferred",
             Self::TopologySheetPatchSearchBounded => "topology.sheet-patch-search-bounded",
@@ -333,6 +339,7 @@ impl CatiaLossCode {
             | Self::TopologyZeroEntityFaceUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyZeroEntityGaugeSubstituted
             | Self::TopologyOwnedPatchSenseInferred
+            | Self::TopologyEndpointStationReadingInferred
             | Self::TopologySharedBoundaryReconciled
             | Self::TopologyTwoEdgeBindingInferred => LossTaxonomy::TopologyGaugeSubstituted,
             Self::AttributesMaterialsMetadataNotTransferred
@@ -413,6 +420,7 @@ mod tests {
                 "topology.b5-graph-unclosed",
                 "topology.owned-patch-subset",
                 "topology.owned-patch-sense-inferred",
+                "topology.endpoint-station-reading-inferred",
                 "topology.shared-boundary-reconciled",
                 "topology.two-edge-binding-inferred",
                 "topology.sheet-patch-search-bounded",

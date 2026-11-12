@@ -99,6 +99,25 @@ impl LaneRefusals {
         );
     }
 
+    pub(crate) fn push_endpoint_station_reading_inferred(
+        &mut self,
+        record: usize,
+        curve: usize,
+        parameter: f64,
+        first_tag: bool,
+    ) {
+        let reading = if first_tag {
+            "first-scalar tag"
+        } else {
+            "final-scalar tag"
+        };
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyEndpointStationReadingInferred.note(format!(
+                "For incidence allocation {record} and curve allocation {curve}, chose the {reading} reading of an ambiguous three-lane endpoint station; native parameter {parameter}."
+            )),
+        );
+    }
+
     pub(crate) fn push_shared_boundary_reconciled(
         &mut self,
         [vertex, seed, retry, replaced]: [usize; 4],
