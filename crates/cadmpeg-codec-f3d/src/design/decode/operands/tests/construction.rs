@@ -1235,28 +1235,34 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&delete_scope);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    scopes,
-                    construction_groups: std::slice::from_ref(&delete_group),
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
-    assert!(matches!(
-        features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::DeleteFace,
-            ..
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        projection_losses,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&delete_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: std::slice::from_ref(&delete_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    assert_eq!(
+        *features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DeleteFace {
+            faces: FaceSelection::Native(delete_group.id.clone()),
+            heal: true,
         })
-    ));
+    );
+    assert!(projection_losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::DeleteFaceFrameControlsAssumed.kind()));
 
     let mut surface_scope = delete_scope.clone();
     let reference_bytes = 11 * u64_from_index(surface_scope.reference_members().len());

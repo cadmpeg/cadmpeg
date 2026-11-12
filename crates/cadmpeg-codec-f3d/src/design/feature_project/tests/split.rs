@@ -230,9 +230,7 @@ fn delete_face_falls_back_to_group_id() {
         }) if native == &selected.id
     ));
 
-    // The compact frame admits the 78-byte fixed scope tail, one byte
-    // longer; a frame two bytes longer is not compact.
-    for (frame_length, admitted) in [(259, true), (260, false)] {
+    for (frame_length, known) in [(259, true), (260, false)] {
         let mut longer = scope.clone();
         longer
             .try_edit(|draft| {
@@ -241,16 +239,23 @@ fn delete_face_falls_back_to_group_id() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
+        let mut losses = Vec::new();
+        let projected =
+            project_delete_face(&longer, std::slice::from_ref(&selected), &[], &mut losses)
+                .unwrap();
+        assert!(matches!(
+            projected,
+            Some(FeatureDefinition::Operation(FeatureOperation::DeleteFace {
+                faces: FaceSelection::Native(ref native), heal: true,
+            })) if native == &selected.id
+        ));
         assert_eq!(
-            project_delete_face(
-                &longer,
-                std::slice::from_ref(&selected),
-                &[],
-                &mut Vec::new()
-            )
-            .unwrap()
-            .is_some(),
-            admitted
+            losses
+                .iter()
+                .filter(|loss| loss.code
+                    == crate::loss::F3dLossCode::DeleteFaceFrameControlsAssumed.kind())
+                .count(),
+            usize::from(!known)
         );
     }
 
