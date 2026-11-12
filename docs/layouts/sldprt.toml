@@ -14235,3 +14235,40 @@ note = "Opaque identity."
 offset = 130
 size = 8
 note = "Opaque continuation."
+
+[[record]]
+name = "sketch_array_first_entry_prefix"
+kind = "byte"
+section = "2"
+anchor = "The first-entry prefix of each sketch array is 14 bytes"
+size = 14
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/relation_table.rs"
+
+[[record.field]]
+name = "count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "array count u32 at prefix +0"
+
+[[record.field]]
+name = "external_reference"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "external-reference flag u16 at prefix +4"
+
+[[record.field]]
+name = "contour_ordinal"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "contour ordinal u32 at prefix +6"
+
+[[record.field]]
+name = "identifier"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "identifier u32 at prefix +10"

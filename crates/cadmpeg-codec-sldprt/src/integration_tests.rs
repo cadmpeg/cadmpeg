@@ -2,6 +2,7 @@
 //! End-to-end contracts over synthesized SLDPRT compound-document images.
 
 mod mesh_bodies;
+mod profile_data;
 mod swift_nominal;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};

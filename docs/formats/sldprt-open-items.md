@@ -815,6 +815,18 @@ resolve a seed feature?
 
 **Note.** The decoder discards that display and reports `pmi.swift-presentation-unframed`.
 
+### DI-65. Indexed-circle array and plane ownership
+
+**Question.** Which native ownership fields associate equal-endpoint arc arrays with their point arrays and model-space sketch frames?
+
+**Known.** The counted sketch arrays preserve point slots and contour ordinals. The current-prefix equal-endpoint arc form has native value zero, centre slot zero, sweep selector one, and four signed reference sentinels. The indexed-curve grammar in §2 supplies these fields. The marker classifier labels this form as a point; projection lacks its coordinate pair.
+
+**Need.** Explicit array, profile, and plane ownership must select the point block and model-space frame, with carrier and applicable start-cap agreement.
+
+**Conflict.** The first-point centre and indexed radial-witness reading has contrary carrier cases under the decoded sketch placements. The compact extended-prefix and legacy equal-endpoint readings also have contrary carrier cases.
+
+**Note.** Retain these records under their current projection until the mapping resolves.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
@@ -1056,12 +1068,12 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 ### SF-02. Right component ownership and profile coordinates
 
-**Question.** Which field distinguishes a sketch support-plane component from a reference to another plane within the sketch object?
+**Question.** Which native role or operand field binds a Right component to the sketch support plane and selects the profile coordinate convention?
 
-**Known.** A profile context can contain a declared plane source and a Right component with another source. The complete component matrix identifies its referenced frame. The existing profile binding remains selected when the component source conflicts with it.
+**Known.** A complete profile-local `(4,1)` component occurs with a scoped Front declaration or a lane-default Front reference. The scoped declaration lies in the profile or its immediate context. The matrix identifies the referenced frame. The intrinsic component mapping can lose finite carrier support on the retained profile plane in both forms. The decoder retains the existing profile binding when the component source conflicts with it.
 
-**Need.** Establish component ownership and the profile coordinate rule from explicit fields. Preserve prior carrier incidence across independent designs.
+**Need.** Establish the support-plane role and profile coordinate rule from explicit fields, including the enclosing reference and operand path. Distinguish finite support from intersections with carrier extensions. Establish each selected form with independent designs, mirrored-polarity controls, and per-sample carrier retention.
 
-**Conflict.** Selecting the component through interval enclosure changes a public fixture's complete carrier support from eighteen sampled points to sixteen. A scoped component mapping gains carrier support in three designs and changes another profile from three carrier hits to two.
+**Conflict.** The Right matrix normal is +X. The retained Front component fallback normal is -Y.
 
-**Note.** Right component mappings retain their current interpretation. Their scoped and lane Front fallback retains its original frame. Section 3.3 defines local Top component profile placement.
+**Note.** Right component mappings retain their current interpretation and losses. The scoped and lane Front fallbacks retain their frames. Section 3.3 defines local Top component profile placement.
