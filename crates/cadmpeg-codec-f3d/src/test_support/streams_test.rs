@@ -98,7 +98,7 @@ pub(super) fn generated_design_sketch_dimension_metastream(records: &[(u64, u64)
     )
 }
 
-pub(super) fn generated_design_base_feature_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(crate) fn generated_design_base_feature_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::BaseFeature,
@@ -1138,7 +1138,7 @@ pub(crate) fn generated_design_base_flange_bulkstream() -> (Vec<u8>, Vec<(u64, u
 
 /// Add the self-contained 267-byte result-body form of a `Base Feature`
 /// parameter scope to the generated Design stream.
-pub(super) fn generated_design_base_feature_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+pub(crate) fn generated_design_base_feature_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let (mut out, mut records) = generated_design_bulkstream();
     let scope_record = 1_400_u32;
     let scope_class_tag = 268_u32;
