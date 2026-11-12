@@ -397,6 +397,7 @@ pub(super) fn feature_consumes_tool_body(
         operands,
         op: BooleanKind::Join,
         keep_tools: false,
+        ..
     } = op_ref
     {
         if resolved_body_selection_slots(operands.target()).as_deref() == Some(&[host])
