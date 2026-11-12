@@ -68,6 +68,19 @@ impl<'ir> Carrier<'ir> {
             carrier.implicit_outer = *implicit_outer;
             return Ok(carrier);
         }
+        if let Some(ProceduralSurfaceDefinition::DegenerateTorus { select_outer }) = definition {
+            if let Some(cache) = cache {
+                let mut carrier = Self::resolve_geometry(surface, cache, body)?;
+                if let Shape::Charted(chart) = &mut carrier.shape {
+                    if let Chart::Torus(torus) = chart.as_mut() {
+                        torus.sheet = Some(*select_outer);
+                        if torus.sheet_domain().is_some() {
+                            return Ok(carrier);
+                        }
+                    }
+                }
+            }
+        }
         if matches!(definition, Some(ProceduralSurfaceDefinition::Offset(_))) {
             if let Some(carrier) = Self::resolve_offset(owners, surface, body)? {
                 return Ok(carrier);

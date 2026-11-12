@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Exact whole-carrier solid round trips.
+//! Exact closed-face solid round trips.
 
 use std::f64::consts::PI;
 use std::io::Cursor;
@@ -166,7 +166,11 @@ fn nurbs(spheroid: bool, reversed: bool) -> SolvedSurfaceGeometry {
 }
 
 fn poles(ir: &mut CadIr) {
-    for (index, z) in [-3.0, 3.0].into_iter().enumerate() {
+    pole_pair(ir, 3.0);
+}
+
+fn pole_pair(ir: &mut CadIr, height: f64) {
+    for (index, z) in [-height, height].into_iter().enumerate() {
         let point = id(PointId::mint, "point", index);
         let vertex = id(VertexId::mint, "vertex", index);
         let lp = id(LoopId::mint, "loop", index);
@@ -388,5 +392,112 @@ fn self_intersecting_loopless_torus_keeps_its_loss() {
         assert!(!String::from_utf8(bytes)
             .expect("text")
             .contains("= ADVANCED_FACE("));
+    }
+}
+
+fn spindle_pole_domain(sense: Sense) {
+    let major: f64 = 2.0;
+    let minor: f64 = 5.0;
+    let height = (minor * minor - major * major).sqrt();
+    let angle = (-major / minor).acos();
+    let apple =
+        2.0 * PI * (minor * minor * height - height.powi(3) / 3.0 + major * minor * minor * angle);
+    let lemon = apple - 2.0 * PI * PI * major * minor * minor;
+    let volume = if sense == Sense::Forward {
+        apple
+    } else {
+        lemon
+    };
+    let mut ir = CadIr::empty();
+    solid(
+        &mut ir,
+        vec![(
+            SolvedSurfaceGeometry::Torus(
+                TorusSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    major,
+                    minor,
+                )
+                .expect("spun circle carrier"),
+            ),
+            sense,
+        )],
+    );
+    pole_pair(&mut ir, height);
+    round_trip(&ir, &[volume]);
+}
+
+#[test]
+fn spindle_apple_pole_domain_round_trips_as_an_exact_solid() {
+    spindle_pole_domain(Sense::Forward);
+}
+
+#[test]
+fn spindle_lemon_pole_domain_round_trips_as_an_exact_solid() {
+    spindle_pole_domain(Sense::Reversed);
+}
+
+#[test]
+fn spindle_poles_require_a_resolved_outer_solid_shell() {
+    for case in ["one-pole", "off-axis", "sheet", "signed-tube", "horn"] {
+        let mut ir = CadIr::empty();
+        let surface = TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            if case == "signed-tube" {
+                -5.0
+            } else if case == "horn" {
+                2.0
+            } else {
+                5.0
+            },
+        )
+        .expect("spindle carrier");
+        solid(
+            &mut ir,
+            vec![(SolvedSurfaceGeometry::Torus(surface), Sense::Forward)],
+        );
+        pole_pair(&mut ir, if case == "horn" { 0.0 } else { 21.0_f64.sqrt() });
+        match case {
+            "one-pole" => {
+                ir.model.faces[0].loops =
+                    FaceLoops::unspecified(vec![ir.model.loops[0].id.clone()]);
+            }
+            "off-axis" => {
+                ir.model.points[0] = Point::new(
+                    ir.model.points[0].id.clone(),
+                    FinitePoint3::new(Point3::new(1.0, 0.0, -21.0_f64.sqrt())).expect("point"),
+                    None,
+                );
+            }
+            "sheet" => ir.model.bodies[0].kind = BodyKind::Sheet,
+            _ => {}
+        }
+        let mut bytes = Vec::new();
+        let report = write_step(
+            &ir,
+            &mut bytes,
+            StepSchema::Ap214,
+            &StepWriteOptions::default(),
+        )
+        .expect("retain the unresolved face");
+        if case != "sheet" {
+            assert!(
+                report
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code
+                        == crate::loss::StepLossCode::RegionSolidReducedToSheet.kind()),
+                "{case}"
+            );
+        }
+        let text = String::from_utf8(bytes).expect("text");
+        assert_eq!(text.matches("= ADVANCED_FACE(").count(), 1, "{case}");
+        assert!(!text.contains("= CLOSED_SHELL("), "{case}");
+        assert!(!text.contains("= DEGENERATE_TOROIDAL_SURFACE("), "{case}");
     }
 }

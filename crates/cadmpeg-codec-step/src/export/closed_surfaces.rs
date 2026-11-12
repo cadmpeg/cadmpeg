@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Exact bounds of whole closed carriers.
+//! Exact bounds of closed surface domains.
+
+mod spindle;
 
 use std::f64::consts::TAU;
 
@@ -23,6 +25,7 @@ pub(super) enum ClosedBound {
     Poles(Vec<Point3>),
     Seams(Box<Seams>),
     Stated,
+    Spindle(Box<spindle::Spindle>),
 }
 
 #[derive(Clone)]
@@ -91,6 +94,7 @@ impl Builder<'_> {
                     forward,
                 }))
             }
+            SolvedSurfaceGeometry::Torus(_) => return Ok(self.spindle_bound(face)),
             SolvedSurfaceGeometry::Nurbs(n) => {
                 let tolerance = if face.loops.is_empty() {
                     0.0
@@ -121,6 +125,7 @@ impl Builder<'_> {
     ) -> Option<Vec<Ref>> {
         match bound {
             ClosedBound::Stated => Some(Vec::new()),
+            ClosedBound::Spindle(spindle) => self.emit_spindle_bound(&spindle, surface, flag),
             ClosedBound::Poles(poles) => Some(
                 poles
                     .into_iter()
