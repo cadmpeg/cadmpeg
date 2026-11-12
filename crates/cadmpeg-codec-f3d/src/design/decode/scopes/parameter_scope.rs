@@ -30,6 +30,7 @@ use super::direct_face::exact_move_face_operation;
 use super::direct_face::exact_move_operation;
 use super::direct_face::exact_scale_operation;
 use super::direct_face::marked_move_transform_loss;
+use super::direct_face::move_transform_prefix_losses;
 use super::direct_face::move_transform_references_loss;
 use super::draft::exact_draft_operation_with_owners;
 use super::emboss::exact_emboss_construction;
@@ -423,6 +424,7 @@ pub(crate) fn decode_parameter_scopes(
                         &class_types,
                     ));
                     losses.extend(move_transform_references_loss(&scope, operation));
+                    losses.extend(move_transform_prefix_losses(&scope, operation));
                 }
                 if let scope::DesignScopePayloadMut::Move(slot) = scope.payload_mut() {
                     *slot = construction;
@@ -437,6 +439,7 @@ pub(crate) fn decode_parameter_scopes(
                     &class_types,
                 ));
                 losses.extend(move_transform_references_loss(&scope, &operation.motion));
+                losses.extend(move_transform_prefix_losses(&scope, &operation.motion));
                 if let scope::DesignScopePayloadMut::Modify(slot) = scope.payload_mut() {
                     *slot = Some(operation);
                 }
@@ -445,6 +448,7 @@ pub(crate) fn decode_parameter_scopes(
                 let construction = exact_move_face_operation(bytes, &records, &scope);
                 if let Some(operation) = &construction {
                     losses.extend(move_transform_references_loss(&scope, operation));
+                    losses.extend(move_transform_prefix_losses(&scope, operation));
                 }
                 if let scope::DesignScopePayloadMut::MoveFace(slot) = scope.payload_mut() {
                     *slot = construction;
