@@ -9954,6 +9954,24 @@ Parsed by:
 | 33 | 1 | `external_flag` | `u8` | little | spec | The owner-marked extended Thread prefix has the owner-marked prologue through offset 32. |
 | 34 | 4 | `entry_count` | `u32` | little | spec | The owner-marked extended Thread prefix has the owner-marked prologue through offset 32. |
 
+## `constructed_plane_entity_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 134 B
+
+Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 130 | 4 | `entity_id_code_unit_count` | `u32` | little | spec | an LP-UTF16 Design entity ID begins at offset 130 from the indexed header |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+- `11..130` (119 B): The specification states no field in this range.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
