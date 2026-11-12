@@ -61,16 +61,19 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
 
     let source_scope = "f3d:Design/BulkStream.dat:design-parameter-scope#7";
-    let target_scope = "f3d:child/Design/BulkStream.dat:design-parameter-scope#7";
+    let target_scope = "f3d:xref/child/Design/BulkStream.dat:design-parameter-scope#7";
     let replacements =
         std::collections::BTreeMap::from([(source_scope.to_owned(), target_scope.to_owned())]);
     crate::test_support::with_service_decode_context(|ctx| {
         let text = TextReplacements::build(replacements.iter())?;
-        let mut map = IdentityMap::new(|source: &str| Ok(format!("scoped:{source}")))
-            .with_text_replacements(&text);
+        let mut map = IdentityMap::new(|source: &str| {
+            let source = source.strip_prefix("f3d:").unwrap();
+            Ok(format!("f3d:xref/child/{source}"))
+        })
+        .with_text_replacements(&text);
         let resolved: MeshSelection = serde_json::from_value(serde_json::json!([
-            "test:mesh:tessellation#first",
-            "test:mesh:tessellation#second"
+            "f3d:mesh:tessellation#first",
+            "f3d:mesh:tessellation#second"
         ]))
         .unwrap();
         let mut visited = Vec::new();
@@ -81,16 +84,16 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
         assert_eq!(
             visited,
             [
-                "test:mesh:tessellation#first",
-                "test:mesh:tessellation#second"
+                "f3d:mesh:tessellation#first",
+                "f3d:mesh:tessellation#second"
             ]
         );
         let resolved = resolved.rewrite_identities(ctx, &mut map)?;
         assert_eq!(
             serde_json::to_value(resolved).unwrap(),
             serde_json::json!([
-                "scoped:test:mesh:tessellation#first",
-                "scoped:test:mesh:tessellation#second"
+                "f3d:xref/child/mesh:tessellation#first",
+                "f3d:xref/child/mesh:tessellation#second"
             ])
         );
         let native: MeshSelection = serde_json::from_value(serde_json::json!({
@@ -105,7 +108,7 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
             })
         );
         let unresolved: MeshSelection = serde_json::from_value(serde_json::json!({
-            "feature":"test:model:feature#import"
+            "feature":"f3d:model:feature#import"
         }))
         .unwrap();
         let mut visited = Vec::new();
@@ -113,11 +116,11 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
             visited.push(id.to_owned());
             Ok(())
         })?;
-        assert_eq!(visited, ["test:model:feature#import"]);
+        assert_eq!(visited, ["f3d:model:feature#import"]);
         let unresolved = unresolved.rewrite_identities(ctx, &mut map)?;
         assert_eq!(
             serde_json::to_value(unresolved).unwrap(),
-            serde_json::json!({"feature":"scoped:test:model:feature#import"})
+            serde_json::json!({"feature":"f3d:xref/child/model:feature#import"})
         );
         map.finish()
     })
