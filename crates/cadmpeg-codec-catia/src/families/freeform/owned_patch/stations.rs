@@ -116,8 +116,9 @@ pub(super) fn mapped_range(
     map: usize,
     curve: usize,
     resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
-) -> Option<[f64; 2]> {
+) -> Option<([f64; 2], bool)> {
     let mapping = map_record(bytes, records.get(map)?)?;
+    let affine = matches!(mapping.source, Class25SourceRelation::Affine { .. });
     let source = match mapping.source {
         Class25SourceRelation::Sampled { range, .. }
         | Class25SourceRelation::Affine { range, .. } => range,
@@ -125,9 +126,30 @@ pub(super) fn mapped_range(
     };
     let [first, second] = operands(&mapping, map, resolve)?;
     match (first == curve, second == curve) {
-        (true, false) => Some(mapping.target_range.endpoints()),
-        (false, true) => Some(source.endpoints()),
+        (true, false) => Some((mapping.target_range.endpoints(), affine)),
+        (false, true) => Some((source.endpoints(), affine)),
         _ => None,
+    }
+}
+
+pub(super) fn mapped_fit_tolerance(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+    map: usize,
+    curve: usize,
+    resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
+) -> Option<f64> {
+    let mapping = map_record(bytes, records.get(map)?)?;
+    let [first, second] = operands(&mapping, map, resolve)?;
+    if first == second || (first != curve && second != curve) {
+        return None;
+    }
+    if matches!(mapping.source, Class25SourceRelation::Absent) {
+        return None;
+    }
+    match mapping.accuracy {
+        class25::Class25Accuracy::Fitted { fit_tolerance, .. } => Some(fit_tolerance.get()),
+        class25::Class25Accuracy::Elided { .. } => None,
     }
 }
 
@@ -642,6 +664,8 @@ mod tests {
             Some(12.25)
         );
     }
+
+    mod native_accuracy;
 
     #[test]
     fn endpoint_parameters_select_the_resolved_occurrence_lane() {

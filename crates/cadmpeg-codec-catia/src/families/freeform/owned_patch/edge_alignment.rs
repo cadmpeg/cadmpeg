@@ -165,9 +165,36 @@ pub(super) fn reproject(
     occurrence: &Use,
     surface: &SolvedSurfaceGeometry,
 ) -> Option<Use> {
+    reproject_with_tolerance(edge, occurrence, surface, GAP_MM)
+}
+
+pub(super) fn reproject_corroborated(
+    edge: &Use,
+    occurrence: &Use,
+    surface: &SolvedSurfaceGeometry,
+) -> Option<Use> {
+    let max_lift = match surface {
+        SolvedSurfaceGeometry::Plane(_) => occurrence
+            .inferred_accuracy
+            .map_or(GAP_MM, |accuracy| accuracy.bound_mm + GAP_MM),
+        _ => GAP_MM,
+    };
+    if max_lift <= GAP_MM {
+        return reproject(edge, occurrence, surface);
+    }
+    reproject_with_tolerance(edge, occurrence, surface, max_lift)
+}
+
+fn reproject_with_tolerance(
+    edge: &Use,
+    occurrence: &Use,
+    surface: &SolvedSurfaceGeometry,
+    max_lift: f64,
+) -> Option<Use> {
     let same = edge_relation(edge, occurrence)?;
     let [lo, hi] = occurrence.curve.full_knot_endpoints().endpoints();
     let occurrence_range = if same { [lo, hi] } else { [hi, lo] };
+    let mut lift_error_mm = 0.0_f64;
     let pcurve = match surface {
         SolvedSurfaceGeometry::Nurbs(spline) => project_spline(edge, spline, |fraction| {
             evaluate_uv(
@@ -213,7 +240,7 @@ pub(super) fn reproject(
                 )
                 .ok()?
                 .get();
-                (point.distance(lifted) <= GAP_MM).then_some([uv.u, uv.v, 0.0])
+                (point.distance(lifted) <= max_lift).then_some([uv.u, uv.v, 0.0])
             };
             let fit = fit_edge_with_error(range, project, UV_FIT_TOLERANCE)
                 .or_else(|| fit_edge_with_error(range, project, UV_FIT_FALLBACK))?;
@@ -246,9 +273,11 @@ pub(super) fn reproject(
                 )
                 .ok()?
                 .get();
-                if lift.distance(curve_point(&edge.curve, parameter)?) > GAP_MM {
+                let gap = lift.distance(curve_point(&edge.curve, parameter)?);
+                if gap > max_lift {
                     return None;
                 }
+                lift_error_mm = lift_error_mm.max(gap);
             }
             pcurve
         }
@@ -256,6 +285,8 @@ pub(super) fn reproject(
     Some(Use {
         pcurve,
         forward: occurrence.forward == same,
+        inferred_accuracy: occurrence.inferred_accuracy,
+        lift_error_mm,
         ..edge.clone()
     })
 }
@@ -347,6 +378,8 @@ mod tests {
             curve,
             pcurve: PcurveGeometry::Nurbs { nurbs },
             forward,
+            inferred_accuracy: None,
+            lift_error_mm: 0.0,
         }
     }
 
@@ -416,5 +449,52 @@ mod tests {
             false,
         );
         assert!(align(&first, &mut different, &plane).is_none());
+    }
+    #[test]
+    fn corroborated_projection_requires_native_accuracy() {
+        let first = edge(vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)], true);
+        let mut occurrence = edge(vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)], false);
+        let plane = SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.02),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("plane"),
+        );
+        assert!(reproject_corroborated(&first, &occurrence, &plane).is_none());
+        occurrence.inferred_accuracy = Some(super::super::InferredEdgeAccuracy {
+            source: 17,
+            bound_mm: 0.01,
+        });
+        assert!(reproject_corroborated(&first, &occurrence, &plane).is_none());
+        occurrence.inferred_accuracy = Some(super::super::InferredEdgeAccuracy {
+            source: 17,
+            bound_mm: 0.02,
+        });
+        let projected = reproject_corroborated(&first, &occurrence, &plane).expect("native bound");
+        assert!((projected.lift_error_mm - 0.02).abs() <= 1.0e-12);
+        assert_eq!(
+            projected.inferred_accuracy.map(|accuracy| accuracy.source),
+            Some(17)
+        );
+    }
+
+    #[test]
+    fn seed_alignment_keeps_the_interior_locus_limit() {
+        let first = edge(vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)], true);
+        let mut second = edge(
+            vec![Point2::new(0.0, 0.004), Point2::new(1.0, 0.004)],
+            false,
+        );
+        let plane = SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("plane"),
+        );
+        assert!(align_seed(&first, &mut second, &plane).is_none());
     }
 }

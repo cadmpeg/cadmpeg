@@ -155,6 +155,21 @@ impl LaneRefusals {
         )));
     }
 
+    pub(crate) fn push_sheet_boundary_recovery(
+        &mut self,
+        code: crate::loss::CatiaLossCode,
+        faces: usize,
+        max_gap_mm: f64,
+    ) {
+        let choice = match code {
+            crate::loss::CatiaLossCode::GeometryRollingSheetExtended => "Extended the stored transverse rolling section within 0.01 in parameter space and 0.005 mm in model space",
+            crate::loss::CatiaLossCode::TopologyAffineVertexReconciled => "Chose corroborated affine stations and reconciled incident fitted vertex positions",
+            crate::loss::CatiaLossCode::GeometryParameterMapAccuracyInferred => "Interpreted the parameter-map fit tolerance as a model-space bound in mm for corroborated planar shared-edge lifts, added the model gap, and retained the inferred bound as edge accuracy",
+            _ => return,
+        };
+        self.notes.push(code.note(format!("{choice} on {faces} emitted sheet faces; largest sampled discrepancy {max_gap_mm:.9} mm.")));
+    }
+
     pub(crate) fn push_rolling_ball_rails_adjusted(&mut self, faces: usize, max_shift_mm: f64) {
         self.notes.push(crate::loss::CatiaLossCode::GeometryRollingBallRailsAdjusted.note(format!(
             "Fitted {faces} rolling-ball sheet faces after moving rail points onto the construction radius. The largest rail-point movement was {max_shift_mm} mm."

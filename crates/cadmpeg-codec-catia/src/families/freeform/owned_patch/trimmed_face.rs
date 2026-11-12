@@ -10,7 +10,7 @@ mod shell_edges;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
-use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
+use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry, TrimmedPcurve};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::scalar::FiniteReal;
@@ -42,7 +42,7 @@ use super::stations;
 use super::trim_curves;
 use super::{
     bridge_radius, curve_point, edge_alignment, interval_parameter, line_pcurve, payload,
-    rolling_ball, CadIr, Member, Patch, Use, GAP_MM,
+    rolling_ball, CadIr, InferredEdgeAccuracy, Member, Patch, Use, GAP_MM,
 };
 
 const UV_JOIN: f64 = 1.0e-5;
@@ -64,11 +64,13 @@ struct Trim {
     pcurve: PcurveGeometry,
     range: [f64; 2],
     mapped_range: Option<[f64; 2]>,
+    affine_map: bool,
     spline_range: Option<[f64; 2]>,
     stations: [Option<f64>; 2],
     primary_stations: [Option<f64>; 2],
     sphere_circle: Option<trim_curves::SphereCircle>,
     alternate_line: Option<LinePcurve>,
+    inferred_accuracy: Option<InferredEdgeAccuracy>,
 }
 
 impl Trim {
@@ -572,28 +574,40 @@ where
                 },
             )
         };
+        let inferred_accuracy = (|| {
+            let map = resolve_edge(0, node.curve_ref)?;
+            let bound_mm =
+                stations::mapped_fit_tolerance(self.bytes, self.records, map, p, &self.resolve)?;
+            Some(InferredEdgeAccuracy {
+                source: (self.physical)(self.records[map].byte_offset())?,
+                bound_mm,
+            })
+        })();
         let selectors = [node.start_parameter_ref, node.end_parameter_ref];
         let spline_range = knots
             .as_ref()
             .and_then(|knots| Some([*knots.first()?, *knots.last()?]));
-        let mut mapped_range = (|| {
+        let mapped = (|| {
             let map = resolve_edge(0, node.curve_ref)?;
-            let range = stations::mapped_range(self.bytes, self.records, map, p, &self.resolve)?;
+            let (range, affine) =
+                stations::mapped_range(self.bytes, self.records, map, p, &self.resolve)?;
             if matches!(pcurve, PcurveGeometry::Line(_)) {
                 let mut range =
                     range.map(|t| (t - source_range[0]) / (source_range[1] - source_range[0]));
                 if range[0] > range[1] {
                     range.reverse();
                 }
-                return Some(range);
+                return Some((range, affine));
             }
             let [lo, hi] = spline_range.unwrap_or(source_range);
             if range[0] < lo - CHART_SLACK || range[1] > hi + CHART_SLACK {
                 return None;
             }
             let range = [range[0].max(lo), range[1].min(hi)];
-            (range[0] < range[1]).then_some(range)
+            (range[0] < range[1]).then_some((range, affine))
         })();
+        let affine_map = mapped.is_some_and(|(_, affine)| affine);
+        let mut mapped_range = mapped.map(|(range, _)| range);
         let domain = stations::Domain {
             range: source_range,
             knots: knots.as_deref().and_then(|knots| {
@@ -736,11 +750,13 @@ where
             pcurve,
             range,
             mapped_range,
+            affine_map,
             spline_range,
             stations,
             primary_stations,
             sphere_circle,
             alternate_line,
+            inferred_accuracy,
         })
     }
 
@@ -918,7 +934,7 @@ impl Ring {
             let context = RingFit {
                 vertices,
                 shared_surface,
-                transverse_recovery: false,
+                transverse_recovery: TransverseRecovery::None,
             };
             let patch = fit(ir, carrier, face, member, trims, &context)?;
             self.contains_vertices(&patch.sides).then_some(patch)
@@ -1022,7 +1038,9 @@ fn clip_line_range(trim: &Trim, chart: [[f64; 2]; 2]) -> Option<[f64; 2]> {
 }
 
 impl DecodedFace<'_> {
-    pub(super) fn endpoint_sites(&self) -> impl Iterator<Item = (usize, usize, Point3, bool)> + '_ {
+    pub(super) fn endpoint_sites(
+        &self,
+    ) -> impl Iterator<Item = (usize, usize, Point3, bool, bool)> + '_ {
         std::iter::once(&self.outer)
             .chain(&self.inner)
             .flat_map(|ring| &ring.trims)
@@ -1036,12 +1054,17 @@ impl DecodedFace<'_> {
                         trim.edge,
                         self.carrier.evaluate(uv)?,
                         primary.is_some(),
+                        trim.affine_map,
                     ))
                 })
             })
     }
 
-    pub(super) fn recover_rolling_boundary(&self, ir: &CadIr) -> Option<Patch> {
+    pub(super) fn recover_rolling_boundary(
+        &self,
+        ir: &CadIr,
+        vertices: Option<&BTreeMap<usize, Point3>>,
+    ) -> Option<Patch> {
         if !matches!(
             self.carrier,
             Carrier::RollingBall(..) | Carrier::OwnedRollingBall { .. }
@@ -1049,22 +1072,24 @@ impl DecodedFace<'_> {
         {
             return None;
         }
-        let context = RingFit {
-            vertices: None,
-            shared_surface: None,
-            transverse_recovery: true,
-        };
-        let mut patch = fit(
-            ir,
-            &self.carrier,
-            self.face_pos,
-            self.member,
-            &self.outer.trims,
-            &context,
-        )?;
-        if !self.outer.contains_vertices(&patch.sides) {
-            return None;
-        }
+        let mut patch = [TransverseRecovery::Clamp, TransverseRecovery::Extend]
+            .into_iter()
+            .find_map(|transverse_recovery| {
+                let context = RingFit {
+                    vertices,
+                    shared_surface: None,
+                    transverse_recovery,
+                };
+                let patch = fit(
+                    ir,
+                    &self.carrier,
+                    self.face_pos,
+                    self.member,
+                    &self.outer.trims,
+                    &context,
+                )?;
+                self.outer.contains_vertices(&patch.sides).then_some(patch)
+            })?;
         patch.priority = super::sheet_group::ROLLING_BOUNDARY_RETRY_PRIORITY;
         Some(patch)
     }
@@ -1623,10 +1648,17 @@ fn apply_mapped_range(trim: &mut Trim) -> bool {
     true
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TransverseRecovery {
+    None,
+    Clamp,
+    Extend,
+}
+
 struct RingFit<'a> {
     vertices: Option<&'a BTreeMap<usize, Point3>>,
     shared_surface: Option<&'a SolvedSurfaceGeometry>,
-    transverse_recovery: bool,
+    transverse_recovery: TransverseRecovery,
 }
 
 fn fit_with_alternate_lines(
@@ -1685,12 +1717,27 @@ fn fit_ring(
     recover: bool,
 ) -> Option<Patch> {
     let [lo, hi] = carrier.bounds()?[0];
-    let chart = |uv| {
+    let chart = |[u, v]: [f64; 2]| {
+        if context.transverse_recovery == TransverseRecovery::Extend {
+            if u < lo - CHART_SLACK || u > hi + CHART_SLACK {
+                return None;
+            }
+            let [u, v] = carrier.point([u.clamp(lo, hi), v]);
+            carrier.evaluate_rolling_extension(u, v)?;
+            return Some([u, v]);
+        }
+        let uv = [u, v];
         clamp_chart(carrier, uv).or_else(|| {
-            context
-                .transverse_recovery
+            (context.transverse_recovery == TransverseRecovery::Clamp)
                 .then(|| recover_rolling_chart(carrier, uv))?
         })
+    };
+    let native_point = |[u, v]: [f64; 2]| {
+        if context.transverse_recovery == TransverseRecovery::Extend {
+            carrier.evaluate_rolling_extension(u, v)
+        } else {
+            carrier.evaluate([u, v])
+        }
     };
     let identities = trims.iter().map(|trim| trim.vertices).collect::<Vec<_>>();
     let topological = cycle(&identities, |a, b| a == b)?;
@@ -1716,7 +1763,7 @@ fn fit_ring(
         joint_recovery::known_vertex(
             [&trims[i], &trims[j]],
             point,
-            |uv| carrier.evaluate(chart(uv)?),
+            |uv| native_point(chart(uv)?),
             recover,
         )
     };
@@ -1725,7 +1772,7 @@ fn fit_ring(
             &trims,
             &topological,
             [witnessed(0, 1), witnessed(1, 0)],
-            |uv| carrier.evaluate(chart(uv)?),
+            |uv| native_point(chart(uv)?),
         )?
     } else {
         (0..trims.len())
@@ -1745,7 +1792,7 @@ fn fit_ring(
                     .or_else(|| joint_recovery::crossing([&trims[i], &trims[j]], stations))
                     .or_else(|| {
                         joint_recovery::world_join([&trims[i], &trims[j]], stations, |uv| {
-                            carrier.evaluate(chart(uv)?)
+                            native_point(chart(uv)?)
                         })
                     })
                     .or_else(|| {
@@ -1753,7 +1800,7 @@ fn fit_ring(
                             [&trims[i], &trims[j]],
                             [ends[i], ends[j]],
                             stations,
-                            |uv| carrier.evaluate(chart(uv)?),
+                            |uv| native_point(chart(uv)?),
                         )
                     })
                     .or_else(|| {
@@ -1761,7 +1808,7 @@ fn fit_ring(
                             return None;
                         }
                         joint_recovery::extended_splines([&trims[i], &trims[j]], stations, |uv| {
-                            carrier.evaluate(chart(uv)?)
+                            native_point(chart(uv)?)
                         })
                     })
             })
@@ -1782,9 +1829,14 @@ fn fit_ring(
     let mut u_max = f64::NEG_INFINITY;
     let mut v_min = f64::INFINITY;
     let mut v_max = f64::NEG_INFINITY;
+    let mut rolling_extension_mm = 0.0_f64;
     for (trim, &forward) in trims.iter().zip(&chart_order) {
         for step in 0..=TRIM_STEPS {
             let [u, v] = chart(trim.uv(trim.sample(step, forward))?)?;
+            if context.transverse_recovery == TransverseRecovery::Extend {
+                rolling_extension_mm =
+                    rolling_extension_mm.max(carrier.rolling_boundary_gap(u, v)?);
+            }
             u_min = u_min.min(u);
             u_max = u_max.max(u);
             v_min = v_min.min(v);
@@ -1805,15 +1857,24 @@ fn fit_ring(
     }
     let [[u_lo, u_hi], [v_lo, v_hi]] = carrier.bounds()?;
     let [chart_start, chart_end] = [carrier.point([u_lo, v_lo]), carrier.point([u_hi, v_hi])];
-    let limits = std::array::from_fn(|axis| {
+    let mut limits = std::array::from_fn(|axis| {
         let [lo, hi] = [[u_min, u_max], [v_min, v_max]][axis];
         [
             (lo - CHART_SLACK).max(chart_start[axis].min(chart_end[axis])),
             (hi + CHART_SLACK).min(chart_start[axis].max(chart_end[axis])),
         ]
     });
+    if context.transverse_recovery == TransverseRecovery::Extend {
+        if v_min >= 0.0 && v_max <= 1.0 {
+            return None;
+        }
+        limits[1] = [v_min - CHART_SLACK, v_max + CHART_SLACK];
+    }
     let solved = match context.shared_surface {
         Some(surface) => surface.clone(),
+        None if context.transverse_recovery == TransverseRecovery::Extend => {
+            carrier.solve_rolling_extension(limits)?
+        }
         None => carrier.solved(limits, recover)?,
     };
     let surface = SurfaceGeometry::Solved(solved.clone());
@@ -1833,7 +1894,7 @@ fn fit_ring(
         for step in 0..=TRIM_STEPS {
             let t = trim.sample(step, true);
             let [u, v] = chart(trim.uv(t)?)?;
-            let p = carrier.evaluate([u, v])?;
+            let p = native_point([u, v])?;
             if p.distance(curve_point(&curve, t)?) > GAP_MM {
                 return None;
             }
@@ -1860,7 +1921,15 @@ fn fit_ring(
                         FinitePoint2::new(Point2::new(u, v)).ok_or(())
                     })
                     .ok()?;
-                PcurveGeometry::Nurbs { nurbs }
+                let endpoints = [*nurbs.knots().first()?, *nurbs.knots().last()?];
+                let basis = PcurveGeometry::Nurbs { nurbs };
+                if trim.range == endpoints {
+                    basis
+                } else {
+                    PcurveGeometry::Trimmed(
+                        TrimmedPcurve::try_new(trim.range, true, Box::new(basis)).ok()?,
+                    )
+                }
             }
             _ => return None,
         };
@@ -1873,8 +1942,14 @@ fn fit_ring(
             curve,
             pcurve,
             forward: chart_order[index] != flip,
+            inferred_accuracy: trim.inferred_accuracy.filter(|_| {
+                trim.mapped_range.is_some_and(|[lo, hi]| {
+                    trim.range[0] >= lo - CHART_SLACK && trim.range[1] <= hi + CHART_SLACK
+                })
+            }),
+            lift_error_mm: 0.0,
         };
-        if context.transverse_recovery
+        if context.transverse_recovery == TransverseRecovery::Clamp
             && (0..=TRIM_STEPS).any(|step| {
                 trim.uv(trim.sample(step, true))
                     .is_some_and(|[_, v]| v < v_lo || v > v_hi)
@@ -1912,12 +1987,18 @@ fn fit_ring(
             },
         sides,
         inner_starts: Vec::new(),
+        recovery: super::SheetBoundaryRecovery {
+            rolling_extension_mm,
+            ..super::SheetBoundaryRecovery::default()
+        },
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{line_at, ring_tail, RingBounds, RingTail};
+
+    mod recovery;
 
     #[test]
     fn trim_retains_existing_affine_station_before_companion_fallback() {
