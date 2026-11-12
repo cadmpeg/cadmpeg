@@ -7961,7 +7961,7 @@ fn project_hole(
         })
         .count();
     let reference_constraints = match (parameter("RefDim1"), parameter("RefDim2")) {
-        (None, None) => !reference_dimensions,
+        (None, None) => !reference_dimensions && edge_groups == 0,
         (Some(first), None) => edge_groups == 1 && design_positive_length(first).is_some(),
         (Some(first), Some(second)) => {
             edge_groups == 2

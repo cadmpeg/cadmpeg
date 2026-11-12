@@ -1115,6 +1115,12 @@ fn unproved_reference_constraints_retain_the_hole_dimensions() {
     assert!(!losses
         .iter()
         .any(|loss| loss.code == crate::loss::F3dLossCode::HoleReferenceDimensionsNative.kind()));
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::F3dLossCode::HoleParametersIndependentAssumed.kind())
+    );
 }
 
 #[test]
@@ -1412,6 +1418,59 @@ fn extra_parameters_and_native_sizing_keep_the_admitted_hole_dimensions() {
         crate::loss::F3dLossCode::HoleParametersIndependentAssumed,
         crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed,
         crate::loss::F3dLossCode::HoleStandardSizingAssumed,
+    ] {
+        assert!(losses.iter().any(|loss| loss.code == code.kind()));
+    }
+}
+
+#[test]
+fn competing_bore_parameters_keep_both_expressions_and_an_unresolved_diameter() {
+    let scope = hole_scope();
+    let mut parameters = hole_parameters().to_vec();
+    parameters.push(
+        parse_design_parameter_record(&parameter_record(
+            Some(124),
+            "6 mm",
+            "HoleDiameter",
+            Some("mm"),
+            "d8",
+            0.6,
+        ))
+        .unwrap(),
+    );
+    let indexed: Vec<_> = parameters
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (u32::try_from(i).unwrap(), p))
+        .collect();
+    let mut losses = Vec::new();
+    let Some(FeatureDefinition::Operation(FeatureOperation::Hole {
+        shape,
+        extent,
+        bottom,
+        ..
+    })) = project_hole(&scope, &indexed, &[], &[], &mut losses).unwrap()
+    else {
+        panic!("partial Hole")
+    };
+    assert_eq!(shape.diameter(), None);
+    assert!(
+        matches!(extent,Some(cadmpeg_ir::features::LinearTermination::Blind { length }) if length.get()==10.0)
+    );
+    assert_eq!(bottom, Some(cadmpeg_ir::features::holes::HoleBottom::Flat));
+    let properties =
+        super::super::scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &indexed).unwrap();
+    assert_eq!(
+        properties.get("parameter:d5").map(String::as_str),
+        Some("4 mm")
+    );
+    assert_eq!(
+        properties.get("parameter:d8").map(String::as_str),
+        Some("6 mm")
+    );
+    for code in [
+        crate::loss::F3dLossCode::HoleShapePartialAssumed,
+        crate::loss::F3dLossCode::HoleParametersIndependentAssumed,
     ] {
         assert!(losses.iter().any(|loss| loss.code == code.kind()));
     }
