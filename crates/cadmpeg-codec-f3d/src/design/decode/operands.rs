@@ -1969,7 +1969,16 @@ pub(crate) fn decode_construction_operand_groups(
         }
         scope.unclosed_construction_operand_groups = unclosed;
         if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude) {
-            assign_extrude_face_roles(scope, &mut out[scope_group_start..]);
+            let seventh_slot_record_index = scope.extrude_prologue().and_then(|prologue| {
+                crate::design::decode::scopes::extrude::extrude_seventh_slot_record_index(
+                    bytes, prologue,
+                )
+            });
+            assign_extrude_face_roles(
+                scope,
+                &mut out[scope_group_start..],
+                seventh_slot_record_index,
+            );
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -2192,7 +2201,28 @@ fn parse_loft_legacy_body_carrier(
 pub(in crate::design) fn assign_extrude_face_roles(
     scope: &DesignParameterScope,
     groups: &mut [DesignConstructionOperandGroup],
+    seventh_slot_record_index: Option<u32>,
 ) {
+    let face_group_count = groups
+        .iter()
+        .filter(|group| {
+            matches!(
+                extrude_operand_role(scope, group.role()),
+                Some(PendingExtrudeRole::Faces(_))
+            )
+        })
+        .count();
+    let start_group_absent = face_group_count == 1
+        && scope
+            .extrude_prologue()
+            .and_then(DesignExtrudePrologue::extent)
+            == Some(DesignExtrudeExtent::OneSidedToFace)
+        && groups.iter().any(|group| {
+            matches!(
+                extrude_operand_role(scope, group.role()),
+                Some(PendingExtrudeRole::Faces(_))
+            ) && Some(group.record_index) == seventh_slot_record_index
+        });
     let mut face_groups =
         groups
             .iter_mut()
@@ -2200,8 +2230,9 @@ pub(in crate::design) fn assign_extrude_face_roles(
                 Some(PendingExtrudeRole::Faces(encoding)) => Some((group, encoding)),
                 _ => None,
             });
-    if scope.extrude_prologue().map(DesignExtrudePrologue::start)
-        == Some(DesignExtrudeStart::FromFace)
+    if !start_group_absent
+        && scope.extrude_prologue().map(DesignExtrudePrologue::start)
+            == Some(DesignExtrudeStart::FromFace)
     {
         if let Some((group, encoding)) = face_groups.next() {
             group.operand_role = DesignConstructionOperandRole::ExtrudeFaces {
@@ -2678,7 +2709,16 @@ fn extrude_operand_role(
             if scope
                 .extrude_prologue()
                 .and_then(DesignExtrudePrologue::extent)
-                == Some(DesignExtrudeExtent::OneSidedToFace) =>
+                .is_some_and(|extent| {
+                    matches!(
+                        extent,
+                        DesignExtrudeExtent::OneSidedToFace
+                            | DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero
+                            | DesignExtrudeExtent::TwoSidedToTargetsOptionZero
+                            | DesignExtrudeExtent::TwoSidedToTargetsOptionTwo
+                            | DesignExtrudeExtent::TwoSidedThroughAllToFace
+                    )
+                }) =>
         {
             Some(PendingExtrudeRole::Faces(
                 DesignExtrudeFaceEncoding::LegacyTermination,

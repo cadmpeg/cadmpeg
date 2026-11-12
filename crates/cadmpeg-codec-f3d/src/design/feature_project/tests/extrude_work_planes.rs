@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::extrude_fallbacks::{profile_group, scope_with_extent};
-use crate::design::feature_project::{bind_extrude_work_plane_targets, project_extrude};
+use crate::design::feature_project::extrude::{bind_extrude_work_plane_targets, project_extrude};
 use crate::records::feature::extrude::DesignExtrudeExtent;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::{
