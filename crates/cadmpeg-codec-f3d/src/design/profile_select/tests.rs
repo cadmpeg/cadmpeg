@@ -200,6 +200,7 @@ fn planar_resolution<'a>(
     sketch_entities: &'a [SketchEntity],
 ) -> SketchProfileResolution<'a> {
     SketchProfileResolution {
+        profile_curves: &[],
         entities: &[],
         entity_selection_operands: operands,
         placements,
@@ -525,6 +526,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     .unwrap();
     let placements = [placement];
     let resolution = SketchProfileResolution {
+        profile_curves: &[],
         entities: &[],
         entity_selection_operands: &[],
         placements: &placements,

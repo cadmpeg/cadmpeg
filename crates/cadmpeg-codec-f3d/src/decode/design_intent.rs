@@ -951,10 +951,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     );
     losses.extend(
         crate::design::profile_select::bind_loft_and_revolve_sketch_selections(
+            ctx,
+            &profile_work,
             scan,
             &mut design.design_construction_operand_groups,
             &design.design_record_headers,
             &crate::design::profile_select::SketchProfileResolution {
+                profile_curves: &design.design_profile_curve_selections,
                 entities: &prereqs.design_entity_headers,
                 entity_selection_operands: &design.design_entity_selection_operands,
                 placements: &design.design_sketch_placements,
