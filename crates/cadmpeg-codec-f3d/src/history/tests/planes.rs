@@ -942,15 +942,19 @@ fn a_construction_plane_identity_names_the_next_work_plane_without_an_assumption
         if let crate::records::feature::scope::DesignScopePayloadMut::Mirror(slot) =
             mirror.payload_mut()
         {
-            *slot = Some(
-                serde_json::from_value(serde_json::json!({
+            *slot = Some({
+                let mut construction = serde_json::json!({
                     "count": 2, "count_record_index": 11, "count_offset": 0,
                     "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
                     "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
                     "plane_group_record_index": 30, "plane_selection_record_index": 40
-                }))
-                .expect("mirror construction"),
-            );
+                });
+                if plane_scope != 369 {
+                    construction["plane_scope_record_index"] = serde_json::json!(plane_scope);
+                    construction["plane_reference_offset"] = serde_json::json!(0);
+                }
+                serde_json::from_value(construction).expect("mirror construction")
+            });
         }
         let mut work_plane = crate::records::feature::scope::DesignParameterScope::empty(
             &format!("f3d:Design/BulkStream.dat:scope#{plane_scope}"),
@@ -1024,4 +1028,40 @@ fn a_construction_plane_identity_names_the_next_work_plane_without_an_assumption
     let mut conflicting = plane_types();
     conflicting.push(crate::test_support::origin_types::other_type_row(meta, 368));
     assert_eq!(bound(conflicting, 369), (None, false, false));
+    assert_eq!(bound(plane_types(), 500), (None, false, false));
+    let mut partial_run = crate::test_support::origin_types::origin_design_types(meta, 39);
+    partial_run.push(crate::test_support::origin_types::plane_row(meta, 368));
+    assert_eq!(bound(partial_run, 369), (None, false, false));
+}
+
+#[test]
+fn a_construction_plane_scope_excludes_an_assumed_scope_and_a_different_plane_reference() {
+    let construction = |extra: serde_json::Value| {
+        let mut construction = serde_json::json!({
+            "count": 2, "count_record_index": 11, "count_offset": 0,
+            "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
+            "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
+            "plane_group_record_index": 30, "plane_selection_record_index": 40,
+            "construction_plane_scope": {"scope_record_index": 369, "identity_offset": 21}
+        });
+        for (key, value) in extra.as_object().unwrap() {
+            construction[key] = value.clone();
+        }
+        serde_json::from_value::<crate::records::feature::mirror::DesignMirrorConstruction>(
+            construction,
+        )
+    };
+    assert!(construction(serde_json::json!({})).is_ok());
+    assert!(construction(serde_json::json!({
+        "plane_scope_record_index": 369, "plane_reference_offset": 0
+    }))
+    .is_ok());
+    assert!(construction(serde_json::json!({
+        "plane_scope_record_index": 500, "plane_reference_offset": 0
+    }))
+    .is_err());
+    assert!(construction(serde_json::json!({
+        "assumed_plane_scope": {"scope_record_index": 500, "identity_offset": 21, "unusable_faces": []}
+    }))
+    .is_err());
 }

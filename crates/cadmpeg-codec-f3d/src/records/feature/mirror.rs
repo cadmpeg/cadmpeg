@@ -270,7 +270,11 @@ impl TryFrom<DesignMirrorConstructionWire> for DesignMirrorConstruction {
                 (Some(origin), Some(normal)) => Some(DesignPlane::from_parts(origin, normal).ok_or("plane_normal must be a unit vector")?),
                 _ => return Err("plane_origin and plane_normal must occur together".into()),
             },
-            construction_plane_scope: wire.construction_plane_scope,
+            construction_plane_scope: match (wire.construction_plane_scope, &wire.assumed_plane_scope, wire.plane_scope_record_index) {
+                (Some(_), Some(_), _) => return Err("construction_plane_scope and assumed_plane_scope cannot occur together".into()),
+                (Some(selected), None, Some(reference)) if reference != selected.scope_record_index => return Err("construction_plane_scope must name the plane reference's scope".into()),
+                (selected, _, _) => selected,
+            },
             assumed_plane_scope: wire.assumed_plane_scope,
         })
     }

@@ -1245,29 +1245,12 @@ pub(crate) fn bind_mirror_selection_planes(
             let Some(stream) = stream.as_deref() else {
                 continue;
             };
-            let construction_plane_scope = if operand.secondary().is_none()
+            let construction_plane_identity = operand.secondary().is_none()
                 && crate::design::decode::meta::is_construction_plane_entity(
                     design_types,
                     stream,
                     operand.primary_identity,
-                ) {
-                u32::try_from(operand.primary_identity)
-                    .ok()
-                    .and_then(|identity| identity.checked_add(1))
-                    .filter(|next_record| {
-                        construction
-                            .plane_scope_record_index
-                            .is_none_or(|scope| scope.value == *next_record)
-                    })
-                    .map(|scope_record_index| {
-                        crate::records::feature::mirror::DesignMirrorConstructionPlaneScope {
-                            scope_record_index,
-                            identity_offset: operand.primary_identity_offset(),
-                        }
-                    })
-            } else {
-                None
-            };
+                );
             match crate::design::decode::meta::classify_origin_entity(
                 design_types,
                 stream,
@@ -1281,9 +1264,25 @@ pub(crate) fn bind_mirror_selection_planes(
                 )
                 | crate::design::decode::meta::OriginClassification::Unknown => continue,
                 crate::design::decode::meta::OriginClassification::NotOrigin
-                    if construction_plane_scope.is_some() =>
+                    if construction_plane_identity =>
                 {
-                    construction.construction_plane_scope = construction_plane_scope;
+                    let Some(scope_record_index) = u32::try_from(operand.primary_identity)
+                        .ok()
+                        .and_then(|identity| identity.checked_add(1))
+                        .filter(|next_record| {
+                            construction
+                                .plane_scope_record_index
+                                .is_none_or(|scope| scope.value == *next_record)
+                        })
+                    else {
+                        continue;
+                    };
+                    construction.construction_plane_scope = Some(
+                        crate::records::feature::mirror::DesignMirrorConstructionPlaneScope {
+                            scope_record_index,
+                            identity_offset: operand.primary_identity_offset(),
+                        },
+                    );
                     continue;
                 }
                 crate::design::decode::meta::OriginClassification::NotOrigin => {
