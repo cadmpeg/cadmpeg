@@ -2767,22 +2767,46 @@ pub enum FeatureOperation {
         #[doc = "Whether the feature copies an occurrence or changes its owner."]
         mode: ComponentTransferMode,
         #[doc = "Transferred occurrence when its persistent identity resolves."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_occurrence"
+        )]
         occurrence: Option<OccurrenceId>,
         #[doc = "Reusable component definition when its identity resolves."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_component"
+        )]
         component: Option<ProductDefinitionId>,
         #[doc = "Source containing definition when it resolves."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_source_owner"
+        )]
         source_owner: Option<ProductDefinitionId>,
         #[doc = "Destination containing definition when it resolves."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_target_owner"
+        )]
         target_owner: Option<ProductDefinitionId>,
         #[doc = "Source local placement when the operation stores one."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_source_transform"
+        )]
         source_transform: Option<Transform>,
         #[doc = "Destination local placement when the operation stores one."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_target_transform"
+        )]
         target_transform: Option<Transform>,
     },
     /// Assembly constraint introduced into the product structure.
@@ -9505,6 +9529,32 @@ cadmpeg_core::named_optional_field!(
     "regeneration_parent"
 );
 cadmpeg_core::named_optional_field!(deserialize_source_tag, String, "source_tag");
+cadmpeg_core::named_optional_field!(deserialize_transfer_occurrence, OccurrenceId, "occurrence");
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_component,
+    ProductDefinitionId,
+    "component"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_source_owner,
+    ProductDefinitionId,
+    "source_owner"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_target_owner,
+    ProductDefinitionId,
+    "target_owner"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_source_transform,
+    Transform,
+    "source_transform"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_target_transform,
+    Transform,
+    "target_transform"
+);
 cadmpeg_core::named_optional_field!(deserialize_source_text, String, "source_text");
 cadmpeg_core::named_optional_field!(deserialize_active_child, FeatureId, "active_child");
 cadmpeg_core::named_optional_field!(deserialize_diameter, PositiveLength, "diameter");
