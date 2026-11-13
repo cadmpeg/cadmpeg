@@ -172,6 +172,7 @@ pub(crate) fn project_local_components_with_types(
     projector.attach_root_occurrences();
     projector.expand_nested_carriers()?;
     projector.apply_path_poses()?;
+    projector.retain_unplaced_definitions();
     projector.finish()
 }
 
@@ -1261,6 +1262,17 @@ impl<'a> Projector<'a> {
             _ => self.path_poses.unresolved += carriers.len(),
         }
         Ok(())
+    }
+
+    fn retain_unplaced_definitions(&mut self) {
+        for (stream, components) in self.sources.components {
+            if components.roots.len() == 1 {
+                continue;
+            }
+            for (&record, root) in &components.roots {
+                self.naming_space_definition(stream, record, root);
+            }
+        }
     }
 
     fn finish(self) -> Result<LocalComponentProjection, cadmpeg_core::CodecError> {
@@ -2896,7 +2908,7 @@ mod tests {
         ] {
             let projection = project_carriers(&carriers, &components, &bodies);
             assert!(projection.occurrences.is_empty(), "{reason}");
-            assert!(projection.definitions.is_empty(), "{reason}");
+            assert_eq!(projection.definitions.len(), 2, "{reason}");
             assert_eq!(projection.losses.len(), 1, "{reason}");
             assert_eq!(
                 projection.losses[0].code,
@@ -2926,7 +2938,7 @@ mod tests {
             &[COMPONENT_BODY, ROOT_BODY],
         );
         assert!(projection.occurrences.is_empty());
-        assert!(projection.definitions.is_empty());
+        assert_eq!(projection.definitions.len(), 2);
         assert_eq!(projection.losses.len(), 1);
         assert_eq!(
             projection.losses[0].code,
@@ -3101,7 +3113,11 @@ mod tests {
                 }
             } else {
                 assert!(projection.occurrences.is_empty());
-                assert!(projection.definitions.is_empty());
+                assert_eq!(projection.definitions.len(), 3);
+                assert!(projection
+                    .definitions
+                    .iter()
+                    .all(|definition| definition.bodies.is_empty()));
                 assert!(projection
                     .losses
                     .iter()

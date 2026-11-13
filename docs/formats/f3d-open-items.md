@@ -1251,7 +1251,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding.
+**Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding. The public Voron Trident `z_mounts_front.f3d` has nine such scopes. Component context bindings identify their result owners. The source-body and source-frame joins require the derivation references independently of those owner bindings.
 
 ### DR-123. Typed-reference BoxPrimitive offsets and other forms
 
@@ -1688,7 +1688,7 @@ when the operation transition carries no candidate for the group members?
 
 **Conflict.** None.
 
-**Note.** Equal matrix bytes corroborate a stored frame. Selection of an owner's current frame and of a captured state remains part of occurrence placement. The identity fallback records the unresolved placement proof.
+**Note.** The public Voron Trident `z_mounts_front.f3d` stores 55 registered version-2 Component placement entities, 43 bound component naming spaces, and 34 component paths. Its local occurrence set is empty. Definition context bindings identify component owners independently of these placement frames. Equal matrix bytes corroborate a stored frame. Selection of an owner's current frame and of a captured state remains part of occurrence placement. The identity fallback records the unresolved placement proof.
 
 ### DR-252. Saved scene framing and state selection
 
