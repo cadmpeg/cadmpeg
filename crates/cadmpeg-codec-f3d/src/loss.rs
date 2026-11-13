@@ -246,6 +246,9 @@ pub(crate) enum F3dLossCode {
     SurfacePatchUnorderedReferenceRunsAssumed,
     /// A box scope has no fully decoded dimensions and local frame.
     FeatureBoxPrimitiveUnresolved,
+    FeatureBoxOffsetFrameAssumed,
+    FeatureBoxSupportFrameAssumed,
+    FeatureBoxSupportFlagsAssumed,
     /// Sheet-metal base flanges projected with their stored thickness copy because
     /// their rule states no thickness.
     SheetThicknessUnruled,
@@ -839,6 +842,9 @@ impl F3dLossCode {
         Self::SurfacePatchUnnamedGroupsAssumedInactive,
         Self::SurfacePatchUnorderedReferenceRunsAssumed,
         Self::FeatureBoxPrimitiveUnresolved,
+        Self::FeatureBoxOffsetFrameAssumed,
+        Self::FeatureBoxSupportFrameAssumed,
+        Self::FeatureBoxSupportFlagsAssumed,
         Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
         Self::MoveUnprojected,
@@ -1232,6 +1238,9 @@ impl F3dLossCode {
                 "feature.surface-patch-unordered-reference-runs-assumed"
             }
             Self::FeatureBoxPrimitiveUnresolved => "feature.box-primitive-unresolved",
+            Self::FeatureBoxOffsetFrameAssumed => "feature.box-offset-frame-assumed",
+            Self::FeatureBoxSupportFrameAssumed => "feature.box-support-frame-assumed",
+            Self::FeatureBoxSupportFlagsAssumed => "feature.box-support-flags-assumed",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
             Self::FeatureMeshImportTessellationsUnresolved => {
                 "feature.mesh-import-tessellations-unresolved"
@@ -1682,6 +1691,9 @@ impl F3dLossCode {
             | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
             | Self::FeatureBoxPrimitiveUnresolved
+            | Self::FeatureBoxOffsetFrameAssumed
+            | Self::FeatureBoxSupportFrameAssumed
+            | Self::FeatureBoxSupportFlagsAssumed
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureMeshImportTessellationsUnresolved
             | Self::FeatureMeshImportEmptySourceAssumed
@@ -2003,6 +2015,9 @@ impl F3dLossCode {
             | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
             | Self::FeatureBoxPrimitiveUnresolved
+            | Self::FeatureBoxOffsetFrameAssumed
+            | Self::FeatureBoxSupportFrameAssumed
+            | Self::FeatureBoxSupportFlagsAssumed
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureMeshImportTessellationsUnresolved
             | Self::FeatureMeshImportEmptySourceAssumed
@@ -2422,6 +2437,9 @@ mod tests {
                 "feature.surface-patch-unnamed-groups-assumed-inactive",
                 "feature.surface-patch-unordered-reference-runs-assumed",
                 "feature.box-primitive-unresolved",
+                "feature.box-offset-frame-assumed",
+                "feature.box-support-frame-assumed",
+                "feature.box-support-flags-assumed",
                 "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",
                 "feature.move-unprojected",
