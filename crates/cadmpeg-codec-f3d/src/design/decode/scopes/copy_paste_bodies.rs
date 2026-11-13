@@ -4,6 +4,7 @@
 use super::shared_frames::marked_record_reference;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::layout::copy_paste_bodies_scope_prefix as prefix;
 use crate::records::feature::body_ops;
 use crate::records::feature::body_ops::DesignCopyPasteBodiesOperation;
 use crate::records::feature::scope;
@@ -25,8 +26,17 @@ pub(super) fn exact_copy_paste_bodies_operation(
     let mut bodies = Vec::new();
     let parsed = (|| -> Option<DesignCopyPasteBodiesOperation> {
         let start = usize::try_from(scope.byte_offset()).ok()?;
-        let body_group_record_index = marked_record_reference(bytes, start + 29)?;
-        let relation_record_index = marked_record_reference(bytes, start + 40)?;
+        let references_at =
+            if bytes.get(start + prefix::ZERO_RUN_9..start + prefix::PROLOGUE_BYTE)? == [0; 9]
+                && bytes.get(start + prefix::PROLOGUE_BYTE) == Some(&0)
+                && View::u32_le_at(bytes, start + prefix::MARKER_WORD)? == prefix::MARKER_WORD_VALUE
+            {
+                start + prefix::BODY_GROUP_REFERENCE
+            } else {
+                start + 29
+            };
+        let body_group_record_index = marked_record_reference(bytes, references_at)?;
+        let relation_record_index = marked_record_reference(bytes, references_at + 11)?;
         if *scope.reference_members().values().next()? != body_group_record_index {
             return None;
         }
