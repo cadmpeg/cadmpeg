@@ -54,18 +54,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** A suppressed final item establishes its own execution state. Its authored position and the terminal ASM state identities remain distinct from the saved rollback position. Joint activation remains under DR-249.
 
-### DR-522. Attributed version-two local occurrence envelopes
-
-**Question.** How do the attribute run, ordinal, identity reference, and placement fields delimit a version-two local occurrence envelope?
-
-**Known.** `f3d.md` §3.1 "An attributed local component occurrence carries" defines the admitted attributed frame. One local corpus file registers two unnamed version-two occurrence-placement records with one-element component paths. Each stores three attributes, ordinal one, equal component references, and a closing owner reference. The attribute values are two false Booleans and an empty string. One byte separates the ordinal from the component GUID. The following identity reference selects another segment. Applying the closing matrix to the component body makes its union with the main body match the reference's outer bounds. The same matrix places the support body beyond those bounds. Public Raspberry Pi B and BMG gear assembly controls store empty attribute runs in other version-two frames. The public Trident front idler also stores version-two frames with additional attribute types. The current occurrence decoder admits neither local record.
-
-**Need.** Complete envelope boundaries and a typed join from each identity reference to its occurrence namespace. Verify the ordinal and placement selectors on two independent designs. Vary one component placement and one occurrence property separately, then compare a joint-positioned save with its insertion state.
-
-**Conflict.** One local corpus file has bound component definitions and body memberships while its neutral occurrence arena is empty. Body ownership falls back to component definitions and retains the stored body frames.
-
-**Note.** The source retains the complete occurrence records. `assembly.component-body-owner-fallback` reports the ownership reading. DR-520 covers the separate operation-table pose selector.
-
 ### DR-520. Version-four operation-table pose selection
 
 **Question.** How does a version-four operation table select an occurrence, its final pose, and the saved operation state?

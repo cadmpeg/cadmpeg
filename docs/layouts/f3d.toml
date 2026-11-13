@@ -37278,3 +37278,82 @@ type = "bytes[3]"
 source = "spec"
 anchor = "The Position suffix spans 83 bytes"
 value = [0, 0, 0]
+
+
+[[record]]
+name = "local_component_occurrence_attributed_short_ordinal"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A version-two attributed local occurrence also permits a one-byte zero ordinal prefix"
+size = 5
+note = "Offsets are relative to the ordinal prefix after the attribute run or object prelude. The carrier GUID follows this prefix."
+
+[[record.field]]
+name = "ordinal_prefix"
+offset = 0
+type = "u8"
+value = 0
+source = "spec"
+anchor = "A version-two attributed local occurrence also permits a one-byte zero ordinal prefix"
+
+[[record.field]]
+name = "occurrence_ordinal"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "A version-two attributed local occurrence also permits a one-byte zero ordinal prefix"
+
+[[record]]
+name = "local_component_occurrence_attributed_ordinal"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Two prefix bytes, the u32 one-based occurrence ordinal"
+size = 6
+note = "Offsets are relative to the ordinal prefix after the attribute run."
+
+[[record.field]]
+name = "ordinal_prefix"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "Two prefix bytes, the u32 one-based occurrence ordinal"
+
+[[record.field]]
+name = "occurrence_ordinal"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "Two prefix bytes, the u32 one-based occurrence ordinal"
+
+[[record]]
+name = "local_component_occurrence_attributed_marked_ordinal"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The two-byte prefix form permits marker `u8 1` after the ordinal"
+size = 7
+note = "Offsets are relative to the ordinal prefix after the attribute run. The carrier GUID follows this prefix."
+
+[[record.field]]
+name = "ordinal_prefix"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "Two prefix bytes, the u32 one-based occurrence ordinal"
+
+[[record.field]]
+name = "occurrence_ordinal"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "Two prefix bytes, the u32 one-based occurrence ordinal"
+
+[[record.field]]
+name = "guid_marker"
+offset = 6
+type = "u8"
+value = 1
+source = "spec"
+anchor = "The two-byte prefix form permits marker `u8 1` after the ordinal"

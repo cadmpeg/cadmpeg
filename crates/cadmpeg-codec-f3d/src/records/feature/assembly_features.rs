@@ -521,11 +521,18 @@ pub(crate) struct DesignOccurrenceSourcePlacement {
 pub(crate) struct DesignAttributedOccurrenceFrame {
     /// The counted attribute run, in record order.
     pub(crate) attributes: Vec<DesignOccurrenceAttribute>,
-    /// The little-endian u16 before the occurrence ordinal.
+    /// Ordered property names in the optional object prelude.
+    pub(crate) property_names: Vec<String>,
+    /// Persistent object key in that prelude.
+    pub(crate) persistent_key: Option<String>,
+    /// Optional marker one between the ordinal and carrier GUID.
+    pub(crate) guid_marker: Option<u8>,
+    /// The ordinal prefix, widened to u16 for a one-byte prefix.
     pub(crate) ordinal_prefix: u16,
     pub(crate) path_discriminator: u32,
-    /// Marked record reference after the occurrence key.
+    /// Cross-segment identity target after the occurrence key; zero for null.
     pub(crate) key_record_index: u64,
+    /// Segment ID of the identity target; zero with a null target.
     pub(crate) key_segment_index: u32,
     /// Local reference to the source design record, when the frame stores one.
     pub(crate) source_record_index: Option<u64>,
@@ -556,6 +563,8 @@ pub(crate) enum DesignOccurrenceAttributeValue {
     Bool(bool),
     /// `IntrinsicMetaTypeHString`: an LP-UTF16 string.
     Text(String),
+    /// `IntrinsicMetaTypeIString`: an LP-UTF16 string.
+    InternedText(String),
 }
 
 #[cfg(test)]
@@ -741,6 +750,12 @@ impl DesignComponentOccurrence {
         if placed != frame.transform_offset.is_some() {
             return Err("transform_offset must be present exactly for a placed occurrence".into());
         }
+        if frame.guid_marker.is_some_and(|marker| marker != 1) {
+            return Err("an occurrence GUID marker is one".into());
+        }
+        if frame.property_names.is_empty() != frame.persistent_key.is_none() {
+            return Err("an occurrence property prelude has names and a persistent key".into());
+        }
         let offsets = [
             Some(draft.byte_offset),
             Some(frame.component_guid_offset),
@@ -834,6 +849,9 @@ impl DesignComponentOccurrence {
             DesignComponentOccurrenceFrame::Attributed(frame) => {
                 Some(DesignAttributedOccurrenceWire {
                     attributes: frame.attributes.clone(),
+                    property_names: frame.property_names.clone(),
+                    persistent_key: frame.persistent_key.clone(),
+                    guid_marker: frame.guid_marker,
                     ordinal_prefix: frame.ordinal_prefix,
                     path_discriminator: frame.path_discriminator,
                     key_record_index: frame.key_record_index,
@@ -1074,15 +1092,32 @@ struct DesignComponentOccurrenceWire {
     operation_pose: Option<crate::records::xref::XrefOperationPose>,
 }
 
+cadmpeg_core::named_optional_field!(deserialize_persistent_key, String, "persistent_key");
+cadmpeg_core::named_optional_field!(deserialize_guid_marker, u8, "guid_marker");
+
 /// Members of an attributed occurrence frame on the wire.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct DesignAttributedOccurrenceWire {
     /// The counted attribute run, in record order.
     attributes: Vec<DesignOccurrenceAttribute>,
-    /// The little-endian u16 before the occurrence ordinal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    property_names: Vec<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_persistent_key"
+    )]
+    persistent_key: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_guid_marker"
+    )]
+    guid_marker: Option<u8>,
+    /// The ordinal prefix, widened to u16 for a one-byte prefix.
     ordinal_prefix: u16,
     path_discriminator: u32,
-    /// Marked record reference after the occurrence key.
+    /// Cross-segment identity target after the occurrence key; zero for null.
     key_record_index: u64,
     key_segment_index: u32,
     /// Local reference to the source design record, when the frame stores one.
@@ -1271,6 +1306,9 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
                 draft,
                 DesignAttributedOccurrenceFrame {
                     attributes: attributed.attributes,
+                    property_names: attributed.property_names,
+                    persistent_key: attributed.persistent_key,
+                    guid_marker: attributed.guid_marker,
                     ordinal_prefix: attributed.ordinal_prefix,
                     path_discriminator: attributed.path_discriminator,
                     key_record_index: attributed.key_record_index,

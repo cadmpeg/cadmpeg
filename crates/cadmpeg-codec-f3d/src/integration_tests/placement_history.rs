@@ -623,3 +623,55 @@ fn history_only_consumed_member_keeps_the_inserted_design_body() {
         .any(|loss| loss.code == F3dLossCode::ComponentBodyOwnerFallback.kind()));
     super::assert_valid(&result);
 }
+
+#[test]
+fn attributed_version_two_occurrences_keep_definition_ownership_and_nested_world_poses() {
+    let (bulk, meta) =
+        crate::test_support::empty_attribute_occurrences::attributed_local_component_design();
+    let bytes = f3d_with_breps_and_design(
+        &[(
+            "BREP.module.smbh",
+            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        )],
+        &bulk,
+        &meta,
+    );
+    let result = super::decode(bytes);
+    super::assert_valid(&result);
+    let model = &result.ir().model;
+    assert_eq!(model.occurrences.len(), 7);
+    assert_eq!(
+        model
+            .product_definitions
+            .iter()
+            .flat_map(|definition| &definition.bodies)
+            .count(),
+        1
+    );
+    let placements = model
+        .occurrences
+        .iter()
+        .map(|occurrence| occurrence.transform)
+        .collect::<Vec<_>>();
+    assert!(placements.iter().any(|transform| [
+        transform.rows()[0][3],
+        transform.rows()[1][3],
+        transform.rows()[2][3]
+    ] == [30.0, 40.0, 0.0]));
+    assert!(placements.iter().any(|transform| [
+        transform.rows()[0][3],
+        transform.rows()[1][3],
+        transform.rows()[2][3]
+    ] == [10.0, 0.0, 0.0]));
+    for code in [
+        F3dLossCode::LocalOccurrenceUnplaced,
+        F3dLossCode::ComponentBodyOwnerUnresolved,
+        F3dLossCode::LocalOccurrenceEnvelopeNative,
+    ] {
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == code.kind()));
+    }
+}

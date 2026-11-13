@@ -123,6 +123,8 @@ pub(crate) enum F3dLossCode {
     RootInstanceDefinitionUnbound,
     /// Alternate occurrence frames without a unique primary-indexed selection.
     LocalOccurrenceEnvelopeSuperseded,
+    /// A registered unnamed local occurrence has an unresolved envelope.
+    LocalOccurrenceEnvelopeNative,
     /// A leading-flag occurrence frame whose record the occurrence-placement
     /// type row does not register.
     LocalOccurrenceTypeUnregistered,
@@ -886,6 +888,7 @@ impl F3dLossCode {
         Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
         Self::LocalOccurrenceEnvelopeSuperseded,
+        Self::LocalOccurrenceEnvelopeNative,
         Self::LocalOccurrenceTypeUnregistered,
         Self::LocalOccurrenceYieldedToRegistered,
         Self::LocalOccurrenceKeyRepeated,
@@ -1363,6 +1366,7 @@ impl F3dLossCode {
             Self::ComponentNamingSpaceUnbound => "assembly.component-naming-space-unbound",
             Self::RootInstanceDefinitionUnbound => "assembly.root-instance-definition-unbound",
             Self::SavedFreeEdgeBodyUnowned => "assembly.saved-free-edge-body-unowned",
+            Self::LocalOccurrenceEnvelopeNative => "assembly.local-occurrence-envelope-native",
             Self::LocalOccurrenceIdentityOrdinalUnresolved => {
                 "assembly.local-occurrence-identity-ordinal-unresolved"
             }
@@ -2011,6 +2015,7 @@ impl F3dLossCode {
             | Self::LocalOccurrenceSourceUnregistered
             | Self::LocalOccurrenceKeyRepeated
             | Self::LocalOccurrenceFirstMatrixRefused
+            | Self::LocalOccurrenceEnvelopeNative
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::LocalOccurrenceTypeUnregistered
             | Self::LocalOccurrenceYieldedToRegistered
@@ -2785,6 +2790,7 @@ impl F3dLossCode {
             | Self::LocalOccurrenceTypeUnregistered
             | Self::LocalOccurrenceKeyRepeated
             | Self::LocalOccurrenceFirstMatrixRefused
+            | Self::LocalOccurrenceEnvelopeNative
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
@@ -2954,6 +2960,7 @@ mod tests {
                 "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
                 "assembly.local-occurrence-envelope-superseded",
+                "assembly.local-occurrence-envelope-native",
                 "assembly.local-occurrence-type-unregistered",
                 "assembly.local-occurrence-yielded-to-registered",
                 "assembly.local-occurrence-key-repeated",
