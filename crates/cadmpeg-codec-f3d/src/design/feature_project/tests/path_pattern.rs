@@ -388,6 +388,7 @@ fn partial(
         parameters,
         &[],
         &[],
+        &std::collections::HashMap::new(),
     );
     assert!(projected
         .losses
@@ -528,12 +529,14 @@ fn partial_path_pattern_reads_compact_feature_seed_in_the_owning_stream() {
     let mut selection = super::pattern::compact_entity_selection(SEED_GROUP, 326, 5);
     selection.scope_record_index = SCOPE;
     let groups = groups(DesignOperandRole::BODIES_A);
+    let ordinals = std::collections::HashMap::from([((STREAM, SCOPE), 3), ((STREAM, 5), 1)]);
     let projected = project_partial_path_pattern(
         &scope(),
         &groups,
         &[],
         std::slice::from_ref(&selection),
         std::slice::from_ref(&seed),
+        &ordinals,
     );
     assert_eq!(
         pattern(projected.definition).0,
@@ -553,6 +556,7 @@ fn partial_path_pattern_reads_compact_feature_seed_in_the_owning_stream() {
             &[],
             std::slice::from_ref(&selection),
             &scopes,
+            &ordinals,
         );
         assert!(matches!(
             pattern(projected.definition).0.as_slice(),
@@ -566,7 +570,14 @@ fn partial_path_pattern_retains_a_declared_path_outside_the_scope_reference_list
     use crate::design::feature_project::path_pattern::project_partial_path_pattern;
     let mut stored = settings(false, true, false, 0.25);
     stored.path_group_record_index = Some(999);
-    let projected = project_partial_path_pattern(&scope_with(Some(stored)), &[], &[], &[], &[]);
+    let projected = project_partial_path_pattern(
+        &scope_with(Some(stored)),
+        &[],
+        &[],
+        &[],
+        &[],
+        &std::collections::HashMap::new(),
+    );
     assert!(
         projected
             .losses
@@ -589,4 +600,48 @@ fn partial_path_pattern_retains_a_declared_path_outside_the_scope_reference_list
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(0.25)
     );
+}
+
+#[test]
+fn partial_path_pattern_keeps_later_and_unordered_feature_candidates_native() {
+    use crate::design::feature_project::path_pattern::project_partial_path_pattern;
+    let seed = super::pattern::seed_scope(5, Some(2));
+    let mut selection = super::pattern::compact_entity_selection(SEED_GROUP, 326, 5);
+    selection.scope_record_index = SCOPE;
+    let count = count(4.0);
+    let distance = distance(2.5);
+    for ordinals in [
+        std::collections::HashMap::from([((STREAM, SCOPE), 3), ((STREAM, 5), 3)]),
+        std::collections::HashMap::from([((STREAM, SCOPE), 3), ((STREAM, 5), 4)]),
+        std::collections::HashMap::from([((STREAM, SCOPE), 3)]),
+        std::collections::HashMap::from([((STREAM, 5), 1)]),
+    ] {
+        let projected = project_partial_path_pattern(
+            &scope(),
+            &groups(DesignOperandRole::BODIES_A),
+            &[(0, &count), (1, &distance)],
+            std::slice::from_ref(&selection),
+            std::slice::from_ref(&seed),
+            &ordinals,
+        );
+        assert!(projected
+            .losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::F3dLossCode::FeaturePathPatternSeedUnresolved.kind()));
+        let (seeds, PatternTransform::CurveDrivenPartial { parameters }) =
+            pattern(projected.definition)
+        else {
+            panic!("partial curve-driven");
+        };
+        assert!(matches!(seeds.as_slice(), [PatternSeed::Native(_)]));
+        assert_eq!(parameters.count, Some(4));
+        assert_eq!(
+            parameters
+                .spacing
+                .map(cadmpeg_ir::scalar::PositiveLength::get),
+            Some(25.0)
+        );
+        assert!(parameters.path.is_some());
+    }
 }

@@ -1422,6 +1422,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             scope,
                             inputs,
                             &parameters,
+                            &source_ordinals,
                             &mut projection_losses,
                         )
                     } else if scope.kind()

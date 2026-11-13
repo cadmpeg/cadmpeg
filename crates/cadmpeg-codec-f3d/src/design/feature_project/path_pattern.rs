@@ -14,6 +14,7 @@ use cadmpeg_ir::features::{
     BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, PathRef,
 };
 use cadmpeg_ir::report::loss::LossNote;
+use std::collections::HashMap;
 
 /// Source kind of the parameter that carries the instance count.
 const COUNT_SOURCE_KIND: &str = "countU";
@@ -31,6 +32,7 @@ pub(super) fn path_pattern_definition(
     scope: &DesignParameterScope,
     inputs: &super::ProjectInputs<'_>,
     parameters: &[(u32, &DesignParameter)],
+    authored_ordinals: &HashMap<(&str, u32), u64>,
     losses: &mut Vec<LossNote>,
 ) -> FeatureDefinition {
     let projected = project_path_pattern(scope, inputs.construction_groups, parameters)
@@ -41,6 +43,7 @@ pub(super) fn path_pattern_definition(
                 parameters,
                 inputs.entity_selection_operands,
                 inputs.scopes,
+                authored_ordinals,
             )
         });
     losses.extend(projected.losses);
@@ -53,6 +56,7 @@ pub(super) fn project_partial_path_pattern(
     parameters: &[(u32, &DesignParameter)],
     selections: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    authored_ordinals: &HashMap<(&str, u32), u64>,
 ) -> ProjectedPathPattern {
     use cadmpeg_ir::features::patterns::curve_driven::CurveDrivenPatternParameters;
 
@@ -107,9 +111,22 @@ pub(super) fn project_partial_path_pattern(
             DesignOperandRole::BODIES_B => Some(vec![PatternSeed::Bodies(BodySelection::Native(group.id.clone()))]),
             DesignOperandRole::ROLE_0X10 => Some(vec![PatternSeed::Faces(FaceSelection::Native(group.id.clone()))]),
             DesignOperandRole::BODIES_A => {
+                let stream = stream?;
+                let ordinal = *authored_ordinals.get(&(stream, scope.record_index))?;
                 let seeds = super::pattern_seeds::entity_selection_feature_seeds(scope, group, selections, scopes)?;
+                if !seeds.iter().all(|seed| match seed {
+                    PatternSeed::Feature(id) => scopes.iter().any(|candidate| {
+                        native_stream(&candidate.id) == Some(stream)
+                            && crate::ids::neutral_feature_id(candidate) == *id
+                            && authored_ordinals.get(&(stream, candidate.record_index))
+                                .is_some_and(|candidate_ordinal| *candidate_ordinal < ordinal)
+                    }),
+                    _ => false,
+                }) {
+                    return None;
+                }
                 losses.push(F3dLossCode::FeaturePathPatternFeatureSeedAssumed.note(format!(
-                    "PathPattern scope {} reads its role-0x4 compact identities as feature-scope indices in the owning Design stream.", scope.id
+                    "PathPattern scope {} reads its role-0x4 compact identities as preceding feature-scope indices in the owning Design stream.", scope.id
                 )));
                 Some(seeds)
             }
