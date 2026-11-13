@@ -967,7 +967,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     let mut losses = Vec::new();
     if assumed_connector_operands != 0 {
         losses.push(F3dLossCode::AssemblyConnectorOperandsAssumed.note(format!(
-            "{assumed_connector_operands} Design assembly joint(s) use native connector references as operand identities with missing document containers; the operand context is assumed."
+            "{assumed_connector_operands} Design assembly joint(s) use native scope identities and connector element paths with missing document containers; the operand context is assumed."
         )));
         losses.push(F3dLossCode::AssemblyMotionBindingAssumed.note(format!(
             "{assumed_connector_operands} Design assembly joint(s) use adjacent decoded motion when available and otherwise a fixed relation; the scope-to-motion binding is assumed."
@@ -1210,8 +1210,11 @@ fn project_assembly_joint(
                 frames.each_ref().map(|frame| {
                     JointOperand::external(
                         ExternalDocument::Missing {},
-                        format!("{stream}:design-record#{}", frame.reference_record_index),
-                        Vec::new(),
+                        scope.id.clone(),
+                        vec![format!(
+                            "construction-record#{}",
+                            frame.reference_record_index
+                        )],
                     )
                 }),
                 None,
