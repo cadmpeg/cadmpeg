@@ -47,6 +47,9 @@ use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpe
 pub mod holes;
 use holes::{HoleBottom, HolePlacement, HoleProfileFilter, HoleShape};
 
+#[doc = "Mesh source selections."]
+pub mod mesh;
+
 pub mod patterns;
 use patterns::{PatternKind, PatternSeed};
 
@@ -2746,9 +2749,9 @@ pub enum FeatureOperation {
     },
     /// Mesh geometry imported into the parametric timeline.
     MeshImport {
-        /// Tessellation identities supplied by the mesh-body records.
+        #[doc = "Resolved tessellations or a retained mesh source."]
         #[serde(deserialize_with = "deserialize_local_tessellations")]
-        tessellations: SelectionMembers<String>,
+        tessellations: mesh::MeshSelection,
     },
     /// Independent bodies introduced by a copy-and-paste operation. The copies
     /// are the feature's outputs, so the selection carries only its native

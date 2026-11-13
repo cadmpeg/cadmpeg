@@ -1,6 +1,34 @@
 use super::*;
 
 #[test]
+fn named_collection_owner_rejects_ambiguous_entries() {
+    let graph = synthetic_mesh_graph(false);
+    let design_type = graph
+        .meta
+        .types
+        .iter()
+        .find(|ty| {
+            ty.type_guid
+                .as_str()
+                .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
+        })
+        .unwrap();
+    let mut bytes = identity_record(268, 110);
+    bytes.extend_from_slice(&[0; 10]);
+    for target in [100, 101] {
+        lp_utf16(&mut bytes, "netfabb.mesh_body");
+        push_reference(&mut bytes, target);
+    }
+    let frame = TypedPrimaryFrame {
+        entity_id: 110,
+        start: 0,
+        end: bytes.len(),
+        design_type,
+    };
+    assert!(parse_mesh_collection_owner_record(&bytes, frame).is_err());
+}
+
+#[test]
 fn mesh_graph_accepts_alternate_body_owner_registration() {
     let mut graph = synthetic_mesh_graph(false);
     let owner = graph
@@ -33,7 +61,7 @@ fn mesh_graph_accepts_alternate_body_owner_registration() {
 
 #[test]
 fn named_collection_owner_keeps_its_frame() {
-    for version in [19, 20] {
+    for version in [15, 17, 19, 20, 21, 22, 23] {
         let mut graph = synthetic_mesh_graph(false);
         graph
             .meta

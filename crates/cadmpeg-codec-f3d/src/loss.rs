@@ -192,6 +192,9 @@ pub(crate) enum F3dLossCode {
     EdgeReferenceLostUnrepaired,
     /// Feature scopes have no complete neutral feature definition.
     FeatureDefinitionIncomplete,
+    FeatureMeshImportTessellationsUnresolved,
+    FeatureMeshImportEmptySourceAssumed,
+    FeatureMeshImportSourceUnparsed,
     /// A historical Thread selection has no complete proof of its live faces.
     ThreadLiveFaceUnproven,
     /// A stored-body operation has an empty proven body set.
@@ -794,6 +797,9 @@ impl F3dLossCode {
         Self::DecalNativeRetained,
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
+        Self::FeatureMeshImportTessellationsUnresolved,
+        Self::FeatureMeshImportEmptySourceAssumed,
+        Self::FeatureMeshImportSourceUnparsed,
         Self::ThreadLiveFaceUnproven,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
@@ -1204,6 +1210,11 @@ impl F3dLossCode {
             }
             Self::FeatureBoxPrimitiveUnresolved => "feature.box-primitive-unresolved",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
+            Self::FeatureMeshImportTessellationsUnresolved => {
+                "feature.mesh-import-tessellations-unresolved"
+            }
+            Self::FeatureMeshImportEmptySourceAssumed => "feature.mesh-import-empty-source-assumed",
+            Self::FeatureMeshImportSourceUnparsed => "feature.mesh-import-source-unparsed",
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
@@ -1641,6 +1652,9 @@ impl F3dLossCode {
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
+            | Self::FeatureMeshImportTessellationsUnresolved
+            | Self::FeatureMeshImportEmptySourceAssumed
+            | Self::FeatureMeshImportSourceUnparsed
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
             | Self::HoleExtentFaceAssumed
@@ -1955,6 +1969,9 @@ impl F3dLossCode {
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
+            | Self::FeatureMeshImportTessellationsUnresolved
+            | Self::FeatureMeshImportEmptySourceAssumed
+            | Self::FeatureMeshImportSourceUnparsed
             | Self::ThreadLiveFaceUnproven
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound
@@ -2329,6 +2346,9 @@ mod tests {
                 "appearance.decal-native",
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
+                "feature.mesh-import-tessellations-unresolved",
+                "feature.mesh-import-empty-source-assumed",
+                "feature.mesh-import-source-unparsed",
                 "feature.thread-live-face-unproven",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
