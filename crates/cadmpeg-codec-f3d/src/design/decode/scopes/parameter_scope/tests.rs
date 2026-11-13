@@ -129,6 +129,23 @@ fn named_combine_admits_odd_tail_with_all_reference_lanes_present() {
 }
 
 #[test]
+fn unlabelled_combine_with_second_reference_keeps_the_unnamed_tail() {
+    let bytes = marked_named_combine("", &[], Some(900), None);
+    let scope = parse_marked_named_combine(&bytes).unwrap();
+    assert_eq!(scope.paired_byte_offset(), 258);
+    assert_eq!(scope.label, None);
+    assert_eq!(scope.combine_named_tail(), None);
+    assert_eq!(
+        scope
+            .reference_members()
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        [110, 111, 120, 121]
+    );
+}
+
+#[test]
 fn named_combine_rejects_incomplete_or_inconsistent_tail() {
     let bytes = marked_named_combine("NewBody", &[], Some(900), None);
     for (offset, value) in [

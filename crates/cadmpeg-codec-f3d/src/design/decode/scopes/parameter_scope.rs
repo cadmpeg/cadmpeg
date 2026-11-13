@@ -2046,7 +2046,7 @@ fn named_parameter_scope_references(
     let (label, mut cursor) = lp_utf16_bounded(
         bytes,
         kind_end.checked_add(named_tail::LABEL_LENGTH)?,
-        0..=256,
+        1..=256,
     )?;
     if label.chars().any(char::is_control)
         || bytes.get(
