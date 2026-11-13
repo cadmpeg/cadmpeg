@@ -2116,6 +2116,9 @@ this additional reference and its marker offset as `additional_tail_reference`.
 The plain-reference tail, from the feature ordinal through its final zero
 bytes, has the fixed fields in
 [the layout table](../layouts/f3d.md#assembly_version_three_extended_tail).
+The typed-reference extended tail has four 51-byte references with inline
+type GUIDs. Its previous-history word follows the added reference. Its fixed
+fields are in [the typed layout table](../layouts/f3d.md#assembly_version_three_typed_extended_tail).
 
 Version 5 uses the same type GUID and field order with these extensions.
 Its joint reference selects type version 6.

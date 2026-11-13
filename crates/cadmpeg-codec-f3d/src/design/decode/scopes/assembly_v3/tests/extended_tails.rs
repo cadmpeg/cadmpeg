@@ -135,9 +135,9 @@ fn extended_tails_preserve_reference_offsets_and_independent_alignment_lanes() {
 #[test]
 fn extended_tails_keep_counted_owners_and_project_unresolved_operands() {
     for count in [0, 2] {
-        for qualified in [false, true] {
+        for (typed, qualified) in [(false, false), (false, true), (true, false)] {
             let (mut bytes, mut scope, owners, mut types) =
-                extended_fixture(false, true, false, 0, count);
+                extended_fixture(typed, true, false, 0, count);
             types.insert(29, (JOINT_TYPE_GUID, 5));
             if qualified {
                 append_locator_paths(&mut bytes, &mut types, Some((false, 2)));
@@ -161,11 +161,67 @@ fn extended_tails_keep_counted_owners_and_project_unresolved_operands() {
                 &[],
             );
             assert_eq!(projected.joints.len(), 1);
+            assert_eq!(
+                projected.losses.iter().any(|loss| loss.code
+                    == crate::loss::F3dLossCode::AssemblyExtendedTypedTailAssumed.kind()),
+                typed
+            );
             assert!(projected
                 .losses
                 .iter()
                 .any(|loss| loss.code
                     == crate::loss::F3dLossCode::AssemblyExtendedTailAssumed.kind()));
+        }
+    }
+}
+
+#[test]
+fn typed_extended_tails_admit_scope_metadata_and_shift_previous_history() {
+    for extended in [false, true] {
+        let (bytes, scope, _, _) = if extended {
+            extended_fixture(true, false, false, 4, 0)
+        } else {
+            fixture(true, false, false, 4)
+        };
+        let parsed = super::super::super::parameter_scope::parse_parameter_scope_with_type_guid(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            30,
+            &scope.class_tag,
+            0,
+            Some(TYPE_GUID),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(parsed.frame_length(), scope.frame_length());
+        assert_eq!(
+            parsed.previous_history_state_id_offset(),
+            Some(scope.feature_ordinal_offset() + if extended { 121 } else { 70 })
+        );
+        let mut wire = serde_json::to_value(&parsed).unwrap();
+        let round_trip: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            round_trip.previous_history_state_id_offset(),
+            parsed.previous_history_state_id_offset()
+        );
+        wire["previous_history_state_id_offset"] =
+            serde_json::json!(scope.feature_ordinal_offset() + 122);
+        assert!(serde_json::from_value::<DesignParameterScope>(wire).is_err());
+        if extended {
+            let mut damaged = bytes.clone();
+            damaged[usize::try_from(scope.feature_ordinal_offset()).unwrap() + 70] = 0;
+            assert!(
+                super::super::super::parameter_scope::parse_parameter_scope_with_type_guid(
+                    &damaged,
+                    &IndexedRecordOffsets::build(&damaged),
+                    30,
+                    &scope.class_tag,
+                    0,
+                    Some(TYPE_GUID),
+                )
+                .unwrap()
+                .is_none()
+            );
         }
     }
 }

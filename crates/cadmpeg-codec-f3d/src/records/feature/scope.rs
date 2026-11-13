@@ -2609,7 +2609,10 @@ impl DesignParameterScope {
         let tail_valid = if typed_canvas {
             true
         } else if typed {
-            tail == crate::layout::typed_reference_parameter_scope_tail::LEN
+            crate::design::decode::scopes::parameter_scope::typed_scope_previous_history_offset(
+                kind, tail,
+            )
+            .is_some()
         } else {
             crate::design::decode::scopes::parameter_scope::parameter_scope_tail_length_is_valid(
                 kind, tail,
@@ -2624,7 +2627,7 @@ impl DesignParameterScope {
                 let relatives = if typed_canvas {
                     Vec::new()
                 } else if typed {
-                    vec![crate::layout::typed_reference_parameter_scope_tail::PREVIOUS_HISTORY_STATE_ID]
+                    crate::design::decode::scopes::parameter_scope::typed_scope_previous_history_offset(kind, tail).into_iter().collect()
                 } else {
                     [false, true]
                         .into_iter()

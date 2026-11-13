@@ -892,6 +892,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     let mut assumed_connector_operands = 0_usize;
     let mut assumed_additional_owner_motion = 0_usize;
     let mut assumed_extended_tails = 0_usize;
+    let mut assumed_extended_typed_tails = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -899,8 +900,14 @@ pub(crate) fn project_assembly_joints_with_paths(
         let motion = scope_joint_motion(scope, stream, motions);
         match project_assembly_joint(scope, stream, &occurrences, scopes, inserts, motion, paths) {
             Ok(Some((mut joint, undecoded))) => {
-                if scope.assembly_alignment().is_some_and(|alignment| alignment.additional_tail_reference.is_some()) {
+                if let Some(reference) = scope
+                    .assembly_alignment()
+                    .and_then(|alignment| alignment.additional_tail_reference.as_ref())
+                {
                     assumed_extended_tails += 1;
+                    if reference.offset.checked_sub(scope.feature_ordinal_offset()) == Some(70) {
+                        assumed_extended_typed_tails += 1;
+                    }
                 }
                 if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble
                     && scope.assembly_alignment().is_some_and(|alignment| {
@@ -980,6 +987,11 @@ pub(crate) fn project_assembly_joints_with_paths(
         }
     }
     let mut losses = Vec::new();
+    if assumed_extended_typed_tails != 0 {
+        losses.push(F3dLossCode::AssemblyExtendedTypedTailAssumed.note(format!(
+            "{assumed_extended_typed_tails} Design assembly relation(s) assume the extra tail reference uses the common 51-byte typed spelling with the same role as its plain spelling; its target and location remain native."
+        )));
+    }
     if assumed_extended_tails != 0 {
         losses.push(F3dLossCode::AssemblyExtendedTailAssumed.note(format!(
             "{assumed_extended_tails} Design assembly relation(s) assume their extended version-three tail reference adds no neutral constraint beyond the decoded joint motion with a fixed fallback. The additional tail reference and source parameter expressions remain retained."

@@ -169,6 +169,7 @@ pub(crate) enum F3dLossCode {
     AssemblyMotionBindingAssumed,
     AssemblyAdditionalOwnerMotionAssumed,
     AssemblyExtendedTailAssumed,
+    AssemblyExtendedTypedTailAssumed,
     /// A joint operand path continues inside an unmerged inserted document; the
     /// remaining keys stay a nested occurrence path.
     AssemblyOperandNestedPathRetained,
@@ -802,6 +803,7 @@ impl F3dLossCode {
         Self::AssemblyMotionBindingAssumed,
         Self::AssemblyAdditionalOwnerMotionAssumed,
         Self::AssemblyExtendedTailAssumed,
+        Self::AssemblyExtendedTypedTailAssumed,
         Self::AssemblyOperandNestedPathRetained,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
@@ -1188,6 +1190,7 @@ impl F3dLossCode {
                 "assembly.additional-owner-motion-assumed"
             }
             Self::AssemblyExtendedTailAssumed => "assembly.extended-tail-assumed",
+            Self::AssemblyExtendedTypedTailAssumed => "assembly.extended-typed-tail-assumed",
             Self::AssemblyOperandNestedPathRetained => "assembly.operand-nested-path-retained",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
@@ -1671,6 +1674,7 @@ impl F3dLossCode {
             | Self::AssemblyMotionBindingAssumed
             | Self::AssemblyAdditionalOwnerMotionAssumed
             | Self::AssemblyExtendedTailAssumed
+            | Self::AssemblyExtendedTypedTailAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
@@ -2204,6 +2208,7 @@ impl F3dLossCode {
             | Self::AssemblyMotionBindingAssumed
             | Self::AssemblyAdditionalOwnerMotionAssumed
             | Self::AssemblyExtendedTailAssumed
+            | Self::AssemblyExtendedTypedTailAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
