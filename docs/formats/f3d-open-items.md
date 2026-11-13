@@ -290,7 +290,7 @@ it can bind a shorter run. The decoder binds only a run whose cardinality
 equals the operand count. The records of any other run stay unrepaired lost
 edge references.
 
-### DR-466. CopyPaste source occurrence identity
+### DR-472. CopyPaste source occurrence identity
 
 **Question.** Which persistent identity selects the source occurrence of a CopyPaste scope whose occurrence key is the null GUID?
 
