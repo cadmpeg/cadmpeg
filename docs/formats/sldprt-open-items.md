@@ -429,6 +429,18 @@ Two omitted owner-qualified construction circles have separate current/extended 
 
 **Need.** We must know the selector values to terminate the extrusion at the correct edge endpoint.
 
+### DI-16. Extrusion travel sense relative to the profile frame
+
+**Question.** Which native fields set the signed extrusion travel relative to the profile frame?
+
+**Known.** The compact end-spec has Boolean words at anchor +8 and +12. Its direction-count word and termination codes define the extent form. A nested planar profile has a surface normal and a face sense.
+
+**Need.** Controlled opposite-travel definitions with the same owned profile, plane reference, end-spec form, and surviving end caps must establish each sense field and its composition with the profile frame.
+
+**Conflict.** The Boolean end-spec words and nested face senses each occur with both travel senses in final-cap witnesses.
+
+**Note.** Later features can consume an extrusion end cap. A missing final cap leaves the historical travel witness unresolved.
+
 ### DI-17. Second-direction codes without a defined second side
 
 **Question.** Does a nonzero second-direction code take effect when the direction count at anchor +4 is `1`? What second side does a second-direction code other than `0` or `1` define when anchor +4 is `0`, and what do first-direction codes `2` through `5` define with `0` at anchor +4?

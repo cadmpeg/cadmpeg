@@ -10043,6 +10043,149 @@ Spec §3.1 · layout: byte offsets · size: 44 B
 | 29 | 4 | `body_count` | `u32` | little | spec | A matrix Scale scope has nine zero bytes |
 | 33 | 11 | `first_body_group` | `bytes[11]` | little | spec | A matrix Scale scope has nine zero bytes |
 
+## `move_transform_typed_form_two_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 376 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The form-2 transform prefix also has an inline-typed reference spelling |
+| 11 | 20 | `header_zero` | `bytes[20]` | little | spec | The form-2 transform prefix also has an inline-typed reference spelling · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 31 | 51 | `first_reference` | `bytes[51]` | little | spec | The form-2 transform prefix also has an inline-typed reference spelling |
+| 82 | 51 | `second_reference` | `bytes[51]` | little | spec | The form-2 transform prefix also has an inline-typed reference spelling |
+| 133 | 51 | `third_reference` | `bytes[51]` | little | spec | The form-2 transform prefix also has an inline-typed reference spelling |
+| 184 | 4 | `zero_word` | `u32` | little | spec | The form-2 transform prefix also has an inline-typed reference spelling · value `0` |
+| 188 | 51 | `fourth_reference` | `bytes[51]` | little | spec | The form-2 transform prefix also has an inline-typed reference spelling |
+| 239 | 4 | `tail_zero` | `bytes[4]` | little | spec | The form-2 transform prefix also has an inline-typed reference spelling · value `[0, 0, 0, 0]` |
+| 243 | 4 | `form` | `u32` | little | spec | The form-2 transform prefix also has an inline-typed reference spelling · value `2` |
+| 247 | 1 | `reserved_zero` | `u8` | little | spec | The form-2 transform prefix also has an inline-typed reference spelling · value `0` |
+| 248 | 128 | `transform` | `f64[16]` | little | spec | The form-2 transform prefix also has an inline-typed reference spelling |
+
+## `move_typed_transform_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 127 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A `Move` prologue with inline-typed references |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | A `Move` prologue with inline-typed references · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 51 | `transform_reference` | `bytes[51]` | little | spec | A `Move` prologue with inline-typed references |
+| 72 | 4 | `reference_flag` | `u32` | little | spec | A `Move` prologue with inline-typed references · value `1` |
+| 76 | 51 | `first_reference` | `bytes[51]` | little | spec | A `Move` prologue with inline-typed references |
+
+## `move_marker_one_transform_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 51 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A marker-one `Move` prologue stores nine zero bytes |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | A marker-one `Move` prologue stores nine zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `marker` | `u8` | little | spec | A marker-one `Move` prologue stores nine zero bytes · value `1` |
+| 21 | 4 | `zero_word` | `u32` | little | spec | A marker-one `Move` prologue stores nine zero bytes · value `0` |
+| 25 | 11 | `transform_reference` | `bytes[11]` | little | spec | A marker-one `Move` prologue stores nine zero bytes |
+| 36 | 4 | `reference_flag` | `u32` | little | spec | A marker-one `Move` prologue stores nine zero bytes · value `1` |
+| 40 | 11 | `first_reference` | `bytes[11]` | little | spec | A marker-one `Move` prologue stores nine zero bytes |
+
+## `move_transform_null_reference_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 176 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | With four null slots, the two codes are at offsets 34 and 39 |
+| 11 | 20 | `header_zero` | `bytes[20]` | little | spec | With four null slots, the two codes are at offsets 34 and 39 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 31 | 1 | `first_reference` | `u8` | little | spec | With four null slots, the two codes are at offsets 34 and 39 · value `0` |
+| 32 | 1 | `second_reference` | `u8` | little | spec | With four null slots, the two codes are at offsets 34 and 39 · value `0` |
+| 33 | 1 | `third_reference` | `u8` | little | spec | With four null slots, the two codes are at offsets 34 and 39 · value `0` |
+| 34 | 4 | `first_code` | `u32` | little | spec | With four null slots, the two codes are at offsets 34 and 39 |
+| 38 | 1 | `fourth_reference` | `u8` | little | spec | With four null slots, the two codes are at offsets 34 and 39 · value `0` |
+| 39 | 4 | `second_code` | `u32` | little | spec | With four null slots, the two codes are at offsets 34 and 39 |
+| 43 | 4 | `form` | `u32` | little | spec | With four null slots, the two codes are at offsets 34 and 39 |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | With four null slots, the two codes are at offsets 34 and 39 · value `0` |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | With four null slots, the two codes are at offsets 34 and 39 |
+
+## `move_transform_first_reference_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 186 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A prefix with one plain reference in the first slot |
+| 11 | 20 | `header_zero` | `bytes[20]` | little | spec | A prefix with one plain reference in the first slot · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 31 | 11 | `first_reference` | `bytes[11]` | little | spec | A prefix with one plain reference in the first slot |
+| 42 | 1 | `second_reference` | `u8` | little | spec | A prefix with one plain reference in the first slot · value `0` |
+| 43 | 1 | `third_reference` | `u8` | little | spec | A prefix with one plain reference in the first slot · value `0` |
+| 44 | 4 | `first_code` | `u32` | little | spec | A prefix with one plain reference in the first slot |
+| 48 | 1 | `fourth_reference` | `u8` | little | spec | A prefix with one plain reference in the first slot · value `0` |
+| 49 | 4 | `second_code` | `u32` | little | spec | A prefix with one plain reference in the first slot |
+| 53 | 4 | `form` | `u32` | little | spec | A prefix with one plain reference in the first slot |
+| 57 | 1 | `reserved_zero` | `u8` | little | spec | A prefix with one plain reference in the first slot · value `0` |
+| 58 | 128 | `transform` | `f64[16]` | little | spec | A prefix with one plain reference in the first slot |
+
+## `move_transform_omitted_matrix_frame_126`
+
+Spec §3.1 · layout: byte offsets · size: 126 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | With four null reference slots, form five, and an omitted matrix |
+| 11 | 20 | `header_zero` | `bytes[20]` | little | spec | With four null reference slots, form five, and an omitted matrix · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 31 | 1 | `first_reference` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 32 | 1 | `second_reference` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 33 | 1 | `third_reference` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 34 | 4 | `first_code` | `u32` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 38 | 1 | `fourth_reference` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 39 | 4 | `second_code` | `u32` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 43 | 4 | `form` | `u32` | little | spec | With four null reference slots, form five, and an omitted matrix · value `5` |
+| 47 | 1 | `matrix_omitted` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `1` |
+
+Unstated regions:
+
+- `48..126` (78 B): The common native tail precedes the same-index paired header.
+
+## `move_transform_omitted_matrix_frame_125`
+
+Spec §3.1 · layout: byte offsets · size: 125 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | With four null reference slots, form five, and an omitted matrix |
+| 11 | 20 | `header_zero` | `bytes[20]` | little | spec | With four null reference slots, form five, and an omitted matrix · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 31 | 1 | `first_reference` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 32 | 1 | `second_reference` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 33 | 1 | `third_reference` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 34 | 4 | `first_code` | `u32` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 38 | 1 | `fourth_reference` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 39 | 4 | `second_code` | `u32` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 43 | 4 | `form` | `u32` | little | spec | With four null reference slots, form five, and an omitted matrix · value `5` |
+| 47 | 1 | `matrix_omitted` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `1` |
+
+Unstated regions:
+
+- `48..125` (77 B): The common native tail precedes the same-index paired header.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
