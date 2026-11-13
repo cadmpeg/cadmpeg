@@ -239,6 +239,10 @@ fn frame_outside_the_grammar_stays_unread() {
             ..ThickenFrame::group_first()
         },
         ThickenFrame {
+            flags: [2, 0],
+            ..ThickenFrame::group_first()
+        },
+        ThickenFrame {
             table: &[200, 74, 201],
             ..ThickenFrame::group_first()
         },

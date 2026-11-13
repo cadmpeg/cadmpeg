@@ -109,10 +109,12 @@ fn thicken_projects_native_group() {
 #[test]
 fn a_symmetric_thicken_adds_the_stored_thickness_on_each_side() {
     let group = group(DesignOperandRole::ROLE_0X5);
-    let project = |symmetric: bool| {
+    let project = |symmetric: bool, signed_thickness: f64| {
         let mut scope = scope(DesignFeatureKind::Thicken);
         if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
             operation.symmetric = symmetric;
+            operation.signed_thickness =
+                cadmpeg_ir::scalar::FiniteReal::new(signed_thickness).unwrap();
         }
         let FeatureOperation::Thicken {
             thickness, side, ..
@@ -127,12 +129,20 @@ fn a_symmetric_thicken_adds_the_stored_thickness_on_each_side() {
         (thickness.map(cadmpeg_ir::scalar::PositiveLength::get), side)
     };
     assert_eq!(
-        project(true),
+        project(true, 0.5),
         (Some(10.0), Some(cadmpeg_ir::features::ThickenSide::Both))
     );
     assert_eq!(
-        project(false),
+        project(true, -0.5),
+        (Some(10.0), Some(cadmpeg_ir::features::ThickenSide::Both))
+    );
+    assert_eq!(
+        project(false, 0.5),
         (Some(5.0), Some(cadmpeg_ir::features::ThickenSide::Forward))
+    );
+    assert_eq!(
+        project(false, -0.5),
+        (Some(5.0), Some(cadmpeg_ir::features::ThickenSide::Reverse))
     );
 
     let mut scope = scope(DesignFeatureKind::Thicken);
