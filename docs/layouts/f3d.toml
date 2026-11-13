@@ -34502,3 +34502,23 @@ value = 1
 offset = 48
 size = 77
 note = "The common native tail precedes the same-index paired header."
+
+[[record]]
+name = "surface_delete_face_wide_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "wide surface-delete prologue"
+size = 132
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/feature_project/delete_face.rs"
+
+[[record.gap]]
+offset = 0
+size = 128
+note = "Indexed scope header and operation prologue; control semantics are tracked in DR-476."
+
+[[record.field]]
+name = "reference_count"
+offset = 128
+type = "u32"
+source = "spec"
+anchor = "which is 123, 127, 128, 131, 134, 138, or 142"

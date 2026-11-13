@@ -9932,3 +9932,11 @@ pub(crate) mod move_transform_omitted_matrix_frame_125 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 125;
 }
+
+/// Byte offsets for the `surface_delete_face_wide_prologue` record.
+///
+/// Spec §3.1. Record length 132 B.
+pub(crate) mod surface_delete_face_wide_prologue {
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 128;
+}

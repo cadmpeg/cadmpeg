@@ -426,6 +426,9 @@ pub(crate) enum F3dLossCode {
     FeaturePathSelectionNative,
     /// Feature face selections retain native candidates; no unique face.
     FeatureFaceSelectionNative,
+    DeleteFaceFrameControlsAssumed,
+    DeleteFaceGroupSelectionAssumed,
+    SurfaceDeleteFaceWidePrologueAssumed,
     /// Legacy face operands use a current active face after no historical slot proof.
     FeatureFaceSelectionActiveSubstituted,
     /// Offset Surface support groups with different ordinals are read as one
@@ -915,6 +918,9 @@ impl F3dLossCode {
         Self::FeatureProfileRegionHoleInferred,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
+        Self::DeleteFaceFrameControlsAssumed,
+        Self::DeleteFaceGroupSelectionAssumed,
+        Self::SurfaceDeleteFaceWidePrologueAssumed,
         Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureSurfaceOffsetGroupOrdinalsAssumed,
         Self::FeatureFormCageOrderAssumed,
@@ -1321,6 +1327,11 @@ impl F3dLossCode {
             Self::FeatureProfileRegionHoleInferred => "feature.profile-region-hole-inferred",
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
             Self::FeatureFaceSelectionNative => "feature.face-selection-native",
+            Self::DeleteFaceFrameControlsAssumed => "feature.delete-face-frame-controls-assumed",
+            Self::DeleteFaceGroupSelectionAssumed => "feature.delete-face-group-selection-assumed",
+            Self::SurfaceDeleteFaceWidePrologueAssumed => {
+                "feature.surface-delete-face-wide-prologue-assumed"
+            }
             Self::FeatureFaceSelectionActiveSubstituted => {
                 "feature.face-selection-active-substituted"
             }
@@ -1737,6 +1748,9 @@ impl F3dLossCode {
             | Self::FeatureProfileRegionHoleInferred
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
+            | Self::DeleteFaceFrameControlsAssumed
+            | Self::DeleteFaceGroupSelectionAssumed
+            | Self::SurfaceDeleteFaceWidePrologueAssumed
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
             | Self::FeatureFormCageOrderAssumed
@@ -2050,6 +2064,9 @@ impl F3dLossCode {
             | Self::FeatureProfileRegionHoleInferred
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
+            | Self::DeleteFaceFrameControlsAssumed
+            | Self::DeleteFaceGroupSelectionAssumed
+            | Self::SurfaceDeleteFaceWidePrologueAssumed
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
             | Self::FeatureFormCageOrderAssumed
@@ -2450,6 +2467,9 @@ mod tests {
                 "feature.profile-region-hole-inferred",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
+                "feature.delete-face-frame-controls-assumed",
+                "feature.delete-face-group-selection-assumed",
+                "feature.surface-delete-face-wide-prologue-assumed",
                 "feature.face-selection-active-substituted",
                 "feature.surface-offset-group-ordinals-assumed",
                 "feature.form-cage-order-assumed",
