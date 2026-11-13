@@ -278,6 +278,8 @@ pub(crate) enum StepLossCode {
     OccurrenceMetadataOmitted,
     /// PMI annotations were not written.
     PmiAnnotationNotWritten,
+    /// An all-around scope has fewer than two writable geometric components.
+    PmiAllAroundComponentsUnresolved,
     /// Source-object associations were not represented.
     SourceAssociationOmitted,
     /// Uninterpreted passthrough records were not represented.
@@ -520,6 +522,7 @@ impl StepLossCode {
         Self::OccurrenceNoWritableProduct,
         Self::OccurrenceMetadataOmitted,
         Self::PmiAnnotationNotWritten,
+        Self::PmiAllAroundComponentsUnresolved,
         Self::SourceAssociationOmitted,
         Self::PassthroughRecordOmitted,
         Self::DisplayColorUnstyled,
@@ -719,6 +722,7 @@ impl StepLossCode {
             Self::OccurrenceNoWritableProduct => "occurrence.no-writable-product",
             Self::OccurrenceMetadataOmitted => "occurrence.metadata-omitted",
             Self::PmiAnnotationNotWritten => "pmi.annotation-not-written",
+            Self::PmiAllAroundComponentsUnresolved => "pmi.all-around-components-unresolved",
             Self::SourceAssociationOmitted => "source.association-omitted",
             Self::PassthroughRecordOmitted => "native.passthrough-record-omitted",
             Self::DisplayColorUnstyled => "appearance.display-color-unstyled",
@@ -1004,6 +1008,7 @@ impl StepLossCode {
             }
             Self::SemanticAnnotationOmitted
             | Self::PmiAnnotationNotWritten
+            | Self::PmiAllAroundComponentsUnresolved
             | Self::PmiDatumSystemInvalid
             | Self::PmiZoneUnresolved
             | Self::PmiDimensionModifierUnresolved
@@ -1174,6 +1179,7 @@ mod tests {
                 "occurrence.no-writable-product",
                 "occurrence.metadata-omitted",
                 "pmi.annotation-not-written",
+                "pmi.all-around-components-unresolved",
                 "source.association-omitted",
                 "native.passthrough-record-omitted",
                 "appearance.display-color-unstyled",
