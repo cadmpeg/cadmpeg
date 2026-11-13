@@ -11,6 +11,7 @@ mod coil;
 mod direct_face;
 mod dispatcher;
 mod draft_pull;
+mod emboss;
 mod extrude;
 mod extrude_fallbacks;
 mod extrude_work_planes;

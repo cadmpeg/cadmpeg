@@ -951,6 +951,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     &mut projection_losses,
                 )?
                 .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                Some(DesignFeatureFamily::Emboss) => project_emboss(
+                    scope,
+                    &parameters,
+                    construction_groups,
+                    face_operands,
+                    &mut projection_losses,
+                )?,
                 Some(DesignFeatureFamily::Split) => project_split(
                     scope,
                     scopes,
@@ -1552,6 +1559,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     &definition,
                     FeatureDefinition::Operation(FeatureOperation::Native { .. })
                 ) || matches!(family, Some(DesignFeatureFamily::Hole))
+                    || matches!(family, Some(DesignFeatureFamily::Emboss))
                 {
                     scope_properties(scope, native_scope, placements, &parameters)?
                 } else {
@@ -2440,7 +2448,11 @@ fn scope_properties(
             properties.insert(cadmpeg_core::nonblank_literal!("profile"), id.into_string());
         }
     }
-    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Hole {
+    if matches!(
+        scope.kind(),
+        crate::records::feature::scope::DesignFeatureKind::Hole
+            | crate::records::feature::scope::DesignFeatureKind::Emboss
+    ) {
         for (_, parameter) in parameters {
             let key =
                 cadmpeg_core::text::NonBlankString::new(format!("parameter:{}", parameter.name()))
@@ -2456,6 +2468,96 @@ fn scope_properties(
             };
             properties.insert(key, parameter.expression().to_owned());
         }
+    }
+    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Emboss {
+        if let Some(construction) = scope.emboss_construction() {
+            use crate::records::feature::emboss::DesignEmbossControlWords;
+            let controls: &[u32] = match &construction.control_words {
+                DesignEmbossControlWords::One(words) => words,
+                DesignEmbossControlWords::Two(words) => words,
+            };
+            for (ordinal, word) in controls.iter().enumerate() {
+                properties.insert(
+                    cadmpeg_core::text::NonBlankString::new(format!("emboss:control:{ordinal}"))
+                        .ok_or_else(|| CodecError::malformed("Emboss control key is blank"))?,
+                    word.to_string(),
+                );
+            }
+            for (ordinal, pair) in construction
+                .native_pair
+                .iter()
+                .chain(construction.additional_native_pairs.iter().flatten())
+                .enumerate()
+            {
+                for (lane, word) in pair.iter().enumerate() {
+                    properties.insert(
+                        cadmpeg_core::text::NonBlankString::new(format!(
+                            "emboss:native_pair:{ordinal}:{lane}"
+                        ))
+                        .ok_or_else(|| CodecError::malformed("Emboss pair key is blank"))?,
+                        word.to_string(),
+                    );
+                }
+            }
+            for (reference, role) in [
+                (construction.profile_group, "profile"),
+                (construction.face_group, "face"),
+                (construction.auxiliary_group, "auxiliary"),
+            ] {
+                properties.insert(
+                    cadmpeg_core::text::NonBlankString::new(format!("emboss:group:{role}"))
+                        .ok_or_else(|| CodecError::malformed("Emboss group key is blank"))?,
+                    reference.value.to_string(),
+                );
+            }
+            for (reference, role) in construction.scalar_owners() {
+                properties.insert(
+                    cadmpeg_core::text::NonBlankString::new(format!("emboss:owner:{role}"))
+                        .ok_or_else(|| CodecError::malformed("Emboss owner key is blank"))?,
+                    reference.value.to_string(),
+                );
+            }
+        }
+        for (role, unit, value) in [
+            (
+                "Depth",
+                "mm",
+                emboss_parameter(parameters, "Depth")
+                    .and_then(design_length)
+                    .map(|v| v.get()),
+            ),
+            (
+                "Horizontal Distance",
+                "mm",
+                emboss_parameter(parameters, "Horizontal Distance")
+                    .and_then(design_length)
+                    .map(|v| v.get()),
+            ),
+            (
+                "Vertical Distance",
+                "mm",
+                emboss_parameter(parameters, "Vertical Distance")
+                    .and_then(design_length)
+                    .map(|v| v.get()),
+            ),
+            (
+                "Rotation Angle",
+                "rad",
+                emboss_parameter(parameters, "Rotation Angle")
+                    .and_then(design_angle)
+                    .map(|v| v.get()),
+            ),
+        ] {
+            if let Some(value) = value {
+                properties.insert(
+                    cadmpeg_core::text::NonBlankString::new(format!("emboss:scalar:{role}:{unit}"))
+                        .ok_or_else(|| CodecError::malformed("Emboss scalar key is blank"))?,
+                    value.to_string(),
+                );
+            }
+        }
+    }
+    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Hole {
         if let Some(extent) = scope.hole_extent() {
             if let Some(hole_type) = &extent.hole_type {
                 properties.insert(
@@ -7917,6 +8019,98 @@ fn hole_placements(
             })
         })
         .collect()
+}
+
+fn emboss_parameter<'b>(
+    parameters: &[(u32, &'b DesignParameter)],
+    source_kind: &str,
+) -> Option<&'b DesignParameter> {
+    let mut matches = parameters
+        .iter()
+        .filter(|(_, parameter)| parameter.source_kind_str() == source_kind)
+        .map(|(_, parameter)| *parameter);
+    let parameter = matches.next()?;
+    matches.next().is_none().then_some(parameter)
+}
+
+fn project_emboss(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+    groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
+    use cadmpeg_ir::features::{
+        FaceSelection, FeatureDefinition, FeatureOperation, PlanarProfileRef, WrapMode,
+    };
+
+    let source_scope = scope.id.as_str();
+    let construction = scope.emboss_construction();
+    let profile_source = construction
+        .and_then(|value| {
+            let mut matching = groups.iter().filter(|group| {
+                native_stream(&group.id) == native_stream(&scope.id)
+                    && group.scope_record_index == scope.record_index
+                    && group.record_index == value.profile_group.value
+            });
+            let group = matching.next()?;
+            matching.next().is_none().then(|| group.id.clone())
+        })
+        .unwrap_or_else(|| source_scope.to_owned());
+    let profile = PlanarProfileRef::Native(profile_source);
+    let target = resolved_direct_face_selection(scope, face_operands)?
+        .unwrap_or_else(|| FaceSelection::Native(source_scope.to_owned()));
+    losses.push(crate::loss::F3dLossCode::EmbossProfileSelectionNative.note(format!(
+        "Emboss scope {} retains its native sketch-profile reference because the selected contour mapping is unresolved.",
+        scope.id
+    )));
+    if matches!(target, FaceSelection::Native(_)) {
+        losses.push(crate::loss::F3dLossCode::EmbossTargetSelectionNative.note(format!(
+            "Emboss scope {} retains its target-face reference because the selected target mapping is unresolved.",
+            scope.id
+        )));
+    }
+    let depth = emboss_parameter(parameters, "Depth").and_then(design_length);
+    let mode = depth
+        .and_then(|signed| {
+            cadmpeg_ir::scalar::PositiveLength::new(signed.get().abs()).map(|magnitude| {
+                if signed.get() > 0.0 {
+                    WrapMode::Emboss { depth: magnitude }
+                } else {
+                    WrapMode::Deboss { depth: magnitude }
+                }
+            })
+        })
+        .unwrap_or(WrapMode::Unresolved { depth });
+    if matches!(mode, WrapMode::Emboss { .. } | WrapMode::Deboss { .. }) {
+        losses.push(crate::loss::F3dLossCode::EmbossDepthSignAssumed.note(format!(
+            "Emboss scope {} interprets the signed Depth parameter as the native tool depth: positive adds material and negative removes material (DR-121).",
+            scope.id
+        )));
+    } else {
+        losses.push(
+            crate::loss::F3dLossCode::EmbossDepthUnresolved.note(format!(
+            "Emboss scope {} has no unique nonzero valid Depth value, so its effect remains unresolved.",
+            scope.id
+        )),
+        );
+    }
+    if parameters.iter().any(|(_, parameter)| {
+        matches!(
+            parameter.source_kind_str(),
+            "Horizontal Distance" | "Vertical Distance" | "Rotation Angle"
+        )
+    }) {
+        losses.push(crate::loss::F3dLossCode::EmbossPlacementNative.note(format!(
+            "Emboss scope {} retains horizontal, vertical, and rotation values and expressions as native placement properties.",
+            scope.id
+        )));
+    }
+    Ok(FeatureDefinition::Operation(FeatureOperation::Wrap {
+        profile,
+        face: target,
+        mode,
+    }))
 }
 
 fn project_hole(

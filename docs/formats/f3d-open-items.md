@@ -1021,15 +1021,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-121. Emboss controls and extended selections
 
-**Question.** What do the Emboss control words and native pairs mean, and which values select material effect, direction, placement, and contour membership?
+**Question.** What do the Emboss control words and native pairs select for profile direction, tangent chaining, auxiliary selections, and contour membership? How do the placement values map to the neutral Wrap operation?
 
-**Known.** The prefix has one or two control words, a counted run of native pairs, four scalar-owner links, two selection-group links, an auxiliary-group link, and the common ordered reference table. The table indices are in increasing order; prefix references bind by record identity. A sketch entity link identifies a Sketch but does not identify its selected contours.
+**Known.** The prefix has one or two control words, a counted run of native pairs, four scalar-owner links, two selection-group links, an auxiliary-group link, and the common ordered reference table. The table indices are in increasing order; prefix references bind by record identity. A sketch entity link identifies a Sketch but does not identify its selected contours. A positive Depth produces an emboss effect and a negative Depth produces a deboss effect.
 
-**Need.** Independent files that change one effect, direction, placement, or contour selection at a time; complete operand frames for the extended reference table.
+**Need.** Controlled exports that change profile direction, tangent chaining, auxiliary selection, contour membership, and each placement value independently; complete operand frames for the extended reference table.
 
 **Conflict.** None.
 
-**Note.** Keep controls and extended selections native. A neutral Wrap requires a proven effect, selected profile, target face, and placement. The existing Wrap operation has no independent horizontal, vertical, or rotation controls.
+**Note.** Project a neutral Wrap from each independently decoded scope. Map a unique nonzero signed Depth to Emboss or Deboss by sign, with a named assumption loss while the control fields remain unassigned. Keep zero, missing, duplicate, and invalid Depth values in an unresolved material mode. Retain unresolved profile and target links in native selections. Retain horizontal, vertical, and rotation parameters as native source properties and neutral parameters while their Wrap placement mapping remains unresolved.
 
 ### DR-120. Align operand roles and motion
 
