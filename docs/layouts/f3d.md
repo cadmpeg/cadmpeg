@@ -575,14 +575,14 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A chamfer set is one indexed record |
 | 11 | 10 | `zero_run_10_at_11` | `bytes[10]` | little | spec | Every byte that the form does not name is zero |
-| 21 | 1 | `flag` | `u8` | little | spec | `+21: u8 flag` |
+| 21 | 1 | `tangent_chain` | `u8` | little | spec | `+21: u8 tangent chain` |
 | 22 | 2 | `zero_run_2_at_22` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
 | 24 | 11 | `distance_owner_reference` | `bytes[11]` | little | spec | `+24: distance owner reference` |
 | 35 | 1 | `zero_run_1_at_35` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
 | 36 | 4 | `spec_kind` | `u32` | little | spec | `+36: u32 spec kind 1` · value `1` |
 | 40 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+40: edge-group reference` |
 | 51 | 2 | `zero_run_2_at_51` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
-| 53 | 4 | `fixed_word` | `u32` | little | spec | `+53: u32 1` · value `1` |
+| 53 | 4 | `set_number` | `u32` | little | spec | `+53: u32 set number` |
 | 57 | 1 | `fixed_byte` | `u8` | little | spec | `+57: u8 1` · value `1` |
 | 58 | 2 | `zero_run_2_at_58` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
 | 60 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | `+60: auxiliary reference` |
@@ -609,7 +609,7 @@ Parsed by:
 | 46 | 4 | `spec_kind` | `u32` | little | spec | `+46: u32 spec kind 2` · value `2` |
 | 50 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+50: edge-group reference` |
 | 61 | 2 | `zero_run_2_at_61` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
-| 63 | 4 | `fixed_word` | `u32` | little | spec | `+63: u32 1` · value `1` |
+| 63 | 4 | `set_number` | `u32` | little | spec | `+63: u32 set number` |
 | 67 | 1 | `fixed_byte` | `u8` | little | spec | `+67: u8 1` · value `1` |
 | 68 | 2 | `zero_run_2_at_68` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
 | 70 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | `+70: auxiliary reference` |
@@ -637,7 +637,7 @@ Parsed by:
 | 46 | 4 | `spec_kind` | `u32` | little | spec | `+46: u32 spec kind 3` · value `3` |
 | 50 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+50: edge-group reference` |
 | 61 | 2 | `zero_run_2_at_61` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
-| 63 | 4 | `fixed_word` | `u32` | little | spec | `+63: u32 1` · value `1` |
+| 63 | 4 | `set_number` | `u32` | little | spec | `+63: u32 set number` |
 | 67 | 1 | `fixed_byte` | `u8` | little | spec | `+67: u8 1` · value `1` |
 | 68 | 2 | `zero_run_2_at_68` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
 | 70 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | `+70: auxiliary reference` |
@@ -664,7 +664,7 @@ Parsed by:
 | 36 | 4 | `spec_kind` | `u32` | little | spec | `+36: u32 spec kind 1` · value `1` |
 | 40 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+40: edge-group reference` |
 | 51 | 2 | `zero_run_2_at_51` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
-| 53 | 4 | `fixed_word` | `u32` | little | spec | `+53: u32 1` · value `1` |
+| 53 | 4 | `set_number` | `u32` | little | spec | `+53: u32 set number` |
 | 57 | 2 | `zero_run_2_at_57` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
 | 59 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | `+59: auxiliary reference` |
 | 70 | 1 | `zero_run_1_at_70` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
@@ -699,8 +699,9 @@ Parsed by:
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A fillet set is one indexed record |
 | 11 | 12 | `zero_run_12_at_11` | `bytes[12]` | little | spec | Every byte that the form does not name is zero |
 | 23 | 1 | `form_marker` | `u8` | little | spec | `+23: u8 1` · value `1` |
-| 24 | 2 | `zero_run_2_at_24` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
-| 26 | 1 | `flag` | `u8` | little | spec | `+26: u8 flag` |
+| 24 | 1 | `zero_run_1_at_24` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
+| 25 | 1 | `curvature_continuity` | `u8` | little | spec | `+25: u8 curvature continuity` |
+| 26 | 1 | `tangent_chain` | `u8` | little | spec | `+26: u8 tangent chain` |
 | 27 | 2 | `zero_run_2_at_27` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
 | 29 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+29: edge-group reference` |
 | 40 | 23 | `zero_run_23_at_40` | `bytes[23]` | little | spec | Every byte that the form does not name is zero |
