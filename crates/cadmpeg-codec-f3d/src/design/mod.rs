@@ -133,6 +133,7 @@ pub(crate) fn design_feature_family(
         | Kind::Modify
         | Kind::DeleteFace
         | Kind::SurfaceDeleteFace
+        | Kind::SurfaceUntrim
         | Kind::RemoveBody
         | Kind::ReverseNormal
         | Kind::Face => None,

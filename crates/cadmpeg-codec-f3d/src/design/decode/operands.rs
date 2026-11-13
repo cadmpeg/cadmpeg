@@ -1915,6 +1915,7 @@ pub(crate) fn decode_construction_operand_groups(
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Modify
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal
             || (scope.kind() == crate::records::feature::scope::DesignFeatureKind::Emboss
                 && scope.emboss_operand_construction().is_some())

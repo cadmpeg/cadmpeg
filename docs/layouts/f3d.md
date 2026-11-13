@@ -10167,6 +10167,19 @@ Unstated regions:
 
 - `48..125` (77 B): The common native tail precedes the same-index paired header.
 
+## `surface_untrim_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/surfaces.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The SurfaceUntrim prologue |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | ten zero bytes at offsets 11 through 20 |
+| 21 | 4 | `loop_group_count` | `u32` | little | spec | the u32 loop-group count `K` at offset 21 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

@@ -5384,12 +5384,18 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         DesignOperandRole::BODIES_B | DesignOperandRole::ROLE_0X43
                     ) && group.extrude_role().is_none()
                 }
+                None if scope.kind()
+                    == crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim =>
+                {
+                    group.role() == DesignOperandRole::ROLE_0X9 && group.extrude_role().is_none()
+                }
                 None => false,
             };
             (design::design_feature_family(&scope.kind()).is_some()
                 || matches!(
                     scope.kind(),
                     crate::records::feature::scope::DesignFeatureKind::Emboss
+                        | crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim
                         | crate::records::feature::scope::DesignFeatureKind::RemoveBody
                         | crate::records::feature::scope::DesignFeatureKind::ReverseNormal
                         | crate::records::feature::scope::DesignFeatureKind::Modify

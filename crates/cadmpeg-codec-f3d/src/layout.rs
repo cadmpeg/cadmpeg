@@ -9860,3 +9860,15 @@ pub(crate) mod move_transform_omitted_matrix_frame_125 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 125;
 }
+
+/// Byte offsets for the `surface_untrim_prologue` record.
+///
+/// Spec §3.1. Record length 25 B.
+pub(crate) mod surface_untrim_prologue {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 25;
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `loop_group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LOOP_GROUP_COUNT: usize = 21;
+}

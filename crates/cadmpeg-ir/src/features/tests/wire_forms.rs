@@ -1837,3 +1837,37 @@ fn planar_target_sources_round_trip_and_refuse_invalid_values() {
         }
     }
 }
+
+#[test]
+fn untrim_surface_carries_its_loops_and_extension_on_the_wire() {
+    use crate::features::{
+        EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, UntrimLoops,
+    };
+
+    for (loops, kind) in [
+        (UntrimLoops::Unresolved, "unresolved"),
+        (UntrimLoops::All, "all"),
+        (UntrimLoops::Internal, "internal"),
+        (UntrimLoops::External, "external"),
+        (
+            UntrimLoops::Selected {
+                edges: EdgeSelection::Native("native:loop-group".into()),
+            },
+            "selected",
+        ),
+    ] {
+        let definition = FeatureDefinition::Operation(FeatureOperation::UntrimSurface {
+            faces: FaceSelection::Native("native:face-group".into()),
+            loops,
+            extension: crate::scalar::NonNegativeLength::new(3.0),
+        });
+        let wire = serde_json::to_value(&definition).unwrap();
+        assert_eq!(wire["definition"], "untrim_surface");
+        assert_eq!(wire["loops"]["kind"], kind);
+        assert_eq!(wire["extension"], 3.0);
+        assert_eq!(
+            serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+            definition
+        );
+    }
+}

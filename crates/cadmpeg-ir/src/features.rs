@@ -3619,6 +3619,16 @@ pub enum FeatureOperation {
         /// Geometric continuation law.
         method: SurfaceExtension,
     },
+    /// Removes trim loops from selected surface faces.
+    UntrimSurface {
+        /// Surface faces whose trim loops are removed.
+        faces: FaceSelection,
+        /// Trim loops removed from the selected faces.
+        loops: UntrimLoops,
+        /// Extension of the untrimmed boundary in canonical millimeters.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        extension: Option<NonNegativeLength>,
+    },
     /// Ruled surface grown from selected boundary edges.
     RuledSurface {
         /// Boundary edges from which the surface is generated.
@@ -5846,6 +5856,27 @@ pub enum SurfaceExtension {
     Linear,
     /// Extend boundary faces perpendicular to the source faces.
     Perpendicular,
+}
+
+/// Trim loops removed by a surface untrim.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum UntrimLoops {
+    /// Loop choice is unresolved.
+    Unresolved,
+    /// Every trim loop of each selected face.
+    All,
+    /// The interior trim loops of each selected face.
+    Internal,
+    /// The exterior trim loop of each selected face.
+    External,
+    /// The selected trim loops.
+    Selected {
+        /// Edges of the selected trim loops.
+        edges: EdgeSelection,
+    },
 }
 
 /// Direction law for a ruled-surface operation.

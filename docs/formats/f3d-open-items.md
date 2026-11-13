@@ -2355,3 +2355,23 @@ when the operation transition carries no candidate for the group members?
 **Need.** Public document bundles with independently identified source documents and repeated component instances that bind each source path identity to its document and occurrence context.
 
 **Note.** A standalone timeline feature names its decoded neutral joint while source operands remain unresolved. The decoder preserves their identities and charges `assembly.joint-source-binding-assumed`.
+
+### DR-482. SurfaceUntrim loop types and stored loop groups
+
+**Question.** Do loop types `1` and `2` select the interior and the exterior loops, and does a loop group stored with loop type `0`, `1`, or `2` change the removed loops?
+
+**Known.** `f3d.md` §3.1 "A `SurfaceUntrim` scope removes trim loops" defines the loop type and the loop groups. Loop type `3` occurs with one loop group. Loop type `0` occurs with and without a loop group.
+
+**Need.** Saves of one untrim that change the loop choice one value at a time, each with the resulting face boundary.
+
+**Note.** The decoder reads `1` as interior and `2` as exterior, applies loop types `0`, `1`, and `2` to every selected face, and records `feature.surface-untrim-loop-type-assumed`.
+
+### DR-483. SurfaceUntrim frames outside the stated prologue and incomplete groups
+
+**Question.** Which fields do further SurfaceUntrim frames carry, and which entities does a missing face or loop group select?
+
+**Known.** `f3d.md` §3.1 "A `SurfaceUntrim` scope removes trim loops" defines the admitted frame. Every scope retains its ordered references.
+
+**Need.** Controlled saves with further prologue forms and complete native definitions for the referenced groups.
+
+**Note.** The decoder keeps the neutral untrim. It records `feature.surface-untrim-frame-assumed` for a frame outside the stated prologue and leaves the loops and the extension unresolved. It records `feature.surface-untrim-group-selection-assumed` for a missing face group or loop group and retains the scope references as the native face selection.

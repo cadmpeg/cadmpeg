@@ -34270,3 +34270,32 @@ value = 1
 offset = 48
 size = 77
 note = "The common native tail precedes the same-index paired header."
+
+[[record]]
+name = "surface_untrim_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "The SurfaceUntrim prologue"
+size = 25
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/surfaces.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The SurfaceUntrim prologue"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes at offsets 11 through 20"
+
+[[record.field]]
+name = "loop_group_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "the u32 loop-group count `K` at offset 21"

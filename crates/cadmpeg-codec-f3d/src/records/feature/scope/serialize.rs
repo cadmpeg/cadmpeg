@@ -187,6 +187,7 @@ impl Serialize for DesignParameterScope {
         emit_opt!("path_pattern_settings", self.path_pattern_settings());
         emit_opt!("surface_stitch_operation", self.surface_stitch_operation());
         emit_opt!("surface_extend_operation", self.surface_extend_operation());
+        emit_opt!("surface_untrim_operation", self.surface_untrim_operation());
         emit_opt!("surface_offset_operation", self.surface_offset_operation());
         emit_opt!("ruled_surface_operation", self.ruled_surface_operation());
         if let Some(base_flange) = self.base_flange() {

@@ -440,6 +440,9 @@ pub(crate) enum F3dLossCode {
     FeatureBodySelectionNative,
     /// Reverse Normal body-group members lack the whole-body record type.
     FeatureReverseNormalBodyUnverified,
+    SurfaceUntrimFrameAssumed,
+    SurfaceUntrimGroupSelectionAssumed,
+    SurfaceUntrimLoopTypeAssumed,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
     /// A Combine frame that matches the fixed fields of the operand-list
@@ -917,6 +920,9 @@ impl F3dLossCode {
         Self::FeatureWorkAxisEndpointToleranceAssumed,
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
+        Self::SurfaceUntrimFrameAssumed,
+        Self::SurfaceUntrimGroupSelectionAssumed,
+        Self::SurfaceUntrimLoopTypeAssumed,
         Self::FeatureCombineSelectionNative,
         Self::FeatureCombinePrologueAssumed,
         Self::FeatureCombineOperandListRefused,
@@ -1315,6 +1321,11 @@ impl F3dLossCode {
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
+            Self::SurfaceUntrimFrameAssumed => "feature.surface-untrim-frame-assumed",
+            Self::SurfaceUntrimGroupSelectionAssumed => {
+                "feature.surface-untrim-group-selection-assumed"
+            }
+            Self::SurfaceUntrimLoopTypeAssumed => "feature.surface-untrim-loop-type-assumed",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
@@ -1713,6 +1724,9 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
+            | Self::SurfaceUntrimFrameAssumed
+            | Self::SurfaceUntrimGroupSelectionAssumed
+            | Self::SurfaceUntrimLoopTypeAssumed
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
@@ -2020,6 +2034,9 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
+            | Self::SurfaceUntrimFrameAssumed
+            | Self::SurfaceUntrimGroupSelectionAssumed
+            | Self::SurfaceUntrimLoopTypeAssumed
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
@@ -2414,6 +2431,9 @@ mod tests {
                 "feature.work-axis-endpoint-tolerance-assumed",
                 "feature.body-selection-native",
                 "feature.reverse-normal-body-unverified",
+                "feature.surface-untrim-frame-assumed",
+                "feature.surface-untrim-group-selection-assumed",
+                "feature.surface-untrim-loop-type-assumed",
                 "feature.combine-selection-native",
                 "feature.combine-prologue-assumed",
                 "feature.combine-operand-list-refused",

@@ -42,6 +42,27 @@ pub(crate) struct DesignSurfaceExtendOperation {
     pub(crate) tolerance_offset: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignSurfaceUntrimOperation {
+    pub(crate) loops: DesignSurfaceUntrimLoops,
+    pub(crate) loops_offset: u64,
+    pub(crate) extension: FiniteReal,
+    pub(crate) extension_offset: u64,
+    pub(crate) extension_record_index: u32,
+    pub(crate) face_group_record_index: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) loop_group_record_indices: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignSurfaceUntrimLoops {
+    All,
+    Internal,
+    External,
+    Manual,
+}
+
 /// Source selection form named by a `SurfaceOffset` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
