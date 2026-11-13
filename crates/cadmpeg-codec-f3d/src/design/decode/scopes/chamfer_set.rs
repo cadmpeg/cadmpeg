@@ -150,14 +150,24 @@ pub(super) fn chamfer_set_list(
 /// Entries per set, in set-number order, when every entry names a set from
 /// one to `set_count` and every set has at least one entry.
 pub(super) fn set_entry_counts(entry_sets: &[u32], set_count: u32) -> Option<Vec<u32>> {
-    let mut counts = vec![0_u32; usize::try_from(set_count).ok()?.min(entry_sets.len())];
-    if counts.len() != usize::try_from(set_count).ok()? {
+    if usize::try_from(set_count).ok()? > entry_sets.len()
+        || entry_sets
+            .iter()
+            .any(|set_number| *set_number == 0 || *set_number > set_count)
+    {
         return None;
     }
-    for set_number in entry_sets {
-        let slot = counts.get_mut(usize::try_from(set_number.checked_sub(1)?).ok()?)?;
-        *slot = slot.checked_add(1)?;
-    }
+    let counts = (1..=set_count)
+        .map(|set_number| {
+            u32::try_from(
+                entry_sets
+                    .iter()
+                    .filter(|entry_set| **entry_set == set_number)
+                    .count(),
+            )
+            .ok()
+        })
+        .collect::<Option<Vec<u32>>>()?;
     counts.iter().all(|count| *count > 0).then_some(counts)
 }
 
