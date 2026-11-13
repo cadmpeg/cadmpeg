@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `UnStitch` scope projection.
 
 use super::{face_scope_frame, unique_feature_match};
 use crate::design::face_resolve::resolved_historical_face_group;
