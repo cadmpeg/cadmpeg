@@ -120,6 +120,29 @@ pub(crate) struct DesignThickenOperation {
     pub(crate) thickness_record_index: u32,
     /// Byte offset of the scalar.
     pub(crate) thickness_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_thicken_boolean"
+    )]
+    pub(crate) boolean: Option<DesignThickenBoolean>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_thicken_boolean, DesignThickenBoolean, "boolean");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignThickenBoolean {
+    pub(crate) operation: DesignThickenBooleanOperation,
+    pub(crate) operation_offset: u64,
+    pub(crate) target_group_record_index: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignThickenBooleanOperation {
+    Join,
+    Cut,
+    Intersect,
 }
 
 cadmpeg_core::named_optional_field!(deserialize_move_prefix, DesignMovePrefix, "prefix");

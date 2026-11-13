@@ -1040,7 +1040,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Thicken) => {
-                    project_thicken(scope, face_operands, construction_groups)?
+                    project_thicken(scope, face_operands, construction_groups, &mut projection_losses)?
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Coil) => project_coil(
@@ -4210,14 +4210,11 @@ pub(super) fn project_thicken(
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ThickenSide};
 
-    let crate::records::feature::scope::DesignScopePayload::Thicken(Some(
-        crate::records::feature::direct_face::DesignThickenOperation {
-            signed_thickness, ..
-        },
-    )) = &scope.payload()
+    let crate::records::feature::scope::DesignScopePayload::Thicken(operation) = &scope.payload()
     else {
         return Ok(None);
     };
@@ -4234,12 +4231,37 @@ pub(super) fn project_thicken(
                 )
                 && !group.members().is_empty()
         });
-        let group = or_none!(candidates.next());
-        if candidates.next().is_some() {
-            return Ok(None);
+        match (candidates.next(), candidates.next()) {
+            (Some(group), None) => FaceSelection::Native(group.id.clone()),
+            _ => {
+                losses.push(crate::loss::F3dLossCode::ThickenFaceSelectionAssumed.note(format!(
+                    "Thicken {} retains its ordered references as the face selection because it lacks one face group with role 0x5 or 0x12.",
+                    scope.id
+                )));
+                FaceSelection::Native(scope.id.clone())
+            }
         }
-        FaceSelection::Native(group.id.clone())
     };
+    let Some(operation) = operation else {
+        losses.push(crate::loss::F3dLossCode::ThickenFrameAssumed.note(format!(
+            "Thicken {} assumes its frame thickens the selected faces; the thickness and side are unresolved.",
+            scope.id
+        )));
+        return Ok(Some(FeatureDefinition::Operation(
+            FeatureOperation::Thicken {
+                faces,
+                thickness: None,
+                side: None,
+            },
+        )));
+    };
+    if let Some(boolean) = operation.boolean {
+        losses.push(crate::loss::F3dLossCode::ThickenBooleanResultNative.note(format!(
+            "Thicken {} combines its result with the bodies of group record {} by {:?}; the neutral Thicken states the added material and the scope retains the combination.",
+            scope.id, boolean.target_group_record_index, boolean.operation
+        )));
+    }
+    let signed_thickness = operation.signed_thickness;
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Thicken {
             faces,

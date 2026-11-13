@@ -26,6 +26,7 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
                 signed_thickness: cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
                 thickness_record_index: 300,
                 thickness_offset: 0,
+                boolean: None,
             });
         }
         DesignScopePayloadMut::Shell(slot) => {
@@ -97,7 +98,7 @@ fn thicken_projects_native_group() {
     let scope = scope(DesignFeatureKind::Thicken);
     let group = group(DesignOperandRole::ROLE_0X5);
     let FeatureOperation::Thicken { faces, .. } = projected_operation(
-        super::super::project_thicken(&scope, &[], std::slice::from_ref(&group)),
+        super::super::project_thicken(&scope, &[], std::slice::from_ref(&group), &mut Vec::new()),
     ) else {
         panic!("expected a thicken");
     };
@@ -123,9 +124,14 @@ fn thicken_lists_a_whole_body_group_beside_resolved_faces_as_unresolved() {
     whole_body.id = "f3d:test:group#110".into();
     whole_body.record_index = 110;
     let groups = [faces_group, whole_body.clone()];
-    let FeatureOperation::Thicken { faces, .. } = projected_operation(
-        super::super::project_thicken(&scope, &[resolved_member_operand()], &groups),
-    ) else {
+    let FeatureOperation::Thicken { faces, .. } =
+        projected_operation(super::super::project_thicken(
+            &scope,
+            &[resolved_member_operand()],
+            &groups,
+            &mut Vec::new(),
+        ))
+    else {
         panic!("expected a thicken");
     };
     let mut rebound = faces.clone();
@@ -153,6 +159,7 @@ fn thicken_keeps_resolved_faces_without_a_whole_body_group() {
             &scope,
             &[resolved_member_operand()],
             &[group(DesignOperandRole::ROLE_0X12)],
+            &mut Vec::new(),
         ))
     else {
         panic!("expected a thicken");

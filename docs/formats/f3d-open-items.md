@@ -1779,7 +1779,7 @@ when the operation transition carries no candidate for the group members?
 
 ### DR-313. Flag bytes of the Thicken scope frame
 
-**Question.** Which Thicken settings do the prologue flag byte of the six-byte marker-one prologue and the two flag bytes between the marked group references and the marked scalar reference of a `Thicken` scope select?
+**Question.** Which Thicken settings do the prologue flag byte and the two flag bytes between the group references and the scalar reference of a `Thicken` scope select?
 
 **Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the flag positions and admits `0` or `1` in each byte. The decoder records `feature.thicken-flags-assumed` with the flag bytes for each admitted scope and projects the Thicken side from the sign of the thickness scalar alone.
 
@@ -1791,9 +1791,9 @@ when the operation transition carries no candidate for the group members?
 
 ### DR-314. Optional u32 zero of the Thicken scope frame
 
-**Question.** What does the u32 zero that can follow the marked scalar reference of a `Thicken` scope encode, and which scopes store it?
+**Question.** What does the u32 zero that can follow the scalar reference of a `Thicken` scope encode, and which scopes store it?
 
-**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the field and the u32 `1` before the marked auxiliary reference that places it. The decoder reads scopes with and without the field and keeps no value from it.
+**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the field before the three counted reference runs. The decoder reads scopes with and without the field and keeps no value from it.
 
 **Need.** `Thicken` scopes that store a nonzero value in the field, or saves of one `Thicken` from application versions whose frames differ in the field.
 
@@ -2355,3 +2355,23 @@ when the operation transition carries no candidate for the group members?
 **Need.** Public document bundles with independently identified source documents and repeated component instances that bind each source path identity to its document and occurrence context.
 
 **Note.** A standalone timeline feature names its decoded neutral joint while source operands remain unresolved. The decoder preserves their identities and charges `assembly.joint-source-binding-assumed`.
+
+### DR-480. Neutral result operation of a Thicken
+
+**Question.** Which neutral form states a Thicken that joins, cuts, or intersects its added material with existing bodies, and which records does the identity run name?
+
+**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" defines the result operation, the identity run, and the target body group. The native scope record keeps the operation and the target group record.
+
+**Need.** A neutral Thicken result field, and saves that identify the records of the identity run.
+
+**Note.** The decoder projects the added material as a neutral Thicken and records `feature.thicken-boolean-result-native` for result operations `1`, `2`, and `3`.
+
+### DR-481. Thicken frames outside the stated grammar
+
+**Question.** Which fields do further Thicken frames carry, and which faces does a Thicken without one face group select?
+
+**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" defines the admitted frame. Every Thicken scope retains its ordered references.
+
+**Need.** Controlled saves of further Thicken frames with their thickness, side, and face selection recorded.
+
+**Note.** The decoder keeps the neutral Thicken. It records `feature.thicken-frame-assumed` for a frame outside the grammar and leaves the thickness and side unresolved. It records `feature.thicken-face-selection-assumed` when the scope lacks one role-`0x5` or role-`0x12` face group and retains the scope references as the native face selection.

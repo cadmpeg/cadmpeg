@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::scopes::thicken_shell::exact_thicken_operation;
-use crate::records::feature::direct_face::DesignThickenOperation;
+use crate::records::feature::direct_face::{
+    DesignThickenBoolean, DesignThickenBooleanOperation, DesignThickenOperation,
+};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::test_support::{indexed_header, push_marked_reference};
 use cadmpeg_core::decode::u64_from_index;
@@ -11,6 +13,7 @@ const MARKER_ZERO: &[u8] = &[0];
 const MARKER_ONE: &[u8] = &[1, 0, 0, 0, 0];
 const MARKER_ONE_PADDED: &[u8] = &[1, 0, 0, 0, 0, 0];
 const MARKER_ONE_FLAGGED: &[u8] = &[1, 0, 0, 0, 0, 1];
+const MARKER_ZERO_PADDED: &[u8] = &[0, 0];
 
 struct ThickenFrame<'a> {
     prologue: &'a [u8],
@@ -18,6 +21,7 @@ struct ThickenFrame<'a> {
     groups: &'a [u32],
     flags: [u8; 2],
     scalar_zero: bool,
+    runs: [&'a [u32]; 3],
     table: &'a [u32],
     thickness: f64,
 }
@@ -30,6 +34,7 @@ impl ThickenFrame<'_> {
             groups: &[200],
             flags: [0, 1],
             scalar_zero: false,
+            runs: [&[300], &[], &[]],
             table: &[200, 201, 74],
             thickness: -1.0,
         }
@@ -50,9 +55,12 @@ impl ThickenFrame<'_> {
         if self.scalar_zero {
             bytes.extend_from_slice(&0u32.to_le_bytes());
         }
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        push_marked_reference(&mut bytes, 300);
-        bytes.extend_from_slice(&[0; 8]);
+        for run in self.runs {
+            bytes.extend_from_slice(&u32::try_from(run.len()).unwrap().to_le_bytes());
+            for reference in run {
+                push_marked_reference(&mut bytes, *reference);
+            }
+        }
         bytes.extend_from_slice(&36u32.to_le_bytes());
         for unit in "00000000-0000-0000-0000-000000000000".encode_utf16() {
             bytes.extend_from_slice(&unit.to_le_bytes());
@@ -247,4 +255,94 @@ fn reference_table_must_follow_the_guid() {
         })
         .unwrap();
     assert_eq!(decode(&bytes, &scope).0, None);
+}
+
+fn boolean_frame<'a>(prologue: &'a [u8], form: u32, identities: &'a [u32]) -> ThickenFrame<'a> {
+    ThickenFrame {
+        prologue,
+        form,
+        runs: [identities, &[], &[202]],
+        table: &[200, 201, 202, 203, 74],
+        ..ThickenFrame::group_first()
+    }
+}
+
+#[test]
+fn join_cut_and_intersect_forms_read_the_target_body_group() {
+    for (prologue, operation_offset) in [
+        (MARKER_ZERO, 21),
+        (MARKER_ZERO_PADDED, 22),
+        (MARKER_ONE, 25),
+        (MARKER_ONE_PADDED, 26),
+    ] {
+        for (form, identities, operation) in [
+            (1, &[][..], DesignThickenBooleanOperation::Join),
+            (2, &[300][..], DesignThickenBooleanOperation::Cut),
+            (3, &[][..], DesignThickenBooleanOperation::Intersect),
+        ] {
+            for scalar_zero in [false, true] {
+                let frame = ThickenFrame {
+                    scalar_zero,
+                    ..boolean_frame(prologue, form, identities)
+                };
+                let operation_record = frame.decode().0.unwrap();
+                assert_eq!(operation_record.signed_thickness.get(), -1.0);
+                assert_eq!(
+                    operation_record.boolean,
+                    Some(DesignThickenBoolean {
+                        operation,
+                        operation_offset,
+                        target_group_record_index: 202,
+                    })
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_new_body_thicken_has_no_boolean_target() {
+    assert_eq!(
+        ThickenFrame::group_first().decode().0.unwrap().boolean,
+        None
+    );
+}
+
+#[test]
+fn boolean_frames_outside_the_run_grammar_stay_unread() {
+    let rejected = [
+        ThickenFrame {
+            form: 4,
+            ..boolean_frame(MARKER_ZERO, 1, &[])
+        },
+        ThickenFrame {
+            runs: [&[], &[], &[]],
+            ..boolean_frame(MARKER_ZERO, 1, &[])
+        },
+        ThickenFrame {
+            runs: [&[], &[], &[202, 203]],
+            ..boolean_frame(MARKER_ZERO, 1, &[])
+        },
+        ThickenFrame {
+            runs: [&[], &[300], &[202]],
+            ..boolean_frame(MARKER_ZERO, 1, &[])
+        },
+        ThickenFrame {
+            runs: [&[], &[], &[400]],
+            ..boolean_frame(MARKER_ZERO, 1, &[])
+        },
+        ThickenFrame {
+            form: 5,
+            ..boolean_frame(MARKER_ZERO, 1, &[])
+        },
+        ThickenFrame {
+            prologue: &[0, 2],
+            ..boolean_frame(MARKER_ZERO, 1, &[])
+        },
+    ];
+    for frame in &rejected {
+        let (operation, losses) = frame.decode();
+        assert_eq!(operation, None);
+        assert!(losses.is_empty());
+    }
 }

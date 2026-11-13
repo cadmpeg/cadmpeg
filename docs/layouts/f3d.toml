@@ -2349,7 +2349,7 @@ kind = "byte"
 section = "3.1"
 anchor = "A `Thicken` scope primary frame stores nine zero bytes at offsets 11 through 19"
 size = 21
-note = "Offsets are relative to the primary indexed header. The prologue marker selects whether the prologue ends at offset 21, 25, or 26."
+note = "Offsets are relative to the primary indexed header. The prologue marker and the optional flag byte place the result operation at offset 21, 22, 25, or 26."
 
 [[record.field]]
 name = "indexed_header"
