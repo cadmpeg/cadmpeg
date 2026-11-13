@@ -41,6 +41,7 @@ mod thicken;
 mod thread;
 mod to_object_revolve;
 mod typed_references;
+mod unstitch;
 
 mod fixed_kind_path_operations;
 mod fixed_kind_tail_operations;

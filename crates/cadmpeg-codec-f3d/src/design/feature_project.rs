@@ -54,6 +54,7 @@ mod reverse_normal;
 mod revolve_target;
 mod surface_offset;
 mod surface_patch;
+mod unstitch;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
 const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
@@ -1442,6 +1443,15 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                     parameters: BTreeMap::new(),
                                 })
                             })
+                    } else if scope.kind()
+                        == crate::records::feature::scope::DesignFeatureKind::UnStitch
+                    {
+                        unstitch::project_unstitch(
+                            scope,
+                            construction_groups,
+                            face_operands,
+                            &mut projection_losses,
+                        )
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::CopyPasteBodies
                     {

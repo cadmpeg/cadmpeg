@@ -1837,3 +1837,21 @@ fn planar_target_sources_round_trip_and_refuse_invalid_values() {
         }
     }
 }
+
+#[test]
+fn unstitch_faces_carries_its_face_selection_on_the_wire() {
+    use crate::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+
+    let definition = FeatureDefinition::Operation(FeatureOperation::UnstitchFaces {
+        faces: FaceSelection::Native("native:face-group".into()),
+    });
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(wire["definition"], "unstitch_faces");
+    assert_eq!(
+        serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+    let mut extended = wire;
+    extended["heal"] = serde_json::json!(false);
+    assert!(serde_json::from_value::<FeatureDefinition>(extended).is_err());
+}

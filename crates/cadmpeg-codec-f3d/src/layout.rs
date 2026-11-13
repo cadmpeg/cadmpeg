@@ -9860,3 +9860,27 @@ pub(crate) mod move_transform_omitted_matrix_frame_125 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 125;
 }
+
+/// Byte offsets for the `unstitch_prologue_compact` record.
+///
+/// Spec §3.1. Record length 26 B.
+pub(crate) mod unstitch_prologue_compact {
+    /// Offset of `identity_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const IDENTITY_COUNT: usize = 22;
+}
+
+/// Byte offsets for the `unstitch_prologue_marked` record.
+///
+/// Spec §3.1. Record length 30 B.
+pub(crate) mod unstitch_prologue_marked {
+    /// Offset of `identity_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const IDENTITY_COUNT: usize = 26;
+}
+
+/// Byte offsets for the `unstitch_prologue_extended` record.
+///
+/// Spec §3.1. Record length 34 B.
+pub(crate) mod unstitch_prologue_extended {
+    /// Offset of `identity_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const IDENTITY_COUNT: usize = 30;
+}

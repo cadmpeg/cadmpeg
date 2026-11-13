@@ -10167,6 +10167,53 @@ Unstated regions:
 
 - `48..125` (77 B): The common native tail precedes the same-index paired header.
 
+## `unstitch_prologue_compact`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/feature_project/unstitch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact UnStitch prologue |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | ten zero bytes at offsets 11 through 20 |
+| 21 | 1 | `selection_flag` | `u8` | little | spec | a selection flag byte at offset 21 |
+| 22 | 4 | `identity_count` | `u32` | little | spec | the u32 identity count `N` at offset 22 |
+
+## `unstitch_prologue_marked`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/feature_project/unstitch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The marked UnStitch prologue |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 4 | `marker` | `u32` | little | spec | u32 `1` at offset 20 · value `1` |
+| 24 | 1 | `zero_flag` | `u8` | little | spec | a zero byte at offset 24 · value `0` |
+| 25 | 1 | `selection_flag` | `u8` | little | spec | the selection flag byte at offset 25 |
+| 26 | 4 | `identity_count` | `u32` | little | spec | `N` at offset 26 |
+
+## `unstitch_prologue_extended`
+
+Spec §3.1 · layout: byte offsets · size: 34 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/feature_project/unstitch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The extended UnStitch prologue |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 4 | `marker` | `u32` | little | spec | u32 `1` at offset 20 · value `1` |
+| 24 | 1 | `zero_flag` | `u8` | little | spec | a zero byte at offset 24 · value `0` |
+| 25 | 1 | `selection_flag` | `u8` | little | spec | the selection flag byte at offset 25 |
+| 26 | 4 | `zero_word` | `u32` | little | spec | a zero u32 at offset 26 · value `0` |
+| 30 | 4 | `identity_count` | `u32` | little | spec | stores `N` at offset 30 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

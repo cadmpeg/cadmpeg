@@ -34270,3 +34270,151 @@ value = 1
 offset = 48
 size = 77
 note = "The common native tail precedes the same-index paired header."
+
+[[record]]
+name = "unstitch_prologue_compact"
+kind = "byte"
+section = "3.1"
+anchor = "The compact UnStitch prologue"
+size = 26
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/feature_project/unstitch.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact UnStitch prologue"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes at offsets 11 through 20"
+
+[[record.field]]
+name = "selection_flag"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "a selection flag byte at offset 21"
+
+[[record.field]]
+name = "identity_count"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "the u32 identity count `N` at offset 22"
+
+[[record]]
+name = "unstitch_prologue_marked"
+kind = "byte"
+section = "3.1"
+anchor = "The marked UnStitch prologue"
+size = 30
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/feature_project/unstitch.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The marked UnStitch prologue"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at offset 20"
+value = 1
+
+[[record.field]]
+name = "zero_flag"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "a zero byte at offset 24"
+value = 0
+
+[[record.field]]
+name = "selection_flag"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "the selection flag byte at offset 25"
+
+[[record.field]]
+name = "identity_count"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "`N` at offset 26"
+
+[[record]]
+name = "unstitch_prologue_extended"
+kind = "byte"
+section = "3.1"
+anchor = "The extended UnStitch prologue"
+size = 34
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/feature_project/unstitch.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The extended UnStitch prologue"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at offset 20"
+value = 1
+
+[[record.field]]
+name = "zero_flag"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "a zero byte at offset 24"
+value = 0
+
+[[record.field]]
+name = "selection_flag"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "the selection flag byte at offset 25"
+
+[[record.field]]
+name = "zero_word"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "a zero u32 at offset 26"
+value = 0
+
+[[record.field]]
+name = "identity_count"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "stores `N` at offset 30"
