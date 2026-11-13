@@ -1,7 +1,34 @@
-use super::MeshSelection;
+use super::{
+    MeshFaceDistribution, MeshModification, MeshRebuildMode, MeshReduceTarget, MeshRepair,
+    MeshSelection,
+};
 
 rewrite_enum!(MeshSelection, []; {
     Tessellations(field0),
     Native { native, members },
     Unresolved { feature },
+});
+
+rewrite_scalar!(MeshFaceDistribution);
+rewrite_scalar!(MeshRebuildMode);
+
+rewrite_enum!(MeshReduceTarget, []; {
+    MaximumDeviation(field0),
+    FaceProportion(field0),
+    FaceCount(field0),
+});
+
+rewrite_enum!(MeshRepair, []; {
+    CloseHoles,
+    StitchAndRemove,
+    Rebuild { mode, density, offset },
+});
+
+rewrite_enum!(MeshModification, []; {
+    Reduce { distribution, target },
+    Repair { method },
+    Remesh { distribution, edge_length, shape_preservation },
+    Smooth { smoothness },
+    Shell { thickness },
+    ReverseNormals,
 });

@@ -696,6 +696,15 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         geometry.mesh_projection,
         &mut losses,
     )?;
+    super::mesh_operations::bind_features(
+        ctx,
+        scan,
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &prereqs.design_parameter_owners,
+        &prereqs.design_parameters,
+        &mut losses,
+    )?;
     crate::design::feature_project::form_cages::bind_form_cages(
         ctx,
         scan,

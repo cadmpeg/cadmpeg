@@ -1317,6 +1317,134 @@ Offsets are relative to the mesh operation member's indexed header.
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its indexed header is followed by ten zero bytes and a marked same-segment mesh-body reference at offset 21. |
 | 21 | 11 | `body_reference` | `bytes[11]` | little | spec | a marked same-segment mesh-body reference at offset 21 |
 
+## `mesh_operation_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 21 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes and a flag byte at offset 20 |
+| 20 | 1 | `flag` | `u8` | little | spec | a flag byte at offset 20 |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+
+## `mesh_operation_geometry_tail`
+
+Spec §3.1 · layout: byte offsets · size: 38 B
+
+Offsets are relative to the tail start. A null output-geometry reference is one byte and moves the later fields ten bytes lower.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `output_geometry` | `bytes[11]` | little | spec | the output-geometry reference, the input-geometry reference, a u32 `0`, the source-group reference, and a zero byte |
+| 11 | 11 | `input_geometry` | `bytes[11]` | little | spec | the output-geometry reference, the input-geometry reference, a u32 `0`, the source-group reference, and a zero byte |
+| 22 | 4 | `zero_word` | `u32` | little | spec | the output-geometry reference, the input-geometry reference, a u32 `0`, the source-group reference, and a zero byte · value `0` |
+| 26 | 11 | `source_group` | `bytes[11]` | little | spec | the output-geometry reference, the input-geometry reference, a u32 `0`, the source-group reference, and a zero byte |
+| 37 | 1 | `zero_byte` | `u8` | little | spec | the output-geometry reference, the input-geometry reference, a u32 `0`, the source-group reference, and a zero byte · value `0` |
+
+## `mesh_operation_group_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes, a u32 member count at offset 21 |
+| 21 | 4 | `member_count` | `u32` | little | spec | a u32 member count at offset 21 |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+
+## `mesh_smooth_scope_fields`
+
+Spec §3.1 · layout: byte offsets · size: 32 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 11 | `smoothness_owner` | `bytes[11]` | little | spec | A `MeshSmooth` scope stores the smoothness owner reference at offset 21 and its geometry tail at offset 32 |
+
+Unstated regions:
+
+- `0..21` (21 B): Mesh operation scope prefix.
+
+## `mesh_shell_scope_fields`
+
+Spec §3.1 · layout: byte offsets · size: 32 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 11 | `thickness_owner` | `bytes[11]` | little | spec | A `MeshShell` scope stores the thickness owner reference at offset 21 and its geometry tail at offset 32 |
+
+Unstated regions:
+
+- `0..21` (21 B): Mesh operation scope prefix.
+
+## `mesh_reduce_scope_fields`
+
+Spec §3.1 · layout: byte offsets · size: 63 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 11 | `tolerance_owner` | `bytes[11]` | little | spec | A `MeshReduce` scope stores the tolerance owner reference at offset 21 |
+| 32 | 4 | `distribution` | `u32` | little | spec | a u32 distribution selector at offset 32 |
+| 36 | 1 | `zero_byte` | `u8` | little | spec | a zero byte at offset 36 · value `0` |
+| 37 | 11 | `proportion_owner` | `bytes[11]` | little | spec | the proportion owner reference at offset 37 |
+| 48 | 4 | `target` | `u32` | little | spec | a u32 target selector at offset 48 |
+| 52 | 11 | `face_count_owner` | `bytes[11]` | little | spec | the face-count owner reference at offset 52 |
+
+Unstated regions:
+
+- `0..21` (21 B): Mesh operation scope prefix.
+
+## `mesh_repair_scope_fields`
+
+Spec §3.1 · layout: byte offsets · size: 51 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 11 | `density_owner` | `bytes[11]` | little | spec | A `MeshRepair` scope stores the density owner reference at offset 21 |
+| 32 | 11 | `offset_owner` | `bytes[11]` | little | spec | the offset owner reference at offset 32 |
+| 43 | 4 | `rebuild_mode` | `u32` | little | spec | a u32 rebuild selector at offset 43 |
+| 47 | 4 | `method` | `u32` | little | spec | a u32 method selector at offset 47 |
+
+Unstated regions:
+
+- `0..21` (21 B): Mesh operation scope prefix.
+
+## `mesh_remesh_scope_fields`
+
+Spec §3.1 · layout: byte offsets · size: 54 B
+
+Offsets are those of the form with a non-null shape-preservation reference.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 2 | `zero_run_2` | `bytes[2]` | little | spec | A `MeshRemesh` scope stores two zero bytes at offset 21 |
+| 23 | 4 | `distribution` | `u32` | little | spec | a u32 distribution selector at offset 23 |
+| 27 | 11 | `shape_preservation_owner` | `bytes[11]` | little | spec | the shape-preservation owner reference at offset 27 |
+| 38 | 1 | `zero_byte` | `u8` | little | spec | a zero byte at offset 38 · value `0` |
+| 39 | 11 | `edge_length_owner` | `bytes[11]` | little | spec | the edge-length owner reference at offset 39 |
+| 50 | 4 | `one_word` | `u32` | little | spec | a u32 `1` at offset 50 · value `1` |
+
+Unstated regions:
+
+- `0..21` (21 B): Mesh operation scope prefix.
+
+## `mesh_section_scope_fields`
+
+Spec §3.1 · layout: byte offsets · size: 43 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 11 | `section_group` | `bytes[11]` | little | spec | A `MeshSection` scope stores the section-group reference at offset 21 |
+| 32 | 11 | `sketch_scope` | `bytes[11]` | little | spec | the reference to the `Sketch` scope that receives the section curves at offset 32 |
+
+Unstated regions:
+
+- `0..21` (21 B): Mesh operation scope prefix.
+
 ## `paramesh_guid_join_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 83 B

@@ -546,6 +546,30 @@ The texture-table class has type GUID `6FC173DC-C7E3-402C-A8C0-891A26DADF8D`, ba
 
 The mesh wrapper has type GUID `E5B3F49A-D8D0-4EEF-BC2B-FCDDAEF9745E`, base-type GUID `98542EB9-A4F2-4137-A808-DBB5B3CD6159`, type version `0`, and add-in name `ParaMesh`. Its 40-byte prefix holds its indexed header, ten zero bytes, a marked same-segment body reference at offset 21, and eight zero bytes. The primary record can continue after the prefix. The wrapper reference of the body names the same wrapper. Each body has one wrapper.
 
+A mesh operation scope is a parameter scope with base-type GUID `90B8D2C6-05BB-4D0F-89EF-83AAC46CA1FF` and add-in name `Fusion`. Its indexed header is followed by nine zero bytes and a flag byte at offset 20. Flag `01` inserts a u32 at offset 21 and moves every later field four bytes higher; the offsets in this paragraph group are those of the flag-`00` form. The fixed fields of the scope end with the 38-byte geometry tail: the output-geometry reference, the input-geometry reference, a u32 `0`, the source-group reference, and a zero byte. A geometry reference is a same-segment reference to the Design GUID record of one mesh geometry state; a null output-geometry reference is one byte and identifies an operation that keeps the mesh geometry. The source group is a mesh operation group. Its indexed header is followed by ten zero bytes, a u32 member count at offset 21, and that many same-segment references to mesh operation members; each member names one mesh body. An owner reference is a same-segment reference to a parameter owner of the scope. Lengths are centimetres.
+
+| Kind | Type GUID | Type version |
+| --- | --- | --- |
+| `MeshSection` | `8FFFCBD2-7102-4A62-BCA0-8229A3C3B9DB` | `1` |
+| `MeshReduce` | `BE693D4C-741E-4794-A93E-5BFED71E9E13` | `2` |
+| `MeshRepair` | `68691143-5EE3-428E-9CD3-F728E4718559` | `4` |
+| `MeshRemesh` | `828DDA62-2750-447D-8728-06C9B7C2B117` | `2` |
+| `MeshSmooth` | `F84CD988-9696-458D-8AF3-795D12E6B9EF` | `2` |
+| `MeshShell` | `1514CDB8-BB81-4895-A953-7B12F4504F99` | `2` |
+| `MeshReverseNormals` | `4AB7A6BD-C40C-4C44-B7CA-0D415B6E4412` | `0` |
+
+A `MeshReverseNormals` scope stores its geometry tail at offset 21. A `MeshSmooth` scope stores the smoothness owner reference at offset 21 and its geometry tail at offset 32; the smoothness is a fraction from zero to one. A `MeshShell` scope stores the thickness owner reference at offset 21 and its geometry tail at offset 32.
+
+A `MeshReduce` scope stores the tolerance owner reference at offset 21, a u32 distribution selector at offset 32, a zero byte at offset 36, the proportion owner reference at offset 37, a u32 target selector at offset 48, the face-count owner reference at offset 52, and its geometry tail at offset 63. Distribution `0` is adaptive and `1` is uniform. Target `0` bounds the reduction by the tolerance, the largest deviation from the source; target `1` by the proportion, the percentage of source faces that the result keeps; target `2` by the face count of the result.
+
+A `MeshRepair` scope stores the density owner reference at offset 21, the offset owner reference at offset 32, a u32 rebuild selector at offset 43, a u32 method selector at offset 47, and its geometry tail at offset 51. Method `0` closes holes, `1` stitches and removes, and `3` rebuilds the mesh with the density and the offset. Rebuild selector `0` is fast and `2` is accurate.
+
+A `MeshRemesh` scope stores two zero bytes at offset 21, a u32 distribution selector at offset 23 with the `MeshReduce` values, and the shape-preservation owner reference at offset 27. After a non-null shape-preservation reference the scope stores a zero byte at offset 38, the edge-length owner reference at offset 39, a u32 `1` at offset 50, and its geometry tail at offset 54. A uniform distribution stores a null shape-preservation reference, and each later field is ten bytes lower. The shape preservation is a fraction from zero to one.
+
+A `MeshSection` scope stores the section-group reference at offset 21, the reference to the `Sketch` scope that receives the section curves at offset 32, and its geometry tail at offset 43 with a null output-geometry reference. The section group is the source group.
+
+The neutral definition of `MeshSection` is `MeshSection`; it names the sectioned mesh and the feature of the referenced `Sketch` scope. The neutral definition of the other kinds is `MeshModify`. The mesh source of each definition is the scope with the ordered mesh-body record indices of its source group.
+
 The `Base Mesh Feature` scope has type GUID `99F6967E-ED35-4222-B906-5CCF0AC70B53`, base-type GUID `2FCB0587-233E-449B-9724-9AAE5AA23647`, type version `0`, and add-in name `Fusion`. Its unflagged indexed header is followed by ten zero bytes, a u32 body count at offset 21, and that many ordered marked same-segment body references at offset 25. A flagged scope stores byte `01` at offset 20 and a u32 at offset 21; its body count is at offset 25 and its body references start at offset 29. Bytes 11 through 19 are zero. The parameter-scope payload follows this list. The scope closes with a nested same-index record whose type GUID is `CB844AB6-240D-4FC9-9C9F-3679DC896D6F`, base-type GUID is `98542EB9-A4F2-4137-A808-DBB5B3CD6159`, type version is `1`, and add-in name is `DataModel` or `CommonData`. This closing record is exactly 30 bytes: its indexed header, eight zero bytes, and a marked same-segment owner reference at offset 19. Each collection body points to its owning scope and collection. The scopes that its bodies name partition its body list. Each scope lists its bodies in scope order.
 
 The fixed mesh Scene-state record has type GUID `F85F2E62-7627-4922-A16D-53E1275D2AAC`, base-type GUID `D0EDEF7C-5879-45A4-9651-900659CC4FDD`, type version `0`, and add-in name `Scene`. It is exactly 95 bytes: its indexed header, 34 zero bytes, and the 50-byte Scene footer. The footer starts with byte `01`. Its remaining 49 bytes are either the unset-bounds sentinel or six f64 values followed by byte `01`. The finite values are the component-wise maximum corner followed by the component-wise minimum corner; every minimum component is less than or equal to its corresponding maximum. In the unset sentinel, bytes 6, 14, 22, 30, 38, and 46 are `EF`; bytes 31, 39, and 47 are `7F`; byte 48 is `01`; all other bytes are `FF`.
@@ -796,6 +820,13 @@ The feature-family name is display text that varies with the application languag
 | `1C037A07-4A15-43F6-ABFC-BBF61B9038D4` | `Hole` |
 | `02E8AA49-08B8-439C-A8C7-221BE20143D8` | `JointOrigin` |
 | `B6678572-C095-4DD1-9348-614677DD0B4A` | `Loft` |
+| `BE693D4C-741E-4794-A93E-5BFED71E9E13` | `MeshReduce` |
+| `828DDA62-2750-447D-8728-06C9B7C2B117` | `MeshRemesh` |
+| `68691143-5EE3-428E-9CD3-F728E4718559` | `MeshRepair` |
+| `4AB7A6BD-C40C-4C44-B7CA-0D415B6E4412` | `MeshReverseNormals` |
+| `8FFFCBD2-7102-4A62-BCA0-8229A3C3B9DB` | `MeshSection` |
+| `1514CDB8-BB81-4895-A953-7B12F4504F99` | `MeshShell` |
+| `F84CD988-9696-458D-8AF3-795D12E6B9EF` | `MeshSmooth` |
 | `D1728651-3640-4CCF-8083-AF7703013978` | `Mirror` |
 | `DDB7BC00-2E41-4BC1-8DA1-A0F104A67E71` | `Modify` |
 | `64E40C8E-E564-469C-8690-5C4E77C1B02C` | `Move` |

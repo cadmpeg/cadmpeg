@@ -1847,6 +1847,43 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder keeps a native mesh source selection and reports `feature.mesh-import-empty-source-assumed`. Unjoined nonempty body runs report `feature.mesh-import-tessellations-unresolved`. Unreadable source frames report `feature.mesh-import-source-unparsed`. DR-292 tracks the operation GUID bindings.
 
+
+### DR-473. Geometry states of mesh operation scopes
+
+**Question.** Which tessellation does each output-geometry and input-geometry reference of a mesh operation scope select?
+
+**Known.** Each reference names the Design GUID record of one mesh geometry state. The source group names the mesh bodies of the operation. The decoder keeps the scope with the ordered body record indices as the mesh source and stores both GUID record indices in the source properties.
+
+**Need.** The join from the GUID record of a superseded geometry state to its `.paramesh` container, checked against a controlled operation whose input and output meshes are known.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-operation-source-unresolved`. An unreadable scope or source group reports `feature.mesh-operation-scope-unparsed`.
+
+### DR-474. Mesh operation selector values and fixed fields
+
+**Question.** Which methods do `MeshRepair` method selector `2` and rebuild selectors `1` and `3` name, and what do the fixed zero fields of the `MeshReduce` and `MeshRemesh` scopes and the u32 `1` after the `MeshRemesh` edge-length owner store?
+
+**Known.** Method `0` closes holes, `1` stitches and removes, and `3` rebuilds. Rebuild selector `0` is fast and `2` is accurate. The decoder stores every selector value in the source properties and leaves the neutral field of an unlisted value unset. The decoder stores a fixed field with another value in the source properties.
+
+**Need.** Controlled saves of each repair method and rebuild type, and of remesh and reduce operations with each dialog option changed alone.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-operation-selector-unruled` and `feature.mesh-operation-fields-uninterpreted`. An owner reference without a usable value reports `feature.mesh-operation-parameter-unbound`.
+
+### DR-475. Section curves of a mesh section
+
+**Question.** Which records of the referenced `Sketch` scope store the section curves of a `MeshSection`?
+
+**Known.** The `MeshSection` scope references the `Sketch` scope that receives the section curves. The decoder names the feature of that scope in the neutral `MeshSection`.
+
+**Need.** A mesh section sketch with a known section polyline, with its sketch records compared against a sketch without section curves.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-section-curves-unresolved`.
+
 ### DR-373. Mesh body and collection-owner payload fields
 
 **Question.** What do the compact matrix flags, the further mesh-body reference slot, and the remaining mesh-body, mesh-wrapper, and collection-owner payload fields mean?

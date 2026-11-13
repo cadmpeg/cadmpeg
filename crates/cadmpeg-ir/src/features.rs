@@ -2742,6 +2742,21 @@ pub enum FeatureOperation {
         #[serde(deserialize_with = "deserialize_local_tessellations")]
         tessellations: mesh::MeshSelection,
     },
+    #[doc = "Planar section of a mesh whose curves belong to a sketch."]
+    MeshSection {
+        #[doc = "Sectioned mesh."]
+        source: mesh::MeshSelection,
+        #[doc = "Sketch feature that receives the section curves, when resolved."]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sketch: Option<FeatureId>,
+    },
+    #[doc = "Change applied to mesh geometry."]
+    MeshModify {
+        #[doc = "Mesh that the operation changes."]
+        source: mesh::MeshSelection,
+        #[doc = "Applied change."]
+        modification: mesh::MeshModification,
+    },
     /// Independent bodies introduced by a copy-and-paste operation. The copies
     /// are the feature's outputs, so the selection carries only its native
     /// expression.

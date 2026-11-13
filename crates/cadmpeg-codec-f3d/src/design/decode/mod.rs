@@ -15,6 +15,7 @@ pub(crate) mod dimension_frames;
 mod image;
 pub(crate) mod joint_motion;
 pub(crate) mod mesh;
+pub(crate) mod mesh_operations;
 pub(crate) mod meta;
 pub(crate) mod operands;
 pub(crate) mod parameters;

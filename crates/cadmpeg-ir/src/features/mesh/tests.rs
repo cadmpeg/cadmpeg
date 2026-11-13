@@ -1,4 +1,8 @@
-use super::MeshSelection;
+use super::{
+    MeshFaceDistribution, MeshModification, MeshRebuildMode, MeshReduceTarget, MeshRepair,
+    MeshSelection,
+};
+use crate::features::FeatureOperation;
 
 #[test]
 fn resolved_mesh_selection_preserves_the_tessellation_array_wire_form() {
@@ -125,4 +129,104 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
         map.finish()
     })
     .unwrap();
+}
+
+#[test]
+fn mesh_modifications_keep_their_tagged_wire_forms() {
+    for (wire, expected) in [
+        (
+            serde_json::json!({"kind":"reduce","distribution":"uniform","target":{"kind":"face_count","value":6}}),
+            MeshModification::Reduce {
+                distribution: Some(MeshFaceDistribution::Uniform),
+                target: Some(MeshReduceTarget::FaceCount(
+                    std::num::NonZeroU32::new(6).unwrap(),
+                )),
+            },
+        ),
+        (
+            serde_json::json!({"kind":"reduce","target":{"kind":"face_proportion","value":0.5}}),
+            MeshModification::Reduce {
+                distribution: None,
+                target: Some(MeshReduceTarget::FaceProportion(
+                    crate::scalar::Fraction::new(0.5).unwrap(),
+                )),
+            },
+        ),
+        (
+            serde_json::json!({"kind":"repair","method":{"kind":"rebuild","mode":"accurate","density":8.0,"offset":0.5}}),
+            MeshModification::Repair {
+                method: Some(MeshRepair::Rebuild {
+                    mode: Some(MeshRebuildMode::Accurate),
+                    density: Some(crate::scalar::PositiveReal::new(8.0).unwrap()),
+                    offset: Some(crate::scalar::Length::new(0.5).unwrap()),
+                }),
+            },
+        ),
+        (
+            serde_json::json!({"kind":"repair","method":{"kind":"close_holes"}}),
+            MeshModification::Repair {
+                method: Some(MeshRepair::CloseHoles),
+            },
+        ),
+        (
+            serde_json::json!({"kind":"remesh","distribution":"adaptive","edge_length":15.0,"shape_preservation":0.5}),
+            MeshModification::Remesh {
+                distribution: Some(MeshFaceDistribution::Adaptive),
+                edge_length: Some(crate::scalar::PositiveLength::new(15.0).unwrap()),
+                shape_preservation: Some(crate::scalar::Fraction::new(0.5).unwrap()),
+            },
+        ),
+        (
+            serde_json::json!({"kind":"smooth"}),
+            MeshModification::Smooth { smoothness: None },
+        ),
+        (
+            serde_json::json!({"kind":"shell","thickness":2.0}),
+            MeshModification::Shell {
+                thickness: Some(crate::scalar::PositiveLength::new(2.0).unwrap()),
+            },
+        ),
+        (
+            serde_json::json!({"kind":"reverse_normals"}),
+            MeshModification::ReverseNormals,
+        ),
+    ] {
+        let decoded: MeshModification = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(decoded, expected);
+        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+    }
+    for invalid in [
+        serde_json::json!({"kind":"smooth","smoothness":1.5}),
+        serde_json::json!({"kind":"shell","thickness":0.0}),
+        serde_json::json!({"kind":"reduce","target":{"kind":"face_count","value":0}}),
+    ] {
+        assert!(serde_json::from_value::<MeshModification>(invalid).is_err());
+    }
+}
+
+#[test]
+fn mesh_operations_keep_their_feature_wire_forms() {
+    for wire in [
+        serde_json::json!({
+            "definition":"mesh_modify",
+            "source":{"native":"mesh:scope","members":["9"]},
+            "modification":{"kind":"reverse_normals"}
+        }),
+        serde_json::json!({
+            "definition":"mesh_section",
+            "source":["test:mesh:tessellation#first"],
+            "sketch":"test:model:feature#sketch"
+        }),
+        serde_json::json!({
+            "definition":"mesh_section",
+            "source":{"feature":"test:model:feature#section"}
+        }),
+    ] {
+        let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+        assert!(matches!(
+            operation,
+            FeatureOperation::MeshModify { .. } | FeatureOperation::MeshSection { .. }
+        ));
+        assert_eq!(serde_json::to_value(operation).unwrap(), wire);
+    }
 }
