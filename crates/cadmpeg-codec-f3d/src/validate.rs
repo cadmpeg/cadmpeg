@@ -5378,6 +5378,14 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
                 }
                 None if scope.kind()
+                    == crate::records::feature::scope::DesignFeatureKind::Align =>
+                {
+                    matches!(
+                        group.role(),
+                        DesignOperandRole::BODIES_A | DesignOperandRole::ROLE_0X5
+                    ) && group.extrude_role().is_none()
+                }
+                None if scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::BaseFlange =>
                 {
                     group.role() == DesignOperandRole::PROFILE
@@ -5412,6 +5420,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::Decal
+                        | crate::records::feature::scope::DesignFeatureKind::Align
                         | crate::records::feature::scope::DesignFeatureKind::BaseFlange
                         | crate::records::feature::scope::DesignFeatureKind::EdgeFlange
                         | crate::records::feature::scope::DesignFeatureKind::Hem
