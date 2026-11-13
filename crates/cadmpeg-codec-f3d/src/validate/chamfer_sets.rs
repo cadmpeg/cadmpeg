@@ -74,8 +74,14 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                     .reference_members()
                     .values()
                     .any(|member| *member == set.group_record_index)
-        }) && crate::design::design_feature_family(&scope.kind())
-            == Some(crate::design::DesignFeatureFamily::Chamfer);
+        }) && list.sets.iter().all(|set| set.entry_count > 0)
+            && list
+                .sets
+                .iter()
+                .try_fold(0_u32, |sum, set| sum.checked_add(set.entry_count))
+                == Some(list.entry_count)
+            && crate::design::design_feature_family(&scope.kind())
+                == Some(crate::design::DesignFeatureFamily::Chamfer);
         if !valid {
             push_constant_finding(
                 findings,

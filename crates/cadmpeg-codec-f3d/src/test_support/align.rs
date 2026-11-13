@@ -192,3 +192,76 @@ pub(crate) fn align_construction_value_fixture(
         },
     }
 }
+
+pub(crate) const ALIGN_MOTION_MATRIX: [[f64; 4]; 4] = [
+    [0., -1., 0., 1.25],
+    [1., 0., 0., -2.5],
+    [0., 0., 1., 3.75],
+    [0., 0., 0., 1.],
+];
+
+pub(crate) struct AlignMotionFixture {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) scope: DesignParameterScope,
+    pub(crate) constructor_offset: usize,
+    pub(crate) form_offset: usize,
+    pub(crate) matrix_offset: usize,
+}
+
+pub(crate) fn align_motion_fixture(
+    form: DesignAlignForm,
+    leading: [bool; 2],
+    remaining: [bool; 4],
+    scalar: f64,
+    codes: [u32; 2],
+    omitted: bool,
+    typed: bool,
+) -> AlignMotionFixture {
+    let (mut bytes, scope) = align_prefix_fixture(form);
+    let mut header = Vec::new();
+    super::indexed_header(&mut header, *b"256", 800);
+    bytes[..header.len()].copy_from_slice(&header);
+    bytes.resize(usize::try_from(scope.paired_byte_offset()).unwrap(), 0);
+    super::indexed_header(&mut bytes, *b"257", 800);
+    let constructor_offset = bytes.len();
+    super::indexed_header(&mut bytes, *b"500", 806);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&scalar.to_le_bytes());
+    for (ordinal, present) in leading.into_iter().chain(remaining).enumerate() {
+        if ordinal == 5 {
+            bytes.extend_from_slice(&codes[0].to_le_bytes());
+        }
+        if present {
+            let index = 810 + u32::try_from(ordinal).unwrap() * 2;
+            bytes.push(1);
+            bytes.extend_from_slice(&u64::from(index).to_le_bytes());
+            if typed {
+                let guid = "84E6245F-1CDC-4FB8-8048-163A85FAD3F0";
+                bytes.extend_from_slice(&36_u32.to_le_bytes());
+                bytes.extend_from_slice(guid.as_bytes());
+            }
+            bytes.extend_from_slice(&[0; 2]);
+        } else {
+            bytes.push(0);
+        }
+    }
+    bytes.extend_from_slice(&codes[1].to_le_bytes());
+    let form_offset = bytes.len();
+    bytes.extend_from_slice(&4_u32.to_le_bytes());
+    bytes.push(u8::from(omitted));
+    let matrix_offset = bytes.len();
+    if !omitted {
+        for value in ALIGN_MOTION_MATRIX.into_iter().flatten() {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&[0; 78]);
+    super::indexed_header(&mut bytes, *b"501", 806);
+    AlignMotionFixture {
+        bytes,
+        scope,
+        constructor_offset,
+        form_offset,
+        matrix_offset,
+    }
+}
