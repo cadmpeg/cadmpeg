@@ -405,6 +405,7 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
 
     let mut inconsistent = histories[0].clone();
     inconsistent.states_mut()[0].transition = Some(AsmHistoricalTransition {
+        geometry_unchanged: false,
         record_revisions: Vec::new(),
         rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(4),
