@@ -194,30 +194,33 @@ fn counted_owner_runs_refuse_broken_counts_references_and_truncated_fields() {
 
 #[test]
 fn counted_owner_runs_validate_owner_membership_order_and_native_offsets() {
-    let (bytes, scope, owners, types) = owner_run_fixture(5, 2, true, false, "Assemble");
-    let decoded = decode(&bytes, &scope, &owners, &types).unwrap();
-    assert!(!valid_alignment(&scope, &decoded, &types, &owners[..5]));
-    let mut duplicate = owners.clone();
-    duplicate.push(owners[4].clone());
-    assert!(!valid_alignment(&scope, &decoded, &types, &duplicate));
-    for field in ["local_ordinal", "scope_record_index"] {
-        let mut changed = owners.clone();
-        let mut wire = serde_json::to_value(&changed[4]).unwrap();
-        wire[field] = serde_json::json!(9);
-        changed[4] = serde_json::from_value(wire).unwrap();
-        assert!(decode(&bytes, &scope, &changed, &types).is_none());
-    }
-    for mutation in 0..5 {
-        let mut changed = decoded.clone();
-        let run = changed.additional_owner_run.as_mut().unwrap();
-        match mutation {
-            0 => run.count.value = 1,
-            1 => run.count.offset += 1,
-            2 => run.references[0].offset += 1,
-            3 => run.references.swap(0, 1),
-            _ => run.references[0].value = 100,
+    for version in [4, 5] {
+        let (bytes, scope, owners, types) = owner_run_fixture(version, 2, true, false, "Assemble");
+        let decoded = decode(&bytes, &scope, &owners, &types).unwrap();
+        assert!(!valid_alignment(&scope, &decoded, &types, &owners[..5]));
+        assert!(decode(&bytes, &scope, &owners[..5], &types).is_none());
+        let mut duplicate = owners.clone();
+        duplicate.push(owners[4].clone());
+        assert!(!valid_alignment(&scope, &decoded, &types, &duplicate));
+        for field in ["local_ordinal", "scope_record_index"] {
+            let mut changed = owners.clone();
+            let mut wire = serde_json::to_value(&changed[4]).unwrap();
+            wire[field] = serde_json::json!(9);
+            changed[4] = serde_json::from_value(wire).unwrap();
+            assert!(decode(&bytes, &scope, &changed, &types).is_none());
         }
-        assert!(!valid_alignment(&scope, &changed, &types, &owners));
+        for mutation in 0..5 {
+            let mut changed = decoded.clone();
+            let run = changed.additional_owner_run.as_mut().unwrap();
+            match mutation {
+                0 => run.count.value = 1,
+                1 => run.count.offset += 1,
+                2 => run.references[0].offset += 1,
+                3 => run.references.swap(0, 1),
+                _ => run.references[0].value = 100,
+            }
+            assert!(!valid_alignment(&scope, &changed, &types, &owners));
+        }
     }
 }
 

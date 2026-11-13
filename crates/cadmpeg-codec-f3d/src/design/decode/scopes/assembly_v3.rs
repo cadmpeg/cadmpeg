@@ -469,10 +469,7 @@ pub(super) fn alignment(
         return Ok(None);
     };
     let stream = native_stream(&scope.id);
-    if grammar.stride == 11
-        && types
-            .get(&u64::from(scope.record_index))
-            .is_some_and(|(_, version)| *version == 5)
+    if (grammar.additional_owner_count.value != 0 || version_five(scope, types))
         && owners
             .iter()
             .filter(|owner| {
@@ -712,10 +709,7 @@ pub(crate) fn valid_alignment(
         .additional_owner_run
         .as_ref()
         .map_or(0, |run| run.references.len());
-    if (additional != 0
-        || types
-            .get(&u64::from(scope.record_index))
-            .is_some_and(|(_, version)| *version == 5))
+    if (additional != 0 || version_five(scope, types))
         && owners
             .iter()
             .filter(|owner| {
