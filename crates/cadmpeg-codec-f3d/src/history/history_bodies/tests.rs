@@ -332,6 +332,215 @@ fn a_later_body_revision_preserves_the_base_feature_geometry() {
 }
 
 #[test]
+fn an_incomplete_history_body_closure_reports_the_undecoded_body() {
+    for width in [RefWidth::Four, RefWidth::Eight] {
+        let mut bytes = Vec::new();
+        put_header(&mut bytes, width);
+        put_plain(&mut bytes, width, "asmheader", &[]);
+        put_sphere_solid(&mut bytes, width, 1, 7, -1, [10.0, 0.0, 0.0]);
+        put_plain(&mut bytes, width, "lump", &[]);
+        put_state(&mut bytes, width, (13, -1, 1, 0), &[(7, 1), (-1, 6)]);
+        put_plain(
+            &mut bytes,
+            width,
+            "body",
+            &[
+                (REF, -1),
+                (INT, 7),
+                (REF, -1),
+                (REF, 6),
+                (REF, -1),
+                (REF, -1),
+            ],
+        );
+        put_state(
+            &mut bytes,
+            width,
+            (12, 0, -1, 1),
+            &[(-1, 1), (-1, 2), (-1, 3), (-1, 4), (-1, 5)],
+        );
+        let (bodies, losses) = run_bytes(&bytes, width, 1, MAX_HISTORY_BODY_WORK);
+        assert!(bodies.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            F3dLossCode::FeatureHistoryBodyUndecoded
+                .note("incomplete")
+                .code
+        );
+    }
+}
+
+#[test]
+fn an_invalid_history_body_nest_reports_the_undecoded_body() {
+    for width in [RefWidth::Four, RefWidth::Eight] {
+        let mut bytes = Vec::new();
+        put_header(&mut bytes, width);
+        put_plain(&mut bytes, width, "asmheader", &[]);
+        put_sphere_solid(&mut bytes, width, 1, 7, -1, [10.0, 0.0, 0.0]);
+        put_plain(
+            &mut bytes,
+            width,
+            "shell",
+            &[
+                (REF, -1),
+                (INT, -1),
+                (REF, -1),
+                (REF, -1),
+                (REF, -1),
+                (REF, -1),
+                (REF, 8),
+                (REF, 2),
+            ],
+        );
+        for owner in [3, 6] {
+            put_plain(
+                &mut bytes,
+                width,
+                "wire",
+                &[
+                    (REF, -1),
+                    (INT, -1),
+                    (REF, -1),
+                    (REF, -1),
+                    (REF, -1),
+                    (REF, owner),
+                    (REF, 9),
+                ],
+            );
+        }
+        put_plain(
+            &mut bytes,
+            width,
+            "vertex",
+            &[
+                (REF, -1),
+                (INT, -1),
+                (REF, -1),
+                (REF, -1),
+                (INT, 0),
+                (REF, 10),
+            ],
+        );
+        put_fields(
+            &mut bytes,
+            width,
+            "point",
+            &[(REF, -1), (INT, -1), (REF, -1)],
+        );
+        bytes.push(0x13);
+        for value in [0.0_f64, 0.0, 0.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x11);
+        put_state(&mut bytes, width, (13, -1, 1, 0), &[(11, 1), (12, 3)]);
+        put_plain(
+            &mut bytes,
+            width,
+            "body",
+            &[
+                (REF, -1),
+                (INT, 7),
+                (REF, -1),
+                (REF, 2),
+                (REF, -1),
+                (REF, -1),
+            ],
+        );
+        put_plain(
+            &mut bytes,
+            width,
+            "shell",
+            &[
+                (REF, -1),
+                (INT, -1),
+                (REF, -1),
+                (REF, 6),
+                (REF, -1),
+                (REF, 4),
+                (REF, 7),
+                (REF, 2),
+            ],
+        );
+        let inserted = (1..=10).map(|slot| (-1, slot)).collect::<Vec<_>>();
+        put_state(&mut bytes, width, (12, 0, -1, 1), &inserted);
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+        let header = cadmpeg_asm::asm_header::parse(&bytes).unwrap();
+        let mut allowance = u64::MAX;
+        let history = super::super::decode(
+            &ctx,
+            &bytes,
+            "test",
+            width,
+            &mut allowance,
+            &WorkBudget::new(1 << 20),
+        )
+        .unwrap()
+        .unwrap();
+        let archive = super::super::decode_record_archive(&ctx, history.states(), &bytes, width)
+            .unwrap()
+            .unwrap();
+        let mut versions = (0..=10)
+            .map(|slot| (slot, slot))
+            .collect::<BTreeMap<_, _>>();
+        versions.insert(1, 11);
+        versions.insert(3, 12);
+        let table = cadmpeg_asm::history::materialize_record_table(&versions, |revision| {
+            archive.get(&revision)
+        })
+        .expect("complete historical record table");
+        let subtypes = archive_subtypes(&archive, header.metadata.save_format_version);
+        let brep = cadmpeg_asm::brep::decode_with_table(
+            &ctx,
+            &table,
+            &bytes,
+            (Some(&header.metadata), &subtypes),
+            "f3d:history",
+            crate::ids::ID_FORMAT,
+            cadmpeg_asm::brep::DecodePurpose::Model,
+        )
+        .unwrap();
+        let mut scratch = CadIr::empty();
+        cadmpeg_asm::brep::transfer::transfer_into_ir(&ctx, &mut scratch, "f3d", brep).unwrap();
+        let body = &scratch.model.bodies[0];
+        let Extract::Nest(topology) = extract(&ctx, &scratch.model, body.id.as_str()).unwrap()
+        else {
+            panic!("reference-closed historical nest")
+        };
+        assert_eq!(topology.shells.len(), 2);
+        assert_eq!(topology.vertices.len(), 1);
+        for shell in &topology.shells {
+            assert_eq!(
+                shell.free_vertices(),
+                std::slice::from_ref(&topology.vertices[0].id)
+            );
+        }
+        let candidate = HistoryBody {
+            id: HistoryBodyId::mint("test:history-body:nest#shared-vertex").unwrap(),
+            produced_by: Some(feature("base").id),
+            consumed_by: None,
+            state: HistoryStateRef {
+                ordinal: 0,
+                identifier: 12,
+            },
+            topology,
+        };
+        assert!(admit(&ctx, candidate).unwrap().is_none());
+        let (bodies, losses) = run_bytes(&bytes, width, 1, MAX_HISTORY_BODY_WORK);
+        assert!(bodies.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            F3dLossCode::FeatureHistoryBodyUndecoded
+                .note("invalid")
+                .code
+        );
+    }
+}
+
+#[test]
 fn an_unchanged_body_needs_no_history_body() {
     let (bodies, losses) = run(false, RefWidth::Eight, 1, MAX_HISTORY_BODY_WORK);
     assert!(bodies.is_empty());
