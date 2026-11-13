@@ -122,7 +122,7 @@ fn project_fallback(
             _ => None,
         });
     let belongs = |id: &str, record_index: u32| {
-        scope.is_some_and(|scope| {
+        scopes.iter().any(|scope| {
             native_stream(&scope.id).is_some_and(|stream| native_stream(id) == Some(stream))
                 && record_index == scope.record_index
         })
@@ -149,6 +149,7 @@ fn project_fallback(
     });
     let section_shape = construction
         .and_then(|construction| construction.section)
+        .or_else(|| observation.and_then(|observation| observation.section))
         .and_then(|section| section.shape());
     let evidence = Evidence {
         scopes,

@@ -109,7 +109,8 @@ It retains complete decoded source records, ordered references, raw shape
 values, point inputs, offsets, and the original parameter expressions. Missing
 and duplicate joins retain their available candidates. The observation contains
 independent prefix fields, admitted owner candidates by ordinal, decoded point
-records, and marked prefix references. Its indexes and offsets use source
+records, marked prefix references, and an independently framed section tag.
+Its indexes and offsets use source
 identity and source coordinates.
 
 The `pipe:forward-fraction`, `pipe:reverse-fraction`, `pipe:section-size-cm`,

@@ -28,7 +28,7 @@ use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Native records a Pipe binding joins.
 pub(crate) struct PipeSources<'a> {
@@ -45,6 +45,7 @@ pub(crate) struct PipeObservation {
     pub(crate) points: Vec<DesignWorkPointConstruction>,
     pub(crate) point_records: Vec<u32>,
     pub(crate) prefix_references: Vec<(u32, u64)>,
+    pub(crate) section: Option<DesignPipeSection>,
 }
 
 pub(crate) fn observe_sources(
@@ -126,6 +127,7 @@ fn observe_scope(
         points: Vec::new(),
         point_records: Vec::new(),
         prefix_references: Vec::new(),
+        section: None,
     };
     for id in scope.reference_members().values().copied() {
         let Some(selected) = frame(id) else {
@@ -190,7 +192,77 @@ fn observe_scope(
             }
         }
     }
+    observation.section = observe_section(bytes, table, scope, frames, index, &observation);
     Some(observation)
+}
+
+fn observe_section(
+    bytes: &[u8],
+    table: usize,
+    scope: &DesignParameterScope,
+    frames: &HashMap<u64, Option<&DesignPrimaryFrame<'_>>>,
+    index: &PipeIndex<'_>,
+    observation: &PipeObservation,
+) -> Option<DesignPipeSection> {
+    if !observation.point_records.is_empty() {
+        return None;
+    }
+    let [Some(forward), Some(reverse), Some(size), Some(thickness)] =
+        std::array::from_fn(|ordinal| match observation.owners[ordinal].as_slice() {
+            [id] => Some(*id),
+            _ => None,
+        })
+    else {
+        return None;
+    };
+    let owners = [forward, reverse, size, thickness];
+    let settings = scope
+        .reference_members()
+        .values()
+        .copied()
+        .filter(|id| {
+            frames
+                .get(&u64::from(*id))
+                .copied()
+                .flatten()
+                .is_some_and(|frame| pipe::is_settings(frame.design_type))
+        })
+        .collect::<Vec<_>>();
+    let [settings] = settings.as_slice() else {
+        return None;
+    };
+    let groups = index
+        .groups(design_segment(&scope.id)?, scope.record_index)
+        .collect::<Vec<_>>();
+    let paths = groups
+        .iter()
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X5)
+        .collect::<Vec<_>>();
+    let [path] = paths.as_slice() else {
+        return None;
+    };
+    let mut claimed = HashSet::from(owners);
+    claimed.insert(*settings);
+    for group in &groups {
+        claimed.insert(group.record_index);
+        claimed.extend(group.members().iter().map(|member| member.value));
+    }
+    let actual = scope
+        .reference_members()
+        .values()
+        .copied()
+        .collect::<HashSet<_>>();
+    if actual.len() != scope.reference_members().len() || actual != claimed {
+        return None;
+    }
+    section_frame_shape(
+        bytes,
+        table,
+        observation.prefix.as_ref()?.opaque_post_operation_offset,
+        owners,
+        *settings,
+        path.record_index,
+    )
 }
 
 /// Bind every Pipe scope whose source framing and complete native relation
@@ -391,7 +463,14 @@ fn read_construction(
         .filter(|id| frame(*id).is_some_and(|selected| pipe::is_settings(selected.design_type)))
         .collect::<Vec<_>>();
     if let (None, [settings], [path]) = (point, settings.as_slice(), paths.as_slice()) {
-        construction.section = section_frame_shape(bytes, table, &construction, *settings, *path);
+        construction.section = section_frame_shape(
+            bytes,
+            table,
+            construction.opaque_post_operation_offset,
+            construction.record_indexes,
+            *settings,
+            *path,
+        );
     }
     if let Some((id, selected)) = point {
         let types = HashMap::from([(
@@ -440,13 +519,12 @@ fn read_construction(
 fn section_frame_shape(
     bytes: &[u8],
     table: usize,
-    construction: &DesignPipeConstruction,
+    opaque_offset: u64,
+    owners: [u32; 4],
     settings: u32,
     path: u32,
 ) -> Option<DesignPipeSection> {
-    let start = usize::try_from(construction.opaque_post_operation_offset)
-        .ok()?
-        .checked_add(2)?;
+    let start = usize::try_from(opaque_offset).ok()?.checked_add(2)?;
     let frame = bytes.get(start..table)?;
     if frame.len() < section_frame::LEN {
         return None;
@@ -455,7 +533,7 @@ fn section_frame_shape(
         .map(|ordinal| marked_record_reference(frame, ordinal * 11))
         .collect::<Option<Vec<_>>>()?;
     named.sort_unstable();
-    let mut expected = construction.record_indexes.to_vec();
+    let mut expected = owners.to_vec();
     expected.push(settings);
     expected.sort_unstable();
     if named != expected
