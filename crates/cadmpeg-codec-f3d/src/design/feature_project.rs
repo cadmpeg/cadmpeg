@@ -7504,8 +7504,7 @@ const HOLE_TAP_CLEARANCE: u32 = 1;
 /// Tap type of a tapped Hole.
 const HOLE_TAP_TAPPED: u32 = 2;
 
-/// The loss a Hole with tap type `tap_type` reports: none for simple and
-/// clearance holes, which model their stored diameter.
+/// The loss a Hole with tap type `tap_type` reports.
 pub(super) fn hole_tap_type_loss(
     scope_id: &str,
     tap_type: u32,
@@ -7516,7 +7515,7 @@ pub(super) fn hole_tap_type_loss(
             "Tapped Hole {scope_id} keeps its stored HoleDiameter; Fusion models the bore diameter that its thread size gives."
         ))),
         other => Some(crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed.note(format!(
-            "Hole {scope_id} assumes its scalar geometry is independent of tap type {other} (DR-461)."
+            "Hole {scope_id} assumes its scalar geometry is independent of tap type {other} (DR-106)."
         ))),
     }
 }
