@@ -21,4 +21,4 @@ rewrite_native_record!(DesignShellOperation, []; {thickness, thickness_record_in
 rewrite_native_record!(DesignShellPrefixFlag, []; {value, offset});
 rewrite_native_record!(DesignShellOutsideWall, []; {thickness, thickness_record_index, thickness_offset});
 rewrite_native_record!(DesignShellWallSlots, []; {tangent_chain, rounded_corners, outside});
-rewrite_native_record!(DesignThickenOperation, []; {signed_thickness, thickness_record_index, thickness_offset});
+rewrite_native_record!(DesignThickenOperation, []; {signed_thickness, symmetric, tangent_chain, thickness_record_index, thickness_offset});
