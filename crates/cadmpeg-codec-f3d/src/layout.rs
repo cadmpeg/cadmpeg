@@ -2721,6 +2721,26 @@ pub(crate) mod fixed_pipe_operation_prefix {
     pub(crate) const OPAQUE_POST_OPERATION: usize = 26;
 }
 
+/// Byte offsets for the `pipe_section_frame` record.
+///
+/// Spec §3.1. Record length 71 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the two opaque bytes of the compact or legacy Pipe prefix of a Pipe without a point-selection pair.
+/// ```
+pub(crate) mod pipe_section_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 71;
+    /// Offset of `zero_byte` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE: usize = 55;
+    /// Stated value of `zero_byte` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE_VALUE: u8 = 0;
+    /// Offset of `path_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PATH_GROUP_REFERENCE: usize = 56;
+    /// Offset of `shape` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SHAPE: usize = 67;
+}
+
 /// Byte offsets for the `legacy_pipe_operation_prefix` record.
 ///
 /// Spec §3.1. Record length 32 B.
