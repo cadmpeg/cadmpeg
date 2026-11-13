@@ -188,6 +188,10 @@ pub(crate) enum F3dLossCode {
     ReferenceImageFlagAssumed,
     /// Decal timeline objects retain native image and mapping records.
     DecalNativeRetained,
+    DecalMappingAssumed,
+    DecalTargetUnresolved,
+    DecalImageUnresolved,
+    DecalDefinitionUnresolved,
     /// Source parametric edge references marked lost have no independent proof.
     EdgeReferenceLostUnrepaired,
     /// Feature scopes have no complete neutral feature definition.
@@ -799,6 +803,10 @@ impl F3dLossCode {
         Self::ReferenceImageNativeRetained,
         Self::ReferenceImageFlagAssumed,
         Self::DecalNativeRetained,
+        Self::DecalMappingAssumed,
+        Self::DecalTargetUnresolved,
+        Self::DecalImageUnresolved,
+        Self::DecalDefinitionUnresolved,
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
         Self::FeatureMeshImportTessellationsUnresolved,
@@ -1173,6 +1181,10 @@ impl F3dLossCode {
             Self::ReferenceImageNativeRetained => "appearance.reference-image-native",
             Self::ReferenceImageFlagAssumed => "appearance.reference-image-flag-assumed",
             Self::DecalNativeRetained => "appearance.decal-native",
+            Self::DecalMappingAssumed => "appearance.decal-mapping-assumed",
+            Self::DecalTargetUnresolved => "appearance.decal-target-unresolved",
+            Self::DecalImageUnresolved => "appearance.decal-image-unresolved",
+            Self::DecalDefinitionUnresolved => "appearance.decal-definition-unresolved",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
             Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
@@ -1560,7 +1572,8 @@ impl F3dLossCode {
             | Self::SketchCurveRegionBoundary
             | Self::SketchCurveUnprofiledSelected
             | Self::ThreadLiveFaceUnproven
-            | Self::ReferenceImageFlagAssumed => Severity::Info,
+            | Self::ReferenceImageFlagAssumed
+            | Self::DecalMappingAssumed => Severity::Info,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
@@ -1639,6 +1652,9 @@ impl F3dLossCode {
             | Self::HistoryOnlyBodyOmitted
             | Self::ReferenceImageNativeRetained
             | Self::DecalNativeRetained
+            | Self::DecalTargetUnresolved
+            | Self::DecalImageUnresolved
+            | Self::DecalDefinitionUnresolved
             | Self::EdgeReferenceLostUnrepaired
             | Self::FeatureStoredBodiesEmpty
             | Self::FeatureStoredBodiesRecipeAbsent
@@ -2193,6 +2209,10 @@ impl F3dLossCode {
             | Self::ReferenceImageNativeRetained
             | Self::ReferenceImageFlagAssumed
             | Self::DecalNativeRetained
+            | Self::DecalMappingAssumed
+            | Self::DecalTargetUnresolved
+            | Self::DecalImageUnresolved
+            | Self::DecalDefinitionUnresolved
             | Self::EdgeReferenceLostUnrepaired
             | Self::MeshAttributeNotTransferred
             | Self::TsplineRadialMapUnresolved
@@ -2366,6 +2386,10 @@ mod tests {
                 "appearance.reference-image-native",
                 "appearance.reference-image-flag-assumed",
                 "appearance.decal-native",
+                "appearance.decal-mapping-assumed",
+                "appearance.decal-target-unresolved",
+                "appearance.decal-image-unresolved",
+                "appearance.decal-definition-unresolved",
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
                 "feature.mesh-import-tessellations-unresolved",
