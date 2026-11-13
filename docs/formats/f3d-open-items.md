@@ -1678,7 +1678,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which version-five fields encode additional parameter owners and the form with 22 extra bytes?
 
-**Known.** The four-owner version-five grammar has explicit angle, Z, X, and Y references, two zero bytes after the angle reference, and six zero bytes after the owner run. Version-four scopes store a counted limit-owner run after their four alignment references.
+**Known.** The four-owner version-five grammar has explicit angle, Z, X, and Y references, two zero bytes after the angle reference, and six zero bytes after the owner run. Version-four scopes store connector frames consecutively, then the alignment references and a counted limit-owner run. Their four-owner form follows the version-four grammar in §3.1 of `f3d.md`.
 
 **Need.** Public version-five controlled files with five and six owners, and a controlled pair whose scopes differ by 22 bytes. Vary one joint limit or owner-producing setting at a time. Identify each added reference target, its scalar lane, the run count, and complete paired-header closure.
 

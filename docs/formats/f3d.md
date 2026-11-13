@@ -2119,9 +2119,12 @@ table is in [the layout table](../layouts/f3d.md#assembly_version_five_scope).
 
 Version 4 uses the version-5 extensions with these differences. Its joint
 reference selects type version 5. [Eight zero bytes](../layouts/f3d.md#assembly_version_four_prologue)
-follow the facing byte's two zero bytes. No zero bytes follow the angle-owner
-reference. The tail stores u8 `1` before its two boolean bytes, and no zero
-byte follows them. Its span is `374 + (R + 12) * 11 + 128 * M + 4 * E`.
+follow the facing byte's two zero bytes. Each connector stores a plain local
+reference, six zero bytes, an identity byte, and its explicit matrix when
+the identity byte is zero. The second connector follows the first connector
+frame directly. Four zero bytes follow the second connector frame. No zero
+bytes follow the angle-owner reference. The tail stores u8 `1` before its
+two boolean bytes, and no zero byte follows them. Its span is `222 + (R + 12) * 11 + 128 * M + 4 * E`.
 
 The span formulas count the eight code units of the stored family name
 `Assemble`. A stored family name of `L` UTF-16 code units adds `2 * (L - 8)`

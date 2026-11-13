@@ -10273,6 +10273,21 @@ Unstated regions:
 
 - `0..128` (128 B): Indexed scope header and operation prologue; control semantics are tracked in DR-476.
 
+## `assembly_version_four_connector_prefix`
+
+Spec §Assembly operands · layout: byte offsets · size: 18 B
+
+Offsets are relative to each version-four connector. Identity byte zero is followed by a rigid matrix; identity byte one supplies identity.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_v3.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `reference` | `bytes[11]` | little | spec | Each connector stores a plain local |
+| 11 | 6 | `zeros` | `bytes[6]` | little | spec | reference, six zero bytes, an identity byte · value `[0, 0, 0, 0, 0, 0]` |
+| 17 | 1 | `identity` | `u8` | little | spec | reference, six zero bytes, an identity byte |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
