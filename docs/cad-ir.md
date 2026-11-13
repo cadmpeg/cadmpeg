@@ -261,6 +261,8 @@ reference entries in the document parameter arena. A referenced parameter may
 be owned by another feature, including a global equations node, and may occur
 more than once when the source serializes repeated consumption slots.
 
+`MeshGenerateFaceGroups` records a mesh source selection and independently optional generation settings: Fast or Accurate method, angle threshold in radians, absolute boundary tolerance in millimetres, and minimum group area as a fraction. Absent settings remain unknown, and stored inactive settings survive. `MeshCombineFaceGroups` records the source selection of groups to combine. Both reuse `MeshSelection`: whole tessellations, a native expression with optional ordered group selectors, or an unavailable source identified by its feature. Feature-owned parameters retain the original expressions, quantities and identities. Saved triangle partitions remain on tessellations. Native selections retain their history state for later resolution.
+
 ## Assembly joints
 
 An assembly joint grounds one connector, or connects two connectors through a paired family. Each connector holds an operand and a frame. The frame is in the operand container's own coordinate space: the document root, the prototype of a local occurrence, or the external document. It is not composed with the occurrence placement; the connector's model-space frame is the occurrence placement applied to the frame. An operand container is the document root, a local occurrence, or an external document. An occurrence container optionally holds `occurrence_path`: the native keys of the nested occurrences, outermost first, that lead from the prototype of the occurrence to the document that owns the object. An absent path means that the prototype of the occurrence owns the object. The path identifies the placement of a part that is placed more than once; placement transforms stay on the occurrences.
@@ -518,5 +520,3 @@ The extract omits repeated faces, loops, coedges, edges, vertices, points, surfa
 ```sh
 cargo run -p cadmpeg-ir --example emit_cube > cube.cadir.json
 ```
-
-`MeshGenerateFaceGroups` records a mesh source selection and independently optional generation settings: Fast or Accurate method, angle threshold in radians, absolute boundary tolerance in millimetres, and minimum group area as a fraction. Absent settings remain unknown, and stored inactive settings survive. `MeshCombineFaceGroups` records the source selection of groups to combine. Both reuse `MeshSelection`: whole tessellations, a native expression with optional ordered group selectors, or an unavailable source identified by its feature. Feature-owned parameters retain the original expressions, quantities and identities. Saved triangle partitions remain on tessellations. Native selections retain their history state for later resolution.

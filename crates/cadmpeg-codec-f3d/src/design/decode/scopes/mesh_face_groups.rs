@@ -40,7 +40,7 @@ pub(super) fn decode_prefix(
         let mut at = start.checked_add(prefix::LEN)?;
         if scope.kind() == DesignFeatureKind::GenerateFaceGroups {
             for _ in 0..3 {
-                local_reference(bytes, &mut at)?;
+                take_reference(bytes, &mut at)?;
             }
             decoded.method_code = Some(Located {
                 value: View::u32_le_at(bytes, at)?,
@@ -51,15 +51,21 @@ pub(super) fn decode_prefix(
             decoded.group_hint = Some(group_token(bytes, &mut at)?);
         }
         let related_at = at.checked_add(1)?;
-        decoded.related_mesh = local_reference(bytes, &mut at)?.map(|value| Located {
-            value,
-            offset: u64_from_index(related_at),
-        });
+        decoded.related_mesh = take_reference(bytes, &mut at)?
+            .local()
+            .and_then(|(target, _)| u32::try_from(target).ok())
+            .map(|value| Located {
+                value,
+                offset: u64_from_index(related_at),
+            });
         let source_at = at.checked_add(1)?;
-        decoded.source_mesh = local_reference(bytes, &mut at)?.map(|value| Located {
-            value,
-            offset: u64_from_index(source_at),
-        });
+        decoded.source_mesh = take_reference(bytes, &mut at)?
+            .local()
+            .and_then(|(target, _)| u32::try_from(target).ok())
+            .map(|value| Located {
+                value,
+                offset: u64_from_index(source_at),
+            });
         let count = View::u32_le_at(bytes, at)?;
         decoded.group_count = Some(Located {
             value: count,
@@ -92,19 +98,6 @@ pub(super) fn decode_prefix(
         decoded.groups = groups;
     }
     Ok((decoded != DesignMeshFaceGroups::default()).then_some(decoded))
-}
-
-fn local_reference(bytes: &[u8], at: &mut usize) -> Option<Option<u32>> {
-    if bytes.get(*at) == Some(&0) {
-        *at = at.checked_add(1)?;
-        return Some(None);
-    }
-    let reference = take_reference(bytes, at)?;
-    Some(
-        reference
-            .local()
-            .and_then(|(target, _)| u32::try_from(target).ok()),
-    )
 }
 
 fn group_token(bytes: &[u8], at: &mut usize) -> Option<Located<String>> {

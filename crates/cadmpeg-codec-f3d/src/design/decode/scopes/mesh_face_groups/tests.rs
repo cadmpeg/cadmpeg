@@ -139,7 +139,7 @@ fn registered_prefixes_preserve_methods_nullable_owners_and_ordered_groups() {
             match scope.payload_mut() {
                 crate::records::feature::scope::DesignScopePayloadMut::GenerateFaceGroups(slot)
                 | crate::records::feature::scope::DesignScopePayloadMut::CombineFaceGroups(slot) => {
-                    *slot = Some(construction)
+                    *slot = Some(construction);
                 }
                 _ => panic!("face-group scope"),
             }

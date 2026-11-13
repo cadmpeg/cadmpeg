@@ -281,7 +281,7 @@ fn typed_projection_preserves_all_parameters_and_scope_reference_slots() {
         .try_edit(|draft| {
             draft.payload = DesignFeatureKind::native("GenerateFaceGroups")
                 .try_into()
-                .unwrap()
+                .unwrap();
         })
         .unwrap();
     let baseline = with_decode_context(|ctx| {
