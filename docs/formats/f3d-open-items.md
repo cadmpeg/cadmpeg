@@ -1443,7 +1443,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** A two-list form without a companion reads the middle lists as the component-node and consumed-body lists and reports `feature.combine-middle-list-omitted-assumed`. A nonempty first list is read as the requested component's browser node. DR-472 tracks the destination of a new-component request.
+**Note.** A two-list form without a companion reads the middle lists as the component-node and consumed-body lists and reports `feature.combine-middle-list-omitted-assumed`. A nonempty first list is read as the requested component's browser node. DR-474 tracks the destination of a new-component request.
 
 ### DR-272. Prologue of a Combine frame whose byte 20 is one
 
@@ -1457,7 +1457,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** None.
 
-### DR-472. Destination of a Combine new-component result
+### DR-474. Destination of a Combine new-component result
 
 **Question.** How does a Combine's new-component request identify the product definition and placement that contain its result?
 
