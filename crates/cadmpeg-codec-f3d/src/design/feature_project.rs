@@ -2539,7 +2539,7 @@ fn scope_properties(
 fn scope_parameter_expressions(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
-) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
+) -> Result<std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     let mut properties = std::collections::BTreeMap::new();
     for (_, parameter) in parameters {
         let name = parameter.name().to_owned();
