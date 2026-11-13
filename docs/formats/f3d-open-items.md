@@ -309,6 +309,11 @@ reference.
 binding, the decoder keys the neutral component definition by the carrier GUID.
 Two carriers of one definition then project as two definitions.
 
+**Note.** DerivedInstance projection keys a definition without naming-space metadata
+by its stream and component record. It retains explicit body bindings to that
+record and reports `feature.derived-instance-definition-unresolved`. Other legacy
+GUID fallbacks retain the conflict above.
+
 ### DR-77. Operation placements of identity-frame carriers
 
 **Question.** Does the `CopyPaste` source placement or the `R-Pattern` first
@@ -2356,7 +2361,7 @@ when the operation transition carries no candidate for the group members?
 
 **Conflict.** None.
 
-**Note.** An unresolved scope keeps a native component selection inside a neutral component insertion and reports `feature.derived-instance-component-insert-assumed`. Its native scope reference and ordered reference properties remain present.
+**Note.** An unresolved construction prefix keeps a native component selection inside a neutral component insertion and reports `feature.derived-instance-component-insert-assumed`. A decoded prefix whose source relation or occurrence is missing keeps its known selection members and reports `feature.derived-instance-sources-unresolved`. Its native scope reference and ordered reference properties remain present.
 
 ### DR-466. Standalone joint source operand binding
 
@@ -2367,3 +2372,27 @@ when the operation transition carries no candidate for the group members?
 **Need.** Public document bundles with independently identified source documents and repeated component instances that bind each source path identity to its document and occurrence context.
 
 **Note.** A standalone timeline feature names its decoded neutral joint while source operands remain unresolved. The decoder preserves their identities and charges `assembly.joint-source-binding-assumed`.
+
+### DR-476. DerivedInstance source placement authority
+
+**Question.** Which placement has authority when a derived source matrix differs from its joined occurrence carrier, or the source placement run omits that relation?
+
+**Known.** The source placement table stores marked relation references followed by an identity selector or sixteen finite scalars. A joined occurrence carrier independently stores its placement. Both representations remain in the native construction.
+
+**Need.** Paired saves that independently change the derived source placement and its occurrence carrier, including an omitted source placement.
+
+**Conflict.** Source and carrier matrices can differ.
+
+**Note.** A unique affine source placement supplies the neutral occurrence pose. Disagreement reports `feature.derived-instance-scope-placement-assumed`. An absent, conflicting or unusable source placement uses the carrier pose and reports `feature.derived-instance-carrier-placement-assumed`. A placement that exceeds finite millimetre coordinates remains native and reports `feature.derived-instance-placement-unrepresentable`. An independently bound finite current pose can supply its occurrence; unresolved occurrence membership remains in the neutral insertion.
+
+### DR-477. DerivedInstance context transform and auxiliary fields
+
+**Question.** What are the roles of the prologue reference, the transform after the primary relation and the trailing GUID, and how do the auxiliary operand-path locators qualify the derivation source?
+
+**Known.** The counted prefix has an ordered source placement run, an auxiliary pair run and an independently ordered repeated run of the pairs' relation references. A primary relation follows four zero bytes. A one-byte marker, an independent identity selector or sixteen-scalar matrix, an LP-UTF16 GUID and three zero bytes close the prefix. Auxiliary targets occupy eight bytes and can exceed a 32-bit record index. Typed references retain their inline GUIDs; typed auxiliary references identify operand-path locators.
+
+**Need.** Paired saves that vary the derivation context and each auxiliary target independently.
+
+**Conflict.** None.
+
+**Note.** All fields remain native. The second matrix is not composed into the neutral source occurrence pose; an explicit matrix reports `feature.derived-instance-context-transform-assumed`.

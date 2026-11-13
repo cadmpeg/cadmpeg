@@ -5947,64 +5947,6 @@ pub(crate) mod component_insert_grouped_identity_carrier {
     pub(crate) const FIRST_COMPONENT_GUID: usize = 38;
 }
 
-/// Byte offsets for the `derived_instance_scope_279_261` record.
-///
-/// Spec §3.1. Record length 443 B.
-///
-/// ```text
-/// Offsets are relative to the primary indexed header. The paired class-261 header begins at offset 443; the frame carries one fixed prologue reference, one ordered relation reference, and a row-major rigid transform.
-/// ```
-pub(crate) mod derived_instance_scope_279_261 {
-    /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 443;
-    /// Offset of `reference_marker` (`u8`). Spec §3.1.
-    pub(crate) const REFERENCE_MARKER: usize = 21;
-    /// Stated value of `reference_marker` (`u8`). Spec §3.1.
-    pub(crate) const REFERENCE_MARKER_VALUE: u8 = 1;
-    /// Offset of `reference_record_index` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_RECORD_INDEX: usize = 22;
-    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_COUNT: usize = 32;
-    /// Stated value of `reference_count` (`u32`). Spec §3.1.
-    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_0001;
-    /// Offset of `relation_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const RELATION_REFERENCE: usize = 36;
-    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
-    pub(crate) const TRANSFORM: usize = 48;
-}
-
-/// Byte offsets for the `derived_instance_relation_310_57` record.
-///
-/// Spec §3.1. Record length 57 B.
-///
-/// ```text
-/// Offsets are relative to the class-310 relation's primary indexed header. The first member names the class-380 occurrence carrier and the third member names the DerivedInstance scope.
-/// ```
-pub(crate) mod derived_instance_relation_310_57 {
-    /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 57;
-    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
-    pub(crate) const INDEXED_HEADER: usize = 0;
-    /// Offset of `carrier_marker` (`u8`). Spec §3.1.
-    pub(crate) const CARRIER_MARKER: usize = 21;
-    /// Stated value of `carrier_marker` (`u8`). Spec §3.1.
-    pub(crate) const CARRIER_MARKER_VALUE: u8 = 1;
-    /// Offset of `carrier_record_index` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const CARRIER_RECORD_INDEX: usize = 22;
-    /// Offset of `middle_marker` (`u8`). Spec §3.1.
-    pub(crate) const MIDDLE_MARKER: usize = 34;
-    /// Stated value of `middle_marker` (`u8`). Spec §3.1.
-    pub(crate) const MIDDLE_MARKER_VALUE: u8 = 1;
-    /// Offset of `middle_record_index` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const MIDDLE_RECORD_INDEX: usize = 35;
-    /// Offset of `scope_marker` (`u8`). Spec §3.1.
-    pub(crate) const SCOPE_MARKER: usize = 46;
-    /// Stated value of `scope_marker` (`u8`). Spec §3.1.
-    pub(crate) const SCOPE_MARKER_VALUE: u8 = 1;
-    /// Offset of `scope_record_index` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const SCOPE_RECORD_INDEX: usize = 47;
-}
-
 /// Byte offsets for the `canvas_geometry_prefix` record.
 ///
 /// Spec §3.1. Record length 217 B.
@@ -9797,6 +9739,74 @@ pub(crate) mod constructed_plane_entity_prefix {
     pub(crate) const LEN: usize = 134;
     /// Offset of `entity_id_code_unit_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const ENTITY_ID_CODE_UNIT_COUNT: usize = 130;
+}
+
+/// Byte offsets for the `derived_instance_prefix` record.
+///
+/// Spec §3.1. Record length 36 B.
+pub(crate) mod derived_instance_prefix {
+    /// Offset of `reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const REFERENCE_MARKER: usize = 21;
+}
+
+/// Byte offsets for the `derived_instance_source_entry_prefix` record.
+///
+/// Spec §3.1. Record length 12 B.
+pub(crate) mod derived_instance_source_entry_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 12;
+}
+
+/// Byte offsets for the `derived_instance_reference_pair` record.
+///
+/// Spec §3.1. Record length 22 B.
+pub(crate) mod derived_instance_reference_pair {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 22;
+}
+
+/// Byte offsets for the `derived_instance_count_prefix` record.
+///
+/// Spec §3.1. Record length 4 B.
+pub(crate) mod derived_instance_count_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 4;
+}
+
+/// Byte offsets for the `derived_instance_suffix_prefix` record.
+///
+/// Spec §3.1. Record length 17 B.
+pub(crate) mod derived_instance_suffix_prefix {
+    /// Offset of `primary_relation_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PRIMARY_RELATION_REFERENCE: usize = 4;
+    /// Stated value of `context_marker` (`u8`). Spec §3.1.
+    pub(crate) const CONTEXT_MARKER_VALUE: u8 = 1;
+}
+
+/// Byte offsets for the `derived_instance_guid_trailer` record.
+///
+/// Spec §3.1. Record length 79 B.
+pub(crate) mod derived_instance_guid_trailer {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 79;
+    /// Offset of `guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const GUID: usize = 0;
+}
+
+/// Byte offsets for the `derived_instance_matrix` record.
+///
+/// Spec §3.1. Record length 128 B.
+pub(crate) mod derived_instance_matrix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 128;
+}
+
+/// Byte offsets for the `derived_instance_reference` record.
+///
+/// Spec §3.1. Record length 11 B.
+pub(crate) mod derived_instance_reference {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 11;
 }
 
 /// Byte offsets for the `scale_matrix_marker_zero_prologue` record.

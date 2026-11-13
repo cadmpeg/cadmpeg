@@ -19534,7 +19534,7 @@ anchor = "Its role is an LP-UTF16 value of 36 through 256 code units"
 
 [[record]]
 name = "derived_instance_scope_279_261"
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs"
 kind = "byte"
 section = "3.1"
 anchor = "A class-`279` / class-`261` `DerivedInstance` scope is a 443-byte frame."
@@ -19607,7 +19607,7 @@ note = "The remaining fixed scope tail ends at the paired class-261 header."
 
 [[record]]
 name = "derived_instance_relation_310_57"
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs"
 kind = "byte"
 section = "3.1"
 anchor = "Its class-`310` relation is a 57-byte three-reference frame."
@@ -33599,6 +33599,379 @@ offset = 130
 type = "u32"
 source = "spec"
 anchor = "an LP-UTF16 Design entity ID begins at offset 130 from the indexed header"
+
+[[record]]
+name = "derived_instance_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The counted `DerivedInstance` prefix"
+size = 36
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "an eleven-byte indexed header"
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Ten zero bytes follow the indexed header."
+
+[[record.field]]
+name = "reference_marker"
+offset = 21
+type = "u8"
+value = 1
+source = "spec"
+anchor = "a marked prologue reference at offset 21"
+
+[[record.field]]
+name = "reference_target"
+offset = 22
+type = "u64"
+source = "spec"
+anchor = "a little-endian u64 target"
+
+[[record.gap]]
+offset = 30
+size = 2
+note = "Six zero bytes follow the prologue record index."
+
+[[record.field]]
+name = "source_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "at offset 32 with plain references"
+
+[[record]]
+name = "derived_instance_source_entry_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Each source entry stores one local relation reference"
+size = 12
+
+[[record.field]]
+name = "relation_reference"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Each source entry stores one local relation reference"
+
+[[record.field]]
+name = "placement_flag"
+offset = 11
+type = "u8"
+source = "spec"
+anchor = "one matrix flag, and its optional matrix"
+
+[[record]]
+name = "derived_instance_reference_pair"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Each pair lists an auxiliary reference and its source relation reference"
+size = 22
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "in two consecutive marked fields"
+
+[[record.field]]
+name = "relation_reference"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "in two consecutive marked fields"
+
+[[record]]
+name = "derived_instance_count_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A u32 auxiliary-pair count follows the source placements"
+size = 4
+
+[[record.field]]
+name = "count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "A second u32 count and a run of marked relation references follow"
+
+[[record]]
+name = "derived_instance_suffix_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Four zero bytes, one marked primary relation reference"
+size = 17
+
+[[record.gap]]
+offset = 0
+size = 4
+note = "Four zero bytes precede the primary relation reference."
+
+[[record.field]]
+name = "primary_relation_reference"
+offset = 4
+type = "bytes[11]"
+source = "spec"
+anchor = "one marked primary relation reference, byte `1`, and a second transform slot"
+
+[[record.field]]
+name = "context_marker"
+offset = 15
+type = "u8"
+value = 1
+source = "spec"
+anchor = "one marked primary relation reference, byte `1`, and a second transform slot"
+
+[[record.field]]
+name = "placement_flag"
+offset = 16
+type = "u8"
+source = "spec"
+anchor = "The second transform uses the same matrix-flag grammar"
+
+[[record]]
+name = "derived_instance_guid_trailer"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A 36-code-unit LP-UTF16 GUID and three zero bytes close this prefix"
+size = 79
+
+[[record.field]]
+name = "guid"
+offset = 0
+type = "bytes[76]"
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 GUID and three zero bytes close this prefix"
+
+[[record.gap]]
+offset = 76
+size = 3
+note = "Three zero bytes precede the ordered-reference table."
+
+[[record]]
+name = "derived_instance_matrix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs"
+kind = "byte"
+section = "3.1"
+anchor = "sixteen little-endian f64 values"
+size = 128
+
+[[record.field]]
+name = "matrix"
+offset = 0
+type = "f64[16]"
+source = "spec"
+anchor = "The matrices use row-major order and centimetre translations"
+
+[[record]]
+name = "derived_instance_relation_58"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The 57-byte and 58-byte derived-instance relations"
+size = 58
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "have an eleven-byte indexed header and ten zero bytes"
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Ten zero bytes follow the indexed header."
+
+[[record.field]]
+name = "carrier_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "The marked carrier reference starts at offset 21"
+
+[[record.field]]
+name = "separator"
+offset = 32
+type = "bytes[3]"
+source = "spec"
+anchor = "bytes `01 00 00` follow the carrier reference"
+
+[[record.field]]
+name = "middle_reference"
+offset = 35
+type = "bytes[11]"
+source = "spec"
+anchor = "the middle reference starts at offset 35"
+
+[[record.gap]]
+offset = 46
+size = 1
+note = "One zero byte precedes the scope reference."
+
+[[record.field]]
+name = "scope_reference"
+offset = 47
+type = "bytes[11]"
+source = "spec"
+anchor = "the scope reference starts at offset 47"
+
+[[record]]
+name = "derived_instance_reference"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Each plain local reference consists of byte `1`"
+size = 11
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+value = 1
+source = "spec"
+anchor = "Each plain local reference consists of byte `1`"
+
+[[record.field]]
+name = "target"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "a little-endian u64 target"
+
+[[record.field]]
+name = "flags"
+offset = 9
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero segment flags"
+
+
+[[record]]
+name = "derived_instance_typed_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A typed local reference inserts an LP-ASCII type GUID"
+size = 76
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "an eleven-byte indexed header"
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Ten zero bytes follow the indexed header."
+
+[[record.field]]
+name = "reference_marker"
+offset = 21
+type = "u8"
+value = 1
+source = "spec"
+anchor = "a marked prologue reference at offset 21"
+
+[[record.field]]
+name = "reference_target"
+offset = 22
+type = "u64"
+source = "spec"
+anchor = "a little-endian u64 target"
+
+[[record.field]]
+name = "type_guid_length"
+offset = 30
+type = "u32"
+value = 36
+source = "spec"
+anchor = "an LP-ASCII type GUID of 36 bytes between the target and the flags"
+
+[[record.field]]
+name = "type_guid"
+offset = 34
+type = "bytes[36]"
+source = "spec"
+anchor = "The typed prologue reference carries type GUID"
+
+[[record.gap]]
+offset = 70
+size = 2
+note = "Two zero segment flags close the local reference."
+
+[[record.field]]
+name = "source_count"
+offset = 72
+type = "u32"
+source = "spec"
+anchor = "offset 72 with typed references"
+
+[[record]]
+name = "derived_instance_relation_typed_177"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The 177-byte typed relation uses the same three references"
+size = 177
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "have an eleven-byte indexed header and ten zero bytes"
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Ten zero bytes follow the indexed header."
+
+[[record.field]]
+name = "carrier_reference"
+offset = 21
+type = "bytes[51]"
+source = "spec"
+anchor = "Its carrier reference starts at offset 21"
+
+[[record.gap]]
+offset = 72
+size = 2
+note = "Two zero bytes occupy offsets 72 and 73."
+
+[[record.field]]
+name = "middle_reference"
+offset = 74
+type = "bytes[51]"
+source = "spec"
+anchor = "the middle reference starts at offset 74"
+
+[[record.gap]]
+offset = 125
+size = 1
+note = "One zero byte precedes the scope reference."
+
+[[record.field]]
+name = "scope_reference"
+offset = 126
+type = "bytes[51]"
+source = "spec"
+anchor = "the scope reference starts at offset 126"
 
 [[record]]
 name = "scale_matrix_marker_zero_prologue"
