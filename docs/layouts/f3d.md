@@ -591,6 +591,24 @@ Parsed by:
 | 25 | 1 | `slot_marker` | `u8` | little | spec | offsets 22 through 24 are zero, and offset 25 is `1` · value `1` |
 | 26 | 1 | `marked_slots` | `u8` | little | spec | The slots start at offset 26 |
 
+## `copy_paste_bodies_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 47 B
+
+Offsets are relative to the primary indexed header of a CopyPasteBodies scope with the marker word at offset 21.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/copy_paste_bodies.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Any other scope has them at primary-header offsets 29 and 40 |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | stores nine zero bytes at offsets 11 through 19, prologue byte `0` |
+| 20 | 1 | `prologue_byte` | `u8` | little | spec | prologue byte `0` at offset 20 · value `0` |
+| 21 | 4 | `marker_word` | `u32` | little | spec | `u32 1` at offset 21 · value `1` |
+| 25 | 11 | `body_group_reference` | `bytes[11]` | little | spec | the body-group reference at offset 25 |
+| 36 | 11 | `relation_reference` | `bytes[11]` | little | spec | the relation reference at offset 36 |
+
 ## `chamfer_scope_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 21 B

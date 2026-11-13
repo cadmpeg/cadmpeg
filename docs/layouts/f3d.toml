@@ -1736,6 +1736,59 @@ source = "spec"
 anchor = "The slots start at offset 26"
 
 [[record]]
+name = "copy_paste_bodies_scope_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/copy_paste_bodies.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A `CopyPasteBodies` scope that stores nine zero bytes at offsets 11 through 19"
+size = 47
+note = "Offsets are relative to the primary indexed header of a CopyPasteBodies scope with the marker word at offset 21."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Any other scope has them at primary-header offsets 29 and 40"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "stores nine zero bytes at offsets 11 through 19, prologue byte `0`"
+
+[[record.field]]
+name = "prologue_byte"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "prologue byte `0` at offset 20"
+value = 0
+
+[[record.field]]
+name = "marker_word"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "`u32 1` at offset 21"
+value = 1
+
+[[record.field]]
+name = "body_group_reference"
+offset = 25
+type = "bytes[11]"
+source = "spec"
+anchor = "the body-group reference at offset 25"
+
+[[record.field]]
+name = "relation_reference"
+offset = 36
+type = "bytes[11]"
+source = "spec"
+anchor = "the relation reference at offset 36"
+
+[[record]]
 name = "chamfer_scope_prologue"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs"
 kind = "byte"
