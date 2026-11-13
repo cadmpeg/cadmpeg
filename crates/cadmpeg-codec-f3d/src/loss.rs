@@ -241,6 +241,20 @@ pub(crate) enum F3dLossCode {
     FeaturePipeCircularSectionAssumed,
     /// A Pipe with one unit and one zero fraction is assumed to start its section at a path end.
     FeaturePipePathEndSectionAssumed,
+    FeaturePipeSourceUnresolved,
+    FeaturePipeOperationUnresolved,
+    FeaturePipeHollowUnresolved,
+    FeaturePipeScalarUnresolved,
+    FeaturePipeSectionUnresolved,
+    FeaturePipePathUnresolved,
+    FeaturePipePathExtentUnresolved,
+    FeaturePipePathParameterizationAssumed,
+    FeaturePipePathRoleAssumed,
+    FeaturePipeTargetsRetainedNative,
+    FeaturePipeTargetsUnresolved,
+    FeaturePipePointOriginUnresolved,
+    FeaturePipePathTangentAssumedFalse,
+    FeaturePipeLinearizeAssumedFalse,
     SurfacePatchInteriorConstraintAssumed,
     SurfacePatchUnnamedGroupsAssumedInactive,
     SurfacePatchUnorderedReferenceRunsAssumed,
@@ -835,6 +849,20 @@ impl F3dLossCode {
         Self::FeaturePipeWholePathExtentAssumed,
         Self::FeaturePipeCircularSectionAssumed,
         Self::FeaturePipePathEndSectionAssumed,
+        Self::FeaturePipeSourceUnresolved,
+        Self::FeaturePipeOperationUnresolved,
+        Self::FeaturePipeHollowUnresolved,
+        Self::FeaturePipeScalarUnresolved,
+        Self::FeaturePipeSectionUnresolved,
+        Self::FeaturePipePathUnresolved,
+        Self::FeaturePipePathExtentUnresolved,
+        Self::FeaturePipePathParameterizationAssumed,
+        Self::FeaturePipePathRoleAssumed,
+        Self::FeaturePipeTargetsRetainedNative,
+        Self::FeaturePipeTargetsUnresolved,
+        Self::FeaturePipePointOriginUnresolved,
+        Self::FeaturePipePathTangentAssumedFalse,
+        Self::FeaturePipeLinearizeAssumedFalse,
         Self::SurfacePatchInteriorConstraintAssumed,
         Self::SurfacePatchUnnamedGroupsAssumedInactive,
         Self::SurfacePatchUnorderedReferenceRunsAssumed,
@@ -1222,6 +1250,22 @@ impl F3dLossCode {
             Self::FeaturePipeWholePathExtentAssumed => "feature.pipe-whole-path-extent-assumed",
             Self::FeaturePipeCircularSectionAssumed => "feature.pipe-circular-section-assumed",
             Self::FeaturePipePathEndSectionAssumed => "feature.pipe-path-end-section-assumed",
+            Self::FeaturePipeSourceUnresolved => "feature.pipe-source-unresolved",
+            Self::FeaturePipeOperationUnresolved => "feature.pipe-operation-unresolved",
+            Self::FeaturePipeHollowUnresolved => "feature.pipe-hollow-unresolved",
+            Self::FeaturePipeScalarUnresolved => "feature.pipe-scalar-unresolved",
+            Self::FeaturePipeSectionUnresolved => "feature.pipe-section-unresolved",
+            Self::FeaturePipePathUnresolved => "feature.pipe-path-unresolved",
+            Self::FeaturePipePathExtentUnresolved => "feature.pipe-path-extent-unresolved",
+            Self::FeaturePipePathParameterizationAssumed => {
+                "feature.pipe-path-parameterization-assumed"
+            }
+            Self::FeaturePipePathRoleAssumed => "feature.pipe-path-role-assumed",
+            Self::FeaturePipeTargetsRetainedNative => "feature.pipe-targets-retained-native",
+            Self::FeaturePipeTargetsUnresolved => "feature.pipe-targets-unresolved",
+            Self::FeaturePipePointOriginUnresolved => "feature.pipe-point-origin-unresolved",
+            Self::FeaturePipePathTangentAssumedFalse => "feature.pipe-path-tangent-assumed-false",
+            Self::FeaturePipeLinearizeAssumedFalse => "feature.pipe-linearize-assumed-false",
             Self::SurfacePatchInteriorConstraintAssumed => {
                 "feature.surface-patch-interior-constraint-assumed"
             }
@@ -1678,6 +1722,20 @@ impl F3dLossCode {
             | Self::FeaturePipeWholePathExtentAssumed
             | Self::FeaturePipeCircularSectionAssumed
             | Self::FeaturePipePathEndSectionAssumed
+            | Self::FeaturePipeSourceUnresolved
+            | Self::FeaturePipeOperationUnresolved
+            | Self::FeaturePipeHollowUnresolved
+            | Self::FeaturePipeScalarUnresolved
+            | Self::FeaturePipeSectionUnresolved
+            | Self::FeaturePipePathUnresolved
+            | Self::FeaturePipePathExtentUnresolved
+            | Self::FeaturePipePathParameterizationAssumed
+            | Self::FeaturePipePathRoleAssumed
+            | Self::FeaturePipeTargetsRetainedNative
+            | Self::FeaturePipeTargetsUnresolved
+            | Self::FeaturePipePointOriginUnresolved
+            | Self::FeaturePipePathTangentAssumedFalse
+            | Self::FeaturePipeLinearizeAssumedFalse
             | Self::SurfacePatchInteriorConstraintAssumed
             | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
@@ -1999,6 +2057,20 @@ impl F3dLossCode {
             | Self::FeaturePipeWholePathExtentAssumed
             | Self::FeaturePipeCircularSectionAssumed
             | Self::FeaturePipePathEndSectionAssumed
+            | Self::FeaturePipeSourceUnresolved
+            | Self::FeaturePipeOperationUnresolved
+            | Self::FeaturePipeHollowUnresolved
+            | Self::FeaturePipeScalarUnresolved
+            | Self::FeaturePipeSectionUnresolved
+            | Self::FeaturePipePathUnresolved
+            | Self::FeaturePipePathExtentUnresolved
+            | Self::FeaturePipePathParameterizationAssumed
+            | Self::FeaturePipePathRoleAssumed
+            | Self::FeaturePipeTargetsRetainedNative
+            | Self::FeaturePipeTargetsUnresolved
+            | Self::FeaturePipePointOriginUnresolved
+            | Self::FeaturePipePathTangentAssumedFalse
+            | Self::FeaturePipeLinearizeAssumedFalse
             | Self::SurfacePatchInteriorConstraintAssumed
             | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
@@ -2418,6 +2490,20 @@ mod tests {
                 "feature.pipe-whole-path-extent-assumed",
                 "feature.pipe-circular-section-assumed",
                 "feature.pipe-path-end-section-assumed",
+                "feature.pipe-source-unresolved",
+                "feature.pipe-operation-unresolved",
+                "feature.pipe-hollow-unresolved",
+                "feature.pipe-scalar-unresolved",
+                "feature.pipe-section-unresolved",
+                "feature.pipe-path-unresolved",
+                "feature.pipe-path-extent-unresolved",
+                "feature.pipe-path-parameterization-assumed",
+                "feature.pipe-path-role-assumed",
+                "feature.pipe-targets-retained-native",
+                "feature.pipe-targets-unresolved",
+                "feature.pipe-point-origin-unresolved",
+                "feature.pipe-path-tangent-assumed-false",
+                "feature.pipe-linearize-assumed-false",
                 "feature.surface-patch-interior-constraint-assumed",
                 "feature.surface-patch-unnamed-groups-assumed-inactive",
                 "feature.surface-patch-unordered-reference-runs-assumed",

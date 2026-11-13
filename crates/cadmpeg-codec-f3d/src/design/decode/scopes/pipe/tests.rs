@@ -659,3 +659,60 @@ fn pipe_source_needs_the_whole_section_frame_before_the_table() {
     assert_eq!(read(table), pipe.section);
     assert_eq!(read(table - 1), None);
 }
+#[test]
+fn pipe_prefix_retains_operation_when_hollow_is_invalid() {
+    let mut compact = [0_u8; 28];
+    compact[21] = 2;
+    compact[22..26].copy_from_slice(&2_u32.to_le_bytes());
+    compact[26..28].copy_from_slice(&[7, 9]);
+    let prefix = super::pipe_prefix(&compact, 0).unwrap();
+    assert_eq!(
+        prefix.operation,
+        Some(crate::records::feature::extrude::DesignExtrudeOperation::Cut)
+    );
+    assert_eq!(prefix.operation_value, Some(2));
+    assert_eq!(prefix.operation_offset, 22);
+    assert_eq!(prefix.is_hollow_value, Some(2));
+    assert_eq!(prefix.is_hollow_offset, 21);
+    assert_eq!(
+        prefix.opaque_post_operation.map(|bytes| bytes.into_inner()),
+        Some([7, 9])
+    );
+    assert!(super::exact_pipe_prefix(&compact, 0).is_none());
+}
+
+#[test]
+fn pipe_prefix_retains_hollow_when_operation_is_unknown() {
+    let mut legacy = [0_u8; 32];
+    legacy[20] = 1;
+    legacy[25] = 1;
+    legacy[26..30].copy_from_slice(&99_u32.to_le_bytes());
+    legacy[30..32].copy_from_slice(&[1, 255]);
+    let prefix = super::pipe_prefix(&legacy, 0).unwrap();
+    assert_eq!(prefix.operation, None);
+    assert_eq!(prefix.operation_value, Some(99));
+    assert_eq!(prefix.operation_offset, 26);
+    assert_eq!(prefix.is_hollow_value, Some(1));
+    assert_eq!(prefix.is_hollow_offset, 25);
+    assert_eq!(
+        prefix.opaque_post_operation.map(|bytes| bytes.into_inner()),
+        Some([1, 255])
+    );
+    assert!(super::exact_pipe_prefix(&legacy, 0).is_none());
+}
+
+#[test]
+fn pipe_prefix_retains_bounded_fields_when_suffix_is_truncated() {
+    let mut compact = [0_u8; 26];
+    compact[21] = 0;
+    compact[22..26].copy_from_slice(&4_u32.to_le_bytes());
+    let prefix = super::pipe_prefix(&compact, 0).unwrap();
+    assert_eq!(
+        prefix.operation,
+        Some(crate::records::feature::extrude::DesignExtrudeOperation::NewBody)
+    );
+    assert_eq!(prefix.operation_value, Some(4));
+    assert_eq!(prefix.is_hollow_value, Some(0));
+    assert_eq!(prefix.opaque_post_operation, None);
+    assert!(super::exact_pipe_prefix(&compact, 0).is_none());
+}

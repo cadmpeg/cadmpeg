@@ -21,6 +21,7 @@ use crate::records::feature::path_features::{
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
 };
+use crate::records::feature::work_geometry::DesignWorkPointConstruction;
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
@@ -35,6 +36,161 @@ pub(crate) struct PipeSources<'a> {
     pub(crate) headers: &'a [DesignRecordHeader],
     pub(crate) owners: &'a [DesignParameterOwner],
     pub(crate) groups: &'a [DesignConstructionOperandGroup],
+}
+
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct PipeObservation {
+    pub(crate) prefix: Option<PipePrefix>,
+    pub(crate) owners: [Vec<u32>; 4],
+    pub(crate) points: Vec<DesignWorkPointConstruction>,
+    pub(crate) point_records: Vec<u32>,
+    pub(crate) prefix_references: Vec<(u32, u64)>,
+}
+
+pub(crate) fn observe_sources(
+    scan: &ContainerScan,
+    sources: &PipeSources<'_>,
+    scopes: &[&DesignParameterScope],
+) -> Result<HashMap<String, Option<PipeObservation>>, CodecError> {
+    let mut observations = HashMap::new();
+    if scopes.is_empty() {
+        return Ok(observations);
+    }
+    let index = PipeIndex::new(
+        sources.types,
+        sources.headers,
+        sources.owners,
+        sources.groups,
+    );
+    for entry in scan.entries.iter().filter(|entry| {
+        scan.is_design_stream(entry, ContainerRole::Bulkstream)
+            && scopes.iter().any(|scope| {
+                crate::ids::native_stream(&scope.id)
+                    == Some(crate::ids::native_scope(&entry.name).as_str())
+            })
+    }) {
+        let stream = crate::ids::native_scope(&entry.name);
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Ok(frames) = design_primary_frames(bytes, &meta) else {
+            continue;
+        };
+        let mut indexed = HashMap::new();
+        for frame in &frames {
+            indexed
+                .entry(frame.entity_id)
+                .and_modify(|slot| *slot = None)
+                .or_insert(Some(frame));
+        }
+        let records = IndexedRecordOffsets::build(bytes);
+        for scope in scopes
+            .iter()
+            .copied()
+            .filter(|scope| crate::ids::native_stream(&scope.id) == Some(stream.as_str()))
+        {
+            let observation = observe_scope(bytes, scope, &indexed, &records, &index);
+            observations
+                .entry(scope.id.clone())
+                .and_modify(|slot| *slot = None)
+                .or_insert(observation);
+        }
+    }
+    Ok(observations)
+}
+
+fn observe_scope(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    frames: &HashMap<u64, Option<&DesignPrimaryFrame<'_>>>,
+    records: &IndexedRecordOffsets,
+    index: &PipeIndex<'_>,
+) -> Option<PipeObservation> {
+    let frame = |id: u32| frames.get(&u64::from(id)).copied().flatten();
+    let own = frame(scope.record_index)?;
+    if !pipe::is_pipe(own.design_type)
+        || u64_from_index(own.start) != scope.byte_offset()
+        || u64_from_index(own.member_end) != scope.paired_byte_offset()
+    {
+        return None;
+    }
+    let table = usize::try_from(scope.reference_count_offset()).ok()?;
+    if table < own.start || table > own.member_end {
+        return None;
+    }
+    let segment = design_segment(&scope.id)?;
+    let mut observation = PipeObservation {
+        prefix: pipe_prefix(bytes.get(..table)?, own.start),
+        owners: std::array::from_fn(|_| Vec::new()),
+        points: Vec::new(),
+        point_records: Vec::new(),
+        prefix_references: Vec::new(),
+    };
+    for id in scope.reference_members().values().copied() {
+        let Some(selected) = frame(id) else {
+            continue;
+        };
+        if pipe::is_scalar(selected.design_type) {
+            let Some(scalar) = exact_fixed_scalar(bytes, records, id) else {
+                continue;
+            };
+            let Some(owner) = index.owner(segment, id) else {
+                continue;
+            };
+            let ordinal = usize::from(scalar.ordinal);
+            if ordinal < 4
+                && scalar.owner_record_index == Some(scope.record_index)
+                && scalar.start == u64_from_index(selected.start)
+                && scalar.end == u64_from_index(selected.member_end)
+                && scalar.value.get().to_bits() == owner.evaluated_value().get().to_bits()
+                && scalar.value_offset == owner.evaluated_value_offset()
+                && owner.byte_offset() == scalar.start
+                && owner.byte_offset().checked_add(owner.frame_length()) == Some(scalar.end)
+                && owner.local_ordinal() == u32::from(scalar.ordinal)
+                && owner.scope_record_index() == scope.record_index
+            {
+                observation.owners[ordinal].push(id);
+            }
+        } else if pipe::is_point(selected.design_type) {
+            observation.point_records.push(id);
+            let types = HashMap::from([(
+                u64::from(id),
+                (
+                    selected.design_type.type_guid.as_str(),
+                    selected.design_type.version,
+                ),
+            )]);
+            if let Some(point) =
+                exact_point_data_construction(bytes, records, std::iter::once(&id), &types).filter(
+                    |point| {
+                        point.point_record_byte_offset == u64_from_index(selected.start)
+                            && records.frames(id).any(|(start, end)| {
+                                start == selected.start && end == selected.member_end
+                            })
+                    },
+                )
+            {
+                observation.points.push(point);
+            }
+        }
+    }
+    if let Some(start) = observation.prefix.as_ref().and_then(|prefix| {
+        usize::try_from(prefix.opaque_post_operation_offset)
+            .ok()?
+            .checked_add(2)
+    }) {
+        for at in start..table {
+            if at.checked_add(11).is_some_and(|end| end <= table) {
+                if let Some(id) = marked_record_reference(bytes, at) {
+                    observation
+                        .prefix_references
+                        .push((id, u64_from_index(at + 1)));
+                }
+            }
+        }
+    }
+    Some(observation)
 }
 
 /// Bind every Pipe scope whose source framing and complete native relation
@@ -97,9 +253,18 @@ pub(crate) fn bind_constructions(
     Ok(())
 }
 
-/// Read the compact or legacy operation prefix of a Pipe scope starting at
-/// `start`. `bytes` ends at the scope's reference table.
-fn exact_pipe_prefix(bytes: &[u8], start: usize) -> Option<DesignPipeConstruction> {
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct PipePrefix {
+    pub(crate) operation: Option<crate::records::feature::extrude::DesignExtrudeOperation>,
+    pub(crate) operation_value: Option<u32>,
+    pub(crate) operation_offset: u64,
+    pub(crate) is_hollow_value: Option<u8>,
+    pub(crate) is_hollow_offset: u64,
+    pub(crate) opaque_post_operation: Option<cadmpeg_ir::native::bytes::NativeBytes<[u8; 2]>>,
+    pub(crate) opaque_post_operation_offset: u64,
+}
+
+pub(crate) fn pipe_prefix(bytes: &[u8], start: usize) -> Option<PipePrefix> {
     let frame = bytes.get(start..)?;
     let (hollow_at, operation_at, opaque_at) =
         if frame.get(compact::ZERO_RUN_10..compact::IS_HOLLOW) == Some(&[0; 10]) {
@@ -120,23 +285,35 @@ fn exact_pipe_prefix(bytes: &[u8], start: usize) -> Option<DesignPipeConstructio
         } else {
             return None;
         };
-    let is_hollow = match *frame.get(hollow_at)? {
+    let at = |offset: usize| u64::try_from(start.checked_add(offset)?).ok();
+    let opaque: Option<[u8; 2]> = frame
+        .get(opaque_at..opaque_at.checked_add(2)?)
+        .and_then(|bytes| bytes.try_into().ok());
+    Some(PipePrefix {
+        operation: extrude_operation_at(frame, operation_at),
+        operation_value: cadmpeg_core::decode::View::u32_le_at(frame, operation_at),
+        operation_offset: at(operation_at)?,
+        is_hollow_value: frame.get(hollow_at).copied(),
+        is_hollow_offset: at(hollow_at)?,
+        opaque_post_operation: opaque.map(cadmpeg_ir::native::bytes::NativeBytes::new),
+        opaque_post_operation_offset: at(opaque_at)?,
+    })
+}
+
+fn exact_pipe_prefix(bytes: &[u8], start: usize) -> Option<DesignPipeConstruction> {
+    let prefix = pipe_prefix(bytes, start)?;
+    let is_hollow = match prefix.is_hollow_value? {
         0 => false,
         1 => true,
         _ => return None,
     };
-    let at = |offset: usize| u64::try_from(start.checked_add(offset)?).ok();
-    let opaque: [u8; 2] = frame
-        .get(opaque_at..opaque_at.checked_add(2)?)?
-        .try_into()
-        .ok()?;
     Some(DesignPipeConstruction {
-        operation: extrude_operation_at(frame, operation_at)?,
-        operation_offset: at(operation_at)?,
+        operation: prefix.operation?,
+        operation_offset: prefix.operation_offset,
         is_hollow,
-        is_hollow_offset: at(hollow_at)?,
-        opaque_post_operation: opaque.into(),
-        opaque_post_operation_offset: at(opaque_at)?,
+        is_hollow_offset: prefix.is_hollow_offset,
+        opaque_post_operation: prefix.opaque_post_operation?,
+        opaque_post_operation_offset: prefix.opaque_post_operation_offset,
         record_indexes: [0; 4],
         point_selection: None,
         section: None,

@@ -24,6 +24,503 @@ use cadmpeg_ir::report::loss::LossKind;
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 const LINEAR_TOLERANCE: f64 = 1.0e-6;
 
+fn projected_fixture(
+    fixture: crate::test_support::pipe::Fixture,
+    edit: impl FnOnce(&mut crate::native::F3dNative, &mut Feature),
+) -> (Feature, Vec<LossKind>) {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut native = fixture.decode(&ctx).unwrap();
+    let ir = result_model(&[]);
+    let mut feature = pipe_feature(&native.design_parameter_scopes[0], &ir);
+    feature.source_properties.insert(
+        cadmpeg_core::text::NonBlankString::new("reference:0").unwrap(),
+        "100".into(),
+    );
+    feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: "Pipe".into(),
+            parameters: [(
+                cadmpeg_core::text::NonBlankString::new("D").unwrap(),
+                "6 mm".into(),
+            )]
+            .into(),
+        }));
+    edit(&mut native, &mut feature);
+    fixture.with_scan(|scan| {
+        let sources = crate::design::decode::scopes::pipe::PipeSources {
+            types: &native.design_types,
+            headers: &native.design_record_headers,
+            owners: &native.design_parameter_owners,
+            groups: &native.design_construction_operand_groups,
+        };
+        let inputs = PipeSectionInputs {
+            scopes: &native.design_parameter_scopes,
+            groups: &native.design_construction_operand_groups,
+            owners: &native.design_parameter_owners,
+            bodies: &ir.model.bodies,
+            regions: &ir.model.regions,
+            faces: &ir.model.faces,
+            surfaces: &ir.model.surfaces,
+            linear_tolerance: LINEAR_TOLERANCE,
+        };
+        let mut features = vec![feature];
+        let losses = super::projection::project(scan, &sources, &mut features, &inputs).unwrap();
+        let first = serde_json::to_value(&features).unwrap();
+        assert!(
+            super::projection::project(scan, &sources, &mut features, &inputs)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(serde_json::to_value(&features).unwrap(), first);
+        (
+            features.remove(0),
+            losses.into_iter().map(|loss| loss.code).collect(),
+        )
+    })
+}
+
+#[test]
+fn pipe_projection_retains_square_triangle_and_unknown_section_values() {
+    use crate::test_support::pipe::{Config, Fixture, SectionFrame};
+    for (stored, label) in [(1, Some("square")), (2, Some("triangular")), (99, None)] {
+        let (feature, losses) = projected_fixture(
+            Fixture::new(Config {
+                values: [0.25, 0.75, 0.6, 0.15],
+                section: Some(SectionFrame::of(stored)),
+                ..Default::default()
+            }),
+            |_, _| {},
+        );
+        let FeatureDefinition::Operation(FeatureOperation::Sweep {
+            shape:
+                SweepShape::Solid {
+                    op,
+                    section: SweepSection::Unresolved(None),
+                    ..
+                },
+            path: Some(PathRef::Native(_)),
+            path_extent: Some(extent),
+            ..
+        }) = feature.evaluation.definition()
+        else {
+            panic!("partial Pipe Sweep")
+        };
+        assert_eq!(*op, cadmpeg_ir::features::SolidSweepOperation::NewBody);
+        assert_eq!(extent.along_fraction.get(), 0.25);
+        assert_eq!(extent.against_fraction.get(), 0.75);
+        assert_eq!(
+            feature
+                .source_properties
+                .get("reference:0")
+                .map(String::as_str),
+            Some("100")
+        );
+        assert_eq!(
+            feature
+                .source_properties
+                .get("pipe:section-size-cm")
+                .map(String::as_str),
+            Some("0.6")
+        );
+        assert_eq!(
+            feature
+                .source_properties
+                .get("pipe:section-thickness-cm")
+                .map(String::as_str),
+            Some("0.15")
+        );
+        let source: serde_json::Value =
+            serde_json::from_str(feature.source_properties.get("pipe:source").unwrap()).unwrap();
+        assert_eq!(source["section_shape"].as_str(), label);
+        assert_eq!(
+            source["scopes"][0]["path_feature_construction"]["section"]["shape_value"],
+            stored
+        );
+        assert_eq!(source["parameters"]["D"], "6 mm");
+        assert_eq!(source["owners"].as_array().unwrap().len(), 4);
+        assert_eq!(
+            losses,
+            [
+                F3dLossCode::FeaturePipeSectionUnresolved.kind(),
+                F3dLossCode::FeaturePipePathParameterizationAssumed.kind(),
+                F3dLossCode::FeaturePipePathTangentAssumedFalse.kind(),
+                F3dLossCode::FeaturePipeLinearizeAssumedFalse.kind(),
+            ]
+        );
+    }
+}
+
+#[test]
+fn pipe_projection_preserves_inactive_thickness_and_out_of_range_fractions() {
+    let (feature, losses) = projected_fixture(
+        crate::test_support::pipe::Fixture::new(crate::test_support::pipe::Config {
+            values: [1.25, -0.25, 0.5, -1.0],
+            hollow: false,
+            ..Default::default()
+        }),
+        |_, _| {},
+    );
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Sweep {
+            shape: SweepShape::Solid {
+                section: SweepSection::Unresolved(None),
+                ..
+            },
+            path_extent: None,
+            ..
+        })
+    ));
+    for (key, value) in [
+        ("pipe:forward-fraction", "1.25"),
+        ("pipe:reverse-fraction", "-0.25"),
+        ("pipe:section-thickness-cm", "-1"),
+        ("pipe:is-hollow", "false"),
+    ] {
+        assert_eq!(
+            feature.source_properties.get(key).map(String::as_str),
+            Some(value)
+        );
+    }
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::FeaturePipeSectionUnresolved.kind(),
+            F3dLossCode::FeaturePipePathExtentUnresolved.kind(),
+            F3dLossCode::FeaturePipePathTangentAssumedFalse.kind(),
+            F3dLossCode::FeaturePipeLinearizeAssumedFalse.kind(),
+        ]
+    );
+}
+
+#[test]
+fn pipe_projection_preserves_partial_point_data_and_prefix_controls() {
+    use crate::test_support::pipe::{Config, Fixture, Layout};
+    let (feature, losses) = projected_fixture(
+        Fixture::new(Config {
+            values: [0.25, 0.75, 0.6, 0.15],
+            point_version: Some(2),
+            layout: Layout {
+                extra_reference: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+        |native, _| {
+            assert!(matches!(
+                native.design_parameter_scopes[0].payload(),
+                DesignScopePayload::Pipe(None)
+            ));
+        },
+    );
+    let source: serde_json::Value =
+        serde_json::from_str(feature.source_properties.get("pipe:source").unwrap()).unwrap();
+    assert_eq!(source["observation"]["prefix"]["operation_value"], 4);
+    assert_eq!(
+        source["observation"]["points"][0]["point_record_index"],
+        500
+    );
+    assert_eq!(
+        source["observation"]["points"][0]["position"],
+        serde_json::json!([0.25, 0.5, 0.75])
+    );
+    assert_eq!(
+        source["observation"]["points"][0]["rule"]["reference_type"],
+        1
+    );
+    assert_eq!(
+        source["observation"]["points"][0]["rule"]["inputs"][0]["record_index"],
+        510
+    );
+    assert!(source["observation"]["prefix_references"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!([500, 29])));
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::FeaturePipeSourceUnresolved.kind(),
+            F3dLossCode::FeaturePipeSectionUnresolved.kind(),
+            F3dLossCode::FeaturePipePathParameterizationAssumed.kind(),
+            F3dLossCode::FeaturePipePointOriginUnresolved.kind(),
+            F3dLossCode::FeaturePipePathTangentAssumedFalse.kind(),
+            F3dLossCode::FeaturePipeLinearizeAssumedFalse.kind(),
+        ]
+    );
+}
+
+#[test]
+fn pipe_projection_keeps_unknown_operation_when_source_is_missing() {
+    let (feature, losses) = projected_fixture(
+        crate::test_support::pipe::Fixture::new(Default::default()),
+        |_, feature| feature.native_ref = None,
+    );
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Sweep {
+            shape: SweepShape::Unresolved { .. },
+            path: None,
+            path_extent: None,
+            ..
+        })
+    ));
+    let source: serde_json::Value =
+        serde_json::from_str(feature.source_properties.get("pipe:source").unwrap()).unwrap();
+    assert_eq!(source["parameters"]["D"], "6 mm");
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::FeaturePipeSourceUnresolved.kind(),
+            F3dLossCode::FeaturePipeScalarUnresolved.kind(),
+            F3dLossCode::FeaturePipeScalarUnresolved.kind(),
+            F3dLossCode::FeaturePipeScalarUnresolved.kind(),
+            F3dLossCode::FeaturePipeScalarUnresolved.kind(),
+            F3dLossCode::FeaturePipeHollowUnresolved.kind(),
+            F3dLossCode::FeaturePipeOperationUnresolved.kind(),
+            F3dLossCode::FeaturePipeSectionUnresolved.kind(),
+            F3dLossCode::FeaturePipePathUnresolved.kind(),
+            F3dLossCode::FeaturePipePathExtentUnresolved.kind(),
+            F3dLossCode::FeaturePipePathTangentAssumedFalse.kind(),
+            F3dLossCode::FeaturePipeLinearizeAssumedFalse.kind(),
+        ]
+    );
+}
+
+#[test]
+fn pipe_projection_keeps_operation_with_invalid_hollow_control() {
+    use crate::test_support::pipe::{Config, Fixture};
+    let mut fixture = Fixture::new(Config {
+        values: [0.25, 0.75, 0.6, 0.15],
+        ..Default::default()
+    });
+    fixture.bulk[21] = 2;
+    let (feature, losses) = projected_fixture(fixture, |native, _| {
+        assert!(matches!(
+            native.design_parameter_scopes[0].payload(),
+            DesignScopePayload::Pipe(None)
+        ));
+    });
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Sweep {
+            shape: SweepShape::Solid {
+                op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                ..
+            },
+            ..
+        })
+    ));
+    let source: serde_json::Value =
+        serde_json::from_str(feature.source_properties.get("pipe:source").unwrap()).unwrap();
+    assert_eq!(source["observation"]["prefix"]["is_hollow_value"], 2);
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::FeaturePipeSourceUnresolved.kind(),
+            F3dLossCode::FeaturePipeHollowUnresolved.kind(),
+            F3dLossCode::FeaturePipeSectionUnresolved.kind(),
+            F3dLossCode::FeaturePipePathParameterizationAssumed.kind(),
+            F3dLossCode::FeaturePipePathTangentAssumedFalse.kind(),
+            F3dLossCode::FeaturePipeLinearizeAssumedFalse.kind(),
+        ]
+    );
+}
+
+#[test]
+fn pipe_projection_uses_explicit_circle_with_partial_extent() {
+    use crate::test_support::pipe::{Config, Fixture, SectionFrame};
+    let (feature, losses) = projected_fixture(
+        Fixture::new(Config {
+            hollow: true,
+            values: [0.25, 0.75, 0.5, 0.1],
+            section: Some(SectionFrame::of(0)),
+            ..Default::default()
+        }),
+        |_, _| {},
+    );
+    assert_eq!(
+        circular_section(feature.evaluation.definition()),
+        Some((2.5, Some(1.0)))
+    );
+    let FeatureDefinition::Operation(FeatureOperation::Sweep {
+        path_extent: Some(extent),
+        ..
+    }) = feature.evaluation.definition()
+    else {
+        panic!("directed circular Sweep")
+    };
+    assert_eq!(extent.along_fraction.get(), 0.25);
+    assert_eq!(extent.against_fraction.get(), 0.75);
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::FeaturePipePathParameterizationAssumed.kind(),
+            F3dLossCode::FeaturePipePathTangentAssumedFalse.kind(),
+            F3dLossCode::FeaturePipeLinearizeAssumedFalse.kind(),
+        ]
+    );
+}
+
+#[test]
+fn pipe_projection_keeps_existing_explicit_circle_output() {
+    use crate::test_support::pipe::{Config, Fixture, SectionFrame};
+    let (feature, losses) = projected_fixture(
+        Fixture::new(Config {
+            values: [1.0, 0.0, 0.5, 0.1],
+            section: Some(SectionFrame::of(0)),
+            ..Default::default()
+        }),
+        |_, _| {},
+    );
+    assert_eq!(
+        circular_section(feature.evaluation.definition()),
+        Some((2.5, None))
+    );
+    assert_eq!(feature.source_properties.len(), 1);
+    assert_eq!(
+        feature
+            .source_properties
+            .get("reference:0")
+            .map(String::as_str),
+        Some("100")
+    );
+    assert_eq!(
+        losses,
+        [F3dLossCode::FeaturePipePathEndSectionAssumed.kind()]
+    );
+}
+
+#[test]
+fn pipe_projection_missing_owner_keeps_other_scalar_roles() {
+    use crate::test_support::pipe::{Config, Fixture, SectionFrame};
+    let (feature, losses) = projected_fixture(
+        Fixture::new(Config {
+            values: [0.25, 0.75, 0.6, 0.15],
+            section: Some(SectionFrame::of(1)),
+            ..Default::default()
+        }),
+        |native, _| {
+            native
+                .design_parameter_owners
+                .retain(|owner| owner.record_index() != 103)
+        },
+    );
+    assert_eq!(
+        feature
+            .source_properties
+            .get("pipe:forward-fraction")
+            .map(String::as_str),
+        Some("0.25")
+    );
+    assert!(!feature
+        .source_properties
+        .contains_key("pipe:reverse-fraction"));
+    assert_eq!(
+        feature
+            .source_properties
+            .get("pipe:section-size-cm")
+            .map(String::as_str),
+        Some("0.6")
+    );
+    assert_eq!(
+        feature
+            .source_properties
+            .get("pipe:section-thickness-cm")
+            .map(String::as_str),
+        Some("0.15")
+    );
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::FeaturePipeScalarUnresolved.kind(),
+            F3dLossCode::FeaturePipeSectionUnresolved.kind(),
+            F3dLossCode::FeaturePipePathExtentUnresolved.kind(),
+            F3dLossCode::FeaturePipePathTangentAssumedFalse.kind(),
+            F3dLossCode::FeaturePipeLinearizeAssumedFalse.kind(),
+        ]
+    );
+}
+
+#[test]
+fn pipe_projection_keeps_cut_when_target_group_is_missing() {
+    use crate::test_support::pipe::{Config, Fixture, Layout};
+    let (feature, losses) = projected_fixture(
+        Fixture::new(Config {
+            operation: 2,
+            values: [0.25, 0.75, 0.6, 0.15],
+            layout: Layout {
+                extra_reference: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+        |native, _| {
+            native
+                .design_construction_operand_groups
+                .retain(|group| group.role() == DesignOperandRole::ROLE_0X5)
+        },
+    );
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Sweep {
+            shape: SweepShape::Solid {
+                op: cadmpeg_ir::features::SolidSweepOperation::Cut,
+                ..
+            },
+            path: Some(PathRef::Native(_)),
+            ..
+        })
+    ));
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::FeaturePipeSourceUnresolved.kind(),
+            F3dLossCode::FeaturePipeTargetsUnresolved.kind(),
+            F3dLossCode::FeaturePipeSectionUnresolved.kind(),
+            F3dLossCode::FeaturePipePathParameterizationAssumed.kind(),
+            F3dLossCode::FeaturePipePathTangentAssumedFalse.kind(),
+            F3dLossCode::FeaturePipeLinearizeAssumedFalse.kind(),
+        ]
+    );
+}
+
+#[test]
+fn pipe_projection_keeps_intersect_and_names_generic_path_assumption() {
+    use crate::test_support::pipe::{Config, Fixture, SectionFrame};
+    let (feature, losses) = projected_fixture(
+        Fixture::new(Config {
+            operation: 3,
+            values: [0.25, 0.75, 0.6, 0.15],
+            section: Some(SectionFrame::of(1)),
+            ..Default::default()
+        }),
+        |_, _| {},
+    );
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Sweep {
+            shape: SweepShape::Solid {
+                op: cadmpeg_ir::features::SolidSweepOperation::Intersect,
+                ..
+            },
+            path: Some(PathRef::Native(_)),
+            ..
+        })
+    ));
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::FeaturePipeTargetsUnresolved.kind(),
+            F3dLossCode::FeaturePipeSectionUnresolved.kind(),
+            F3dLossCode::FeaturePipePathRoleAssumed.kind(),
+            F3dLossCode::FeaturePipePathParameterizationAssumed.kind(),
+            F3dLossCode::FeaturePipePathTangentAssumedFalse.kind(),
+            F3dLossCode::FeaturePipeLinearizeAssumedFalse.kind(),
+        ]
+    );
+}
+
 fn pipe_scope(operation: DesignExtrudeOperation, is_hollow: bool) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         &format!("{STREAM}:design-parameter-scope#20"),

@@ -95,6 +95,34 @@ it excludes parsed records and output. These deterministic estimates are not
 RSS bounds. Callers can gate later parallel decode by the working estimate plus
 retained result estimates.
 
+## Pipe source properties
+
+Pipe features project as neutral Sweeps. Existing circular projections keep
+their established section and extent readings. Other Pipes retain independently
+decoded operation, path, and bounded fractions. An explicit circular shape and
+valid dimensions supply a generated circular section independently of path and
+extent readiness. Other section constructions remain unresolved.
+
+For those partial projections, `source_properties["pipe:source"]` is JSON with
+`scopes`, `owners`, `groups`, `observation`, `section_shape`, and `parameters`.
+It retains complete decoded source records, ordered references, raw shape
+values, point inputs, offsets, and the original parameter expressions. Missing
+and duplicate joins retain their available candidates. The observation contains
+independent prefix fields, admitted owner candidates by ordinal, decoded point
+records, and marked prefix references. Its indexes and offsets use source
+identity and source coordinates.
+
+The `pipe:forward-fraction`, `pipe:reverse-fraction`, `pipe:section-size-cm`,
+`pipe:section-thickness-cm`, and `pipe:is-hollow` properties expose uniquely
+decoded controls. Dimensions remain in centimetres, including inactive wall
+thickness. Each original source property remains available.
+
+`feature.pipe-path-parameterization-assumed` records the reading of forward and
+reverse values as neutral along and against fractions. Out-of-range values
+remain source properties and leave the neutral extent unresolved. Required
+`path_tangent` and `linearize` controls assume false with separate loss codes.
+DR-31 records the remaining placement and control questions.
+
 ## Encode
 
 ```rust,no_run
