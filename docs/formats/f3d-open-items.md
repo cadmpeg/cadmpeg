@@ -2434,7 +2434,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder retains the bounded-face operands and compact identity candidates. Group `4324` stays native with `feature.edge-selection-native`. DR-224 tracks Fillet transition ambiguities; DR-244 tracks treatment groups whose transitions supply no candidate set.
 
-### DR-478. UnStitch prologue flag and reference runs
+### DR-482. UnStitch prologue flag and reference runs
 
 **Question.** Which setting does the UnStitch selection flag encode, and which entities do the identity and source reference runs name?
 
@@ -2444,7 +2444,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder separates exactly the member faces of the face group and records `feature.unstitch-prologue-controls-assumed`.
 
-### DR-479. UnStitch frames outside the three prologue forms and incomplete face groups
+### DR-483. UnStitch frames outside the three prologue forms and incomplete face groups
 
 **Question.** Which controls do further UnStitch frames carry, and which faces does an incomplete face-group definition select?
 
