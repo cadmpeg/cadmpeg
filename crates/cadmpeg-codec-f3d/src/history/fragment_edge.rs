@@ -12,20 +12,27 @@ fn side_one_reference_face_edge<'a>(
     structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
     references: &[crate::records::dimensions::DesignRecipeReference],
     candidate_boundary_edges: &[i64],
+    transition_deleted_edges: &[i64],
     topology: &'a AsmHistoricalTopology,
     topology_queries: &mut TopologyQueryCache<'a>,
 ) -> Option<SideOneEdge> {
     let lanes = crate::records::dimensions::reference_lanes(references);
-    common_edge(structure, candidate_boundary_edges, None, |ordinal| {
-        let lane = super::recipe_index::reference_lane_faces(lanes.get(ordinal)?).faces;
-        let mut faces = selection::faces_in_topology(&lane, topology);
-        faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
-        faces.dedup();
-        if faces.is_empty() {
-            return None;
-        }
-        fragment_boundaries(&faces, topology, topology_queries)
-    })
+    common_edge(
+        structure,
+        candidate_boundary_edges,
+        transition_deleted_edges,
+        None,
+        |ordinal| {
+            let lane = super::recipe_index::reference_lane_faces(lanes.get(ordinal)?).faces;
+            let mut faces = selection::faces_in_topology(&lane, topology);
+            faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+            faces.dedup();
+            if faces.is_empty() {
+                return None;
+            }
+            fragment_boundaries(&faces, topology, topology_queries)
+        },
+    )
 }
 
 fn side_one_ordinals(
@@ -52,6 +59,7 @@ fn side_one_ordinals(
 fn common_edge(
     structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
     candidate_boundary_edges: &[i64],
+    transition_deleted_edges: &[i64],
     required_edges: Option<&[i64]>,
     mut lane: impl FnMut(usize) -> Option<BTreeMap<i64, BTreeSet<i64>>>,
 ) -> Option<super::SideOneEdge> {
@@ -90,7 +98,7 @@ fn common_edge(
         }),
         (None, _, [slot]) => Some(super::SideOneEdge {
             slot: *slot,
-            inferred: true,
+            inferred: !transition_deleted_edges.contains(slot),
         }),
         _ => None,
     }
@@ -144,6 +152,7 @@ pub(crate) fn context_edge(
     common_edge(
         operand.recipe_structure.as_ref(),
         &operand.preceding_boundary_edge_slots,
+        &operand.transition_deleted_edge_slots,
         disjoint_names.then_some(operand.transition_deleted_edge_slots.as_slice()),
         |ordinal| {
             let context = operand.recipe_reference_contexts.get(ordinal)?;
@@ -190,6 +199,36 @@ mod tests {
     use crate::history_records::{AsmHistoricalCoedge, AsmHistoricalRelation};
     use crate::records::dimensions::DesignRecipeReference;
     use cadmpeg_ir::ids::FaceId;
+
+    #[test]
+    fn fragment_singleton_deletion_proves_the_edge_without_narrowing_the_lane_intersection() {
+        let structure = serde_json::from_value(serde_json::json!({
+            "root": 2,
+            "sides": [
+                {"field_count": 3, "header_value": 1, "scalars": [0, 2],
+                 "payload_prefix": [0], "payload_entry_count": 0, "entries": []},
+                {"field_count": 3, "header_value": 0, "scalars": [0, 0],
+                 "payload_prefix": [0], "payload_entry_count": 0, "entries": []}
+            ]
+        }))
+        .unwrap();
+        for (second, expected) in [(vec![31, 33], true), (vec![31, 32], false)] {
+            for deleted in [vec![], vec![32], vec![31]] {
+                let result = common_edge(Some(&structure), &[], &deleted, None, |ordinal| {
+                    Some(if ordinal == 0 {
+                        BTreeMap::from([(31, BTreeSet::from([10])), (32, BTreeSet::from([20]))])
+                    } else {
+                        second
+                            .iter()
+                            .map(|edge| (*edge, BTreeSet::from([40])))
+                            .collect()
+                    })
+                })
+                .map(|edge| (edge.slot, edge.inferred));
+                assert_eq!(result, expected.then_some((31, !deleted.contains(&31))));
+            }
+        }
+    }
 
     #[test]
     fn recipe_reference_disjoint_names_require_one_deleted_common_edge() {
@@ -326,6 +365,7 @@ mod tests {
                     Some(&structure),
                     &references,
                     candidate_edges,
+                    &[],
                     &topology,
                     &mut TopologyQueryCache::default(),
                 )
@@ -341,6 +381,7 @@ mod tests {
                     Some(&structure),
                     &same_face,
                     &[],
+                    &[],
                     &topology,
                     &mut TopologyQueryCache::default(),
                 ),
@@ -352,6 +393,7 @@ mod tests {
                 side_one_reference_face_edge(
                     Some(&structure),
                     &references,
+                    &[],
                     &[],
                     &incomplete,
                     &mut TopologyQueryCache::default(),
