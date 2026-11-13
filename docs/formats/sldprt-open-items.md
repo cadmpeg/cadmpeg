@@ -814,7 +814,9 @@ resolve a seed feature?
 
 **Known.** `sldprt.md` §2.1 maps the `<GTOL-name>` tokens to characteristics. One FTC-08 display stores two `<IGTOL-FLAT>` rows with `.03` and `.015` and the free-state modifier on the first. Its face reference selects the face that the two `GdtFlatness` annotations `Flatness1` and `Flatness2` target, with magnitudes `.762` and `.381` mm.
 
-**Need.** Establish whether `IGTOL-` names the same characteristic as `GTOL-` with a display variant, so that such a display depicts its annotations.
+**Need.** Establish the prefix's general role and the remaining `IGTOL-` characteristic meanings.
+
+**Note.** The decoder associates an `IGTOL-FLAT` display with its flatness annotations when the owner or face references select the complete set of at least two rows and all positive row magnitudes agree through one common unit factor. It reports `pmi.swift-internal-flatness-symbol-assumed` for that reading. Other internal symbols remain unresolved.
 
 
 ### DI-64. End of the last SWIFT geometric-tolerance display

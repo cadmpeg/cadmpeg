@@ -60,9 +60,90 @@ impl From<DesignDecalMappingMode> for u8 {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignDecalScopeLayout {
+    Compact,
+    Extended,
+    TypedCompact,
+    TypedExtended,
+}
+
+impl DesignDecalScopeLayout {
+    pub(crate) const ALL: [Self; 4] = [
+        Self::Compact,
+        Self::Extended,
+        Self::TypedCompact,
+        Self::TypedExtended,
+    ];
+
+    pub(crate) const fn typed(self) -> bool {
+        matches!(self, Self::TypedCompact | Self::TypedExtended)
+    }
+
+    pub(crate) const fn extended(self) -> bool {
+        matches!(self, Self::Extended | Self::TypedExtended)
+    }
+
+    pub(crate) const fn asset_reference(self) -> usize {
+        match self {
+            Self::Compact => crate::layout::design_decal_scope_prefix::ASSET_REFERENCE,
+            Self::Extended => crate::layout::design_decal_scope_extended_prefix::ASSET_REFERENCE,
+            Self::TypedCompact => crate::layout::design_decal_scope_typed_prefix::ASSET_REFERENCE,
+            Self::TypedExtended => {
+                crate::layout::design_decal_scope_typed_extended_prefix::ASSET_REFERENCE
+            }
+        }
+    }
+
+    pub(crate) const fn mapping_mode(self) -> usize {
+        match self {
+            Self::Compact => crate::layout::design_decal_scope_prefix::MAPPING_MODE,
+            Self::Extended => crate::layout::design_decal_scope_extended_prefix::MAPPING_MODE,
+            Self::TypedCompact => crate::layout::design_decal_scope_typed_prefix::MAPPING_MODE,
+            Self::TypedExtended => {
+                crate::layout::design_decal_scope_typed_extended_prefix::MAPPING_MODE
+            }
+        }
+    }
+
+    pub(crate) const fn target_group_reference(self) -> usize {
+        match self {
+            Self::Compact => crate::layout::design_decal_scope_prefix::TARGET_GROUP_REFERENCE,
+            Self::Extended => {
+                crate::layout::design_decal_scope_extended_prefix::TARGET_GROUP_REFERENCE
+            }
+            Self::TypedCompact => {
+                crate::layout::design_decal_scope_typed_prefix::TARGET_GROUP_REFERENCE
+            }
+            Self::TypedExtended => {
+                crate::layout::design_decal_scope_typed_extended_prefix::TARGET_GROUP_REFERENCE
+            }
+        }
+    }
+
+    pub(crate) const fn len(self) -> usize {
+        match self {
+            Self::Compact => crate::layout::design_decal_scope_prefix::LEN,
+            Self::Extended => crate::layout::design_decal_scope_extended_prefix::LEN,
+            Self::TypedCompact => crate::layout::design_decal_scope_typed_prefix::LEN,
+            Self::TypedExtended => crate::layout::design_decal_scope_typed_extended_prefix::LEN,
+        }
+    }
+
+    pub(crate) const fn asset_frame_length(self) -> usize {
+        if self.typed() {
+            crate::layout::design_decal_image_typed_asset_record::LEN
+        } else {
+            crate::layout::design_decal_image_asset_record::LEN
+        }
+    }
+}
+
 /// Primary Decal asset and its consecutive image-name record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesignDecalAsset {
+    primary_frame_length: u64,
     class_tags: [String; 2],
     record_index: u32,
     byte_offset: u64,
@@ -72,6 +153,7 @@ pub(crate) struct DesignDecalAsset {
 
 impl DesignDecalAsset {
     pub(crate) fn new(
+        layout: DesignDecalScopeLayout,
         class_tags: [String; 2],
         record_indices: [u32; 2],
         byte_offset: u64,
@@ -94,13 +176,15 @@ impl DesignDecalAsset {
         }
         let units = u32::try_from(name.encode_utf16().count())
             .map_err(|_| "asset_name UTF-16 count must fit u32")?;
-        let length = u64_from_index(crate::layout::design_decal_image_asset_record::LEN)
+        let primary_frame_length = u64_from_index(layout.asset_frame_length());
+        let length = primary_frame_length
             + u64_from_index(crate::layout::design_decal_image_name_prefix::LEN)
             + 2 * u64::from(units);
         byte_offset
             .checked_add(length)
             .ok_or("asset_byte_offset and asset_name must leave a complete name record")?;
         Ok(Self {
+            primary_frame_length,
             class_tags,
             record_index: record_indices[0],
             byte_offset,
@@ -117,8 +201,9 @@ impl DesignDecalAsset {
     pub(crate) fn name(&self) -> &str {
         &self.name
     }
-    pub(crate) const fn primary_frame_length() -> u64 {
-        u64_from_index(crate::layout::design_decal_image_asset_record::LEN)
+    #[cfg(test)]
+    pub(crate) fn primary_frame_length(&self) -> u64 {
+        self.primary_frame_length
     }
     pub(crate) fn name_frame_length(&self) -> u64 {
         u64_from_index(crate::layout::design_decal_image_name_prefix::LEN)
@@ -128,7 +213,7 @@ impl DesignDecalAsset {
         self.record_index + 1
     }
     fn name_byte_offset(&self) -> u64 {
-        self.byte_offset + Self::primary_frame_length()
+        self.byte_offset + self.primary_frame_length
     }
     fn entity_reference_offset(&self) -> u64 {
         self.byte_offset
@@ -150,6 +235,7 @@ pub(crate) struct DesignDecalImage {
     /// Globally unique native binding identity.
     pub(crate) id: String,
     scope: Located<u32>,
+    layout: DesignDecalScopeLayout,
     /// Source mapping-mode byte.
     pub(crate) mapping_mode: DesignDecalMappingMode,
     /// Target construction-group record index.
@@ -170,6 +256,7 @@ impl Clone for DesignDecalImage {
         Self {
             id: self.id.clone(),
             scope: self.scope,
+            layout: self.layout,
             mapping_mode: self.mapping_mode,
             target_group_record_index: self.target_group_record_index,
             asset: self.asset.clone(),
@@ -181,19 +268,22 @@ impl DesignDecalImage {
     pub(crate) fn new(
         id: String,
         scope: Located<u32>,
+        layout: DesignDecalScopeLayout,
         mapping_mode: DesignDecalMappingMode,
         target_group_record_index: u32,
         asset: DesignDecalAsset,
     ) -> Result<Self, String> {
         scope
             .offset
-            .checked_add(u64_from_index(
-                crate::layout::design_decal_scope_prefix::LEN,
-            ))
+            .checked_add(u64_from_index(layout.len()))
             .ok_or("asset_reference_offset must belong to a complete Decal scope prefix")?;
+        if asset.primary_frame_length != u64_from_index(layout.asset_frame_length()) {
+            return Err("asset_frame_length must match the Decal scope layout".into());
+        }
         Ok(Self {
             id,
             scope,
+            layout,
             mapping_mode,
             target_group_record_index,
             asset,
@@ -205,18 +295,18 @@ impl DesignDecalImage {
     pub(crate) fn scope_byte_offset(&self) -> u64 {
         self.scope.offset
     }
+    #[cfg(test)]
+    pub(crate) fn layout(&self) -> DesignDecalScopeLayout {
+        self.layout
+    }
     fn asset_reference_offset(&self) -> u64 {
-        self.scope.offset
-            + u64_from_index(crate::layout::design_decal_scope_prefix::ASSET_REFERENCE)
-            + 1
+        self.scope.offset + u64_from_index(self.layout.asset_reference()) + 1
     }
     fn mapping_mode_offset(&self) -> u64 {
-        self.scope.offset + u64_from_index(crate::layout::design_decal_scope_prefix::MAPPING_MODE)
+        self.scope.offset + u64_from_index(self.layout.mapping_mode())
     }
     fn target_group_reference_offset(&self) -> u64 {
-        self.scope.offset
-            + u64_from_index(crate::layout::design_decal_scope_prefix::TARGET_GROUP_REFERENCE)
-            + 1
+        self.scope.offset + u64_from_index(self.layout.target_group_reference()) + 1
     }
 }
 
@@ -227,6 +317,7 @@ struct DesignDecalImageWire {
     id: String,
     /// Decal scope record index.
     scope_record_index: u32,
+    scope_layout: DesignDecalScopeLayout,
     /// Byte offset of the scope's marked image-asset reference.
     asset_reference_offset: u64,
     /// Source mapping-mode byte.
@@ -267,6 +358,7 @@ struct DesignDecalImageWire {
 struct DesignDecalImageWireRef<'a> {
     id: &'a str,
     scope_record_index: u32,
+    scope_layout: DesignDecalScopeLayout,
     asset_reference_offset: u64,
     mapping_mode: DesignDecalMappingMode,
     mapping_mode_offset: u64,
@@ -292,6 +384,7 @@ impl Serialize for DesignDecalImage {
         DesignDecalImageWireRef {
             id: &self.id,
             scope_record_index: self.scope_record_index(),
+            scope_layout: self.layout,
             asset_reference_offset: self.asset_reference_offset(),
             mapping_mode: self.mapping_mode,
             mapping_mode_offset: self.mapping_mode_offset(),
@@ -300,7 +393,7 @@ impl Serialize for DesignDecalImage {
             asset_class_tag,
             asset_record_index: self.asset.record_index,
             asset_byte_offset: self.asset.byte_offset,
-            asset_frame_length: DesignDecalAsset::primary_frame_length(),
+            asset_frame_length: self.asset.primary_frame_length,
             asset_entity_suffix: self.asset.entity_suffix,
             asset_entity_reference_offset: self.asset.entity_reference_offset(),
             name_class_tag,
@@ -319,11 +412,10 @@ impl TryFrom<DesignDecalImageWire> for DesignDecalImage {
     fn try_from(wire: DesignDecalImageWire) -> Result<Self, Self::Error> {
         let scope_offset = wire
             .asset_reference_offset
-            .checked_sub(
-                u64_from_index(crate::layout::design_decal_scope_prefix::ASSET_REFERENCE) + 1,
-            )
+            .checked_sub(u64_from_index(wire.scope_layout.asset_reference()) + 1)
             .ok_or("asset_reference_offset precedes the Decal scope prefix")?;
         let asset = DesignDecalAsset::new(
+            wire.scope_layout,
             [wire.asset_class_tag, wire.name_class_tag],
             [wire.asset_record_index, wire.name_record_index],
             wire.asset_byte_offset,
@@ -336,6 +428,7 @@ impl TryFrom<DesignDecalImageWire> for DesignDecalImage {
                 value: wire.scope_record_index,
                 offset: scope_offset,
             },
+            wire.scope_layout,
             wire.mapping_mode,
             wire.target_group_record_index,
             asset,
@@ -354,7 +447,7 @@ impl TryFrom<DesignDecalImageWire> for DesignDecalImage {
             (
                 "asset_frame_length",
                 wire.asset_frame_length,
-                DesignDecalAsset::primary_frame_length(),
+                image.asset.primary_frame_length,
             ),
             (
                 "asset_entity_reference_offset",
@@ -394,7 +487,7 @@ impl From<DesignDecalImage> for DesignDecalImageWire {
         let target_group_reference_offset = value.target_group_reference_offset();
         let asset_record_index = value.asset.record_index;
         let asset_byte_offset = value.asset.byte_offset;
-        let asset_frame_length = DesignDecalAsset::primary_frame_length();
+        let asset_frame_length = value.asset.primary_frame_length;
         let asset_entity_suffix = value.asset.entity_suffix;
         let asset_entity_reference_offset = value.asset.entity_reference_offset();
         let name_record_index = value.asset.name_record_index();
@@ -405,6 +498,7 @@ impl From<DesignDecalImage> for DesignDecalImageWire {
         Self {
             id: value.id,
             scope_record_index,
+            scope_layout: value.layout,
             asset_reference_offset,
             mapping_mode: value.mapping_mode,
             mapping_mode_offset,
