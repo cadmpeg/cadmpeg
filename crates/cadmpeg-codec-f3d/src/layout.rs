@@ -718,6 +718,28 @@ pub(crate) mod shell_marked_slot_scope_prefix {
     pub(crate) const MARKED_SLOTS: usize = 26;
 }
 
+/// Byte offsets for the `copy_paste_bodies_scope_prefix` record.
+///
+/// Spec §3.1. Record length 47 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header of a CopyPasteBodies scope with the marker word at offset 21.
+/// ```
+pub(crate) mod copy_paste_bodies_scope_prefix {
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `prologue_byte` (`u8`). Spec §3.1.
+    pub(crate) const PROLOGUE_BYTE: usize = 20;
+    /// Offset of `marker_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MARKER_WORD: usize = 21;
+    /// Stated value of `marker_word` (`u32`). Spec §3.1.
+    pub(crate) const MARKER_WORD_VALUE: u32 = 0x0000_0001;
+    /// Offset of `body_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const BODY_GROUP_REFERENCE: usize = 25;
+    /// Offset of `relation_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RELATION_REFERENCE: usize = 36;
+}
+
 /// Byte offsets for the `chamfer_scope_prologue` record.
 ///
 /// Spec §3.1. Record length 21 B.
@@ -2719,6 +2741,26 @@ pub(crate) mod fixed_pipe_operation_prefix {
     pub(crate) const OPERATION: usize = 22;
     /// Offset of `opaque_post_operation` (`bytes[2]`). Spec §3.1.
     pub(crate) const OPAQUE_POST_OPERATION: usize = 26;
+}
+
+/// Byte offsets for the `pipe_section_frame` record.
+///
+/// Spec §3.1. Record length 71 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the two opaque bytes of the compact or legacy Pipe prefix of a Pipe without a point-selection pair.
+/// ```
+pub(crate) mod pipe_section_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 71;
+    /// Offset of `zero_byte` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE: usize = 55;
+    /// Stated value of `zero_byte` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE_VALUE: u8 = 0;
+    /// Offset of `path_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PATH_GROUP_REFERENCE: usize = 56;
+    /// Offset of `shape` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SHAPE: usize = 67;
 }
 
 /// Byte offsets for the `legacy_pipe_operation_prefix` record.
