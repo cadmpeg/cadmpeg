@@ -2438,7 +2438,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder separates exactly the member faces of the face group and records `feature.unstitch-prologue-controls-assumed`.
 
-### DR-487. UnStitch frames outside the three prologue forms and incomplete face groups
+### DR-488. UnStitch frames outside the three prologue forms and incomplete face groups
 
 **Question.** Which controls do further UnStitch frames carry, and which faces does an incomplete face-group definition select?
 
