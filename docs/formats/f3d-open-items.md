@@ -2402,11 +2402,12 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** Which source image and target does a Decal scope select when its image definition is absent or has an unparsed frame?
 
-**Known.** The Decal scope identifies a presentation operation. Its referenced definition supplies the image basename and mapping byte.
+**Known.** The Decal scope identifies a presentation operation. Its prefix stores the image-asset reference, mapping byte, and target-group reference. The referenced image definition supplies the image basename.
 
 **Need.** A save that preserves the selected image and target while its definition uses another framing form.
 
-**Note.** The decoder retains the scope identity as an external image source and native face selection, assumes fit-to-faces mapping, and records `appearance.decal-definition-unresolved`, `appearance.decal-target-unresolved`, and `appearance.decal-mapping-assumed`.
+**Note.** The decoder retains the scope identity as an external image source and records `appearance.decal-definition-unresolved`. It preserves parsed prefix values in source properties and uses the target-group reference to select faces. Missing target bindings produce `appearance.decal-target-unresolved`. An absent mapping byte or a byte other than `0x60` produces `appearance.decal-mapping-assumed`.
+
 ### DR-476. Controls of the wider SurfaceDeleteFace prologue
 
 **Question.** Which settings do the controls before the ordered-reference count of the wide surface-delete prologue encode?

@@ -1884,19 +1884,19 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         let group = ctx
             .operand_groups_by_index
             .get(&(native_stream, image.target_group_record_index));
-        let neutral_is_valid = scope.is_none_or(|scope| {
+        let neutral_is_valid = !ctx.holds_design_intent() || scope.is_some_and(|scope| {
             let expected_faces = crate::design::decode::decal::DecalTargets {
                 groups: &ctx.native.design_construction_operand_groups,
                 operands: &ctx.native.design_body_recipe_operands,
             }
-            .faces(scope, image)
+            .faces(scope, image.target_group_record_index)
             .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(scope.id.clone()));
             ctx.ir
                 .model
                 .features
                 .iter()
-                .filter(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
-                .all(|feature| {
+                .any(|feature| {
+                    feature.native_ref.as_deref() == Some(scope.id.as_str()) &&
                     matches!(
                         feature.evaluation.definition(),
                         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Decal {

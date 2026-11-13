@@ -83,21 +83,47 @@ pub(crate) fn project_decal_images(
                     unresolved_image_asset(Some(image.asset.name()), &image.id)?
                 }
             };
-            let faces = targets.faces(scope, image).unwrap_or_else(|| {
-                unresolved_targets += 1;
-                FaceSelection::Native(scope.id.clone())
-            });
+            let faces = targets
+                .faces(scope, image.target_group_record_index)
+                .unwrap_or_else(|| {
+                    unresolved_targets += 1;
+                    FaceSelection::Native(scope.id.clone())
+                });
             assumed_mappings +=
                 usize::from(image.mapping_mode != DesignDecalMappingMode::FitToFaces);
             (asset, faces)
         } else {
             unresolved_definitions += 1;
-            unresolved_targets += 1;
-            assumed_mappings += 1;
-            (
-                unresolved_image_asset(None, &scope.id)?,
-                FaceSelection::Native(scope.id.clone()),
-            )
+            let prefix = scope_prefix(scan, scope)?;
+            assumed_mappings += usize::from(prefix.as_ref().is_none_or(|prefix| {
+                DesignDecalMappingMode::from_code(prefix.mapping_mode)
+                    != DesignDecalMappingMode::FitToFaces
+            }));
+            let faces = prefix
+                .as_ref()
+                .and_then(|prefix| targets.faces(scope, prefix.target_group_record_index))
+                .unwrap_or_else(|| {
+                    unresolved_targets += 1;
+                    FaceSelection::Native(scope.id.clone())
+                });
+            if let Some(prefix) = prefix {
+                for (key, value) in [
+                    (
+                        "decal:asset-record-index",
+                        prefix.asset_record_index.to_string(),
+                    ),
+                    ("decal:mapping-mode", prefix.mapping_mode.to_string()),
+                    (
+                        "decal:target-group-record-index",
+                        prefix.target_group_record_index.to_string(),
+                    ),
+                ] {
+                    feature.source_properties.extend(
+                        cadmpeg_core::text::NonBlankString::new(key).map(|key| (key, value)),
+                    );
+                }
+            }
+            (unresolved_image_asset(None, &scope.id)?, faces)
         };
         feature
             .evaluation
@@ -159,12 +185,12 @@ impl DecalTargets<'_> {
     pub(crate) fn faces(
         self,
         scope: &DesignParameterScope,
-        image: &DesignDecalImage,
+        target_group_record_index: u32,
     ) -> Option<FaceSelection> {
-        let native_stream = ids::native_stream(&image.id);
+        let native_stream = ids::native_stream(&scope.id);
         let group = self.groups.iter().find(|group| {
             group.scope_record_index == scope.record_index
-                && group.record_index == image.target_group_record_index
+                && group.record_index == target_group_record_index
                 && group.role() == DECAL_TARGET_ROLE
                 && ids::native_stream(&group.id) == native_stream
         })?;
@@ -230,6 +256,37 @@ struct DecalScopePrefix {
     target_group_record_index: u32,
 }
 
+fn scope_prefix(
+    scan: &ContainerScan,
+    scope: &DesignParameterScope,
+) -> Result<Option<DecalScopePrefix>, CodecError> {
+    let Some(entry) = scan.entries.iter().find(|entry| {
+        scan.is_design_stream(entry, cadmpeg_core::container::ContainerRole::Bulkstream)
+            && ids::native_stream(&scope.id) == Some(ids::native_scope(&entry.name).as_str())
+    }) else {
+        return Ok(None);
+    };
+    let bytes = scan.entry_bytes(&entry.name)?;
+    let (Ok(start), Ok(end)) = (
+        usize::try_from(scope.byte_offset()),
+        usize::try_from(scope.reference_count_offset()),
+    ) else {
+        return Ok(None);
+    };
+    let Some(bytes) = bytes.get(..end) else {
+        return Ok(None);
+    };
+    Ok(unique_scope_prefix(bytes, start))
+}
+
+fn unique_scope_prefix(bytes: &[u8], scope_at: usize) -> Option<DecalScopePrefix> {
+    let mut prefixes = DesignDecalScopeLayout::ALL
+        .into_iter()
+        .filter_map(|layout| parse_decal_scope_prefix(bytes, scope_at, layout));
+    let prefix = prefixes.next()?;
+    prefixes.next().is_none().then_some(prefix)
+}
+
 fn parse_decal_scope_prefix(
     bytes: &[u8],
     scope_at: usize,
@@ -272,13 +329,7 @@ fn parse_decal_image_frame(
     scope_at: usize,
 ) -> Result<Option<DesignDecalImage>, CodecError> {
     let parsed = (|| {
-        let mut prefixes = DesignDecalScopeLayout::ALL
-            .into_iter()
-            .filter_map(|layout| parse_decal_scope_prefix(bytes, scope_at, layout));
-        let prefix = prefixes.next()?;
-        if prefixes.next().is_some() {
-            return None;
-        }
+        let prefix = unique_scope_prefix(bytes, scope_at)?;
 
         let mut position = 0;
         let mut asset_record = None;
@@ -781,6 +832,77 @@ mod tests {
             ]
         );
     }
+    #[test]
+    fn missing_image_definition_preserves_scope_bindings() {
+        let entry = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let mut scope = scope();
+        scope
+            .try_edit(|draft| {
+                draft.id = format!("f3d:{entry}:scope#23");
+                draft.reference_count_offset = 64;
+                draft.reference_members = crate::records::identity::ReferenceRun::located(vec![
+                    crate::records::identity::Located {
+                        value: 24,
+                        offset: 69,
+                    },
+                ]);
+                draft.kind_offset = 87;
+                draft.feature_ordinal_offset = 103;
+                draft.frame_length = 183;
+                draft.paired_byte_offset = 183;
+            })
+            .unwrap();
+        let (bytes, at) = fixture(DesignDecalScopeLayout::Compact, 0x60);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(entry, stored).unwrap();
+        zip.write_all(&bytes[at..at + 44]).unwrap();
+        zip.write_all(&[0; 139]).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        let mut features = [feature(&scope)];
+        let mut losses = Vec::new();
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            super::project_decal_images(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                &[scope],
+                &[],
+                super::DecalTargets {
+                    groups: &[],
+                    operands: &[],
+                },
+                &mut features,
+                &mut losses,
+            )
+            .unwrap();
+        });
+        let properties: Vec<_> = features[0]
+            .source_properties
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
+        assert_eq!(
+            properties,
+            [
+                ("decal:asset-record-index", "17"),
+                ("decal:mapping-mode", "96"),
+                ("decal:target-group-record-index", "24"),
+            ]
+        );
+        assert_eq!(
+            loss_codes(&losses),
+            [
+                "appearance.decal-target-unresolved",
+                "appearance.decal-definition-unresolved",
+            ]
+        );
+        assert!(matches!(
+            features[0].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Decal { .. })
+        ));
+    }
+
     #[test]
     fn decal_projection_retains_a_missing_definition_as_an_external_source() {
         let scope = scope();
