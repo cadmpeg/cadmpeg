@@ -163,6 +163,7 @@ pub(crate) enum F3dLossCode {
     AssemblyOperandDescentAmbiguous,
     /// A complete joint occurrence path has no unique merged insertion instance.
     AssemblyOperandDescentUnresolved,
+    AssemblyJointSourceBindingAssumed,
     /// A joint operand path continues inside an unmerged inserted document; the
     /// remaining keys stay a nested occurrence path.
     AssemblyOperandNestedPathRetained,
@@ -772,6 +773,7 @@ impl F3dLossCode {
         Self::AssemblyRootPathIdentitiesNative,
         Self::AssemblyOperandDescentAmbiguous,
         Self::AssemblyOperandDescentUnresolved,
+        Self::AssemblyJointSourceBindingAssumed,
         Self::AssemblyOperandNestedPathRetained,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
@@ -1133,6 +1135,7 @@ impl F3dLossCode {
             Self::AssemblyRootPathIdentitiesNative => "assembly.root-path-identities-native",
             Self::AssemblyOperandDescentAmbiguous => "assembly.operand-descent-ambiguous",
             Self::AssemblyOperandDescentUnresolved => "assembly.operand-descent-unresolved",
+            Self::AssemblyJointSourceBindingAssumed => "assembly.joint-source-binding-assumed",
             Self::AssemblyOperandNestedPathRetained => "assembly.operand-nested-path-retained",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
@@ -1582,6 +1585,7 @@ impl F3dLossCode {
             | Self::AssemblyJointActivationAssumed
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
+            | Self::AssemblyJointSourceBindingAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
@@ -2081,6 +2085,7 @@ impl F3dLossCode {
             | Self::AssemblyJointActivationAssumed
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
+            | Self::AssemblyJointSourceBindingAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
@@ -2279,6 +2284,7 @@ mod tests {
                 "assembly.root-path-identities-native",
                 "assembly.operand-descent-ambiguous",
                 "assembly.operand-descent-unresolved",
+                "assembly.joint-source-binding-assumed",
                 "assembly.operand-nested-path-retained",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",

@@ -332,9 +332,22 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
             }
             match direction {
+                cadmpeg_ir::features::ExtrudeDirection::Unresolved {}
+                    if self.contradicted_travel
+                        && existing
+                            .is_some_and(|record| !record.properties.contains_key("Direction")) => {
+                }
                 cadmpeg_ir::features::ExtrudeDirection::Unresolved {} => {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has an unresolved extrusion direction",
+                        feature.id
+                    )));
+                }
+                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {}
+                    if self.contradicted_travel =>
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires an explicit model-space extrusion direction",
                         feature.id
                     )));
                 }
@@ -681,5 +694,68 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 properties,
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use std::collections::HashMap;
+
+    #[test]
+    fn retained_travel_writes_require_a_contradiction() {
+        for (contradiction, unresolved, supported) in [
+            (false, false, true),
+            (false, true, false),
+            (true, false, false),
+            (true, true, true),
+        ] {
+            let record: crate::records::Feature = serde_json::from_value(serde_json::json!({
+                "id":"native", "parent":"history", "ordinal":0,
+                "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
+                "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
+                "properties":{"EndCondition":"Blind", "Operation":"Join"}
+            }))
+            .expect("synthetic feature record");
+            let history: crate::records::FeatureHistory =
+                serde_json::from_value(serde_json::json!({
+                    "id":"history", "features":[record.clone()]
+                }))
+                .expect("synthetic history");
+            let mut feature = crate::history::project::project_features(&[history])
+                .expect("feature projection")
+                .into_iter()
+                .next()
+                .expect("extrusion");
+            if unresolved {
+                feature.evaluation.edit(|definition, _| {
+                    if let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                        direction,
+                        ..
+                    }) = definition
+                    {
+                        *direction = ExtrudeDirection::Unresolved {};
+                    }
+                });
+            }
+            let encoded = NeutralFeatureEncoder {
+                contradicted_travel: contradiction,
+                feature: &feature,
+                existing: Some(&record),
+                principal_planes_by_record: &HashMap::new(),
+                record_sources: &HashMap::new(),
+                retained_tree_node_roles: &HashMap::new(),
+                feature_sources: &HashMap::new(),
+                sketch_sources: &HashMap::new(),
+                parent_sources: &HashMap::new(),
+                resolved_parameter_names: &HashMap::new(),
+            }
+            .encode();
+            assert_eq!(encoded.is_ok(), supported);
+            if let Ok(encoded) = encoded {
+                assert!(!encoded.properties.contains_key("Direction"));
+            }
+        }
     }
 }
