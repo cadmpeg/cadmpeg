@@ -29,6 +29,4 @@ rewrite_enum!(MeshModification, []; {
     Repair { method },
     Remesh { distribution, edge_length, shape_preservation },
     Smooth { smoothness },
-    Shell { thickness },
-    ReverseNormals,
 });

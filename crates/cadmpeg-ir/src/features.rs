@@ -2757,6 +2757,13 @@ pub enum FeatureOperation {
     MeshSection {
         #[doc = "Sectioned mesh."]
         source: mesh::MeshSelection,
+        #[doc = "Model-space section plane, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_section_plane"
+        )]
+        plane: Option<FeatureSupportPlaneFrame>,
         #[doc = "Sketch feature that receives the section curves, when resolved."]
         #[serde(
             default,
@@ -9643,6 +9650,7 @@ mod tests;
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_plane, FeatureId, "plane");
 cadmpeg_core::named_optional_field!(deserialize_section_sketch, FeatureId, "sketch");
+cadmpeg_core::named_optional_field!(deserialize_section_plane, FeatureSupportPlaneFrame, "plane");
 cadmpeg_core::named_optional_field!(deserialize_pull, DraftPull, "pull");
 cadmpeg_core::named_optional_field!(deserialize_frame, FeatureSupportPlaneFrame, "frame");
 cadmpeg_core::named_optional_field!(

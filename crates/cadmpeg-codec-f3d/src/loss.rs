@@ -195,6 +195,10 @@ pub(crate) enum F3dLossCode {
     FeatureMeshImportTessellationsUnresolved,
     FeatureMeshImportEmptySourceAssumed,
     FeatureMeshImportSourceUnparsed,
+    FeatureMeshSectionPlaneUnresolved,
+    FeatureMeshShellControlsUnresolved,
+    FeatureMeshOperationTailPartial,
+    FeatureMeshBodySelectionAssumed,
     FeatureMeshOperationSourceUnresolved,
     FeatureMeshOperationScopeUnparsed,
     FeatureMeshOperationSelectorUnruled,
@@ -807,6 +811,10 @@ impl F3dLossCode {
         Self::FeatureMeshImportTessellationsUnresolved,
         Self::FeatureMeshImportEmptySourceAssumed,
         Self::FeatureMeshImportSourceUnparsed,
+        Self::FeatureMeshSectionPlaneUnresolved,
+        Self::FeatureMeshShellControlsUnresolved,
+        Self::FeatureMeshOperationTailPartial,
+        Self::FeatureMeshBodySelectionAssumed,
         Self::FeatureMeshOperationSourceUnresolved,
         Self::FeatureMeshOperationScopeUnparsed,
         Self::FeatureMeshOperationSelectorUnruled,
@@ -1232,6 +1240,10 @@ impl F3dLossCode {
             }
             Self::FeatureMeshImportEmptySourceAssumed => "feature.mesh-import-empty-source-assumed",
             Self::FeatureMeshImportSourceUnparsed => "feature.mesh-import-source-unparsed",
+            Self::FeatureMeshSectionPlaneUnresolved => "feature.mesh-section-plane-unresolved",
+            Self::FeatureMeshShellControlsUnresolved => "feature.mesh-shell-controls-unresolved",
+            Self::FeatureMeshOperationTailPartial => "feature.mesh-operation-tail-partial",
+            Self::FeatureMeshBodySelectionAssumed => "feature.mesh-body-selection-assumed",
             Self::FeatureMeshOperationSourceUnresolved => {
                 "feature.mesh-operation-source-unresolved"
             }
@@ -1685,6 +1697,10 @@ impl F3dLossCode {
             | Self::FeatureMeshImportTessellationsUnresolved
             | Self::FeatureMeshImportEmptySourceAssumed
             | Self::FeatureMeshImportSourceUnparsed
+            | Self::FeatureMeshSectionPlaneUnresolved
+            | Self::FeatureMeshShellControlsUnresolved
+            | Self::FeatureMeshOperationTailPartial
+            | Self::FeatureMeshBodySelectionAssumed
             | Self::FeatureMeshOperationSourceUnresolved
             | Self::FeatureMeshOperationScopeUnparsed
             | Self::FeatureMeshOperationSelectorUnruled
@@ -2009,6 +2025,10 @@ impl F3dLossCode {
             | Self::FeatureMeshImportTessellationsUnresolved
             | Self::FeatureMeshImportEmptySourceAssumed
             | Self::FeatureMeshImportSourceUnparsed
+            | Self::FeatureMeshSectionPlaneUnresolved
+            | Self::FeatureMeshShellControlsUnresolved
+            | Self::FeatureMeshOperationTailPartial
+            | Self::FeatureMeshBodySelectionAssumed
             | Self::FeatureMeshOperationSourceUnresolved
             | Self::FeatureMeshOperationScopeUnparsed
             | Self::FeatureMeshOperationSelectorUnruled
@@ -2392,6 +2412,10 @@ mod tests {
                 "feature.mesh-import-tessellations-unresolved",
                 "feature.mesh-import-empty-source-assumed",
                 "feature.mesh-import-source-unparsed",
+                "feature.mesh-section-plane-unresolved",
+                "feature.mesh-shell-controls-unresolved",
+                "feature.mesh-operation-tail-partial",
+                "feature.mesh-body-selection-assumed",
                 "feature.mesh-operation-source-unresolved",
                 "feature.mesh-operation-scope-unparsed",
                 "feature.mesh-operation-selector-unruled",

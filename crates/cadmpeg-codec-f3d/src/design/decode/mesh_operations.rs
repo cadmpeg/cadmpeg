@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::sketch::IndexedRecordOffsets;
+use super::meta::{dynamic_type, record_header_class_tag};
 use crate::bytes::take_reference;
 use crate::layout::indexed_design_record_header as header;
 use crate::layout::mesh_operation_group_prefix as group;
@@ -35,7 +35,7 @@ impl MeshOperationKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MeshOperationFields {
     Section {
         section_group: u32,
@@ -75,6 +75,7 @@ pub(crate) struct MeshOperationScope {
     pub(crate) output_geometry: Option<u32>,
     pub(crate) input_geometry: u32,
     pub(crate) source_group: u32,
+    pub(crate) tail_error: Option<MeshOperationFraming>,
     pub(crate) deviations: Vec<(&'static str, u32)>,
 }
 
@@ -95,7 +96,9 @@ struct Cursor<'a> {
 
 impl Cursor<'_> {
     fn u8(&mut self, field: &'static str) -> Result<u8, MeshOperationFraming> {
-        let value = *self.bytes.get(self.at).ok_or(MeshOperationFraming(field))?;
+        let mut view = View::over_retained(self.bytes);
+        view.seek(self.at).ok_or(MeshOperationFraming(field))?;
+        let value = view.u8().ok_or(MeshOperationFraming(field))?;
         self.at += 1;
         Ok(value)
     }
@@ -173,26 +176,40 @@ pub(crate) fn read_scope(
     };
     let fields = match kind {
         MeshOperationKind::Section => MeshOperationFields::Section {
-            section_group: cursor.reference("section group reference")?,
-            sketch_scope: cursor.reference("sketch scope reference")?,
+            section_group: cursor
+                .optional_reference("section group reference")?
+                .unwrap_or(0),
+            sketch_scope: cursor
+                .optional_reference("sketch scope reference")?
+                .unwrap_or(0),
         },
         MeshOperationKind::Reduce => {
-            let tolerance_owner = cursor.reference("tolerance owner reference")?;
+            let tolerance_owner = cursor
+                .optional_reference("tolerance owner reference")?
+                .unwrap_or(0);
             let distribution = cursor.u32("distribution selector")?;
             cursor.expect_u8("reduce-byte-after-distribution", 0)?;
-            let proportion_owner = cursor.reference("proportion owner reference")?;
+            let proportion_owner = cursor
+                .optional_reference("proportion owner reference")?
+                .unwrap_or(0);
             let target = cursor.u32("target selector")?;
             MeshOperationFields::Reduce {
                 tolerance_owner,
                 distribution,
                 proportion_owner,
                 target,
-                face_count_owner: cursor.reference("face-count owner reference")?,
+                face_count_owner: cursor
+                    .optional_reference("face-count owner reference")?
+                    .unwrap_or(0),
             }
         }
         MeshOperationKind::Repair => MeshOperationFields::Repair {
-            density_owner: cursor.reference("density owner reference")?,
-            offset_owner: cursor.reference("offset owner reference")?,
+            density_owner: cursor
+                .optional_reference("density owner reference")?
+                .unwrap_or(0),
+            offset_owner: cursor
+                .optional_reference("offset owner reference")?
+                .unwrap_or(0),
             rebuild_mode: cursor.u32("rebuild selector")?,
             method: cursor.u32("method selector")?,
         },
@@ -203,7 +220,9 @@ pub(crate) fn read_scope(
             let shape_preservation_owner =
                 cursor.optional_reference("shape-preservation owner reference")?;
             cursor.expect_u8("remesh-byte-after-shape-preservation", 0)?;
-            let edge_length_owner = cursor.reference("edge-length owner reference")?;
+            let edge_length_owner = cursor
+                .optional_reference("edge-length owner reference")?
+                .unwrap_or(0);
             cursor.expect_u32("remesh-word-after-edge-length", 1)?;
             MeshOperationFields::Remesh {
                 distribution,
@@ -212,52 +231,172 @@ pub(crate) fn read_scope(
             }
         }
         MeshOperationKind::Smooth => MeshOperationFields::Smooth {
-            smoothness_owner: cursor.reference("smoothness owner reference")?,
+            smoothness_owner: cursor
+                .optional_reference("smoothness owner reference")?
+                .unwrap_or(0),
         },
         MeshOperationKind::Shell => MeshOperationFields::Shell {
-            thickness_owner: cursor.reference("thickness owner reference")?,
+            thickness_owner: cursor
+                .optional_reference("thickness owner reference")?
+                .unwrap_or(0),
         },
         MeshOperationKind::ReverseNormals => MeshOperationFields::ReverseNormals,
     };
-    let output_geometry = cursor.optional_reference("output geometry reference")?;
-    let input_geometry = cursor.reference("input geometry reference")?;
-    cursor.expect_u32("tail-word-after-input-geometry", 0)?;
-    let source_group = cursor.reference("source group reference")?;
-    cursor.expect_u8("tail-byte-after-source-group", 0)?;
+    let mut output_geometry = None;
+    let mut input_geometry = 0;
+    let mut source_group = 0;
+    let tail_error = (|| {
+        output_geometry = cursor.optional_reference("output geometry reference")?;
+        input_geometry = cursor.reference("input geometry reference")?;
+        cursor.expect_u32("tail-word-after-input-geometry", 0)?;
+        source_group = cursor.reference("source group reference")?;
+        cursor.expect_u8("tail-byte-after-source-group", 0)
+    })()
+    .err();
     Ok(MeshOperationScope {
         prefix_word,
         fields,
         output_geometry,
         input_geometry,
         source_group,
+        tail_error,
         deviations: cursor.deviations,
     })
 }
 
 pub(crate) struct MeshOperationRecords<'a> {
     bytes: &'a [u8],
-    offsets: IndexedRecordOffsets,
+    meta: std::sync::Arc<crate::metastream::MetaStream>,
+    primary: std::collections::HashMap<u64, Option<usize>>,
+    secondary: std::collections::HashMap<u64, Option<usize>>,
+    registrations: std::collections::HashMap<u64, Option<usize>>,
 }
 
 impl<'a> MeshOperationRecords<'a> {
-    pub(crate) fn index(bytes: &'a [u8]) -> Self {
+    pub(crate) fn index(
+        bytes: &'a [u8],
+        meta: std::sync::Arc<crate::metastream::MetaStream>,
+    ) -> Self {
+        fn insert(
+            index: &mut std::collections::HashMap<u64, Option<usize>>,
+            entity: u64,
+            ordinal: usize,
+        ) {
+            index
+                .entry(entity)
+                .and_modify(|entry| *entry = None)
+                .or_insert(Some(ordinal));
+        }
+        let mut primary = std::collections::HashMap::new();
+        let mut secondary = std::collections::HashMap::new();
+        let mut registrations = std::collections::HashMap::new();
+        for (ordinal, record) in meta.records.iter().enumerate() {
+            insert(&mut primary, record.entity_id, ordinal);
+        }
+        for (ordinal, record) in meta.secondary_records.iter().enumerate() {
+            insert(&mut secondary, record.entity_id, ordinal);
+        }
+        for (ordinal, row) in meta.types.iter().enumerate() {
+            for &entity in row.entities.values() {
+                insert(&mut registrations, entity, ordinal);
+            }
+        }
         Self {
             bytes,
-            offsets: IndexedRecordOffsets::build(bytes),
+            meta,
+            primary,
+            secondary,
+            registrations,
         }
+    }
+
+    pub(crate) fn validate_scope(
+        &self,
+        kind: MeshOperationKind,
+        scope_index: u32,
+    ) -> Result<&'a [u8], MeshOperationFraming> {
+        let (guid, version) = match kind {
+            MeshOperationKind::Section => ("8FFFCBD2-7102-4A62-BCA0-8229A3C3B9DB", 1),
+            MeshOperationKind::Reduce => ("BE693D4C-741E-4794-A93E-5BFED71E9E13", 2),
+            MeshOperationKind::Repair => ("68691143-5EE3-428E-9CD3-F728E4718559", 4),
+            MeshOperationKind::Remesh => ("828DDA62-2750-447D-8728-06C9B7C2B117", 2),
+            MeshOperationKind::Smooth => ("F84CD988-9696-458D-8AF3-795D12E6B9EF", 2),
+            MeshOperationKind::Shell => ("1514CDB8-BB81-4895-A953-7B12F4504F99", 2),
+            MeshOperationKind::ReverseNormals => ("4AB7A6BD-C40C-4C44-B7CA-0D415B6E4412", 0),
+        };
+        self.record(
+            scope_index,
+            "operation scope record",
+            guid,
+            "90B8D2C6-05BB-4D0F-89EF-83AAC46CA1FF",
+            "Fusion",
+            Some(version),
+        )
     }
 
     fn record(
         &self,
         record_index: u32,
         field: &'static str,
+        guid: &str,
+        base: &str,
+        module: &str,
+        version: Option<u32>,
     ) -> Result<&'a [u8], MeshOperationFraming> {
-        let start = *self
-            .offsets
-            .offsets(record_index)
-            .first()
-            .ok_or(MeshOperationFraming(field))?;
-        let record = self.bytes.get(start..).ok_or(MeshOperationFraming(field))?;
+        let error = MeshOperationFraming(field);
+        let entity = u64::from(record_index);
+        let ordinal = self.primary.get(&entity).copied().flatten().ok_or(error)?;
+        let indexed = &self.meta.records[ordinal];
+        let start = usize::try_from(indexed.bulk_offset).map_err(|_| error)?;
+        let end = match self.meta.records.get(ordinal + 1) {
+            Some(next) => usize::try_from(next.bulk_offset).map_err(|_| error)?,
+            None => self.bytes.len(),
+        };
+        if start >= end
+            || end > self.bytes.len()
+            || ordinal.checked_sub(1).is_some_and(|previous| {
+                self.meta.records[previous].bulk_offset >= indexed.bulk_offset
+            })
+        {
+            return Err(error);
+        }
+        let member_end = if let Some(nested_index) = self.secondary.get(&entity) {
+            let nested = &self.meta.secondary_records[nested_index.ok_or(error)?];
+            let at = usize::try_from(nested.bulk_offset).map_err(|_| error)?;
+            if at <= start || at >= end {
+                return Err(error);
+            }
+            let tag = record_header_class_tag(self.bytes, at, end, entity).ok_or(error)?;
+            dynamic_type(&self.meta, &tag).ok_or(error)?;
+            at
+        } else {
+            end
+        };
+        let tag = record_header_class_tag(self.bytes, start, member_end, entity).ok_or(error)?;
+        let (ordinal, kind) = dynamic_type(&self.meta, &tag).ok_or(error)?;
+        if !kind.type_guid.as_str().eq_ignore_ascii_case(guid)
+            || !kind
+                .base_type_guid
+                .value()
+                .is_some_and(|value| value.as_str().eq_ignore_ascii_case(base))
+            || version.is_some_and(|version| kind.version != version)
+            || kind.module != module
+            || self.registrations.get(&entity).copied().flatten() != Some(ordinal)
+        {
+            return Err(error);
+        }
+        let record = self.bytes.get(start..member_end).ok_or(error)?;
+        Ok(record)
+    }
+
+    fn source_record(
+        &self,
+        record_index: u32,
+        field: &'static str,
+        guid: &str,
+        base: &str,
+    ) -> Result<&'a [u8], MeshOperationFraming> {
+        let record = self.record(record_index, field, guid, base, "Fusion", Some(0))?;
         if record
             .get(member::ZERO_RUN_10..member::BODY_REFERENCE)
             .is_none_or(|run| run.iter().any(|byte| *byte != 0))
@@ -272,7 +411,12 @@ impl<'a> MeshOperationRecords<'a> {
         ctx: &DecodeContext<'_>,
         group: u32,
     ) -> Result<Result<Vec<u32>, MeshOperationFraming>, CodecError> {
-        let record = match self.record(group, "source group record") {
+        let record = match self.source_record(
+            group,
+            "source group record",
+            "22975A91-16AD-4CC9-A5E4-B4F8B4C27881",
+            "2CA5A1CD-C99B-4C9B-91AF-57989148E841",
+        ) {
             Ok(record) => record,
             Err(error) => return Ok(Err(error)),
         };
@@ -297,7 +441,14 @@ impl<'a> MeshOperationRecords<'a> {
         for body in &mut bodies {
             let read = cursor
                 .reference("source group member reference")
-                .and_then(|index| self.record(index, "source member record"))
+                .and_then(|index| {
+                    self.source_record(
+                        index,
+                        "source member record",
+                        "1AA9CC7B-5C34-45DA-AE14-0444E7F966F2",
+                        "6144EA59-3ACA-4172-9F14-A6531E94D69B",
+                    )
+                })
                 .and_then(|record| {
                     Cursor {
                         bytes: record,
@@ -305,6 +456,17 @@ impl<'a> MeshOperationRecords<'a> {
                         deviations: Vec::new(),
                     }
                     .reference("source member body reference")
+                })
+                .and_then(|body| {
+                    self.record(
+                        body,
+                        "source body record",
+                        "EA90DA22-556C-4C61-89BB-20C2681B7A9D",
+                        "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
+                        "ParaMesh",
+                        None,
+                    )?;
+                    Ok(body)
                 });
             match read {
                 Ok(index) => *body = index,

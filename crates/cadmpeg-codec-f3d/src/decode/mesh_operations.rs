@@ -2,11 +2,13 @@
 
 use crate::container::ContainerScan;
 use crate::design::decode::mesh_operations::{
-    read_scope, MeshOperationFields, MeshOperationKind, MeshOperationRecords, MeshOperationScope,
+    read_scope, MeshOperationFields, MeshOperationFraming, MeshOperationKind, MeshOperationRecords,
+    MeshOperationScope,
 };
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::{DesignParameter, DesignParameterOwner};
+use crate::records::sketch_placement::DesignSketchPlacement;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -15,10 +17,13 @@ use cadmpeg_ir::features::mesh::{
     MeshSelection,
 };
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureOperation, NativeSelections, SelectionReference,
+    BodySelection, FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    FeatureSupportPlaneFrame, NativeSelections, SelectionReference,
 };
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Fraction, Length, NonNegativeLength, PositiveLength, PositiveReal};
+use cadmpeg_ir::sketches::Sketch;
 use std::collections::HashMap;
 
 const MILLIMETRES_PER_DESIGN_LENGTH: f64 = 10.0;
@@ -37,7 +42,7 @@ struct Notes<'a> {
 }
 
 impl Notes<'_> {
-    fn property(&mut self, key: impl Into<String>, value: impl ToString) {
+    fn property(&mut self, key: impl Into<String>, value: impl ToString + Copy) {
         self.properties.push((key.into(), value.to_string()));
     }
 
@@ -98,7 +103,9 @@ fn modification(
     notes: &mut Notes<'_>,
 ) -> Option<MeshModification> {
     Some(match *fields {
-        MeshOperationFields::Section { .. } => return None,
+        MeshOperationFields::Section { .. }
+        | MeshOperationFields::Shell { .. }
+        | MeshOperationFields::ReverseNormals => return None,
         MeshOperationFields::Reduce {
             tolerance_owner,
             distribution: distribution_selector,
@@ -219,20 +226,14 @@ fn modification(
                 number(value(smoothness_owner)).and_then(Fraction::new),
             ),
         },
-        MeshOperationFields::Shell { thickness_owner } => MeshModification::Shell {
-            thickness: notes.bound(
-                "thickness",
-                thickness_owner,
-                length(value(thickness_owner)).and_then(PositiveLength::new),
-            ),
-        },
-        MeshOperationFields::ReverseNormals => MeshModification::ReverseNormals,
     })
 }
 
 fn unresolved_modification(kind: MeshOperationKind) -> Option<MeshModification> {
     Some(match kind {
-        MeshOperationKind::Section => return None,
+        MeshOperationKind::Section
+        | MeshOperationKind::Shell
+        | MeshOperationKind::ReverseNormals => return None,
         MeshOperationKind::Reduce => MeshModification::Reduce {
             distribution: None,
             target: None,
@@ -244,9 +245,41 @@ fn unresolved_modification(kind: MeshOperationKind) -> Option<MeshModification> 
             shape_preservation: None,
         },
         MeshOperationKind::Smooth => MeshModification::Smooth { smoothness: None },
-        MeshOperationKind::Shell => MeshModification::Shell { thickness: None },
-        MeshOperationKind::ReverseNormals => MeshModification::ReverseNormals,
     })
+}
+
+fn body_selection(selection: MeshSelection) -> BodySelection {
+    match selection {
+        MeshSelection::Native {
+            native,
+            members: Some(bodies),
+        } => BodySelection::Local { bodies, native },
+        MeshSelection::Native { native, .. } => BodySelection::Native(native.as_str().to_owned()),
+        MeshSelection::Unresolved { .. } | MeshSelection::Tessellations(_) => {
+            BodySelection::Unresolved
+        }
+    }
+}
+
+fn shell(
+    source: MeshSelection,
+    thickness: Option<PositiveLength>,
+    notes: &mut Notes<'_>,
+) -> FeatureOperation {
+    notes.losses.push(F3dLossCode::FeatureMeshShellControlsUnresolved.note(format!(
+        "Mesh shell {} retains unknown outward, construction mode, corner join, intersection resolution and self-intersection controls as unresolved.",
+        notes.source
+    )));
+    FeatureOperation::Shell {
+        bodies: Some(body_selection(source)),
+        removed_faces: FaceSelection::Faces(Vec::new()),
+        thickness,
+        outward: None,
+        mode: None,
+        join: None,
+        resolve_intersections: None,
+        allow_self_intersections: None,
+    }
 }
 
 fn source_selection(
@@ -267,6 +300,9 @@ fn source_selection(
             let selectors = bodies.iter().map(u32::to_string).collect::<Vec<_>>();
             match NativeSelections::try_from(selectors) {
                 Ok(members) => {
+                    notes.losses.push(F3dLossCode::FeatureMeshBodySelectionAssumed.note(format!(
+                        "Mesh operation {} interprets source member body references as body selections; member-tail selection controls remain unresolved.", notes.source
+                    )));
                     notes.losses.push(
                         F3dLossCode::FeatureMeshOperationSourceUnresolved.note(format!(
                             "Mesh operation {} retains source body records {bodies:?} and input geometry record {}; their tessellation remains unresolved.",
@@ -309,28 +345,92 @@ struct Plan {
     properties: Vec<(String, String)>,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct MeshOperationInputs<'a> {
+    pub(super) scopes: &'a [DesignParameterScope],
+    pub(super) owners: &'a [DesignParameterOwner],
+    pub(super) parameters: &'a [DesignParameter],
+    pub(super) placements: &'a [DesignSketchPlacement],
+    pub(super) sketches: &'a [Sketch],
+}
+
+fn section_binding(
+    inputs: &MeshOperationInputs<'_>,
+    features: &[Feature],
+    stream: Option<&str>,
+    sketch_scope: u32,
+) -> (Option<FeatureSupportPlaneFrame>, Option<FeatureId>) {
+    let mut scopes = inputs.scopes.iter().filter(|candidate| {
+        crate::ids::native_stream(&candidate.id) == stream && candidate.record_index == sketch_scope
+    });
+    let scope = scopes.next().filter(|_| scopes.next().is_none());
+    let feature = scope.and_then(|scope| {
+        let mut candidates = features.iter().filter(|candidate| {
+            candidate.native_ref.as_deref() == Some(scope.id.as_str())
+                && matches!(
+                    candidate.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+                )
+        });
+        candidates.next().filter(|_| candidates.next().is_none())
+    });
+    let model_plane = feature.and_then(|feature| {
+        let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch }) =
+            feature.evaluation.definition()
+        else {
+            return None;
+        };
+        let id = sketch.id()?;
+        let mut sketches = inputs.sketches.iter().filter(|sketch| &sketch.id == id);
+        let sketch = sketches.next().filter(|_| sketches.next().is_none())?;
+        let (origin, normal, u_axis) = sketch.placement.resolved()?;
+        FeatureSupportPlaneFrame::new(origin.get(), normal.get(), u_axis.get())
+    });
+    let plane = model_plane.or_else(|| {
+        let mut placements = inputs.placements.iter().filter(|placement| {
+            crate::ids::native_stream(&placement.id) == stream
+                && placement.scope_record_index == Some(sketch_scope)
+        });
+        let placement = placements.next().filter(|_| placements.next().is_none())?;
+        let matrix = placement.transform();
+        let scale = crate::design::face_resolve::placement_origin_scale(placement);
+        FeatureSupportPlaneFrame::new(
+            Point3::new(
+                matrix[0][3] * scale,
+                matrix[1][3] * scale,
+                matrix[2][3] * scale,
+            ),
+            Vector3::new(matrix[0][2], matrix[1][2], matrix[2][2]),
+            Vector3::new(matrix[0][0], matrix[1][0], matrix[2][0]),
+        )
+    });
+    (plane, feature.map(|feature| feature.id.clone()))
+}
+
 fn scope_bytes<'a>(
     scan: &ContainerScan<'a>,
     scope: &DesignParameterScope,
-) -> Option<(String, &'a [u8], &'a [u8])> {
+) -> Option<(String, &'a [u8])> {
     let stream = crate::ids::native_stream(&scope.id)?.strip_prefix("f3d:")?;
     let entry = crate::ids::decode_identity_key_component(stream)?;
     let bytes = scan.entry_view(&entry)?.window();
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    let end = start.checked_add(usize::try_from(scope.frame_length()).ok()?)?;
-    Some((entry, bytes, bytes.get(start..end)?))
+    Some((entry, bytes))
 }
 
 pub(super) fn bind_features(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     features: &mut [Feature],
-    scopes: &[DesignParameterScope],
-    owners: &[DesignParameterOwner],
-    parameters: &[DesignParameter],
+    inputs: MeshOperationInputs<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    let mut records = HashMap::<String, MeshOperationRecords<'_>>::new();
+    let MeshOperationInputs {
+        scopes,
+        owners,
+        parameters,
+        ..
+    } = &inputs;
+    let mut records = HashMap::<String, Option<MeshOperationRecords<'_>>>::new();
     let mut plans = Vec::new();
     for (index, feature) in features.iter().enumerate() {
         let Some(kind) = feature
@@ -357,11 +457,39 @@ pub(super) fn bind_features(
                 notes.property(format!("parameter:{name}"), expression);
             }
         }
-        let parsed = scope
-            .and_then(|scope| Some((scope, scope_bytes(scan, scope)?)))
-            .map(|(scope, (entry, bytes, frame))| (scope, entry, bytes, read_scope(kind, frame)));
-        let (selection, modification, sketch) = match parsed {
-            Some((scope, entry, bytes, Ok(operation))) => {
+        let parsed = if let Some((scope, (entry, bytes))) =
+            scope.and_then(|scope| Some((scope, scope_bytes(scan, scope)?)))
+        {
+            let indexed = match records.entry(entry) {
+                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    let meta = match crate::design::decode::meta::metadata_for_bulk_stream(
+                        scan,
+                        entry.key(),
+                    ) {
+                        Ok(meta) => meta,
+                        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                        Err(_) => None,
+                    };
+                    entry.insert(meta.map(|meta| MeshOperationRecords::index(bytes, meta)))
+                }
+            };
+            let parsed = indexed
+                .as_ref()
+                .ok_or(MeshOperationFraming("source metadata"))
+                .and_then(|records| records.validate_scope(kind, scope.record_index))
+                .and_then(|frame| read_scope(kind, frame));
+            Some((scope, indexed.as_ref(), parsed))
+        } else {
+            None
+        };
+        let operation = match parsed {
+            Some((scope, records, Ok(operation))) => {
+                if let Some(error) = operation.tail_error {
+                    notes.losses.push(F3dLossCode::FeatureMeshOperationTailPartial.note(format!(
+                        "Mesh operation {source} retains decoded controls and references before its unresolved {error}."
+                    )));
+                }
                 if let Some(word) = operation.prefix_word {
                     notes.property("mesh-scope-prefix-word", word);
                     notes
@@ -398,26 +526,15 @@ pub(super) fn bind_features(
                         }),
                     })
                 };
-                let modification = modification(&operation.fields, &value, &mut notes);
-                let sketch = match operation.fields {
+                let (plane, sketch) = match operation.fields {
                     MeshOperationFields::Section {
                         section_group,
                         sketch_scope,
                     } => {
                         notes.property("mesh-section-group", section_group);
                         notes.property("mesh-section-sketch-scope", sketch_scope);
-                        let sketch = scopes
-                            .iter()
-                            .find(|candidate| {
-                                crate::ids::native_stream(&candidate.id) == stream
-                                    && candidate.record_index == sketch_scope
-                            })
-                            .and_then(|sketch| {
-                                features.iter().find(|candidate| {
-                                    candidate.native_ref.as_deref() == Some(sketch.id.as_str())
-                                })
-                            })
-                            .map(|sketch| sketch.id.clone());
+                        let (plane, sketch) =
+                            section_binding(&inputs, features, stream, sketch_scope);
                         notes.losses.push(
                             F3dLossCode::FeatureMeshSectionCurvesUnresolved.note(match &sketch {
                                 Some(sketch) => format!(
@@ -428,19 +545,40 @@ pub(super) fn bind_features(
                                 ),
                             }),
                         );
-                        sketch
+                        (plane, sketch)
                     }
-                    _ => None,
+                    _ => (None, None),
                 };
-                let bodies = records
-                    .entry(entry)
-                    .or_insert_with(|| MeshOperationRecords::index(bytes))
-                    .group_bodies(ctx, operation.source_group)?;
-                (
-                    source_selection(&operation, bodies, &mut notes)?,
-                    modification,
-                    sketch,
-                )
+                let bodies = match records {
+                    Some(records) => records.group_bodies(ctx, operation.source_group)?,
+                    None => Err(MeshOperationFraming("source metadata")),
+                };
+                let source = source_selection(&operation, bodies, &mut notes)?;
+                match operation.fields {
+                    MeshOperationFields::Section { .. } => FeatureOperation::MeshSection {
+                        source,
+                        plane,
+                        sketch,
+                    },
+                    MeshOperationFields::Shell { thickness_owner } => {
+                        let thickness = notes.bound(
+                            "thickness",
+                            thickness_owner,
+                            length(value(thickness_owner)).and_then(PositiveLength::new),
+                        );
+                        shell(source, thickness, &mut notes)
+                    }
+                    MeshOperationFields::ReverseNormals => FeatureOperation::ReverseShape {
+                        source: body_selection(source),
+                    },
+                    _ => FeatureOperation::MeshModify {
+                        source,
+                        modification: modification(&operation.fields, &value, &mut notes)
+                            .ok_or_else(|| {
+                                CodecError::malformed("mesh modification has no controls")
+                            })?,
+                    },
+                }
             }
             other => {
                 let reason = match other {
@@ -452,25 +590,33 @@ pub(super) fn bind_features(
                     .push(F3dLossCode::FeatureMeshOperationScopeUnparsed.note(format!(
                         "Mesh operation {source} retains its originating feature identity because {reason}."
                     )));
-                (
-                    MeshSelection::Unresolved {
-                        feature: feature.id.clone(),
+                let source = MeshSelection::Unresolved {
+                    feature: feature.id.clone(),
+                };
+                match kind {
+                    MeshOperationKind::Section => FeatureOperation::MeshSection {
+                        source,
+                        plane: None,
+                        sketch: None,
                     },
-                    unresolved_modification(kind),
-                    None,
-                )
+                    MeshOperationKind::Shell => shell(source, None, &mut notes),
+                    MeshOperationKind::ReverseNormals => FeatureOperation::ReverseShape {
+                        source: body_selection(source),
+                    },
+                    _ => FeatureOperation::MeshModify {
+                        source,
+                        modification: unresolved_modification(kind).ok_or_else(|| {
+                            CodecError::malformed("mesh modification kind has no controls")
+                        })?,
+                    },
+                }
             }
         };
-        let operation = match modification {
-            Some(modification) => FeatureOperation::MeshModify {
-                source: selection,
-                modification,
-            },
-            None => FeatureOperation::MeshSection {
-                source: selection,
-                sketch,
-            },
-        };
+        if matches!(operation, FeatureOperation::MeshSection { plane: None, .. }) {
+            notes.losses.push(F3dLossCode::FeatureMeshSectionPlaneUnresolved.note(format!(
+                "Mesh section {source} retains its sketch reference while its model-space plane remains unresolved."
+            )));
+        }
         losses.append(&mut notes.losses);
         plans.push(Plan {
             feature: index,

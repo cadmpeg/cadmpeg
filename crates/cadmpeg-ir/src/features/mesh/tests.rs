@@ -181,16 +181,6 @@ fn mesh_modifications_keep_their_tagged_wire_forms() {
             serde_json::json!({"kind":"smooth"}),
             MeshModification::Smooth { smoothness: None },
         ),
-        (
-            serde_json::json!({"kind":"shell","thickness":2.0}),
-            MeshModification::Shell {
-                thickness: Some(crate::scalar::PositiveLength::new(2.0).unwrap()),
-            },
-        ),
-        (
-            serde_json::json!({"kind":"reverse_normals"}),
-            MeshModification::ReverseNormals,
-        ),
     ] {
         let decoded: MeshModification = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(decoded, expected);
@@ -199,7 +189,8 @@ fn mesh_modifications_keep_their_tagged_wire_forms() {
     for invalid in [
         serde_json::json!({"kind":"smooth","smoothness":1.5}),
         serde_json::json!({"kind":"smooth","smoothness":null}),
-        serde_json::json!({"kind":"shell","thickness":0.0}),
+        serde_json::json!({"kind":"shell","thickness":2.0}),
+        serde_json::json!({"kind":"reverse_normals"}),
         serde_json::json!({"kind":"reduce","target":{"kind":"face_count","value":0}}),
     ] {
         assert!(serde_json::from_value::<MeshModification>(invalid).is_err());
@@ -212,12 +203,13 @@ fn mesh_operations_keep_their_feature_wire_forms() {
         serde_json::json!({
             "definition":"mesh_modify",
             "source":{"native":"mesh:scope","members":["9"]},
-            "modification":{"kind":"reverse_normals"}
+            "modification":{"kind":"smooth","smoothness":0.25}
         }),
         serde_json::json!({
             "definition":"mesh_section",
             "source":["test:mesh:tessellation#first"],
-            "sketch":"test:model:feature#sketch"
+            "sketch":"test:model:feature#sketch",
+            "plane":{"origin":{"x":1.0,"y":2.0,"z":3.0},"normal":{"x":0.0,"y":0.0,"z":1.0},"u_axis":{"x":1.0,"y":0.0,"z":0.0}}
         }),
         serde_json::json!({
             "definition":"mesh_section",
@@ -231,4 +223,59 @@ fn mesh_operations_keep_their_feature_wire_forms() {
         ));
         assert_eq!(serde_json::to_value(operation).unwrap(), wire);
     }
+}
+
+#[test]
+fn section_plane_rejects_explicit_null_and_nonperpendicular_axes() {
+    for plane in [
+        serde_json::Value::Null,
+        serde_json::json!({
+            "origin":{"x":0.0,"y":0.0,"z":0.0},
+            "normal":{"x":0.0,"y":0.0,"z":1.0},
+            "u_axis":{"x":0.0,"y":0.0,"z":1.0}
+        }),
+    ] {
+        let wire = serde_json::json!({
+            "definition":"mesh_section",
+            "source":{"feature":"test:model:feature#section"},
+            "plane":plane
+        });
+        assert!(serde_json::from_value::<FeatureOperation>(wire).is_err());
+    }
+}
+
+#[test]
+fn section_identity_rewrite_keeps_its_plane_and_linked_sketch() {
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+
+    let wire = serde_json::json!({
+        "definition":"mesh_section",
+        "source":{"feature":"test:model:feature#section"},
+        "plane":{
+            "origin":{"x":1.0,"y":2.0,"z":3.0},
+            "normal":{"x":0.0,"y":0.0,"z":1.0},
+            "u_axis":{"x":1.0,"y":0.0,"z":0.0}
+        },
+        "sketch":"test:model:feature#sketch"
+    });
+    let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+    crate::test_support::with_service_decode_context(|ctx| {
+        let mut map = IdentityMap::new(|id: &str| Ok(id.replace("test:", "test:child/")));
+        let mut identities = Vec::new();
+        operation.visit_identity_references(ctx, &mut |id| {
+            identities.push(id.to_owned());
+            Ok(())
+        })?;
+        assert_eq!(
+            identities,
+            ["test:model:feature#section", "test:model:feature#sketch"]
+        );
+        let rewritten = operation.rewrite_identities(ctx, &mut map)?;
+        let mut expected = wire.clone();
+        expected["source"]["feature"] = "test:child/model:feature#section".into();
+        expected["sketch"] = "test:child/model:feature#sketch".into();
+        assert_eq!(serde_json::to_value(rewritten).unwrap(), expected);
+        map.finish()
+    })
+    .unwrap();
 }

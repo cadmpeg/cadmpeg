@@ -172,18 +172,6 @@ pub enum MeshModification {
         )]
         smoothness: Option<Fraction>,
     },
-    #[doc = "Hollows the mesh and keeps a wall."]
-    Shell {
-        #[doc = "Wall thickness in canonical millimeters, when resolved."]
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_thickness"
-        )]
-        thickness: Option<PositiveLength>,
-    },
-    #[doc = "Reverses the face normals."]
-    ReverseNormals,
 }
 cadmpeg_core::named_optional_field!(deserialize_members, NativeSelections, "members");
 
@@ -204,7 +192,6 @@ cadmpeg_core::named_optional_field!(
     "shape_preservation"
 );
 cadmpeg_core::named_optional_field!(deserialize_smoothness, Fraction, "smoothness");
-cadmpeg_core::named_optional_field!(deserialize_thickness, PositiveLength, "thickness");
 
 mod decode_clone;
 

@@ -1876,7 +1876,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.mesh-operation-source-unresolved`. An unreadable scope or source group reports `feature.mesh-operation-scope-unparsed`.
+**Note.** The decoder reports `feature.mesh-operation-source-unresolved`. An unreadable scope or source group reports `feature.mesh-operation-scope-unparsed`. A partially decoded geometry tail reports `feature.mesh-operation-tail-partial` and retains the preceding controls and references.
 
 ### DR-474. Mesh operation selector values and fixed fields
 
@@ -1900,7 +1900,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.mesh-section-curves-unresolved`.
+**Note.** The decoder reports `feature.mesh-section-curves-unresolved`. An unavailable section plane reports `feature.mesh-section-plane-unresolved`.
 
 ### DR-373. Mesh body and collection-owner payload fields
 
@@ -2470,3 +2470,28 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** A complete twenty-node program, four face candidates, and a shared transition set permit several member assignments. Selecting every transition candidate assumes a group-level rule.
 
 **Note.** The decoder retains the bounded-face operands and compact identity candidates. Group `4324` stays native with `feature.edge-selection-native`. DR-224 tracks Fillet transition ambiguities; DR-244 tracks treatment groups whose transitions supply no candidate set.
+
+
+### DR-482. Mesh operation member selection tails
+
+**Question.** Which source member tail fields select face groups or subsets of a mesh body?
+
+**Known.** A source member contains a body reference followed by selection fields. The decoder retains the body reference as an input-local body selection.
+
+**Need.** Controlled saves with whole-body and face-group selections changed independently.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-body-selection-assumed` for the body-selection reading.
+
+### DR-483. Mesh shell construction controls
+
+**Question.** Which mesh shell fields encode the wall direction, offset construction, corner continuation, and intersection settings?
+
+**Known.** The mesh shell scope names its thickness owner and source mesh. These values define the neutral Shell input and thickness.
+
+**Need.** Controlled saves that change each shell construction control independently.
+
+**Conflict.** None.
+
+**Note.** The decoder leaves unresolved construction settings unset and reports `feature.mesh-shell-controls-unresolved`.
