@@ -44,8 +44,12 @@ fn scale_operation_refuses_a_nonpositive_uniform_factor() {
             body_group_record_index: 102,
             center_record_index: 105,
             center_position: None,
-            uniform_factor: positive(2.5),
-            uniform_factor_offset: 21,
+            further_body_group_record_indices: Vec::new(),
+            factors: crate::records::feature::body_ops::DesignScaleFactors::Uniform {
+                factor: positive(2.5),
+                offset: 21,
+            },
+            matrix_offset: None,
         },
         "uniform_factor",
         "uniform_factor must be positive and finite",
@@ -74,6 +78,8 @@ fn shell_operation_refuses_a_nonpositive_thickness() {
             outward: true,
             outward_offset: 60,
             wall_slots: None,
+            prefix_flag: None,
+            auxiliary_references: Vec::new(),
         },
         "thickness",
         "PositiveReal",
@@ -139,6 +145,8 @@ fn surface_offset_boundary_carrier_refuses_a_nonpositive_tolerance() {
 fn circular_pattern_construction_refuses_a_nonpositive_angle() {
     refuses_zero(
         &DesignCircularPatternConstruction {
+            axis_separator_flag_offset: None,
+            symmetric: None,
             count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index: 11,
             count_offset: 40,
@@ -209,4 +217,31 @@ fn mirror_native_plane_refuses_zero_and_nonunit_normals() {
     .unwrap();
     let plane: DesignMirrorConstruction = serde_json::from_value(value.clone()).unwrap();
     assert_eq!(serde_json::to_value(plane).unwrap(), value);
+}
+
+#[test]
+fn scale_axis_factors_round_trip_and_reject_partial_or_mixed_forms() {
+    let wire = serde_json::json!({
+        "body_group_record_index": 102,
+        "center_record_index": 105,
+        "axis_factors": [1.0, 2.0, 3.0],
+        "axis_factor_offsets": [60, 100, 140],
+        "matrix_offset": 60
+    });
+    let value: DesignScaleOperation = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(value).unwrap(), wire);
+    for field in ["axis_factors", "axis_factor_offsets"] {
+        let mut invalid = wire.clone();
+        invalid.as_object_mut().unwrap().remove(field);
+        assert!(serde_json::from_value::<DesignScaleOperation>(invalid).is_err());
+    }
+    for factors in [[0.0, 2.0, 3.0], [1.0, -2.0, 3.0]] {
+        let mut invalid = wire.clone();
+        invalid["axis_factors"] = serde_json::json!(factors);
+        assert!(serde_json::from_value::<DesignScaleOperation>(invalid).is_err());
+    }
+    let mut mixed = wire;
+    mixed["uniform_factor"] = serde_json::json!(2.0);
+    mixed["uniform_factor_offset"] = serde_json::json!(25);
+    assert!(serde_json::from_value::<DesignScaleOperation>(mixed).is_err());
 }

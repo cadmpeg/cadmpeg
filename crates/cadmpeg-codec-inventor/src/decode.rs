@@ -648,6 +648,18 @@ fn decode_container<'a>(
     } else {
         UnresolvedDesign::default()
     };
+    if delivered == DecodeDepth::Full {
+        losses.extend(crate::annotation::project(
+            ctx,
+            &crate::annotation::Inputs {
+                rse: &container.rse,
+                labels: &feature_inventory.labels,
+                parameters: &design_inventory.parameters,
+                properties: &feature_inventory.properties,
+            },
+            &mut ir.model,
+        )?);
+    }
     let mut stored_body_losses = Vec::new();
     if !body_keys.is_empty() {
         let projection = crate::feature::base::project(
@@ -1101,6 +1113,9 @@ fn decode_container<'a>(
             &container.rse,
         ));
         losses.extend(crate::sketch::polygon_control_vertex_loss(
+            &sketch_inventory.constraints,
+        ));
+        losses.extend(crate::sketch::circle_parameter::loss(
             &sketch_inventory.constraints,
         ));
         losses.extend(crate::sketch::spline::point_relation_loss(

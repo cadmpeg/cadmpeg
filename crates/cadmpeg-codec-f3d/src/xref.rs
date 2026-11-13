@@ -1513,9 +1513,12 @@ pub(crate) fn legacy_placement_metadata_native(source: &XrefPlacementSource) -> 
 struct LegacyAttributedPlacementDetails<'a> {
     carrier_record_index: u64,
     occurrence_guid: crate::records::mesh::DesignRelaxedGuidText,
+    occurrence_guid_offset: usize,
     owner: u64,
     role: Utf16View<'a>,
+    role_offset: usize,
     transform: Option<[[f64; 4]; 4]>,
+    transform_offset: Option<usize>,
 }
 
 fn legacy_attributed_placement_details(
@@ -1593,15 +1596,18 @@ fn legacy_attributed_placement_details(
     {
         return None;
     }
-    let tail = body.get(members_start + legacy_members::LEN..)?;
-    let (tail, transform) = match *members.get(legacy_members::IDENTITY_FLAG)? {
-        1 => (tail, None),
-        0 if tail.len() == legacy_matrix_tail::LEN => (
-            tail.get(legacy_matrix_tail::ZERO..)?,
-            Some(decode_rigid_matrix(tail, legacy_matrix_tail::MATRIX)?),
-        ),
-        _ => return None,
-    };
+    let tail_start = members_start + legacy_members::LEN;
+    let tail = body.get(tail_start..)?;
+    let (tail, identity_tail_start, transform) =
+        match *members.get(legacy_members::IDENTITY_FLAG)? {
+            1 => (tail, tail_start, None),
+            0 if tail.len() == legacy_matrix_tail::LEN => (
+                tail.get(legacy_matrix_tail::ZERO..)?,
+                tail_start + legacy_matrix_tail::ZERO,
+                Some(decode_rigid_matrix(tail, legacy_matrix_tail::MATRIX)?),
+            ),
+            _ => return None,
+        };
     if tail.len() != legacy_identity_tail::LEN
         || View::u32_le_at(tail, legacy_identity_tail::ZERO)? != legacy_identity_tail::ZERO_VALUE
         || tail.get(legacy_identity_tail::SEPARATOR) != Some(&legacy_identity_tail::SEPARATOR_VALUE)
@@ -1640,9 +1646,48 @@ fn legacy_attributed_placement_details(
         .to_string()
         .try_into()
         .ok()?,
+        occurrence_guid_offset: members_start + legacy_members::TRACKING_GUID_LENGTH + 4,
         owner,
         role,
+        role_offset: identity_tail_start + legacy_identity_tail::ROLE_LENGTH + 4,
         transform,
+        transform_offset: transform.map(|_| tail_start + legacy_matrix_tail::MATRIX),
+    })
+}
+
+/// A `Component Insert` carrier stored as an attributed legacy placement, with
+/// absolute offsets.
+pub(crate) struct AttributedInsertCarrier {
+    pub(crate) role: String,
+    pub(crate) role_offset: usize,
+    pub(crate) transform_offset: Option<usize>,
+    pub(crate) occurrence_key:
+        crate::records::identity::Located<crate::records::mesh::DesignRelaxedGuidText>,
+}
+
+pub(crate) fn attributed_component_insert_carrier(
+    bytes: &[u8],
+    carrier_at: usize,
+    relation_at: usize,
+    carrier_record_index: u32,
+) -> Option<AttributedInsertCarrier> {
+    let details = legacy_attributed_placement_details(bytes.get(carrier_at..relation_at)?)?;
+    if details.carrier_record_index != u64::from(carrier_record_index) {
+        return None;
+    }
+    Some(AttributedInsertCarrier {
+        role: details.role.to_string(),
+        role_offset: carrier_at.checked_add(details.role_offset)?,
+        transform_offset: match details.transform_offset {
+            Some(offset) => Some(carrier_at.checked_add(offset)?),
+            None => None,
+        },
+        occurrence_key: crate::records::identity::Located {
+            value: details.occurrence_guid,
+            offset: cadmpeg_core::decode::u64_from_index(
+                carrier_at.checked_add(details.occurrence_guid_offset)?,
+            ),
+        },
     })
 }
 

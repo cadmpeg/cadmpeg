@@ -13,6 +13,7 @@ use super::base_feature::{
     exact_base_feature_construction, timeline_body_owners, timeline_owned_base_feature,
     TimelineBodyOwner,
 };
+use super::chamfer_set::chamfer_set_list;
 use super::coil::bind_coil_extent_from_parameters;
 use super::coil::exact_coil_discriminators;
 use super::coil::exact_coil_placement;
@@ -24,20 +25,24 @@ use super::component_constructions::exact_copy_paste_component_operation;
 use super::component_constructions::exact_derived_instance_construction;
 use super::copy_paste_bodies::exact_copy_paste_bodies_operation;
 use super::direct_face::exact_direct_face_operation;
+use super::direct_face::exact_modify_operation;
 use super::direct_face::exact_move_face_operation;
 use super::direct_face::exact_move_operation;
 use super::direct_face::exact_scale_operation;
 use super::direct_face::marked_move_transform_loss;
+use super::direct_face::move_transform_prefix_losses;
+use super::direct_face::move_transform_references_loss;
 use super::draft::exact_draft_operation_with_owners;
 use super::emboss::exact_emboss_construction;
 use super::extrude::{exact_extrude_prologue, exact_typed_extrude_prologue};
+use super::fillet_set::fillet_set_list;
 use super::fixed_parameters::exact_fixed_chamfer_parameters;
 use super::fixed_parameters::exact_fixed_extrude_parameters;
 use super::fixed_parameters::exact_fixed_fillet_parameters;
 use super::hole::exact_hole_construction;
 use super::path_feature::{
-    exact_path_feature_construction, loft_reference_loss, marker_one_revolve_assumed_length,
-    three_flag_loft_settings_loss,
+    exact_path_feature_construction, loft_lists_loss, loft_reference_loss,
+    marker_one_revolve_assumed_length, three_flag_loft_settings_loss,
 };
 use super::pattern::exact_circular_pattern_construction_with_owners;
 use super::pattern::exact_rectangular_pattern_construction;
@@ -362,7 +367,9 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_direct_face_operation(bytes, &records, &scope);
+                let construction =
+                    exact_direct_face_operation(bytes, &records, &scope, &mut losses);
+                let scope_offset = scope.byte_offset();
                 match (scope.payload_mut(), construction) {
                     (
                         scope::DesignScopePayloadMut::OffsetFaces(slot),
@@ -371,7 +378,20 @@ pub(crate) fn decode_parameter_scopes(
                     (
                         scope::DesignScopePayloadMut::Shell(slot),
                         Some(direct_face::DesignDirectFaceOperation::Shell(value)),
-                    ) => *slot = Some(value),
+                    ) => {
+                        if !value.auxiliary_references.is_empty() {
+                            losses.push(
+                                crate::loss::F3dLossCode::FeatureShellAuxiliaryReferencesNative
+                                    .note(format!(
+                                        "Shell scope at {} in {} projects from its wall slot and face group; its auxiliary references {:?} have no neutral form.",
+                                        scope_offset,
+                                        entry.name,
+                                        value.auxiliary_references
+                                    )),
+                            );
+                        }
+                        *slot = Some(value);
+                    }
                     _ => {}
                 }
             }
@@ -402,13 +422,33 @@ pub(crate) fn decode_parameter_scopes(
                         operation,
                         &class_types,
                     ));
+                    losses.extend(move_transform_references_loss(&scope, operation));
+                    losses.extend(move_transform_prefix_losses(&scope, operation));
                 }
                 if let scope::DesignScopePayloadMut::Move(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }
+            if let Some(operation) = exact_modify_operation(bytes, &records, &scope) {
+                losses.extend(marked_move_transform_loss(
+                    bytes,
+                    &records,
+                    &scope,
+                    &operation.motion,
+                    &class_types,
+                ));
+                losses.extend(move_transform_references_loss(&scope, &operation.motion));
+                losses.extend(move_transform_prefix_losses(&scope, &operation.motion));
+                if let scope::DesignScopePayloadMut::Modify(slot) = scope.payload_mut() {
+                    *slot = Some(operation);
+                }
+            }
             {
                 let construction = exact_move_face_operation(bytes, &records, &scope);
+                if let Some(operation) = &construction {
+                    losses.extend(move_transform_references_loss(&scope, operation));
+                    losses.extend(move_transform_prefix_losses(&scope, operation));
+                }
                 if let scope::DesignScopePayloadMut::MoveFace(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -471,15 +511,23 @@ pub(crate) fn decode_parameter_scopes(
                     parameters,
                     parameter_owners,
                 );
+                let sets = fillet_set_list(bytes, &records, &scope, parameters, parameter_owners);
                 if let scope::DesignScopePayloadMut::Fillet(slot) = scope.payload_mut() {
-                    *slot = construction;
+                    *slot = crate::records::feature::fillet_set::DesignFilletScope::admit(
+                        construction,
+                        sets,
+                    );
                 }
             }
             {
                 let construction =
                     exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
+                let sets = chamfer_set_list(bytes, &records, &scope, parameters, parameter_owners);
                 if let scope::DesignScopePayloadMut::Chamfer(slot) = scope.payload_mut() {
-                    *slot = construction;
+                    *slot = crate::records::feature::chamfer_set::DesignChamferScope::admit(
+                        construction,
+                        sets,
+                    );
                 }
             }
             if let Some(construction) =
@@ -491,6 +539,7 @@ pub(crate) fn decode_parameter_scopes(
                 {
                     losses.extend(loft_reference_loss(&scope, value));
                     losses.extend(three_flag_loft_settings_loss(bytes, &scope, value));
+                    losses.extend(loft_lists_loss(&scope, value));
                 }
                 match (scope.payload_mut(), construction) {
                     (
@@ -648,6 +697,13 @@ pub(crate) fn decode_parameter_scopes(
                 &scope,
                 &stream_types,
             );
+            scope.occurrence_transfer_intent =
+                super::occurrence_transfer::occurrence_transfer_intent(
+                    bytes,
+                    &records,
+                    &scope,
+                    &stream_types,
+                );
             bind_component_pattern_occurrences(&mut scope, component_occurrences)?;
             {
                 let construction = exact_copy_paste_bodies_operation(bytes, &records, &scope);
@@ -1310,11 +1366,12 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
     (|| {
         let start = usize::try_from(byte_offset).ok()?;
         let paired_at = records.first_at_or_after(start.checked_add(11)?, record_index)?;
-        let paste_table_at = type_guid
-            .and_then(|guid| family::paste_prefix_table(guid, bytes.get(..paired_at)?, start));
+        let paste_prefix = type_guid
+            .and_then(|guid| family::paste_scope_prefix(guid, bytes.get(..paired_at)?, start));
+        let paste_table_at = paste_prefix.as_ref().map(|(table_at, _)| *table_at);
         let type_family = type_guid
             .and_then(family::from_type_guid)
-            .or_else(|| paste_table_at.map(|_| scope::DesignFeatureKind::CopyPaste));
+            .or_else(|| paste_prefix.map(|(_, family)| family));
         let (paired_class_tag, _) =
             lp_ascii_filtered_view(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
         let mut fixed_candidate = None;

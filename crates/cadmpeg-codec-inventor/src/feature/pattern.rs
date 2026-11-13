@@ -633,7 +633,7 @@ fn axis(
     })
 }
 
-fn fixed_feature_header(source: &PmDcPatternFeature) -> bool {
+fn fixed_header(source: &PmDcPatternFeature) -> bool {
     source.family == PmDcPatternFamily::Rectangular
         && crate::pmdc::record_version_supported(source.save_version_major)
         && source.property_slots.len()
@@ -644,7 +644,7 @@ fn fixed_feature_header(source: &PmDcPatternFeature) -> bool {
             }
         && source.control == 0
         && source.properties.references().is_empty()
-        && [3, 7, 8, 10]
+        && [3, 7, 8]
             .into_iter()
             .all(|number| slot(source, number).is_some_and(|reference| reference.index() == 0))
         && (source.save_version_major < 21
@@ -652,15 +652,11 @@ fn fixed_feature_header(source: &PmDcPatternFeature) -> bool {
                 .all(|number| slot(source, number).is_some_and(|reference| reference.index() == 0)))
 }
 
-fn fixed_feature_properties<'a>(
-    property: impl Fn(usize) -> Option<&'a PmDcFeatureProperty>,
-) -> bool {
-    [6, 11].into_iter().all(|number| {
-        matches!(
-            property(number).map(|record| &record.kind),
-            Some(PmDcFeaturePropertyKind::Boolean { value: false, .. })
-        )
-    }) && matches!(
+fn fixed_properties<'a>(property: impl Fn(usize) -> Option<&'a PmDcFeatureProperty>) -> bool {
+    matches!(
+        property(11).map(|record| &record.kind),
+        Some(PmDcFeaturePropertyKind::Boolean { value: false, .. })
+    ) && matches!(
         property(2).map(|record| &record.kind),
         Some(PmDcFeaturePropertyKind::RdxVariable {
             nominal_value: 0,
@@ -681,8 +677,12 @@ fn construction<'a>(
     index: &ProjectionIndex<'_>,
     operands: &'a Operands,
 ) -> Option<LinearConstruction<'a>> {
-    if !fixed_feature_header(source)
-        || !fixed_feature_properties(|number| property_at(source, number, index))
+    if !fixed_header(source) || !fixed_properties(|number| property_at(source, number, index)) {
+        return None;
+    }
+    let bodies_mode = bool_at(source, 6, index)?;
+    if slot(source, if bodies_mode { 9 } else { 10 })?.index() != 0
+        || (bodies_mode && !source.participants.references().is_empty())
     {
         return None;
     }
@@ -843,6 +843,32 @@ fn seed_placement_is_admitted(
     seed_model_history && pattern_model_history && !seed_is_sketch && seed_ordinal < pattern_ordinal
 }
 
+fn body_seed(source: &PmDcPatternFeature, index: &ProjectionIndex<'_>) -> Option<PatternSeed> {
+    let collection = property_at(source, 10, index)?;
+    let PmDcFeaturePropertyKind::References {
+        family: super::PmDcFeatureReferenceFamily::ObjectCollection,
+        items,
+    } = &collection.kind
+    else {
+        return None;
+    };
+    let mut wrappers = Vec::new();
+    for reference in items.references() {
+        let wrapper = resolve_property(
+            source.identity.segment_token.as_str(),
+            reference.index(),
+            index,
+        )?;
+        if !matches!(wrapper.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }) {
+            return None;
+        }
+        wrappers.push(wrapper.id());
+    }
+    Some(PatternSeed::Bodies(
+        cadmpeg_ir::features::BodySelection::local(wrappers, collection.id()).ok()?,
+    ))
+}
+
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     source: &PmDcPatternFeature,
@@ -856,7 +882,11 @@ pub(super) fn project(
     if !placement.model_history {
         return None;
     }
+    let bodies_mode = bool_at(source, 6, index)?;
     let mut seeds = Vec::new();
+    if bodies_mode {
+        seeds.push(body_seed(source, index)?);
+    }
     let mut distinct = HashSet::new();
     for reference in source.participants.references() {
         seed_kind(source, *reference, operands)?;
@@ -884,7 +914,7 @@ pub(super) fn project(
     if seeds.is_empty() {
         return None;
     }
-    let collection = property_at(source, 9, index)?;
+    let collection = property_at(source, if bodies_mode { 10 } else { 9 }, index)?;
     let (id, result) = match result_from_collection(ctx, &source.identity, collection, index)? {
         Ok(result) => result,
         Err(error) => return Some(Err(error)),
@@ -921,11 +951,13 @@ pub(crate) struct SourceRecords<'a> {
     pub(crate) values: &'a [cadmpeg_ir::features::DesignParameter],
     pub(crate) transforms: &'a [crate::sketch::PmDcTransform],
     pub(crate) directions: &'a [crate::sketch::PmDcDirection],
+    pub(crate) bodies: &'a HashMap<String, cadmpeg_ir::ids::BodyId>,
 }
 
 pub(crate) fn validation_index(records: SourceRecords<'_>) -> ProjectionIndex<'_> {
     use cadmpeg_core::decode::unique_index;
     ProjectionIndex {
+        body_joins: Some(records.bodies),
         properties: unique_index(records.properties.iter().map(|r| {
             (
                 (r.identity.segment_token.as_str(), r.identity.record_ordinal),
@@ -973,10 +1005,30 @@ pub(crate) fn matches_source(
     else {
         return false;
     };
-    if construction(source, index, operands).is_none_or(|source| !source.matches(pattern))
-        || seeds.is_empty()
-        || seeds.len() != source.participants.references().len()
-    {
+    if construction(source, index, operands).is_none_or(|source| !source.matches(pattern)) {
+        return false;
+    }
+    let Some(bodies_mode) = bool_at(source, 6, index) else {
+        return false;
+    };
+    if bodies_mode {
+        if feature.source_properties.contains_key("history") {
+            return false;
+        }
+        let Some(seed) = body_seed(source, index) else {
+            return false;
+        };
+        let mut expected = FeatureDefinition::Operation(FeatureOperation::Pattern {
+            seeds: vec![seed],
+            pattern: pattern.clone(),
+        });
+        if let Some(bodies) = index.body_joins {
+            super::body_selection::definition(&mut expected, bodies, None);
+        }
+        if &expected != feature.evaluation.definition() {
+            return false;
+        }
+    } else if seeds.is_empty() || seeds.len() != source.participants.references().len() {
         return false;
     }
     let mut distinct = HashSet::new();
@@ -1026,7 +1078,7 @@ pub(crate) fn matches_source(
             return false;
         }
     }
-    let Some(collection) = property_at(source, 9, index) else {
+    let Some(collection) = property_at(source, if bodies_mode { 10 } else { 9 }, index) else {
         return false;
     };
     if !matches!(

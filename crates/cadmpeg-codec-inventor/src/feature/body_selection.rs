@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Current-model identities of persistent surface-body wrappers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::decode::DecodeContext;
@@ -312,6 +312,9 @@ pub(crate) fn definition(
             }
             | FeatureOperation::SplitBody {
                 targets: selected, ..
+            }
+            | FeatureOperation::TrimBodiesAtPlane {
+                targets: selected, ..
             },
         ) => {
             selection(selected, bodies, None);
@@ -328,6 +331,235 @@ pub(crate) fn matches(
 ) -> bool {
     definition(&mut expected, bodies, tools_group);
     &expected == actual
+}
+
+pub(crate) fn combine_matches(
+    mut expected: FeatureDefinition,
+    actual: &FeatureDefinition,
+    bodies: &HashMap<String, BodyId>,
+    tools_group: Option<&str>,
+    earlier: &HashSet<String>,
+) -> bool {
+    definition(&mut expected, bodies, tools_group);
+    combine_local(&mut expected, earlier, tools_group);
+    &expected == actual
+}
+
+pub(crate) fn split_matches(
+    mut expected: FeatureDefinition,
+    actual: &FeatureDefinition,
+    bodies: &HashMap<String, BodyId>,
+    earlier: &HashSet<String>,
+    qualified_target: bool,
+) -> bool {
+    definition(&mut expected, bodies, None);
+    split_local(&mut expected, earlier, qualified_target);
+    &expected == actual
+}
+
+pub(crate) struct ProducerRecords<'a> {
+    pub(crate) features: &'a [super::PmDcFeature],
+    pub(crate) labels: &'a [super::PmDcFeatureLabel],
+    pub(crate) properties: &'a [PmDcFeatureProperty],
+}
+
+pub(crate) fn produced_before(
+    features: &[cadmpeg_ir::features::Feature],
+    results: &[cadmpeg_ir::features::FeatureResultTopology],
+    feature: &cadmpeg_ir::features::Feature,
+    records: &ProducerRecords<'_>,
+) -> HashSet<String> {
+    if feature.suppressed.is_none() {
+        return HashSet::new();
+    }
+    let producers = features
+        .iter()
+        .filter(|other| other.ordinal < feature.ordinal && other.suppressed == Some(false))
+        .collect::<Vec<_>>();
+    let ids = producers
+        .iter()
+        .map(|other| &other.id)
+        .collect::<HashSet<_>>();
+    let mut wrappers = results
+        .iter()
+        .filter(|result| ids.contains(&result.output_of))
+        .flat_map(cadmpeg_ir::features::FeatureResultTopology::bodies)
+        .map(|wrapper| wrapper.as_str().to_owned())
+        .collect::<HashSet<_>>();
+    let sources = cadmpeg_core::decode::unique_index(
+        records.features.iter().map(|source| (source.id(), source)),
+    );
+    let properties =
+        cadmpeg_core::decode::unique_index(records.properties.iter().map(|property| {
+            (
+                (
+                    property.identity.segment_token.as_str(),
+                    property.identity.record_ordinal,
+                ),
+                property,
+            )
+        }));
+    let labels = cadmpeg_core::decode::unique_index(records.labels.iter().map(|label| {
+        (
+            (
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal(),
+            ),
+            label,
+        )
+    }));
+    for producer in producers {
+        if !matches!(
+            producer.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        ) {
+            continue;
+        }
+        let Some(source) = producer
+            .native_ref
+            .as_deref()
+            .and_then(|id| sources.get(id))
+            .and_then(Option::as_ref)
+        else {
+            continue;
+        };
+        let token = source.identity.segment_token.as_str();
+        let Some(label) = labels
+            .get(&(token, Some(source.identity.record_ordinal)))
+            .and_then(Option::as_ref)
+        else {
+            continue;
+        };
+        if !super::FeatureFamily::Base
+            .class_ids()
+            .contains(&label.class_id())
+        {
+            continue;
+        }
+        if let Some((_, output)) = base::wrappers(source, label.class_id(), |ordinal| {
+            properties
+                .get(&(token, ordinal))
+                .and_then(Option::as_ref)
+                .copied()
+        }) {
+            wrappers.insert(output.id());
+        }
+    }
+    wrappers
+}
+
+fn combine_local(
+    definition: &mut FeatureDefinition,
+    earlier: &HashSet<String>,
+    tools_group: Option<&str>,
+) {
+    let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) = definition
+    else {
+        return;
+    };
+    let local = |selection: &mut BodySelection, group: Option<&str>| {
+        let (wrappers, native) = match selection {
+            BodySelection::Native(wrapper) => (vec![wrapper.clone()], wrapper.clone()),
+            BodySelection::NativeSet(members) => {
+                let Some(group) = group else { return };
+                (
+                    members.iter().map(|id| id.as_str().to_owned()).collect(),
+                    group.to_owned(),
+                )
+            }
+            _ => return,
+        };
+        if wrappers.iter().all(|wrapper| earlier.contains(wrapper)) {
+            if let Ok(local) = BodySelection::local(wrappers, native) {
+                *selection = local;
+            }
+        }
+    };
+    let (mut target, mut tools) = operands.clone().into_parts();
+    local(&mut target, None);
+    local(&mut tools, tools_group);
+    if let Ok(retained) = CombineOperands::new(target, tools) {
+        *operands = retained;
+    }
+}
+
+pub(crate) fn qualified_split_target(
+    source: &super::PmDcFeature,
+    properties: &[PmDcFeatureProperty],
+) -> bool {
+    let resolve = |reference: crate::pmdc::PmDcReference| {
+        let ordinal = reference.record_ordinal()?;
+        let mut matches = properties.iter().filter(|property| {
+            property.identity.segment_token == source.identity.segment_token
+                && property.identity.record_ordinal == ordinal
+        });
+        let property = matches.next()?;
+        matches.next().is_none().then_some(property)
+    };
+    let Some(reference) = source.properties.references().get(7) else {
+        return false;
+    };
+    if !reference.qualified() {
+        return false;
+    }
+    let Some(selection) = resolve(*reference) else {
+        return false;
+    };
+    let super::PmDcFeaturePropertyKind::References {
+        family: super::PmDcFeatureReferenceFamily::BodySelection,
+        items,
+    } = &selection.kind
+    else {
+        return false;
+    };
+    let [wrapper] = items.references() else {
+        return false;
+    };
+    wrapper.qualified()
+        && resolve(*wrapper).is_some_and(|property| {
+            property.identity.type_id
+                == crate::record_identity::RecordTypeId::from_bytes(super::SURFACE_BODY_TYPE)
+                && matches!(property.kind, super::PmDcFeaturePropertyKind::SurfaceBody { body }
+                    if body.index() != 0 && !body.qualified())
+        })
+}
+
+fn split_local(
+    definition: &mut FeatureDefinition,
+    earlier: &HashSet<String>,
+    qualified_target: bool,
+) {
+    let targets = match definition {
+        FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane { targets, .. }) => {
+            targets
+        }
+        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, .. })
+            if qualified_target =>
+        {
+            targets
+        }
+        FeatureDefinition::Operation(FeatureOperation::TrimBodies { operands, .. }) => {
+            let mut targets = operands.targets().clone();
+            local_split_selection(&mut targets, earlier);
+            if let Ok(retained) = TrimBodyOperands::new(targets, operands.tools().clone()) {
+                *operands = retained;
+            }
+            return;
+        }
+        _ => return,
+    };
+    local_split_selection(targets, earlier);
+}
+
+fn local_split_selection(targets: &mut BodySelection, earlier: &HashSet<String>) {
+    let BodySelection::Native(wrapper) = targets else {
+        return;
+    };
+    if earlier.contains(wrapper.as_str()) {
+        if let Ok(local) = BodySelection::local(vec![wrapper.clone()], wrapper.clone()) {
+            *targets = local;
+        }
+    }
 }
 
 pub(crate) fn tools_group(
@@ -387,6 +619,7 @@ pub(crate) fn project(
             .iter()
             .map(|source| (source.id(), source)),
     );
+    let features = model.features.clone();
     for feature in &mut model.features {
         let group = matches!(
             feature.evaluation.definition(),
@@ -401,9 +634,30 @@ pub(crate) fn project(
                 .and_then(|source| tools_group(source, &inventory.properties))
         })
         .flatten();
-        feature
-            .evaluation
-            .edit(|value, _| definition(value, bodies, group.as_deref()));
+        let earlier = produced_before(
+            &features,
+            &model.feature_result_topologies,
+            feature,
+            &ProducerRecords {
+                features: &inventory.features,
+                labels: &inventory.labels,
+                properties: &inventory.properties,
+            },
+        );
+        let qualified_target = matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::SplitBody { .. })
+        ) && feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| sources.get(native))
+            .and_then(Option::as_ref)
+            .is_some_and(|source| qualified_split_target(source, &inventory.properties));
+        feature.evaluation.edit(|value, _| {
+            definition(value, bodies, group.as_deref());
+            combine_local(value, &earlier, group.as_deref());
+            split_local(value, &earlier, qualified_target);
+        });
         if let Some(outputs) = outputs(&feature.id, &model.feature_result_topologies, bodies) {
             feature.evaluation.set_outputs(outputs);
         }
@@ -492,6 +746,9 @@ pub(crate) fn native_losses(
                 FeatureDefinition::Operation(
                     FeatureOperation::MoveBody { bodies, .. }
                     | FeatureOperation::SplitBody {
+                        targets: bodies, ..
+                    }
+                    | FeatureOperation::TrimBodiesAtPlane {
                         targets: bodies, ..
                     },
                 ) => native(bodies),

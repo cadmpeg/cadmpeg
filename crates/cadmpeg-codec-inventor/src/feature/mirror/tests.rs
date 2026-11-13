@@ -4,7 +4,7 @@ use super::*;
 use crate::feature::tests::{reference, segment};
 use crate::feature::{parse_pattern_feature, MIRROR_FEATURE_TYPE, WORK_PLANE_TYPE};
 use crate::record_identity::{Located, RecordTypeId};
-use crate::test_support::mirror::{pattern, property, seed, Fixture};
+use crate::test_support::mirror::{pattern, property, seed, supplied_form, Fixture};
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
 #[test]
@@ -334,19 +334,30 @@ fn native_validation_compares_the_reflection_seeds_and_result_identity() {
         .project(&ctx, &source, &fixture.label, seed, |_| {})
         .expect("mirror")
         .expect("projection");
-    assert!(fixture
-        .index()
-        .matches_projection(&source, &fixture.label, &feature, &result, seed));
+    assert!(fixture.index().matches_projection(
+        &source,
+        &fixture.label,
+        &feature,
+        &result,
+        false,
+        seed
+    ));
     result.native_ref = Some(source.id());
-    assert!(!fixture
-        .index()
-        .matches_projection(&source, &fixture.label, &feature, &result, seed));
+    assert!(!fixture.index().matches_projection(
+        &source,
+        &fixture.label,
+        &feature,
+        &result,
+        false,
+        seed
+    ));
     result.native_ref = Some(fixture.properties[2].id());
     assert!(!fixture.index().matches_projection(
         &source,
         &fixture.label,
         &feature,
         &result,
+        false,
         |_| seed(4)
     ));
     feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
@@ -359,9 +370,14 @@ fn native_validation_compares_the_reflection_seeds_and_result_identity() {
             .expect("reflection"),
         }),
     );
-    assert!(!fixture
-        .index()
-        .matches_projection(&source, &fixture.label, &feature, &result, seed));
+    assert!(!fixture.index().matches_projection(
+        &source,
+        &fixture.label,
+        &feature,
+        &result,
+        false,
+        seed
+    ));
 }
 
 #[test]
@@ -386,6 +402,7 @@ fn native_validation_requires_canonical_feature_and_result_ids() {
         &fixture.label,
         &feature,
         &changed_result,
+        false,
         seed
     ));
     let mut changed_feature = feature.clone();
@@ -397,6 +414,7 @@ fn native_validation_requires_canonical_feature_and_result_ids() {
         &fixture.label,
         &changed_feature,
         &changed_result,
+        false,
         seed
     ));
     let mut changed_feature = feature.clone();
@@ -406,6 +424,7 @@ fn native_validation_requires_canonical_feature_and_result_ids() {
         &fixture.label,
         &changed_feature,
         &result,
+        false,
         seed
     ));
 }
@@ -788,6 +807,7 @@ fn multi_operation_sheet_metal_parent_seeds_keep_the_pinned_native_loss() {
             &fixture.label,
             &feature,
             &result,
+            false,
             |_| seed_feature_id(&history, 20, &parent)
         ));
         let losses = native_losses(std::slice::from_ref(&source), &[], &[]);
@@ -795,6 +815,133 @@ fn multi_operation_sheet_metal_parent_seeds_keep_the_pinned_native_loss() {
         assert_eq!(
             losses[0].code.local_code(),
             "feature.mirror-operands-native"
+        );
+    }
+}
+
+fn mirror_plane_reference(
+    fixture: &Fixture,
+    source: &PmDcPatternFeature,
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    let resolved = fixture
+        .index()
+        .resolve(source, &fixture.label, |_| None)
+        .expect("body mirror");
+    let FeatureDefinition::Operation(FeatureOperation::MirrorShape {
+        plane_reference, ..
+    }) = resolved.definition
+    else {
+        panic!("mirror shape")
+    };
+    plane_reference
+}
+
+#[test]
+fn a_plane_supplied_by_a_work_plane_keeps_the_native_reference_until_history() {
+    let (plain, source) = crate::test_support::mirror::replacement_form();
+    let native = Some(cadmpeg_ir::features::FaceSelection::Native(
+        plain.planes[0].id(),
+    ));
+    assert_eq!(mirror_plane_reference(&plain, &source), native);
+    let (fixture, source) = supplied_form();
+    assert_eq!(mirror_plane_reference(&fixture, &source), native);
+    assert_eq!(
+        fixture.index().supplying_plane("generated", 103),
+        Some(Fixture::SUPPLIER)
+    );
+}
+
+#[test]
+fn a_plane_supplied_by_a_work_plane_keeps_the_stored_reflection() {
+    let (plain, source) = crate::test_support::mirror::replacement_form();
+    let (supplied, _) = supplied_form();
+    let frame = |fixture: &Fixture| {
+        let resolved = fixture
+            .index()
+            .resolve(&source, &fixture.label, |_| None)
+            .expect("body mirror");
+        let FeatureDefinition::Operation(FeatureOperation::MirrorShape {
+            plane_origin,
+            plane_normal,
+            ..
+        }) = resolved.definition
+        else {
+            panic!("mirror shape")
+        };
+        (plane_origin, plane_normal)
+    };
+    assert_eq!(frame(&plain), frame(&supplied));
+}
+
+fn with_supplier(
+    change: impl FnOnce(&mut crate::feature::PmDcWorkPlanePayload),
+) -> (Fixture, PmDcPatternFeature) {
+    let (mut fixture, source) = supplied_form();
+    let mut payload = (*fixture.planes[1]).clone();
+    change(&mut payload);
+    fixture.planes[1] = Located::new(
+        payload,
+        fixture.planes[1].identity.type_id.clone(),
+        segment(),
+        Fixture::SUPPLIER,
+    );
+    (fixture, source)
+}
+
+#[test]
+fn a_plane_reference_that_does_not_prove_the_plane_stays_native() {
+    let real = |value: f64| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite");
+    let mut cases = vec![
+        (
+            "offset supplier",
+            with_supplier(|plane| plane.origin[0] = real(2.5)),
+        ),
+        (
+            "tilted supplier",
+            with_supplier(|plane| plane.u_axis[0] = real(1.0e-6)),
+        ),
+    ];
+    let (mut fixture, source) = supplied_form();
+    fixture.planes[1] = Located::new(
+        (*fixture.planes[1]).clone(),
+        RecordTypeId::from_bytes(crate::feature::SURFACE_TYPE),
+        segment(),
+        Fixture::SUPPLIER,
+    );
+    cases.push(("supplier of another record type", (fixture, source)));
+    for (name, owner, target) in [
+        ("record owned by another plane", 106, Fixture::SUPPLIER + 1),
+        ("record targeting its owner", 104, 104),
+    ] {
+        let (mut fixture, source) = supplied_form();
+        let last = fixture.properties.len() - 1;
+        fixture.properties[last] = property(
+            109,
+            PmDcFeaturePropertyKind::Mirror {
+                definition: Property::PlaneReference {
+                    owner: reference(owner),
+                    target: reference(target),
+                    role: 4,
+                },
+            },
+        );
+        cases.push((name, (fixture, source)));
+    }
+    let (mut fixture, source) = supplied_form();
+    fixture.planes.pop();
+    cases.push(("missing supplier", (fixture, source)));
+    for (name, (fixture, source)) in cases {
+        assert_eq!(
+            mirror_plane_reference(&fixture, &source),
+            Some(cadmpeg_ir::features::FaceSelection::Native(
+                fixture.planes[0].id()
+            )),
+            "{name}"
+        );
+        assert_eq!(
+            fixture.index().supplying_plane("generated", 103),
+            None,
+            "{name}"
         );
     }
 }

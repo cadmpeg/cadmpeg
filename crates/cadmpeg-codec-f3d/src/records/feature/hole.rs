@@ -68,6 +68,7 @@ cadmpeg_core::named_optional_field!(
     "direction_control"
 );
 cadmpeg_core::named_optional_field!(deserialize_standard, DesignHoleStandard, "standard");
+cadmpeg_core::named_optional_field!(deserialize_hole_type, Located<u32>, "hole_type");
 
 /// Standard sizing names that a type-version-5 or -7 Hole stores after its
 /// extent controls when its standard flag is `1`, in source order.
@@ -152,6 +153,8 @@ pub(crate) struct DesignHoleExtent {
     pub(crate) direction_control: Option<Located<u8>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) standard: Option<DesignHoleStandard>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) hole_type: Option<Located<u32>>,
 }
 
 #[derive(Deserialize)]
@@ -166,6 +169,8 @@ struct DesignHoleExtentWire {
     direction_control: Option<Located<u8>>,
     #[serde(default, deserialize_with = "deserialize_standard")]
     standard: Option<DesignHoleStandard>,
+    #[serde(default, deserialize_with = "deserialize_hole_type")]
+    hole_type: Option<Located<u32>>,
 }
 
 impl TryFrom<DesignHoleExtentWire> for DesignHoleExtent {
@@ -184,12 +189,20 @@ impl TryFrom<DesignHoleExtentWire> for DesignHoleExtent {
         {
             return Err("invalid Hole direction control");
         }
+        if wire
+            .hole_type
+            .as_ref()
+            .is_some_and(|hole_type| !valid_hole_type(hole_type.value))
+        {
+            return Err("invalid Hole type");
+        }
         Ok(Self {
             leading_word: wire.leading_word,
             extent_control: wire.extent_control,
             saved_non_distance_depth: wire.saved_non_distance_depth,
             direction_control: wire.direction_control,
             standard: wire.standard,
+            hole_type: wire.hole_type,
         })
     }
 }
@@ -200,10 +213,10 @@ pub(crate) struct DesignHoleScope {
     pub(crate) extent: Option<DesignHoleExtent>,
 }
 
-/// Tangent-point payload of a version-four Hole point carrier.
+/// Tangent-point payload of a Hole point carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignHoleTangentPoint {
-    pub(crate) prefix: u8,
+    pub(crate) prefix: Option<u8>,
     pub(crate) data: Located<[FiniteReal; 3]>,
 }
 
@@ -387,8 +400,8 @@ impl TryFrom<DesignHoleConstructionWire> for DesignHoleConstruction {
             reference_type_offset: wire.reference_type_offset,
             tangent_point_data: match (wire.tangent_point_data, wire.tangent_point_data_prefix, wire.tangent_point_data_offset) {
                 (None, None, None) => None,
-                (Some(value), Some(prefix), Some(offset)) => Some(DesignHoleTangentPoint { prefix, data: Located { value, offset } }),
-                _ => return Err("tangent_point_data, tangent_point_data_prefix and tangent_point_data_offset must occur together".into()),
+                (Some(value), prefix, Some(offset)) => Some(DesignHoleTangentPoint { prefix, data: Located { value, offset } }),
+                _ => return Err("tangent_point_data and tangent_point_data_offset must occur together; tangent_point_data_prefix requires both".into()),
             },
             input_records: wire.input_record_indices.into_iter().zip(wire.input_record_offsets).map(|(value, offset)| Located { value, offset }).collect(),
             face_selection: wire.face_selection,
@@ -462,7 +475,7 @@ impl Serialize for DesignHoleConstruction {
             reference_type: self.reference_type,
             reference_type_offset: self.reference_type_offset,
             tangent_point_data: tangent.map(|value| &value.data.value),
-            tangent_point_data_prefix: tangent.map(|value| value.prefix),
+            tangent_point_data_prefix: tangent.and_then(|value| value.prefix),
             tangent_point_data_offset: tangent.map(|value| value.data.offset),
             input_record_indices: InputRecordIndices(&self.input_records),
             input_record_offsets: InputRecordOffsets(&self.input_records),

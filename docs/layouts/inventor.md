@@ -59,13 +59,13 @@ Offsets start after the versioned state content header in segment major version 
 
 ## `pm_dc_cf2b17_state`
 
-Spec §13 · layout: byte offsets · size: 4 B
+Spec §13.11 · layout: byte offsets · size: 4 B
 
 Offset starts after the versioned state content header in segment major versions 25 and 28.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `state` | `i32` | little | spec | `state:i32 = -1` and a sequence of u32 values · value `-1` |
+| 0 | 4 | `state` | `i32` | little | spec | tolerance state i32 = -1 · value `-1` |
 
 ## `pm_dc_c6b25a_body`
 
@@ -1485,6 +1485,24 @@ Parsed by:
 | 48 | 4 | `owner_count` | `u32` | little | spec | the single-entry Mirror instance map has type · value `1` |
 | 52 | 4 | `owner` | `u32` | little | spec | the single-entry Mirror instance map has type |
 
+## `pm_dc_mirror_plane_reference_tail_v19`
+
+Spec §13 · layout: byte offsets · size: 18 B
+
+Offsets start after the segment-major-19 content header.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/mirror/plane_reference.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | In segment major version 19, a plane-reference record of type · value `-1` |
+| 4 | 4 | `owner` | `u32` | little | spec | In segment major version 19, a plane-reference record of type |
+| 8 | 1 | `marker0` | `u8` | little | spec | In segment major version 19, a plane-reference record of type · value `1` |
+| 9 | 1 | `marker1` | `u8` | little | spec | In segment major version 19, a plane-reference record of type · value `5` |
+| 10 | 4 | `target` | `u32` | little | spec | In segment major version 19, a plane-reference record of type |
+| 14 | 4 | `role` | `u32` | little | spec | In segment major version 19, a plane-reference record of type |
+
 ## `pm_dc_mirror_generated_body_feature_v19`
 
 Spec §13 · layout: byte offsets · size: 66 B
@@ -1895,3 +1913,144 @@ Parsed by:
 | 4 | 2 | `tail_flags` | `u16` | little | spec | tail_flags u16 |
 | 6 | 8 | `tail_scale` | `f64` | little | spec | tail_scale f64 |
 | 14 | 1 | `tail_state` | `u8` | little | spec | tail_state u8 |
+
+## `pm_dc_frame_row_v25`
+
+Spec §13.11 · layout: byte offsets · size: 82 B
+
+A feature-control-frame row in segment major version 25.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/annotation/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | frame header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | frame header_id u16 |
+| 6 | 4 | `characteristic` | `u32` | little | spec | characteristic u32 |
+| 10 | 4 | `magnitude` | `u32` | little | spec | magnitude u32 |
+| 14 | 12 | `zone_modifiers` | `u32[3]` | little | spec | zone_modifiers u32[3] |
+| 26 | 4 | `second_value` | `u32` | little | spec | second_value u32 |
+| 30 | 4 | `third_value` | `u32` | little | spec | third_value u32 |
+| 34 | 12 | `datums` | `u32[3]` | little | spec | datums u32[3] |
+| 46 | 36 | `datum_modifiers` | `u8[36]` | little | spec | datum_modifiers u8[36] |
+
+## `pm_dc_frame_row_v28`
+
+Spec §13.11 · layout: byte offsets · size: 102 B
+
+A feature-control-frame row in segment major version 28.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/annotation/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | frame header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | frame header_id u16 |
+| 6 | 4 | `characteristic` | `u32` | little | spec | characteristic u32 |
+| 10 | 4 | `magnitude` | `u32` | little | spec | magnitude u32 |
+| 14 | 12 | `zone_modifiers` | `u32[3]` | little | spec | zone_modifiers u32[3] |
+| 26 | 4 | `second_value` | `u32` | little | spec | second_value u32 |
+| 30 | 4 | `third_value` | `u32` | little | spec | third_value u32 |
+| 34 | 12 | `datums` | `u32[3]` | little | spec | datums u32[3] |
+| 46 | 36 | `datum_modifiers` | `u8[36]` | little | spec | datum_modifiers u8[36] |
+| 82 | 16 | `identifier` | `u8[16]` | little | spec | frame identifier u8[16] |
+| 98 | 4 | `frame_reference` | `u32` | little | spec | frame_reference u32 |
+
+## `pm_dc_naming_table_header`
+
+Spec §13.11 · layout: byte offsets · size: 18 B
+
+The entries follow the header.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/annotation/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | table header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | table header_id u16 |
+| 6 | 4 | `next` | `u32` | little | spec | next u32 |
+| 10 | 4 | `last_identifier` | `u32` | little | spec | last_identifier u32 |
+| 14 | 4 | `count` | `u32` | little | spec | count u32 |
+
+## `pm_dc_annotation_value_block`
+
+Spec §13.11 · layout: byte offsets · size: 76 B
+
+The block between the fit texts and the parameter references of a value record.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/annotation/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 76 | `block` | `u8[76]` | little | spec | value block bytes[76] |
+
+## `pm_dc_hole_note_flags`
+
+Spec §13.11 · layout: byte offsets · size: 16 B
+
+The flag words that follow the four hole parameters of a plain hole note.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/annotation/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `word_a` | `u32` | little | spec | hole flags word_a u32 = 1 · value `1` |
+| 4 | 4 | `word_b` | `u32` | little | spec | hole flags word_b u32 = 0 · value `0` |
+| 8 | 4 | `word_c` | `u32` | little | spec | hole flags word_c u32 = 0x01000000 · value `16777216` |
+| 12 | 4 | `word_d` | `u32` | little | spec | hole flags word_d u32 = 0 · value `0` |
+
+## `pm_dc_generated_name_tail`
+
+Spec §13.11 · layout: byte offsets · size: 16 B
+
+The tail of a generated name record of the generated and sweep families.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/annotation/names.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `lead` | `u32` | little | spec | u32 0, u32 0, `associative_id:u32` · value `0` |
+| 4 | 4 | `second` | `u32` | little | spec | u32 0, u32 0, `associative_id:u32` · value `0` |
+| 8 | 4 | `associative_id` | `u32` | little | spec | `associative_id:u32` |
+| 12 | 4 | `role` | `u32` | little | spec | `role:u32` |
+
+## `pm_dc_hole_name_tail`
+
+Spec §13.11 · layout: byte offsets · size: 10 B
+
+The tail of a hole name record.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/annotation/names.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `lead` | `u32` | little | spec | u32 0, `first:u32`, `role:u16` · value `0` |
+| 4 | 4 | `first` | `u32` | little | spec | `first:u32` |
+| 8 | 2 | `role` | `u16` | little | spec | `role:u16` |
+
+## `pm_dc_blend_name_tail`
+
+Spec §13.11 · layout: byte offsets · size: 13 B
+
+The tail of a blend name record.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/annotation/names.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `lead` | `u32` | little | spec | u32 0, `first:u8`, `second:u8`, 3 bytes, `third:u32` · value `0` |
+| 4 | 1 | `first` | `u8` | little | spec | `first:u8` |
+| 5 | 1 | `second` | `u8` | little | spec | `second:u8` |
+| 9 | 4 | `third` | `u32` | little | spec | `third:u32` |
+
+Unstated regions:
+
+- `6..9` (3 B): The specification states three bytes between `second` and `third`.

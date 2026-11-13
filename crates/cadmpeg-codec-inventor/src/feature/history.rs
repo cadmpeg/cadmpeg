@@ -51,6 +51,13 @@ pub(crate) struct History {
 }
 
 impl History {
+    /// Every placement with its record ordinal.
+    pub(crate) fn placements(&self) -> impl Iterator<Item = (u32, HistoryPlacement)> + '_ {
+        self.placements
+            .iter()
+            .map(|(ordinal, placement)| (*ordinal, *placement))
+    }
+
     pub(crate) fn placement(&self, ordinal: u32) -> Option<HistoryPlacement> {
         self.placements.get(&ordinal).copied()
     }

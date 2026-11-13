@@ -90,6 +90,7 @@ pub(super) fn exact_rectangular_pattern_construction(
                 instance_search_cap: None,
                 directions: Vec::new(),
                 secondary_direction: None,
+                distribution: None,
             },
         )
         .ok()?;
@@ -109,6 +110,13 @@ pub(super) fn exact_rectangular_pattern_construction(
     construction
         .try_set_secondary_direction(secondary)
         .map_err(CodecError::malformed)?;
+    construction.set_distribution(exact_rectangular_pattern_distribution(
+        bytes,
+        records,
+        scope,
+        &construction,
+        &directions,
+    ));
     if directions.len() + usize::from(construction.secondary_direction().is_some())
         == construction.active_direction_count()
     {
@@ -170,15 +178,28 @@ fn exact_rectangular_pattern_direction(
     selection_record_index: u32,
     scope_record_index: u32,
 ) -> Option<patterns::DesignRectangularPatternDirection> {
+    use crate::layout::rectangular_pattern_compact_spacing_direction_record as compact;
     use crate::layout::rectangular_pattern_direction_record as frame;
-
     use crate::layout::rectangular_pattern_spacing_direction_record as spacing;
 
     let distance_type = View::u32_le_at(bytes, start + frame::FIXED_EIGHT)?;
-    let shift = match (paired_at.checked_sub(start)?, distance_type) {
+    let length = paired_at.checked_sub(start)?;
+    let shift = match (length, distance_type) {
         (frame::LEN, 8) => 0,
         (spacing::LEN, 7) if bytes.get(start + spacing::SPACING_FLAG) == Some(&0) => 1,
+        (compact::LEN, 7) => 0,
         _ => return None,
+    };
+    let compact_spacing = length == compact::LEN;
+    let at = |offset| {
+        start
+            + if compact_spacing && offset >= frame::INDEX_PLUS_ONE_REFERENCE {
+                offset - (frame::INDEX_PLUS_ONE_REFERENCE - compact::INDEX_PLUS_ONE_REFERENCE)
+            } else if compact_spacing && offset >= frame::SELECTION_COUNT {
+                offset - (frame::SELECTION_COUNT - compact::SELECTION_COUNT)
+            } else {
+                offset + shift
+            }
     };
     let header = start + frame::INDEXED_HEADER;
     let (class_tag, after_tag) =
@@ -191,39 +212,39 @@ fn exact_rectangular_pattern_direction(
         || bytes.get(start + frame::ZERO_RUN_10..start + frame::SELECTION_KIND) != Some(&[0; 10])
         || !matches!(selection_kind, 8 | 16)
         || bytes.get(start + frame::ZERO_RUN_16..start + frame::FIXED_EIGHT) != Some(&[0; 16])
-        || (0..3).any(|lane| {
-            View::f64_le_at(bytes, start + shift + frame::NEGATIVE_ONES + lane * 8) != Some(-1.0)
-        })
-        || View::u32_le_at(bytes, start + shift + frame::SELECTION_COUNT) != Some(1)
-        || marked_record_reference(bytes, start + shift + frame::SELECTION_REFERENCE)
+        || (!compact_spacing
+            && (0..3).any(|lane| {
+                View::f64_le_at(bytes, at(frame::NEGATIVE_ONES) + lane * 8) != Some(-1.0)
+            }))
+        || View::u32_le_at(bytes, at(frame::SELECTION_COUNT)) != Some(1)
+        || marked_record_reference(bytes, at(frame::SELECTION_REFERENCE))
             != Some(selection_record_index)
-        || bytes.get(start + shift + frame::ZERO_RUN_2..start + shift + frame::AUXILIARY_COUNT)
-            != Some(&[0; 2])
-        || View::u32_le_at(bytes, start + shift + frame::AUXILIARY_COUNT) != Some(1)
-        || marked_record_reference(bytes, start + shift + frame::AUXILIARY_REFERENCE).is_none()
-        || View::u64_le_at(bytes, start + shift + frame::ROLE) != Some(0x0000_0004_0000_0000)
-        || bytes
-            .get(start + shift + frame::ZERO_RUN_AFTER_ROLE..start + shift + frame::OPAQUE_INDEX)
-            != Some(&[0; 10])
+        || bytes.get(at(frame::ZERO_RUN_2)..at(frame::AUXILIARY_COUNT)) != Some(&[0; 2])
+        || View::u32_le_at(bytes, at(frame::AUXILIARY_COUNT)) != Some(1)
+        || marked_record_reference(bytes, at(frame::AUXILIARY_REFERENCE)).is_none()
+        || View::u64_le_at(bytes, at(frame::ROLE)) != Some(0x0000_0004_0000_0000)
+        || bytes.get(at(frame::ZERO_RUN_AFTER_ROLE)..at(frame::OPAQUE_INDEX)) != Some(&[0; 10])
     {
         return None;
     }
-    let opaque_index = View::u32_le_at(bytes, start + shift + frame::OPAQUE_INDEX)?;
+    let opaque_index = View::u32_le_at(bytes, at(frame::OPAQUE_INDEX))?;
     if opaque_index == 0
-        || !View::f64_le_at(bytes, start + shift + frame::OPAQUE_SCALAR)?.is_finite()
-        || View::u32_le_at(bytes, start + shift + frame::OPAQUE_INDEX_REPEAT) != Some(opaque_index)
-        || marked_record_reference(bytes, start + shift + frame::INDEX_PLUS_TWO_REFERENCE)
+        || !View::f64_le_at(bytes, at(frame::OPAQUE_SCALAR))?.is_finite()
+        || View::u32_le_at(bytes, at(frame::OPAQUE_INDEX_REPEAT)) != Some(opaque_index)
+        || marked_record_reference(bytes, at(frame::INDEX_PLUS_TWO_REFERENCE))
             != record_index.checked_add(2)
-        || bytes.get(start + shift + frame::SEPARATOR_FLAG) != Some(&1)
+        || (!compact_spacing && bytes.get(at(frame::SEPARATOR_FLAG)) != Some(&1))
         || bytes.get(
-            start + shift + frame::SEPARATOR_ZERO_RUN
-                ..start + shift + frame::INDEX_PLUS_ONE_REFERENCE,
+            if compact_spacing {
+                start + compact::SEPARATOR_ZERO_RUN
+            } else {
+                at(frame::SEPARATOR_ZERO_RUN)
+            }..at(frame::INDEX_PLUS_ONE_REFERENCE),
         ) != Some(&[0; 2])
-        || marked_record_reference(bytes, start + shift + frame::INDEX_PLUS_ONE_REFERENCE)
+        || marked_record_reference(bytes, at(frame::INDEX_PLUS_ONE_REFERENCE))
             != record_index.checked_add(1)
-        || bytes.get(start + shift + frame::SCOPE_SEPARATOR) != Some(&0)
-        || marked_record_reference(bytes, start + shift + frame::SCOPE_REFERENCE)
-            != Some(scope_record_index)
+        || bytes.get(at(frame::SCOPE_SEPARATOR)) != Some(&0)
+        || marked_record_reference(bytes, at(frame::SCOPE_REFERENCE)) != Some(scope_record_index)
     {
         return None;
     }
@@ -249,24 +270,20 @@ fn exact_rectangular_pattern_direction(
     direction.direction().is_some().then_some(direction)
 }
 
-fn exact_rectangular_pattern_secondary_direction(
+/// The record index, start, and end of each pattern payload linked to
+/// `scope`, its owners, and the U-direction record.
+fn rectangular_pattern_payload_frames(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     construction: &DesignRectangularPatternConstruction,
-    directions: &[patterns::DesignRectangularPatternDirection],
-) -> Option<crate::records::identity::Located<[FiniteReal; 3]>> {
+    u_direction: u32,
+) -> Option<Vec<(u32, usize, usize)>> {
     use crate::layout::rectangular_pattern_payload_prefix as prefix;
     use crate::layout::rectangular_pattern_payload_suffix as suffix;
 
-    let [direction] = directions else {
-        return None;
-    };
-    if construction.active_direction_count() != 2 || direction.distance_type != 7 {
-        return None;
-    }
-    let mut found = None;
-    for (_, offsets) in records.records() {
+    let mut frames = Vec::new();
+    for (record_index, offsets) in records.records() {
         for &start in offsets {
             let owners = construction.owner_record_indices;
             if bytes.get(start + prefix::ZERO_HEAD..start + prefix::FLAG) != Some(&[0; 8])
@@ -275,15 +292,15 @@ fn exact_rectangular_pattern_secondary_direction(
                 || bytes.get(start + prefix::ZERO_MIDDLE..start + prefix::V_COUNT) != Some(&[0; 4])
                 || bytes.get(start + prefix::ZERO_TAIL..start + prefix::SENTINEL) != Some(&[0; 9])
                 || View::u32_le_at(bytes, start + prefix::SENTINEL) != Some(u32::MAX)
-                || bytes.get(start + prefix::ZERO_DISTANCE..start + prefix::V_COUNT_REPEAT)
-                    != Some(&[0; 2])
+                || !matches!(bytes.get(start + prefix::SYMMETRIC), Some(0 | 1))
+                || bytes.get(start + prefix::ZERO_AFTER_SYMMETRIC) != Some(&0)
                 || [
                     (prefix::U_COUNT, owners[0]),
                     (prefix::V_COUNT, owners[1]),
                     (prefix::U_DISTANCE, owners[2]),
                     (prefix::V_DISTANCE, owners[3]),
                     (prefix::V_COUNT_REPEAT, owners[1]),
-                    (prefix::U_DIRECTION, direction.record_index),
+                    (prefix::U_DIRECTION, u_direction),
                 ]
                 .into_iter()
                 .any(|(offset, index)| {
@@ -308,22 +325,121 @@ fn exact_rectangular_pattern_secondary_direction(
             {
                 continue;
             }
-            let Some(value) = finite_reals_at::<3>(bytes, start + prefix::V_DIRECTION) else {
-                continue;
-            };
-            cadmpeg_ir::units::UnitVector3::normalized(cadmpeg_ir::math::Vector3::from(
-                value.map(FiniteReal::get),
-            ))?;
-            let candidate = crate::records::identity::Located {
-                value,
-                offset: u64::try_from(start + prefix::V_DIRECTION).ok()?,
-            };
-            if found.replace(candidate).is_some() {
-                return None;
-            }
+            frames.push((record_index, start, end));
+        }
+    }
+    Some(frames)
+}
+
+fn exact_rectangular_pattern_secondary_direction(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    construction: &DesignRectangularPatternConstruction,
+    directions: &[patterns::DesignRectangularPatternDirection],
+) -> Option<crate::records::identity::Located<[FiniteReal; 3]>> {
+    use crate::layout::rectangular_pattern_payload_prefix as prefix;
+
+    let [direction] = directions else {
+        return None;
+    };
+    if construction.active_direction_count() != 2 {
+        return None;
+    }
+    let mut found = None;
+    for (_, start, _) in rectangular_pattern_payload_frames(
+        bytes,
+        records,
+        scope,
+        construction,
+        direction.record_index,
+    )? {
+        let Some(value) = finite_reals_at::<3>(bytes, start + prefix::V_DIRECTION) else {
+            continue;
+        };
+        cadmpeg_ir::units::UnitVector3::normalized(cadmpeg_ir::math::Vector3::from(
+            value.map(FiniteReal::get),
+        ))?;
+        let candidate = crate::records::identity::Located {
+            value,
+            offset: u64::try_from(start + prefix::V_DIRECTION).ok()?,
+        };
+        if found.replace(candidate).is_some() {
+            return None;
         }
     }
     found
+}
+
+/// The distribution bytes of the one pattern payload linked to `scope`. The
+/// block reads only when its entry and instance runs end at the suffix.
+fn exact_rectangular_pattern_distribution(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    construction: &DesignRectangularPatternConstruction,
+    directions: &[patterns::DesignRectangularPatternDirection],
+) -> Option<patterns::DesignRectangularPatternDistribution> {
+    use crate::layout::rectangular_pattern_payload_distribution as block;
+    use crate::layout::rectangular_pattern_payload_prefix as prefix;
+    use crate::layout::rectangular_pattern_payload_suffix as suffix;
+    const ENTRY_LEN: usize = 16;
+    const MARKED_REFERENCE_LEN: usize = 11;
+
+    let u_direction = directions.first()?.record_index;
+    let frames =
+        rectangular_pattern_payload_frames(bytes, records, scope, construction, u_direction)?;
+    let [(record_index, start, end)] = frames.as_slice() else {
+        return None;
+    };
+    let after_prefix = start + prefix::LEN;
+    let at = match bytes.get(after_prefix)? {
+        0 => after_prefix + 1,
+        1 => {
+            marked_record_reference(bytes, after_prefix)?;
+            after_prefix + MARKED_REFERENCE_LEN
+        }
+        _ => return None,
+    };
+    if bytes.get(at + block::ZERO_RUN..at + block::FIXED_TWO) != Some(&[0; 12])
+        || View::u32_le_at(bytes, at + block::FIXED_TWO) != Some(block::FIXED_TWO_VALUE)
+        || View::u32_le_at(bytes, at + block::SENTINEL) != Some(u32::MAX)
+    {
+        return None;
+    }
+    let total_extent = match bytes.get(at + block::DISTANCE_TYPE)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let entries = usize::try_from(View::u32_le_at(bytes, at + block::ENTRY_COUNT)?).ok()?;
+    let instance_count_at = entries
+        .checked_mul(ENTRY_LEN)?
+        .checked_add(at + block::LEN)?;
+    let instances = View::u32_le_at(bytes, instance_count_at)?;
+    if u64::from(instances) != u64::from(construction.u_count()) * u64::from(construction.v_count())
+    {
+        return None;
+    }
+    let suffix_at = usize::try_from(instances)
+        .ok()?
+        .checked_mul(MARKED_REFERENCE_LEN)?
+        .checked_add(instance_count_at + 4)?;
+    if suffix_at.checked_add(suffix::LEN)? != *end {
+        return None;
+    }
+    let symmetric_at = start + prefix::SYMMETRIC;
+    Some(patterns::DesignRectangularPatternDistribution {
+        record_index: *record_index,
+        symmetric: crate::records::identity::Located {
+            value: bytes.get(symmetric_at) == Some(&1),
+            offset: u64::try_from(symmetric_at).ok()?,
+        },
+        total_extent: crate::records::identity::Located {
+            value: total_extent,
+            offset: u64::try_from(at + block::DISTANCE_TYPE).ok()?,
+        },
+    })
 }
 
 /// Outcome of the rectangular-pattern instance search.
@@ -579,29 +695,52 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::CircularPattern) {
             return None;
         }
-        let mut axis_candidates = Vec::new();
+        let mut solved_candidates = Vec::new();
+        let mut extended_candidates = Vec::new();
         for (record_index, selection_record_index) in scope
             .reference_members()
             .values()
             .zip(scope.reference_members().values().skip(1))
         {
             for (start, paired_at) in records.frames(*record_index) {
-                if let Some(axis) = exact_circular_pattern_axis(
+                let arguments = (
                     bytes,
                     start,
                     paired_at,
                     *record_index,
                     *selection_record_index,
                     scope.record_index,
+                );
+                let (axis, candidates) = if let Some(axis) = exact_circular_pattern_axis(
+                    arguments.0,
+                    arguments.1,
+                    arguments.2,
+                    arguments.3,
+                    arguments.4,
+                    arguments.5,
                 ) {
-                    axis_candidates.push(CircularPatternAxisCandidate {
-                        axis,
-                        axis_record_index: *record_index,
-                        selection_record_index: *selection_record_index,
-                    });
-                }
+                    (axis, &mut solved_candidates)
+                } else if let Some(axis) = exact_extended_circular_pattern_axis(
+                    arguments.0,
+                    arguments.1,
+                    arguments.2,
+                    arguments.3,
+                    arguments.4,
+                    arguments.5,
+                ) {
+                    (axis, &mut extended_candidates)
+                } else {
+                    continue;
+                };
+                candidates.push(CircularPatternAxisCandidate {
+                    axis,
+                    axis_record_index: *record_index,
+                    selection_record_index: *selection_record_index,
+                    separator_flag_offset: None,
+                });
             }
         }
+        let mut axis_candidates = inline_axis_candidates(solved_candidates, extended_candidates);
         for record_index in scope.reference_members().values() {
             for (start, paired_at) in records.frames(*record_index) {
                 let candidate = match exact_legacy_circular_pattern_axis(
@@ -615,11 +754,12 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     Ok(candidate) => candidate,
                     Err(error) => return Some(Err(error)),
                 };
-                if let Some((axis, selection_record_index)) = candidate {
+                if let Some((axis, selection_record_index, separator_flag_offset)) = candidate {
                     axis_candidates.push(CircularPatternAxisCandidate {
                         axis,
                         axis_record_index: *record_index,
                         selection_record_index,
+                        separator_flag_offset,
                     });
                 }
             }
@@ -629,6 +769,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             axis,
             axis_record_index,
             selection_record_index,
+            separator_flag_offset,
         } = axis_candidates.into_iter().nth(axis_index)?;
         let owner_count_candidates = parameter_owners.iter().filter_map(|owner| {
             if native_stream(owner.id()) != native_stream(&scope.id)
@@ -705,7 +846,15 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         let [(angle, angle_record_index, angle_offset)] = angle_candidates.as_slice() else {
             return None;
         };
+        let symmetric = exact_circular_pattern_symmetric(
+            bytes,
+            records,
+            scope,
+            [*count_record_index, *angle_record_index, axis_record_index],
+            *count,
+        );
         Some(Ok(DesignCircularPatternConstruction {
+            symmetric,
             count: std::num::NonZeroU32::new(*count)?,
             count_record_index: *count_record_index,
             count_offset: *count_offset,
@@ -715,6 +864,10 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             axis,
             axis_record_index,
             selection_record_index,
+            axis_separator_flag_offset: match separator_flag_offset {
+                Some(offset) => Some(u64::try_from(offset).ok()?),
+                None => None,
+            },
         }))
     })();
     parsed.transpose()
@@ -725,6 +878,20 @@ struct CircularPatternAxisCandidate {
     axis: patterns::DesignCircularPatternAxis,
     axis_record_index: u32,
     selection_record_index: u32,
+    separator_flag_offset: Option<usize>,
+}
+
+/// The inline axis candidates of a scope: its 195-byte records, or its
+/// 221-byte frames when it holds no 195-byte record.
+fn inline_axis_candidates(
+    solved: Vec<CircularPatternAxisCandidate>,
+    extended: Vec<CircularPatternAxisCandidate>,
+) -> Vec<CircularPatternAxisCandidate> {
+    if solved.is_empty() {
+        extended
+    } else {
+        solved
+    }
 }
 
 /// Select one circular-pattern axis, preferring the explicit solved carrier.
@@ -752,7 +919,7 @@ fn exact_legacy_circular_pattern_axis(
     paired_at: usize,
     record_index: u32,
     scope: &DesignParameterScope,
-) -> Result<Option<(patterns::DesignCircularPatternAxis, u32)>, CodecError> {
+) -> Result<Option<(patterns::DesignCircularPatternAxis, u32, Option<usize>)>, CodecError> {
     let parsed = (|| {
         use patterns::DesignCircularPatternAxis;
 
@@ -777,7 +944,7 @@ fn exact_legacy_circular_pattern_axis(
             paired_at.checked_sub(start),
             View::u32_le_at(bytes, start + 21),
         ) {
-            (Some(129), Some(1)) => (
+            (Some(129 | 130), Some(1)) => (
                 [Some(start + 26), Some(start + 56)],
                 start + 40,
                 start + 51,
@@ -821,18 +988,30 @@ fn exact_legacy_circular_pattern_axis(
         {
             return None;
         }
+        // The 130-byte two-wrapper form stores `u8 1` and two zero bytes
+        // between the references to the axis-record indexes plus two and plus
+        // one, where the other forms store two zero bytes.
+        let separator_flag_at = (paired_at.checked_sub(start) == Some(130)).then_some(tail_at + 27);
+        let shift = usize::from(separator_flag_at.is_some());
+        let separator_holds = match separator_flag_at {
+            Some(flag_at) => {
+                bytes.get(flag_at) == Some(&1)
+                    && bytes.get(flag_at + 1..flag_at + 3) == Some(&[0; 2])
+            }
+            None => bytes.get(tail_at + 27..tail_at + 29) == Some(&[0; 2]),
+        };
         let opaque_index = View::u32_le_at(bytes, tail_at)?;
         if opaque_index == 0
             || !View::f64_le_at(bytes, tail_at + 4)?.is_finite()
             || View::u32_le_at(bytes, tail_at + 12) != Some(opaque_index)
             || marked_record_reference(bytes, tail_at + 16) != record_index.checked_add(2)
             || bytes.get(tail_at + 21..tail_at + 27) != Some(&[0; 6])
-            || bytes.get(tail_at + 27..tail_at + 29) != Some(&[0; 2])
-            || marked_record_reference(bytes, tail_at + 29) != record_index.checked_add(1)
-            || bytes.get(tail_at + 34..tail_at + 40) != Some(&[0; 6])
-            || bytes.get(tail_at + 40) != Some(&0)
-            || marked_record_reference(bytes, tail_at + 41) != Some(scope.record_index)
-            || bytes.get(tail_at + 46..tail_at + 52) != Some(&[0; 6])
+            || !separator_holds
+            || marked_record_reference(bytes, tail_at + 29 + shift) != record_index.checked_add(1)
+            || bytes.get(tail_at + 34 + shift..tail_at + 40 + shift) != Some(&[0; 6])
+            || bytes.get(tail_at + 40 + shift) != Some(&0)
+            || marked_record_reference(bytes, tail_at + 41 + shift) != Some(scope.record_index)
+            || bytes.get(tail_at + 46 + shift..tail_at + 52 + shift) != Some(&[0; 6])
         {
             return None;
         }
@@ -881,6 +1060,7 @@ fn exact_legacy_circular_pattern_axis(
                 resolved: None,
             },
             selection_record_index,
+            separator_flag_at,
         )))
     })();
     parsed.transpose()
@@ -999,6 +1179,121 @@ fn exact_circular_pattern_axis(
         displacement,
         u64::try_from(start.checked_add(49)?).ok()?,
     )
+}
+
+/// The 221-byte axis frame, which has the layout of the rectangular-pattern
+/// spacing direction record with selection kind `8`.
+fn exact_extended_circular_pattern_axis(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    record_index: u32,
+    selection_record_index: u32,
+    scope_record_index: u32,
+) -> Option<patterns::DesignCircularPatternAxis> {
+    use crate::layout::rectangular_pattern_spacing_direction_record as spacing;
+
+    if paired_at.checked_sub(start) != Some(spacing::LEN) {
+        return None;
+    }
+    let record = exact_rectangular_pattern_direction(
+        bytes,
+        start,
+        paired_at,
+        record_index,
+        selection_record_index,
+        scope_record_index,
+    )
+    .filter(|record| record.selection_kind == 8)?;
+    patterns::DesignCircularPatternAxis::inline(
+        record.origin,
+        record.origin_offset,
+        record.displacement.map(FiniteReal::get),
+        record.displacement_offset,
+    )
+}
+
+/// The symmetric byte of the one pattern payload that names the count owner,
+/// the total-angle owner, and the axis record of `scope`. The payload reads
+/// only when its reference, entry, and instance runs end at the suffix.
+fn exact_circular_pattern_symmetric(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    [count_owner, angle_owner, axis]: [u32; 3],
+    count: u32,
+) -> Option<crate::records::identity::Located<bool>> {
+    use crate::layout::circular_pattern_payload_distribution as block;
+    use crate::layout::circular_pattern_payload_prefix as prefix;
+    use crate::layout::rectangular_pattern_payload_suffix as suffix;
+    const ENTRY_LEN: usize = 16;
+    const MARKED_REFERENCE_LEN: usize = 11;
+
+    let mut found = None;
+    for (_, offsets) in records.records() {
+        for &start in offsets {
+            if bytes.get(start + prefix::ZERO_RUN..start + prefix::SYMMETRIC) != Some(&[0; 10])
+                || marked_record_reference(bytes, start + prefix::ANGLE_OWNER) != Some(angle_owner)
+                || marked_record_reference(bytes, start + prefix::AXIS) != Some(axis)
+            {
+                continue;
+            }
+            let symmetric = match bytes.get(start + prefix::SYMMETRIC) {
+                Some(0) => false,
+                Some(1) => true,
+                _ => continue,
+            };
+            let parsed = (|| {
+                let references =
+                    usize::try_from(View::u32_le_at(bytes, start + prefix::LEN)?).ok()?;
+                let at = references
+                    .checked_mul(MARKED_REFERENCE_LEN)?
+                    .checked_add(start + prefix::LEN + 4)?;
+                if bytes.get(at + block::ZERO_RUN..at + block::FIXED_TWO) != Some(&[0; 8])
+                    || View::u32_le_at(bytes, at + block::FIXED_TWO) != Some(block::FIXED_TWO_VALUE)
+                    || View::u32_le_at(bytes, at + block::SENTINEL) != Some(u32::MAX)
+                    || bytes.get(at + block::FIXED_ONE) != Some(&block::FIXED_ONE_VALUE)
+                {
+                    return None;
+                }
+                let entries =
+                    usize::try_from(View::u32_le_at(bytes, at + block::ENTRY_COUNT)?).ok()?;
+                let instance_count_at = entries
+                    .checked_mul(ENTRY_LEN)?
+                    .checked_add(at + block::LEN)?;
+                if View::u32_le_at(bytes, instance_count_at) != Some(count) {
+                    return None;
+                }
+                let tail = usize::try_from(count)
+                    .ok()?
+                    .checked_mul(MARKED_REFERENCE_LEN)?
+                    .checked_add(instance_count_at + 4)?;
+                let end = tail.checked_add(suffix::LEN)?;
+                let seed_group = marked_record_reference(bytes, tail + suffix::SEED_GROUP)?;
+                (marked_record_reference(bytes, tail + suffix::U_COUNT) == Some(count_owner)
+                    && marked_record_reference(bytes, tail + suffix::SCOPE)
+                        == Some(scope.record_index)
+                    && scope
+                        .reference_members()
+                        .values()
+                        .any(|index| *index == seed_group)
+                    && bytes.get(tail + suffix::ZERO_TAIL..end) == Some(&[0; 4])
+                    && next_indexed_record_offset(bytes, start + prefix::LEN) == Some(end))
+                .then_some(())
+            })();
+            if parsed.is_none() {
+                continue;
+            }
+            let candidate = crate::records::identity::Located {
+                value: symmetric,
+                offset: u64::try_from(start + prefix::SYMMETRIC).ok()?,
+            };
+            if found.replace(candidate).is_some() {
+                return None;
+            }
+        }
+    }
+    found
 }
 
 fn exact_fixed_pattern_count(

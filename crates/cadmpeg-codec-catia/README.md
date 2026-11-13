@@ -66,6 +66,22 @@ streams transfer face-local constructions. Inner-without-directory layouts
 transfer A8/B2 carriers. Complete scalar formula graphs transfer typed
 parameters. Unresolved native bytes stay attached to the IR as unknown records.
 
+## Shared sheet boundaries
+
+Two face occurrences of one native edge can use different curve parameters.
+Shared-boundary transfer aligns their pcurves and retries rejected faces after
+a neighboring face is admitted. Analytic reprojection retains the seeded
+periodic chart branches.
+
+A matching incident edge can corroborate a shared vertex repair. Endpoint
+and boundary retry seeds admit discrepancies up to 0.005 mm. Alignment and
+reprojection check the recovered pcurve's lift against the selected 3D edge
+at 0.001 mm. A repaired outer boundary must contain each inner loop.
+The report records these choices with `topology.shared-boundary-reconciled`.
+It counts emitted faces admitted by vertex repair, seed alignment, and shared-edge
+retry, and prior faces whose shared curves were replaced. These counts can
+overlap. The note gives the largest vertex movement or sampled edge discrepancy.
+
 ## Sheet surface transfer
 
 A complete rolling-ball jet defines a native procedural surface from its
@@ -74,12 +90,42 @@ for rolling-ball, ruled, offset, and offset-extrusion carriers that require a
 solved surface for STEP export. The decode report records these faces with
 `geometry.sheet-surface-fitted`. The fit checks use sampled points.
 
+Rolling-sheet boundary recovery first tries the stored transverse chart. It
+can then extend the procedural circular section by at most 0.01 in transverse
+parameter and 0.005 mm from its stored boundary. The recovered carrier is a
+sample-checked spline fit. `geometry.rolling-sheet-extended` reports emitted
+faces and their largest sampled boundary extension.
+
+Two affine-mapped edges can corroborate a vertex when each edge has matching
+stations on separate face charts. The selected station can move by at most
+0.0005 mm to keep each fitted endpoint within the 0.01 mm coincidence bound.
+`topology.affine-vertex-reconciled` reports the choice and the largest change
+to an emitted face's vertex positions.
+
+For a planar shared boundary corroborated by an admitted neighboring edge,
+the decoder interprets the parameter-map fit tolerance as a model-space bound
+in mm and adds the 0.001 mm model gap. This unit interpretation is inferred;
+the format model retains the scalar separately. The inferred bound is retained
+as edge accuracy. The report records the number of emitted faces and largest
+sampled lift gap with
+`geometry.parameter-map-accuracy-inferred`. STEP export retains the document
+linear tolerance as its global uncertainty. Larger per-entity tolerances remain
+subject to the exporter's topology-metadata loss reporting; STEP readback can
+therefore reject a recovered boundary at the tighter document tolerance.
+
 For an owned rolling-ball construction, a stored construction radius can
 select a small radial correction of the two rail points at each station.
 When an emitted face uses moved rail points, the report adds
 `geometry.rolling-ball-rails-adjusted` with the largest point movement.
 The sampled fit check compares the spline with the construction used for
 fitting, after any reported rail correction.
+
+Three-lane endpoint stations with an 18-byte `80` tail can place the compact tag
+after either scalar. The decoder retains a valid first-scalar-tag reading in
+preference to the final-scalar-tag reading. When both tag positions match,
+`topology.endpoint-station-reading-inferred` names the selected reading,
+incidence allocation, curve allocation, and native parameter. Companion-spline
+stations follow the existing affine-spline and circular endpoint paths.
 
 ## Reference
 

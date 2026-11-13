@@ -4,24 +4,24 @@
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
     BodyMembers, BodySelection, CoilConstruction, CoilPlacement, CoilResult, CombineOperands,
-    DatumPlaneReference, DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull,
-    DraftSecondSide, EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-    ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion, FaceSelection,
-    FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
+    ComponentTransferMode, DatumPlaneReference, DatumPointConstruction, DistinctMembers,
+    DraftAnchor, DraftPull, DraftSecondSide, EdgeSelection, ExtrudeDirection, ExtrudeExtent,
+    ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion,
+    FaceSelection, FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
     FilledSurfaceContinuity, FilledSurfaceContinuityState, GeneratedBodyRef, GeneratedCurveRef,
     GeneratedEdgeRef, GeneratedFaceRef, GeneratedSweepSection, GeneratedVertexRef,
-    GeometryImportPath, HelicalSweepConstruction, InsertedBodies, LinearTermination, LoftGuidance,
-    LoftPointSection, LoftSection, NativeFeatureKind, NativeSelections, NonEmptyMembers,
-    PartialRevolveConstruction, PathRef, PlanarProfileRef, PrimitiveSolid, PrimitiveSolidKind,
-    ProfileRef, ReplaceFaceOperands, RevolutionAxis, RevolveConstruction, RevolveExtent,
-    RibConstruction, RuledSurfaceMode, ScaleCenter, SectionOperands, SelectionMembers,
-    SelectionReference, SewBodySelection, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight,
-    SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
-    SheetMetalHemForm, SketchFeatureBinding, SketchPointSelection, SketchProfileBoundaryUse,
-    SketchProfileLoops, SketchProfileRegion, SketchProfileRegions, SplitBodyTool, SplitFacePlanes,
-    SplitFaceTool, SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
-    ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
-    VertexSelection,
+    GeometryImportPath, HelicalSweepConstruction, InsertedBodies, InsertedComponents,
+    LinearTermination, LoftGuidance, LoftPointSection, LoftSection, NativeFeatureKind,
+    NativeSelections, NonEmptyMembers, PartialRevolveConstruction, PathRef, PlanarProfileRef,
+    PrimitiveSolid, PrimitiveSolidKind, ProfileRef, ReplaceFaceOperands, RevolutionAxis,
+    RevolveConstruction, RevolveExtent, RibConstruction, RuledSurfaceMode, ScaleCenter,
+    SectionOperands, SelectionMembers, SelectionReference, SewBodySelection,
+    SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
+    SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding,
+    SketchPointSelection, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion,
+    SketchProfileRegions, SplitBodyTool, SplitFacePlanes, SplitFaceTool, SurfaceBoundary,
+    SweepGuideRail, SweepOrientation, SweepSection, SweepShape, ThreePointSelection, TreeChildren,
+    TrimBodyOperands, TrimCellSelection, TrimRegion, VertexSelection,
 };
 
 rewrite_enum!(AngularTermination, []; {
@@ -81,6 +81,11 @@ rewrite_enum!(CoilResult, []; {
     Boolean { operation, targets },
 });
 
+rewrite_enum!(ComponentTransferMode, []; {
+Copy,
+Reparent,
+});
+
 rewrite_record!(CombineOperands, []; { target, tools });
 
 rewrite_enum!(DatumPlaneReference, []; {
@@ -106,7 +111,7 @@ rewrite_enum!(DraftAnchor, []; {
     PartingLine { tool, pull },
 });
 
-rewrite_record!(DraftPull, []; { direction, plane });
+rewrite_record!(DraftPull, []; { direction, plane, frame });
 
 rewrite_enum!(DraftSecondSide, []; {
     Symmetric {},
@@ -193,6 +198,8 @@ rewrite_enum!(FeatureOperation, []; {
     MeshImport { tessellations },
     InsertBodies { bodies },
     InsertComponent { occurrence },
+    InsertComponents { components },
+    ComponentTransfer { mode, occurrence, component, source_owner, target_owner, source_transform, target_transform },
     AssemblyJoint { joint },
     Form { cages },
     CosmeticThread { face, standard, designation, diameter, pitch, modeled, extent },
@@ -269,6 +276,7 @@ rewrite_enum!(FeatureOperation, []; {
     BoundaryFill { tools, cells },
     CutWithSurface { targets, tools, reverse },
     TrimBodies { operands, keep },
+    TrimBodiesAtPlane { targets, plane, keep },
     SplitBody { targets, tool },
     SplitFace { targets, tool },
     DeleteBody { bodies, mode },
@@ -314,6 +322,12 @@ rewrite_record!(HelicalSweepConstruction, []; { profile, axis_origin, axis_direc
 rewrite_enum!(InsertedBodies, []; {
     Native(field0),
     Resolved { native },
+});
+
+rewrite_enum!(InsertedComponents, []; {
+    Native { native },
+    Resolved { occurrences, native },
+    Partial { occurrences, native },
 });
 
 rewrite_enum!(LinearTermination, []; {

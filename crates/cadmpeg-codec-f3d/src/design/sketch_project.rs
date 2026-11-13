@@ -375,7 +375,10 @@ pub(crate) fn project_sketch_design(
         ) else {
             continue;
         };
-        let name = placement.entity_id.as_str().to_owned();
+        let name = placement
+            .display_name
+            .clone()
+            .unwrap_or_else(|| placement.entity_id.as_str().to_owned());
         let native_ref = placement.id.clone();
         sketches.push(Sketch {
             id: crate::ids::neutral_sketch_id(placement),
@@ -443,11 +446,8 @@ pub(crate) fn project_sketch_design(
             continue;
         };
         let geometry = match source {
-            SketchCurveGeometry::Line {
-                start, end, normal, ..
-            } if planar_point(start.as_raw())
-                && planar_point(end.as_raw())
-                && normal.as_raw().z != 0.0 =>
+            SketchCurveGeometry::Line { start, end, .. }
+                if planar_point(start.as_raw()) && planar_point(end.as_raw()) =>
             {
                 let start = start.as_raw();
                 let end = end.as_raw();
@@ -1050,7 +1050,10 @@ pub(crate) fn project_spatial_sketch_design(
             capped_profile_searches += 1;
             Vec::new()
         };
-        let name = placement.entity_id.as_str().to_owned();
+        let name = placement
+            .display_name
+            .clone()
+            .unwrap_or_else(|| placement.entity_id.as_str().to_owned());
         let native_ref = placement.id.clone();
         sketches.push(SpatialSketch {
             profiles,

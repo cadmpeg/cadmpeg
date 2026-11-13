@@ -69,6 +69,7 @@ const EPS_SWEEP_EXTENT_RELATIVE: f64 = 1.0e-3;
 /// Decoded B-rep arenas, provenance, and transfer statistics.
 #[derive(Default)]
 pub(crate) struct Brep {
+    pub(crate) approximations: super::approximation::ApproximationCounts,
     /// Source locations for decoded entities.
     pub(crate) annotations: Annotations,
     /// Top-level solid or sheet bodies.
@@ -756,7 +757,8 @@ fn blend_support_geometry<'a>(
     };
     // The face that carries the sweep reports its own refusal when it emits.
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
-    let resolved = resolve_sweep_surface(ctx, carriers, tables, face, &mut refusal)?;
+    let resolved =
+        resolve_sweep_surface(ctx, carriers, tables, face, &mut refusal, &mut Vec::new())?;
     Ok(resolved.map(|sweep| Cow::Owned(sweep.geometry)))
 }
 
@@ -766,6 +768,7 @@ fn resolve_sweep_surface(
     tables: &topology::Tables,
     face: &WalkedFace,
     refusal: &mut crate::lane_refusal::LaneRefusals,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<SweepSurfaceResolution>, cadmpeg_core::CodecError> {
     let Some(construction) = carriers.sweep(face.surface_attr) else {
         return Ok(None);
@@ -777,13 +780,34 @@ fn resolve_sweep_surface(
         "sldprt sweep construction at byte {} for surface attr {}",
         construction.offset, face.surface_attr
     );
-    let Some(curve) = sweep::profile_nurbs(&profile.carrier().geometry, &record, refusal) else {
+    let mut profile_range = profile
+        .carrier()
+        .parameter_range
+        .map(cadmpeg_ir::units::FiniteVector::get);
+    if let SweepKind::Spun { profile_bounds, .. } = &construction.kind {
+        profile_range = sweep::stored_conic_interval(&profile.carrier().geometry, *profile_bounds);
+        if let [Some(low), Some(high)] = profile_bounds {
+            if profile_range.is_none()
+                && matches!(
+                    profile.carrier().geometry.solved(),
+                    Some(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))
+                )
+            {
+                losses.push(crate::loss::SldprtLossCode::GeometrySpunProfileIntervalIgnored.note(
+                    format!("{record}: ignored stored profile interval [{low}, {high}]; revolve the whole profile"),
+                ));
+            }
+        }
+    }
+    let Some(curve) =
+        sweep::profile_nurbs(&profile.carrier().geometry, profile_range, &record, refusal)
+    else {
         return Ok(None);
     };
     let profile_derived = matches!(profile, IndexedCurve::Derived(_));
     let profile_knots = curve.knots().as_slice().len();
     match &construction.kind {
-        SweepKind::Spun { base, axis } => {
+        SweepKind::Spun { base, axis, .. } => {
             retain_surface_bytes(
                 ctx,
                 nurbs_surface_bytes(
@@ -826,6 +850,21 @@ fn resolve_sweep_surface(
                         .and_then(|pa| tables.points().get(&pa))
                         .map(|p| p.xyz_m)
                     else {
+                        if let Some([low, high]) = tables
+                            .coedges()
+                            .get(ce_attr)
+                            .and_then(|fin| tables.edge_uses().get(&fin.refs[6]))
+                            .and_then(|edge| carriers.curve(edge.references.curve()))
+                            .and_then(|curve| {
+                                sweep::curve_projection_bounds(
+                                    &curve.carrier().geometry,
+                                    *direction,
+                                )
+                            })
+                        {
+                            point_lo = point_lo.min(low);
+                            point_hi = point_hi.max(high);
+                        }
                         continue;
                     };
                     let travel = coordinates[0] * LEN_TO_MM * direction.x
@@ -877,6 +916,7 @@ fn resolve_sweep_surface(
                 unit_direction,
                 v_start - pad,
                 v_end + pad,
+                closed_edge_start(ctx, Some(profile))?.is_some(),
                 &record,
                 refusal,
             )
@@ -951,6 +991,77 @@ fn emit_offset_surface(
         geometry,
     });
     Ok(())
+}
+
+fn emit_sweep_support(
+    sink: &mut BrepSink<'_, '_, '_>,
+    attr: u32,
+    surface: SurfaceId,
+    carriers: &CarrierIndex,
+    annotations: &mut AnnotationBuilder,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
+) -> Result<Option<SurfaceId>, cadmpeg_core::CodecError> {
+    let Some((sweep, profile)) = carriers.exact_swept_support(attr) else {
+        return Ok(None);
+    };
+    let SweepKind::Swept { direction } = &sweep.kind else {
+        return Ok(None);
+    };
+    if sink
+        .out
+        .surfaces
+        .iter()
+        .any(|candidate| candidate.id == surface)
+    {
+        return Ok(Some(surface));
+    }
+    if !sink
+        .out
+        .curves
+        .iter()
+        .any(|curve| curve.id == id_curve(profile.attr))
+    {
+        emit_curve(sink.ctx, sink.out, profile)?;
+    }
+    let directrix = id_curve(profile.attr);
+    let direction = direction.as_raw();
+    let definition = ProceduralSurfaceDefinition::LinearSweep(
+        cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
+            directrix,
+            cadmpeg_ir::math::Vector3::new(
+                direction.x * LEN_TO_MM,
+                direction.y * LEN_TO_MM,
+                direction.z * LEN_TO_MM,
+            ),
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?,
+    );
+    let construction = ProceduralSurfaceId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "hidden-sweep-construction"),
+        attr,
+    );
+    annotations.note(
+        surface.as_str(),
+        source_stream,
+        u64_from_index(sweep.offset),
+        Some("procedural_support"),
+    );
+    admit_brep_entity(sink.ctx)?;
+    sink.out.procedural_surfaces.push(ProceduralSurface::new(
+        construction.clone(),
+        definition,
+        None,
+    ));
+    admit_brep_entity(sink.ctx)?;
+    sink.out.surfaces.push(Surface {
+        id: surface.clone(),
+        source_object: None,
+        geometry: SurfaceGeometry::Procedural {
+            construction,
+            cache: None,
+        },
+    });
+    Ok(Some(surface))
 }
 
 /// Whether one referenced support can be emitted without a procedural cycle.
@@ -1065,6 +1176,21 @@ fn ensure_surface_support(
             }
             Ok(Some(surface))
         } else {
+            if carriers.sweep(attr).is_some() {
+                if let Some(bridge) = emitted_face_surface_by_carrier.get(&attr) {
+                    return Ok(Some(id_surf(*bridge)));
+                }
+                if let Some(surface) = emit_sweep_support(
+                    sink,
+                    attr,
+                    id_hidden_support_surface(attr),
+                    carriers,
+                    annotations,
+                    source_stream,
+                )? {
+                    return Ok(Some(surface));
+                }
+            }
             let surface = emitted_face_surface_by_carrier.get(&attr).map_or_else(
                 || id_hidden_support_surface(attr),
                 |bridge| id_surf(*bridge),
@@ -1120,7 +1246,7 @@ fn face_admission(
     } else if face
         .loop_attrs()
         .any(|loop_attr| loop_set.contains(&loop_attr))
-        || covers_whole_sphere(face, t, carriers)
+        || covers_whole_closed_surface(face, t, carriers)
     {
         FaceAdmission::Admitted
     } else {
@@ -1128,20 +1254,107 @@ fn face_admission(
     }
 }
 
-/// Whether `face` stores no loop and lies on a sphere. A sphere is a closed
-/// surface without boundary, so the face covers the whole surface (spec §7.1).
-fn covers_whole_sphere(face: &WalkedFace, t: &topology::Tables, carriers: &CarrierIndex) -> bool {
+fn face_has_exact_boundary(
+    face: &WalkedFace,
+    t: &topology::Tables,
+    exact_edges: &HashSet<u32>,
+) -> bool {
+    !face.loops.is_empty()
+        && face.vertex_loops.is_empty()
+        && face.unresolved_loop.is_none()
+        && face.unresolved_fins.is_empty()
+        && face.loops.iter().all(|(_, ring)| {
+            !ring.is_empty()
+                && ring.iter().all(|fin| {
+                    t.coedges()
+                        .get(fin)
+                        .is_some_and(|fin| exact_edges.contains(&fin.refs[6]))
+                })
+        })
+}
+
+fn offset_for_face<'a>(
+    face: &WalkedFace,
+    t: &topology::Tables,
+    carriers: &'a CarrierIndex,
+    exact_edges: &HashSet<u32>,
+) -> Option<&'a super::offset::OffsetCarrier> {
+    carriers.offset(face.surface_attr).filter(|offset| {
+        !offset.unchecked
+            || face_has_exact_boundary(face, t, exact_edges)
+            || covers_whole_offset(face, t, carriers)
+    })
+}
+
+fn sweep_face_can_alias(
+    ctx: &DecodeContext<'_>,
+    face: &WalkedFace,
+    t: &topology::Tables,
+    carriers: &CarrierIndex,
+    exact_edges: &HashSet<u32>,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if carriers.exact_swept_support(face.surface_attr).is_none()
+        || face_has_exact_boundary(face, t, exact_edges)
+    {
+        return Ok(true);
+    }
+    let mut refusal = crate::lane_refusal::LaneRefusals::new();
+    Ok(resolve_sweep_surface(ctx, carriers, t, face, &mut refusal, &mut Vec::new())?.is_some())
+}
+
+fn covers_whole_closed_surface(
+    face: &WalkedFace,
+    t: &topology::Tables,
+    carriers: &CarrierIndex,
+) -> bool {
     face.loops.is_empty()
-        && t.bridges()
-            .get(&face.bridge_attr)
-            .is_some_and(|bridge| bridge.refs[2] <= 1)
-        && !t.loops().values().any(|lp| lp.refs[2] == face.bridge_attr)
-        && carriers.surface(face.surface_attr).is_some_and(|carrier| {
-            matches!(
-                carrier.geometry,
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+        && t.bridges().get(&face.bridge_attr).is_some_and(|bridge| {
+            whole_closed_face(
+                bridge.refs[2],
+                carriers.surface(face.surface_attr),
+                t.has_looped_bridge_frame(face.bridge_attr),
+            ) || whole_closed_offset_face(
+                bridge.refs[2],
+                face.surface_attr,
+                carriers,
+                t.has_looped_bridge_frame(face.bridge_attr),
             )
         })
+        && !t.loops().values().any(|lp| lp.refs[2] == face.bridge_attr)
+}
+
+fn covers_whole_offset(face: &WalkedFace, t: &topology::Tables, carriers: &CarrierIndex) -> bool {
+    covers_whole_closed_surface(face, t, carriers)
+        && carriers.closed_offset_surface(face.surface_attr)
+}
+
+fn whole_closed_offset_face(
+    loop_attr: u32,
+    surface_attr: u32,
+    carriers: &CarrierIndex,
+    has_looped_bridge_frame: bool,
+) -> bool {
+    loop_attr <= 1 && !has_looped_bridge_frame && carriers.closed_offset_surface(surface_attr)
+}
+
+fn whole_closed_face(
+    loop_attr: u32,
+    carrier: Option<&super::SurfaceCarrier>,
+    has_looped_bridge_frame: bool,
+) -> bool {
+    loop_attr <= 1 && !has_looped_bridge_frame && loopless_surface(carrier)
+}
+
+fn loopless_surface(carrier: Option<&super::SurfaceCarrier>) -> bool {
+    carrier.is_some_and(|carrier| match &carrier.geometry {
+        SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Sphere(_) | SolvedSurfaceGeometry::Torus(_),
+        ) => true,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
+            surface.u_periodic() && surface.v_periodic()
+        }
+        _ => false,
+    })
 }
 
 /// Follow the sibling loop-head chain of a bridge and each loop's coedge ring,
@@ -1239,34 +1452,49 @@ fn ring_forward_linked(ring: &[u32], t: &topology::Tables) -> bool {
         .all(|ce_attr| t.coedges().get(ce_attr).is_some_and(|ce| ce.refs[2] > 1))
 }
 
-/// The start point and parameter range of a closed edge whose vertex uses
-/// are sentinels: a circle from its reference direction through one turn, or
-/// a surface-intersection chart whose first and last poles are the same
-/// point, over its domain (spec §7.2).
-fn closed_edge_start(curve: Option<&IndexedCurve>) -> Option<(cadmpeg_ir::math::Point3, [f64; 2])> {
-    match (&curve?.carrier().geometry, curve?) {
-        (CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), _) => {
-            let center = circle_curve.center().get();
-            let ref_direction = circle_curve.frame().reference().as_raw();
-            let radius = circle_curve.radius().get();
-            Some((
-                center.translated(*ref_direction, radius),
-                [0.0, std::f64::consts::TAU],
-            ))
+fn closed_edge_start(
+    ctx: &DecodeContext<'_>,
+    curve: Option<&IndexedCurve>,
+) -> Result<Option<(cadmpeg_ir::math::Point3, [f64; 2])>, cadmpeg_core::CodecError> {
+    let Some(carrier) = curve.map(IndexedCurve::carrier) else {
+        return Ok(None);
+    };
+    let Some(geometry) = carrier.geometry.solved() else {
+        return Ok(None);
+    };
+    let Some(domain) = geometry.closed_traversal_range() else {
+        return Ok(None);
+    };
+    let domain = domain.endpoints();
+    let [low, high] = carrier
+        .parameter_range
+        .map_or(domain, cadmpeg_ir::units::FiniteVector::get);
+    if carrier.parameter_range.is_some() {
+        let full = match geometry {
+            SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
+                high > low && high - low == domain[1] - domain[0]
+            }
+            _ => [low, high] == domain,
+        };
+        if !full {
+            return Ok(None);
         }
-        (CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)), IndexedCurve::Derived(_))
-            if !nurbs.periodic() =>
-        {
-            let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } = nurbs.pole_rows()
-            else {
-                return None;
-            };
-            let (first, last) = (points.first()?.get(), points.last()?.get());
-            let domain = nurbs_curve_parameter_domain(nurbs)?;
-            (first == last).then_some((first, domain.endpoints()))
-        }
-        _ => None,
     }
+    let Some(first) = super::evaluation::curve_point(ctx, &carrier.geometry, low)? else {
+        return Ok(None);
+    };
+    if !matches!(
+        geometry,
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)
+    ) {
+        let Some(last) = super::evaluation::curve_point(ctx, &carrier.geometry, high)? else {
+            return Ok(None);
+        };
+        if !cadmpeg_ir::eval::curve_endpoints_coincident([first.get(), last.get()], 0.0) {
+            return Ok(None);
+        }
+    }
+    Ok(Some((first.get(), [low, high])))
 }
 
 /// The model positions of the vertices a walked face's coedges start at.
@@ -1669,7 +1897,8 @@ fn surface_curve_ring_start(
 ) -> Option<(Point3, [f64; 2])> {
     let [low, high] = surface_curve_ends(carrier);
     let [first, second] = carrier.parameter_range;
-    (low.distance(high) <= RING_CLOSURE_MM).then_some((low, [first.min(second), first.max(second)]))
+    cadmpeg_ir::eval::curve_endpoints_coincident([low, high], RING_CLOSURE_MM)
+        .then_some((low, [first.min(second), first.max(second)]))
 }
 
 /// A bounded `SP_CURVE`'s stored end points, the low end of its range first.
@@ -1834,6 +2063,10 @@ fn attach_surface_curve(
         .map(SolvedCurveGeometry::Nurbs),
         None => None,
     };
+    if cache.is_some() {
+        out.approximations
+            .surface_curve(super::fit::FIT_TOLERANCE_MM);
+    }
     let construction = ProceduralCurveId::compose(
         &cadmpeg_ir::identity_namespace!("sldprt", "brep", "sp-curve"),
         attr,
@@ -2133,16 +2366,6 @@ enum DummyRecovery {
     Absent,
 }
 
-/// Recover one edge whose canonical FIN is an unwalked boundary dummy.
-///
-/// Admission needs a boundary dummy canonical whose reciprocal partner is
-/// walked and corroborates both endpoints in ring order: the dummy's
-/// non-null `refs[4]` matches the end that the partner's ring supplies, and
-/// the partner's own non-null `refs[4]` supplies the other end. The dummy
-/// runs the edge, so its `refs[4]` takes the place of the partner's own end
-/// in the edge direction. The dummy stays out
-/// of public face loops; only the edge endpoints are recovered. Any doubt
-/// withholds the edge.
 fn recover_dummy_partner_edge(
     edge_attr: u32,
     canonical: u32,
@@ -2171,25 +2394,21 @@ fn recover_dummy_partner_edge(
     else {
         return DummyRecovery::Absent;
     };
-    if fin.refs[4] <= 1 || partner.refs[4] <= 1 || fin.refs[4] != incidence.ring_vuse {
+    let vertexless = fin.refs[4] <= 1 && partner.refs[4] <= 1 && incidence.ring_vuse <= 1;
+    if !vertexless
+        && (fin.refs[4] <= 1 || partner.refs[4] <= 1 || fin.refs[4] != incidence.ring_vuse)
+    {
         return DummyRecovery::Withheld;
     }
     let (start, end) = incidence.ends(fin.refs[4], partner.refs[4]);
     DummyRecovery::Admitted(start, end, *incidence)
 }
 
-/// Strict admission for one vertexless ring edge on `curve_attr`.
-///
-/// Both endpoints are the native null sentinel. Admission needs reciprocal
-/// opposite FINs on a curve that `closes` on itself and states no range of
-/// its own, opposite senses, a valid face-owned single-FIN loop, and at most
-/// one sheet dummy. Anything else withholds the edge: no vertex is invented.
 fn admit_vertexless_ring_edge(
     [edge_attr, fin_attr, curve_attr]: [u32; 3],
     closes: bool,
     faces: &[WalkedFace],
     t: &topology::Tables,
-    carriers: &CarrierIndex,
 ) -> bool {
     let Some(fin) = t.coedges().get(&fin_attr) else {
         return false;
@@ -2212,12 +2431,6 @@ fn admit_vertexless_ring_edge(
         return false;
     }
     if !closes || curve_attr <= 1 {
-        return false;
-    }
-    if carriers
-        .curve(curve_attr)
-        .is_some_and(|indexed| indexed.carrier().parameter_range.is_some())
-    {
         return false;
     }
     let mut single = false;
@@ -2365,18 +2578,28 @@ pub(crate) fn decode_bodies(
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     let mut site = scan_site(ctx, bodies, &mut |_| {})?;
-    decode_graph(
+    let mut decoded = decode_graph(
         ctx,
         &mut site.carriers,
         &site.tables,
         site.facts,
         &site.typed_facts,
         stream,
-    )
+    )?;
+    if !site.mesh_bodies.is_empty() {
+        decoded.losses.push(crate::loss::SldprtLossCode::GeometryMeshBodyNotTransferred.note(
+            format!(
+                "{} mesh body/bodies have Parasolid MESH face support; facet positions and triangle ownership remain unresolved. Mesh geometry is withheld.",
+                site.mesh_bodies.len(),
+            ),
+        ));
+    }
+    Ok(decoded)
 }
 
 /// The merged record state of one site.
 struct SiteState {
+    mesh_bodies: HashSet<u32>,
     carriers: CarrierIndex,
     tables: topology::Tables,
     facts: entity::Facts,
@@ -2441,6 +2664,7 @@ fn scan_site(
     let mut node_attributes = Vec::new();
     let mut deltas_typed = Vec::new();
     let mut deltas_blends = Vec::new();
+    let mut mesh_bodies = HashSet::new();
     for (((payload, header), (body, prefixed)), deltas) in
         ordered.iter().zip(&entity_streams).zip(&deltas_records)
     {
@@ -2448,6 +2672,7 @@ fn scan_site(
             .then(|| topology::nodes::sequence(payload))
             .flatten()
             .and_then(|records| {
+                mesh_bodies.extend(super::mesh::bodies(&records));
                 let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
                 let mut lane_refusals = Vec::new();
                 let splines = super::spline::nodes::carriers(
@@ -2593,7 +2818,13 @@ fn scan_site(
             }
         }
     }
-    let evidence = SiteEvidence::of(&entity_streams, &typed_streams);
+    let evidence = SiteEvidence::of(
+        &entity_streams,
+        &typed_streams,
+        ordered.iter().map(|(_, header)| {
+            !is_deltas_stream(header) && !crate::parasolid::is_body_stream(header)
+        }),
+    );
     // A Deltas blend enters only when the current faces, edges, and carriers
     // reach it, directly or through reached Deltas carriers.
     let mut seeds: Vec<u32> = evidence
@@ -2673,7 +2904,7 @@ fn scan_site(
             (body, header),
             &stream_typed_facts,
             node_tables,
-            &carriers.curve_attrs(),
+            &carriers,
             &evidence,
             &tables,
             exclude,
@@ -2703,6 +2934,7 @@ fn scan_site(
         }
     }
     Ok(SiteState {
+        mesh_bodies,
         carriers,
         tables,
         facts,
@@ -2726,10 +2958,15 @@ struct SiteEvidence {
     typed: typed::Facts,
     owner_attrs: HashSet<u32>,
     bridge_attrs: Option<HashSet<u32>>,
+    looped_bridge_attrs: HashSet<u32>,
 }
 
 impl SiteEvidence {
-    fn of(entity_streams: &[(&[u8], bool)], typed_streams: &[typed::Facts]) -> Self {
+    fn of(
+        entity_streams: &[(&[u8], bool)],
+        typed_streams: &[typed::Facts],
+        plain_streams: impl Iterator<Item = bool>,
+    ) -> Self {
         let mut typed = typed::Facts::default();
         for stream_typed_facts in typed_streams {
             typed.merge_missing(stream_typed_facts.clone());
@@ -2741,10 +2978,18 @@ impl SiteEvidence {
                 .map(|((body, deltas), facts)| (facts, *body, *deltas)),
         );
         let bridge_attrs = typed.valid_ownership_face_attrs();
+        let looped_bridge_attrs = entity_streams
+            .iter()
+            .zip(plain_streams)
+            .flat_map(|((body, deltas), plain)| {
+                topology::framed_looped_bridge_attrs(body, *deltas, plain)
+            })
+            .collect();
         Self {
             typed,
             owner_attrs,
             bridge_attrs,
+            looped_bridge_attrs,
         }
     }
 }
@@ -2771,20 +3016,35 @@ fn stream_topology(
     (body, header): (&[u8], &StreamHeader),
     stream_typed_facts: &typed::Facts,
     node_tables: Option<topology::Tables>,
-    curve_attrs: &HashSet<u32>,
+    carriers: &CarrierIndex,
     evidence: &SiteEvidence,
     base: &topology::Tables,
     exclude: &HashSet<u32>,
 ) -> topology::Tables {
-    let typed_face_offsets =
+    let mut typed_face_offsets =
         stream_typed_facts.selected_face_offsets(evidence.bridge_attrs.as_ref());
-    if let Some(mut tables) = node_tables {
+    for face in &stream_typed_facts.faces {
+        if whole_closed_face(
+            face.refs[2],
+            carriers.surface(face.refs[4]),
+            evidence.looped_bridge_attrs.contains(&face.attr),
+        ) || whole_closed_offset_face(
+            face.refs[2],
+            face.refs[4],
+            carriers,
+            evidence.looped_bridge_attrs.contains(&face.attr),
+        ) {
+            typed_face_offsets.remove(&face.offset);
+        }
+    }
+    let curve_attrs = carriers.curve_attrs();
+    let mut tables = if let Some(mut tables) = node_tables {
         topology::nodes::own(&mut tables, &typed_face_offsets, &evidence.owner_attrs);
         tables
     } else if is_deltas_stream(header) {
         let mut scanned = topology::scan_deltas_with_owner_attrs(
             body,
-            curve_attrs,
+            &curve_attrs,
             &typed_face_offsets,
             base,
             &evidence.owner_attrs,
@@ -2794,18 +3054,20 @@ fn stream_topology(
     } else if crate::parasolid::is_body_stream(header) {
         topology::scan_with_owner_attrs(
             body,
-            curve_attrs,
+            &curve_attrs,
             &typed_face_offsets,
             &evidence.owner_attrs,
         )
     } else {
         topology::scan_plain_with_owner_attrs(
             body,
-            curve_attrs,
+            &curve_attrs,
             &typed_face_offsets,
             &evidence.owner_attrs,
         )
-    }
+    };
+    tables.record_looped_bridge_attrs(&evidence.looped_bridge_attrs);
+    tables
 }
 
 /// The typed-fact, carrier and topology identities of each Deltas stream of
@@ -2830,7 +3092,13 @@ fn incomplete_deltas_identities(
     for (payload, header) in ordered {
         entity_streams.push((header_body(payload, header)?, is_deltas_stream(header)));
     }
-    let evidence = SiteEvidence::of(&entity_streams, typed_streams);
+    let evidence = SiteEvidence::of(
+        &entity_streams,
+        typed_streams,
+        ordered.iter().map(|(_, header)| {
+            !is_deltas_stream(header) && !crate::parasolid::is_body_stream(header)
+        }),
+    );
     let no_conflicts = HashSet::new();
     let mut carriers = CarrierIndex::default();
     let mut tables: Option<topology::Tables> = None;
@@ -2854,7 +3122,7 @@ fn incomplete_deltas_identities(
             (body, header),
             facts,
             node_tables,
-            &carriers.curve_attrs(),
+            &carriers,
             &evidence,
             tables.as_ref().unwrap_or(&topology::Tables::default()),
             exclude,
@@ -3167,7 +3435,62 @@ fn sorted_graph_attrs(attrs: impl IntoIterator<Item = u32>) -> Vec<u32> {
     sorted
 }
 
+fn report_withheld_ownership(out: &mut Brep, facts: &typed::Facts) {
+    let Some(attrs) = facts.valid_ownership_face_attrs() else {
+        return;
+    };
+    let face_ids: HashSet<_> = out.faces.iter().map(|face| face.id.as_str()).collect();
+    let faces = attrs
+        .iter()
+        .filter(|attr| {
+            let id = id_face(**attr);
+            !face_ids.contains(id.as_str())
+        })
+        .count();
+    let mut bodies = 0;
+    let mut shells = 0;
+    if let Some(hierarchies) = facts.hierarchies(&attrs) {
+        let body_ids: HashSet<_> = out.bodies.iter().map(|body| body.id.as_str()).collect();
+        let shell_ids: HashSet<_> = out.shells.iter().map(|shell| shell.id.as_str()).collect();
+        bodies = hierarchies
+            .iter()
+            .filter(|hierarchy| {
+                let id = BodyId::compose(&body_namespace(), hierarchy.body.attr);
+                !body_ids.contains(id.as_str())
+            })
+            .count();
+        shells = hierarchies
+            .iter()
+            .flat_map(|hierarchy| &hierarchy.shells)
+            .filter(|native| {
+                let id = ShellId::compose(&shell_namespace(), native.attr);
+                !shell_ids.contains(id.as_str())
+            })
+            .count();
+    }
+    let withheld = bodies + shells + faces;
+    if withheld > 0 {
+        out.losses.push(crate::loss::SldprtLossCode::TopologyOwnershipWithheld.note(format!(
+            "{withheld} current typed ownership node(s) are withheld: {bodies} body node(s), {shells} shell node(s), and {faces} face node(s)."
+        )));
+    }
+}
+
 fn decode_graph(
+    ctx: &DecodeContext<'_>,
+    carriers: &mut CarrierIndex,
+    t: &topology::Tables,
+    entity_facts: entity::Facts,
+    typed_facts: &typed::Facts,
+    stream: &cadmpeg_ir::StreamName,
+) -> Result<Brep, cadmpeg_core::CodecError> {
+    let mut out = decode_graph_inner(ctx, carriers, t, entity_facts, typed_facts, stream)?;
+    out.losses.extend(out.approximations.take_notes());
+    report_withheld_ownership(&mut out, typed_facts);
+    Ok(out)
+}
+
+fn decode_graph_inner(
     ctx: &DecodeContext<'_>,
     carriers: &mut CarrierIndex,
     t: &topology::Tables,
@@ -3223,7 +3546,7 @@ fn decode_graph(
     };
     if carriers.has_unvalidated_offset() {
         out.losses.push(crate::loss::SldprtLossCode::GeometryOffsetValidityUnresolved.note(
-            "Invalid, unchecked, or zero-distance offset records retain opaque geometry until their exact construction is validated.",
+            "Offset records with unresolved validity, sense, distance, or support graphs retain opaque geometry.",
         ));
     }
     if carriers.has_surface_category_conflict() {
@@ -3481,7 +3804,7 @@ fn decode_graph(
         let resolved_endpoints = kept_vertices.contains(&start_v) && kept_vertices.contains(&end_v);
         let vertexless = !resolved_endpoints && start_v <= 1 && end_v <= 1;
         let closed_point = if vertexless {
-            match closed_edge_start(carriers.curve(curve_attr)) {
+            match closed_edge_start(ctx, carriers.curve(curve_attr))? {
                 None => surface_curve(curve_attr).and_then(surface_curve_ring_start),
                 closed => closed,
             }
@@ -3494,7 +3817,6 @@ fn decode_graph(
                 closed_point.is_some(),
                 &faces,
                 t,
-                carriers,
             )
         {
             out.stats.withheld_ring_edges += 1;
@@ -3506,7 +3828,12 @@ fn decode_graph(
         let (mut start_id, mut end_id) = if let Some((position, _)) = closed_point {
             let point_id = id_closed_point(e);
             let vertex_id = id_closed_vertex(e);
-            let seam_note = if carriers.curve(curve_attr).is_some() {
+            let seam_note = if carriers.curve(curve_attr).is_some_and(|curve| {
+                matches!(
+                    curve.carrier().geometry,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+                )
+            }) {
                 "derived_closed_circle_seam"
             } else {
                 "derived_closed_curve_seam"
@@ -3679,6 +4006,7 @@ fn decode_graph(
                     let carrier = indexed.carrier();
                     if emitted_curves.insert(curve_attr) {
                         emit_curve(ctx, &mut out, carrier)?;
+                        out.approximations.intersection(indexed);
                         if matches!(indexed, IndexedCurve::Derived(_)) {
                             let offset = carrier.offset;
                             annotations.note(
@@ -4051,9 +4379,32 @@ fn decode_graph(
             .or_default();
         groups.push(edges);
     }
+    let exact_boundary_edges = edge_curve_spans
+        .iter()
+        .filter_map(|(edge, (curve, _))| {
+            let exact = matches!(carriers.curve(*curve), Some(IndexedCurve::Exact(_)))
+                || carriers.curve(*curve).is_none() && surface_curve(*curve).is_some();
+            (exact && edge_set.contains(edge)).then_some(*edge)
+        })
+        .collect::<HashSet<_>>();
+    let unresolved_offset_faces = faces.iter().any(|face| {
+        carriers.offset(face.surface_attr).is_some()
+            && offset_for_face(face, t, carriers, &exact_boundary_edges).is_none()
+    });
+    if unresolved_offset_faces && !carriers.has_unvalidated_offset() {
+        out.losses.push(crate::loss::SldprtLossCode::GeometryOffsetValidityUnresolved.note(
+            "Unchecked offset faces with intersection-chart boundaries retain opaque geometry; the exact boundary guide relation has no neutral carrier.",
+        ));
+    }
     let mut emitted_face_surface_by_carrier = HashMap::<u32, u32>::new();
     for face in &faces {
-        if face_admission(face, &loop_set, t, carriers) == FaceAdmission::Admitted {
+        let bounded_offset = carriers.offset(face.surface_attr).is_none()
+            || offset_for_face(face, t, carriers, &exact_boundary_edges).is_some();
+        let bounded_sweep = sweep_face_can_alias(ctx, face, t, carriers, &exact_boundary_edges)?;
+        if face_admission(face, &loop_set, t, carriers) == FaceAdmission::Admitted
+            && bounded_offset
+            && bounded_sweep
+        {
             emitted_face_surface_by_carrier
                 .entry(face.surface_attr)
                 .and_modify(|bridge| *bridge = (*bridge).min(face.bridge_attr))
@@ -4113,24 +4464,25 @@ fn decode_graph(
                 });
             }
             _ => {
-                let resolved_offset = if let Some(offset) = carriers.offset(f.surface_attr) {
-                    if support_is_acyclic(ctx, offset.support, carriers, &mut HashSet::new())? {
-                        ensure_surface_support(
-                            &mut BrepSink { ctx, out: &mut out },
-                            offset.support,
-                            carriers,
-                            &emitted_face_surface_by_carrier,
-                            &mut annotations,
-                            &source_stream,
-                            &mut HashSet::new(),
-                        )?
-                        .map(|support| (offset, support))
+                let resolved_offset =
+                    if let Some(offset) = offset_for_face(f, t, carriers, &exact_boundary_edges) {
+                        if support_is_acyclic(ctx, offset.support, carriers, &mut HashSet::new())? {
+                            ensure_surface_support(
+                                &mut BrepSink { ctx, out: &mut out },
+                                offset.support,
+                                carriers,
+                                &emitted_face_surface_by_carrier,
+                                &mut annotations,
+                                &source_stream,
+                                &mut HashSet::new(),
+                            )?
+                            .map(|support| (offset, support))
+                        } else {
+                            None
+                        }
                     } else {
                         None
-                    }
-                } else {
-                    None
-                };
+                    };
                 let blend_attrs = (|| -> Result<_, cadmpeg_core::CodecError> {
                     let Some(blend) = carriers.blend(f.surface_attr) else {
                         return Ok(None);
@@ -4249,6 +4601,7 @@ fn decode_graph(
                         let carrier = indexed.carrier();
                         if emitted_curves.insert(blend.spine) {
                             emit_curve(ctx, &mut out, carrier)?;
+                            out.approximations.intersection(indexed);
                             annotations.note(
                                 id_curve(blend.spine).as_str(),
                                 &source_stream,
@@ -4395,6 +4748,7 @@ fn decode_graph(
                         .map_err(cadmpeg_core::CodecError::malformed)?;
                     let mut definition = ProceduralSurfaceDefinition::Blend(admitted_payload);
                     if let Some(cache) = &cache {
+                        out.approximations.blend(cache.fit_tolerance);
                         let fit_tolerance =
                             cadmpeg_ir::geometry::FitTolerance::try_new(cache.fit_tolerance)
                                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -4439,7 +4793,14 @@ fn decode_graph(
                     exactness,
                 }) = {
                     let mut sweep_refusal = crate::lane_refusal::LaneRefusals::new();
-                    let resolved = resolve_sweep_surface(ctx, carriers, t, f, &mut sweep_refusal)?;
+                    let resolved = resolve_sweep_surface(
+                        ctx,
+                        carriers,
+                        t,
+                        f,
+                        &mut sweep_refusal,
+                        &mut out.losses,
+                    )?;
                     for record in sweep_refusal.take_records() {
                         let note = crate::loss::spline_lane_refusal(format_args!(
                             "swept surface for face attr {}: {record}",
@@ -4464,7 +4825,17 @@ fn decode_graph(
                         source_object: None,
                         geometry: SurfaceGeometry::Solved(geometry),
                     });
-                } else {
+                } else if !face_has_exact_boundary(f, t, &exact_boundary_edges)
+                    || emit_sweep_support(
+                        &mut BrepSink { ctx, out: &mut out },
+                        f.surface_attr,
+                        id_surf(f.bridge_attr),
+                        carriers,
+                        &mut annotations,
+                        &source_stream,
+                    )?
+                    .is_none()
+                {
                     out.stats.unknown_surface_faces += 1;
                     annotations.note(
                         id_surf(f.bridge_attr).as_str(),
@@ -4596,6 +4967,7 @@ fn decode_graph(
 
     if out.faces.is_empty() {
         return Ok(Brep {
+            approximations: out.approximations,
             losses: out.losses,
             stats: out.stats,
             ..Brep::default()
@@ -4996,14 +5368,14 @@ fn prune_rejected_topology(out: &mut Brep) {
         .iter()
         .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str))
         .chain(out.procedural_surfaces.iter().filter_map(|surface| {
-            if let ProceduralSurfaceDefinition::Blend(definition_payload) = surface.definition() {
-                definition_payload
-                    .spine()
-                    .as_ref()
-                    .map(cadmpeg_ir::ids::CurveId::as_str)
-            } else {
-                None
+            match surface.definition() {
+                ProceduralSurfaceDefinition::Blend(definition) => definition.spine().as_ref(),
+                ProceduralSurfaceDefinition::LinearSweep(definition) => {
+                    Some(definition.directrix())
+                }
+                _ => None,
             }
+            .map(cadmpeg_ir::ids::CurveId::as_str)
         }))
         .collect::<std::collections::HashSet<_>>();
     out.curves
@@ -6766,6 +7138,9 @@ fn derive_nurbs_isoparametric_pcurves(
             }),
         );
         annotations.exactness(id.as_str(), Exactness::Derived);
+        if let Some(tolerance) = pcurve.fit_tolerance().filter(|_| cache) {
+            out.approximations.inverse_boundary(tolerance.get());
+        }
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
@@ -9154,7 +9529,7 @@ mod tests {
             &mut refusal,
         )
         .unwrap();
-        let swept = swept_nurbs(&profile, axis, 0.0, 1.0, &"sweep", &mut refusal).unwrap();
+        let swept = swept_nurbs(&profile, axis, 0.0, 1.0, false, &"sweep", &mut refusal).unwrap();
         assert_eq!(
             super::nurbs_surface_bytes(
                 profile.pole_count(),
@@ -11090,3 +11465,15 @@ mod tolerant_edge_tests;
 
 #[cfg(test)]
 mod vertex_loop_tests;
+
+#[cfg(test)]
+mod ownership_loss_tests;
+
+#[cfg(test)]
+mod edge_free_tests;
+
+#[cfg(test)]
+mod offset_support_tests;
+
+#[cfg(test)]
+mod approximation_loss_tests;

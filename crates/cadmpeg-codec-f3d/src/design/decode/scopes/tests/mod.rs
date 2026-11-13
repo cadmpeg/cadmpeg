@@ -8,12 +8,14 @@
 
 mod assembly;
 mod assembly_variable_reference;
+mod chamfer_sets;
 mod combine;
 mod component_pattern;
 mod copy_paste_bodies;
 mod derived_instance;
 mod draft_flags;
 mod extended_thread;
+mod fillet_sets;
 mod fixed_extrude_lanes;
 mod fixed_kind_operations;
 mod fixed_kind_tail;
@@ -23,7 +25,9 @@ mod history_admission;
 mod legacy_class_397;
 mod legacy_frames;
 mod legacy_work_planes;
+mod move_reference_forms;
 mod move_transform;
+mod named_delete_face;
 mod named_empty_label;
 mod named_variable_tail;
 mod offset_faces;

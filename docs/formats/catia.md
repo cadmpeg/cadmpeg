@@ -454,7 +454,7 @@ Cylinder and torus payloads use the first three little-endian f32 values of the 
 
 A standard circle without an admitted native edge support and with two distinct endpoints has two complementary candidate arcs. Compute each arc's exact extrema in every coordinate. An arc fits a face when its extrema lie within the face's stored AABB with coordinate allowance `max(2e-3 mm, 3·f32::EPSILON·scale)`, where `scale` is the maximum of 1, the absolute AABB center, its half-extent, and the absolute arc extrema in that coordinate. Each endpoint must lie on the circle and its plane within `2e-3` mm. When exactly one arc fits every available incident-face AABB, that arc supplies the edge interval. Its midpoint supplies the branch witness for each incident pcurve.
 
-The same arc test applies to an ellipse that a spline row's support construction supplies without an interval, with the ellipse's own frame: one candidate follows its parameterization and the other reverses its axis. An endpoint satisfies `(x/a)²+(y/b)²=1` within `2e-3` and lies within `2e-3` mm of the ellipse plane. The stored AABB of a curved face can lie inside the exact face extent by a few micrometres. When neither arc fits, the arc whose largest excess over the allowance is at most `0.01` of the other arc's excess supplies the edge interval, and the decode records `geometry.arc-branch-least-box-excess`.
+The same arc test applies to an ellipse that a spline row's support construction supplies without an interval, with the ellipse's own frame: one candidate follows its parameterization and the other reverses its axis. Each endpoint lies within `2e-3` mm of the ellipse point at `atan2(y/b, x/a)` in that frame. The stored AABB of a curved face can lie inside the exact face extent by a few micrometres. When neither arc fits, the arc whose largest excess over the allowance is at most `0.01` of the other arc's excess supplies the edge interval, and the decode records `geometry.arc-branch-least-box-excess`.
 
 When the face boxes leave the branch unresolved, a cylinder section uses the witness azimuth and a torus isoparametric circle uses the corresponding major or minor chart coordinate. A candidate in either lane is valid only when its lifted pcurve midpoint lies on the stored circle within `2e-3` mm. Exactly one lane and interval must remain. The witness's constant chart coordinate need not equal the boundary circle's constant coordinate.
 
@@ -566,7 +566,7 @@ The 152-byte payload is `<center:3f64le> <stored_x:3f64le> <stored_y:3f64le> <st
 
 ### 5.14 Torus record `b2 03 2b`
 
-The 200-byte payload is `<center:3f64le> <direction_x:3f64le> <direction_y:3f64le> <axis:3f64le> <major_radius:f64le> <minor_radius:f64le> <major_range:2f64le> <major_domain:2f64le> <minor_range:2f64le> <minor_domain:2f64le> <major_scale:f64le> <minor_scale:f64le> <zero:f64le>`. The three directions form a right-handed orthonormal frame. Both radii and both scales are positive. Each angular range is strictly increasing, spans at most `2π`, and lies inside its corresponding full-turn domain. Each domain spans `2π` and has the same midpoint as its active range, within `1e-12`. Native parameters use the independent gauges `major_angle=U/major_scale` and `minor_angle=V/minor_scale`. The point is `center+(major_radius+minor_radius·cos(minor_angle))·(cos(major_angle)·direction_x+sin(major_angle)·direction_y)+minor_radius·sin(minor_angle)·axis`.
+The 200-byte payload is `<center:3f64le> <direction_x:3f64le> <direction_y:3f64le> <axis:3f64le> <major_radius:f64le> <minor_radius:f64le> <major_range:2f64le> <major_domain:2f64le> <minor_range:2f64le> <minor_domain:2f64le> <major_scale:f64le> <minor_scale:f64le> <zero:f64le>`. The three directions form a right-handed orthonormal frame. Both radii and both scales are positive. Each angular range is strictly increasing, spans at most `2π`, and lies inside its corresponding full-turn domain. Each domain spans `2π` and has the same midpoint as its active range, within `1e-12`. Native parameters use the independent gauges `major_angle=U/major_scale` and `minor_angle=V/minor_scale`. Sheet-owned trims use the full-turn domains for their U and V limits. The point is `center+(major_radius+minor_radius·cos(minor_angle))·(cos(major_angle)·direction_x+sin(major_angle)·direction_y)+minor_radius·sin(minor_angle)·axis`.
 
 ### 5.15 Surface-of-revolution record `b2 03 2d`
 
@@ -938,6 +938,35 @@ An edge's class-`25` sampled relation also carries separate active ranges
 for its two curve representations. A line incidence can supply a spline
 station through an exact sample pair or a sampled identity relation.
 
+An extended spline-span tag is `04 <span:u8>`. The span byte is
+`44 + i`, where `i` is the zero-based index in the complete distinct-knot
+array. The station is `knots[i] + t` and `t` lies in
+`[0, knots[i+1] - knots[i]]`. This tag uses the complete knot array's
+index independently of the compact arc-number base.
+
+For compact arc tags, the first active span follows the leading
+extrapolation sites when their stored count equals the number of negative
+knots preceding a zero knot. The compact span index includes that leading
+count. The scalar remains local to the selected span.
+
+The following incidence tails preserve separate parameter gauges for each
+referenced curve. Lane indices are zero-based.
+
+| References | Tail | Assigned lanes |
+| --- | --- | --- |
+| 2 | `80 t:f64le 04 span:u8` | Lane 1 uses the extended spline-span tag. |
+| 3 | `81 t:f64le 04 span:u8` | Lane 1 uses the extended spline-span tag. |
+| 3 | `80 a:f64le b:f64le compact:u8` | When only the final tag position holds a compact code, lane 1 uses absolute `a`; lane 2 uses compact-tagged `b`. |
+| 3 | `10 a:f64le compact:u8 b:f64le` | Lane 1 uses compact-tagged `a`; lane 2 uses absolute `b`. |
+| 3 | `80 a:f64le compact:u8 b:f64le` | When only the first scalar's tag position holds a compact code, lane 1 uses compact-tagged `a`; lane 2 uses absolute `b`. |
+| 3 | `80 a:f64le 04 span:u8 b:f64le` | Lane 1 uses extended-tagged `a`; lane 2 uses absolute `b`. |
+| 3 | `00 a:f64le 04 first:u8 b:f64le c:f64le 04 last:u8` | Lanes 0 and 2 use the extended tags; lane 1 uses absolute `b`. |
+
+Each addressed spline station lies in its selected knot span. An incidence
+that names one curve twice supplies no unique lane for that curve.
+A parameter-map companion spline uses its own knot array and extrapolation
+count before its station is mapped through the affine or sampled relation.
+
 The sheet class-`21` pcurve stores a compact operand, a chart prefix,
 degree and distinct-knot count as inline compact integers, `0c`,
 the increasing f64 knots, and the UV pole pairs. Prefix
@@ -974,7 +1003,7 @@ knot interval.
 A sheet class-`31` offset cache can name the class-`39` guide directly.
 Its basis uses `P(U)` as the origin and adds the stored signed distance
 along the unit normal of the ruled chart. The outer class-`30` reference
-confirms the U and V intervals of the cached result.
+confirms the U and V intervals of the cached result. The guide knot interval remains the offset chart's U domain.
 
 An A-family class-`34` carrier followed by four contiguous B-family class-`18` records owns those four parameter-space sides. Each side header is a positive compact integer. Its operand is the sum of the header integers from the first side through that side. Their controls include the tuple and line forms above. The explicit direction is axis-aligned and unit within `1e-12`. Two sides have constant U and two have constant V. Their fixed coordinates define the carrier rectangle, and each side interval intersects the other axis's rectangle interval. A side interval can cover part of a rectangle side.
 

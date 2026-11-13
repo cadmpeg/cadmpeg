@@ -428,6 +428,22 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
     assert_eq!(features.len(), 1);
     assert_eq!(features[0].name.as_deref(), Some("Extrude 1"));
     assert_eq!(features[0].suppressed, Some(true));
+    for family in [
+        crate::design::DesignFeatureFamily::Extrude,
+        crate::design::DesignFeatureFamily::Fillet,
+        crate::design::DesignFeatureFamily::Chamfer,
+        crate::design::DesignFeatureFamily::Hole,
+        crate::design::DesignFeatureFamily::Thread,
+        crate::design::DesignFeatureFamily::Combine,
+    ] {
+        assert!(super::super::stateless_scope_is_suppressed(family));
+    }
+    for family in [
+        crate::design::DesignFeatureFamily::Sketch,
+        crate::design::DesignFeatureFamily::Mirror,
+    ] {
+        assert!(!super::super::stateless_scope_is_suppressed(family));
+    }
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {

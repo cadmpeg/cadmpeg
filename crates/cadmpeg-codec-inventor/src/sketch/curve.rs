@@ -31,6 +31,7 @@ pub(crate) fn relation_stays_native(
         Kind::PolygonRelation { .. } | Kind::PolygonControl { .. } | Kind::BlockGroup { .. } => {
             true
         }
+        Kind::CircleParameter { .. } => false,
         Kind::CircleCenter {
             entity: first,
             center: second,

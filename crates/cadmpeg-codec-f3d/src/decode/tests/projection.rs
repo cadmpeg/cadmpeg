@@ -15,9 +15,9 @@
 use cadmpeg_test_support::wire;
 
 use super::super::{
-    bind_mesh_feature_definitions, face_selection_is_resolved, feature_definition_is_incomplete,
-    incomplete_feature_families, mesh_attribute_channels, mesh_texture_asset,
-    mesh_texture_assignments, report_design_projection_gaps, MeshProjection,
+    face_selection_is_resolved, feature_definition_is_incomplete, incomplete_feature_families,
+    mesh_attribute_channels, mesh_texture_asset, mesh_texture_assignments,
+    report_design_projection_gaps, MeshProjection,
 };
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
@@ -221,7 +221,7 @@ fn recipe_side_search_past_its_work_cap_reports_a_loss() {
         .expect("face operand");
     // One counted side with 3,000 payload-prefix splits needs more search
     // work than the cap allows.
-    let mut program = vec![-1, -1, 2, 1, -1, 0, -1, 0, -1, 2, 5, -1, 7, -1];
+    let mut program = vec![-1, -1, 2, 1, -1, 0, -1, 1, -1, 2, 5, -1, 7, -1];
     program.extend_from_slice(&[0; 3000]);
     operand
         .recipe_nodes
@@ -284,6 +284,7 @@ fn capped_rectangular_pattern_instance_search_reports_a_loss() {
                     ),
                     directions: Vec::new(),
                     secondary_direction: None,
+                    distribution: None,
                 },
             )
             .unwrap(),
@@ -358,18 +359,45 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         count: 2,
         tessellations_by_scope: std::collections::HashMap::from([(
             ("f3d:Design/BulkStream.dat".into(), 10),
-            vec!["tessellation:z-body".into(), "tessellation:a-body".into()],
+            vec![
+                "test:model:tessellation#z-body".into(),
+                "test:model:tessellation#a-body".into(),
+            ],
         )]),
     };
 
-    bind_mesh_feature_definitions(&mut features, &[scope], &projection).unwrap();
+    let archive = crate::test_support::zip_test::synthetic_f3d(false);
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        with_test_ctx(|ctx| {
+            super::super::mesh_import::bind_features(
+                ctx,
+                scan,
+                &mut features,
+                &[scope],
+                &projection,
+                &mut Vec::new(),
+            )
+            .unwrap();
+        });
+    });
 
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::MeshImport {
-            tessellations: vec!["tessellation:z-body".into(), "tessellation:a-body".into(),]
+            tessellations: cadmpeg_ir::features::mesh::MeshSelection::Tessellations(
+                vec![
+                    cadmpeg_ir::tessellation::TessellationId::mint(
+                        "test:model:tessellation#z-body"
+                    )
+                    .unwrap(),
+                    cadmpeg_ir::tessellation::TessellationId::mint(
+                        "test:model:tessellation#a-body"
+                    )
+                    .unwrap(),
+                ]
                 .try_into()
-                .unwrap(),
+                .unwrap()
+            ),
         })
     );
     assert!(!feature_definition_is_incomplete(
@@ -1314,6 +1342,55 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
 }
 
 #[test]
+fn incomplete_feature_loss_restates_the_current_features() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+
+    let feature = |id: &str, kind: &str| Feature {
+        product_definition: None,
+        id: FeatureId::mint(id).expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: Some(kind.to_owned()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: kind.into(),
+                parameters: std::collections::BTreeMap::new(),
+            }),
+        ),
+        native_ref: None,
+    };
+    let stale = || {
+        vec![F3dLossCode::FeatureDefinitionIncomplete
+            .note("3 feature scope(s) have no complete neutral feature definition: Assemble=3.")]
+    };
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model
+        .features
+        .push(feature("synthetic:test:id#feature:1", "Assemble"));
+    let mut losses = stale();
+    crate::decode::refresh_incomplete_feature_loss(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].message,
+        "1 feature scope(s) have no complete neutral feature definition: Assemble=1."
+    );
+
+    ir.model.features.clear();
+    let mut losses = stale();
+    crate::decode::refresh_incomplete_feature_loss(&ir, &mut losses);
+    assert!(losses.is_empty());
+
+    let mut losses = Vec::new();
+    crate::decode::refresh_incomplete_feature_loss(&ir, &mut losses);
+    assert!(losses.is_empty());
+}
+
+#[test]
 fn body_copy_features_require_resolved_body_selection() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
@@ -1626,6 +1703,7 @@ fn move_transform_refusal_reports_exact_loss_for_transform_or_selection() {
                 form: DesignMoveForm::Form1,
                 form_offset: 443,
                 transform_reference_offset: None,
+                prefix: None,
             });
         }
         let mut report = cadmpeg_ir::codec::DecodeBody {

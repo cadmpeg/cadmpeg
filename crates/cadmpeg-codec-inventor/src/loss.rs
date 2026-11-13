@@ -83,6 +83,8 @@ pub(crate) enum InventorLossCode {
     /// A polygon control relation names two different vertex references; the
     /// repeated-vertex reading does not apply and both references stay native.
     SketchPolygonControlVerticesDiffer,
+    /// A circle parameter record binds a parameter to a circle with an unresolved role.
+    SketchCircleParameterNative,
     /// A spline-point relation retains unresolved locus and parameter roles.
     SketchSplinePointNative,
     /// A spline entity retains its source curve pending exact operands.
@@ -129,6 +131,8 @@ pub(crate) enum InventorLossCode {
     FeatureExtrusionProfileNative,
     /// A surface extrusion direction rests on the assumed polarity of Boolean slot 3.
     FeatureSurfaceExtrusionPolarityAssumed,
+    /// A through-all surface extrusion reads its neutral extent as bounded by the selected solid body.
+    FeatureSurfaceExtrusionSolidBoundAssumed,
     /// A planar extrusion target retains its unresolved body-face identity.
     FeatureExtrusionTargetFaceNative,
     /// Rectangular patterns retain construction operands outside the fixed-spacing feature form.
@@ -289,6 +293,17 @@ pub(crate) enum InventorLossCode {
     DrawingNativeOnly,
     /// A drawing record is outside its typed prefix form.
     DrawingRecordMalformed,
+    /// A dimension geometry intent names no unique active-body face or edge.
+    PmiTargetUnresolved,
+    /// A dimension value record stores a tolerance form outside the
+    /// established codes.
+    PmiToleranceUnresolved,
+    /// A dimension owner or value record is outside the established grammar.
+    PmiRecordMalformed,
+    /// A feature control frame is outside the established grammar.
+    PmiFrameNative,
+    /// A feature control frame names datums that do not resolve.
+    PmiDatumSystemUnresolved,
 }
 
 impl InventorLossCode {
@@ -319,6 +334,7 @@ impl InventorLossCode {
         Self::SketchBoxRoleMismatch,
         Self::SketchMemberCurveNative,
         Self::SketchPolygonControlVerticesDiffer,
+        Self::SketchCircleParameterNative,
         Self::SketchSplinePointNative,
         Self::SketchSplineCurveNative,
         Self::SketchEllipseCurveNative,
@@ -341,6 +357,7 @@ impl InventorLossCode {
         Self::FeatureExtrusionOperandsNative,
         Self::FeatureExtrusionProfileNative,
         Self::FeatureSurfaceExtrusionPolarityAssumed,
+        Self::FeatureSurfaceExtrusionSolidBoundAssumed,
         Self::FeatureExtrusionTargetFaceNative,
         Self::FeatureRectangularPatternOperandsNative,
         Self::FeatureThreadDefinitionPartial,
@@ -421,6 +438,11 @@ impl InventorLossCode {
         Self::FeatureHistoryStateUnbound,
         Self::DrawingNativeOnly,
         Self::DrawingRecordMalformed,
+        Self::PmiTargetUnresolved,
+        Self::PmiToleranceUnresolved,
+        Self::PmiRecordMalformed,
+        Self::PmiFrameNative,
+        Self::PmiDatumSystemUnresolved,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -453,6 +475,7 @@ impl InventorLossCode {
             Self::SketchBoxRoleMismatch => "sketch.box-role-mismatch",
             Self::SketchMemberCurveNative => "sketch.member-curve-native",
             Self::SketchPolygonControlVerticesDiffer => "sketch.polygon-control-vertices-differ",
+            Self::SketchCircleParameterNative => "sketch.circle-parameter-native",
             Self::SketchSplinePointNative => "sketch.spline-point-native",
             Self::SketchSplineCurveNative => "sketch.spline-curve-native",
             Self::SketchEllipseCurveNative => "sketch.ellipse-curve-native",
@@ -466,6 +489,9 @@ impl InventorLossCode {
             Self::FeatureExtrusionProfileNative => "feature.extrusion-profile-native",
             Self::FeatureSurfaceExtrusionPolarityAssumed => {
                 "feature.surface-extrusion-polarity-assumed"
+            }
+            Self::FeatureSurfaceExtrusionSolidBoundAssumed => {
+                "feature.surface-extrusion-solid-bound-assumed"
             }
             Self::FeatureExtrusionTargetFaceNative => "feature.extrusion-target-face-native",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
@@ -575,6 +601,11 @@ impl InventorLossCode {
             Self::FeatureHistoryStateUnbound => "feature.history-state-unbound",
             Self::DrawingNativeOnly => "drawing.native-only",
             Self::DrawingRecordMalformed => "drawing.record-malformed",
+            Self::PmiTargetUnresolved => "pmi.target-unresolved",
+            Self::PmiToleranceUnresolved => "pmi.tolerance-unresolved",
+            Self::PmiRecordMalformed => "pmi.record-malformed",
+            Self::PmiFrameNative => "pmi.frame-native",
+            Self::PmiDatumSystemUnresolved => "pmi.datum-system-unresolved",
         }
     }
 
@@ -590,6 +621,11 @@ impl InventorLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::PmiTargetUnresolved
+            | Self::PmiToleranceUnresolved
+            | Self::PmiRecordMalformed
+            | Self::PmiFrameNative
+            | Self::PmiDatumSystemUnresolved => LossTaxonomy::PmiOmitted,
             Self::GeometryKernelCarrierNotTransferred
             | Self::GeometryProceduralSurfaceNotTransferred => LossTaxonomy::GeometryNotTransferred,
             Self::DrawingNativeOnly | Self::RseSegmentPairUntyped | Self::UfrxSchemaUnsupported => {
@@ -629,6 +665,7 @@ impl InventorLossCode {
             | Self::FeatureExtrusionOperandsNative
             | Self::FeatureExtrusionProfileNative
             | Self::FeatureSurfaceExtrusionPolarityAssumed
+            | Self::FeatureSurfaceExtrusionSolidBoundAssumed
             | Self::FeatureExtrusionTargetFaceNative
             | Self::FeatureRectangularPatternOperandsNative
             | Self::FeatureThreadDefinitionPartial
@@ -681,6 +718,7 @@ impl InventorLossCode {
             | Self::SketchBoxRoleMismatch
             | Self::SketchMemberCurveNative
             | Self::SketchPolygonControlVerticesDiffer
+            | Self::SketchCircleParameterNative
             | Self::SketchSplinePointNative
             | Self::SketchSplineCurveNative
             | Self::SketchEllipseCurveNative
@@ -782,6 +820,7 @@ mod tests {
                 "sketch.box-role-mismatch",
                 "sketch.member-curve-native",
                 "sketch.polygon-control-vertices-differ",
+                "sketch.circle-parameter-native",
                 "sketch.spline-point-native",
                 "sketch.spline-curve-native",
                 "sketch.ellipse-curve-native",
@@ -804,6 +843,7 @@ mod tests {
                 "feature.extrusion-operands-native",
                 "feature.extrusion-profile-native",
                 "feature.surface-extrusion-polarity-assumed",
+                "feature.surface-extrusion-solid-bound-assumed",
                 "feature.extrusion-target-face-native",
                 "feature.rectangular-pattern-operands-native",
                 "feature.thread-definition-partial",
@@ -884,6 +924,11 @@ mod tests {
                 "feature.history-state-unbound",
                 "drawing.native-only",
                 "drawing.record-malformed",
+                "pmi.target-unresolved",
+                "pmi.tolerance-unresolved",
+                "pmi.record-malformed",
+                "pmi.frame-native",
+                "pmi.datum-system-unresolved",
             ]
         );
     }

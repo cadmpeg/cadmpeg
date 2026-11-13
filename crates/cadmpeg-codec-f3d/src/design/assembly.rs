@@ -1979,6 +1979,7 @@ mod tests {
             &[],
             &table.references,
             &occurrences,
+            &[],
         );
         let typed_path = path(11, true).unwrap();
         let legacy_path = DesignAssemblyOperandPath::try_new(
@@ -2088,6 +2089,7 @@ mod tests {
             &[],
             &restored.xref_references,
             &kept,
+            &[],
         );
         assert!(!kept_bindings.requires_external_binding("f3d:Design/BulkStream.dat"));
         let kept_joint = super::project_assembly_joints_with_paths(
@@ -2105,6 +2107,7 @@ mod tests {
         let bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &restored.xref_references,
+            &[],
             &[],
         );
         let refused = super::project_assembly_joints_with_paths(
@@ -2126,8 +2129,12 @@ mod tests {
         let mut with_child = table.references.clone();
         with_child.push(missing_child);
         let ancestor = instances(&table.references);
-        let partial_bindings =
-            super::super::components::paths::LocalOccurrencePaths::new(&[], &with_child, &ancestor);
+        let partial_bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &with_child,
+            &ancestor,
+            &[],
+        );
         let original = path(11, true).unwrap();
         let mut keys = original.occurrence_guids().to_vec();
         keys.push(crate::records::identity::Located {
@@ -2174,8 +2181,12 @@ mod tests {
         let mut other_document = restored.xref_references[0].clone();
         other_document.id =
             "f3d:xref/role-other/reference-0/occurrence-0/xref:reference#0".to_owned();
-        let other_bindings =
-            super::super::components::paths::LocalOccurrencePaths::new(&[], &[other_document], &[]);
+        let other_bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &[other_document],
+            &[],
+            &[],
+        );
         let independent = super::project_assembly_joints_with_paths(
             &restored.design_parameter_scopes,
             &[],
@@ -2200,6 +2211,7 @@ mod tests {
             &[],
             &table.references,
             &occurrences,
+            &[],
         );
         let refused = super::project_assembly_joints_with_paths(
             &scopes(true, false),
@@ -2248,7 +2260,7 @@ mod tests {
             &std::collections::BTreeMap::new(),
             &[],
             &inserts,
-            &super::super::components::paths::LocalOccurrencePaths::new(&[], &[], &[]),
+            &super::super::components::paths::LocalOccurrencePaths::new(&[], &[], &[], &[]),
         )
         .unwrap();
         assert!(matches!(
@@ -2438,6 +2450,7 @@ mod tests {
             &[],
             &table.references[..1],
             &occurrences,
+            &[],
         );
         null_group[0]
             .try_edit(|draft| {
@@ -3314,6 +3327,7 @@ mod tests {
                     occurrence_identity: None,
                     neutron_role: "component-role".into(),
                     neutron_role_offset: 0,
+                    occurrence_key: None,
                     placement: None,
                 },
             );

@@ -226,6 +226,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-protein`        | `src/lib.rs`                                       | `MAX_RECOVERY_VALUES`                     | `1_024`                                                 | 2    | Declared value count of one property. Excess is `Malformed`; the record goes to `rejected`.                                                                                                                                                                                  |
 | `cadmpeg-protein`        | `src/lib.rs`                                       | `MAX_INHERITED_PROPERTIES`                | `1 << 18`                                               | 4    | Property entries one `SchemaCatalog` materializes across all inherited schema closures, checked before each closure is cloned. A schema that would pass it is not resolved and its record goes to `rejected`; Inventor reports `protein.asset-rejected` and F3D a note.      |
 | `cadmpeg`                | `src/query/mod.rs`                                 | `MAX_QUERY_INPUT_BYTES`                   | `256 * 1024 * 1024`                                     | N    | CLI `query` input file size; not a decode path.                                                                                                                                                                                                                              |
+| `cadmpeg`                | `src/query/mod.rs`                                 | `MAX_COUNTS_INPUT_BYTES`                  | `1024 * 1024 * 1024`                                    | N    | CLI `query counts` streamed input file size; not a decode path.                                                                                                                                                                                                                              |
 | `cadmpeg` | `src/repro.rs` | `MAX_REPRO_INPUT_BYTES` | `256 * 1024 * 1024` | N | Reproduction report and bundle JSON input size. |
 | `cadmpeg`                | `src/inspect/numeric.rs`                           | `MAX_WIDTH`                               | `8`                                                     | N    | Widest scalar type `inspect read` decodes.                                                                                                                                                                                                                                   |
 | `cadmpeg-codec-step`     | `src/strings.rs`                                   | `MAX_STORED_STRING_OCTETS`                | `32_767`                                                | 2    | Encoded length of one string token before decoding. Excess is a `StringError` for that token.                                                                                                                                                                                |
@@ -437,6 +438,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/brep/evaluation.rs`                           | `MAX_FOOT_STEPS`                          | `16`                                                    | 4    | Newton steps of the nearest point on an analytic surface. Past it the point has no foot. |
 | `cadmpeg-codec-sldprt`   | `src/brep/fit.rs`                                  | `MAX_SPANS`                               | `4096`                                                  | 4    | Spans of one fitted curve on a support. A fit that needs more leaves the curve without a cache. |
 | `cadmpeg-codec-sldprt`   | `src/brep/index.rs`                                | `MAX_BLEND_NESTING`                       | `3`                                                     | 4    | Blends a rolling-ball support may nest within. A deeper support leaves the blend without a cache. |
+| `cadmpeg-codec-sldprt` | `src/history/extrude_direction.rs` | `MAX_WITNESS_WORK` | `2_000_000` | 4 | Cap, mesh and profile-sample tests of the implicit extrusion travel witness. Past it the remaining features get no witness and keep their decoded direction. |
 | `cadmpeg-codec-catia`    | `src/families/standard/topology.rs`                | `MAX_DUPLICATE_FACE_OPERATIONS`           | `65_536`                                                | 4    | Branch operations of the duplicate-face edge search; its depth stops at the budget's recursion guard. Exhaustion also exhausts the enclosing topology `WorkBudget`, so the decode reports the topology search failure. |
 | `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_A_PAYLOAD_BYTES` | `1024` | 2 | Bytes admitted for an A-family scalar map. A larger payload leaves the record untyped. |
 | `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_B_SAMPLE_PAIRS` | `12` | 1 | The one-byte B-family payload length permits at most twelve source and target pairs after the fixed fields. |
@@ -444,7 +446,12 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-catia` | `src/families/freeform/mod.rs` | `MAX_PATCH_RECORD_VISITS_PER_RECORD` | `64` | 4 | Rolling-ball search visits per input record. Excess candidates skip the search and charge a loss. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch.rs` | `MAX_FIT_CANDIDATES_FLOOR` | `512` | 4 | Floor for the owned face fit allowance, which also admits one candidate per eight input records, rounded up. Transfer retains the patches collected before the cap and reports the skipped candidates. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/sheet_group.rs` | `MAX_VERTEX_RETRIES` | `3` | 4 | Recovery passes for pending faces using shared vertex witnesses. Pending faces stay untransferred after the last pass. |
+| `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/sheet_carrier.rs` | `MAX_ROLLING_EXTENSION_MM` | `0.005` | N | Largest model-space displacement in mm from an extended rolling section to its stored boundary. A larger gap rejects the extension. |
+| `cadmpeg-ir` | `src/eval.rs` | `MAX_TRANSVERSE_EXTENSION` | `0.01` | N | Largest rolling-section parameter extension beyond either end of [0, 1]. A larger excursion rejects the evaluation. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/sheet_group/endpoint_sites.rs` | `MAX_ENDPOINT_GAP_MM` | `0.005` | N | Maximum distance in mm between a corroborated vertex and each incident fitted endpoint. A larger gap keeps the fitted endpoint positions. |
+| `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/edge_alignment.rs` | `MAX_ENDPOINT_SEED_GAP_MM` | `0.005` | N | Maximum endpoint distance in mm for a corroborated shared-trim alignment seed. The fitted curve and surface lifts meet the ordinary edge gap. |
+| `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/transfer.rs` | `MAX_SHARED_EDGE_SEED_GAP_MM` | `0.005` | N | Maximum sampled boundary separation in mm for a retry using the admitted shared edge. Reprojection must meet the surface lift gap. |
+| `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/transfer.rs` | `MAX_CORROBORATED_VERTEX_GAP_MM` | `0.005` | N | Maximum distance in mm for a vertex repair corroborated by an incident matching edge. Larger discrepancies retain the conflicting vertex. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/surface_fit.rs` | `MAX_REFINEMENTS` | `9` | 4 | Refinements of a tensor surface grid after the initial fit. A remaining residual rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/surface_fit.rs` | `MAX_SPANS` | `48` | 4 | Knot spans per axis of a fitted tensor surface. A larger grid rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/trimmed_face.rs` | `MAX_ALTERNATE_LINES` | `4` | 4 | Ambiguous line stations admitted to the alternate boundary search. Excess skips the search. |
@@ -545,26 +552,26 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 330.
+Production `MAX_*` constants: 337.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
 | 2    | Per-input bound            | 76    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 166   |
-| N    | Not a decode bound         | 46    |
-|      | Total                      | 330   |
+| 4    | Local work cap             | 167   |
+| N    | Not a decode bound         | 52    |
+|      | Total                      | 337   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
-`cadmpeg-protein` 3, `cadmpeg` 3, `cadmpeg-codec-step` 8,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
+`cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 5,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 24,
-`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 36,
-`cadmpeg-codec-catia` 75, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
+`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 37,
+`cadmpeg-codec-catia` 79, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
 ## Routing

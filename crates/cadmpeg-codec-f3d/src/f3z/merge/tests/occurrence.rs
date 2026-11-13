@@ -374,6 +374,7 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
 #[test]
 fn occurrence_merge_remaps_and_retains_native_records() {
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             42,
             crate::records::sketch_placement::DesignSketchFrameForm::MemberCompact {
@@ -1689,13 +1690,63 @@ fn standalone_joint_of_a_complete_scope_binds_its_feature() {
 }
 
 #[test]
-fn standalone_joint_below_an_unmerged_placement_keeps_its_decoded_operand() {
+fn standalone_joint_inside_an_unmerged_document_keeps_a_nested_occurrence_path() {
     use cadmpeg_ir::features::FeatureOperation;
-    let (mut model, _) =
+    use cadmpeg_ir::products::OperandContainer;
+    const NESTED: &str = "ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    let (mut model, insertion) = standalone_joint_model(vec![NESTED.into()]);
+    let complete = std::collections::BTreeSet::from(["f3d:scope#standalone".to_owned()]);
+    let children = std::collections::BTreeMap::new();
+    let mut losses = Vec::new();
+    super::super::rebind_joints(
+        &mut super::super::JointRows {
+            occurrences: &model.occurrences,
+            joints: &mut model.assembly_joints,
+            features: &mut model.features,
+        },
+        &children,
+        &children,
+        &complete,
+        super::super::JointRebind::CompleteScopes,
+        &mut losses,
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::AssemblyOperandNestedPathRetained.kind()
+    );
+    let operand = &model.assembly_joints[0]
+        .connectors()
+        .next()
+        .unwrap()
+        .operand;
+    assert_eq!(
+        operand.container,
+        OperandContainer::Occurrence {
+            occurrence: insertion,
+            occurrence_path: vec![NESTED.to_owned()],
+        }
+    );
+    assert!(operand.subelements.is_empty());
+    assert!(matches!(
+        model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. })
+    ));
+}
+
+#[test]
+fn standalone_joint_with_an_unknown_merged_child_key_keeps_its_decoded_operand() {
+    use cadmpeg_ir::features::FeatureOperation;
+    use cadmpeg_ir::ids::OccurrenceId;
+    let (mut model, insertion) =
         standalone_joint_model(vec!["ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee".into()]);
     let decoded = model.assembly_joints.clone();
     let complete = std::collections::BTreeSet::from(["f3d:scope#standalone".to_owned()]);
-    let children = std::collections::BTreeMap::new();
+    let child = OccurrenceId::mint("f3d:model:occurrence#child").unwrap();
+    let children = std::collections::BTreeMap::from([(
+        (insertion, "11111111-bbbb-4ccc-8ddd-eeeeeeeeeeee".to_owned()),
+        Some(&child),
+    )]);
     let mut losses = Vec::new();
     super::super::rebind_joints(
         &mut super::super::JointRows {
@@ -1713,11 +1764,11 @@ fn standalone_joint_below_an_unmerged_placement_keeps_its_decoded_operand() {
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,
-        crate::loss::F3dLossCode::AssemblyOperandDescentUnresolved.kind()
+        crate::loss::F3dLossCode::AssemblyJointSourceBindingAssumed.kind()
     );
     assert!(matches!(
         model.features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. })
     ));
 }
 
@@ -1848,4 +1899,45 @@ fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
             );
         }
     }
+}
+
+#[test]
+fn standalone_external_joint_binds_without_changing_source_operands() {
+    use cadmpeg_ir::products::{ExternalDocument, JointOperand};
+    let (mut model, _) = standalone_joint_model(Vec::new());
+    for (ordinal, connector) in model.assembly_joints[0].connectors_mut().enumerate() {
+        connector.operand = JointOperand::external(
+            ExternalDocument::document_id("11111111-2222-3333-4444-555555555555"),
+            format!("source-occurrence-{ordinal}"),
+            vec!["nested-source-occurrence".into()],
+        );
+    }
+    let decoded = model.assembly_joints.clone();
+    let complete = std::collections::BTreeSet::from(["f3d:scope#standalone".to_owned()]);
+    let children = std::collections::BTreeMap::new();
+    let mut losses = Vec::new();
+    super::super::rebind_joints(
+        &mut super::super::JointRows {
+            occurrences: &model.occurrences,
+            joints: &mut model.assembly_joints,
+            features: &mut model.features,
+        },
+        &children,
+        &children,
+        &complete,
+        super::super::JointRebind::CompleteScopes,
+        &mut losses,
+    );
+    assert_eq!(model.assembly_joints, decoded);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::AssemblyJointSourceBindingAssumed.kind()
+    );
+    assert_eq!(
+        model.features[0].evaluation.definition(),
+        &FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
+            joint: decoded[0].id.clone(),
+        })
+    );
 }

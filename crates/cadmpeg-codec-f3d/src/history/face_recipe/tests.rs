@@ -75,6 +75,7 @@ fn operand() -> DesignFaceOperand {
                 selector: 1,
                 selector_offset: ordinal,
                 token: format!("face{ordinal}"),
+                token_integer: 0,
                 token_offset: ordinal,
                 design_reference: i64::try_from(ordinal).unwrap(),
                 design_reference_offset: ordinal,
@@ -121,6 +122,100 @@ fn bounded_face_nodes_resolve_the_complete_referenced_boundary() {
     assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), Some(100));
     assert!(operand.preceding_candidate_faces.is_empty());
     assert!(operand.candidate_faces.is_empty());
+}
+
+#[test]
+fn bounded_face_nodes_resolve_a_complete_loop_of_a_face_with_an_inner_loop() {
+    let mut topology = topology();
+    topology.faces.push(104);
+    topology.edges.push(20);
+    topology.vertices.push(5);
+    topology.edge_vertices.push(AsmHistoricalEdge {
+        edge: 20,
+        start_vertex: 5,
+        end_vertex: 5,
+    });
+    topology.face_loops[0].member_refs.push(300);
+    topology.face_loops.push(AsmHistoricalRelation {
+        owner_ref: 104,
+        member_refs: vec![301],
+    });
+    for (loop_, coedge, radial_next) in [(300, 2000, 2001), (301, 2001, 2000)] {
+        topology.loop_coedges.push(AsmHistoricalRelation {
+            owner_ref: loop_,
+            member_refs: vec![coedge],
+        });
+        topology.coedge_topology.push(AsmHistoricalCoedge {
+            coedge,
+            owner_loop: loop_,
+            edge: 20,
+            next: coedge,
+            previous: coedge,
+            radial_next,
+        });
+    }
+    let index = FaceRecipeIndex::new(&topology);
+    let mut operand = operand();
+    assert_eq!(index.resolve(&operand), None);
+    assert_eq!(index.resolve_loop(&operand), Some(100));
+    operand.recipe_nodes.truncate(2);
+    operand.recipe_program[2] = 2;
+    assert_eq!(index.resolve_loop(&operand), None);
+}
+
+#[test]
+fn bounded_face_loop_proof_requires_distinct_edges_and_complete_endpoint_fans() {
+    let index = FaceRecipeIndex::new(&topology());
+    let mut operand = operand();
+    operand.recipe_nodes[2] = operand.recipe_nodes[0].clone();
+    assert_eq!(index.resolve_loop(&operand), None);
+    let mut operand = self::operand();
+    operand.recipe_nodes[0]
+        .recipe_structure
+        .as_mut()
+        .unwrap()
+        .sides[0]
+        .scalars[0] = 2;
+    assert_eq!(index.resolve_loop(&operand), None);
+}
+
+#[test]
+fn bounded_face_loop_proof_requires_one_face_across_all_candidate_lanes() {
+    let mut topology = topology();
+    let mut other = topology.clone();
+    for face in &mut other.faces {
+        *face += 1000;
+    }
+    for edge in &mut other.edge_vertices {
+        edge.edge += 1000;
+        edge.start_vertex += 1000;
+        edge.end_vertex += 1000;
+    }
+    for row in other.face_loops.iter_mut().chain(&mut other.loop_coedges) {
+        row.owner_ref += 1000;
+        for member in &mut row.member_refs {
+            *member += 1000;
+        }
+    }
+    for row in &mut other.coedge_topology {
+        row.coedge += 1000;
+        row.owner_loop += 1000;
+        row.edge += 1000;
+        row.next += 1000;
+        row.previous += 1000;
+    }
+    topology.faces.extend(other.faces);
+    topology.edge_vertices.extend(other.edge_vertices);
+    topology.face_loops.extend(other.face_loops);
+    topology.loop_coedges.extend(other.loop_coedges);
+    topology.coedge_topology.extend(other.coedge_topology);
+    let mut operand = operand();
+    for (ordinal, reference) in operand.recipe_references.iter_mut().enumerate() {
+        reference.candidate_faces.push(crate::ids::brep_face_id(
+            1100 + i64::try_from(ordinal).unwrap(),
+        ));
+    }
+    assert_eq!(FaceRecipeIndex::new(&topology).resolve_loop(&operand), None);
 }
 
 #[test]
@@ -345,4 +440,14 @@ fn bounded_face_nodes_bind_two_edge_loops_with_two_shared_vertices() {
         }
     }
     assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), Some(100));
+}
+
+#[test]
+fn a_one_clause_node_leaves_the_bounded_face_member_unresolved() {
+    let topology = topology();
+    let mut operand = operand();
+    let structure = operand.recipe_nodes[0].recipe_structure.as_mut().unwrap();
+    structure.prelude[1] = 1;
+    structure.sides.truncate(1);
+    assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), None);
 }

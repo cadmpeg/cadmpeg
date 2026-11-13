@@ -32,9 +32,14 @@ fn mirror_new_body_uses_the_source_collection_and_generated_result() {
         result.bodies()[0].as_str(),
         fixture.properties.last().expect("output").id()
     );
-    assert!(fixture
-        .index()
-        .matches_projection(&source, &fixture.label, &feature, &result, |_| None));
+    assert!(fixture.index().matches_projection(
+        &source,
+        &fixture.label,
+        &feature,
+        &result,
+        false,
+        |_| None
+    ));
 }
 
 #[test]
@@ -264,12 +269,12 @@ fn mirror_source_resolves_to_the_current_body_of_its_wrapper() {
     let mut resolved = feature.clone();
     resolved.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(definition);
     let index = fixture.index().with_bodies(&joined);
-    assert!(index.matches_projection(&source, &fixture.label, &resolved, &result, |_| None));
+    assert!(index.matches_projection(&source, &fixture.label, &resolved, &result, false, |_| None));
     // A wrapper without a current body leaves the source unresolved, and an
     // unresolved projection does not match a resolved feature.
     let empty = std::collections::HashMap::new();
     let index = fixture.index().with_bodies(&empty);
-    assert!(!index.matches_projection(&source, &fixture.label, &resolved, &result, |_| None));
+    assert!(!index.matches_projection(&source, &fixture.label, &resolved, &result, false, |_| None));
 }
 
 #[test]

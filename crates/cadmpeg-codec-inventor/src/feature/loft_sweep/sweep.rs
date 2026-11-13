@@ -248,7 +248,12 @@ pub(super) fn project(
         source.header.source_index,
         radius,
         name,
-        &path.names,
+        &path
+            .names
+            .iter()
+            .enumerate()
+            .map(|(at, name)| (*name, path.curves.get(at).copied()))
+            .collect::<Vec<_>>(),
         path.endpoints,
     )
     .ok_or(NativeReason::ResultTopology)?;

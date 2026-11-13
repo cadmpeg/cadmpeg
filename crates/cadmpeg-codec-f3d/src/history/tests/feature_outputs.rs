@@ -10,7 +10,7 @@ fn active_body() -> cadmpeg_ir::topology::Body {
     body
 }
 
-fn base_feature() -> cadmpeg_ir::features::Feature {
+pub(super) fn base_feature() -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::{
         BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
     };
@@ -40,7 +40,7 @@ fn base_feature() -> cadmpeg_ir::features::Feature {
     }
 }
 
-fn state(
+pub(super) fn state(
     state_id: i64,
     node_index: i64,
     next_ref: Option<i64>,
@@ -68,7 +68,7 @@ fn state(
     )
 }
 
-fn scope_between(
+pub(super) fn scope_between(
     state_id: i64,
     previous_state_id: i64,
 ) -> crate::records::feature::scope::DesignParameterScope {
@@ -427,7 +427,9 @@ fn stored_body_scope_refuses_missing_bodies_and_ambiguous_states() {
         .unwrap();
         assert!(matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Native { .. })
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+        }) if Some(native.as_str()) == feature.native_ref.as_deref()
         ));
         let losses = super::super::stored_bodies::losses(&[feature], &[scope]);
         assert_eq!(losses.len(), 1);
@@ -555,7 +557,7 @@ fn stored_body_scope_reports_recipe_absence_from_snapshot_kind() {
 }
 
 #[test]
-fn stored_body_scope_without_any_proof_keeps_native_definition() {
+fn stored_body_scope_without_any_proof_keeps_its_neutral_snapshot() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut feature, scope, _, _) = output_binding_inputs();
     feature.evaluation.set_outputs(Default::default());
@@ -569,8 +571,9 @@ fn stored_body_scope_without_any_proof_keeps_native_definition() {
     )
     .unwrap();
     assert!(matches!(feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
-        if kind.as_str() == "Base Feature"));
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+        }) if native == "native:scope"));
 }
 
 fn history_in_source(source: &str, bodies: &[i64]) -> crate::history_records::AsmHistory {
@@ -635,7 +638,9 @@ fn stored_body_scope_refuses_a_body_from_another_history_blob() {
     .unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+        }) if Some(native.as_str()) == feature.native_ref.as_deref()
     ));
     let losses = super::super::stored_bodies::losses(&[feature], &[scope]);
     assert_eq!(losses.len(), 1);
@@ -676,7 +681,9 @@ fn stored_body_scope_refuses_a_declared_body_count_mismatch() {
     .unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+        }) if Some(native.as_str()) == feature.native_ref.as_deref()
     ));
     let losses = super::super::stored_bodies::losses(&[feature], &[scope]);
     assert_eq!(losses.len(), 1);
@@ -1098,6 +1105,7 @@ fn historical_partial_and_native_edge_selections_test() {
         ..Default::default()
     };
     state0_topo.edge_samples.push(AsmHistoricalEdgeSample {
+        bounds: None,
         edge: 10,
         interior: Point3::new(1.0, 0.0, 0.0),
         tangent: None,
@@ -1805,7 +1813,7 @@ fn feature_output_body_namespace_refusal_has_a_loss() {
 }
 
 #[test]
-fn stored_body_scope_keeps_equal_state_without_a_stored_body_proof_native() {
+fn stored_body_scope_keeps_equal_state_without_a_stored_body_proof_unbound() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut feature, _, _, _) = native_base_feature();
     let scope = scope_between(0, 0);
@@ -1829,7 +1837,9 @@ fn stored_body_scope_keeps_equal_state_without_a_stored_body_proof_native() {
     assert!(feature.evaluation.outputs().is_empty());
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+        }) if Some(native.as_str()) == feature.native_ref.as_deref()
     ));
 }
 
@@ -1866,3 +1876,5 @@ mod edge_midpoints;
 mod saved_edges;
 mod split_plane;
 mod stored_results;
+
+mod transition_geometry;

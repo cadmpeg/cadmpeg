@@ -4,6 +4,56 @@
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
+/// Byte offsets for the `pm_dc_751ade_label_owner_body_v25` record.
+///
+/// Spec §13. Record length 36 B.
+///
+/// ```text
+/// Offsets start after the versioned state content header in segment major version 25.
+/// ```
+pub(crate) mod pm_dc_751ade_label_owner_body_v25 {
+    /// Record length in bytes. Spec §13.
+    pub(crate) const LEN: usize = 36;
+    /// Offset of `state` (`i32`, little-endian). Spec §13.
+    pub(crate) const STATE: usize = 0;
+    /// Stated value of `state` (`i32`). Spec §13.
+    pub(crate) const STATE_VALUE: i32 = -1;
+    /// Offset of `first_reference` (`u32`, little-endian). Spec §13.
+    pub(crate) const FIRST_REFERENCE: usize = 4;
+    /// Offset of `work_plane` (`u32`, little-endian). Spec §13.
+    pub(crate) const WORK_PLANE: usize = 8;
+    /// Offset of `references` (`u32[5]`, little-endian). Spec §13.
+    pub(crate) const REFERENCES: usize = 16;
+}
+
+/// Byte offsets for the `pm_dc_751ade_label_owner_body_v28` record.
+///
+/// Spec §13. Record length 44 B.
+///
+/// ```text
+/// Offsets start after the versioned state content header in segment major version 28.
+/// ```
+pub(crate) mod pm_dc_751ade_label_owner_body_v28 {
+    /// Record length in bytes. Spec §13.
+    pub(crate) const LEN: usize = 44;
+    /// Offset of `state` (`i32`, little-endian). Spec §13.
+    pub(crate) const STATE: usize = 0;
+    /// Offset of `first_reference` (`u32`, little-endian). Spec §13.
+    pub(crate) const FIRST_REFERENCE: usize = 4;
+    /// Offset of `work_plane` (`u32`, little-endian). Spec §13.
+    pub(crate) const WORK_PLANE: usize = 8;
+    /// Offset of `empty_list_marker` (`u32`, little-endian). Spec §13.
+    pub(crate) const EMPTY_LIST_MARKER: usize = 16;
+    /// Stated value of `empty_list_marker` (`u32`). Spec §13.
+    pub(crate) const EMPTY_LIST_MARKER_VALUE: u32 = 0x3000_0002;
+    /// Offset of `empty_list_count` (`u32`, little-endian). Spec §13.
+    pub(crate) const EMPTY_LIST_COUNT: usize = 20;
+    /// Stated value of `empty_list_count` (`u32`). Spec §13.
+    pub(crate) const EMPTY_LIST_COUNT_VALUE: u32 = 0x0000_0000;
+    /// Offset of `references` (`u32[5]`, little-endian). Spec §13.
+    pub(crate) const REFERENCES: usize = 24;
+}
+
 /// Byte offsets for the `pm_dc_derived_source_field` record.
 ///
 /// Spec §13.4. Record length 4 B.
@@ -494,6 +544,24 @@ pub(crate) mod pm_dc_mirror_instance_map_single_tail_v19 {
     pub(crate) const OWNER: usize = 52;
 }
 
+/// Byte offsets for the `pm_dc_mirror_plane_reference_tail_v19` record.
+///
+/// Spec §13. Record length 18 B.
+///
+/// ```text
+/// Offsets start after the segment-major-19 content header.
+/// ```
+pub(crate) mod pm_dc_mirror_plane_reference_tail_v19 {
+    /// Record length in bytes. Spec §13.
+    pub(crate) const LEN: usize = 18;
+    /// Stated value of `state` (`i32`). Spec §13.
+    pub(crate) const STATE_VALUE: i32 = -1;
+    /// Stated value of `marker0` (`u8`). Spec §13.
+    pub(crate) const MARKER0_VALUE: u8 = 1;
+    /// Stated value of `marker1` (`u8`). Spec §13.
+    pub(crate) const MARKER1_VALUE: u8 = 5;
+}
+
 /// Byte offsets for the `pm_dc_mirror_generated_body_feature_v19` record.
 ///
 /// Spec §13. Record length 66 B.
@@ -680,4 +748,148 @@ pub(crate) mod pm_dc_box_frame_tail {
     pub(crate) const TAIL_SCALE: usize = 6;
     /// Offset of `tail_state` (`u8`). Spec §12.
     pub(crate) const TAIL_STATE: usize = 14;
+}
+
+/// Byte offsets for the `pm_dc_frame_row_v25` record.
+///
+/// Spec §13.11. Record length 82 B.
+///
+/// ```text
+/// A feature-control-frame row in segment major version 25.
+/// ```
+pub(crate) mod pm_dc_frame_row_v25 {
+    /// Record length in bytes. Spec §13.11.
+    pub(crate) const LEN: usize = 82;
+    /// Offset of `characteristic` (`u32`, little-endian). Spec §13.11.
+    pub(crate) const CHARACTERISTIC: usize = 6;
+    /// Offset of `magnitude` (`u32`, little-endian). Spec §13.11.
+    pub(crate) const MAGNITUDE: usize = 10;
+    /// Offset of `zone_modifiers` (`u32[3]`, little-endian). Spec §13.11.
+    pub(crate) const ZONE_MODIFIERS: usize = 14;
+    /// Offset of `second_value` (`u32`, little-endian). Spec §13.11.
+    pub(crate) const SECOND_VALUE: usize = 26;
+    /// Offset of `third_value` (`u32`, little-endian). Spec §13.11.
+    pub(crate) const THIRD_VALUE: usize = 30;
+    /// Offset of `datums` (`u32[3]`, little-endian). Spec §13.11.
+    pub(crate) const DATUMS: usize = 34;
+    /// Offset of `datum_modifiers` (`u8[36]`). Spec §13.11.
+    pub(crate) const DATUM_MODIFIERS: usize = 46;
+}
+
+/// Byte offsets for the `pm_dc_frame_row_v28` record.
+///
+/// Spec §13.11. Record length 102 B.
+///
+/// ```text
+/// A feature-control-frame row in segment major version 28.
+/// ```
+pub(crate) mod pm_dc_frame_row_v28 {
+    /// Record length in bytes. Spec §13.11.
+    pub(crate) const LEN: usize = 102;
+    /// Offset of `frame_reference` (`u32`, little-endian). Spec §13.11.
+    pub(crate) const FRAME_REFERENCE: usize = 98;
+}
+
+/// Byte offsets for the `pm_dc_naming_table_header` record.
+///
+/// Spec §13.11. Record length 18 B.
+///
+/// ```text
+/// The entries follow the header.
+/// ```
+pub(crate) mod pm_dc_naming_table_header {
+    /// Record length in bytes. Spec §13.11.
+    pub(crate) const LEN: usize = 18;
+    /// Offset of `count` (`u32`, little-endian). Spec §13.11.
+    pub(crate) const COUNT: usize = 14;
+}
+
+/// Byte offsets for the `pm_dc_annotation_value_block` record.
+///
+/// Spec §13.11. Record length 76 B.
+///
+/// ```text
+/// The block between the fit texts and the parameter references of a value record.
+/// ```
+pub(crate) mod pm_dc_annotation_value_block {
+    /// Record length in bytes. Spec §13.11.
+    pub(crate) const LEN: usize = 76;
+}
+
+/// Byte offsets for the `pm_dc_hole_note_flags` record.
+///
+/// Spec §13.11. Record length 16 B.
+///
+/// ```text
+/// The flag words that follow the four hole parameters of a plain hole note.
+/// ```
+pub(crate) mod pm_dc_hole_note_flags {
+    /// Stated value of `word_a` (`u32`). Spec §13.11.
+    pub(crate) const WORD_A_VALUE: u32 = 0x0000_0001;
+    /// Stated value of `word_b` (`u32`). Spec §13.11.
+    pub(crate) const WORD_B_VALUE: u32 = 0x0000_0000;
+    /// Stated value of `word_c` (`u32`). Spec §13.11.
+    pub(crate) const WORD_C_VALUE: u32 = 0x0100_0000;
+    /// Stated value of `word_d` (`u32`). Spec §13.11.
+    pub(crate) const WORD_D_VALUE: u32 = 0x0000_0000;
+}
+
+/// Byte offsets for the `pm_dc_generated_name_tail` record.
+///
+/// Spec §13.11. Record length 16 B.
+///
+/// ```text
+/// The tail of a generated name record of the generated and sweep families.
+/// ```
+pub(crate) mod pm_dc_generated_name_tail {
+    /// Offset of `lead` (`u32`, little-endian). Spec §13.11.
+    pub(crate) const LEAD: usize = 0;
+    /// Stated value of `lead` (`u32`). Spec §13.11.
+    pub(crate) const LEAD_VALUE: u32 = 0x0000_0000;
+    /// Offset of `second` (`u32`, little-endian). Spec §13.11.
+    pub(crate) const SECOND: usize = 4;
+    /// Stated value of `second` (`u32`). Spec §13.11.
+    pub(crate) const SECOND_VALUE: u32 = 0x0000_0000;
+    /// Offset of `associative_id` (`u32`, little-endian). Spec §13.11.
+    pub(crate) const ASSOCIATIVE_ID: usize = 8;
+    /// Offset of `role` (`u32`, little-endian). Spec §13.11.
+    pub(crate) const ROLE: usize = 12;
+}
+
+/// Byte offsets for the `pm_dc_hole_name_tail` record.
+///
+/// Spec §13.11. Record length 10 B.
+///
+/// ```text
+/// The tail of a hole name record.
+/// ```
+pub(crate) mod pm_dc_hole_name_tail {
+    /// Offset of `lead` (`u32`, little-endian). Spec §13.11.
+    pub(crate) const LEAD: usize = 0;
+    /// Stated value of `lead` (`u32`). Spec §13.11.
+    pub(crate) const LEAD_VALUE: u32 = 0x0000_0000;
+    /// Offset of `first` (`u32`, little-endian). Spec §13.11.
+    pub(crate) const FIRST: usize = 4;
+    /// Offset of `role` (`u16`, little-endian). Spec §13.11.
+    pub(crate) const ROLE: usize = 8;
+}
+
+/// Byte offsets for the `pm_dc_blend_name_tail` record.
+///
+/// Spec §13.11. Record length 13 B.
+///
+/// ```text
+/// The tail of a blend name record.
+/// ```
+pub(crate) mod pm_dc_blend_name_tail {
+    /// Offset of `lead` (`u32`, little-endian). Spec §13.11.
+    pub(crate) const LEAD: usize = 0;
+    /// Stated value of `lead` (`u32`). Spec §13.11.
+    pub(crate) const LEAD_VALUE: u32 = 0x0000_0000;
+    /// Offset of `first` (`u8`). Spec §13.11.
+    pub(crate) const FIRST: usize = 4;
+    /// Offset of `second` (`u8`). Spec §13.11.
+    pub(crate) const SECOND: usize = 5;
+    /// Offset of `third` (`u32`, little-endian). Spec §13.11.
+    pub(crate) const THIRD: usize = 9;
 }

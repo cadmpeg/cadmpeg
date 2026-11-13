@@ -131,3 +131,35 @@ fn an_undershooting_box_selects_the_arc_with_the_smaller_excess() {
     let straddling = [Some(bounds([0.0, 0.0, 0.0], [2.0, 0.9, 0.1])), None];
     assert!(bounded_ellipse_branch(&geometry, endpoints, &straddling).is_none());
 }
+
+#[test]
+fn ellipse_endpoint_admission_uses_model_space_distance_at_every_scale() {
+    for scale in [1.0, 1000.0] {
+        let ellipse = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0 * scale,
+            scale,
+        )
+        .expect("ellipse");
+        let face_bounds = [
+            Some(bounds(
+                [0.0, 0.5 * scale, 0.0],
+                [2.0 * scale + 1.0, 0.5 * scale, 1.0],
+            )),
+            None,
+        ];
+        for (gap, accepted) in [(0.001, true), (0.1, false)] {
+            let endpoints = [
+                Point3::new(2.0 * scale + gap, 0.0, 0.0),
+                Point3::new(-2.0 * scale, 0.0, 0.0),
+            ];
+            assert_eq!(
+                bounded_ellipse_branch(&ellipse, endpoints, &face_bounds).is_some(),
+                accepted,
+                "scale {scale}, endpoint gap {gap} mm",
+            );
+        }
+    }
+}

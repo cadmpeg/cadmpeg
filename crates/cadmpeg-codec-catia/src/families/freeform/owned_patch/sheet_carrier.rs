@@ -26,6 +26,8 @@ use super::super::rolling_ball_patch::fit_rectangular_patch;
 use super::ruled::Ruled;
 use super::{near, surface_fit, SheetSurfaceFit};
 
+const MAX_ROLLING_EXTENSION_MM: f64 = 0.005;
+
 pub(super) const SPHERE_BRIDGE_RADIUS_TOLERANCE_MM: f64 = 1.0e-6;
 
 pub(super) enum Carrier<'a> {
@@ -89,11 +91,11 @@ impl Carrier<'_> {
             ]),
             Self::Torus(torus, _) => Some([
                 torus
-                    .major_angular_range
+                    .major_angular_domain
                     .endpoints()
                     .map(|u| u * torus.major_scale.get()),
                 torus
-                    .minor_angular_range
+                    .minor_angular_domain
                     .endpoints()
                     .map(|v| v * torus.minor_scale.get()),
             ]),
@@ -220,6 +222,29 @@ impl Carrier<'_> {
         let (definition, _) = self.rolling_definition()?;
         let [u, s] = self.point([u, v]);
         eval::rolling_ball_jet_boundary_gap(definition, u, s).ok()
+    }
+
+    pub(super) fn evaluate_rolling_extension(&self, u: f64, v: f64) -> Option<Point3> {
+        let (definition, _) = self.rolling_definition()?;
+        eval::rolling_ball_jet_extended_point(definition, u, v, MAX_ROLLING_EXTENSION_MM)
+            .ok()
+            .map(FinitePoint3::get)
+    }
+
+    pub(super) fn solve_rolling_extension(
+        &self,
+        limits: [[f64; 2]; 2],
+    ) -> Option<SolvedSurfaceGeometry> {
+        let (ProceduralSurfaceDefinition::RollingBallJet(jet), _) = self.rolling_definition()?
+        else {
+            return None;
+        };
+        let surface = surface_fit::bounded(
+            jet.stations().iter().map(|s| s.knot.get()),
+            limits,
+            |u, v| self.evaluate_rolling_extension(u, v),
+        )?;
+        Some(SolvedSurfaceGeometry::Nurbs(surface))
     }
 
     pub(super) fn solved(

@@ -120,13 +120,17 @@ pub(crate) enum SldprtLossCode {
     FeatureNativeKindRetained,
     /// Native feature-input operation object does not bind uniquely to a feature.
     FeatureInputObjectUnbound,
-    /// A nested solid-body transmit remains in its native feature-input lane.
+    /// A solid-body transmit remains in its native feature-input or stock-body section.
     FeatureInputSolidBodyRetained,
     /// The archive walk of a feature-input lane stopped before the stream's
     /// end, so the lane scalars keep no archive parameter class.
     FeatureInputArchiveWalkStopped,
     /// Typed feature retains native or unresolved required operation operands.
     FeatureTypedOperandIncomplete,
+    /// Extrusion profile curve data remains unresolved.
+    FeatureProfileCurvesUnavailable,
+    /// Extrusion travel sense remains in its native feature-input lane.
+    FeatureExtrudeDirectionUnresolved,
     /// Thin extrusion retains an ambiguous inline Boolean operation.
     FeatureThinOperationAmbiguous,
     /// Native edge selection has a refused terminal feature owner.
@@ -141,6 +145,8 @@ pub(crate) enum SldprtLossCode {
     GeometrySurfaceCarrierAmbiguous,
     /// Offset validity does not establish an exact construction.
     GeometryOffsetValidityUnresolved,
+    /// Stored spun-profile bounds are ignored and the whole profile is revolved.
+    GeometrySpunProfileIntervalIgnored,
     /// Edge references an untyped support curve carried opaque.
     GeometryEdgeSupportCurveUntyped,
     /// Tolerant edge has no curve because its fin geometry is not read.
@@ -170,6 +176,8 @@ pub(crate) enum SldprtLossCode {
     /// The stream's INTERSECTION declaration states no node layout that
     /// frames, so its intersection curves are not read.
     GeometryIntersectionLayoutUnknown,
+    /// A neutral carrier uses an approximate intersection or fitted cache.
+    GeometryCarrierApproximated,
     /// Current face records carry conflicting or incoherent color bindings.
     AppearanceFaceColorUnresolved,
     /// Appearance assignments have no unambiguous `DisplayLists` target.
@@ -191,6 +199,8 @@ pub(crate) enum SldprtLossCode {
     TopologyFaceUnclaimed,
     /// A face has no decoded loop, so the face and its surface are withheld.
     TopologyFaceWithheld,
+    /// Current typed ownership nodes are absent from the decoded topology.
+    TopologyOwnershipWithheld,
     /// Referenced FIN records have conflicting complete frames.
     TopologyFinRecordAmbiguous,
     /// A canonical edge whose FIN record is an unwalked boundary dummy lacks
@@ -200,7 +210,7 @@ pub(crate) enum SldprtLossCode {
     /// A FIN forward link names no reciprocal same-loop backward link, so
     /// its ring is withheld instead of walked on doubt.
     TopologyFinLinkUnresolved,
-    /// Vertexless ring FINs fail strict reciprocal-circle single-loop
+    /// Vertexless ring FINs fail reciprocal closed-carrier single-loop
     /// admission, so no vertex is invented for them.
     TopologyRingEdgeWithheld,
     /// A vertex loop names no resolved vertex, so its face and surface are
@@ -217,6 +227,8 @@ pub(crate) enum SldprtLossCode {
     TopologyPcurveCarrierOffSurface,
     /// Parasolid B-rep geometry was not transferred (no resolved stream).
     GeometryParasolidNotTransferred,
+    /// Mesh bodies whose facet geometry remains unresolved.
+    GeometryMeshBodyNotTransferred,
     /// Imported-feature body streams that do not decode.
     GeometryImportedBodiesNotTransferred,
     /// B-rep topology graph was not built for this file.
@@ -346,6 +358,8 @@ impl SldprtLossCode {
         Self::FeatureInputSolidBodyRetained,
         Self::FeatureInputArchiveWalkStopped,
         Self::FeatureTypedOperandIncomplete,
+        Self::FeatureProfileCurvesUnavailable,
+        Self::FeatureExtrudeDirectionUnresolved,
         Self::FeatureThinOperationAmbiguous,
         Self::FeatureEdgeTerminalUnresolved,
         Self::FeatureBodyPathAmbiguous,
@@ -353,6 +367,7 @@ impl SldprtLossCode {
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometrySurfaceCarrierAmbiguous,
         Self::GeometryOffsetValidityUnresolved,
+        Self::GeometrySpunProfileIntervalIgnored,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryTolerantEdgeCurveUnread,
         Self::GeometryPointRecordAmbiguous,
@@ -365,6 +380,7 @@ impl SldprtLossCode {
         Self::GeometryConeHalfAngleSignUnresolved,
         Self::GeometryConeHalfAngleIdentityRefused,
         Self::GeometryIntersectionLayoutUnknown,
+        Self::GeometryCarrierApproximated,
         Self::AppearanceFaceColorUnresolved,
         Self::AppearanceAssignmentUnresolved,
         Self::NativeAppearanceScopeUnresolved,
@@ -375,6 +391,7 @@ impl SldprtLossCode {
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyFaceUnclaimed,
         Self::TopologyFaceWithheld,
+        Self::TopologyOwnershipWithheld,
         Self::TopologyFinRecordAmbiguous,
         Self::TopologyFinPartnerUnresolved,
         Self::TopologyFinLinkUnresolved,
@@ -385,6 +402,7 @@ impl SldprtLossCode {
         Self::TopologyVertexRecordUnresolved,
         Self::TopologyPcurveCarrierOffSurface,
         Self::GeometryParasolidNotTransferred,
+        Self::GeometryMeshBodyNotTransferred,
         Self::GeometryImportedBodiesNotTransferred,
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
@@ -463,6 +481,8 @@ impl SldprtLossCode {
             Self::FeatureInputSolidBodyRetained => "feature.input-solid-body-retained",
             Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
+            Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
+            Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureEdgeTerminalUnresolved => "feature.edge-terminal-unresolved",
             Self::FeatureBodyPathAmbiguous => "feature.body-path-ambiguous",
@@ -470,6 +490,7 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometrySurfaceCarrierAmbiguous => "geometry.surface-carrier-ambiguous",
             Self::GeometryOffsetValidityUnresolved => "geometry.offset-validity-unresolved",
+            Self::GeometrySpunProfileIntervalIgnored => "geometry.spun-profile-interval-ignored",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryTolerantEdgeCurveUnread => "geometry.tolerant-edge-curve-unread",
             Self::GeometryPointRecordAmbiguous => "geometry.point-record-ambiguous",
@@ -484,6 +505,7 @@ impl SldprtLossCode {
                 "geometry.cone-half-angle-identity-refused"
             }
             Self::GeometryIntersectionLayoutUnknown => "geometry.intersection-layout-unknown",
+            Self::GeometryCarrierApproximated => "geometry.carrier-approximated",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
             Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
             Self::NativeAppearanceScopeUnresolved => "appearance.native-scope-unresolved",
@@ -493,6 +515,7 @@ impl SldprtLossCode {
             Self::TessellationDisplayWithoutGeometry => "tessellation.display-without-geometry",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
+            Self::TopologyOwnershipWithheld => "topology.ownership-withheld",
             Self::TopologyFaceWithheld => "topology.face-withheld",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
             Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
@@ -504,6 +527,7 @@ impl SldprtLossCode {
             Self::TopologyVertexRecordUnresolved => "topology.vertex-record-unresolved",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
             Self::GeometryParasolidNotTransferred => "geometry.parasolid-not-transferred",
+            Self::GeometryMeshBodyNotTransferred => "geometry.mesh-body-not-transferred",
             Self::GeometryImportedBodiesNotTransferred => {
                 "geometry.imported-bodies-not-transferred"
             }
@@ -575,9 +599,9 @@ impl SldprtLossCode {
             Self::GeometryParasolidNotTransferred
             | Self::TopologyGraphNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
-            Self::ContainerNoParasolidStream | Self::GeometryImportedBodiesNotTransferred => {
-                Severity::Error
-            }
+            Self::ContainerNoParasolidStream
+            | Self::GeometryMeshBodyNotTransferred
+            | Self::GeometryImportedBodiesNotTransferred => Severity::Error,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -617,12 +641,15 @@ impl SldprtLossCode {
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureProfileCurvesUnavailable
+            | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
             | Self::FeatureBodyRetentionUnresolved
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
+            | Self::GeometrySpunProfileIntervalIgnored
             | Self::GeometryOffsetValidityUnresolved
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryTolerantEdgeCurveUnread
@@ -636,6 +663,7 @@ impl SldprtLossCode {
             | Self::GeometryConeHalfAngleSignUnresolved
             | Self::GeometryConeHalfAngleIdentityRefused
             | Self::GeometryIntersectionLayoutUnknown
+            | Self::GeometryCarrierApproximated
             | Self::AppearanceFaceColorUnresolved
             | Self::AppearanceAssignmentUnresolved
             | Self::NativeAppearanceScopeUnresolved
@@ -645,6 +673,7 @@ impl SldprtLossCode {
             | Self::TessellationDisplayWithoutGeometry
             | Self::TopologyBodyHierarchyDerived
             | Self::TopologyFaceUnclaimed
+            | Self::TopologyOwnershipWithheld
             | Self::TopologyFaceWithheld
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
@@ -728,6 +757,7 @@ impl SldprtLossCode {
             }
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
+            | Self::TopologyOwnershipWithheld
             | Self::TopologyFaceWithheld
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
@@ -738,9 +768,11 @@ impl SldprtLossCode {
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
+            Self::GeometryCarrierApproximated => LossTaxonomy::ProceduralReduced,
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
+            | Self::GeometrySpunProfileIntervalIgnored
             | Self::GeometryOffsetValidityUnresolved
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryTolerantEdgeCurveUnread
@@ -753,6 +785,7 @@ impl SldprtLossCode {
             | Self::GeometryConeHalfAngleIdentityRefused
             | Self::GeometryIntersectionLayoutUnknown
             | Self::GeometryParasolidNotTransferred
+            | Self::GeometryMeshBodyNotTransferred
             | Self::ContainerAuxiliaryParasolidRefused
             | Self::GeometryImportedBodiesNotTransferred
             | Self::ContainerParasolidProbeCapped => LossTaxonomy::GeometryNotTransferred,
@@ -806,6 +839,8 @@ impl SldprtLossCode {
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureProfileCurvesUnavailable
+            | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -1025,6 +1060,8 @@ mod tests {
                 "feature.input-solid-body-retained",
                 "feature.input-archive-walk-stopped",
                 "feature.typed-operand-incomplete",
+                "feature.profile-curves-unavailable",
+                "feature.extrude-direction-unresolved",
                 "feature.thin-operation-ambiguous",
                 "feature.edge-terminal-unresolved",
                 "feature.body-path-ambiguous",
@@ -1032,6 +1069,7 @@ mod tests {
                 "geometry.face-support-surface-untyped",
                 "geometry.surface-carrier-ambiguous",
                 "geometry.offset-validity-unresolved",
+                "geometry.spun-profile-interval-ignored",
                 "geometry.edge-support-curve-untyped",
                 "geometry.tolerant-edge-curve-unread",
                 "geometry.point-record-ambiguous",
@@ -1044,6 +1082,7 @@ mod tests {
                 "geometry.cone-half-angle-sign-unresolved",
                 "geometry.cone-half-angle-identity-refused",
                 "geometry.intersection-layout-unknown",
+                "geometry.carrier-approximated",
                 "appearance.face-color-unresolved",
                 "appearance.assignment-unresolved",
                 "appearance.native-scope-unresolved",
@@ -1054,6 +1093,7 @@ mod tests {
                 "topology.body-hierarchy-derived",
                 "topology.face-unclaimed",
                 "topology.face-withheld",
+                "topology.ownership-withheld",
                 "topology.fin-record-ambiguous",
                 "topology.fin-partner-unresolved",
                 "topology.fin-link-unresolved",
@@ -1064,6 +1104,7 @@ mod tests {
                 "topology.vertex-record-unresolved",
                 "topology.pcurve-carrier-off-surface",
                 "geometry.parasolid-not-transferred",
+                "geometry.mesh-body-not-transferred",
                 "geometry.imported-bodies-not-transferred",
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",

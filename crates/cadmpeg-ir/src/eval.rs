@@ -41,6 +41,13 @@ use crate::CadIr;
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit, WorkBudget};
 use cadmpeg_core::CodecError;
 
+/// Whether evaluated curve endpoints meet within the topology tolerance.
+#[must_use]
+pub fn curve_endpoints_coincident(endpoints: [Point3; 2], tolerance: f64) -> bool {
+    let distance = endpoints[0].distance(endpoints[1]);
+    distance.is_finite() && distance <= tolerance
+}
+
 /// Resource policies for geometry evaluation.
 pub mod admission;
 
@@ -5711,6 +5718,33 @@ pub fn rolling_ball_jet_boundary_gap(
     Ok(outside.distance(boundary.get()))
 }
 
+/// Evaluate a point on the circular section within a model-space extension
+/// of its stored transverse interval.
+pub fn rolling_ball_jet_extended_point(
+    definition: &ProceduralSurfaceDefinition,
+    t: f64,
+    s: f64,
+    max_gap_mm: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    const MAX_TRANSVERSE_EXTENSION: f64 = 0.01;
+    if !(-MAX_TRANSVERSE_EXTENSION..=1.0 + MAX_TRANSVERSE_EXTENSION).contains(&s)
+        || !max_gap_mm.is_finite()
+        || max_gap_mm < 0.0
+    {
+        return Err(EvaluationFailure::NoValue);
+    }
+    if (0.0..=1.0).contains(&s) {
+        return rolling_ball_jet_point(definition, t, s);
+    }
+    let outside = rolling_ball_jet_transverse_point(definition, t, s)?;
+    let boundary = rolling_ball_jet_point(definition, t, s.clamp(0.0, 1.0))?;
+    if outside.distance(boundary.get()) <= max_gap_mm {
+        Ok(outside)
+    } else {
+        Err(EvaluationFailure::NoValue)
+    }
+}
+
 fn rolling_ball_jet_transverse_point(
     definition: &ProceduralSurfaceDefinition,
     t: f64,
@@ -6298,7 +6332,7 @@ pub fn model_surface_point(
 }
 
 /// Evaluate a surface carrier against the caller's index of its model.
-pub(super) fn model_surface_point_in_index(
+pub fn model_surface_point_in_index(
     admission: admission::EvaluationAdmission<'_, '_>,
     index: &crate::index::ModelIndex<'_>,
     geometry: &SurfaceGeometry,
@@ -8292,6 +8326,24 @@ fn subset_parameter(
     let agrees = sense.unwrap_or(end >= start);
     let derivative = if agrees { 1.0 } else { -1.0 };
     Some((start + derivative * parameter, derivative))
+}
+
+/// The point and first partials of a signed normal offset, from the
+/// support's point, first partials and second partials.
+pub fn offset_surface_partials(
+    support: SurfaceSecondPartials<FinitePoint3, FiniteVector3>,
+    distance: f64,
+) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    offset_surface_jet(
+        SurfaceJet {
+            point: support.point,
+            first: Ok([support.du, support.dv]),
+            second: Ok([support.duu, support.duv, support.dvv]),
+        },
+        distance,
+    )?
+    .first_order()
+    .partials()
 }
 
 /// The jet of the offset by `distance` along the unit normal of `base`, or

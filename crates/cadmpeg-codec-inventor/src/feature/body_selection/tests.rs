@@ -964,3 +964,756 @@ fn body_mirror_pattern_seeds_resolve_with_the_wrapper_joins_and_stay_local_witho
     assert_eq!(losses[0].code.local_code(), "feature.body-selection-native");
     assert!(native_losses(&model_of(feature_seed), &joins()).is_empty());
 }
+
+fn plain_feature(
+    name: &str,
+    ordinal: u64,
+    suppressed: Option<bool>,
+) -> cadmpeg_ir::features::Feature {
+    use cadmpeg_ir::features::{DistinctMembers, Feature, FeatureContent, FeatureEvaluation};
+    Feature {
+        id: FeatureId::mint(format!("test:model:feature#{name}")).expect("synthetic feature"),
+        ordinal,
+        name: None,
+        suppressed,
+        dependencies: DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(combine(BodySelection::Native(
+            "tool".into(),
+        ))),
+        native_ref: None,
+        product_definition: None,
+    }
+}
+
+fn result_of(feature: &cadmpeg_ir::features::Feature, wrappers: &[&str]) -> FeatureResultTopology {
+    FeatureResultTopology::new(
+        FeatureResultTopologyId::mint(format!(
+            "test:model:feature-result#{}",
+            feature.id.as_str().rsplit('#').next().expect("name")
+        ))
+        .expect("synthetic result"),
+        feature.id.clone(),
+        FeatureResultMembers::new(
+            wrappers
+                .iter()
+                .map(|wrapper| NonBlankString::new(*wrapper).expect("wrapper"))
+                .collect(),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .expect("members"),
+        None,
+    )
+}
+
+#[test]
+fn produced_wrappers_come_from_earlier_unsuppressed_features_only() {
+    let earlier = plain_feature("earlier", 3, Some(false));
+    let suppressed = plain_feature("suppressed", 4, Some(true));
+    let later = plain_feature("later", 9, Some(false));
+    let consumer = plain_feature("consumer", 6, Some(false));
+    let features = [earlier, suppressed, later, consumer];
+    let results = [
+        result_of(&features[0], &["made"]),
+        result_of(&features[1], &["skipped"]),
+        result_of(&features[2], &["future"]),
+    ];
+    let produced = produced_before(&features, &results, &features[3], &empty_producer_records());
+    assert_eq!(produced, HashSet::from(["made".to_owned()]));
+}
+
+#[test]
+fn unplaced_producer_is_not_an_earlier_producer() {
+    let unplaced = plain_feature("unplaced", 1, None);
+    let consumer = plain_feature("consumer", 6, Some(false));
+    let features = [unplaced, consumer];
+    let results = [result_of(&features[0], &["made"])];
+    assert!(
+        produced_before(&features, &results, &features[1], &empty_producer_records()).is_empty()
+    );
+}
+
+#[test]
+fn unplaced_combine_has_no_earlier_producers() {
+    let producer = plain_feature("producer", 1, Some(false));
+    let consumer = plain_feature("consumer", 6, None);
+    let features = [producer, consumer];
+    let results = [result_of(&features[0], &["made"])];
+    assert!(
+        produced_before(&features, &results, &features[1], &empty_producer_records()).is_empty()
+    );
+    let mut actual = combine(BodySelection::Native("tool".into()));
+    combine_local(&mut actual, &HashSet::new(), None);
+    assert_eq!(actual, combine(BodySelection::Native("tool".into())));
+}
+
+#[test]
+fn unjoined_combine_operands_stay_local_only_when_every_wrapper_is_produced_earlier() {
+    let tools = || {
+        BodySelection::NativeSet(
+            NativeSelections::try_from(vec!["tool".into(), "other".into()])
+                .expect("distinct wrappers"),
+        )
+    };
+    let operands = |actual: &FeatureDefinition| {
+        let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) = actual
+        else {
+            panic!("combine")
+        };
+        operands.clone().into_parts()
+    };
+    let all: HashSet<String> = ["target", "tool", "other"].map(String::from).into();
+    let mut actual = combine(tools());
+    combine_local(&mut actual, &all, Some("tools"));
+    let (target, tools_after) = operands(&actual);
+    assert_eq!(
+        target,
+        BodySelection::local(vec!["target".into()], "target".into()).expect("local")
+    );
+    assert_eq!(
+        tools_after,
+        BodySelection::local(vec!["tool".into(), "other".into()], "tools".into()).expect("local")
+    );
+    assert!(combine_matches(
+        combine(tools()),
+        &actual,
+        &HashMap::new(),
+        Some("tools"),
+        &all
+    ));
+    // A wrapper that no earlier feature produces keeps its selection native.
+    let partial: HashSet<String> = ["target", "tool"].map(String::from).into();
+    let mut actual = combine(tools());
+    combine_local(&mut actual, &partial, Some("tools"));
+    let (target, tools_after) = operands(&actual);
+    assert!(matches!(target, BodySelection::Local { .. }));
+    assert_eq!(tools_after, tools());
+    // A set without its collection identity stays native.
+    let mut actual = combine(tools());
+    combine_local(&mut actual, &all, None);
+    assert_eq!(operands(&actual).1, tools());
+    // A complete current-body join wins over the local form.
+    let mut actual = combine(tools());
+    definition(&mut actual, &joins(), Some("tools"));
+    combine_local(&mut actual, &all, Some("tools"));
+    assert!(matches!(
+        operands(&actual).0,
+        BodySelection::Resolved { .. }
+    ));
+}
+
+fn plane_trim(targets: BodySelection) -> FeatureDefinition {
+    FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane {
+        targets,
+        plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
+        keep: cadmpeg_ir::features::BodyTrimSide::Forward,
+    })
+}
+
+fn plane_trim_targets(definition: &FeatureDefinition) -> &BodySelection {
+    let FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane { targets, .. }) =
+        definition
+    else {
+        panic!("plane trim")
+    };
+    targets
+}
+
+#[test]
+fn unjoined_plane_trim_target_stays_local_only_when_its_wrapper_is_produced_earlier() {
+    let produced: HashSet<String> = ["target".to_owned()].into();
+    // An earlier producer makes the wrapper a persistent input body.
+    let mut actual = plane_trim(BodySelection::Native("target".into()));
+    split_local(&mut actual, &produced, true);
+    assert_eq!(
+        plane_trim_targets(&actual),
+        &BodySelection::local(vec!["target".into()], "target".into()).expect("local")
+    );
+    assert!(split_matches(
+        plane_trim(BodySelection::Native("target".into())),
+        &actual,
+        &HashMap::new(),
+        &produced,
+        true
+    ));
+    // The expected form of a Local selection is not accepted without a producer.
+    assert!(!split_matches(
+        plane_trim(BodySelection::Native("target".into())),
+        &actual,
+        &HashMap::new(),
+        &HashSet::new(),
+        true
+    ));
+    // A wrapper that no earlier feature produces keeps its selection native.
+    let mut actual = plane_trim(BodySelection::Native("target".into()));
+    split_local(&mut actual, &["other".to_owned()].into(), true);
+    assert_eq!(
+        plane_trim_targets(&actual),
+        &BodySelection::Native("target".into())
+    );
+    split_local(&mut actual, &HashSet::new(), true);
+    assert_eq!(
+        plane_trim_targets(&actual),
+        &BodySelection::Native("target".into())
+    );
+    // A complete current-body join wins over the local form.
+    let mut actual = plane_trim(BodySelection::Native("target".into()));
+    definition(&mut actual, &joins(), None);
+    split_local(&mut actual, &produced, true);
+    assert!(matches!(
+        plane_trim_targets(&actual),
+        BodySelection::Resolved { .. }
+    ));
+}
+
+#[test]
+fn local_plane_trim_target_counts_in_the_unjoined_body_loss() {
+    use cadmpeg_ir::features::{DistinctMembers, Feature, FeatureContent, FeatureEvaluation};
+    let mut actual = plane_trim(BodySelection::Native("target".into()));
+    split_local(&mut actual, &["target".to_owned()].into(), true);
+    let mut model = Model::default();
+    model.features.push(Feature {
+        id: FeatureId::mint("test:model:feature#trim").expect("feature"),
+        ordinal: 1,
+        name: None,
+        suppressed: Some(false),
+        dependencies: DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: Some("trim_bodies".into()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(actual),
+        native_ref: None,
+        product_definition: None,
+    });
+    let losses = native_losses(&model, &HashMap::new());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "feature.body-selection-native");
+}
+
+fn empty_producer_records() -> ProducerRecords<'static> {
+    ProducerRecords {
+        features: &[],
+        labels: &[],
+        properties: &[],
+    }
+}
+
+fn native_derived_producer() -> (cadmpeg_ir::features::Feature, FeatureInventory, String) {
+    use crate::feature::tests::{test_feature, test_label, test_property};
+    use crate::feature::PmDcFeaturePropertyKind;
+    let mut source = test_feature(10, 3, &[(0, 20), (1, 21), (2, 22)]);
+    let mut input = test_property(
+        20,
+        PmDcFeaturePropertyKind::SurfaceBody {
+            body: crate::pmdc::PmDcReference::from_packed(0x8000_001f),
+        },
+    );
+    let mut output = test_property(
+        21,
+        PmDcFeaturePropertyKind::SurfaceBody {
+            body: crate::pmdc::PmDcReference::from_packed(1),
+        },
+    );
+    for wrapper in [&mut input, &mut output] {
+        wrapper.identity.type_id =
+            crate::record_identity::RecordTypeId::from_bytes(crate::feature::SURFACE_BODY_TYPE);
+    }
+    source.edit(|payload| payload.save_version_major = 19);
+    input.edit(|payload| payload.save_version_major = 19);
+    output.edit(|payload| payload.save_version_major = 19);
+    let wrapper = output.id();
+    let mut producer = plain_feature("derived", 1, Some(false));
+    producer.native_ref = Some(source.id());
+    producer.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Other("derived".into()),
+            parameters: std::collections::BTreeMap::default(),
+        }),
+    );
+    let inventory = FeatureInventory {
+        features: vec![source],
+        labels: vec![test_label(10, 1, crate::feature::derived::CLASS_ID, &[])],
+        properties: vec![input, output],
+        ..FeatureInventory::default()
+    };
+    (producer, inventory, wrapper)
+}
+
+fn check_derived_selection(trim: bool, ordinal: u64, suppressed: Option<bool>, joined: bool) {
+    let (mut producer, inventory, wrapper) = native_derived_producer();
+    producer.ordinal = ordinal;
+    producer.suppressed = suppressed;
+    let original = if trim {
+        plane_trim(BodySelection::Native(wrapper.clone()))
+    } else {
+        combine(BodySelection::Native(wrapper.clone()))
+    };
+    let mut consumer = plain_feature("consumer", 6, Some(false));
+    consumer.evaluation =
+        cadmpeg_ir::features::FeatureEvaluation::from_definition(original.clone());
+    let mut model = Model::default();
+    model.features = vec![producer, consumer];
+    let bodies = if joined {
+        HashMap::from([(wrapper.clone(), body("derived"))])
+    } else {
+        HashMap::new()
+    };
+    project(&mut model, &bodies, &inventory);
+    assert!(model.feature_result_topologies.is_empty());
+    let actual = model.features[1].evaluation.definition();
+    let expected = if joined {
+        BodySelection::Resolved {
+            bodies: vec![body("derived")].try_into().expect("body"),
+            native: wrapper.clone(),
+        }
+    } else if ordinal < 6 && suppressed == Some(false) {
+        BodySelection::local(vec![wrapper.clone()], wrapper).expect("local")
+    } else {
+        BodySelection::Native(wrapper)
+    };
+    if trim {
+        assert_eq!(plane_trim_targets(actual), &expected);
+    } else {
+        let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) = actual
+        else {
+            panic!("combine")
+        };
+        assert_eq!(operands.clone().into_parts().1, expected);
+    }
+    let earlier = produced_before(
+        &model.features,
+        &model.feature_result_topologies,
+        &model.features[1],
+        &ProducerRecords {
+            features: &inventory.features,
+            labels: &inventory.labels,
+            properties: &inventory.properties,
+        },
+    );
+    if trim {
+        assert!(split_matches(original, actual, &bodies, &earlier, true));
+    } else {
+        assert!(combine_matches(original, actual, &bodies, None, &earlier));
+    }
+}
+
+#[test]
+fn native_derived_result_makes_plane_trim_target_local() {
+    check_derived_selection(true, 1, Some(false), false);
+}
+
+#[test]
+fn native_derived_result_makes_combine_tool_local() {
+    check_derived_selection(false, 1, Some(false), false);
+}
+
+#[test]
+fn later_unplaced_or_suppressed_native_derived_producer_keeps_selections_native() {
+    for trim in [true, false] {
+        for (ordinal, suppressed) in [(9, Some(false)), (1, None), (1, Some(true))] {
+            check_derived_selection(trim, ordinal, suppressed, false);
+        }
+    }
+}
+
+#[test]
+fn native_derived_result_current_body_join_wins() {
+    for trim in [true, false] {
+        check_derived_selection(trim, 1, Some(false), true);
+    }
+}
+
+fn split_body_forms() -> Vec<FeatureDefinition> {
+    [
+        SplitBodyTool::Plane {
+            plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
+        },
+        SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native("tool".into())),
+    ]
+    .into_iter()
+    .map(|tool| {
+        FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            targets: BodySelection::Native("target".into()),
+            tool,
+        })
+    })
+    .chain(std::iter::once(FeatureDefinition::Operation(
+        FeatureOperation::TrimBodies {
+            operands: TrimBodyOperands::new(
+                BodySelection::Native("target".into()),
+                BodySelection::Native("tool".into()),
+            )
+            .expect("distinct"),
+            keep: cadmpeg_ir::features::BodyTrimSide::Unresolved,
+        },
+    )))
+    .collect()
+}
+
+fn split_targets(definition: &FeatureDefinition) -> &BodySelection {
+    match definition {
+        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, .. }) => targets,
+        FeatureDefinition::Operation(FeatureOperation::TrimBodies { operands, .. }) => {
+            operands.targets()
+        }
+        _ => panic!("body split or trim"),
+    }
+}
+
+#[test]
+fn produced_split_body_targets_become_local_and_validate() {
+    let earlier = HashSet::from(["target".to_owned()]);
+    for original in split_body_forms() {
+        let mut actual = original.clone();
+        split_local(&mut actual, &earlier, true);
+        assert_eq!(
+            split_targets(&actual),
+            &BodySelection::local(vec!["target".into()], "target".into()).expect("local")
+        );
+        assert!(split_matches(
+            original.clone(),
+            &actual,
+            &HashMap::new(),
+            &earlier,
+            true
+        ));
+        assert!(!split_matches(
+            original,
+            &actual,
+            &HashMap::new(),
+            &HashSet::new(),
+            true
+        ));
+    }
+}
+
+#[test]
+fn split_body_targets_without_a_matching_producer_stay_native() {
+    for earlier in [HashSet::new(), HashSet::from(["other".to_owned()])] {
+        for original in split_body_forms() {
+            let mut actual = original.clone();
+            split_local(&mut actual, &earlier, true);
+            assert_eq!(actual, original);
+        }
+    }
+}
+
+#[test]
+fn split_body_complete_join_wins_over_local_producer() {
+    let earlier = HashSet::from(["target".to_owned()]);
+    for original in split_body_forms() {
+        let mut actual = original.clone();
+        definition(&mut actual, &joins(), None);
+        split_local(&mut actual, &earlier, true);
+        assert_eq!(
+            split_targets(&actual),
+            &BodySelection::Resolved {
+                bodies: vec![body("body:target")].try_into().expect("body"),
+                native: "target".into(),
+            }
+        );
+        assert!(split_matches(original, &actual, &joins(), &earlier, true));
+    }
+}
+
+#[test]
+fn local_split_body_target_preserves_unjoined_loss_count() {
+    let earlier = HashSet::from(["target".to_owned()]);
+    for original in split_body_forms() {
+        let mut model = Model::default();
+        let mut feature = plain_feature("split", 2, Some(false));
+        feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(original);
+        model.features.push(feature);
+        let before = native_losses(&model, &HashMap::new());
+        model.features[0].evaluation.edit(|definition, _| {
+            split_local(definition, &earlier, true);
+        });
+        let after = native_losses(&model, &HashMap::new());
+        assert_eq!(before.len(), 1);
+        assert_eq!(after.len(), 1);
+        assert_eq!(before[0].code, after[0].code);
+        assert_eq!(before[0].message, after[0].message);
+    }
+}
+
+#[test]
+fn unqualified_split_body_target_stays_native_with_a_producer() {
+    let earlier = HashSet::from(["target".to_owned()]);
+    for original in split_body_forms().into_iter().take(2) {
+        let mut actual = original.clone();
+        split_local(&mut actual, &earlier, false);
+        assert_eq!(actual, original);
+    }
+}
+
+#[test]
+fn split_local_target_checks_member_count_qualification_and_body_reference() {
+    use crate::feature::{
+        tests::reference_list, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily,
+    };
+    use crate::pmdc::PmDcReference;
+    use crate::test_support::split::{plane_trim_fixture, set_kind, set_slot};
+    let (source, properties) = plane_trim_fixture(false);
+    assert!(qualified_split_target(&source, &properties));
+    let mut unqualified = source.clone();
+    set_slot(
+        &mut unqualified,
+        7,
+        PmDcReference::new(source.properties.references()[7].index(), false).expect("reference"),
+    );
+    assert!(!qualified_split_target(&unqualified, &properties));
+    for members in [vec![], vec![69, 70]] {
+        let mut properties = properties.clone();
+        set_kind(
+            &mut properties,
+            5,
+            PmDcFeaturePropertyKind::References {
+                family: PmDcFeatureReferenceFamily::BodySelection,
+                items: reference_list(&members),
+            },
+        );
+        assert!(!qualified_split_target(&source, &properties));
+    }
+    let mut unqualified = properties.clone();
+    unqualified[5].edit(|payload| {
+        payload.kind = PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::BodySelection,
+            items: crate::pmdc::PmDcReferenceList::new(
+                2,
+                Some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
+                vec![PmDcReference::new(69, false).expect("reference")],
+            )
+            .expect("one member"),
+        };
+    });
+    assert!(!qualified_split_target(&source, &unqualified));
+    for body in [PmDcReference::new(0, false), PmDcReference::new(1, true)] {
+        let mut properties = properties.clone();
+        set_kind(
+            &mut properties,
+            7,
+            PmDcFeaturePropertyKind::SurfaceBody {
+                body: body.expect("reference"),
+            },
+        );
+        assert!(!qualified_split_target(&source, &properties));
+    }
+}
+
+#[test]
+fn split_body_projection_and_validator_share_producer_and_qualification_rules() {
+    use crate::test_support::split::{plane_trim_fixture, set_slot};
+    use cadmpeg_ir::features::FeatureEvaluation;
+    for qualified in [true, false] {
+        let (mut source, properties) = plane_trim_fixture(false);
+        if !qualified {
+            let index = source.properties.references()[7].index();
+            set_slot(
+                &mut source,
+                7,
+                crate::pmdc::PmDcReference::new(index, false).expect("reference"),
+            );
+        }
+        let wrapper = properties[7].id();
+        let original = FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            targets: BodySelection::Native(wrapper.clone()),
+            tool: SplitBodyTool::Plane {
+                plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
+            },
+        });
+        let producer = plain_feature("producer", 1, Some(false));
+        let result = result_of(&producer, &[&wrapper]);
+        let mut consumer = plain_feature("consumer", 2, Some(false));
+        consumer.native_ref = Some(source.id());
+        consumer.evaluation = FeatureEvaluation::from_definition(original.clone());
+        let mut model = Model::default();
+        model.features = vec![producer, consumer];
+        model.feature_result_topologies.push(result);
+        let inventory = FeatureInventory {
+            features: vec![source],
+            properties,
+            ..FeatureInventory::default()
+        };
+        project(&mut model, &HashMap::new(), &inventory);
+        let expected = if qualified {
+            BodySelection::local(vec![wrapper.clone()], wrapper.clone()).expect("local")
+        } else {
+            BodySelection::Native(wrapper.clone())
+        };
+        let actual = model.features[1].evaluation.definition();
+        assert_eq!(split_targets(actual), &expected);
+        assert!(split_matches(
+            original,
+            actual,
+            &HashMap::new(),
+            &HashSet::from([wrapper]),
+            qualified
+        ));
+    }
+}
+
+#[test]
+fn native_derived_result_makes_split_body_target_local() {
+    use crate::feature::{
+        tests::reference_list, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily,
+    };
+    use crate::test_support::split::{plane_trim_fixture, set_kind};
+    let (producer, mut inventory, wrapper) = native_derived_producer();
+    let (source, mut properties) = plane_trim_fixture(false);
+    set_kind(
+        &mut properties,
+        5,
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::BodySelection,
+            items: reference_list(&[inventory.properties[1].identity.record_ordinal + 1]),
+        },
+    );
+    let mut consumer = plain_feature("consumer", 6, Some(false));
+    consumer.native_ref = Some(source.id());
+    let original = FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        targets: BodySelection::Native(wrapper.clone()),
+        tool: SplitBodyTool::Plane {
+            plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
+        },
+    });
+    consumer.evaluation =
+        cadmpeg_ir::features::FeatureEvaluation::from_definition(original.clone());
+    inventory.features.push(source);
+    inventory.properties.extend(properties);
+    let mut model = Model::default();
+    model.features = vec![producer, consumer];
+    project(&mut model, &HashMap::new(), &inventory);
+    let actual = model.features[1].evaluation.definition();
+    assert_eq!(
+        split_targets(actual),
+        &BodySelection::local(vec![wrapper.clone()], wrapper.clone()).expect("local")
+    );
+    assert!(split_matches(
+        original,
+        actual,
+        &HashMap::new(),
+        &HashSet::from([wrapper]),
+        true
+    ));
+    assert!(model.feature_result_topologies.is_empty());
+}
+
+fn check_native_base_split(
+    ordinal: u64,
+    suppressed: Option<bool>,
+    joined: bool,
+    select_source: bool,
+) {
+    use crate::feature::{
+        tests::{reference_list, test_label},
+        PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily,
+    };
+    use crate::test_support::split::{plane_trim_fixture, set_kind, set_slot};
+    let (mut producer, mut inventory, result) = native_derived_producer();
+    producer.ordinal = ordinal;
+    producer.suppressed = suppressed;
+    producer.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Other("Base".into()),
+            parameters: std::collections::BTreeMap::default(),
+        }),
+    );
+    set_slot(
+        &mut inventory.features[0],
+        2,
+        crate::pmdc::PmDcReference::from_packed(0),
+    );
+    inventory.labels = vec![test_label(10, 1, crate::feature::BASE_CLASS_ID, &[])];
+    let selected = usize::from(!select_source);
+    let wrapper = inventory.properties[selected].id();
+    let (source, mut properties) = plane_trim_fixture(false);
+    set_kind(
+        &mut properties,
+        5,
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::BodySelection,
+            items: reference_list(&[inventory.properties[selected].identity.record_ordinal + 1]),
+        },
+    );
+    let original = FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        targets: BodySelection::Native(wrapper.clone()),
+        tool: SplitBodyTool::Plane {
+            plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
+        },
+    });
+    let mut consumer = plain_feature("consumer", 6, Some(false));
+    consumer.native_ref = Some(source.id());
+    consumer.evaluation =
+        cadmpeg_ir::features::FeatureEvaluation::from_definition(original.clone());
+    inventory.features.push(source);
+    inventory.properties.extend(properties);
+    let mut model = Model::default();
+    model.features = vec![producer, consumer];
+    let bodies = if joined {
+        HashMap::from([(result.clone(), body("base"))])
+    } else {
+        HashMap::new()
+    };
+    let earlier = produced_before(
+        &model.features,
+        &model.feature_result_topologies,
+        &model.features[1],
+        &ProducerRecords {
+            features: &inventory.features,
+            labels: &inventory.labels,
+            properties: &inventory.properties,
+        },
+    );
+    let eligible = ordinal < 6 && suppressed == Some(false);
+    assert_eq!(
+        earlier,
+        if eligible {
+            HashSet::from([result])
+        } else {
+            HashSet::new()
+        }
+    );
+    project(&mut model, &bodies, &inventory);
+    let expected = if joined {
+        BodySelection::Resolved {
+            bodies: vec![body("base")].try_into().expect("body"),
+            native: wrapper,
+        }
+    } else if eligible && !select_source {
+        BodySelection::local(vec![wrapper.clone()], wrapper).expect("local")
+    } else {
+        BodySelection::Native(wrapper)
+    };
+    let actual = model.features[1].evaluation.definition();
+    assert_eq!(split_targets(actual), &expected);
+    assert!(split_matches(original, actual, &bodies, &earlier, true));
+    assert!(model.feature_result_topologies.is_empty());
+}
+
+#[test]
+fn native_base_result_makes_split_body_target_local() {
+    check_native_base_split(1, Some(false), false, false);
+}
+
+#[test]
+fn later_unplaced_or_suppressed_native_base_keeps_split_target_native() {
+    for (ordinal, suppressed) in [(9, Some(false)), (1, None), (1, Some(true))] {
+        check_native_base_split(ordinal, suppressed, false, false);
+    }
+}
+
+#[test]
+fn native_base_result_current_body_join_wins_for_split() {
+    check_native_base_split(1, Some(false), true, false);
+}
+
+#[test]
+fn native_base_source_wrapper_keeps_split_target_native() {
+    check_native_base_split(1, Some(false), false, true);
+}

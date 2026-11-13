@@ -71,11 +71,15 @@ pub(in crate::families::standard::decode) fn bounded_ellipse_branch(
         let delta = point.vector_from(center);
         let first = delta.dot(reference) / radii[0];
         let second = delta.dot(binormal) / radii[1];
-        let residual = first * first + second * second - 1.0;
-        !point.is_finite()
-            || delta.dot(*axis.as_raw()).abs() > ANALYTIC_CURVE_ENDPOINT_TOLERANCE
-            || !residual.is_finite()
-            || residual.abs() > ANALYTIC_CURVE_ENDPOINT_TOLERANCE
+        let (sine, cosine) = second.atan2(first).sin_cos();
+        let fitted = Vector3::new(
+            reference.x * radii[0] * cosine + binormal.x * radii[1] * sine,
+            reference.y * radii[0] * cosine + binormal.y * radii[1] * sine,
+            reference.z * radii[0] * cosine + binormal.z * radii[1] * sine,
+        );
+        let residual =
+            Vector3::new(delta.x - fitted.x, delta.y - fitted.y, delta.z - fitted.z).norm();
+        !point.is_finite() || !residual.is_finite() || residual > ANALYTIC_CURVE_ENDPOINT_TOLERANCE
     }) {
         return None;
     }

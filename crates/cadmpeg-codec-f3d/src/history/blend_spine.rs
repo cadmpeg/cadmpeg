@@ -123,6 +123,29 @@ pub(super) fn edge_points(topology: &AsmHistoricalTopology) -> HashMap<i64, Opti
         .collect()
 }
 
+/// The start and end points of each edge with a vertex row, or `None` for an
+/// edge with two vertex rows, a vertex without one point row, or a point
+/// without one finite position.
+pub(super) fn edge_ends(topology: &AsmHistoricalTopology) -> HashMap<i64, Option<[Point3; 2]>> {
+    let vertices = unique_rows(&topology.edge_vertices, |row| {
+        (row.edge, [row.start_vertex, row.end_vertex])
+    });
+    let points = unique_rows(&topology.vertex_points, |row| (row.entity, row.carrier));
+    let positions = unique_rows(&topology.point_positions, |row| (row.point, row.position));
+    let position = |vertex| {
+        unique(&points, vertex)
+            .and_then(|point| unique(&positions, point))
+            .filter(|position| finite(*position))
+    };
+    vertices
+        .into_iter()
+        .map(|(edge, ends)| {
+            let ends = ends.and_then(|[start, end]| Some([position(start)?, position(end)?]));
+            (edge, ends)
+        })
+        .collect()
+}
+
 /// The origin and normal of each plane carrier, or `None` for a carrier with
 /// two plane rows or with a cylinder, axis, or radius row.
 pub(super) fn plane_rows(

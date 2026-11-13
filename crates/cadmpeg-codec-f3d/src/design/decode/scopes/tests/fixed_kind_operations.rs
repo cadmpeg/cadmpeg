@@ -1522,6 +1522,7 @@ fn fixed_kind_edge_and_revolve_operations(
             .expect("valid entity ID"),
 
         visibility: None,
+        display_name: None,
 
         class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 904,

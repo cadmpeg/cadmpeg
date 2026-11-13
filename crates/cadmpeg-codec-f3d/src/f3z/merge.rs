@@ -626,10 +626,6 @@ enum JointRebind {
     CompleteScopes,
 }
 
-/// Complete the operand descent of the joints that bind after decode in a
-/// standalone document and bind their features. The document has no merged
-/// members, so a path that continues below an external placement does not
-/// complete: its joint keeps its decoded operand and its feature stays native.
 pub(crate) fn bind_standalone_joints(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
@@ -655,7 +651,6 @@ fn rebind_joint_descent(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     use crate::records::feature::assembly_features::DesignComponentOccurrence;
-    use cadmpeg_ir::products::OccurrenceParent;
 
     if ir.model.assembly_joints.is_empty() {
         return Ok(());
@@ -665,92 +660,40 @@ fn rebind_joint_descent(
     };
     let carriers = namespace
         .arena_iter_as_for_decode::<DesignComponentOccurrence>(ctx, "design_component_occurrences")
-        .map(|carrier| carrier.map(|carrier| (carrier.id, carrier.occurrence_guid)))
+        .map(|carrier| {
+            carrier.map(|carrier| (carrier.id, carrier.occurrence_guid.as_str().to_owned()))
+        })
         .collect::<Result<std::collections::BTreeMap<_, _>, _>>()?;
-    let mut children = std::collections::BTreeMap::new();
-    for occurrence in &ir.model.occurrences {
-        let Some(key) = occurrence
-            .native_ref
-            .as_deref()
-            .and_then(|id| carriers.get(id))
-        else {
-            continue;
-        };
-        let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
-            continue;
-        };
-        let mut parent = parent;
-        for _ in 0..=member_roots.len() {
-            children
-                .entry((parent.clone(), key.as_str().to_ascii_lowercase()))
-                .and_modify(|selected| *selected = None)
-                .or_insert(Some(&occurrence.id));
-            let Some(outer) = member_roots.get(parent) else {
-                break;
-            };
-            parent = outer;
-        }
-    }
     let external = namespace
         .arena_iter_as_for_decode::<XrefReference>(ctx, "xref_references")
         .filter_map(|reference| match reference {
-            Ok(reference) => reference
-                .placement_source
-                .and_then(|source| source.occurrence_guid.map(|guid| Ok((reference.id, guid)))),
+            Ok(reference) => reference.placement_source.and_then(|source| {
+                source
+                    .occurrence_guid
+                    .map(|guid| Ok((reference.id, guid.as_str().to_owned())))
+            }),
             Err(error) => Some(Err(error)),
         })
         .collect::<Result<std::collections::BTreeMap<_, _>, _>>()?;
-    let mut complete_children = children.clone();
-    for occurrence in &ir.model.occurrences {
-        let Some(key) = occurrence
-            .native_ref
-            .as_deref()
-            .and_then(|id| external.get(id))
-        else {
-            continue;
-        };
-        let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
-            continue;
-        };
-        let mut parent = parent;
-        for _ in 0..=member_roots.len() {
-            complete_children
-                .entry((parent.clone(), key.as_str().to_ascii_lowercase()))
-                .and_modify(|selected| *selected = None)
-                .or_insert(Some(&occurrence.id));
-            let Some(outer) = member_roots.get(parent) else {
-                break;
-            };
-            parent = outer;
-        }
-    }
     let types = namespace
         .arena_iter_as_for_decode::<crate::records::entity_header::SegmentType>(ctx, "design_types")
         .collect::<Result<Vec<_>, _>>()?;
-    let mut types_by_stream = std::collections::HashMap::new();
-    let mut complete_scopes = std::collections::BTreeSet::new();
+    let mut complete_scopes = CompleteJointScopes::new(&types);
     for scope in namespace
         .arena_iter_as_for_decode::<crate::records::feature::scope::DesignParameterScope>(
             ctx,
             "design_parameter_scopes",
         )
     {
-        let scope = scope?;
-        let Some(stream) = crate::ids::native_stream(&scope.id) else {
-            continue;
-        };
-        let stream_types = types_by_stream.entry(stream.to_owned()).or_insert_with(|| {
-            stream
-                .strip_prefix("f3d:")
-                .and_then(crate::ids::decode_identity_key_component)
-                .map(|entry| crate::design::decode::meta::stream_types_by_entity(&types, &entry))
-                .unwrap_or_default()
-        });
-        if crate::design::decode::scopes::assembly_v3::joint_binds_after_merge(&scope, stream_types)
-        {
-            complete_scopes.insert(scope.id);
-        }
+        complete_scopes.add(scope?);
     }
+    let children = joint_children(&ir.model.occurrences, &carriers, member_roots, None);
+    let complete_children = joint_children(
+        &ir.model.occurrences,
+        &external,
+        member_roots,
+        Some(children.clone()),
+    );
     rebind_joints(
         &mut JointRows {
             occurrences: &ir.model.occurrences,
@@ -759,11 +702,156 @@ fn rebind_joint_descent(
         },
         &children,
         &complete_children,
-        &complete_scopes,
+        &complete_scopes.ids,
         mode,
         losses,
     );
     Ok(())
+}
+
+/// Apply the standalone joint rebinding of decode to `joints`, projected from
+/// `native` over `occurrences`.
+pub(crate) fn rebind_standalone_projected_joints(
+    native: &crate::native::F3dNative,
+    occurrences: &[cadmpeg_ir::products::Occurrence],
+    joints: &mut Vec<cadmpeg_ir::products::AssemblyJoint>,
+) {
+    if joints.is_empty() {
+        return;
+    }
+    let carriers = native
+        .design_component_occurrences
+        .iter()
+        .map(|carrier| {
+            (
+                carrier.id.clone(),
+                carrier.occurrence_guid.as_str().to_owned(),
+            )
+        })
+        .collect();
+    let external = native
+        .xref_references
+        .iter()
+        .filter_map(|reference| {
+            let guid = reference
+                .placement_source
+                .as_ref()?
+                .occurrence_guid
+                .as_ref()?;
+            Some((reference.id.clone(), guid.as_str().to_owned()))
+        })
+        .collect();
+    let mut complete_scopes = CompleteJointScopes::new(&native.design_types);
+    for scope in &native.design_parameter_scopes {
+        complete_scopes.add(scope.clone());
+    }
+    rebind_projected_joints(
+        &carriers,
+        &external,
+        &complete_scopes.ids,
+        occurrences,
+        joints,
+    );
+}
+
+fn rebind_projected_joints(
+    carriers: &std::collections::BTreeMap<String, String>,
+    external: &std::collections::BTreeMap<String, String>,
+    complete_scopes: &std::collections::BTreeSet<String>,
+    occurrences: &[cadmpeg_ir::products::Occurrence],
+    joints: &mut Vec<cadmpeg_ir::products::AssemblyJoint>,
+) {
+    let member_roots = std::collections::BTreeMap::new();
+    let children = joint_children(occurrences, carriers, &member_roots, None);
+    let complete_children =
+        joint_children(occurrences, external, &member_roots, Some(children.clone()));
+    rebind_joints(
+        &mut JointRows {
+            occurrences,
+            joints,
+            features: &mut Vec::new(),
+        },
+        &children,
+        &complete_children,
+        complete_scopes,
+        JointRebind::CompleteScopes,
+        &mut Vec::new(),
+    );
+}
+
+/// The scopes whose joints bind after decode.
+struct CompleteJointScopes<'t> {
+    types: &'t [crate::records::entity_header::SegmentType],
+    types_by_stream:
+        std::collections::HashMap<String, std::collections::HashMap<u64, (&'t str, u32)>>,
+    ids: std::collections::BTreeSet<String>,
+}
+
+impl<'t> CompleteJointScopes<'t> {
+    fn new(types: &'t [crate::records::entity_header::SegmentType]) -> Self {
+        Self {
+            types,
+            types_by_stream: std::collections::HashMap::new(),
+            ids: std::collections::BTreeSet::new(),
+        }
+    }
+
+    fn add(&mut self, scope: crate::records::feature::scope::DesignParameterScope) {
+        let Some(stream) = crate::ids::native_stream(&scope.id) else {
+            return;
+        };
+        let types = self.types;
+        let stream_types = self
+            .types_by_stream
+            .entry(stream.to_owned())
+            .or_insert_with(|| {
+                stream
+                    .strip_prefix("f3d:")
+                    .and_then(crate::ids::decode_identity_key_component)
+                    .map(|entry| crate::design::decode::meta::stream_types_by_entity(types, &entry))
+                    .unwrap_or_default()
+            });
+        if crate::design::decode::scopes::assembly_v3::joint_binds_after_merge(&scope, stream_types)
+        {
+            self.ids.insert(scope.id);
+        }
+    }
+}
+
+/// Map each `(parent, lowercased key)` to the child occurrence whose native
+/// record `keys` names, through every member root above the parent. A key
+/// shared by two children of one parent maps to `None`.
+fn joint_children<'o>(
+    occurrences: &'o [cadmpeg_ir::products::Occurrence],
+    keys: &std::collections::BTreeMap<String, String>,
+    member_roots: &std::collections::BTreeMap<
+        cadmpeg_ir::ids::OccurrenceId,
+        cadmpeg_ir::ids::OccurrenceId,
+    >,
+    base: Option<JointChildren<'o>>,
+) -> JointChildren<'o> {
+    use cadmpeg_ir::products::OccurrenceParent;
+    let mut children = base.unwrap_or_default();
+    for occurrence in occurrences {
+        let Some(key) = occurrence.native_ref.as_deref().and_then(|id| keys.get(id)) else {
+            continue;
+        };
+        let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
+            continue;
+        };
+        let mut parent = parent;
+        for _ in 0..=member_roots.len() {
+            children
+                .entry((parent.clone(), key.to_ascii_lowercase()))
+                .and_modify(|selected| *selected = None)
+                .or_insert(Some(&occurrence.id));
+            let Some(outer) = member_roots.get(parent) else {
+                break;
+            };
+            parent = outer;
+        }
+    }
+    children
 }
 
 /// The rows of a model that joint rebinding reads and rewrites.
@@ -773,9 +861,6 @@ struct JointRows<'a> {
     features: &'a mut Vec<cadmpeg_ir::features::Feature>,
 }
 
-/// Complete the operand descent of the joints of `model` and bind the
-/// features of the joints that complete. A joint of a complete scope whose
-/// path does not complete is removed and reported.
 fn rebind_joints(
     model: &mut JointRows<'_>,
     children: &JointChildren<'_>,
@@ -791,27 +876,29 @@ fn rebind_joints(
         .map(|occurrence| &occurrence.id)
         .collect::<std::collections::BTreeSet<_>>();
     let mut refused = std::collections::BTreeSet::new();
-    let mut unresolved_scopes = std::collections::BTreeSet::new();
     for joint in model.joints.iter_mut() {
         let joint_id = joint.id.clone();
-        if let Some(scope) = joint
+        if joint
             .native_ref
-            .clone()
-            .filter(|id| complete_scopes.contains(id))
+            .as_ref()
+            .is_some_and(|id| complete_scopes.contains(id))
         {
             if mode == JointRebind::CompleteScopes {
-                // A standalone document keeps a readable joint whose descent
-                // continues below an unmerged placement, with its operand as
-                // decoded; its feature stays native.
                 let mut descended = joint.clone();
+                let mut nested = joint.clone();
                 if complete_joint_descent(&mut descended, complete_children, &instances) {
                     *joint = descended;
-                } else {
-                    losses.push(F3dLossCode::AssemblyOperandDescentUnresolved.note(format!(
-                        "joint {}: the complete occurrence path continues below an unmerged placement; the joint keeps its decoded operand and its feature stays native",
+                } else if nest_residual_descent(&mut nested, complete_children, &instances) {
+                    losses.push(F3dLossCode::AssemblyOperandNestedPathRetained.note(format!(
+                        "joint {}: the occurrence path continues inside an unmerged inserted document; the remaining keys stay a nested occurrence path",
                         joint.id
                     )));
-                    unresolved_scopes.insert(scope);
+                    *joint = nested;
+                } else {
+                    losses.push(F3dLossCode::AssemblyJointSourceBindingAssumed.note(format!(
+                        "joint {}: the timeline feature uses the decoded joint with unresolved source operand identities; their document and occurrence bindings are assumed",
+                        joint.id
+                    )));
                 }
             } else if !retain_complete_joint(joint, complete_children, &instances, losses) {
                 refused.insert(joint_id.clone());
@@ -864,15 +951,9 @@ fn rebind_joints(
         }
     }
     model.joints.retain(|joint| !refused.contains(&joint.id));
-    let bindable = complete_scopes
-        .difference(&unresolved_scopes)
-        .cloned()
-        .collect::<std::collections::BTreeSet<_>>();
-    bind_retained_joint_features(model.features, model.joints, &bindable);
+    bind_retained_joint_features(model.features, model.joints, complete_scopes);
 }
 
-/// Bind the features of joints that survived complete descent. A refused joint
-/// has no row, so its feature keeps its native definition and parameters.
 fn bind_retained_joint_features(
     features: &mut [cadmpeg_ir::features::Feature],
     joints: &[cadmpeg_ir::products::AssemblyJoint],
@@ -909,6 +990,56 @@ fn retain_complete_joint(
         "joint {}: the complete occurrence path has no unique merged insertion instance; the joint stays native", joint.id
     )));
     false
+}
+
+/// Descend each occurrence operand through keyed children to an occurrence
+/// that has none, and keep its remaining keys as the nested occurrence path
+/// inside that occurrence's document.
+fn nest_residual_descent(
+    joint: &mut cadmpeg_ir::products::AssemblyJoint,
+    children: &JointChildren<'_>,
+    instances: &std::collections::BTreeSet<&cadmpeg_ir::ids::OccurrenceId>,
+) -> bool {
+    use cadmpeg_ir::products::OperandContainer;
+    for connector in joint.connectors_mut() {
+        let operand = &mut connector.operand;
+        let OperandContainer::Occurrence {
+            occurrence,
+            occurrence_path,
+        } = &operand.container
+        else {
+            if !matches!(operand.container, OperandContainer::Root {})
+                || !operand.subelements.is_empty()
+            {
+                return false;
+            }
+            continue;
+        };
+        if !instances.contains(occurrence) || !occurrence_path.is_empty() {
+            return false;
+        }
+        let mut selected = occurrence;
+        let mut consumed = 0;
+        for key in &operand.subelements {
+            match children.get(&(selected.clone(), key.to_ascii_lowercase())) {
+                Some(Some(child)) => {
+                    selected = child;
+                    consumed += 1;
+                }
+                Some(None) => return false,
+                None => break,
+            }
+        }
+        if children.keys().any(|(parent, _)| parent == selected) {
+            return false;
+        }
+        operand.container = OperandContainer::Occurrence {
+            occurrence: selected.clone(),
+            occurrence_path: operand.subelements.split_off(consumed),
+        };
+        operand.subelements.clear();
+    }
+    true
 }
 
 fn complete_joint_descent(

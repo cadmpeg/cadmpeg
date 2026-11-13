@@ -1830,8 +1830,11 @@ fn validate_features(
                 record,
             )
         }));
+    let extrusion_positions = data.feature_positions(ctx)?;
     let extrusion_index = crate::feature::extrusion::ValidationIndex::new(
         &crate::feature::extrusion::ValidationRecords {
+            features: &data.pm_dc_features,
+            labels: &data.pm_dc_feature_labels,
             properties: &data.pm_dc_feature_properties,
             parameters: &data.pm_dc_parameters,
             sketches: &data.pm_dc_sketches,
@@ -1841,6 +1844,7 @@ fn validate_features(
             entity_links: &data.pm_dc_entity_style_links,
             kernel_links: &data.pm_dc_kernel_entity_links,
             model: &ir.model,
+            positions: &extrusion_positions,
         },
     );
     let loft_index = ir
@@ -1912,6 +1916,7 @@ fn validate_features(
                 values: &ir.model.parameters,
                 transforms: &data.pm_dc_transforms,
                 directions: &data.pm_dc_directions,
+                bodies: &body_joins,
             })
         });
     let revolve_sketches = ir
@@ -2109,6 +2114,7 @@ fn validate_features(
                 feature,
                 raw_feature,
                 &ir.model.feature_input_topologies,
+                &data.active_carrier,
                 |id| {
                     let mut candidates = data
                         .pm_dc_feature_properties
@@ -2530,6 +2536,7 @@ fn validate_features(
             feature,
             raw_feature,
             &ir.model.feature_input_topologies,
+            &data.active_carrier,
             |id| {
                 let mut candidates = data
                     .pm_dc_feature_properties
@@ -2561,7 +2568,7 @@ fn validate_features(
                     .copied()
             })
             .is_none_or(|expected| {
-                !crate::feature::body_selection::matches(
+                !crate::feature::body_selection::combine_matches(
                     expected,
                     definition,
                     &body_joins,
@@ -2570,6 +2577,16 @@ fn validate_features(
                         &data.pm_dc_feature_properties,
                     )
                     .as_deref(),
+                    &crate::feature::body_selection::produced_before(
+                        &ir.model.features,
+                        &ir.model.feature_result_topologies,
+                        feature,
+                        &crate::feature::body_selection::ProducerRecords {
+                            features: &data.pm_dc_features,
+                            labels: &data.pm_dc_feature_labels,
+                            properties: &data.pm_dc_feature_properties,
+                        },
+                    ),
                 )
             })
         {
@@ -2596,7 +2613,25 @@ fn validate_features(
                 },
             );
             if expected.ok().is_none_or(|expected| {
-                !crate::feature::body_selection::matches(expected, definition, &body_joins, None)
+                !crate::feature::body_selection::split_matches(
+                    expected,
+                    definition,
+                    &body_joins,
+                    &crate::feature::body_selection::produced_before(
+                        &ir.model.features,
+                        &ir.model.feature_result_topologies,
+                        feature,
+                        &crate::feature::body_selection::ProducerRecords {
+                            features: &data.pm_dc_features,
+                            labels: &data.pm_dc_feature_labels,
+                            properties: &data.pm_dc_feature_properties,
+                        },
+                    ),
+                    crate::feature::body_selection::qualified_split_target(
+                        raw_feature,
+                        &data.pm_dc_feature_properties,
+                    ),
+                )
             }) {
                 findings.push(finding(
                     Check::NativeLinks,
@@ -3092,6 +3127,59 @@ struct NativeData {
 }
 
 impl NativeData {
+    /// The B-rep segments of the metadata, with their roles.
+    fn brep_segment_names(&self) -> Vec<crate::design::scope::BrepSegmentName> {
+        use crate::design::scope::{BrepSegmentName, BrepSegmentRole};
+        self.metadata
+            .iter()
+            .filter_map(|segment| {
+                let role = match segment.kind.as_str() {
+                    "pm_brep" => BrepSegmentRole::Document,
+                    "mb_brep" => BrepSegmentRole::FlatPattern,
+                    _ => return None,
+                };
+                Some(BrepSegmentName {
+                    display_name: segment.display_name.clone(),
+                    role,
+                })
+            })
+            .collect()
+    }
+
+    /// The history position of each feature record, by segment token and
+    /// record ordinal.
+    fn feature_positions(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<HashMap<(&str, u32), u64>, CodecError> {
+        let segments = self.brep_segment_names();
+        let records = crate::feature::history::HistoryRecords {
+            features: &self.pm_dc_features,
+            patterns: &self.pm_dc_pattern_features,
+            labels: &self.pm_dc_feature_labels,
+            terminators: &self.pm_dc_feature_terminators,
+            sketches: &self.pm_dc_sketches,
+            work_planes: &self.pm_dc_work_planes,
+            roots: &self.pm_dc_model_roots,
+            segments: &segments,
+        };
+        let tokens = self
+            .pm_dc_features
+            .iter()
+            .map(|feature| feature.identity.segment_token.as_str())
+            .collect::<HashSet<_>>();
+        let mut positions = HashMap::new();
+        for token in tokens {
+            let history = crate::feature::history::build_records(ctx, token, &records)?;
+            positions.extend(
+                history
+                    .placements()
+                    .map(|(ordinal, placement)| ((token, ordinal), placement.ordinal)),
+            );
+        }
+        Ok(positions)
+    }
+
     fn load(
         ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::native::NativeNamespace,
@@ -3970,7 +4058,8 @@ pub(crate) fn sketch_constraint_references(constraint: &PmDcSketchConstraint) ->
             parameter,
             ..
         } => references.extend([first.index(), second.index(), parameter.index()]),
-        PmDcSketchConstraintKind::Radius { entity, .. } => {
+        PmDcSketchConstraintKind::Radius { entity, .. }
+        | PmDcSketchConstraintKind::CircleParameter { entity, .. } => {
             references.push(entity.index());
         }
         PmDcSketchConstraintKind::Diameter {

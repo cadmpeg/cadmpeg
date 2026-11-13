@@ -47,6 +47,9 @@ use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpe
 pub mod holes;
 use holes::{HoleBottom, HolePlacement, HoleProfileFilter, HoleShape};
 
+#[doc = "Mesh source selections."]
+pub mod mesh;
+
 pub mod patterns;
 use patterns::{PatternKind, PatternSeed};
 
@@ -1102,6 +1105,42 @@ pub struct DraftPull {
         deserialize_with = "deserialize_plane"
     )]
     pub plane: Option<FeatureId>,
+    /// Frame of the plane that supplied the direction, in the same space as
+    /// `direction`, when no datum-plane feature is retained.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_frame"
+    )]
+    pub frame: Option<FeatureSupportPlaneFrame>,
+}
+
+/// Relative bound on the sine between a draft pull direction and its plane-frame normal.
+const EPS_DRAFT_PULL_FRAME_PARALLEL: f64 = 1.0e-9;
+
+impl DraftPull {
+    /// Pull frame with a direction and an optional datum-plane feature.
+    #[must_use]
+    pub const fn new(direction: FeatureDirection3, plane: Option<FeatureId>) -> Self {
+        Self {
+            direction,
+            plane,
+            frame: None,
+        }
+    }
+
+    /// Return whether the retained plane frame, if any, has a normal parallel
+    /// or antiparallel to the direction.
+    #[must_use]
+    pub fn frame_matches_direction(&self) -> bool {
+        self.frame.is_none_or(|frame| {
+            let normal = frame.normal();
+            let scale = normal.norm() * self.direction.norm();
+            scale.is_finite()
+                && normal.get().cross(self.direction.get()).norm()
+                    <= EPS_DRAFT_PULL_FRAME_PARALLEL * scale
+        })
+    }
 }
 
 /// Draft of the face portions on the far side of a two-sided draft's neutral plane.
@@ -2678,6 +2717,17 @@ impl<'de> Deserialize<'de> for TreeChildren {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[doc = "Operation mode for a local component occurrence transfer."]
+pub enum ComponentTransferMode {
+    #[doc = "A new local component occurrence is created from an existing occurrence."]
+    Copy,
+    #[doc = "An existing local component occurrence changes its containing definition."]
+    Reparent,
+}
+
 /// A feature operation: neutral construction semantics with an explicit native
 /// escape hatch, and no post-processing layer of its own.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2699,9 +2749,9 @@ pub enum FeatureOperation {
     },
     /// Mesh geometry imported into the parametric timeline.
     MeshImport {
-        /// Tessellation identities supplied by the mesh-body records.
+        #[doc = "Resolved tessellations or a retained mesh source."]
         #[serde(deserialize_with = "deserialize_local_tessellations")]
-        tessellations: SelectionMembers<String>,
+        tessellations: mesh::MeshSelection,
     },
     /// Independent bodies introduced by a copy-and-paste operation. The copies
     /// are the feature's outputs, so the selection carries only its native
@@ -2714,6 +2764,58 @@ pub enum FeatureOperation {
     InsertComponent {
         /// Placed occurrence created by this history operation.
         occurrence: OccurrenceId,
+    },
+    #[doc = "Component occurrences introduced by one construction feature."]
+    InsertComponents {
+        #[doc = "Resolved membership and its retained native selection."]
+        components: InsertedComponents,
+    },
+    #[doc = "Component occurrence copied or transferred between local owners."]
+    ComponentTransfer {
+        #[doc = "Whether the feature copies an occurrence or changes its owner."]
+        mode: ComponentTransferMode,
+        #[doc = "Transferred occurrence when its persistent identity resolves."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_occurrence"
+        )]
+        occurrence: Option<OccurrenceId>,
+        #[doc = "Reusable component definition when its identity resolves."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_component"
+        )]
+        component: Option<ProductDefinitionId>,
+        #[doc = "Source containing definition when it resolves."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_source_owner"
+        )]
+        source_owner: Option<ProductDefinitionId>,
+        #[doc = "Destination containing definition when it resolves."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_target_owner"
+        )]
+        target_owner: Option<ProductDefinitionId>,
+        #[doc = "Source local placement when the operation stores one."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_source_transform"
+        )]
+        source_transform: Option<Transform>,
+        #[doc = "Destination local placement when the operation stores one."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_target_transform"
+        )]
+        target_transform: Option<Transform>,
     },
     /// Assembly constraint introduced into the product structure.
     AssemblyJoint {
@@ -3679,6 +3781,17 @@ pub enum FeatureOperation {
         /// Side retained by the trim.
         keep: BodyTrimSide,
     },
+    /// Removes one side of selected bodies at a datum plane. The selected
+    /// bodies keep their identity and retain the side named by `keep`.
+    TrimBodiesAtPlane {
+        /// Bodies trimmed by the operation.
+        targets: BodySelection,
+        /// Earlier datum-plane feature supplying the trimming plane.
+        plane: FeatureId,
+        /// Side retained: `Forward` keeps the side that the plane normal
+        /// points into, `Reverse` keeps the opposite side.
+        keep: BodyTrimSide,
+    },
     /// Partitions selected bodies with surface faces or a datum plane while
     /// retaining every resulting side.
     SplitBody {
@@ -4060,6 +4173,27 @@ pub enum UnresolvedFamily {
 }
 
 impl FeatureOperation {
+    #[doc = "Construct a component-transfer operation from its readable operands."]
+    pub fn component_transfer(
+        mode: ComponentTransferMode,
+        occurrence: Option<OccurrenceId>,
+        component: Option<ProductDefinitionId>,
+        source_owner: Option<ProductDefinitionId>,
+        target_owner: Option<ProductDefinitionId>,
+        source_transform: Option<Transform>,
+        target_transform: Option<Transform>,
+    ) -> Self {
+        Self::ComponentTransfer {
+            mode,
+            occurrence,
+            component,
+            source_owner,
+            target_owner,
+            source_transform,
+            target_transform,
+        }
+    }
+
     /// Family name of an operation whose replay produces body geometry, and `None` for
     /// definitions that do not.
     ///
@@ -4118,7 +4252,7 @@ impl FeatureOperation {
             Self::FaceBlend { .. } => Some("face blend"),
             Self::Shell { .. } => Some("shell"),
             Self::SewBodies { .. } => Some("sew bodies"),
-            Self::TrimBodies { .. } => Some("trim bodies"),
+            Self::TrimBodies { .. } | Self::TrimBodiesAtPlane { .. } => Some("trim bodies"),
             Self::Extrude { .. } => Some("extrude"),
             Self::Revolve { .. } => Some("revolve"),
             Self::Sweep { .. } => Some("sweep"),
@@ -6925,6 +7059,118 @@ pub enum InsertedBodies {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[doc = "Invalid membership or native reference of a component insertion."]
+pub enum InsertedComponentsError {
+    #[doc = "A resolved or partial insertion has no known occurrence."]
+    #[error("resolved or partial component insertion must select an occurrence")]
+    Empty,
+    #[doc = "The known membership repeats an occurrence."]
+    #[error("component insertion repeats an occurrence")]
+    RepeatedOccurrence,
+    #[doc = "The retained native selection is blank."]
+    #[error("component insertion native reference must not be blank")]
+    BlankNative,
+    #[doc = "The allocator refused selection storage."]
+    #[error("component insertion allocation failed")]
+    Allocation,
+}
+
+impl From<BodySelectionError> for InsertedComponentsError {
+    fn from(error: BodySelectionError) -> Self {
+        match error {
+            BodySelectionError::Empty => Self::Empty,
+            BodySelectionError::RepeatedBody | BodySelectionError::RepeatedNativeMember => {
+                Self::RepeatedOccurrence
+            }
+            BodySelectionError::BlankNativeMember => Self::BlankNative,
+            BodySelectionError::Allocation => Self::Allocation,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[doc = "Occurrence membership of an insertion with its complete native selection."]
+pub enum InsertedComponents {
+    #[doc = "Insertion membership remains in its native selection."]
+    Native {
+        #[doc = "Format-native selection expression."]
+        native: SelectionReference,
+    },
+    #[doc = "Every inserted occurrence resolves to the neutral model."]
+    Resolved {
+        #[doc = "Nonempty distinct occurrences in source order."]
+        occurrences: SelectionMembers<OccurrenceId>,
+        #[doc = "Format-native selection expression."]
+        native: SelectionReference,
+    },
+    #[doc = "Known inserted occurrences accompany unresolved native membership."]
+    Partial {
+        #[doc = "Nonempty distinct known occurrences in source order."]
+        occurrences: SelectionMembers<OccurrenceId>,
+        #[doc = "Format-native expression retaining the complete selection."]
+        native: SelectionReference,
+    },
+}
+
+impl InsertedComponents {
+    #[doc = "Retain unresolved membership through a nonblank native selection."]
+    pub fn native(native: String) -> Result<Self, InsertedComponentsError> {
+        Ok(Self::Native {
+            native: SelectionReference::new(native)?,
+        })
+    }
+
+    #[doc = "Admit complete nonempty distinct membership and its native selection."]
+    pub fn resolved(
+        occurrences: Vec<OccurrenceId>,
+        native: String,
+    ) -> Result<Self, InsertedComponentsError> {
+        Ok(Self::Resolved {
+            occurrences: SelectionMembers::try_from(occurrences)?,
+            native: SelectionReference::new(native)?,
+        })
+    }
+
+    #[doc = "Admit nonempty distinct known membership and the complete native selection."]
+    pub fn partial(
+        occurrences: Vec<OccurrenceId>,
+        native: String,
+    ) -> Result<Self, InsertedComponentsError> {
+        Ok(Self::Partial {
+            occurrences: SelectionMembers::try_from(occurrences)?,
+            native: SelectionReference::new(native)?,
+        })
+    }
+
+    #[must_use]
+    #[doc = "Whether every inserted occurrence is resolved."]
+    pub const fn is_resolved(&self) -> bool {
+        matches!(self, Self::Resolved { .. })
+    }
+
+    #[must_use]
+    #[doc = "Known occurrence identities in source order."]
+    pub fn occurrences(&self) -> &[OccurrenceId] {
+        match self {
+            Self::Native { .. } => &[],
+            Self::Resolved { occurrences, .. } | Self::Partial { occurrences, .. } => occurrences,
+        }
+    }
+
+    #[must_use]
+    #[doc = "The retained format-native expression for the complete insertion."]
+    pub fn native_reference(&self) -> &SelectionReference {
+        match self {
+            Self::Native { native }
+            | Self::Resolved { native, .. }
+            | Self::Partial { native, .. } => native,
+        }
+    }
+}
+
 impl InsertedBodies {
     /// Whether the copied bodies are resolved to the neutral model.
     #[must_use]
@@ -8300,6 +8546,9 @@ pub struct SketchProfileBoundaryUse {
     /// Sketch entity supplying the curve geometry.
     pub entity: crate::sketches::SketchEntityId,
     /// Parameter endpoints on the source curve, ordered in the entity's stored direction.
+    /// A line is parameterized from `0` at its start point to `1` at its end point; an arc
+    /// or circle by its angle in radians; an ellipse by its eccentric angle in radians; a
+    /// NURBS curve by its knot-domain coordinate.
     #[serde(deserialize_with = "deserialize_profile_parameter_range")]
     pub parameter_range: crate::geometry::DirectedParameterRange,
     /// Whether boundary traversal opposes the interval's stored direction.
@@ -9375,6 +9624,7 @@ mod tests;
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_plane, FeatureId, "plane");
 cadmpeg_core::named_optional_field!(deserialize_pull, DraftPull, "pull");
+cadmpeg_core::named_optional_field!(deserialize_frame, FeatureSupportPlaneFrame, "frame");
 cadmpeg_core::named_optional_field!(
     deserialize_draft_second_side,
     DraftSecondSide,
@@ -9399,6 +9649,32 @@ cadmpeg_core::named_optional_field!(
     "regeneration_parent"
 );
 cadmpeg_core::named_optional_field!(deserialize_source_tag, String, "source_tag");
+cadmpeg_core::named_optional_field!(deserialize_transfer_occurrence, OccurrenceId, "occurrence");
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_component,
+    ProductDefinitionId,
+    "component"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_source_owner,
+    ProductDefinitionId,
+    "source_owner"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_target_owner,
+    ProductDefinitionId,
+    "target_owner"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_source_transform,
+    Transform,
+    "source_transform"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_target_transform,
+    Transform,
+    "target_transform"
+);
 cadmpeg_core::named_optional_field!(deserialize_source_text, String, "source_text");
 cadmpeg_core::named_optional_field!(deserialize_active_child, FeatureId, "active_child");
 cadmpeg_core::named_optional_field!(deserialize_diameter, PositiveLength, "diameter");

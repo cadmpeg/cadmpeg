@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact generator joins and complete result-face construction checks.
 
+use crate::feature::profile::selection::PathCurve;
 use cadmpeg_ir::{
     attributes::{AttributeTarget, AttributeValue},
     document::Model,
@@ -15,6 +16,11 @@ use std::collections::{HashMap, HashSet};
 
 const EPS_RESULT_POINT_MM: f64 = 1.0e-5;
 const EPS_SWEEP_RADIUS_MM: f64 = 1.0e-5;
+/// Largest distance between a side-face axis or center and the joined path
+/// curve.
+const EPS_SWEEP_PATH_MM: f64 = 1.0e-5;
+/// Largest sine of the angle between a cylinder axis and its path line.
+const EPS_SWEEP_AXIS: f64 = 1.0e-6;
 
 struct NamedFace<'a> {
     face: &'a Face,
@@ -116,10 +122,11 @@ pub(in crate::feature::loft_sweep) fn sweep(
     generator: u32,
     radius: f64,
     profile: i64,
-    path: &[i64],
+    path: &[(i64, Option<PathCurve>)],
     endpoints: [Point3; 2],
 ) -> Option<()> {
     let faces = owned_faces(model, generator)?;
+    let joined = |span: i64| path.iter().find(|(name, _)| *name == span)?.1;
     let mut caps = HashMap::new();
     let mut spans = HashSet::new();
     for named in &faces {
@@ -150,7 +157,8 @@ pub(in crate::feature::loft_sweep) fn sweep(
             }
             (section, span, 20, SolvedSurfaceGeometry::Cylinder(cylinder))
                 if *section == profile
-                    && (cylinder.radius().get() - radius).abs() <= EPS_SWEEP_RADIUS_MM =>
+                    && (cylinder.radius().get() - radius).abs() <= EPS_SWEEP_RADIUS_MM
+                    && joined(*span).is_none_or(|curve| along_line(cylinder, curve)) =>
             {
                 if !spans.insert(*span) {
                     return None;
@@ -158,7 +166,8 @@ pub(in crate::feature::loft_sweep) fn sweep(
             }
             (section, span, 20, SolvedSurfaceGeometry::Torus(torus))
                 if *section == profile
-                    && (torus.minor_radius().get().abs() - radius).abs() <= EPS_SWEEP_RADIUS_MM =>
+                    && (torus.minor_radius().get().abs() - radius).abs() <= EPS_SWEEP_RADIUS_MM
+                    && joined(*span).is_none_or(|curve| about_arc(torus, curve)) =>
             {
                 if !spans.insert(*span) {
                     return None;
@@ -167,7 +176,9 @@ pub(in crate::feature::loft_sweep) fn sweep(
             _ => return None,
         }
     }
-    if caps.len() != 2 || spans.len() != path.len() || !path.iter().all(|name| spans.contains(name))
+    if caps.len() != 2
+        || spans.len() != path.len()
+        || !path.iter().all(|(name, _)| spans.contains(name))
     {
         return None;
     }
@@ -179,11 +190,45 @@ pub(in crate::feature::loft_sweep) fn sweep(
     Some(())
 }
 
+/// Whether the cylinder axis is the line of a line-joined span.
+fn along_line(
+    cylinder: &cadmpeg_ir::geometry::analytic::CylinderSurface,
+    curve: PathCurve,
+) -> bool {
+    let PathCurve::Line { start, end } = curve else {
+        return false;
+    };
+    let axis = *cylinder.frame().axis().as_raw();
+    let line = end.vector_from(start);
+    let length = line.norm();
+    let off_axis = |point: Point3| {
+        let offset = point.vector_from(cylinder.origin().get());
+        offset.cross(axis).norm()
+    };
+    length > 0.0
+        && line.cross(axis).norm() <= EPS_SWEEP_AXIS * length
+        && off_axis(start) <= EPS_SWEEP_PATH_MM
+        && off_axis(end) <= EPS_SWEEP_PATH_MM
+}
+
+/// Whether the torus center and major radius are those of an arc-joined span.
+fn about_arc(torus: &cadmpeg_ir::geometry::analytic::TorusSurface, curve: PathCurve) -> bool {
+    let PathCurve::Arc { center, radius } = curve else {
+        return false;
+    };
+    same_point_within(torus.center().get(), center, EPS_SWEEP_PATH_MM)
+        && (torus.major_radius().get() - radius).abs() <= EPS_SWEEP_RADIUS_MM
+}
+
 fn same_point(left: Point3, right: Point3) -> bool {
+    same_point_within(left, right, EPS_RESULT_POINT_MM)
+}
+
+fn same_point_within(left: Point3, right: Point3, tolerance: f64) -> bool {
     (left.x - right.x)
         .hypot(left.y - right.y)
         .hypot(left.z - right.z)
-        <= EPS_RESULT_POINT_MM
+        <= tolerance
 }
 
 fn cap_center(model: &Model, face: &Face, radius: f64) -> Option<Point3> {

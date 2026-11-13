@@ -345,22 +345,14 @@ fn blend(index: usize, owner: i64, schema: u32, generator: i64) -> Record {
 }
 
 #[test]
-fn a_schema_43_carrier_joins_no_face() {
-    let records = archive(38)
-        .into_iter()
-        .map(|mut record| {
-            let mut tokens = record.tokens.to_vec();
-            for token in &mut tokens {
-                if matches!(token, Token::Long(38)) {
-                    *token = Token::Long(43);
-                }
-            }
-            record.tokens = tokens.into();
-            record
-        })
-        .collect::<Vec<_>>();
-    assert!(crate::feature::edge_selection::matched_qualified(&records[1], 43).is_some());
-    assert!(run(&records, 43).is_none());
+fn a_schema_43_face_join_checks_the_generated_name_and_carrier_schema() {
+    let records = archive(43);
+    assert!(run(&records, 43).is_some());
+    let mut foreign = records.clone();
+    foreign[2] = generated(11, 1, 43, 99);
+    assert!(run(&foreign, 43).is_none());
+    assert!(run(&records, 42).is_none());
+    assert!(run(&archive(45), 45).is_none());
 }
 
 #[test]
@@ -588,6 +580,7 @@ fn fixture(
 
 fn selected_face(owner: i64, item: u32, surface: Surface) -> SelectedFace {
     SelectedFace {
+        schema: 42,
         owner,
         owners: vec![owner],
         generators: 1,
@@ -611,10 +604,20 @@ fn check(
     feature: &Feature,
     states: &[FeatureInputTopology],
 ) -> bool {
+    check_with_schema(inventory, feature, states, 42)
+}
+
+fn check_with_schema(
+    inventory: &crate::feature::FeatureInventory,
+    feature: &Feature,
+    states: &[FeatureInputTopology],
+    schema: u32,
+) -> bool {
     valid(
         feature,
         &inventory.features[0],
         states,
+        &crate::feature::edge_selection::historical::tests::carrier(schema),
         |id| inventory.properties.iter().find(|p| p.id() == id),
         |r| {
             inventory
@@ -1736,7 +1739,7 @@ fn a_face_selector_stores_state_zero_or_two_and_no_other_state() {
 
 #[test]
 fn the_feature_tags_of_the_owner_state_their_source_indexes() {
-    for schema in [38, 40, 42] {
+    for schema in [38, 40, 42, 43] {
         for family in ["NMx_Brep_Feature_tag", "NMx_tweak_reblend_tag"] {
             let mut records = archive(schema);
             records.push(feature_tag(12, 1, schema, family, &[(17, -1), (19, -1)]));
@@ -1844,7 +1847,7 @@ fn a_state_two_selector_joins_a_thicken_operand_only_through_its_own_feature_tag
 }
 
 #[test]
-fn a_state_two_selector_joins_no_other_feature_kind() {
+fn a_state_two_selector_requires_an_owned_move_face_or_thicken_operand() {
     let face = |state| SelectedFace {
         state,
         feature_sources: vec![4],
@@ -1858,8 +1861,105 @@ fn a_state_two_selector_joins_no_other_feature_kind() {
         Kind::ThickenOffset,
     ] {
         assert!(state_admitted(kind, &face(0), 4), "{kind:?}");
-        assert_eq!(state_admitted(kind, &face(2), 4), kind == Kind::Thicken);
+        assert_eq!(
+            state_admitted(kind, &face(2), 4),
+            matches!(kind, Kind::MoveFace | Kind::Thicken | Kind::ThickenOffset)
+        );
         assert!(!state_admitted(kind, &face(2), 5), "{kind:?}");
         assert!(!state_admitted(kind, &face(-1), 4), "{kind:?}");
     }
+}
+
+#[test]
+fn modified_move_face_and_offset_operands_require_the_selecting_feature_tag() {
+    let ctx = context();
+    for offset in [false, true] {
+        for admitted in [true, false] {
+            let (mut inventory, mut feature) = if offset {
+                offset_thicken_fixture(&ctx)
+            } else {
+                fixture(&ctx, [&[41], &[43]])
+            };
+            let own = inventory.features[0].header.source_index;
+            for face in inventory.edge_inputs.faces.values_mut() {
+                face.state = 2;
+                face.feature_sources = vec![own + u32::from(!admitted)];
+            }
+            let states =
+                project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+            assert_eq!(states.len(), usize::from(admitted));
+            if admitted {
+                assert_eq!(states[0].faces.len(), 2);
+                assert!(check(&inventory, &feature, &states));
+            } else {
+                assert!(matches!(faces(&feature), FaceSelection::Native(_)));
+            }
+        }
+    }
+}
+
+#[test]
+fn modified_untagged_operands_keep_move_face_partial_and_offset_native() {
+    let ctx = context();
+    for offset in [false, true] {
+        let (mut inventory, mut feature) = if offset {
+            offset_thicken_fixture(&ctx)
+        } else {
+            fixture(&ctx, [&[41], &[43]])
+        };
+        let own = inventory.features[0].header.source_index;
+        for ((_, selector), face) in &mut inventory.edge_inputs.faces {
+            face.state = 2;
+            face.feature_sources = if *selector == 41 {
+                vec![own]
+            } else {
+                Vec::new()
+            };
+        }
+        let states =
+            project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+        if offset {
+            assert!(states.is_empty());
+            assert!(matches!(faces(&feature), FaceSelection::Native(_)));
+        } else {
+            assert_eq!(states.len(), 1);
+            assert_eq!(states[0].faces.len(), 1);
+            assert!(matches!(
+                faces(&feature),
+                FaceSelection::HistoricalPartial { .. }
+            ));
+            assert!(check(&inventory, &feature, &states));
+        }
+    }
+}
+
+#[test]
+fn a_modified_schema_43_move_face_requires_its_input_revision_rule() {
+    let ctx = context();
+    let (mut inventory, mut feature) = fixture(&ctx, [&[41], &[43]]);
+    let own = inventory.features[0].header.source_index;
+    for face in inventory.edge_inputs.faces.values_mut() {
+        face.schema = 43;
+        face.state = 2;
+        face.feature_sources = vec![own];
+    }
+    assert!(
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
+    assert!(matches!(faces(&feature), FaceSelection::Native(_)));
+}
+
+#[test]
+fn reader_and_validator_admit_the_same_face_carrier_schemas() {
+    let ctx = context();
+    let (inventory, mut feature) = fixture(&ctx, [&[41], &[43]]);
+    let states = project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+    for schema in [38, 40, 42, 43, 44] {
+        assert!(run(&archive(schema), schema).is_some());
+        assert!(check_with_schema(&inventory, &feature, &states, schema));
+    }
+    assert!(run(&archive(45), 45).is_none());
+    assert!(!check_with_schema(&inventory, &feature, &states, 45));
 }

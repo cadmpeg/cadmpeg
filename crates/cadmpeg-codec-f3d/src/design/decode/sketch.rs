@@ -166,6 +166,7 @@ pub(crate) fn decode_sketch_placements(
         record_offsets.insert(scope, IndexedRecordOffsets::build(bytes));
     }
     let mut visibilities = HashMap::new();
+    let mut display_names = HashMap::new();
     for entry in scan
         .entries
         .iter()
@@ -179,7 +180,7 @@ pub(crate) fn decode_sketch_placements(
         let Some((key, _)) = record_offsets.get_key_value(&scope) else {
             continue;
         };
-        for (entity_suffix, visibility) in
+        for (entity_suffix, visibility, display_name) in
             decode_sketch_visibilities_in_stream(bytes, &metadata, losses)?
         {
             if visibilities.contains_key(&(key.as_str(), entity_suffix)) {
@@ -190,6 +191,9 @@ pub(crate) fn decode_sketch_placements(
             }
 
             visibilities.insert((key.as_str(), entity_suffix), visibility);
+            if let Some(name) = display_name {
+                display_names.insert((key.as_str(), entity_suffix), name);
+            }
         }
     }
     for scope in scopes
@@ -324,6 +328,9 @@ pub(crate) fn decode_sketch_placements(
         placement.visibility = visibilities
             .get(&(stream, placement.entity_id.suffix()))
             .copied();
+        placement.display_name = display_names
+            .get(&(stream, placement.entity_id.suffix()))
+            .cloned();
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
@@ -341,7 +348,7 @@ fn decode_sketch_visibilities_in_stream(
     bytes: &[u8],
     metadata: &crate::metastream::MetaStream,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
+) -> Result<Vec<(u64, DesignSketchVisibility, Option<String>)>, CodecError> {
     let mut out = Vec::new();
     for frame in super::meta::typed_primary_frames(
         bytes,
@@ -432,12 +439,17 @@ fn decode_sketch_visibilities_in_stream(
             )));
         };
 
-        out.push((entity_suffix, visibility));
+        let display_name = decode_sketch_member_display_name(&bytes[..frame.end], member_at);
+
+        out.push((entity_suffix, visibility, display_name));
     }
     if out.is_empty() {
         return Ok(out);
     }
-    let visibilities = out.iter().copied().collect::<HashMap<_, _>>();
+    let visibilities = out
+        .iter()
+        .map(|&(suffix, vis, _)| (suffix, vis))
+        .collect::<HashMap<_, _>>();
     let mut collections = std::collections::BTreeMap::new();
     for frame in super::meta::typed_primary_frames(
         bytes,
@@ -534,7 +546,7 @@ fn decode_sketch_visibilities_in_stream(
             }
         }
     }
-    for (entity, visibility) in &mut out {
+    for (entity, visibility, _) in &mut out {
         let direct = visibility.ordinal_collection.map(std::num::NonZeroU64::get);
         let root = direct.and_then(|id| {
             if collections.contains_key(&id) {
@@ -722,6 +734,21 @@ fn decode_sketch_visibility_member(
     Some(visibility)
 }
 
+pub(super) fn decode_sketch_member_display_name(bytes: &[u8], member_at: usize) -> Option<String> {
+    let mut collection_at = member_at + visibility_member::TAIL_MARKER;
+    let reference = take_reference(bytes, &mut collection_at)?;
+    match reference {
+        Reference::Null => {}
+        Reference::Local {
+            target,
+            inline_type_guid: None,
+        } if target != 0 => {}
+        _ => return None,
+    }
+    let (name, _) = lp_utf16_bounded(bytes, collection_at, 1..=256)?;
+    (!name.trim().is_empty() && !name.chars().any(char::is_control)).then_some(name)
+}
+
 /// Byte length of a member-run head carrying an explicit 4×4 transform.
 const MEMBER_RUN_HEAD_FRAME: usize = 162;
 
@@ -859,6 +886,7 @@ fn parse_member_run_head_placement(
         id: String::new(),
         scope_record_index: None,
         entity_id: entity_id.clone(),
+        display_name: None,
         visibility: None,
         frame,
         class_tag,
@@ -980,6 +1008,7 @@ fn parse_sketch_placement_candidates(
             id: String::new(),
             scope_record_index: Some(scope_record_index),
             entity_id: entity_id.clone(),
+            display_name: None,
             visibility: None,
             frame,
             class_tag,
@@ -1712,7 +1741,31 @@ fn decode_headers_for_indices(
     }) {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = crate::ids::native_scope(&entry.name);
+        let first = out.len();
         decode_headers_for_indices_from_stream(&entry.name, &scope, bytes, wanted, &mut out);
+        if let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? {
+            if let Ok(frames) = design_primary_frames(bytes, &meta) {
+                let by_index: HashMap<_, _> = frames
+                    .into_iter()
+                    .filter_map(|frame| {
+                        u32::try_from(frame.entity_id)
+                            .ok()
+                            .map(|index| (index, frame))
+                    })
+                    .collect();
+                for header in &mut out[first..] {
+                    if let Some(frame) = by_index.get(&header.record_index) {
+                        header.byte_offset = u64_from_index(frame.start);
+                        header.class_tag = frame.class_tag.clone();
+                        header.id = design_record_id(
+                            &entry.name,
+                            ":design-record-header#",
+                            header.byte_offset,
+                        );
+                    }
+                }
+            }
+        }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
@@ -3544,7 +3597,10 @@ struct ParsedSketchGeometryGroup {
 }
 
 fn parse_sketch_geometry_group(payload: &[u8]) -> Option<ParsedSketchGeometryGroup> {
-    use crate::layout::sketch_geometry_group_prefix as group;
+    use crate::layout::{
+        sketch_geometry_group_prefix as group, sketch_geometry_group_short_tail as short_tail,
+        sketch_geometry_group_tail as long_tail,
+    };
     let field = |offset, len| {
         let mut view = View::over_retained(payload);
         view.skip(offset)?;
@@ -3588,10 +3644,16 @@ fn parse_sketch_geometry_group(payload: &[u8]) -> Option<ParsedSketchGeometryGro
     }
     let mut tail = View::over_retained(payload);
     tail.skip(cursor)?;
-    if tail.take(4)? != [0; 4] {
-        return None;
+    if tail.u8()? != short_tail::OWNER_MARKER_VALUE {
+        let mut zero_run = View::over_retained(payload);
+        zero_run.skip(cursor)?;
+        if zero_run.take(long_tail::OWNER_MARKER - long_tail::ZERO_RUN)?
+            != [0; long_tail::OWNER_MARKER - long_tail::ZERO_RUN]
+        {
+            return None;
+        }
+        cursor = cursor.checked_add(long_tail::OWNER_MARKER)?;
     }
-    cursor = cursor.checked_add(4)?;
     let sketch = take_same_segment_sketch_reference(payload, &mut cursor)?;
     (cursor == payload.len()).then_some(ParsedSketchGeometryGroup {
         ordinal,

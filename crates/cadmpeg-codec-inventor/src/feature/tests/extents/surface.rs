@@ -15,6 +15,39 @@ fn surface_extrusion(
             operation,
             extent,
             symmetric: false,
+            solid_input: SolidInput::None,
+        },
+        slots,
+        extra,
+        IDENTITY_MATRIX,
+        |_| {},
+        |_, _, _, _| {},
+    )
+}
+
+/// A surface extrusion whose slot-14 wrapper is the result wrapper of an
+/// earlier new-body solid extrusion.
+fn surface_extrusion_over_solid(
+    extent: u16,
+    slots: &[(usize, u32)],
+    extra: Vec<PmDcFeatureProperty>,
+) -> Option<Feature> {
+    surface_extrusion_with_input(SolidInput::Earlier, extent, slots, extra)
+}
+
+fn surface_extrusion_with_input(
+    solid_input: SolidInput,
+    extent: u16,
+    slots: &[(usize, u32)],
+    extra: Vec<PmDcFeatureProperty>,
+) -> Option<Feature> {
+    build_extent_extrusion(
+        ExtentCase {
+            output: Output::Surface,
+            operation: 5,
+            extent,
+            symmetric: false,
+            solid_input,
         },
         slots,
         extra,
@@ -130,7 +163,7 @@ fn surface_extrusion_refuses_operands_it_does_not_define() {
     for operation in [1, 2, 3, 4, 6] {
         assert!(surface_extrusion(operation, 5, &[], Vec::new()).is_none());
     }
-    // Slot 14 holds a surface body whose role is open.
+    // Slot 14 selects a surface body that no solid extrusion created.
     assert!(surface_extrusion(5, 5, &[(14, 22)], vec![surface_body(22)]).is_none());
     // Slot 26 is the solid result collection.
     assert!(surface_extrusion(5, 5, &[(26, 22)], vec![surface_body(22)]).is_none());
@@ -155,6 +188,7 @@ fn the_solid_decoder_refuses_the_surface_operation() {
             operation: 5,
             extent: 5,
             symmetric: false,
+            solid_input: SolidInput::None,
         },
         &[],
         Vec::new(),
@@ -186,4 +220,71 @@ fn extrusion_families_admit_only_their_own_body_kind() {
         FeatureFamily::from_definition(solid),
         Some(FeatureFamily::Extrusion)
     ));
+}
+
+#[test]
+fn through_all_surface_extrusion_over_a_solid_body_is_a_new_sheet() {
+    let feature = surface_extrusion_over_solid(5, &[(14, 22)], vec![surface_body(22)])
+        .expect("through-all surface over a solid");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent,
+        op,
+        solid: Some(false),
+        ..
+    }) = feature.evaluation.definition()
+    else {
+        panic!("not a surface extrusion");
+    };
+    assert_eq!(*op, BooleanOp::NewBody);
+    assert!(matches!(
+        extent,
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: LinearTermination::ThroughAll {},
+                draft: None,
+            }
+        }
+    ));
+}
+
+#[test]
+fn surface_extrusion_over_a_solid_body_refuses_other_slot_14_forms() {
+    // The slot-14 wrapper has to be a result wrapper of a solid extrusion.
+    assert!(surface_extrusion(5, 5, &[(14, 22)], vec![surface_body(22)]).is_none());
+    // Only a through-all extent reads the solid body.
+    assert!(surface_extrusion_over_solid(
+        7,
+        &[(13, 20), (18, 21), (14, 22)],
+        vec![
+            test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+            plane_surface(21),
+            surface_body(22),
+        ],
+    )
+    .is_none());
+    // The solid extrusion that stores the wrapper precedes the surface
+    // extrusion in the history.
+    assert!(surface_extrusion_with_input(
+        SolidInput::Later,
+        5,
+        &[(14, 22)],
+        vec![surface_body(22)]
+    )
+    .is_none());
+    // The input wrapper differs from the result wrapper of slot 16.
+    assert!(surface_extrusion_over_solid(5, &[(14, 8)], Vec::new()).is_none());
+    // The slot-14 record is a surface-body wrapper.
+    assert!(surface_extrusion_over_solid(
+        5,
+        &[(14, 22)],
+        vec![test_property(
+            22,
+            PmDcFeaturePropertyKind::Boolean {
+                name: String::new(),
+                name_value: 0,
+                value: false,
+            },
+        )],
+    )
+    .is_none());
 }

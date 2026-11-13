@@ -523,6 +523,69 @@ mod tests {
     }
 
     #[test]
+    fn plane_trim_requires_an_existing_datum_plane_feature() {
+        let feature = |id: FeatureId,
+                       ordinal,
+                       dependencies: Vec<FeatureId>,
+                       definition: FeatureDefinition| Feature {
+            product_definition: None,
+            id,
+            ordinal,
+            name: None,
+            suppressed: Some(false),
+            dependencies: crate::features::DistinctMembers::try_from(dependencies).unwrap(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: crate::features::FeatureContent::default(),
+            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+            native_ref: None,
+        };
+        let plane = FeatureId::mint("test:model:feature#a-plane").expect("identity grammar");
+        let other = FeatureId::mint("test:model:feature#b-other").expect("identity grammar");
+        let trim = FeatureId::mint("test:model:feature#c-trim").expect("identity grammar");
+        for (tool, admitted) in [(plane.clone(), true), (other.clone(), false)] {
+            let mut ir = CadIr::empty();
+            ir.model.features = vec![
+                feature(
+                    plane.clone(),
+                    0,
+                    Vec::new(),
+                    FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
+                        plane: PrincipalPlane::Right,
+                    }),
+                ),
+                feature(
+                    other.clone(),
+                    1,
+                    Vec::new(),
+                    FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                        targets: BodySelection::Unresolved,
+                        tool: SplitBodyTool::Faces(FaceSelection::Unresolved),
+                    }),
+                ),
+                feature(
+                    trim.clone(),
+                    2,
+                    vec![plane.clone(), other.clone()],
+                    FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane {
+                        targets: BodySelection::Unresolved,
+                        plane: tool,
+                        keep: crate::features::BodyTrimSide::Reverse,
+                    }),
+                ),
+            ];
+            let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+            assert_eq!(
+                report.findings.is_empty(),
+                admitted,
+                "{:?}",
+                report.findings
+            );
+        }
+    }
+
+    #[test]
     fn split_body_tool_wire_forms_round_trip() {
         let plane = FeatureId::mint("test:model:feature#plane").expect("identity grammar");
         for tool in [

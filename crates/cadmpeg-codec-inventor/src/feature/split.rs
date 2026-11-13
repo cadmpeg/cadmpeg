@@ -19,6 +19,7 @@ use super::{
 };
 
 pub(crate) mod face;
+pub(crate) mod plane_trim;
 pub(crate) mod trim;
 
 pub(crate) const CLASS_ID: ClassId = ClassId(NativeBytes::new([
@@ -109,7 +110,9 @@ pub(crate) fn definition<'a>(
         };
     let mode = enumeration(mode, 3).ok_or(NativeReason::Control(0))?;
     if mode == 1 {
-        return trim::definition(source, &resolve).ok_or(NativeReason::Mode(1));
+        return trim::definition(source, &resolve)
+            .or_else(|| plane_trim::definition(source, &resolve, &plane))
+            .ok_or(NativeReason::Mode(1));
     }
     if mode == 2 {
         return face::definition(source, &resolve, &plane).ok_or(NativeReason::Mode(2));
@@ -202,7 +205,9 @@ pub(crate) fn output_slot(definition: &FeatureDefinition) -> usize {
     if matches!(
         definition,
         FeatureDefinition::Operation(
-            FeatureOperation::SplitFace { .. } | FeatureOperation::TrimBodies { .. }
+            FeatureOperation::SplitFace { .. }
+                | FeatureOperation::TrimBodies { .. }
+                | FeatureOperation::TrimBodiesAtPlane { .. }
         )
     ) {
         7
@@ -268,7 +273,8 @@ pub(super) fn project(
         | FeatureOperation::SplitFace {
             tool: SplitFaceTool::Plane { plane },
             ..
-        },
+        }
+        | FeatureOperation::TrimBodiesAtPlane { plane, .. },
     ) = &definition
     {
         dependencies.insert(plane.clone());
@@ -330,9 +336,10 @@ pub(super) fn project(
                     FeatureDefinition::Operation(FeatureOperation::SplitFace { .. }) => {
                         "split_face"
                     }
-                    FeatureDefinition::Operation(FeatureOperation::TrimBodies { .. }) => {
-                        "trim_bodies"
-                    }
+                    FeatureDefinition::Operation(
+                        FeatureOperation::TrimBodies { .. }
+                        | FeatureOperation::TrimBodiesAtPlane { .. },
+                    ) => "trim_bodies",
                     _ => "split_body",
                 }
                 .into(),

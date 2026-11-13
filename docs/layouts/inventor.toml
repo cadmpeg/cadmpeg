@@ -202,8 +202,8 @@ anchor = "references u32[5]"
 [[record]]
 name = "pm_dc_cf2b17_state"
 kind = "byte"
-section = "13"
-anchor = "type `cf2b17de9c46a894e06459a70546aa94` has a state content header"
+section = "13.11"
+anchor = "a tolerance feature of type `cf2b17de9c46a894e06459a70546aa94` has a state content header"
 size = 4
 note = "Offset starts after the versioned state content header in segment major versions 25 and 28."
 
@@ -212,7 +212,7 @@ name = "state"
 offset = 0
 type = "i32"
 source = "spec"
-anchor = "`state:i32 = -1` and a sequence of u32 values"
+anchor = "tolerance state i32 = -1"
 value = -1
 
 [[record]]
@@ -4241,6 +4241,60 @@ source = "spec"
 anchor = "the single-entry Mirror instance map has type"
 
 [[record]]
+name = "pm_dc_mirror_plane_reference_tail_v19"
+kind = "byte"
+section = "13"
+anchor = "In segment major version 19, a plane-reference record of type"
+size = 18
+note = "Offsets start after the segment-major-19 content header."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/mirror/plane_reference.rs"
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "In segment major version 19, a plane-reference record of type"
+value = -1
+
+[[record.field]]
+name = "owner"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "In segment major version 19, a plane-reference record of type"
+
+[[record.field]]
+name = "marker0"
+offset = 8
+type = "u8"
+source = "spec"
+anchor = "In segment major version 19, a plane-reference record of type"
+value = 1
+
+[[record.field]]
+name = "marker1"
+offset = 9
+type = "u8"
+source = "spec"
+anchor = "In segment major version 19, a plane-reference record of type"
+value = 5
+
+[[record.field]]
+name = "target"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "In segment major version 19, a plane-reference record of type"
+
+[[record.field]]
+name = "role"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "In segment major version 19, a plane-reference record of type"
+
+[[record]]
 name = "pm_dc_mirror_generated_body_feature_v19"
 kind = "byte"
 section = "13"
@@ -5449,3 +5503,375 @@ offset = 14
 type = "u8"
 source = "spec"
 anchor = "tail_state u8"
+
+[[record]]
+name = "pm_dc_frame_row_v25"
+kind = "byte"
+section = "13.11"
+anchor = "its frame row of type `261b9fa9bc4dafc38f0570970a8313ce`"
+size = 82
+note = "A feature-control-frame row in segment major version 25."
+parsed_by = "crates/cadmpeg-codec-inventor/src/annotation/records.rs"
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "frame header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "frame header_id u16"
+
+[[record.field]]
+name = "characteristic"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "characteristic u32"
+
+[[record.field]]
+name = "magnitude"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "magnitude u32"
+
+[[record.field]]
+name = "zone_modifiers"
+offset = 14
+type = "u32[3]"
+source = "spec"
+anchor = "zone_modifiers u32[3]"
+
+[[record.field]]
+name = "second_value"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "second_value u32"
+
+[[record.field]]
+name = "third_value"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "third_value u32"
+
+[[record.field]]
+name = "datums"
+offset = 34
+type = "u32[3]"
+source = "spec"
+anchor = "datums u32[3]"
+
+[[record.field]]
+name = "datum_modifiers"
+offset = 46
+type = "u8[36]"
+source = "spec"
+anchor = "datum_modifiers u8[36]"
+
+[[record]]
+name = "pm_dc_frame_row_v28"
+kind = "byte"
+section = "13.11"
+anchor = "its frame row of type `261b9fa9bc4dafc38f0570970a8313ce`"
+size = 102
+note = "A feature-control-frame row in segment major version 28."
+parsed_by = "crates/cadmpeg-codec-inventor/src/annotation/records.rs"
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "frame header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "frame header_id u16"
+
+[[record.field]]
+name = "characteristic"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "characteristic u32"
+
+[[record.field]]
+name = "magnitude"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "magnitude u32"
+
+[[record.field]]
+name = "zone_modifiers"
+offset = 14
+type = "u32[3]"
+source = "spec"
+anchor = "zone_modifiers u32[3]"
+
+[[record.field]]
+name = "second_value"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "second_value u32"
+
+[[record.field]]
+name = "third_value"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "third_value u32"
+
+[[record.field]]
+name = "datums"
+offset = 34
+type = "u32[3]"
+source = "spec"
+anchor = "datums u32[3]"
+
+[[record.field]]
+name = "datum_modifiers"
+offset = 46
+type = "u8[36]"
+source = "spec"
+anchor = "datum_modifiers u8[36]"
+
+[[record.field]]
+name = "identifier"
+offset = 82
+type = "u8[16]"
+source = "spec"
+anchor = "frame identifier u8[16]"
+
+[[record.field]]
+name = "frame_reference"
+offset = 98
+type = "u32"
+source = "spec"
+anchor = "frame_reference u32"
+
+[[record]]
+name = "pm_dc_naming_table_header"
+kind = "byte"
+section = "13.11"
+anchor = "A naming table of type `4220e9ccd111c5710008a7ba32a3dc09` contains"
+size = 18
+note = "The entries follow the header."
+parsed_by = "crates/cadmpeg-codec-inventor/src/annotation/records.rs"
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "table header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "table header_id u16"
+
+[[record.field]]
+name = "next"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "next u32"
+
+[[record.field]]
+name = "last_identifier"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "last_identifier u32"
+
+[[record.field]]
+name = "count"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "count u32"
+
+[[record]]
+name = "pm_dc_annotation_value_block"
+kind = "byte"
+section = "13.11"
+anchor = "A value record has the content header of section 12, with stamps"
+size = 76
+note = "The block between the fit texts and the parameter references of a value record."
+parsed_by = "crates/cadmpeg-codec-inventor/src/annotation/records.rs"
+
+[[record.field]]
+name = "block"
+offset = 0
+type = "u8[76]"
+source = "spec"
+anchor = "value block bytes[76]"
+
+[[record]]
+name = "pm_dc_hole_note_flags"
+kind = "byte"
+section = "13.11"
+anchor = "A plain hole note continues with"
+size = 16
+note = "The flag words that follow the four hole parameters of a plain hole note."
+parsed_by = "crates/cadmpeg-codec-inventor/src/annotation/records.rs"
+
+[[record.field]]
+name = "word_a"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "hole flags word_a u32 = 1"
+value = 1
+
+[[record.field]]
+name = "word_b"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "hole flags word_b u32 = 0"
+value = 0
+
+[[record.field]]
+name = "word_c"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "hole flags word_c u32 = 0x01000000"
+value = 16777216
+
+[[record.field]]
+name = "word_d"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "hole flags word_d u32 = 0"
+value = 0
+
+[[record]]
+name = "pm_dc_generated_name_tail"
+kind = "byte"
+section = "13.11"
+anchor = "The record type of a generated name gives the attribute families"
+size = 16
+note = "The tail of a generated name record of the generated and sweep families."
+parsed_by = "crates/cadmpeg-codec-inventor/src/annotation/names.rs"
+
+[[record.field]]
+name = "lead"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "u32 0, u32 0, `associative_id:u32`"
+value = 0
+
+[[record.field]]
+name = "second"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "u32 0, u32 0, `associative_id:u32`"
+value = 0
+
+[[record.field]]
+name = "associative_id"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "`associative_id:u32`"
+
+[[record.field]]
+name = "role"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "`role:u32`"
+
+[[record]]
+name = "pm_dc_hole_name_tail"
+kind = "byte"
+section = "13.11"
+anchor = "The record type of a generated name gives the attribute families"
+size = 10
+note = "The tail of a hole name record."
+parsed_by = "crates/cadmpeg-codec-inventor/src/annotation/names.rs"
+
+[[record.field]]
+name = "lead"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "u32 0, `first:u32`, `role:u16`"
+value = 0
+
+[[record.field]]
+name = "first"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "`first:u32`"
+
+[[record.field]]
+name = "role"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "`role:u16`"
+
+[[record]]
+name = "pm_dc_blend_name_tail"
+kind = "byte"
+section = "13.11"
+anchor = "The record type of a generated name gives the attribute families"
+size = 13
+note = "The tail of a blend name record."
+parsed_by = "crates/cadmpeg-codec-inventor/src/annotation/names.rs"
+
+[[record.field]]
+name = "lead"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "u32 0, `first:u8`, `second:u8`, 3 bytes, `third:u32`"
+value = 0
+
+[[record.field]]
+name = "first"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "`first:u8`"
+
+[[record.field]]
+name = "second"
+offset = 5
+type = "u8"
+source = "spec"
+anchor = "`second:u8`"
+
+[[record.gap]]
+offset = 6
+size = 3
+note = "The specification states three bytes between `second` and `third`."
+
+[[record.field]]
+name = "third"
+offset = 9
+type = "u32"
+source = "spec"
+anchor = "`third:u32`"

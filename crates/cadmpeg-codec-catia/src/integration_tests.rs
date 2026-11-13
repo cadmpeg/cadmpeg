@@ -26,6 +26,7 @@ use crate::test_support::test_topology::fbb_only_quad_unmatched_edge_topology_st
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
+mod chart_domains;
 mod owned_sheet;
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
@@ -838,3 +839,5 @@ mod planar_loop_gauge;
 mod selected_shell_plane;
 
 mod native_curved_face_orientation;
+
+mod endpoint_stations;

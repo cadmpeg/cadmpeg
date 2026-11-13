@@ -10,6 +10,7 @@ use super::{
 fn spatial_distance_projects_vertical_distance_and_skips_spatial_sketches() {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,

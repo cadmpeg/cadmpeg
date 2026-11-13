@@ -4,6 +4,7 @@ mod base;
 mod kernel;
 mod mirror;
 mod motion;
+mod nist_ctc_01;
 
 use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};

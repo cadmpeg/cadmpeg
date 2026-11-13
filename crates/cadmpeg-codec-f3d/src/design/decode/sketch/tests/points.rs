@@ -364,7 +364,51 @@ fn sketch_geometry_group_validates_the_complete_member_sequence() {
     assert!(parse_sketch_geometry_group(&geometry_group(&[41, 41], OWNER)).is_none());
     let mut missing_zeros = bytes.clone();
     missing_zeros.drain(97..101);
-    assert!(parse_sketch_geometry_group(&missing_zeros).is_none());
+    assert_eq!(missing_zeros.len(), 86 + 11 * 2);
+    let short = parse_sketch_geometry_group(&missing_zeros).unwrap();
+    assert_eq!(short.sketch, OWNER);
+    assert_eq!(short.ordinal, 3);
+    assert_eq!(short.members, [41, 60]);
+    for partial in [1, 2, 3] {
+        let mut invalid = bytes.clone();
+        invalid.drain(97..97 + partial);
+        assert!(
+            parse_sketch_geometry_group(&invalid).is_none(),
+            "{partial} zero byte(s) removed"
+        );
+    }
+    for extra in [1, 4] {
+        let mut invalid = bytes.clone();
+        invalid.splice(97..97, std::iter::repeat_n(0, extra));
+        assert!(
+            parse_sketch_geometry_group(&invalid).is_none(),
+            "{} zero bytes",
+            4 + extra
+        );
+    }
+    let mut short_extended = missing_zeros.clone();
+    short_extended.push(0);
+    assert!(parse_sketch_geometry_group(&short_extended).is_none());
+    for selector in [2, 0xff] {
+        let mut long = bytes.clone();
+        long[97] = selector;
+        assert!(
+            parse_sketch_geometry_group(&long).is_none(),
+            "long tail selector {selector}"
+        );
+        let mut short = missing_zeros.clone();
+        short[97] = selector;
+        assert!(
+            parse_sketch_geometry_group(&short).is_none(),
+            "short tail selector {selector}"
+        );
+    }
+    let mut empty_short = geometry_group(&[], OWNER);
+    empty_short.drain(75..79);
+    assert_eq!(empty_short.len(), 86);
+    let empty = parse_sketch_geometry_group(&empty_short).unwrap();
+    assert_eq!(empty.sketch, OWNER);
+    assert!(empty.members.is_empty());
 }
 
 fn group_stream(members: &[u32], group_owner: u32) -> (Vec<u8>, crate::metastream::MetaStream) {
@@ -559,6 +603,29 @@ fn sketch_geometry_group_keeps_ordinal_and_member_run() {
     let (groups, losses) = decode_group_records(&bytes, &meta);
     assert_eq!(groups[0].ordinal, 9);
     assert!(losses.is_empty());
+}
+
+#[test]
+fn sketch_geometry_group_without_the_zero_run_keeps_its_members_and_owners() {
+    let (mut bytes, mut meta) = group_stream(&[41, 60], OWNER);
+    let group_start = usize::try_from(meta.records[2].bulk_offset).unwrap();
+    let zero_run = group_start + 75 + 11 * 2;
+    bytes.drain(zero_run..zero_run + 4);
+    for record in &mut meta.records {
+        if record.bulk_offset > u64::try_from(group_start).unwrap() {
+            record.bulk_offset -= 4;
+        }
+    }
+    let (groups, losses) = decode_group_records(&bytes, &meta);
+    let [group] = groups.as_slice() else {
+        panic!("one sketch geometry group");
+    };
+    assert_eq!(group.members, [41, 60]);
+    assert_eq!(group.sketch_reference, OWNER);
+    assert!(losses.is_empty());
+    let (points, curves, _) = decode_group_stream(&bytes, &meta);
+    assert_eq!(points[0].owner_reference, Some(OWNER));
+    assert_eq!(curves[0].owner_reference, Some(OWNER));
 }
 
 #[test]

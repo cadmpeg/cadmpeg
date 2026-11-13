@@ -84,3 +84,22 @@ fn sketch_visibility_sketch_flag_wire_reads_back() {
     assert!(read.sketch_flag);
     assert_eq!(read, visibility);
 }
+
+#[test]
+fn sketch_placement_display_name_wire_validates_non_blank_non_control_bounds() {
+    let mut record = placement(false);
+    record.display_name = Some("MountingHoles".into());
+    let valid = serde_json::to_value(&record).unwrap();
+    assert_eq!(
+        serde_json::from_value::<DesignSketchPlacement>(valid.clone())
+            .unwrap()
+            .display_name
+            .as_deref(),
+        Some("MountingHoles")
+    );
+    for bad in ["", "   ", "Bad\nName", &"x".repeat(257)] {
+        let mut invalid = valid.clone();
+        invalid["display_name"] = serde_json::json!(bad);
+        assert!(serde_json::from_value::<DesignSketchPlacement>(invalid).is_err());
+    }
+}
