@@ -4039,7 +4039,7 @@ fn resolve_profile_curve_regions(
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
     let stream = native_stream(&group.id)?;
-    let (sketch, curves) = profile_curve_selection_curves(group, stream, resolution)?;
+    let (sketch, curves) = profile_curve_selection_curves(group, stream, resolution, false)?;
     let source = resolution
         .sketches
         .iter()
@@ -4194,15 +4194,31 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
     let Some(stream) = native_stream(&group.id) else {
         return Ok(None);
     };
-    if resolution.profile_curves.iter().any(|selection| {
-        native_stream(&selection.id) == Some(stream)
-            && selection.scope_record_index == group.scope_record_index
-            && selection.group_record_index == group.record_index
-            && selection.compact_references()
-    }) {
+    let selections = resolution
+        .profile_curves
+        .iter()
+        .filter(|selection| {
+            native_stream(&selection.id) == Some(stream)
+                && selection.scope_record_index == group.scope_record_index
+                && selection.group_record_index == group.record_index
+        })
+        .collect::<Vec<_>>();
+    let compact = selections
+        .iter()
+        .any(|selection| selection.compact_references());
+    if compact
+        && (allow_assumptions
+            || selections.iter().any(|selection| {
+                selection.groups.iter().any(|group| {
+                    !group.further.is_empty()
+                        || !matches!(group.region.as_slice(), [loop_] if loop_.outer)
+                })
+            }))
+    {
         return Ok(None);
     }
-    let Some((sketch, curves)) = profile_curve_selection_curves(group, stream, resolution) else {
+    let Some((sketch, curves)) = profile_curve_selection_curves(group, stream, resolution, compact)
+    else {
         return Ok(None);
     };
     let Some(source) = resolution
@@ -4243,7 +4259,7 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
             };
             cursor = end;
             let single_exterior = matches!(loops.as_slice(), [loop_] if loop_.outer);
-            let found = if single_exterior {
+            let found = if single_exterior && !compact {
                 crate::design::geometry::arrangement_region_matching_curve_program(
                     source,
                     resolution.sketch_entities,
@@ -4256,30 +4272,66 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                 None
             };
             let Some(found) = found else {
-                if let Some(rings) = stored_loop_rings(loops, program) {
-                    if let Some(selected) =
-                        crate::design::geometry::arrangement_regions_matching_member_rings(
-                            source,
-                            resolution.sketch_entities,
-                            &rings,
-                            scoped.linear_tolerance,
-                            scoped.profile_work,
-                            scoped.ctx,
-                        )?
-                    {
-                        if let [region] = selected.regions.as_slice() {
-                            flags_read = true;
-                            coincident |= selected.coincident;
-                            island_absence |= selected.island_absence;
-                            if !regions.contains(region) {
-                                regions.push(region.clone());
+                if !compact {
+                    if let Some(rings) = stored_loop_rings(loops, program) {
+                        if let Some(selected) =
+                            crate::design::geometry::arrangement_regions_matching_member_rings(
+                                source,
+                                resolution.sketch_entities,
+                                &rings,
+                                scoped.linear_tolerance,
+                                scoped.profile_work,
+                                scoped.ctx,
+                            )?
+                        {
+                            if let [region] = selected.regions.as_slice() {
+                                flags_read |= allow_assumptions || !selected.identity_unique;
+                                coincident |= selected.coincident
+                                    && (allow_assumptions || !selected.identity_unique);
+                                island_absence |= selected.island_absence;
+                                if !regions.contains(region) {
+                                    regions.push(region.clone());
+                                }
+                                continue;
                             }
-                            continue;
                         }
                     }
                 }
                 if !single_exterior {
                     return Ok(None);
+                }
+                if !allow_assumptions {
+                    if let Some(rings) = stored_loop_rings(loops, program) {
+                        if let [members] = rings.as_slice() {
+                            let program = members
+                                .iter()
+                                .zip(&loops[0].entries)
+                                .map(|(member, entry)| {
+                                    (
+                                        member.clone(),
+                                        [entry.entry_fields[1], entry.entry_fields[2]],
+                                    )
+                                })
+                                .collect::<Vec<_>>();
+                            if let Some(selected) =
+                                crate::design::geometry::member_loop_union::resolve(
+                                    source,
+                                    resolution.sketch_entities,
+                                    &program,
+                                    scoped.linear_tolerance,
+                                    scoped.profile_work,
+                                    scoped.ctx,
+                                )?
+                            {
+                                for region in selected {
+                                    if !regions.contains(&region) {
+                                        regions.push(region);
+                                    }
+                                }
+                                continue;
+                            }
+                        }
+                    }
                 }
                 let Some(split) = crate::design::geometry::arrangement_regions_of_crossing_loop(
                     source,
@@ -4382,7 +4434,7 @@ fn resolve_profile_curve_path(
     {
         return None;
     }
-    let (sketch, curves) = profile_curve_selection_curves(group, stream, resolution)?;
+    let (sketch, curves) = profile_curve_selection_curves(group, stream, resolution, false)?;
     let mut seen = HashSet::new();
     if curves.iter().any(|curve| !seen.insert(curve)) {
         return None;
@@ -4394,6 +4446,7 @@ fn profile_curve_selection_curves(
     group: &DesignConstructionOperandGroup,
     stream: &str,
     resolution: &EntitySelectionPathResolution<'_>,
+    allow_compact_fragments: bool,
 ) -> Option<(
     cadmpeg_ir::sketches::SketchId,
     Vec<cadmpeg_ir::sketches::SketchEntityId>,
@@ -4427,7 +4480,9 @@ fn profile_curve_selection_curves(
         });
         let selection = available!(matches.next());
         if !selection.valid_layout()
-            || selection.compact_references() && !selection.complete_loop_groups()
+            || selection.compact_references()
+                && !allow_compact_fragments
+                && !selection.complete_loop_groups()
             || matches.next().is_some()
             || sketch_scope.is_some_and(|scope| scope != selection.sketch_scope_record_index)
             || owner_text.is_some_and(|text: &str| text != selection.owner_text)
