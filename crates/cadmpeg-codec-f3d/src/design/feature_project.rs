@@ -1435,13 +1435,18 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         crate::records::feature::scope::DesignFeatureKind::DeleteFace
                             | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                     ) {
-                        delete_face::project_delete_face(scope, construction_groups, face_operands)?
-                            .unwrap_or_else(|| {
-                                FeatureDefinition::Operation(FeatureOperation::Native {
-                                    kind: scope.kind_name().into(),
-                                    parameters: BTreeMap::new(),
-                                })
+                        delete_face::project_delete_face(
+                            scope,
+                            construction_groups,
+                            face_operands,
+                            &mut projection_losses,
+                        )?
+                        .unwrap_or_else(|| {
+                            FeatureDefinition::Operation(FeatureOperation::Native {
+                                kind: scope.kind_name().into(),
+                                parameters: BTreeMap::new(),
                             })
+                        })
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::CopyPasteBodies
                     {
