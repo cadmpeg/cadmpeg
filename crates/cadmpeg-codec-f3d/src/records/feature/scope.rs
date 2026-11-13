@@ -3026,6 +3026,9 @@ impl DesignParameterScope {
     pub(crate) fn move_operation(&self) -> Option<&DesignMoveOperation> {
         match &self.payload {
             DesignScopePayload::Move(value) | DesignScopePayload::MoveFace(value) => value.as_ref(),
+            DesignScopePayload::Align(value) => {
+                value.as_ref().and_then(|envelope| envelope.motion.as_ref())
+            }
             _ => None,
         }
     }

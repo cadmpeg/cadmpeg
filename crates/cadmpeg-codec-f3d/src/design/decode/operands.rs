@@ -1894,6 +1894,7 @@ pub(crate) fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Shell)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Thicken)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Move)
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Align
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfacePatch)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfaceRuled)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::BoundaryFill)

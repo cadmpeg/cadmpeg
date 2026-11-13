@@ -1412,16 +1412,26 @@ pub(super) fn exact_base_feature_construction(
             return None;
         }
         let body_count = combined_count / 2;
+        let body_run_length = u64::try_from(body_count.checked_mul(52)?).ok()?;
+        let ordinary = matches!(
+            scope.kind_offset().checked_sub(scope.byte_offset())?,
+            kind if kind == 169 + body_run_length || kind == 165 + body_run_length
+        );
+        let legacy_290_261 = legacy_290_261 && !ordinary;
+        let legacy_360_258 = legacy_360_258 && !ordinary;
+        let legacy_444_263 = legacy_444_263 && !ordinary;
         let class_expanded = legacy_290_261
             || legacy_360_258
-            || matches!(
+            || (!ordinary
+                && matches!(
+                    (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
+                    ("384", "264") | ("409", "262")
+                ));
+        let class_compact = !ordinary
+            && matches!(
                 (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
-                ("384", "264") | ("409", "262")
+                ("420", "258") | ("452", "266")
             );
-        let class_compact = matches!(
-            (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
-            ("420", "258") | ("452", "266")
-        );
         let unclassed_count = if class_expanded || class_compact || legacy_444_263 {
             None
         } else {
@@ -1438,7 +1448,6 @@ pub(super) fn exact_base_feature_construction(
         let expanded = class_expanded || unclassed_count == Some(UnclassedResultBodyCount::Passive);
         let compact =
             class_compact || unclassed_count == Some(UnclassedResultBodyCount::BodySuffix);
-        let body_run_length = u64::try_from(body_count.checked_mul(52)?).ok()?;
         let base_length = if legacy_290_261 {
             Some(261)
         } else if expanded || compact || legacy_444_263 {
