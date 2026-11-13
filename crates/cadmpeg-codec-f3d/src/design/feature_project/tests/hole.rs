@@ -885,7 +885,7 @@ fn an_extents_to_hole_ends_at_the_one_face_its_member_resolves() {
 }
 
 #[test]
-fn a_resolved_extents_to_face_ends_the_hole_without_a_loss() {
+fn a_resolved_extents_to_face_adds_no_loss() {
     use crate::records::topology::extrude_selection::DesignOperandRole;
     let scope = extents_to_scope();
     let parameters = hole_parameters()[1..].to_vec();
@@ -915,10 +915,17 @@ fn a_resolved_extents_to_face_ends_the_hole_without_a_loss() {
             offset: None,
         })
     ));
-    assert!(!losses.iter().any(|loss| {
-        loss.code == crate::loss::F3dLossCode::HoleExtentUnproven.kind()
-            || loss.message.contains(&groups[0].id)
-    }));
+    let mut native_losses = Vec::new();
+    project_hole(
+        &scope,
+        &indexed,
+        &groups,
+        &[extent_member(Vec::new())],
+        &mut native_losses,
+    )
+    .unwrap()
+    .expect("hole");
+    assert_eq!(losses, native_losses);
 }
 
 #[test]
