@@ -27,6 +27,7 @@ fn placement(record: u32, scope_record_index: Option<u32>) -> DesignSketchPlacem
         class_tag: "256".to_owned().try_into().unwrap(),
         record_index: record,
         paired_class_tag: "257".to_owned().try_into().unwrap(),
+        display_name: None,
     }
 }
 
@@ -151,4 +152,34 @@ fn a_named_feature_without_projected_sketches_charges_no_name_loss() {
     });
     assert_eq!(features.len(), 1);
     assert!(bind_sketch_names(&features, &scopes, &placements, &mut [], &mut []).is_empty());
+}
+
+#[test]
+fn stored_placement_display_name_or_scope_label_skips_composed_name_loss() {
+    // 1. Placement with display_name
+    let mut named_placement = placement(20, Some(10));
+    named_placement.display_name = Some("CustomSketch".into());
+    let (result, losses) = names(&[scope(10)], &[named_placement], Some("CustomSketch"));
+    assert!(losses.is_empty());
+    assert_eq!(
+        result,
+        (Some("CustomSketch".into()), Some("Sketch_42".into()))
+    );
+
+    // 2. Scope with label matching feature name
+    let mut labeled_scope = scope(10);
+    labeled_scope.label = Some(crate::records::identity::Located {
+        value: "RenamedFeature".to_owned(),
+        offset: Default::default(),
+    });
+    let (result2, losses2) = names(
+        &[labeled_scope],
+        &[placement(20, Some(10))],
+        Some("RenamedFeature"),
+    );
+    assert!(losses2.is_empty());
+    assert_eq!(
+        result2,
+        (Some("Sketch_42".into()), Some("Sketch_42".into()))
+    );
 }

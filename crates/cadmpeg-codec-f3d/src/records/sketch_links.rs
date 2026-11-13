@@ -232,6 +232,8 @@ pub(crate) struct PersistentSubentityTag {
     /// Native UTF-8 tag token. Numeric strings and `-1` retain their spelling.
     #[serde(deserialize_with = "deserialize_persistent_tag_token")]
     pub(crate) token: cadmpeg_core::text::NonBlankString,
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
+    pub(crate) token_integer: u32,
     /// Ordered signed Design-stream references carried by this group.
     pub(crate) design_references: Vec<i64>,
     /// Position of this group in the owning attribute record.

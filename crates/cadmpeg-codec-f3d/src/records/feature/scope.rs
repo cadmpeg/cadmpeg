@@ -70,6 +70,11 @@ cadmpeg_core::named_optional_field!(
     super::occurrence_transfer::DesignOccurrenceTransfer,
     "occurrence_transfer"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_occurrence_transfer_intent,
+    super::occurrence_transfer::DesignOccurrenceTransferIntent,
+    "occurrence_transfer_intent"
+);
 
 cadmpeg_core::named_optional_field!(deserialize_source_kind, String, "source_kind");
 cadmpeg_core::named_optional_field!(
@@ -77,6 +82,7 @@ cadmpeg_core::named_optional_field!(
     crate::records::identity::Located<String>,
     "label"
 );
+cadmpeg_core::named_optional_field!(deserialize_display_name, String, "display_name");
 cadmpeg_core::named_optional_field!(
     deserialize_deleted_members,
     super::deleted_members::DesignDeletedMembers,
@@ -762,6 +768,9 @@ pub(crate) struct DesignParameterScope {
     /// Label and offset of its UTF-16LE code units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) label: Option<crate::records::identity::Located<String>>,
+    /// Display name bound from a companion `WorkPlane` entity record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) display_name: Option<String>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     history_state_id: Option<i64>,
@@ -776,6 +785,9 @@ pub(crate) struct DesignParameterScope {
     reference_members: ReferenceRun<u32>,
     /// Component ownership and placement recorded by paste operations.
     pub(crate) occurrence_transfer: Option<super::occurrence_transfer::DesignOccurrenceTransfer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) occurrence_transfer_intent:
+        Option<super::occurrence_transfer::DesignOccurrenceTransferIntent>,
     /// Family-specific construction records.
     payload: DesignScopePayload,
     /// Reference members whose records open a construction-operand group the
@@ -850,6 +862,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_occurrence_transfer"
     )]
     occurrence_transfer: Option<super::occurrence_transfer::DesignOccurrenceTransfer>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_occurrence_transfer_intent"
+    )]
+    occurrence_transfer_intent: Option<super::occurrence_transfer::DesignOccurrenceTransferIntent>,
     /// Globally unique deterministic identifier for this native record.
     id: String,
     /// Byte offset of the primary indexed record header.
@@ -892,6 +910,13 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_label"
     )]
     label: Option<crate::records::identity::Located<String>>,
+    /// Display name bound from a companion `WorkPlane` entity record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_display_name"
+    )]
+    display_name: Option<String>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(
         default,
@@ -2177,6 +2202,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             ));
         }
         let occurrence_transfer = wire.occurrence_transfer.take();
+        let occurrence_transfer_intent = wire.occurrence_transfer_intent.take();
         let mut admitted = Self::try_new(DesignParameterScopeDraft {
             id: wire.id,
             byte_offset: wire.byte_offset,
@@ -2219,8 +2245,34 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 "occurrence_transfer disagrees with scope".into(),
             ));
         }
+        if occurrence_transfer_intent
+            .as_ref()
+            .is_some_and(|value| !value.valid_for_scope(&admitted))
+        {
+            return Err(DesignParameterScopePayloadError(
+                "occurrence_transfer_intent disagrees with scope".into(),
+            ));
+        }
+        if let Some(name) = wire.display_name.as_deref() {
+            let units = name.encode_utf16().count();
+            if wire.kind != DesignFeatureKind::WorkPlane
+                || name.trim().is_empty()
+                || !(1..=256).contains(&units)
+                || name.chars().any(char::is_control)
+                || admitted
+                    .label
+                    .as_ref()
+                    .is_some_and(|label| label.value != name)
+            {
+                return Err(DesignParameterScopePayloadError(
+                    "invalid display_name".into(),
+                ));
+            }
+        }
         admitted.source_kind = wire.source_kind;
+        admitted.display_name = wire.display_name;
         admitted.occurrence_transfer = occurrence_transfer;
+        admitted.occurrence_transfer_intent = occurrence_transfer_intent;
         if wire.derived_base_owner.is_some_and(|owner| {
             !super::derived_base::is_derived_base(&admitted)
                 || !owner.frame_holds(admitted.byte_offset(), admitted.paired_byte_offset())
@@ -2242,6 +2294,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
         let (reference_members, reference_member_offsets) = scope.reference_members.into_wire();
         let mut wire = DesignParameterScopeSerde {
             occurrence_transfer: scope.occurrence_transfer,
+            occurrence_transfer_intent: scope.occurrence_transfer_intent,
             id: scope.id,
             byte_offset: scope.byte_offset,
             class_tag: scope.class_tag.into(),
@@ -2255,6 +2308,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             feature_ordinal: scope.feature_ordinal.get(),
             feature_ordinal_offset: scope.feature_ordinal_offset,
             label: scope.label,
+            display_name: scope.display_name,
             history_state_id: scope.history_state_id,
             history_state_id_offset,
             previous_history_state_id: scope.previous_history_state_id,
@@ -2663,12 +2717,14 @@ impl DesignParameterScope {
             feature_ordinal: draft.feature_ordinal,
             feature_ordinal_offset: draft.feature_ordinal_offset,
             label: draft.label,
+            display_name: None,
             history_state_id: draft.history_state_id,
             previous_history_state_id: draft.previous_history_state_id,
             previous_history_state_id_offset: draft.previous_history_state_id_offset,
             reference_count_offset: draft.reference_count_offset,
             reference_members: draft.reference_members,
             occurrence_transfer: None,
+            occurrence_transfer_intent: None,
             payload: draft.payload,
             unclosed_construction_operand_groups: draft.unclosed_construction_operand_groups,
             deleted_members: draft.deleted_members,

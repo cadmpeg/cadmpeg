@@ -358,6 +358,7 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
                 target: target(1),
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("97").unwrap(),
+                token_integer: 0,
                 design_references: vec![1],
                 ordinal: 0,
             },
@@ -366,6 +367,7 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
                 target: target(3),
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("97").unwrap(),
+                token_integer: 0,
                 design_references: vec![3],
                 ordinal: 0,
             },
@@ -793,4 +795,32 @@ fn a_blob_of_only_sketch_regions_keeps_no_model_body() {
     );
     assert!(brep.asm.bodies.is_empty());
     assert!(brep.asm.body_native_keys.is_empty());
+}
+
+#[test]
+fn generic_tag_payload_retains_token_integer() {
+    for version in [2, 3] {
+        for token_integer in [0u32, 4012, u32::MAX] {
+            let mut groups = vec![
+                AttributeValue::Integer(7),
+                AttributeValue::String("97".into()),
+                AttributeValue::Integer(i64::from(token_integer)),
+                AttributeValue::Integer(1),
+                AttributeValue::Integer(-302),
+            ];
+            if version == 3 {
+                groups.push(AttributeValue::Integer(0));
+            }
+            let attribute = generic_tag_attribute(
+                AttributeTarget::Face(FaceId::mint("f3d:test:face#1").unwrap()),
+                (version, version),
+                1,
+                groups,
+            );
+            let tags = persistent_subentity_tags(&attribute).unwrap();
+            assert_eq!(tags.len(), 1);
+            assert_eq!(tags[0].token_integer, token_integer);
+            assert_eq!(tags[0].design_references, [-302]);
+        }
+    }
 }

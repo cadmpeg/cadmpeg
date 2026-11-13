@@ -261,6 +261,7 @@ fn primary_reference_edges_bind_in_the_named_input_topology() {
                         entity_ref,
                         selector: 1,
                         token: token.into(),
+                        token_integer: 0,
                         design_references: vec![50],
                         ordinal: 0,
                     })
@@ -463,6 +464,7 @@ fn revolve_axis_edge_is_shared_by_the_first_recipe_side_faces() {
                     entity_ref: face,
                     selector: 1,
                     token: token.into(),
+                    token_integer: 0,
                     design_references: vec![23, 50],
                     ordinal: 0,
                 });
@@ -613,6 +615,7 @@ fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_inf
         selector: 1,
         selector_offset: operand * 100,
         token: operand.to_string(),
+        token_integer: 0,
         token_offset: operand * 100 + 8,
         design_reference: 50,
         design_reference_offset: 0,

@@ -456,7 +456,7 @@ fn has_incoherent_refs<T: Eq + Hash>(references: &[T], known: &HashSet<&T>) -> b
     false
 }
 
-fn append_design_losses(
+pub(crate) fn append_design_losses(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     report: &mut DecodeBody,
@@ -1179,6 +1179,7 @@ fn append_design_losses(
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,
     };
+    let profile_data = crate::resolved_features::profile_data::FeatureProfileData::new(&ir.model);
     let incomplete_planar_profile = |profile: &PlanarProfileRef| match profile {
         PlanarProfileRef::Faces(faces) => faces.is_empty(),
         PlanarProfileRef::Unresolved(_) | PlanarProfileRef::Native(_) => true,
@@ -1188,8 +1189,8 @@ fn append_design_losses(
         | PlanarProfileRef::SketchEntities { .. }
         | PlanarProfileRef::SketchSelection { .. }
         | PlanarProfileRef::HistoricalFaces { .. }
-        | PlanarProfileRef::Sketch(_)
-        | PlanarProfileRef::Feature(_) => false,
+        | PlanarProfileRef::Sketch(_) => false,
+        PlanarProfileRef::Feature(feature) => !profile_data.has_curves(feature),
     };
     let incomplete_profile = |profile: &ProfileRef| match profile {
         ProfileRef::SpatialSketchProfiles { .. } | ProfileRef::SpatialSketchSelection { .. } => {
@@ -1263,6 +1264,32 @@ fn append_design_losses(
                     incomplete_edge_selection(&group.edges) || group.spec.is_unresolved()
                 })
         };
+    let unresolved_extrude_directions = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.evaluation.definition())
+        .chain(ir.model.configurations.iter().flat_map(|configuration| {
+            configuration
+                .feature_states
+                .values()
+                .map(|state| &state.definition)
+        }))
+        .filter(|definition| {
+            matches!(
+                definition.operation(),
+                FeatureOperation::Extrude {
+                    direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
+                    ..
+                }
+            )
+        })
+        .count();
+    if unresolved_extrude_directions > 0 {
+        report.losses.push(SldprtLossCode::FeatureExtrudeDirectionUnresolved.note(format!(
+            "{unresolved_extrude_directions} extrusion definition(s) retain native travel sense because finite start and opposite end caps contradict the implicit direction."
+        )));
+    }
     let incomplete_typed_features = evaluated_feature_states
         .iter()
         .filter(|state| {
@@ -1285,6 +1312,40 @@ fn append_design_losses(
                     .occurrences
                     .iter()
                     .any(|candidate| candidate.id == *occurrence),
+                FeatureOperation::InsertComponents { components } => {
+                    !components.is_resolved()
+                        || components.occurrences().iter().any(|occurrence| {
+                            !ir.model
+                                .occurrences
+                                .iter()
+                                .any(|candidate| candidate.id == *occurrence)
+                        })
+                }
+                FeatureOperation::ComponentTransfer {
+                    occurrence,
+                    component,
+                    source_owner,
+                    target_owner,
+                    target_transform,
+                    ..
+                } => {
+                    occurrence.as_ref().is_none_or(|occurrence| {
+                        !ir.model
+                            .occurrences
+                            .iter()
+                            .any(|candidate| candidate.id == *occurrence)
+                    }) || [component, source_owner, target_owner]
+                        .into_iter()
+                        .any(|definition| {
+                            definition.as_ref().is_none_or(|definition| {
+                                !ir.model
+                                    .product_definitions
+                                    .iter()
+                                    .any(|candidate| candidate.id == *definition)
+                            })
+                        })
+                        || target_transform.is_none()
+                }
                 FeatureOperation::AssemblyJoint { joint } => !ir
                     .model
                     .assembly_joints
@@ -1842,6 +1903,13 @@ fn append_design_losses(
     if incomplete_typed_features > 0 {
         report.losses.push(SldprtLossCode::FeatureTypedOperandIncomplete.note(format!(
             "{incomplete_typed_features} typed feature(s) retain native or unresolved required operation operands."
+        )));
+    }
+
+    let missing_profile_curves = profile_data.missing_extrudes(&ir.model).count();
+    if missing_profile_curves > 0 {
+        report.losses.push(SldprtLossCode::FeatureProfileCurvesUnavailable.note(format!(
+            "{missing_profile_curves} extrusion feature-reference profile(s) lack decoded non-construction curves."
         )));
     }
 
@@ -3618,9 +3686,6 @@ fn build_geometry_ir(
         "admit SLDPRT entities",
     )?;
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
-    // Stamp baseline before fabricating the read-side configuration snapshot.
-    stamp_configuration_baseline(ctx, &mut ir)?;
-    snapshot_active_configuration(&mut ir)?;
     let mut unknowns = brep.unknowns;
     for owned_face_color in brep.face_colors {
         let annotation_source = &owned_face_color.source_stream;
@@ -3947,6 +4012,11 @@ fn build_geometry_ir(
         source.links_mut().extend(links);
     }
     crate::metadata::mass_properties::append(ctx, &mut ir, &mut pmi_losses)?;
+    if crate::history::extrude_direction::retain_contradicted_directions(&mut ir.model) {
+        stamp_feature_baseline(ctx, &mut ir)?;
+    }
+    stamp_configuration_baseline(ctx, &mut ir)?;
+    snapshot_active_configuration(&mut ir)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown

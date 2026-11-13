@@ -10,7 +10,7 @@ use super::endpoints::{
 };
 use super::grid::quantize;
 use super::scalars::FeatureObjectNames;
-use super::transforms::{sketch_frame_marker_transform, MarkerTransform};
+use super::transforms::{feature_sketch_marker_transform, MarkerTransform};
 use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
 use crate::layout::temporary_axis_compact_boundary as axis_compact_end;
 use crate::layout::temporary_axis_declared_boundary_prefix as axis_declared_end;
@@ -1145,6 +1145,7 @@ pub(crate) fn bind_profile_revolution_axes(
                 profile_native,
                 sketch,
                 generated_axis_surfaces,
+                model_features,
             ) {
                 candidates.push(axis);
             }
@@ -1192,6 +1193,7 @@ fn profile_roster_construction_axis(
     profile_native: &str,
     sketch: &Sketch,
     surfaces: &[Surface],
+    features: &[cadmpeg_ir::features::Feature],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
     const QUANTUM: f64 = 1e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
@@ -1254,7 +1256,7 @@ fn profile_roster_construction_axis(
         }
         _ => return None,
     };
-    let transform = sketch_frame_marker_transform(sketch, QUANTUM)?;
+    let transform = feature_sketch_marker_transform(sketch, QUANTUM, features)?;
     let Some([native_start, native_end]) = native_endpoints else {
         return profile_generated_surface_axis(
             lane,

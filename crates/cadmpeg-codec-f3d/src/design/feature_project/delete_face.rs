@@ -43,30 +43,81 @@ fn typed_delete_face_frame(scope: &DesignParameterScope) -> Option<()> {
     .then_some(())
 }
 
+fn known_delete_face_frame(scope: &DesignParameterScope) -> bool {
+    if typed_delete_face_frame(scope).is_some() {
+        return true;
+    }
+    let Some((count_offset, tail_length)) = face_scope_frame(scope) else {
+        return false;
+    };
+    let known_count = match scope.kind_name() {
+        "DeleteFace" => matches!(count_offset, 123 | 127 | 131),
+        "SurfaceDeleteFace" => matches!(count_offset, 123 | 127 | 128 | 131 | 134 | 138 | 142),
+        _ => false,
+    };
+    known_count
+        && u64::try_from(
+            scope
+                .label
+                .as_ref()
+                .map_or(0, |label| label.value.encode_utf16().count()),
+        )
+        .ok()
+        .and_then(|units| units.checked_mul(2))
+        .and_then(|bytes| tail_length.checked_sub(bytes))
+        .is_some_and(|tail| matches!(tail, 76..=78))
+}
+
 pub(super) fn project_delete_face(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
-    let reference_count = scope.reference_members().len();
-    let heal = if typed_delete_face_frame(scope).is_some() {
-        true
-    } else {
-        let (count_offset, tail_length) = or_none!(face_scope_frame(scope));
-        let heal = match scope.kind_name() {
-            "DeleteFace" if matches!(count_offset, 123 | 127 | 131) => true,
-            "SurfaceDeleteFace" if matches!(count_offset, 123 | 127 | 131 | 134 | 138 | 142) => {
-                false
-            }
-            _ => return Ok(None),
-        };
-        if !matches!(tail_length, 77 | 78) {
-            return Ok(None);
-        }
-        heal
+    let heal = match scope.kind_name() {
+        "DeleteFace" => true,
+        "SurfaceDeleteFace" => false,
+        _ => return Ok(None),
     };
+    if !known_delete_face_frame(scope) {
+        losses.push(crate::loss::F3dLossCode::DeleteFaceFrameControlsAssumed.note(format!(
+            "{} {} assumes its frame controls preserve removal of the selected faces with healing set to {heal}.", scope.kind_name(), scope.id
+        )));
+    }
+    let faces = match selected_delete_faces(scope, construction_groups, face_operands, heal)? {
+        Some(faces) => faces,
+        None => {
+            losses.push(crate::loss::F3dLossCode::DeleteFaceGroupSelectionAssumed.note(format!(
+                "{} {} retains its ordered references as a face selection because their role-0x10 group definition is missing or inconsistent.", scope.kind_name(), scope.id
+            )));
+            FaceSelection::Native(scope.id.clone())
+        }
+    };
+    if !heal
+        && scope
+            .reference_count_offset()
+            .checked_sub(scope.byte_offset())
+            == u64::try_from(crate::layout::surface_delete_face_wide_prologue::REFERENCE_COUNT).ok()
+    {
+        losses.push(crate::loss::F3dLossCode::SurfaceDeleteFaceWidePrologueAssumed.note(format!(
+            "SurfaceDeleteFace {} treats the wider prologue as preserving unhealed deletion of its role-0x10 face group.", scope.id
+        )));
+    }
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::DeleteFace { faces, heal },
+    )))
+}
+
+fn selected_delete_faces(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+    heal: bool,
+) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
+    use cadmpeg_ir::features::FaceSelection;
+    let reference_count = scope.reference_members().len();
     if reference_count < 2 {
         return Ok(None);
     }
@@ -108,7 +159,5 @@ pub(super) fn project_delete_face(
         Some(faces) => faces,
         None => FaceSelection::Native(group.id.clone()),
     };
-    Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::DeleteFace { faces, heal },
-    )))
+    Ok(Some(faces))
 }

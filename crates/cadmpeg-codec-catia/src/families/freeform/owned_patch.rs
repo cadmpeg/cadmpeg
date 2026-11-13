@@ -65,7 +65,14 @@ enum SheetSurfaceFit {
     Extrusion,
 }
 
+#[derive(Clone, Copy, Default)]
+struct SheetBoundaryRecovery {
+    rolling_extension_mm: f64,
+    affine_vertex_shift_mm: f64,
+}
+
 struct Patch {
+    recovery: SheetBoundaryRecovery,
     face: usize,
     body: RecordKey,
     forward: bool,
@@ -77,6 +84,12 @@ struct Patch {
     inner_starts: Vec<usize>,
 }
 
+#[derive(Clone, Copy)]
+struct InferredEdgeAccuracy {
+    source: usize,
+    bound_mm: f64,
+}
+
 #[derive(Clone)]
 struct Use {
     edge: usize,
@@ -85,6 +98,8 @@ struct Use {
     curve: NurbsCurve,
     pcurve: PcurveGeometry,
     forward: bool,
+    inferred_accuracy: Option<InferredEdgeAccuracy>,
+    lift_error_mm: f64,
 }
 
 fn payload<'a>(data: &'a [u8], record: &ConsolidatedRecord) -> Option<&'a [u8]> {
@@ -412,6 +427,8 @@ fn fit(
             forward: spec.increasing == (loop_forward == member.forward),
             curve,
             pcurve: line_pcurve([lo, hi], ends)?,
+            inferred_accuracy: None,
+            lift_error_mm: 0.0,
         });
     }
     if loop_forward != member.forward {
@@ -429,6 +446,7 @@ fn fit(
         priority: 0,
         sides,
         inner_starts: Vec::new(),
+        recovery: SheetBoundaryRecovery::default(),
     })
 }
 

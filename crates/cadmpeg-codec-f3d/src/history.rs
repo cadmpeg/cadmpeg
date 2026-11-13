@@ -23,6 +23,7 @@ pub(crate) mod compact_lineage;
 mod delete_face;
 pub(crate) mod edge_flange;
 mod edge_samples;
+pub(crate) mod extrude_target;
 pub(crate) mod face_admission;
 mod face_recipe;
 mod fallback_face;
@@ -1626,6 +1627,21 @@ pub(crate) fn bind_feature_outputs(
         let history_source = bound_history.and_then(|h| historical_brep_source(&histories[h].id));
         let cur_key = bound_history.map(|h| (h, state_id));
         let prev_key = bound_history.map(|h| (h, previous_state_id));
+        if bound_history.is_some_and(|h| {
+            histories[h].states().iter().any(|state| {
+                state.state_id == state_id
+                    && state.transition.as_ref().is_some_and(|transition| {
+                        transition.previous_state_id == Some(previous_state_id)
+                            && transition.geometry_unchanged
+                    })
+            })
+        }) {
+            feature.source_properties.insert(
+                cadmpeg_core::nonblank_literal!("transition_geometry"),
+                "unchanged".into(),
+            );
+        }
+
         let prev_feat_solid = bound_history.and_then(|h| prev_feature_solid.get(&h).copied());
         let feature_scope = feature
             .native_ref
@@ -2024,8 +2040,19 @@ pub(crate) fn bind_feature_outputs(
             }
         }
     }
+    let base_scopes = scopes
+        .iter()
+        .filter(|scope| {
+            scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFeature
+        })
+        .map(|scope| scope.id.as_str())
+        .collect::<HashSet<_>>();
     for feature in features {
-        stored_bodies::finalize_body_sets(feature);
+        let base_scope = feature
+            .native_ref
+            .as_deref()
+            .and_then(|id| base_scopes.get(id).copied());
+        stored_bodies::finalize_body_sets(feature, base_scope);
     }
     Ok(losses)
 }
@@ -5578,7 +5605,11 @@ fn bind_historical_recipe_reference_candidates<'a>(
     reference.alternate_selector_faces.clear();
     reference.alternate_selector_edges.clear();
     let index = recipe_topologies.get(topology);
-    for tag_index in index.matching_tags(&reference.token, reference.design_reference) {
+    for tag_index in index.matching_tags(
+        &reference.token,
+        reference.token_integer,
+        reference.design_reference,
+    ) {
         let tag = &index.topology.persistent_subentity_tags[*tag_index];
         match tag.entity_kind {
             AsmHistoricalEntityKind::Face => {
@@ -7797,15 +7828,8 @@ fn edge_recipe_reference_context<'a>(
     topology_queries: &mut TopologyQueryCache<'a>,
     face_boundaries: &mut FaceBoundaryArena,
 ) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
-    let mut candidate_faces = Vec::new();
-    for reference in lane {
-        for face in effective_faces(reference) {
-            if !candidate_faces.contains(face) {
-                candidate_faces.push(face.clone());
-            }
-        }
-    }
-    let candidate_faces = candidate_faces.as_slice();
+    let candidate_faces = recipe_index::reference_lane_faces(lane);
+    let candidate_faces = candidate_faces.faces.as_slice();
     let face_slots = |faces: &[cadmpeg_ir::ids::FaceId]| {
         faces
             .iter()
@@ -9779,6 +9803,7 @@ pub(crate) fn historical_topology_with_tags(
                 entity_ref,
                 selector: tag.selector,
                 token,
+                token_integer: tag.token_integer,
                 design_references,
                 ordinal: tag.ordinal,
             },

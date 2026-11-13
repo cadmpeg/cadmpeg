@@ -41,6 +41,7 @@ fn fixture_text_styles_project_only_representable_states() {
     for case in crate::test_support::sketch_text::text_fixture_records() {
         let text = case.decode();
         let placement = DesignSketchPlacement {
+            display_name: None,
             frame: crate::records::sketch_placement::DesignSketchFrame::new(
                 0,
                 crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
@@ -80,6 +81,7 @@ fn text_of_a_model_space_sketch_has_no_planar_sketch_to_reference() {
         let text = crate::test_support::sketch_text::neutral_text_record();
         let owner = text.owner_reference;
         let placement = DesignSketchPlacement {
+            display_name: None,
             frame: crate::records::sketch_placement::DesignSketchFrame::new(
                 0,
                 crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
@@ -172,6 +174,7 @@ fn sketch_text_alignment_ordinals_project_to_named_positions() {
 #[test]
 fn sketch_container_visibility_projects_to_the_neutral_sketch() {
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::MemberCompact {
@@ -223,10 +226,9 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             .expect("valid entity ID"),
 
         visibility: None,
-
+        display_name: None,
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 1,
-
         paired_class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
             .unwrap(),
     };
@@ -373,10 +375,9 @@ fn point_closure_does_not_mark_construction_geometry() {
             .expect("valid entity ID"),
 
         visibility: None,
-
+        display_name: None,
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 1,
-
         paired_class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
             .unwrap(),
     };
@@ -486,10 +487,9 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             .expect("valid entity ID"),
 
         visibility: None,
-
+        display_name: None,
         class_tag: crate::records::references::DesignClassTag::try_from("356".to_owned()).unwrap(),
         record_index: 185,
-
         paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
             .unwrap(),
     };
@@ -971,6 +971,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             .expect("valid entity ID"),
 
         visibility: None,
+        display_name: None,
 
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         record_index: 100,
@@ -1377,6 +1378,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
 #[test]
 fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::MemberCompact {
@@ -1470,6 +1472,7 @@ fn shared_curve_identity_pairs_project_distinct_entities() {
         entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned())
             .expect("valid entity ID"),
         visibility: None,
+        display_name: None,
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         record_index: 100,
         paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
@@ -1592,6 +1595,7 @@ fn shared_curve_identity_pairs_project_distinct_entities() {
 
 const EPS_CONTAINMENT_DISTANCE: f64 = 1.0e-9;
 
+mod line_projection;
 mod spline_projection;
 
 /// A spatial sketch whose closed-profile search exceeds its local cap keeps
@@ -1617,6 +1621,7 @@ fn capped_spatial_profile_search_reports_a_loss() {
         entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned())
             .expect("valid entity ID"),
         visibility: None,
+        display_name: None,
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         record_index: 100,
         paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
@@ -1756,6 +1761,7 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
     );
 
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,

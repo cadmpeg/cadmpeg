@@ -429,6 +429,18 @@ Two omitted owner-qualified construction circles have separate current/extended 
 
 **Need.** We must know the selector values to terminate the extrusion at the correct edge endpoint.
 
+### DI-16. Extrusion travel sense relative to the profile frame
+
+**Question.** Which native fields set the signed extrusion travel relative to the profile frame?
+
+**Known.** The compact end-spec has Boolean words at anchor +8 and +12. Its direction-count word and termination codes define the extent form. A nested planar profile has a surface normal and a face sense.
+
+**Need.** Controlled opposite-travel definitions with the same owned profile, plane reference, end-spec form, and surviving end caps must establish each sense field and its composition with the profile frame.
+
+**Conflict.** The Boolean end-spec words and nested face senses each occur with both travel senses in final-cap witnesses.
+
+**Note.** Later features can consume an extrusion end cap. A missing final cap leaves the historical travel witness unresolved.
+
 ### DI-17. Second-direction codes without a defined second side
 
 **Question.** Does a nonzero second-direction code take effect when the direction count at anchor +4 is `1`? What second side does a second-direction code other than `0` or `1` define when anchor +4 is `0`, and what do first-direction codes `2` through `5` define with `0` at anchor +4?
@@ -815,6 +827,18 @@ resolve a seed feature?
 
 **Note.** The decoder discards that display and reports `pmi.swift-presentation-unframed`.
 
+### DI-65. Indexed-circle array and plane ownership
+
+**Question.** Which native ownership fields associate equal-endpoint arc arrays with their point arrays and model-space sketch frames?
+
+**Known.** The counted sketch arrays preserve point slots and contour ordinals. The current-prefix equal-endpoint arc form has native value zero, centre slot zero, sweep selector one, and four signed reference sentinels. The indexed-curve grammar in §2 supplies these fields. The marker classifier labels this form as a point; projection lacks its coordinate pair.
+
+**Need.** Explicit array, profile, and plane ownership must select the point block and model-space frame, with carrier and applicable start-cap agreement.
+
+**Conflict.** The first-point centre and indexed radial-witness reading has contrary carrier cases under the decoded sketch placements. The compact extended-prefix and legacy equal-endpoint readings also have contrary carrier cases.
+
+**Note.** Retain these records under their current projection until the mapping resolves.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
@@ -1044,26 +1068,24 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** Establish the cross-stream receive-index mapping, precision and comb encodings, coordinate units, triangle grouping, orientation, and complete per-body ownership. Check each reconstructed mesh against independent body areas and volumes before transfer.
 
-### SF-01. Top principal-plane placement and profile coordinates
+### SF-01. Remaining Top reference forms and profile coordinates
 
-**Question.** Which Top reference forms bind profile marker pairs to the matrix, and which matrix direction and coordinate polarity apply?
+**Question.** Which placement and coordinate convention applies to declared Top references, lane-default Front references, mixed or enclosing-context component records, lane component references, block definitions, and nested profile streams?
 
-**Known.** The principal component form with source `3` and selector `2` stores the f64 sequence `[1,0,0,0,0,1,0,-1,0]`, zero translation, and unit scale. A row-major reading gives U=+X, V=-Z, N=+Y. Complete finite-face profile support covers six sketches from one independent design. Seven profiles from two designs have plane-carrier support. The second design has one of twelve sampled points on finite faces; its carrier incidence does not distinguish in-plane polarity. The current Top fallback uses U=+X and N=+Z. A deferred Top component that used an existing Front reference retains its original frame N=-Y and U=-Z. Its marker pairs retain their original projection.
+**Known.** `sldprt.md` §3.3 defines local Top component placement and intrinsic marker coordinates for marker and compact profile objects with a profile or immediate-context Front reference. The declared Top fallback retains U=+X and N=+Z. The retained Front lane fallback uses N=-Y and U=-Z. Nested profile streams carry their own coordinate records.
 
-**Need.** Establish profile attachment and coordinate polarity in at least two independent designs. Include complete profile geometry and consumed-feature controls.
+**Need.** Determine the byte fields that bind each remaining reference form to its profile coordinates and normal direction. Establish each complete rule with independent profile and mirrored-polarity controls.
 
-**Conflict.** The candidate matrix reading and the current fallback select different normal axes.
-
-**Note.** Eight tested extrude profiles are empty and one has unsupported geometry. Their final-body checks remain unavailable.
+**Conflict.** The local component's N=+Y and the declared fallback's N=+Z select different normal axes.
 
 ### SF-02. Right component ownership and profile coordinates
 
-**Question.** Which field distinguishes a sketch support-plane component from a reference to another plane within the sketch object?
+**Question.** Which native role or operand field binds a Right component to the sketch support plane and selects the profile coordinate convention?
 
-**Known.** A profile context can contain a declared plane source and a Right component with another source. The complete component matrix identifies its referenced frame. The existing profile binding remains selected when the component source conflicts with it.
+**Known.** A complete profile-local `(4,1)` component occurs with a scoped Front declaration or a lane-default Front reference. The scoped declaration lies in the profile or its immediate context. The matrix identifies the referenced frame. The intrinsic component mapping can lose finite carrier support on the retained profile plane in both forms. The decoder retains the existing profile binding when the component source conflicts with it.
 
-**Need.** Establish component ownership and the profile coordinate rule from explicit fields. Preserve prior carrier incidence across independent designs.
+**Need.** Establish the support-plane role and profile coordinate rule from explicit fields, including the enclosing reference and operand path. Distinguish finite support from intersections with carrier extensions. Establish each selected form with independent designs, mirrored-polarity controls, and per-sample carrier retention.
 
-**Conflict.** Selecting the component through interval enclosure changes a public fixture's complete carrier support from eighteen sampled points to sixteen. A scoped component mapping gains carrier support in three designs and changes another profile from three carrier hits to two.
+**Conflict.** The Right matrix normal is +X. The retained Front component fallback normal is -Y.
 
-**Note.** Top and Right component mappings retain their current interpretation. Their existing scoped and lane Front fallback retains its original frame.
+**Note.** Right component mappings retain their current interpretation and losses. The scoped and lane Front fallbacks retain their frames. Section 3.3 defines local Top component profile placement.

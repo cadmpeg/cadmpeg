@@ -598,7 +598,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             FeatureOperation::ReferenceImage { .. } | FeatureOperation::DatumPrincipalPlane { .. },
         ) => false,
         FeatureDefinition::Operation(FeatureOperation::MeshImport { tessellations }) => {
-            tessellations.is_empty()
+            !matches!(tessellations, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
         }
         FeatureDefinition::Operation(FeatureOperation::Decal { faces, .. }) => {
             !face_selection_is_resolved(faces)
@@ -852,6 +852,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !body_selection_is_resolved(source)
         }
         FeatureDefinition::Operation(FeatureOperation::InsertComponent { .. }) => false,
+        FeatureDefinition::Operation(FeatureOperation::InsertComponents { components }) => !components.is_resolved(),
         FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::Shell {
             bodies,
@@ -1909,6 +1910,28 @@ impl std::fmt::Display for IncompleteFamilyCounts<'_> {
     }
 }
 
+/// Restate the `feature.definition-incomplete` note from the current features
+/// after a later pass completed some of them.
+fn refresh_incomplete_feature_loss(
+    ir: &CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let kind = F3dLossCode::FeatureDefinitionIncomplete.kind();
+    let Some(at) = losses.iter().position(|loss| loss.code == kind) else {
+        return;
+    };
+    let families = incomplete_feature_families(ir);
+    let count = families.values().sum::<usize>();
+    if count == 0 {
+        losses.remove(at);
+        return;
+    }
+    losses[at] = F3dLossCode::FeatureDefinitionIncomplete.note(format!(
+        "{count} feature scope(s) have no complete neutral feature definition: {}.",
+        IncompleteFamilyCounts(&families)
+    ));
+}
+
 fn push_loss_vec(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     code: F3dLossCode,
@@ -1983,6 +2006,287 @@ fn report_design_projection_gaps(
     ir: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
+    let scopes_owning = |kinds: &[&str]| -> std::collections::HashSet<(&str, u32)> {
+        let parameters: std::collections::HashSet<(&str, u32)> = native
+            .design_parameters
+            .iter()
+            .filter(|parameter| kinds.contains(&parameter.source_kind_str()))
+            .filter_map(|parameter| {
+                crate::ids::native_stream(&parameter.id)
+                    .map(|stream| (stream, parameter.record_index))
+            })
+            .collect();
+        native
+            .design_parameter_owners
+            .iter()
+            .filter_map(|owner| {
+                let stream = crate::ids::native_stream(owner.id())?;
+                parameters
+                    .contains(&(stream, owner.parameter_record_index()))
+                    .then_some((stream, owner.scope_record_index()))
+            })
+            .collect()
+    };
+    let scope_values = |kind: &str| -> std::collections::HashMap<(&str, u32), Vec<f64>> {
+        let parameters: std::collections::HashMap<(&str, u32), f64> = native
+            .design_parameters
+            .iter()
+            .filter(|parameter| parameter.source_kind_str() == kind)
+            .filter_map(|parameter| {
+                crate::ids::native_stream(&parameter.id).map(|stream| {
+                    (
+                        (stream, parameter.record_index),
+                        parameter.evaluated_value().get(),
+                    )
+                })
+            })
+            .collect();
+        let mut values: std::collections::HashMap<(&str, u32), Vec<f64>> =
+            std::collections::HashMap::new();
+        for owner in &native.design_parameter_owners {
+            let Some(stream) = crate::ids::native_stream(owner.id()) else {
+                continue;
+            };
+            if let Some(value) = parameters.get(&(stream, owner.parameter_record_index())) {
+                values
+                    .entry((stream, owner.scope_record_index()))
+                    .or_default()
+                    .push(*value);
+            }
+        }
+        values
+    };
+    let along_values = scope_values("AlongDistance");
+    let taper_values = scope_values("TaperAngle");
+    let wall_scopes = scopes_owning(&["Side1WallThickness", "Side2WallThickness"]);
+    let along_scopes = scopes_owning(&["AlongDistance"]);
+    let scopes_by_id: std::collections::HashMap<&str, _> = native
+        .design_parameter_scopes
+        .iter()
+        .map(|scope| (scope.id.as_str(), scope))
+        .collect();
+    let auxiliary_selection_scopes: std::collections::HashSet<(&str, u32)> = native
+        .design_construction_operand_groups
+        .iter()
+        .filter(|group| {
+            group.role() == crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5
+                && group.extrude_role().is_none()
+        })
+        .filter_map(|group| {
+            crate::ids::native_stream(&group.id).map(|stream| (stream, group.scope_record_index))
+        })
+        .collect();
+    for feature in &ir.model.features {
+        let Some(scope) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|id| scopes_by_id.get(id))
+        else {
+            continue;
+        };
+        let Some(prologue) = scope.extrude_prologue() else {
+            continue;
+        };
+        if crate::ids::native_stream(&scope.id)
+            .is_some_and(|stream| wall_scopes.contains(&(stream, scope.record_index)))
+            && matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+                )
+            )
+        {
+            report
+                .losses
+                .push(F3dLossCode::FeatureExtrudeWallThicknessNative.note(format!(
+                    "Extrude {} retains its wall-thickness inputs in the native scope.",
+                    feature.id
+                )));
+        }
+        if scope.extrude_profile().is_some()
+            && matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude {
+                        profile: cadmpeg_ir::features::ProfileRef::Planar(
+                            cadmpeg_ir::features::PlanarProfileRef::Native(id)
+                        ),
+                        ..
+                    }
+                ) if id == &scope.id
+            )
+        {
+            report.losses.push(F3dLossCode::FeatureExtrudeSketchPlacementNative.note(
+                format!("Extrude {} retains its sketch profile in the native scope because its placement is unresolved.", feature.id),
+            ));
+        }
+        if matches!(
+            prologue.extent(),
+            Some(
+                crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceThroughAll
+                    | crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedThroughAllToFace
+            )
+        ) && crate::ids::native_stream(&scope.id).is_some_and(|stream| {
+                auxiliary_selection_scopes.contains(&(stream, scope.record_index))
+            })
+            && matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+                )
+            )
+        {
+            report.losses.push(
+                F3dLossCode::FeatureExtrudeAuxiliarySelectionNative.note(format!(
+                    "Extrude {} retains an auxiliary selection in its native scope (DR-328).",
+                    feature.id
+                )),
+            );
+        }
+        if matches!(
+            prologue.extent(),
+            Some(
+                crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero
+                    | crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionZero
+                    | crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionTwo
+            )
+        ) && matches!(
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+            )
+        ) {
+            report.losses.push(F3dLossCode::FeatureExtrudeTargetOptionAssumed.note(
+                format!("Extrude {} assumes the target option preserves the selected side terminations (DR-117).", feature.id),
+            ));
+        }
+        if prologue.extent()
+            == Some(crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne)
+            && matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+                )
+            )
+        {
+            report.losses.push(F3dLossCode::FeatureExtrudeFaceControlAssumed.note(
+                format!("Extrude {} assumes the second-side control preserves the face termination (DR-329).", feature.id),
+            ));
+        }
+        if prologue.start() == crate::records::feature::extrude::DesignExtrudeStart::FromFace
+            && matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude {
+                        start: cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. },
+                        ..
+                    }
+                )
+            )
+        {
+            report.losses.push(F3dLossCode::FeatureExtrudeStartFaceAbsentAssumed.note(format!(
+                "Extrude {} reads its selected-face start without a start group as the offset profile plane (DR-322).",
+                feature.id
+            )));
+        }
+        let scope_key =
+            crate::ids::native_stream(&scope.id).map(|stream| (stream, scope.record_index));
+        let first_side_zero = scope_key
+            .and_then(|key| along_values.get(&key))
+            .is_some_and(|values| values.as_slice() == [0.0]);
+        let first_side_taper = scope_key
+            .and_then(|key| taper_values.get(&key))
+            .is_some_and(|values| values.iter().any(|value| *value != 0.0))
+            || scope
+                .fixed_extrude_parameters()
+                .and_then(|fixed| fixed.taper_angle.as_ref())
+                .is_some_and(|taper| taper.value.get() != 0.0);
+        if prologue.extent()
+            == Some(crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedDistance)
+            && first_side_zero
+            && first_side_taper
+            && matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude {
+                        extent: cadmpeg_ir::features::ExtrudeExtent::OneSided { .. },
+                        ..
+                    }
+                )
+            )
+        {
+            report.losses.push(
+                F3dLossCode::FeatureExtrudeZeroSideTaperIgnored.note(format!(
+                "Extrude {} ignores the first-side taper because its first side has zero length.",
+                feature.id
+            )),
+            );
+        }
+        if prologue.extent()
+            == Some(crate::records::feature::extrude::DesignExtrudeExtent::SymmetricDistance)
+            && prologue.distance_tail().is_none()
+        {
+            let fixed_lane_only = scope
+                .fixed_extrude_parameters()
+                .is_some_and(|fixed| fixed.along_distance.is_some())
+                && !crate::ids::native_stream(&scope.id)
+                    .is_some_and(|stream| along_scopes.contains(&(stream, scope.record_index)));
+            let reading = matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude {
+                        extent: cadmpeg_ir::features::ExtrudeExtent::Symmetric { .. },
+                        ..
+                    },
+                )
+            ) && prologue.side_extent_discriminators() != Some([1, 1]);
+            let reading = reading.then_some(if fixed_lane_only {
+                "each side"
+            } else {
+                "the whole travel"
+            });
+            if let Some(reading) = reading {
+                report
+                    .losses
+                    .push(
+                        F3dLossCode::FeatureExtrudeSymmetricDistanceAssumed.note(format!(
+                        "Extrude {} assumes the symmetric distance applies to {reading} (DR-78).",
+                        feature.id
+                    )),
+                    );
+            }
+        }
+    }
+    let surface_groups: std::collections::HashSet<&str> = native
+        .design_construction_operand_groups
+        .iter()
+        .filter(|group| {
+            group.role()
+                == crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X43
+        })
+        .map(|group| group.id.as_str())
+        .collect();
+    for feature in &ir.model.features {
+        if let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                profile:
+                    cadmpeg_ir::features::ProfileRef::Planar(
+                        cadmpeg_ir::features::PlanarProfileRef::Native(group),
+                    ),
+                ..
+            },
+        ) = feature.evaluation.definition()
+        {
+            if surface_groups.contains(group.as_str()) {
+                report.losses.push(
+                    F3dLossCode::FeatureExtrudeSurfaceProfileAssumed.note(format!(
+                        "Extrude {} takes native group {group} as its surface profile (DR-328).",
+                        feature.id
+                    )),
+                );
+            }
+        }
+    }
     let projected_moves: std::collections::HashSet<&str> = ir
         .model
         .features
@@ -2169,7 +2473,10 @@ fn report_design_projection_gaps(
     )?;
     let mut uninterpreted_scopes = 0;
     for scope in &native.design_parameter_scopes {
-        if scope.occurrence_transfer.is_none() && scope.payload().is_uninterpreted() {
+        if scope.occurrence_transfer.is_none()
+            && scope.occurrence_transfer_intent.is_none()
+            && scope.payload().is_uninterpreted()
+        {
             uninterpreted_scopes += 1;
         }
     }
@@ -2637,6 +2944,8 @@ struct F3dDecodeSession<'a> {
     report_scope: crate::report::ReportScope,
     unknowns: Vec<UnknownRecord>,
     admitted_entities: u64,
+    component_definitions_by_record:
+        std::collections::BTreeMap<(String, u64), cadmpeg_ir::ids::ProductDefinitionId>,
 }
 
 impl<'a> F3dDecodeSession<'a> {
@@ -2713,6 +3022,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report_scope,
                 unknowns,
                 admitted_entities,
+                component_definitions_by_record: std::collections::BTreeMap::new(),
             },
             SessionPath::Geometry(Box::new(GeometrySessionPath {
                 index: GeometryIndex {
@@ -2758,6 +3068,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report_scope,
                 unknowns,
                 admitted_entities,
+                component_definitions_by_record: std::collections::BTreeMap::new(),
             },
             SessionPath::Bodyless {
                 mesh_projection,
@@ -2932,6 +3243,8 @@ impl<'a> F3dDecodeSession<'a> {
             products: design_intent::DesignProducts {
                 occurrences: &model.occurrences,
                 assembly_joints: &model.assembly_joints,
+                definitions: &model.product_definitions,
+                component_definitions_by_record: &self.component_definitions_by_record,
             },
             geometry: design_intent::DesignGeometry {
                 primary_brep: match path {
@@ -3011,7 +3324,11 @@ impl<'a> F3dDecodeSession<'a> {
                 let face_losses =
                     resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
                 apply_appearance_base_colors(&mut self.ir);
-                apply_body_presentation_names(&mut self.ir, scan, &prereqs.design_body_bindings)?;
+                let name_losses = apply_body_presentation_names(
+                    &mut self.ir,
+                    scan,
+                    &prereqs.design_body_bindings,
+                )?;
                 self.ir
                     .model
                     .appearance_bindings
@@ -3022,6 +3339,7 @@ impl<'a> F3dDecodeSession<'a> {
                     materials.has_topology_assignments,
                 );
                 self.report.losses.extend(face_losses);
+                self.report.losses.extend(name_losses);
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
                 match &prereqs.xref {
                     Ok(Some(table)) => {
@@ -3103,6 +3421,7 @@ impl<'a> F3dDecodeSession<'a> {
             &local_sources,
             &prereqs.design_types,
         )?;
+        self.component_definitions_by_record = local.component_definitions_by_record.clone();
         if let Some(table) = prereqs.xref_table() {
             let external =
                 crate::xref::project_occurrences(table, &local_sources, &local.occurrences)?;
@@ -3398,6 +3717,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 &mut decoded.ir,
                 &mut decoded.body.losses,
             )?;
+            refresh_incomplete_feature_loss(&decoded.ir, &mut decoded.body.losses);
             let poses = crate::xref::operation_pose::collect(
                 ctx,
                 &scan,
@@ -4088,63 +4408,6 @@ fn mesh_texture_assignments(
         });
     }
     Ok(assignments)
-}
-
-/// Replace the native definition of each mesh-import scope with its exact
-/// tessellation identities.
-fn mesh_feature_tessellations<'a>(
-    projection: &'a MeshProjection,
-    stream: &str,
-    record_index: u32,
-) -> Option<&'a [String]> {
-    let key = stream.to_string();
-    projection
-        .tessellations_by_scope
-        .get(&(key, record_index))
-        .map(Vec::as_slice)
-}
-
-fn bind_mesh_feature_definitions(
-    features: &mut [cadmpeg_ir::features::Feature],
-    scopes: &[crate::records::feature::scope::DesignParameterScope],
-    projection: &MeshProjection,
-) -> Result<(), cadmpeg_core::CodecError> {
-    for feature in features {
-        if feature.source_tag.as_deref() != Some("Base Mesh Feature") {
-            continue;
-        }
-        let Some(native_ref) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        let Some(scope) = scopes.iter().find(|scope| scope.id == native_ref) else {
-            continue;
-        };
-        let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-        let Some(tessellations) =
-            mesh_feature_tessellations(projection, stream, scope.record_index)
-        else {
-            continue;
-        };
-        if tessellations.is_empty() {
-            continue;
-        }
-        let mut copies = Vec::new();
-        for tessellation in tessellations {
-            let copy = tessellation.to_owned();
-            copies.push(copy);
-        }
-        feature
-            .evaluation
-            .set_definition(cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::MeshImport {
-                    tessellations: copies
-                        .try_into()
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
-                },
-            ));
-    }
-
-    Ok(())
 }
 
 /// Project channels with a settled element layout and count unresolved channels
@@ -5694,7 +5957,9 @@ pub(crate) fn apply_body_presentation_names(
     ir: &mut CadIr,
     scan: &ContainerScan,
     body_bindings: &[crate::records::bodies::DesignBodyBinding],
-) -> Result<(), CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
+    let mut losses = Vec::new();
+    let mut stream_entity_names = std::collections::BTreeMap::<(&str, u64), Option<String>>::new();
     for entry in scan
         .entries
         .iter()
@@ -5712,29 +5977,98 @@ pub(crate) fn apply_body_presentation_names(
             let Some(name) = presentation.name.as_deref() else {
                 continue;
             };
-            if is_default_body_name(name) {
+            if name.trim().is_empty()
+                || name.chars().any(char::is_control)
+                || is_default_body_name(name)
+            {
                 continue;
             }
-            let mut matching = body_bindings.iter().filter(|b| {
-                b.stream() == entry.name && b.entity_suffix == presentation.entity_suffix
-            });
-            let (Some(binding), None) = (matching.next(), matching.next()) else {
-                continue;
-            };
-            if let Some(body_id) = &binding.body {
-                if let Some(body) = ir.model.bodies.iter_mut().find(|b| b.id == *body_id) {
-                    if body.name.is_none() {
-                        body.name = Some(name.to_string());
+            match stream_entity_names.entry((entry.name.as_str(), presentation.entity_suffix)) {
+                std::collections::btree_map::Entry::Vacant(v) => {
+                    v.insert(Some(name.to_string()));
+                }
+                std::collections::btree_map::Entry::Occupied(mut o) => {
+                    if o.get().as_deref() != Some(name) {
+                        o.insert(None);
                     }
                 }
             }
         }
     }
-    Ok(())
+
+    let mut bindings_by_owner = std::collections::HashMap::<
+        (&str, u64),
+        Vec<&crate::records::bodies::DesignBodyBinding>,
+    >::new();
+    for binding in body_bindings {
+        bindings_by_owner
+            .entry((binding.stream(), binding.entity_suffix))
+            .or_default()
+            .push(binding);
+    }
+
+    let mut body_names =
+        std::collections::BTreeMap::<cadmpeg_ir::ids::BodyId, Option<String>>::new();
+    for ((stream, entity_suffix), candidate) in &stream_entity_names {
+        let Some(name) = candidate else {
+            losses.push(F3dLossCode::BodyDisplayNameAmbiguous.note(format!(
+                "Body presentations in {stream} assign conflicting display names to entity suffix {entity_suffix}."
+            )));
+            if let Some(bindings) = bindings_by_owner.get(&(*stream, *entity_suffix)) {
+                for body_id in bindings.iter().filter_map(|b| b.body.as_ref()) {
+                    body_names.insert(body_id.clone(), None);
+                }
+            }
+            continue;
+        };
+        let Some(bindings) = bindings_by_owner.get(&(*stream, *entity_suffix)) else {
+            continue;
+        };
+        if bindings.len() > 1 {
+            if bindings.iter().any(|b| b.body.is_some()) {
+                losses.push(F3dLossCode::BodyDisplayNameAmbiguous.note(format!(
+                    "Body presentation display name {name:?} for {stream} entity suffix {entity_suffix} matches {} body bindings.",
+                    bindings.len()
+                )));
+                for body_id in bindings.iter().filter_map(|b| b.body.as_ref()) {
+                    body_names.insert(body_id.clone(), None);
+                }
+            }
+            continue;
+        }
+        let Some(body_id) = &bindings[0].body else {
+            continue;
+        };
+        match body_names.entry(body_id.clone()) {
+            std::collections::btree_map::Entry::Vacant(v) => {
+                v.insert(Some(name.clone()));
+            }
+            std::collections::btree_map::Entry::Occupied(mut o) => {
+                if let Some(existing) = o.get().as_deref() {
+                    if existing != name {
+                        losses.push(F3dLossCode::BodyDisplayNameAmbiguous.note(format!(
+                            "Model body {body_id} receives conflicting presentation display names {existing:?} and {name:?}."
+                        )));
+                        o.insert(None);
+                    }
+                }
+            }
+        }
+    }
+
+    for body in &mut ir.model.bodies {
+        if let Some(Some(name)) = body_names.get(&body.id) {
+            if body.name.is_none() {
+                body.name = Some(name.clone());
+            }
+        }
+    }
+    Ok(losses)
 }
 
 pub(crate) mod design_intent;
 mod geometry_admission;
+mod mesh_import;
 mod prereqs;
 
 #[cfg(test)]

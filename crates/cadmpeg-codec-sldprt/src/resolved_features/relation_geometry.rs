@@ -22,8 +22,8 @@ use super::relation_records::{
     relation_uses_dynamic_operands, relation_uses_solver_points, CircleHandleDrivers,
 };
 use super::transforms::{
-    marker_entities, sketch_entity_locus_points, sketch_frame_marker_transform, MarkerEntityFilter,
-    ProfileAxis,
+    feature_sketch_marker_transform, marker_entities, sketch_entity_locus_points,
+    MarkerEntityFilter, ProfileAxis,
 };
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -50,6 +50,7 @@ use std::collections::{HashMap, HashSet};
 pub(super) const RELATION_PARAMETER_ID_PROPERTY: &str = "sldprt_relation_id";
 pub(super) const RELATION_PARAMETER_ROLE_PROPERTY: &str = "sldprt_relation_parameter_role";
 pub(super) const RELATION_PARAMETER_ROLE_REFERENCE: &str = "reference";
+pub(super) const RELATION_PARAMETER_ROLE_DRIVING: &str = "driving";
 pub(super) const RELATION_DISPLAY_SCALAR_ID_PROPERTY: &str = "sldprt_display_scalar_id";
 
 pub(crate) fn is_reference_relation_parameter(
@@ -566,7 +567,7 @@ pub(crate) fn project_relation_point_geometry(
                 sketches
                     .iter()
                     .find(|candidate| candidate.id == *sketch)
-                    .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
+                    .and_then(|sketch| feature_sketch_marker_transform(sketch, QUANTUM, features))
                     .and_then(|transform| transform.apply(native))
             } else {
                 unique_position
@@ -1076,7 +1077,9 @@ pub(crate) fn project_relation_solved_line_geometry(
                     sketches
                         .iter()
                         .find(|candidate| candidate.id == *sketch)
-                        .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
+                        .and_then(|sketch| {
+                            feature_sketch_marker_transform(sketch, QUANTUM, features)
+                        })
                         .and_then(|transform| transform.apply(native))
                 } else {
                     unique_position
@@ -1127,7 +1130,9 @@ pub(crate) fn project_relation_solved_line_geometry(
                         sketches
                             .iter()
                             .find(|candidate| candidate.id == *sketch)
-                            .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
+                            .and_then(|sketch| {
+                                feature_sketch_marker_transform(sketch, QUANTUM, features)
+                            })
                     })
                     .flatten();
                 let mut candidates = Vec::new();
@@ -1593,7 +1598,9 @@ pub(crate) fn project_relation_solved_point_geometry(
                         sketches
                             .iter()
                             .find(|candidate| candidate.id == **sketch)
-                            .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
+                            .and_then(|sketch| {
+                                feature_sketch_marker_transform(sketch, QUANTUM, features)
+                            })
                             .and_then(|transform| transform.apply(native))
                     } else {
                         unique_position
@@ -2573,7 +2580,15 @@ pub(crate) fn project_relation_bindings(
                 .as_ref()
                 .and_then(|parameter| parameters_by_id.get(parameter))
                 .copied();
-            let reference_parameter = parameter.is_some_and(is_reference_relation_parameter);
+            let measured_parameter = parameter.is_some_and(|parameter| {
+                parameter
+                    .properties
+                    .get(RELATION_PARAMETER_ROLE_PROPERTY)
+                    .is_some_and(|role| {
+                        role == RELATION_PARAMETER_ROLE_REFERENCE
+                            || role == RELATION_PARAMETER_ROLE_DRIVING
+                    })
+            });
             let native_kind = relation_native_kind(relation.family);
             let mut entities = Vec::new();
             for marker in relation
@@ -2631,7 +2646,7 @@ pub(crate) fn project_relation_bindings(
             };
             let typed_definition = match typed_definition {
                 Some(definition)
-                    if reference_parameter
+                    if measured_parameter
                         && relation_constraint_is_inactive(
                             parameter,
                             &definition,

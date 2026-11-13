@@ -25,6 +25,7 @@ fn direct_face_recipe_clauses_resolve_ordered_changed_intersections() {
             selector: 1,
             selector_offset,
             token: "x".into(),
+            token_integer: 0,
             token_offset: selector_offset + 1,
             design_reference: 1,
             design_reference_offset: selector_offset + 2,

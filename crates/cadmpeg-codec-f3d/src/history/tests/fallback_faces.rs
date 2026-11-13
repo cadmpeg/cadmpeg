@@ -92,6 +92,7 @@ fn history(lanes: &[&[i64]], updated: &[i64]) -> AsmHistory {
                     entity_ref: *face,
                     selector: 1,
                     token: token(faces),
+                    token_integer: 0,
                     design_references: vec![300],
                     ordinal: 0,
                 });

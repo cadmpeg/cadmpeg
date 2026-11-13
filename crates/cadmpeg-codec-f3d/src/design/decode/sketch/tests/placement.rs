@@ -232,6 +232,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
                 .expect("valid entity ID"),
 
             visibility: None,
+            display_name: None,
 
             class_tag: crate::records::references::DesignClassTag::try_from("293".to_owned())
                 .unwrap(),

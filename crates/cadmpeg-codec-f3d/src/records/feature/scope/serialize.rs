@@ -87,6 +87,10 @@ impl Serialize for DesignParameterScope {
         }
 
         emit_opt!("occurrence_transfer", self.occurrence_transfer.as_ref());
+        emit_opt!(
+            "occurrence_transfer_intent",
+            self.occurrence_transfer_intent.as_ref()
+        );
         emit!("id", &self.id);
         emit!("byte_offset", self.byte_offset);
         emit!("class_tag", self.class_tag.as_str());
@@ -136,6 +140,7 @@ impl Serialize for DesignParameterScope {
         emit!("feature_ordinal", self.feature_ordinal.get());
         emit!("feature_ordinal_offset", self.feature_ordinal_offset);
         emit_opt!("label", self.label.as_ref());
+        emit_opt!("display_name", self.display_name.as_deref());
         emit_opt!("history_state_id", self.history_state_id);
         emit!("history_state_id_offset", self.history_state_id_offset());
         emit_opt!("previous_history_state_id", self.previous_history_state_id);

@@ -47,6 +47,7 @@ fn persistent_subentity_tokens_require_content_and_preserve_non_numeric_text() {
             target: AttributeTarget::Face(FaceId::mint("test:model:face#1").unwrap()),
             selector: 1,
             token: NonBlankString::new(text).unwrap(),
+            token_integer: 0,
             design_references: vec![],
             ordinal: 0,
         };
