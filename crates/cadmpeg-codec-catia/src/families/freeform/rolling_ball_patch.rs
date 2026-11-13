@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded polynomial approximation of a native rolling-ball face carrier.
 
+use std::cell::OnceCell;
+
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::Point3;
 
 use crate::wire::records::{ConsolidatedFamily, ConsolidatedRecord};
@@ -26,6 +29,30 @@ const EDGE_HOLDOUT_STEPS: usize = 20;
 const MAX_EDGE_ERROR_MM: f64 = 0.001;
 const MAX_EDGE_SPLIT_DEPTH: usize = 12;
 const MAX_EDGE_SPANS: usize = 128;
+
+fn surface_evaluator<'a>(
+    ir: &'a CadIr,
+    carrier: &'a SurfaceGeometry,
+) -> impl Fn(f64, f64) -> Option<[f64; 3]> + 'a {
+    let index = OnceCell::new();
+    move |u, v| {
+        let point =
+            if carrier.solved_cache().is_some() || carrier.procedural_construction().is_none() {
+                eval::model_surface_point(EvaluationAdmission::Standard, ir, carrier, u, v)
+            } else {
+                eval::model_surface_point_in_index(
+                    EvaluationAdmission::Standard,
+                    index.get_or_init(|| ModelIndex::build(ir)),
+                    carrier,
+                    u,
+                    v,
+                )
+            }
+            .ok()?
+            .get();
+        Some([point.x, point.y, point.z])
+    }
+}
 
 #[derive(Clone)]
 pub(super) struct ClosedPcurve {
@@ -178,12 +205,7 @@ pub(super) fn fit(
     {
         return None;
     }
-    let evaluate = |u: f64, v: f64| {
-        let point = eval::model_surface_point(EvaluationAdmission::Standard, ir, carrier, u, v)
-            .ok()?
-            .get();
-        Some([point.x, point.y, point.z])
-    };
+    let evaluate = surface_evaluator(ir, carrier);
     let u_basis = (0..=U_DEGREE)
         .map(|index| bernstein(U_DEGREE, f64_from_index(index)? / f64_from_index(U_DEGREE)?))
         .collect::<Option<Vec<_>>>()?;
@@ -283,16 +305,13 @@ pub(super) fn fit_edge(
     edge: &ClosedPcurve,
     v_bounds: Option<[f64; 2]>,
 ) -> Option<NurbsCurve> {
+    let evaluate = surface_evaluator(ir, carrier);
     fit_lifted_edge(edge.range, |parameter: f64| {
         let uv = eval::decode::pcurve_uv(EvaluationAdmission::Standard, &edge.geometry, parameter)
             .ok()?
             .get();
         let chart_v = chart_v(uv.v, v_bounds)?;
-        let point =
-            eval::model_surface_point(EvaluationAdmission::Standard, ir, carrier, uv.u, chart_v)
-                .ok()?
-                .get();
-        Some([point.x, point.y, point.z])
+        evaluate(uv.u, chart_v)
     })
 }
 
@@ -422,6 +441,7 @@ pub(super) fn closed_patch(
     v_bounds: Option<[f64; 2]>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<ClosedPatch> {
+    let evaluate = surface_evaluator(ir, carrier);
     let mut candidates = Vec::new();
     let source_records = records
         .iter()
@@ -469,16 +489,8 @@ pub(super) fn closed_patch(
                     .ok()?
                     .get();
                     let chart_v = chart_v(uv.v, v_bounds)?;
-                    let point = eval::model_surface_point(
-                        EvaluationAdmission::Standard,
-                        ir,
-                        carrier,
-                        uv.u,
-                        chart_v,
-                    )
-                    .ok()?
-                    .get();
-                    lifted.push(([uv.u, chart_v], [point.x, point.y, point.z]));
+                    let point = evaluate(uv.u, chart_v)?;
+                    lifted.push(([uv.u, chart_v], point));
                 }
                 Some(ClosedPcurve {
                     pos: pcurve.pos,
