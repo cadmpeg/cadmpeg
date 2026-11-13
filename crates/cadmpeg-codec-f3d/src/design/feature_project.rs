@@ -785,7 +785,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::Combine) => project_combine(scope, native_scope)
                     .unwrap_or_else(|| {
-                        projection_losses.push(F3dLossCode::FeatureCombineDefinitionUnresolved.note(
+                        projection_losses.push(crate::loss::F3dLossCode::FeatureCombineDefinitionUnresolved.note(
                             format!("{}: the Combine operation or its operand construction is unresolved; the feature family is retained without a fabricated Boolean operation", scope.id),
                         ));
                         FeatureDefinition::Operation(FeatureOperation::Unresolved {
