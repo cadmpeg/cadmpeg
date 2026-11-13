@@ -9853,6 +9853,16 @@ pub(crate) mod move_transform_omitted_matrix_frame_126 {
     pub(crate) const LEN: usize = 126;
 }
 
+/// Byte offsets for the `rigid_transform_leading_prefix` record.
+///
+/// Spec §3.1. Record length 29 B.
+pub(crate) mod rigid_transform_leading_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 29;
+    /// Offset of `scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const SCALAR: usize = 21;
+}
+
 /// Byte offsets for the `move_transform_omitted_matrix_frame_125` record.
 ///
 /// Spec §3.1. Record length 125 B.
