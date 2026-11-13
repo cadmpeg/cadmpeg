@@ -68,6 +68,7 @@ const EPS_DIMENSIONS_OWNER_SCOPED_SPATIAL_PARALLEL_LINE_SET_DIMENSION_DEFINITION
 const EPS_DIMENSIONS_SPATIAL_COUNTED_OFFSET_DIMENSION_DEFINITION_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_SPATIAL_POINT_DISTANCE_MATCHES_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_MATCHES_E9: f64 = 1.0e-9;
+const EPS_DIMENSIONS_SPATIAL_POINT_LINE_DISTANCE_MATCHES_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_E12: f64 = 1.0e-12;
 const EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_RADIAL_DIMENSION_DEFINITION_AT_TOLERANCE_E9: f64 = 1.0e-9;
@@ -2764,6 +2765,14 @@ pub(crate) fn project_spatial_dimension_constraints(
                                     parameter: parameter.clone(),
                                 },
                             )
+                        } else if let Some([point, line]) =
+                            spatial_point_line_distance_match(first, second, expected)
+                        {
+                            Some(SpatialSketchConstraintDefinitionInput::PointLineDistance {
+                                point: point.id().clone(),
+                                line: line.id().clone(),
+                                parameter: parameter.clone(),
+                            })
                         } else {
                             None
                         }
@@ -3519,6 +3528,46 @@ fn spatial_parallel_line_distance_matches(
         && measured.is_finite()
         && (measured - expected.abs()).abs()
             <= EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_MATCHES_E9 * scale
+}
+
+/// The point and the line of a point-line pair whose point lies at the
+/// expected distance from the infinite carrier of the line.
+fn spatial_point_line_distance_match<'a>(
+    first: &'a cadmpeg_ir::sketches::SpatialSketchEntity,
+    second: &'a cadmpeg_ir::sketches::SpatialSketchEntity,
+    expected: f64,
+) -> Option<[&'a cadmpeg_ir::sketches::SpatialSketchEntity; 2]> {
+    [[first, second], [second, first]]
+        .into_iter()
+        .find(|[point, line]| {
+            spatial_point_line_distance_matches(&point.geometry, &line.geometry, expected)
+        })
+}
+
+fn spatial_point_line_distance_matches(
+    point: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    line: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    expected: f64,
+) -> bool {
+    let cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Point { position } =
+        point.definition()
+    else {
+        return false;
+    };
+    let Some([start, end]) = spatial_line_segment(line) else {
+        return false;
+    };
+    let direction = end.vector_from(start);
+    let length = direction.norm();
+    if !(length.is_finite() && length > 0.0) {
+        return false;
+    }
+    let measured = position.get().vector_from(start).cross(direction).norm() / length;
+    let scale = 1.0 + measured.max(expected.abs());
+    expected.is_finite()
+        && measured.is_finite()
+        && (measured - expected.abs()).abs()
+            <= EPS_DIMENSIONS_SPATIAL_POINT_LINE_DISTANCE_MATCHES_E9 * scale
 }
 
 fn spatial_line_segment(
