@@ -48,6 +48,10 @@ pub(crate) fn is_scalar(data: &SegmentTypeData) -> bool {
     has_type(data, SCALAR_GUID, SCALAR_BASE, &[0])
 }
 
+pub(crate) fn is_settings(data: &SegmentTypeData) -> bool {
+    has_type(data, SETTINGS_GUID, SETTINGS_BASE, &[1])
+}
+
 pub(crate) fn is_point(data: &SegmentTypeData) -> bool {
     has_type(data, POINT_GUID, GROUP_GUID, &[2, 3])
 }
