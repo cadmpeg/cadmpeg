@@ -1257,7 +1257,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Conflict.** None.
 
-**Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding.
+**Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding. The public Voron Trident `z_mounts_front.f3d` has nine such scopes. Component context bindings identify their result owners. The source-body and source-frame joins require the derivation references independently of those owner bindings.
 
 ### DR-123. Typed-reference BoxPrimitive offsets and other forms
 
@@ -1369,15 +1369,15 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 ### DR-164. Primary edge-recipe references with several face fragments
 
-**Question.** Which selector rule selects the edge when several edges remain after the primary-reference lane unions, distinct-support-face constraint, and recipe-boundary constraint? Can a recipe's candidate faces omit the edge that its first-side faces select?
+**Question.** Which selector rule selects the edge when several edges remain after the primary-reference lane unions, distinct-support-face constraint, and recipe-boundary constraint? Which face does a lane select when its persistent names bind to disjoint face sets? Does the singleton deletion proof apply to a one-side Chamfer recipe?
 
-**Known.** The first side carries one-based prefix-reference ordinals. A prefix reference can bind to several preceding faces through persistent token and Design-reference tags. Each first-side reference lane contributes the union of its live face-fragment loop edges. The lane intersection requires distinct supporting faces. The recipe-boundary constraint and singleton fallback select a unique edge. On the public Orbiter V2 test, two Orbiter X carriages, Zodiac BMO and Wago mount parts, the union rule selects the same edge for each of the 65 operand slots that the one-face-per-reference rule selects, and selects 19 further slots. Each of those further slots has an empty recipe candidate-face set. When the first-side faces share exactly one live edge and that edge bounds none of the recipe's candidate faces, the reading takes that edge and reports `history.edge-selection-inferred`.
+**Known.** The first side carries one-based prefix-reference ordinals. A prefix reference can bind to several preceding faces through persistent token and Design-reference tags. Each first-side reference lane contributes the union of its live face-fragment loop edges. The lane intersection requires distinct supporting faces. The recipe-boundary constraint selects a unique edge. A standard two-side Chamfer or Fillet recipe has transition proof for a singleton lane intersection when the owning transition deletes that edge and the persistent names within each lane have a common face. The public Trident front Z mounts have 69 singleton selections outside the candidate-face boundaries: 56 Chamfer and 13 Fillet operands, including one fragment-lane operand of each kind. Every selected edge is deleted, and its supporting faces change in the owning transition. Independent controls include the Micron beefy handle and B motor tail mount, Mini AfterSherpa Orbiter V2 test, and V6 Zodiac BMO. Stored recipe programs, face-loop boundaries, edge revisions, and state transitions prove the same reading in these controls. The Trident rear Z carriage has one one-side Chamfer operand at Design offset 1995667, scope record 115756. Its first side names faces 1602 and 2154, whose common edge is slot 1718 in state 353. State 354 deletes that edge and changes both faces. Its 37-word program starts at Design offset 1996254. The side header is `0`, its scalars are `[1, 2, 1]`, and its two topology entries have boundary counts `2` and `7`. The recipe candidate face is 1872. This one-side reading retains `history.edge-selection-inferred`. A disjoint-name lane still uses a deleted-edge restriction as an assumption.
 
-**Need.** The selector rule for several remaining edges. Controlled recipe changes that preserve the prefix references and vary the selected fragment, including a recipe whose candidate faces are known to bound the selected edge.
+**Need.** The selector rule for several remaining edges, the face-binding rule for disjoint persistent names, and an independent one-side Chamfer design that distinguishes the selected edge from collateral deletion. Controlled recipe changes that preserve the prefix references and vary the selected fragment must distinguish the candidate rules.
 
 **Conflict.** None.
 
-**Note.** An unresolved member retains the native group. A non-unique or incomplete reference proof reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
+**Note.** An unresolved member retains the native group. A singleton without the deletion proof and a disjoint-name reading report `history.edge-selection-inferred`. A non-unique or incomplete reference proof reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
 
 ### DR-170. Unresolved DeleteFace operand bindings
 
@@ -1696,7 +1696,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** Equal matrix bytes corroborate a stored frame. Selection of an owner's current frame and of a captured state remains part of occurrence placement. The identity fallback records the unresolved placement proof.
+**Note.** The public Voron Trident `z_mounts_front.f3d` stores 55 registered version-2 Component placement entities, 43 bound component naming spaces, and 34 component paths. Its local occurrence set is empty. Definition context bindings identify component owners independently of these placement frames. Equal matrix bytes corroborate a stored frame. Selection of an owner's current frame and of a captured state remains part of occurrence placement. The identity fallback records the unresolved placement proof.
 
 ### DR-252. Saved scene framing and state selection
 
