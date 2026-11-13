@@ -486,6 +486,9 @@ pub(crate) enum F3dLossCode {
     FeatureMoveTransformModeAssumed,
     FeatureMoveTransformPrefixAssumed,
     FeatureMoveTransformIdentityAssumed,
+    FeatureAlignMotionAssumed,
+    FeatureAlignIdentityAssumed,
+    FeatureAlignMotionUnprojected,
     /// A projected `Modify` assumes that its unlisted body groups select the bodies of its listed groups.
     FeatureModifyUnlistedGroupsAssumed,
     /// A projected `Modify` stores a reference table outside the body-group run of its family.
@@ -511,7 +514,7 @@ pub(crate) enum F3dLossCode {
     FeaturePathPatternPlacementNotTransferred,
     /// A rectangular pattern's symmetric distribution or coincident direction has no linear pattern field.
     FeatureRectangularPatternPlacementNotTransferred,
-    /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
+    /// A `Thicken` scope stores a prologue flag byte `1` whose Thicken setting is unresolved.
     FeatureThickenFlagsAssumed,
     /// A `Shell` reference table stores references outside its face-group members.
     FeatureShellTableMembersAssumed,
@@ -962,6 +965,9 @@ impl F3dLossCode {
         Self::FeatureMoveTransformModeAssumed,
         Self::FeatureMoveTransformPrefixAssumed,
         Self::FeatureMoveTransformIdentityAssumed,
+        Self::FeatureAlignMotionAssumed,
+        Self::FeatureAlignIdentityAssumed,
+        Self::FeatureAlignMotionUnprojected,
         Self::FeatureModifyUnlistedGroupsAssumed,
         Self::FeatureModifyTableAssumed,
         Self::FeatureModifyStateAssumed,
@@ -1390,6 +1396,9 @@ impl F3dLossCode {
                 "feature.move-transform-references-assumed"
             }
             Self::FeatureMoveTransformIdentityAssumed => "feature.move-transform-identity-assumed",
+            Self::FeatureAlignMotionAssumed => "feature.align-motion-assumed",
+            Self::FeatureAlignIdentityAssumed => "feature.align-identity-assumed",
+            Self::FeatureAlignMotionUnprojected => "feature.align-motion-unprojected",
             Self::FeatureMoveTransformPrefixAssumed => "feature.move-transform-prefix-assumed",
             Self::FeatureMoveTransformModeAssumed => "feature.move-transform-mode-assumed",
             Self::FeatureMoveScopeReferencesAssumed => "feature.move-scope-references-assumed",
@@ -1802,6 +1811,9 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformModeAssumed
             | Self::FeatureMoveTransformPrefixAssumed
             | Self::FeatureMoveTransformIdentityAssumed
+            | Self::FeatureAlignMotionAssumed
+            | Self::FeatureAlignIdentityAssumed
+            | Self::FeatureAlignMotionUnprojected
             | Self::FeatureModifyUnlistedGroupsAssumed
             | Self::FeatureModifyTableAssumed
             | Self::FeatureModifyStateAssumed
@@ -2120,6 +2132,9 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformModeAssumed
             | Self::FeatureMoveTransformPrefixAssumed
             | Self::FeatureMoveTransformIdentityAssumed
+            | Self::FeatureAlignMotionAssumed
+            | Self::FeatureAlignIdentityAssumed
+            | Self::FeatureAlignMotionUnprojected
             | Self::FeatureModifyUnlistedGroupsAssumed
             | Self::FeatureModifyTableAssumed
             | Self::FeatureModifyStateAssumed
@@ -2533,6 +2548,9 @@ mod tests {
                 "feature.move-transform-mode-assumed",
                 "feature.move-transform-prefix-assumed",
                 "feature.move-transform-identity-assumed",
+                "feature.align-motion-assumed",
+                "feature.align-identity-assumed",
+                "feature.align-motion-unprojected",
                 "feature.modify-unlisted-groups-assumed",
                 "feature.modify-table-assumed",
                 "feature.modify-state-assumed",

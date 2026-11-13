@@ -120,9 +120,20 @@ pub(crate) struct DesignThickenOperation {
     pub(crate) thickness_record_index: u32,
     /// Byte offset of the scalar.
     pub(crate) thickness_offset: u64,
+    /// Whether the thickness is added on both sides of the selected faces.
+    pub(crate) symmetric: bool,
+    /// Whether the selection extends along tangent faces.
+    pub(crate) tangent_chain: bool,
 }
 
 cadmpeg_core::named_optional_field!(deserialize_move_prefix, DesignMovePrefix, "prefix");
+cadmpeg_core::named_optional_field!(deserialize_move_leading, DesignMoveLeading, "leading");
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignMoveLeading {
+    pub(crate) scalar: FiniteReal,
+    pub(crate) references: [DesignMoveReference; 2],
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignMovePrefix {
@@ -130,6 +141,12 @@ pub(crate) struct DesignMovePrefix {
     pub(crate) codes: [u32; 2],
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) matrix_omitted: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_move_leading"
+    )]
+    pub(crate) leading: Option<DesignMoveLeading>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -147,9 +164,16 @@ pub(crate) enum DesignMoveReference {
 
 impl DesignMovePrefix {
     pub(crate) fn form_offset(&self) -> Option<usize> {
-        self.references.iter().try_fold(
-            crate::layout::move_transform_frame_293::FIRST_REFERENCE + 8,
-            |offset, reference| {
+        let first_reference = if self.leading.is_some() {
+            crate::layout::rigid_transform_leading_prefix::LEN
+        } else {
+            crate::layout::move_transform_frame_293::FIRST_REFERENCE
+        };
+        self.leading
+            .iter()
+            .flat_map(|leading| leading.references.iter())
+            .chain(self.references.iter())
+            .try_fold(first_reference.checked_add(8)?, |offset, reference| {
                 offset.checked_add(match reference {
                     DesignMoveReference::Null => 1,
                     DesignMoveReference::Local { .. } => 11,
@@ -160,8 +184,7 @@ impl DesignMovePrefix {
                         crate::bytes::TYPED_LOCAL_REFERENCE_LEN
                     }
                 })
-            },
-        )
+            })
     }
 
     pub(crate) fn full_references(&self) -> bool {
@@ -235,6 +258,7 @@ pub(crate) enum DesignMoveForm {
     /// Source form 1.
     Form1,
     Form2,
+    Form4,
     /// Source form 5.
     Form5,
     Form6,
@@ -247,9 +271,10 @@ impl TryFrom<u32> for DesignMoveForm {
             0 => Ok(Self::Form0),
             1 => Ok(Self::Form1),
             2 => Ok(Self::Form2),
+            4 => Ok(Self::Form4),
             5 => Ok(Self::Form5),
             6 => Ok(Self::Form6),
-            _ => Err(format!("form must be 0, 1, 2, 5 or 6, not {value}")),
+            _ => Err(format!("form must be 0, 1, 2, 4, 5 or 6, not {value}")),
         }
     }
 }
@@ -260,6 +285,7 @@ impl From<DesignMoveForm> for u32 {
             DesignMoveForm::Form0 => 0,
             DesignMoveForm::Form1 => 1,
             DesignMoveForm::Form2 => 2,
+            DesignMoveForm::Form4 => 4,
             DesignMoveForm::Form5 => 5,
             DesignMoveForm::Form6 => 6,
         }

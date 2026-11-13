@@ -139,7 +139,7 @@ pub(crate) fn project_decal_images(
     assets.dedup_by(|a, b| a.id == b.id);
     if assumed_mappings != 0 {
         losses.push(F3dLossCode::DecalMappingAssumed.note(format!(
-            "{assumed_mappings} Decal feature(s) have a missing mapping mode or a mode other than 0x60; the decoder assumes the fit-to-faces mapping (DR-483)."
+            "{assumed_mappings} Decal feature(s) have a missing mapping mode or a mode other than 0x60; the decoder assumes the fit-to-faces mapping (DR-484)."
         )));
     }
     if unresolved_targets != 0 {
@@ -154,7 +154,7 @@ pub(crate) fn project_decal_images(
     }
     if unresolved_definitions != 0 {
         losses.push(F3dLossCode::DecalDefinitionUnresolved.note(format!(
-            "{unresolved_definitions} Decal feature(s) have no decoded image definition; the decoder retains the scope identity as the external image source (DR-482)."
+            "{unresolved_definitions} Decal feature(s) have no decoded image definition; the decoder retains the scope identity as the external image source (DR-485)."
         )));
     }
     Ok(assets)
