@@ -493,6 +493,191 @@ anchor = "with six trailing zero bytes"
 
 
 [[record]]
+name = "design_decal_scope_extended_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The extended Decal prefix stores nine zero bytes at offsets 11 through 19"
+size = 48
+note = "Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The extended Decal prefix stores nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "The extended Decal prefix stores nine zero bytes at offsets 11 through 19"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "extra_code"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 value `1` at offset 20"
+value = 1
+
+[[record.field]]
+name = "zero"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "a zero byte at offset 24"
+value = 0
+
+[[record.field]]
+name = "asset_reference"
+offset = 25
+type = "bytes[5]"
+source = "spec"
+anchor = "image-asset reference, mapping mode, and target-group reference occur at offsets 25, 36, and 37"
+
+[[record.field]]
+name = "asset_reference_zero_run"
+offset = 30
+type = "bytes[6]"
+source = "spec"
+anchor = "Both references keep their six trailing zero bytes"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "mapping_mode"
+offset = 36
+type = "u8"
+source = "spec"
+anchor = "image-asset reference, mapping mode, and target-group reference occur at offsets 25, 36, and 37"
+
+[[record.field]]
+name = "target_group_reference"
+offset = 37
+type = "bytes[5]"
+source = "spec"
+anchor = "image-asset reference, mapping mode, and target-group reference occur at offsets 25, 36, and 37"
+
+[[record.field]]
+name = "target_reference_zero_run"
+offset = 42
+type = "bytes[6]"
+source = "spec"
+anchor = "Both references keep their six trailing zero bytes"
+value = [0, 0, 0, 0, 0, 0]
+
+
+[[record]]
+name = "design_decal_scope_typed_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The typed Decal prefix stores each reference as a 51-byte typed local reference"
+size = 124
+note = "Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The typed Decal prefix stores each reference as a 51-byte typed local reference"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Ten zero bytes occupy scope offsets 11 through 20"
+
+[[record.field]]
+name = "asset_reference"
+offset = 21
+type = "bytes[51]"
+source = "spec"
+anchor = "the image-asset reference at offset 21 has target type GUID"
+
+[[record.field]]
+name = "mapping_mode"
+offset = 72
+type = "u8"
+source = "spec"
+anchor = "the mapping mode is at offset 72"
+
+[[record.field]]
+name = "target_group_reference"
+offset = 73
+type = "bytes[51]"
+source = "spec"
+anchor = "the target-group reference at offset 73 has target type GUID"
+
+
+[[record]]
+name = "design_decal_scope_typed_extended_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The typed extended Decal prefix has the extended header and the typed references"
+size = 128
+note = "Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The typed extended Decal prefix has the extended header and the typed references"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "The extended Decal prefix stores nine zero bytes at offsets 11 through 19"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "extra_code"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 value `1` at offset 20"
+value = 1
+
+[[record.field]]
+name = "zero"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "a zero byte at offset 24"
+value = 0
+
+[[record.field]]
+name = "asset_reference"
+offset = 25
+type = "bytes[51]"
+source = "spec"
+anchor = "its image-asset reference, mapping mode, and target-group reference occur at offsets 25, 76, and 77"
+
+[[record.field]]
+name = "mapping_mode"
+offset = 76
+type = "u8"
+source = "spec"
+anchor = "its image-asset reference, mapping mode, and target-group reference occur at offsets 25, 76, and 77"
+
+[[record.field]]
+name = "target_group_reference"
+offset = 77
+type = "bytes[51]"
+source = "spec"
+anchor = "its image-asset reference, mapping mode, and target-group reference occur at offsets 25, 76, and 77"
+
+
+[[record]]
 name = "design_decal_image_asset_record"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
 kind = "byte"
@@ -528,6 +713,37 @@ offset = 24
 type = "bytes[6]"
 source = "spec"
 anchor = "six zero bytes at offsets 24 through 29"
+
+
+[[record]]
+name = "design_decal_image_typed_asset_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The typed Decal image-asset record is 70 bytes"
+size = 70
+note = "Complete typed Decal image-asset record. The image-name record begins at byte 70."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The typed Decal image-asset record is 70 bytes"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "Eight zero bytes occupy its offsets 11 through 18"
+
+[[record.field]]
+name = "design_entity_suffix_reference"
+offset = 19
+type = "bytes[51]"
+source = "spec"
+anchor = "a 51-byte typed local reference at offset 19"
 
 
 [[record]]
@@ -1518,6 +1734,59 @@ offset = 26
 type = "u8"
 source = "spec"
 anchor = "The slots start at offset 26"
+
+[[record]]
+name = "copy_paste_bodies_scope_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/copy_paste_bodies.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A `CopyPasteBodies` scope that stores nine zero bytes at offsets 11 through 19"
+size = 47
+note = "Offsets are relative to the primary indexed header of a CopyPasteBodies scope with the marker word at offset 21."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Any other scope has them at primary-header offsets 29 and 40"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "stores nine zero bytes at offsets 11 through 19, prologue byte `0`"
+
+[[record.field]]
+name = "prologue_byte"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "prologue byte `0` at offset 20"
+value = 0
+
+[[record.field]]
+name = "marker_word"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "`u32 1` at offset 21"
+value = 1
+
+[[record.field]]
+name = "body_group_reference"
+offset = 25
+type = "bytes[11]"
+source = "spec"
+anchor = "the body-group reference at offset 25"
+
+[[record.field]]
+name = "relation_reference"
+offset = 36
+type = "bytes[11]"
+source = "spec"
+anchor = "the relation reference at offset 36"
 
 [[record]]
 name = "chamfer_scope_prologue"
@@ -8654,6 +8923,43 @@ offset = 26
 type = "bytes[2]"
 source = "spec"
 anchor = "two opaque bytes at offsets 26 and 27"
+
+[[record]]
+name = "pipe_section_frame"
+kind = "byte"
+section = "3.1"
+anchor = "the section frame follows the two opaque bytes"
+size = 71
+note = "Offsets are relative to the byte after the two opaque bytes of the compact or legacy Pipe prefix of a Pipe without a point-selection pair."
+
+[[record.field]]
+name = "owner_and_settings_references"
+offset = 0
+type = "bytes[55]"
+source = "spec"
+anchor = "Five marked references occupy offsets 0 through 54"
+
+[[record.field]]
+name = "zero_byte"
+offset = 55
+type = "u8"
+source = "spec"
+anchor = "A zero byte is at offset 55"
+value = 0
+
+[[record.field]]
+name = "path_group_reference"
+offset = 56
+type = "bytes[11]"
+source = "spec"
+anchor = "The marked reference at offset 56"
+
+[[record.field]]
+name = "shape"
+offset = 67
+type = "u32"
+source = "spec"
+anchor = "The u32 section shape at offset 67"
 
 [[record]]
 name = "legacy_pipe_operation_prefix"
@@ -34583,26 +34889,6 @@ size = 77
 note = "The common native tail precedes the same-index paired header."
 
 [[record]]
-name = "surface_delete_face_wide_prologue"
-kind = "byte"
-section = "3.1"
-anchor = "wide surface-delete prologue"
-size = 132
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/feature_project/delete_face.rs"
-
-[[record.gap]]
-offset = 0
-size = 128
-note = "Indexed scope header and operation prologue; control semantics are tracked in DR-476."
-
-[[record.field]]
-name = "reference_count"
-offset = 128
-type = "u32"
-source = "spec"
-anchor = "which is 123, 127, 128, 131, 134, 138, or 142"
-
-[[record]]
 name = "unstitch_prologue_compact"
 kind = "byte"
 section = "3.1"
@@ -34749,3 +35035,54 @@ offset = 30
 type = "u32"
 source = "spec"
 anchor = "stores `N` at offset 30"
+
+[[record]]
+name = "surface_delete_face_wide_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "wide surface-delete prologue"
+size = 132
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/feature_project/delete_face.rs"
+
+[[record.gap]]
+offset = 0
+size = 128
+note = "Indexed scope header and operation prologue; control semantics are tracked in DR-476."
+
+[[record.field]]
+name = "reference_count"
+offset = 128
+type = "u32"
+source = "spec"
+anchor = "which is 123, 127, 128, 131, 134, 138, or 142"
+
+[[record]]
+name = "assembly_version_four_connector_prefix"
+kind = "byte"
+section = "Assembly operands"
+anchor = "Each connector stores a plain local"
+size = 18
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_v3.rs"
+note = "Offsets are relative to each version-four connector. Identity byte zero is followed by a rigid matrix; identity byte one supplies identity."
+
+[[record.field]]
+name = "reference"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Each connector stores a plain local"
+
+[[record.field]]
+name = "zeros"
+offset = 11
+type = "bytes[6]"
+value = [0, 0, 0, 0, 0, 0]
+source = "spec"
+anchor = "reference, six zero bytes, an identity byte"
+
+[[record.field]]
+name = "identity"
+offset = 17
+type = "u8"
+source = "spec"
+anchor = "reference, six zero bytes, an identity byte"
