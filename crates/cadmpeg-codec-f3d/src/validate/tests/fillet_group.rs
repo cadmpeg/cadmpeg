@@ -318,6 +318,7 @@ fn fillet_set_native_with(
     };
     slot.sets = Some(DesignFilletSetList {
         form: DesignFilletSetListForm::Current,
+        rolling_ball_corner: true,
         sets: vec![DesignFilletSet {
             record_index: 11,
             byte_offset: 500,
@@ -327,7 +328,8 @@ fn fillet_set_native_with(
                 radius_owner_record_index,
             },
             tangency_weight_owner_record_index,
-            flag: false,
+            tangent_chain: false,
+            curvature_continuity: Some(false),
         }],
     });
     native
@@ -389,4 +391,38 @@ fn fillet_sets_name_scope_members_and_owners_of_their_kinds() {
             "{radius_owner} {tangency_owner}"
         );
     }
+}
+
+#[test]
+fn fillet_set_flags_belong_to_their_forms() {
+    use crate::records::feature::fillet_set::DesignFilletSetListForm;
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    let edit = |change: &dyn Fn(&mut crate::records::feature::fillet_set::DesignFilletSetList)| {
+        let mut native = fillet_set_native(200);
+        crate::design::test_support::name_scope_references(
+            &mut native.design_parameter_scopes[0],
+            [100],
+        );
+        let DesignScopePayloadMut::Fillet(slot) = native.design_parameter_scopes[0].payload_mut()
+        else {
+            panic!("Fillet fixture");
+        };
+        change(slot.sets.as_mut().unwrap());
+        fillet_set_findings(&native)
+    };
+    assert_eq!(edit(&|_| {}), 0);
+    assert_eq!(edit(&|list| list.sets[0].curvature_continuity = None), 1);
+    assert_eq!(
+        edit(&|list| {
+            list.sets[0].frame_length = 93;
+        }),
+        1
+    );
+    assert_eq!(
+        edit(&|list| {
+            list.form = DesignFilletSetListForm::Compact;
+            list.rolling_ball_corner = false;
+        }),
+        1
+    );
 }

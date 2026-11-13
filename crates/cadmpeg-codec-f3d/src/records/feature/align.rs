@@ -11,6 +11,11 @@ cadmpeg_core::named_optional_field!(
     DesignAlignConstruction,
     "construction"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_align_motion,
+    super::direct_face::DesignMoveOperation,
+    "motion"
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -31,6 +36,12 @@ pub(crate) struct DesignAlignEnvelope {
         deserialize_with = "deserialize_align_construction"
     )]
     pub(crate) construction: Option<DesignAlignConstruction>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_align_motion"
+    )]
+    pub(crate) motion: Option<super::direct_face::DesignMoveOperation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -48,4 +59,4 @@ pub(crate) struct DesignAlignConstruction {
 
 rewrite_native_record!(DesignAlignConstruction, []; {record_index, byte_offset, paired_byte_offset, class_tag, paired_class_tag, marked_words, codes, matrix_scalars, scalar});
 rewrite_native_scalar!(DesignAlignForm);
-rewrite_native_record!(DesignAlignEnvelope, []; {form, first_reference, source_code, second_reference, construction});
+rewrite_native_record!(DesignAlignEnvelope, []; {form, first_reference, source_code, second_reference, construction, motion});

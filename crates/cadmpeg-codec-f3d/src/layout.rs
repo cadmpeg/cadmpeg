@@ -680,8 +680,8 @@ pub(crate) mod chamfer_scope_prologue {
 pub(crate) mod chamfer_set_equal {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 83;
-    /// Offset of `flag` (`u8`). Spec §3.1.
-    pub(crate) const FLAG: usize = 21;
+    /// Offset of `tangent_chain` (`u8`). Spec §3.1.
+    pub(crate) const TANGENT_CHAIN: usize = 21;
     /// Offset of `distance_owner_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const DISTANCE_OWNER_REFERENCE: usize = 24;
     /// Offset of `spec_kind` (`u32`, little-endian). Spec §3.1.
@@ -690,8 +690,8 @@ pub(crate) mod chamfer_set_equal {
     pub(crate) const SPEC_KIND_VALUE: u32 = 0x0000_0001;
     /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const EDGE_GROUP_REFERENCE: usize = 40;
-    /// Offset of `fixed_word` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FIXED_WORD: usize = 53;
+    /// Offset of `set_number` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SET_NUMBER: usize = 53;
     /// Offset of `fixed_byte` (`u8`). Spec §3.1.
     pub(crate) const FIXED_BYTE: usize = 57;
     /// Offset of `auxiliary_reference` (`bytes[11]`). Spec §3.1.
@@ -722,8 +722,8 @@ pub(crate) mod chamfer_set_two_distances {
     pub(crate) const SPEC_KIND_VALUE: u32 = 0x0000_0002;
     /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const EDGE_GROUP_REFERENCE: usize = 50;
-    /// Offset of `fixed_word` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FIXED_WORD: usize = 63;
+    /// Offset of `set_number` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SET_NUMBER: usize = 63;
     /// Offset of `fixed_byte` (`u8`). Spec §3.1.
     pub(crate) const FIXED_BYTE: usize = 67;
     /// Offset of `auxiliary_reference` (`bytes[11]`). Spec §3.1.
@@ -754,8 +754,8 @@ pub(crate) mod chamfer_set_distance_angle {
     pub(crate) const SPEC_KIND_VALUE: u32 = 0x0000_0003;
     /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const EDGE_GROUP_REFERENCE: usize = 50;
-    /// Offset of `fixed_word` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FIXED_WORD: usize = 63;
+    /// Offset of `set_number` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SET_NUMBER: usize = 63;
     /// Offset of `fixed_byte` (`u8`). Spec §3.1.
     pub(crate) const FIXED_BYTE: usize = 67;
     /// Offset of `auxiliary_reference` (`bytes[11]`). Spec §3.1.
@@ -784,8 +784,8 @@ pub(crate) mod chamfer_set_compact_equal {
     pub(crate) const SPEC_KIND_VALUE: u32 = 0x0000_0001;
     /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const EDGE_GROUP_REFERENCE: usize = 40;
-    /// Offset of `fixed_word` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FIXED_WORD: usize = 53;
+    /// Offset of `set_number` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SET_NUMBER: usize = 53;
     /// Offset of `auxiliary_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const AUXILIARY_REFERENCE: usize = 59;
     /// Offset of `scope_reference` (`bytes[11]`). Spec §3.1.
@@ -820,8 +820,10 @@ pub(crate) mod fillet_set_constant {
     pub(crate) const LEN: usize = 97;
     /// Offset of `form_marker` (`u8`). Spec §3.1.
     pub(crate) const FORM_MARKER: usize = 23;
-    /// Offset of `flag` (`u8`). Spec §3.1.
-    pub(crate) const FLAG: usize = 26;
+    /// Offset of `curvature_continuity` (`u8`). Spec §3.1.
+    pub(crate) const CURVATURE_CONTINUITY: usize = 25;
+    /// Offset of `tangent_chain` (`u8`). Spec §3.1.
+    pub(crate) const TANGENT_CHAIN: usize = 26;
     /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const EDGE_GROUP_REFERENCE: usize = 29;
     /// Offset of `radius_owner_reference` (`bytes[11]`). Spec §3.1.
@@ -9895,6 +9897,16 @@ pub(crate) mod move_marker_one_transform_prologue {
 pub(crate) mod move_transform_omitted_matrix_frame_126 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 126;
+}
+
+/// Byte offsets for the `rigid_transform_leading_prefix` record.
+///
+/// Spec §3.1. Record length 29 B.
+pub(crate) mod rigid_transform_leading_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 29;
+    /// Offset of `scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const SCALAR: usize = 21;
 }
 
 /// Byte offsets for the `move_transform_omitted_matrix_frame_125` record.
