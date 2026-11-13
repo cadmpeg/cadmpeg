@@ -34408,3 +34408,137 @@ offset = 128
 type = "u32"
 source = "spec"
 anchor = "which is 123, 127, 128, 131, 134, 138, or 142"
+
+[[record]]
+name = "captured_position_prefix"
+note = "Offsets are relative to the scope primary indexed header."
+kind = "byte"
+section = "Captured component positions"
+anchor = "The inline prefix starts with the eleven-byte indexed header"
+size = 33
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The inline prefix starts with the eleven-byte indexed header"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[18]"
+source = "spec"
+anchor = "The inline prefix starts with the eleven-byte indexed header"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "row_count"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "The inline prefix starts with the eleven-byte indexed header"
+
+[[record]]
+name = "captured_position_row"
+note = "Offsets are relative to the start of each ordered row."
+kind = "byte"
+section = "Captured component positions"
+anchor = "Each Position row starts with byte zero"
+size = 13
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs"
+
+[[record.field]]
+name = "zero"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "Each Position row starts with byte zero"
+value = 0
+
+[[record.field]]
+name = "reference_marker"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "Each Position row starts with byte zero"
+value = 1
+
+[[record.field]]
+name = "target"
+offset = 2
+type = "u64"
+source = "spec"
+anchor = "Each Position row starts with byte zero"
+
+[[record.field]]
+name = "reference_padding"
+offset = 10
+type = "u16"
+source = "spec"
+anchor = "Each Position row starts with byte zero"
+value = 0
+
+[[record.field]]
+name = "matrix_marker"
+offset = 12
+type = "u8"
+source = "spec"
+anchor = "Each Position row starts with byte zero"
+
+[[record]]
+name = "captured_position_matrix"
+note = "Offsets are relative to the first coefficient after matrix marker 0."
+kind = "byte"
+section = "Captured component positions"
+anchor = "Matrix marker 0 is followed by sixteen row-major finite f64 coefficients"
+size = 128
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs"
+
+[[record.field]]
+name = "coefficients"
+offset = 0
+type = "f64[16]"
+source = "spec"
+anchor = "Matrix marker 0 is followed by sixteen row-major finite f64 coefficients"
+
+[[record]]
+name = "captured_position_suffix"
+note = "Offsets are relative to the suffix immediately after the ordered rows."
+kind = "byte"
+section = "Captured component positions"
+anchor = "The Position suffix spans 83 bytes"
+size = 83
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs"
+
+[[record.field]]
+name = "zero_word"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The Position suffix spans 83 bytes"
+value = 0
+
+[[record.field]]
+name = "identity_length"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "The Position suffix spans 83 bytes"
+value = 36
+
+[[record.field]]
+name = "identity"
+offset = 8
+type = "bytes[72]"
+source = "spec"
+anchor = "The Position suffix spans 83 bytes"
+
+[[record.field]]
+name = "zero_tail"
+offset = 80
+type = "bytes[3]"
+source = "spec"
+anchor = "The Position suffix spans 83 bytes"
+value = [0, 0, 0]

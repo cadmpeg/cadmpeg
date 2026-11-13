@@ -2034,6 +2034,16 @@ For each selector, an edge is an incidence match when, for every present clause 
 
 A suppressed edge-treatment scope resolves its recipes against the unique terminal topology of its ASM history. The terminal state is the feature's replay input state. An operand's terminal face context is the ordered, deduplicated union of its primary persistent-reference faces and each prefix reference's exact-selector faces, falling back to that reference's alternate-selector faces only when its exact set is empty. Incidence, boundary-count, and common-triplet proofs operate on the resulting terminal boundaries without transition-only changed-edge filters and must resolve to one common slot. More than one terminal state in a history, or matching terminal states in more than one history, does not select a topology. Deleted-edge, treatment-radius, changed-context, and scope-partition proofs require an executed transition and do not apply. When the terminal recipe graph has no complete group proof, every proven edge and every unresolved operand identity form a partial historical selection.
 
+#### Captured component positions
+
+A Position scope has type GUID `8EE00B00-76BB-49AB-8C25-E837FEC5BDA5`, version 6. Its stored kind can be `Position` or `Posición`. The inline prefix starts with the eleven-byte indexed header, eighteen zero bytes at offset 11, and a u32 row count at offset 29. Ordered rows start at offset 33. The count includes every row in source order; repeated targets remain separate rows. An empty row sequence has count zero.
+
+Each Position row starts with byte zero at offset 0, a marked same-segment reference at offset 1, and a matrix marker at offset 12. The reference stores marker 1, a u64 record index at offset 2, and a zero u16 at offset 10. The record index fits u32. Matrix marker 0 is followed by sixteen row-major finite f64 coefficients at offset 13; that row spans 141 bytes. Matrix marker 1 omits the coefficients; that row spans 13 bytes.
+
+The Position suffix spans 83 bytes between the rows and the normal ordered-reference count. It stores u32 zero at offset 0, u32 value 36 at offset 4, the UTF-16LE text `00000000-0000-0000-0000-000000000000` at offset 8, and three zero bytes at offset 80. The last row ends at the suffix start. The suffix ends at the scope's ordered-reference count.
+
+Each row target selects an operand-path locator of type `2E3AC990-483D-4A55-8662-C064B976A957`, version 5. The locator's backlink names the Position scope. Its ordered typed path records and wrapper use the assembly operand-path envelope.
+
 #### Assembly operands
 
 The four direct-construction 421-byte `As-built` generations use one exact class and offset map:

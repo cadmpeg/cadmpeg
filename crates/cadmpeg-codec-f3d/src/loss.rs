@@ -482,6 +482,11 @@ pub(crate) enum F3dLossCode {
     FeatureMoveTransformModeAssumed,
     FeatureMoveTransformPrefixAssumed,
     FeatureMoveTransformIdentityAssumed,
+    PositionEnvelopeUnparsed,
+    PositionSemanticsAssumed,
+    PositionIdentityAssumed,
+    PositionOccurrenceUnresolved,
+    PositionTransformUnprojected,
     /// A projected `Modify` assumes that its unlisted body groups select the bodies of its listed groups.
     FeatureModifyUnlistedGroupsAssumed,
     /// A projected `Modify` stores a reference table outside the body-group run of its family.
@@ -954,6 +959,11 @@ impl F3dLossCode {
         Self::FeatureMoveTransformModeAssumed,
         Self::FeatureMoveTransformPrefixAssumed,
         Self::FeatureMoveTransformIdentityAssumed,
+        Self::PositionEnvelopeUnparsed,
+        Self::PositionSemanticsAssumed,
+        Self::PositionIdentityAssumed,
+        Self::PositionOccurrenceUnresolved,
+        Self::PositionTransformUnprojected,
         Self::FeatureModifyUnlistedGroupsAssumed,
         Self::FeatureModifyTableAssumed,
         Self::FeatureModifyStateAssumed,
@@ -1378,6 +1388,11 @@ impl F3dLossCode {
                 "feature.move-transform-references-assumed"
             }
             Self::FeatureMoveTransformIdentityAssumed => "feature.move-transform-identity-assumed",
+            Self::PositionEnvelopeUnparsed => "feature.position-envelope-unparsed",
+            Self::PositionSemanticsAssumed => "feature.position-semantics-assumed",
+            Self::PositionIdentityAssumed => "feature.position-identity-assumed",
+            Self::PositionOccurrenceUnresolved => "feature.position-occurrence-unresolved",
+            Self::PositionTransformUnprojected => "feature.position-transform-unprojected",
             Self::FeatureMoveTransformPrefixAssumed => "feature.move-transform-prefix-assumed",
             Self::FeatureMoveTransformModeAssumed => "feature.move-transform-mode-assumed",
             Self::FeatureMoveScopeReferencesAssumed => "feature.move-scope-references-assumed",
@@ -1786,6 +1801,11 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformModeAssumed
             | Self::FeatureMoveTransformPrefixAssumed
             | Self::FeatureMoveTransformIdentityAssumed
+            | Self::PositionEnvelopeUnparsed
+            | Self::PositionSemanticsAssumed
+            | Self::PositionIdentityAssumed
+            | Self::PositionOccurrenceUnresolved
+            | Self::PositionTransformUnprojected
             | Self::FeatureModifyUnlistedGroupsAssumed
             | Self::FeatureModifyTableAssumed
             | Self::FeatureModifyStateAssumed
@@ -2104,6 +2124,11 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformModeAssumed
             | Self::FeatureMoveTransformPrefixAssumed
             | Self::FeatureMoveTransformIdentityAssumed
+            | Self::PositionEnvelopeUnparsed
+            | Self::PositionSemanticsAssumed
+            | Self::PositionIdentityAssumed
+            | Self::PositionOccurrenceUnresolved
+            | Self::PositionTransformUnprojected
             | Self::FeatureModifyUnlistedGroupsAssumed
             | Self::FeatureModifyTableAssumed
             | Self::FeatureModifyStateAssumed

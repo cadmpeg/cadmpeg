@@ -2728,6 +2728,56 @@ pub enum ComponentTransferMode {
     Reparent,
 }
 
+cadmpeg_core::named_optional_field!(deserialize_captured_occurrence, OccurrenceId, "occurrence");
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[doc = "A canonical affine pose or the ordinal of its retained native matrix."]
+pub enum CapturedPositionTransform {
+    #[doc = "Finite affine pose with translation in canonical millimetres."]
+    Affine {
+        #[doc = "Captured pose in the occurrence assembly context."]
+        transform: Transform,
+    },
+    #[doc = "Matrix retained in the named native scope's ordered captured rows."]
+    Native {
+        #[doc = "Native scope retaining the source coefficients."]
+        scope: crate::ids::NativeId,
+        #[doc = "Zero-based ordinal of the source matrix row."]
+        row: usize,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = "One retained occurrence selector and its captured pose."]
+pub struct CapturedComponentPosition {
+    #[doc = "Native selector retained independently of occurrence resolution."]
+    pub selector: crate::ids::NativeId,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_captured_occurrence"
+    )]
+    #[doc = "Expanded occurrence when the complete selector resolves uniquely."]
+    pub occurrence: Option<OccurrenceId>,
+    #[doc = "Captured pose in the occurrence assembly context."]
+    pub transform: CapturedPositionTransform,
+}
+
+impl CapturedComponentPosition {
+    #[doc = "Construct an unresolved captured pose while preserving its native selector."]
+    pub fn new(selector: crate::ids::NativeId, transform: Transform) -> Self {
+        Self {
+            selector,
+            occurrence: None,
+            transform: CapturedPositionTransform::Affine { transform },
+        }
+    }
+}
+
 /// A feature operation: neutral construction semantics with an explicit native
 /// escape hatch, and no post-processing layer of its own.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2816,6 +2866,11 @@ pub enum FeatureOperation {
             deserialize_with = "deserialize_transfer_target_transform"
         )]
         target_transform: Option<Transform>,
+    },
+    #[doc = "Independent captured occurrence poses in source order, including repeated selectors."]
+    CapturedComponentPositions {
+        #[doc = "Exactly the captured rows, with an empty capture represented by an empty sequence."]
+        positions: Vec<CapturedComponentPosition>,
     },
     /// Assembly constraint introduced into the product structure.
     AssemblyJoint {

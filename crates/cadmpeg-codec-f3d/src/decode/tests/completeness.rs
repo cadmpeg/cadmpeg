@@ -4,6 +4,35 @@
 use super::super::feature_definition_is_incomplete;
 
 #[test]
+fn position_completeness_requires_affine_pose_and_resolved_occurrence() {
+    use cadmpeg_ir::features::{
+        CapturedComponentPosition, CapturedPositionTransform, FeatureDefinition, FeatureOperation,
+    };
+    let mut position = CapturedComponentPosition::new(
+        cadmpeg_ir::ids::NativeId::mint("synthetic:test:selector#pose").unwrap(),
+        cadmpeg_ir::transform::Transform::identity(),
+    );
+    let definition = |position| {
+        FeatureDefinition::Operation(FeatureOperation::CapturedComponentPositions {
+            positions: vec![position],
+        })
+    };
+    assert!(feature_definition_is_incomplete(&definition(
+        position.clone()
+    )));
+    position.occurrence =
+        Some(cadmpeg_ir::ids::OccurrenceId::mint("synthetic:test:occurrence#one").unwrap());
+    assert!(!feature_definition_is_incomplete(&definition(
+        position.clone()
+    )));
+    position.transform = CapturedPositionTransform::Native {
+        scope: cadmpeg_ir::ids::NativeId::mint("synthetic:test:scope#capture").unwrap(),
+        row: 0,
+    };
+    assert!(feature_definition_is_incomplete(&definition(position)));
+}
+
+#[test]
 fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
     let mut report = cadmpeg_ir::codec::DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),

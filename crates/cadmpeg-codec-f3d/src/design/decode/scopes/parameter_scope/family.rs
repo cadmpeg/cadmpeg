@@ -262,6 +262,9 @@ pub(super) fn paste_scope_prefix(
 }
 
 pub(super) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {
+    if guid.eq_ignore_ascii_case(super::super::position::TYPE_GUID) {
+        return Some(DesignFeatureKind::native("Position"));
+    }
     FAMILIES
         .iter()
         .find(|(registered, _)| registered.eq_ignore_ascii_case(guid))

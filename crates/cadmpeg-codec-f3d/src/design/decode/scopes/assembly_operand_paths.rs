@@ -81,6 +81,7 @@ pub(super) fn exact_assembly_operand_paths(
                     locator_record_index,
                     locator_reference_offset,
                     locator_at,
+                    |_| Ok(()),
                 ) {
                     Ok(parsed) => parsed,
                     Err(error) => return Some(Err(error)),
@@ -159,6 +160,7 @@ pub(super) fn exact_rigid_group_member_paths(
                     locator_record_index,
                     locator_reference_offset,
                     locator_at,
+                    |_| Ok(()),
                 ) {
                     Ok(parsed) => parsed,
                     Err(error) => return Some(Err(error)),
@@ -193,6 +195,57 @@ pub(super) fn exact_rigid_group_member_paths(
     .transpose()
 }
 
+pub(super) fn exact_position_operand_path(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    types: &StreamTypes<'_>,
+    target: &crate::records::identity::Located<u32>,
+) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
+    if !types
+        .get(&u64::from(target.value))
+        .is_some_and(|(guid, version)| {
+            *version == 5 && guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID)
+        })
+    {
+        return Ok(None);
+    }
+    let Some(start) = usize::try_from(scope.paired_byte_offset())
+        .ok()
+        .and_then(|at| at.checked_add(crate::layout::indexed_design_record_header::LEN))
+    else {
+        return Ok(None);
+    };
+    let mut candidate = None;
+    for at in records
+        .offsets(target.value)
+        .iter()
+        .copied()
+        .filter(|at| *at >= start)
+    {
+        let path = match exact_assembly_operand_path_envelope(
+            bytes,
+            scope,
+            types,
+            target.value,
+            target.offset,
+            at,
+            |retained| ctx.retain_bytes(retained, "retain F3D Position locator path"),
+        ) {
+            Ok(path) => path,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => None,
+        };
+        if let Some(path) = path.filter(DesignAssemblyOperandPath::admitted_by_type) {
+            if candidate.replace(path).is_some() {
+                return Ok(None);
+            }
+        }
+    }
+    Ok(candidate)
+}
+
 fn local_record_reference(bytes: &[u8], at: usize, typed: bool) -> Option<(u32, u64)> {
     Some((
         crate::bytes::local_reference_target(bytes, at, typed)?,
@@ -207,10 +260,13 @@ fn exact_assembly_operand_path_envelope(
     locator_record_index: u32,
     locator_reference_offset: u64,
     locator_at: usize,
+    retain_path: impl FnOnce(u64) -> Result<(), CodecError>,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     (|| {
         let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
-        let variable_reference = !super::assembly_v3::registered(scope, stream_types)
+        let position = super::position::registered(scope, stream_types);
+        let variable_reference = !position
+            && !super::assembly_v3::registered(scope, stream_types)
             && !crate::design::assembly::rigid_as_built_scope(scope)
             && crate::design::assembly::variable_reference_assembly_generation(
                 scope.class_tag.as_str(),
@@ -224,10 +280,8 @@ fn exact_assembly_operand_path_envelope(
             .get(&u64::from(locator_record_index))
             .filter(|(guid, _)| guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID));
         let locator_end = next_indexed_record_offset(bytes, locator_at.checked_add(1)?)?;
-        let assemble = super::assembly_v3::registered(scope, stream_types);
-        let group_layout = if crate::design::assembly::rigid_as_built_scope(scope)
-            || super::assembly_v3::registered(scope, stream_types)
-        {
+        let assemble = position || super::assembly_v3::registered(scope, stream_types);
+        let group_layout = if crate::design::assembly::rigid_as_built_scope(scope) || assemble {
             Some(if assemble {
                 RigidGroupLocatorLayout::admit_assemble(
                     registered_locator.copied(),
@@ -524,6 +578,13 @@ fn exact_assembly_operand_path_envelope(
             wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
             path_reference_offset,
         };
+        const RETAINED_BYTES_PER_SOURCE_BYTE: u64 = 16;
+        let retained = u64::try_from(wrapper_at.checked_sub(path_at)?)
+            .ok()?
+            .checked_mul(RETAINED_BYTES_PER_SOURCE_BYTE)?;
+        if let Err(error) = retain_path(retained) {
+            return Some(Err(error));
+        }
         let mut paths = path_spans.into_iter().map(|(record_index, start, limit)| {
             if super::assembly_v3::registered(scope, stream_types)
                 && !stream_types

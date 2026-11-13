@@ -10220,6 +10220,67 @@ Unstated regions:
 
 - `0..128` (128 B): Indexed scope header and operation prologue; control semantics are tracked in DR-476.
 
+## `captured_position_prefix`
+
+Spec §Captured component positions · layout: byte offsets · size: 33 B
+
+Offsets are relative to the scope primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The inline prefix starts with the eleven-byte indexed header |
+| 11 | 18 | `zero_run` | `bytes[18]` | little | spec | The inline prefix starts with the eleven-byte indexed header · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 29 | 4 | `row_count` | `u32` | little | spec | The inline prefix starts with the eleven-byte indexed header |
+
+## `captured_position_row`
+
+Spec §Captured component positions · layout: byte offsets · size: 13 B
+
+Offsets are relative to the start of each ordered row.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `zero` | `u8` | little | spec | Each Position row starts with byte zero · value `0` |
+| 1 | 1 | `reference_marker` | `u8` | little | spec | Each Position row starts with byte zero · value `1` |
+| 2 | 8 | `target` | `u64` | little | spec | Each Position row starts with byte zero |
+| 10 | 2 | `reference_padding` | `u16` | little | spec | Each Position row starts with byte zero · value `0` |
+| 12 | 1 | `matrix_marker` | `u8` | little | spec | Each Position row starts with byte zero |
+
+## `captured_position_matrix`
+
+Spec §Captured component positions · layout: byte offsets · size: 128 B
+
+Offsets are relative to the first coefficient after matrix marker 0.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 128 | `coefficients` | `f64[16]` | little | spec | Matrix marker 0 is followed by sixteen row-major finite f64 coefficients |
+
+## `captured_position_suffix`
+
+Spec §Captured component positions · layout: byte offsets · size: 83 B
+
+Offsets are relative to the suffix immediately after the ordered rows.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `zero_word` | `u32` | little | spec | The Position suffix spans 83 bytes · value `0` |
+| 4 | 4 | `identity_length` | `u32` | little | spec | The Position suffix spans 83 bytes · value `36` |
+| 8 | 72 | `identity` | `bytes[72]` | little | spec | The Position suffix spans 83 bytes |
+| 80 | 3 | `zero_tail` | `bytes[3]` | little | spec | The Position suffix spans 83 bytes · value `[0, 0, 0]` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
