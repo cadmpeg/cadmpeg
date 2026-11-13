@@ -34405,3 +34405,34 @@ offset = 128
 type = "u32"
 source = "spec"
 anchor = "which is 123, 127, 128, 131, 134, 138, or 142"
+
+[[record]]
+name = "assembly_version_four_connector_prefix"
+kind = "byte"
+section = "Assembly operands"
+anchor = "Each connector stores a plain local"
+size = 18
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_v3.rs"
+note = "Offsets are relative to each version-four connector. Identity byte zero is followed by a rigid matrix; identity byte one supplies identity."
+
+[[record.field]]
+name = "reference"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Each connector stores a plain local"
+
+[[record.field]]
+name = "zeros"
+offset = 11
+type = "bytes[6]"
+value = [0, 0, 0, 0, 0, 0]
+source = "spec"
+anchor = "reference, six zero bytes, an identity byte"
+
+[[record.field]]
+name = "identity"
+offset = 17
+type = "u8"
+source = "spec"
+anchor = "reference, six zero bytes, an identity byte"

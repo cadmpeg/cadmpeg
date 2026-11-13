@@ -7,6 +7,7 @@ use crate::bytes::{local_reference_target, lp_ascii_filtered_view};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::native_stream;
 use crate::layout::assembly_version_five_scope as five;
+use crate::layout::assembly_version_four_connector_prefix as four_connector;
 use crate::layout::assembly_version_four_prologue as four;
 use crate::layout::assembly_version_three_prefix as prefix;
 use crate::records::feature::assembly::{
@@ -66,6 +67,7 @@ struct VersionLayout {
     joint_versions: &'static [u32],
     prologue_zeros: usize,
     frame_zeros: usize,
+    plain_references: bool,
     frame_guid: bool,
     angle_zeros: usize,
     tail_reference: bool,
@@ -83,6 +85,7 @@ impl VersionLayout {
                 joint_versions: &[3, 4],
                 prologue_zeros: 0,
                 frame_zeros: 0,
+                plain_references: false,
                 frame_guid: false,
                 angle_zeros: 0,
                 tail_reference: false,
@@ -92,8 +95,9 @@ impl VersionLayout {
             4 => Self {
                 joint_versions: &[5],
                 prologue_zeros: four::PROLOGUE_ZEROS_VALUE.len(),
-                frame_zeros: five::FIRST_FRAME_ZEROS_VALUE.len(),
-                frame_guid: true,
+                frame_zeros: four_connector::ZEROS_VALUE.len(),
+                plain_references: true,
+                frame_guid: false,
                 angle_zeros: 0,
                 tail_reference: true,
                 tail_marker: true,
@@ -103,6 +107,7 @@ impl VersionLayout {
                 joint_versions: &[6],
                 prologue_zeros: five::ZERO_RUN_26_VALUE.len() - 2,
                 frame_zeros: five::FIRST_FRAME_ZEROS_VALUE.len(),
+                plain_references: true,
                 frame_guid: true,
                 angle_zeros: five::ANGLE_ZEROS_VALUE.len(),
                 tail_reference: true,
@@ -280,7 +285,7 @@ pub(crate) fn parse(
     } else {
         11
     };
-    if layout.frame_guid && stride != 11 {
+    if layout.plain_references && stride != 11 {
         return None;
     }
     let mut fields = Fields {
@@ -526,7 +531,7 @@ pub(crate) fn alignment_layout(
                 && last_table.checked_sub(first_table)
                     == table_span.checked_mul(u64_from_index(*stride))
         })?;
-    if layout.frame_guid && stride != 11 {
+    if layout.plain_references && stride != 11 {
         return None;
     }
     let mut at = usize::try_from(first).ok()?;

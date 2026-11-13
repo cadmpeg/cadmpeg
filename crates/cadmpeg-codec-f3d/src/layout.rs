@@ -9912,3 +9912,15 @@ pub(crate) mod surface_delete_face_wide_prologue {
     /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REFERENCE_COUNT: usize = 128;
 }
+
+/// Byte offsets for the `assembly_version_four_connector_prefix` record.
+///
+/// Spec §Assembly operands. Record length 18 B.
+///
+/// ```text
+/// Offsets are relative to each version-four connector. Identity byte zero is followed by a rigid matrix; identity byte one supplies identity.
+/// ```
+pub(crate) mod assembly_version_four_connector_prefix {
+    /// Stated value of `zeros` (`bytes[6]`). Spec §Assembly operands.
+    pub(crate) const ZEROS_VALUE: [u8; 6] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+}
