@@ -2516,6 +2516,7 @@ mod tests {
                 "feature.body-selection-native",
                 "feature.reverse-normal-body-unverified",
                 "feature.combine-selection-native",
+                "feature.combine-definition-unresolved",
                 "feature.combine-middle-list-omitted-assumed",
                 "feature.combine-component-destination-assumed",
                 "feature.combine-named-tail-prologue-assumed",
