@@ -923,12 +923,15 @@ impl DesignMeshPlacement {
         if u64::try_from(native_frame.len()).ok() != Some(record.frame_length()) {
             return Err("native mesh-body frame must match its record extent".into());
         }
-        let first_presence = if flagged {
-            crate::layout::paramesh_flagged_mesh_body_join_prefix::FIRST_PRESENCE
+        let first_presence = usize::try_from(layout.presence_offsets[0])
+            .map_err(|_| "first matrix presence offset exceeds usize")?;
+        let valid_prefix = if flagged {
+            first_presence == crate::layout::paramesh_flagged_mesh_body_join_prefix::FIRST_PRESENCE
         } else {
-            crate::layout::paramesh_mesh_body_join_prefix::FIRST_PRESENCE
+            first_presence == crate::layout::paramesh_mesh_body_join_prefix::FIRST_PRESENCE
+                || first_presence == crate::layout::paramesh_compact_v6_body_prefix::FIRST_PRESENCE
         };
-        if layout.presence_offsets[0] != u64_from_index(first_presence) {
+        if !valid_prefix {
             return Err("first matrix presence offset does not match its prefix".into());
         }
         let mut next = first_presence;
@@ -1924,8 +1927,14 @@ impl DesignMeshCollection {
         let body_bytes = u64::from(body_count) * 11;
         let length = fixed_length + body_bytes;
         let valid_length = if flagged && body_count != 0 {
-            record.frame_length() == length + 4
-                || record.frame_length() == length + 4 + u64::from(body_count) * 15
+            if flagged_data
+                .as_ref()
+                .is_some_and(|data| data.entries.is_empty())
+            {
+                record.frame_length() == length || record.frame_length() == length + 4
+            } else {
+                record.frame_length() == length + 4 + u64::from(body_count) * 15
+            }
         } else {
             record.frame_length() == length
         };
