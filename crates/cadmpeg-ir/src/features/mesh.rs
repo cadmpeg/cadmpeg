@@ -17,7 +17,11 @@ pub enum MeshSelection {
         #[doc = "Native expression identifying the source selection."]
         native: SelectionReference,
         #[doc = "Ordered member selectors relative to the native source."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_members"
+        )]
         members: Option<NativeSelections>,
     },
     #[doc = "Unavailable source identified by the feature that retains its construction."]
@@ -79,13 +83,25 @@ pub enum MeshRepair {
     #[doc = "Reconstructs the mesh from its volume."]
     Rebuild {
         #[doc = "Reconstruction quality, when resolved."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_mode"
+        )]
         mode: Option<MeshRebuildMode>,
         #[doc = "Sampling density of the reconstruction, when resolved."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_density"
+        )]
         density: Option<PositiveReal>,
         #[doc = "Signed surface offset in canonical millimeters, when resolved."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_offset"
+        )]
         offset: Option<Length>,
     },
 }
@@ -98,45 +114,97 @@ pub enum MeshModification {
     #[doc = "Lowers the face count."]
     Reduce {
         #[doc = "Face distribution of the result, when resolved."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distribution"
+        )]
         distribution: Option<MeshFaceDistribution>,
         #[doc = "Active bound of the reduction, when resolved."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_target"
+        )]
         target: Option<MeshReduceTarget>,
     },
     #[doc = "Repairs defects."]
     Repair {
         #[doc = "Repair method, when resolved."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_method"
+        )]
         method: Option<MeshRepair>,
     },
     #[doc = "Replaces the faces with faces of a target edge length."]
     Remesh {
         #[doc = "Face distribution of the result, when resolved."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distribution"
+        )]
         distribution: Option<MeshFaceDistribution>,
         #[doc = "Target edge length in canonical millimeters, when resolved."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_edge_length"
+        )]
         edge_length: Option<PositiveLength>,
         #[doc = "Weight that keeps sharp source shape under an adaptive distribution."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_shape_preservation"
+        )]
         shape_preservation: Option<Fraction>,
     },
     #[doc = "Smooths the surface."]
     Smooth {
         #[doc = "Smoothing strength, when resolved."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_smoothness"
+        )]
         smoothness: Option<Fraction>,
     },
     #[doc = "Hollows the mesh and keeps a wall."]
     Shell {
         #[doc = "Wall thickness in canonical millimeters, when resolved."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thickness"
+        )]
         thickness: Option<PositiveLength>,
     },
     #[doc = "Reverses the face normals."]
     ReverseNormals,
 }
+cadmpeg_core::named_optional_field!(deserialize_members, NativeSelections, "members");
+
+cadmpeg_core::named_optional_field!(deserialize_mode, MeshRebuildMode, "mode");
+cadmpeg_core::named_optional_field!(deserialize_density, PositiveReal, "density");
+cadmpeg_core::named_optional_field!(deserialize_offset, Length, "offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_distribution,
+    MeshFaceDistribution,
+    "distribution"
+);
+cadmpeg_core::named_optional_field!(deserialize_target, MeshReduceTarget, "target");
+cadmpeg_core::named_optional_field!(deserialize_method, MeshRepair, "method");
+cadmpeg_core::named_optional_field!(deserialize_edge_length, PositiveLength, "edge_length");
+cadmpeg_core::named_optional_field!(
+    deserialize_shape_preservation,
+    Fraction,
+    "shape_preservation"
+);
+cadmpeg_core::named_optional_field!(deserialize_smoothness, Fraction, "smoothness");
+cadmpeg_core::named_optional_field!(deserialize_thickness, PositiveLength, "thickness");
 
 mod decode_clone;
 

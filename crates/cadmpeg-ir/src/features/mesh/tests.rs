@@ -50,6 +50,7 @@ fn mesh_selections_reject_empty_repeated_blank_and_mixed_members() {
         serde_json::json!(["mesh id"]),
         serde_json::json!({"native":" "}),
         serde_json::json!({"native":"mesh:source", "members":[]}),
+        serde_json::json!({"native":"mesh:source", "members":null}),
         serde_json::json!({"native":"mesh:source", "members":[" "]}),
         serde_json::json!({"native":"mesh:source", "members":["7", "7"]}),
         serde_json::json!({"native":"mesh:source", "tessellations":["mesh:second"]}),
@@ -197,6 +198,7 @@ fn mesh_modifications_keep_their_tagged_wire_forms() {
     }
     for invalid in [
         serde_json::json!({"kind":"smooth","smoothness":1.5}),
+        serde_json::json!({"kind":"smooth","smoothness":null}),
         serde_json::json!({"kind":"shell","thickness":0.0}),
         serde_json::json!({"kind":"reduce","target":{"kind":"face_count","value":0}}),
     ] {
