@@ -87,6 +87,10 @@ impl Serialize for DesignParameterScope {
         }
 
         emit_opt!("occurrence_transfer", self.occurrence_transfer.as_ref());
+        emit_opt!(
+            "occurrence_transfer_intent",
+            self.occurrence_transfer_intent.as_ref()
+        );
         emit!("id", &self.id);
         emit!("byte_offset", self.byte_offset);
         emit!("class_tag", self.class_tag.as_str());

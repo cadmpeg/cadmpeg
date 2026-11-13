@@ -241,15 +241,24 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
 /// Type GUID that `CopyPaste` and `CutPaste` scopes share.
 const PASTE_TYPE: &str = "D57B1A22-9D5A-4D7D-A909-E08C579612CA";
 
-/// Offset of the reference table that ends the compact `CopyPaste` prefix of
-/// a scope of the shared paste type, which types the scope as `CopyPaste`
-/// whatever its stored name.
-pub(super) fn paste_prefix_table(guid: &str, bytes: &[u8], start: usize) -> Option<usize> {
+pub(super) fn paste_scope_prefix(
+    guid: &str,
+    bytes: &[u8],
+    start: usize,
+) -> Option<(usize, DesignFeatureKind)> {
     if !guid.eq_ignore_ascii_case(PASTE_TYPE) {
         return None;
     }
-    super::super::occurrence_transfer::compact_copy_paste_prefix(bytes, start)
-        .map(|prefix| prefix.table_at)
+    let copy = super::super::occurrence_transfer::copy_paste_prefix_table(bytes, start)
+        .map(|table_at| (table_at, DesignFeatureKind::CopyPaste));
+    let cut = super::super::occurrence_transfer::cut_paste_prefix_table(bytes, start)
+        .map(|table_at| (table_at, DesignFeatureKind::native("CutPaste")));
+    match (copy, cut) {
+        (Some(_), Some(_)) => None,
+        (Some(copy), None) => Some(copy),
+        (None, Some(cut)) => Some(cut),
+        (None, None) => None,
+    }
 }
 
 pub(super) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {

@@ -24,6 +24,23 @@ fn copy_scope(target: [[f64; 4]; 4]) -> DesignParameterScope {
         crate::records::feature::scope::DesignFeatureKind::CopyPaste,
         348,
     );
+    scope.occurrence_transfer_intent = Some(
+        crate::records::feature::occurrence_transfer::DesignOccurrenceTransferIntent {
+            mode: crate::records::feature::occurrence_transfer::DesignOccurrenceTransferMode::Copy,
+            relation_record_index: Some(346),
+            occurrence_record_index: Some(345),
+            component_record_index: Some(159),
+            source_owner_component_record_index: None,
+            target_owner_component_record_index: Some(159),
+            source_transform: Some(target.try_into().unwrap()),
+            target_transform: Some(target.try_into().unwrap()),
+        },
+    );
+    scope
+}
+
+fn strict_copy_scope(target: [[f64; 4]; 4]) -> DesignParameterScope {
+    let mut scope = copy_scope(target);
     scope.occurrence_transfer = Some(DesignOccurrenceTransfer {
         relation_record_index: 346,
         occurrence_record_index: 345,
@@ -31,7 +48,7 @@ fn copy_scope(target: [[f64; 4]; 4]) -> DesignParameterScope {
         target_owner: DesignPasteOwner {
             collection: 27,
             context: 26,
-            component: 3,
+            component: 159,
         },
         target_transform: target.try_into().unwrap(),
         target_transform_offset: Some(41288),
@@ -40,6 +57,28 @@ fn copy_scope(target: [[f64; 4]; 4]) -> DesignParameterScope {
             source_transform_offset: 41132,
         },
     });
+    scope
+}
+
+fn cut_scope(target: [[f64; 4]; 4]) -> DesignParameterScope {
+    let mut scope = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#348"),
+        crate::records::feature::scope::DesignFeatureKind::try_from("CutPaste".to_owned()).unwrap(),
+        348,
+    );
+    scope.occurrence_transfer_intent = Some(
+        crate::records::feature::occurrence_transfer::DesignOccurrenceTransferIntent {
+            mode:
+                crate::records::feature::occurrence_transfer::DesignOccurrenceTransferMode::Reparent,
+            relation_record_index: Some(346),
+            occurrence_record_index: Some(345),
+            component_record_index: Some(159),
+            source_owner_component_record_index: Some(160),
+            target_owner_component_record_index: Some(159),
+            source_transform: None,
+            target_transform: Some(target.try_into().unwrap()),
+        },
+    );
     scope
 }
 
@@ -59,7 +98,8 @@ fn copy() -> DesignComponentOccurrence {
 fn product_occurrence(carrier: &DesignComponentOccurrence) -> Occurrence {
     serde_json::from_value(serde_json::json!({
         "id": crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid),
-        "prototype": {"scope": "local", "definition": "f3d:model:component#copied"},
+        "native_ref": carrier.id.clone(),
+        "prototype": {"scope": "local", "definition": crate::ids::neutral_component_id(&carrier.component_guid)},
         "parent": {"kind": "root"},
         "ordinal": 0,
         "transform": [[1.0, 0.0, 0.0, 60.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]],
@@ -79,7 +119,39 @@ fn project(
     scope: &DesignParameterScope,
     carriers: &[DesignComponentOccurrence],
     projected: &[Occurrence],
-) -> FeatureDefinition {
+) -> (FeatureDefinition, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    let mut definitions = Vec::new();
+    let mut component_definitions_by_record = BTreeMap::new();
+    for carrier in carriers {
+        let Some(stream) = crate::ids::native_stream(&carrier.id) else {
+            continue;
+        };
+        let mut matching = projected
+            .iter()
+            .filter(|occurrence| occurrence.native_ref.as_deref() == Some(carrier.id.as_str()));
+        let (Some(occurrence), None) = (matching.next(), matching.next()) else {
+            continue;
+        };
+        if let cadmpeg_ir::products::PrototypeReference::Local { definition } =
+            &occurrence.prototype
+        {
+            if !definitions
+                .iter()
+                .any(|candidate: &super::super::ProductDefinition| {
+                    candidate.id.as_str() == definition.as_str()
+                })
+            {
+                definitions.push(super::super::component_definition(
+                    definition.clone(),
+                    Vec::new(),
+                ));
+            }
+            component_definitions_by_record.insert(
+                (stream.to_owned(), carrier.component_record_index),
+                definition.clone(),
+            );
+        }
+    }
     let mut feature = Feature {
         product_definition: None,
         id: FeatureId::mint("f3d:model:feature#copy").expect("identity grammar"),
@@ -94,92 +166,157 @@ fn project(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(native()),
         native_ref: Some(scope.id.clone()),
     };
-    super::super::project_copy_paste_transfer_features(
+    let losses = super::super::project_copy_paste_transfer_features(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(scope),
         carriers,
         projected,
+        &definitions,
+        &component_definitions_by_record,
     );
-    feature.evaluation.definition().clone()
+    (feature.evaluation.definition().clone(), losses)
 }
 
 #[test]
-fn a_copy_transfer_inserts_the_carrier_its_relation_names() {
+fn a_strict_copy_transfer_preserves_insert_component_projection() {
     let projected = [product_occurrence(&copy())];
-    assert_eq!(
-        project(
-            &copy_scope(translated(6.0)),
-            &[source(), copy()],
-            &projected
-        ),
-        FeatureDefinition::Operation(FeatureOperation::InsertComponent {
-            occurrence: projected[0].id.clone(),
-        })
+    let (definition, losses) = project(
+        &strict_copy_scope(translated(6.0)),
+        &[source(), copy()],
+        &projected,
+    );
+    let FeatureDefinition::Operation(FeatureOperation::InsertComponent { occurrence }) = definition
+    else {
+        panic!("a fully joined CopyPaste keeps its existing insertion projection");
+    };
+    assert_eq!(occurrence, projected[0].id);
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn a_copy_transfer_keeps_decoded_placement_when_occurrence_join_is_missing() {
+    let scope = copy_scope(translated(6.0));
+    let (definition, losses) = project(&scope, &[source()], &[]);
+    let FeatureDefinition::Operation(FeatureOperation::ComponentTransfer {
+        mode,
+        occurrence,
+        source_transform,
+        target_transform,
+        ..
+    }) = definition
+    else {
+        panic!("unresolved CopyPaste must retain its transfer operation");
+    };
+    assert_eq!(mode, cadmpeg_ir::features::ComponentTransferMode::Copy);
+    assert_eq!(occurrence, None);
+    assert_eq!(source_transform, target_transform);
+    assert_eq!(target_transform.unwrap().rows()[0][3], 60.0);
+    let codes = losses
+        .iter()
+        .map(|loss| loss.code.local_code())
+        .collect::<Vec<_>>();
+    assert!(codes.contains(&"feature.occurrence-transfer-occurrence-unresolved"));
+    assert!(codes.contains(&"feature.occurrence-transfer-owner-unresolved"));
+    assert!(codes.contains(&"feature.occurrence-transfer-source-unresolved"));
+    assert!(losses.iter().all(|loss| loss.message.contains(&scope.id)));
+}
+
+#[test]
+fn unreadable_copy_placements_emit_the_placement_loss() {
+    let mut scope = copy_scope(translated(6.0));
+    let intent = scope.occurrence_transfer_intent.as_mut().unwrap();
+    intent.source_transform = None;
+    intent.target_transform = None;
+    let projected = [product_occurrence(&copy())];
+    let (definition, losses) = project(&scope, &[source(), copy()], &projected);
+    let FeatureDefinition::Operation(FeatureOperation::ComponentTransfer {
+        source_transform,
+        target_transform,
+        ..
+    }) = definition
+    else {
+        panic!("an unreadable CopyPaste placement keeps its transfer operation");
+    };
+    assert_eq!(source_transform, None);
+    assert_eq!(target_transform, None);
+    assert!(losses.iter().any(|loss| {
+        loss.code.local_code() == "feature.occurrence-transfer-placement-unresolved"
+    }));
+    assert!(losses
+        .iter()
+        .any(|loss| { loss.code.local_code() == "feature.occurrence-transfer-source-unresolved" }));
+}
+
+#[test]
+fn a_copy_transfer_uses_the_stream_qualified_projected_occurrence_id() {
+    let primary = copy();
+    let mut other_stream = copy();
+    other_stream.id = "f3d:Other/BulkStream.dat:design-component-occurrence#345".into();
+    other_stream.component_guid = super::guid("2ad641b3-9ea3-4e5f-a4da-926c3faeccad");
+    let mut projected_primary = product_occurrence(&primary);
+    projected_primary.id =
+        crate::ids::stream_component_occurrence_id(STREAM, &primary.occurrence_guid);
+    let allocated_definition =
+        cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:product-definition#allocated")
+            .unwrap();
+    projected_primary.prototype = cadmpeg_ir::products::PrototypeReference::Local {
+        definition: allocated_definition.clone(),
+    };
+    let mut projected_other = product_occurrence(&other_stream);
+    projected_other.id = crate::ids::stream_component_occurrence_id(
+        "f3d:Other/BulkStream.dat",
+        &other_stream.occurrence_guid,
+    );
+    assert_ne!(projected_primary.id, projected_other.id);
+    let (definition, _) = project(
+        &copy_scope(translated(6.0)),
+        &[primary.clone(), other_stream.clone()],
+        &[projected_primary.clone(), projected_other],
+    );
+    let FeatureDefinition::Operation(FeatureOperation::ComponentTransfer {
+        occurrence,
+        component,
+        ..
+    }) = definition
+    else {
+        panic!("a partially joined CopyPaste must retain its operation");
+    };
+    assert_eq!(occurrence, Some(projected_primary.id));
+    assert_eq!(component, Some(allocated_definition.clone()));
+    assert_ne!(
+        component,
+        Some(crate::ids::neutral_component_id(&primary.component_guid))
+    );
+    assert_ne!(
+        allocated_definition,
+        crate::ids::neutral_component_id(&other_stream.component_guid)
     );
 }
 
 #[test]
-fn a_copy_transfer_stays_native_without_a_source_of_its_definition_or_its_placement() {
-    let moved = translated(6.0);
+fn a_cut_transfer_projects_when_its_source_owner_does_not_resolve() {
     let projected = [product_occurrence(&copy())];
-
-    let mut new_definition = copy();
-    new_definition.component_record_index = 160;
-    assert_eq!(
-        project(&copy_scope(moved), &[source(), new_definition], &projected),
-        native()
-    );
-    assert_eq!(project(&copy_scope(moved), &[copy()], &projected), native());
-    let later_source = carrier(
-        400,
-        SOURCE,
-        DesignComponentOccurrencePlacement::Base,
-        DOCUMENT_ROOT,
-    );
-    assert_eq!(
-        project(&copy_scope(moved), &[copy(), later_source], &projected),
-        native()
-    );
-    assert_eq!(
-        project(
-            &copy_scope(translated(5.0)),
-            &[source(), copy()],
-            &projected
-        ),
-        native()
-    );
-}
-
-#[test]
-fn a_copy_transfer_stays_native_for_a_repeated_unprojected_or_disagreeing_carrier() {
-    let moved = translated(6.0);
-    let projected = [product_occurrence(&copy())];
-
-    let mut repeated = carrier(
-        360,
-        "00000000-0000-4000-8000-000000000360",
-        placed(3, moved),
-        DOCUMENT_ROOT,
-    );
-    repeated.record_index = 345;
-    assert_eq!(
-        project(
-            &copy_scope(moved),
-            &[source(), copy(), repeated],
-            &projected
-        ),
-        native()
-    );
-    assert_eq!(
-        project(&copy_scope(moved), &[source(), copy()], &[]),
-        native()
-    );
-    let mut disagreeing = copy_scope(moved);
-    if let Some(transfer) = disagreeing.occurrence_transfer.as_mut() {
-        transfer.component_record_index = 160;
-    }
-    assert_eq!(
-        project(&disagreeing, &[source(), copy()], &projected),
-        native()
-    );
+    let (definition, losses) = project(&cut_scope(translated(6.0)), &[copy()], &projected);
+    let FeatureDefinition::Operation(FeatureOperation::ComponentTransfer {
+        mode,
+        occurrence,
+        component,
+        source_owner,
+        target_owner,
+        source_transform,
+        target_transform,
+    }) = definition
+    else {
+        panic!("CutPaste must project as a component transfer");
+    };
+    assert_eq!(mode, cadmpeg_ir::features::ComponentTransferMode::Reparent);
+    assert_eq!(occurrence, Some(projected[0].id.clone()));
+    assert!(component.is_some());
+    assert_eq!(source_owner, None);
+    assert_eq!(target_owner, component);
+    assert_eq!(source_transform, None);
+    assert_eq!(target_transform.unwrap().rows()[0][3], 60.0);
+    assert!(losses
+        .iter()
+        .any(|loss| { loss.code.local_code() == "feature.occurrence-transfer-owner-unresolved" }));
 }

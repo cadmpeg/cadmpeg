@@ -2714,6 +2714,17 @@ impl<'de> Deserialize<'de> for TreeChildren {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[doc = "Operation mode for a local component occurrence transfer."]
+pub enum ComponentTransferMode {
+    #[doc = "A new local component occurrence is created from an existing occurrence."]
+    Copy,
+    #[doc = "An existing local component occurrence changes its containing definition."]
+    Reparent,
+}
+
 /// A feature operation: neutral construction semantics with an explicit native
 /// escape hatch, and no post-processing layer of its own.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2750,6 +2761,53 @@ pub enum FeatureOperation {
     InsertComponent {
         /// Placed occurrence created by this history operation.
         occurrence: OccurrenceId,
+    },
+    #[doc = "Component occurrence copied or transferred between local owners."]
+    ComponentTransfer {
+        #[doc = "Whether the feature copies an occurrence or changes its owner."]
+        mode: ComponentTransferMode,
+        #[doc = "Transferred occurrence when its persistent identity resolves."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_occurrence"
+        )]
+        occurrence: Option<OccurrenceId>,
+        #[doc = "Reusable component definition when its identity resolves."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_component"
+        )]
+        component: Option<ProductDefinitionId>,
+        #[doc = "Source containing definition when it resolves."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_source_owner"
+        )]
+        source_owner: Option<ProductDefinitionId>,
+        #[doc = "Destination containing definition when it resolves."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_target_owner"
+        )]
+        target_owner: Option<ProductDefinitionId>,
+        #[doc = "Source local placement when the operation stores one."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_source_transform"
+        )]
+        source_transform: Option<Transform>,
+        #[doc = "Destination local placement when the operation stores one."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_target_transform"
+        )]
+        target_transform: Option<Transform>,
     },
     /// Assembly constraint introduced into the product structure.
     AssemblyJoint {
@@ -4107,6 +4165,27 @@ pub enum UnresolvedFamily {
 }
 
 impl FeatureOperation {
+    #[doc = "Construct a component-transfer operation from its readable operands."]
+    pub fn component_transfer(
+        mode: ComponentTransferMode,
+        occurrence: Option<OccurrenceId>,
+        component: Option<ProductDefinitionId>,
+        source_owner: Option<ProductDefinitionId>,
+        target_owner: Option<ProductDefinitionId>,
+        source_transform: Option<Transform>,
+        target_transform: Option<Transform>,
+    ) -> Self {
+        Self::ComponentTransfer {
+            mode,
+            occurrence,
+            component,
+            source_owner,
+            target_owner,
+            source_transform,
+            target_transform,
+        }
+    }
+
     /// Family name of an operation whose replay produces body geometry, and `None` for
     /// definitions that do not.
     ///
@@ -9450,6 +9529,32 @@ cadmpeg_core::named_optional_field!(
     "regeneration_parent"
 );
 cadmpeg_core::named_optional_field!(deserialize_source_tag, String, "source_tag");
+cadmpeg_core::named_optional_field!(deserialize_transfer_occurrence, OccurrenceId, "occurrence");
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_component,
+    ProductDefinitionId,
+    "component"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_source_owner,
+    ProductDefinitionId,
+    "source_owner"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_target_owner,
+    ProductDefinitionId,
+    "target_owner"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_source_transform,
+    Transform,
+    "source_transform"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_target_transform,
+    Transform,
+    "target_transform"
+);
 cadmpeg_core::named_optional_field!(deserialize_source_text, String, "source_text");
 cadmpeg_core::named_optional_field!(deserialize_active_child, FeatureId, "active_child");
 cadmpeg_core::named_optional_field!(deserialize_diameter, PositiveLength, "diameter");

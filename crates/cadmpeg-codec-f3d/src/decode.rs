@@ -2472,7 +2472,10 @@ fn report_design_projection_gaps(
     )?;
     let mut uninterpreted_scopes = 0;
     for scope in &native.design_parameter_scopes {
-        if scope.occurrence_transfer.is_none() && scope.payload().is_uninterpreted() {
+        if scope.occurrence_transfer.is_none()
+            && scope.occurrence_transfer_intent.is_none()
+            && scope.payload().is_uninterpreted()
+        {
             uninterpreted_scopes += 1;
         }
     }
@@ -2940,6 +2943,8 @@ struct F3dDecodeSession<'a> {
     report_scope: crate::report::ReportScope,
     unknowns: Vec<UnknownRecord>,
     admitted_entities: u64,
+    component_definitions_by_record:
+        std::collections::BTreeMap<(String, u64), cadmpeg_ir::ids::ProductDefinitionId>,
 }
 
 impl<'a> F3dDecodeSession<'a> {
@@ -3016,6 +3021,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report_scope,
                 unknowns,
                 admitted_entities,
+                component_definitions_by_record: std::collections::BTreeMap::new(),
             },
             SessionPath::Geometry(Box::new(GeometrySessionPath {
                 index: GeometryIndex {
@@ -3061,6 +3067,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report_scope,
                 unknowns,
                 admitted_entities,
+                component_definitions_by_record: std::collections::BTreeMap::new(),
             },
             SessionPath::Bodyless {
                 mesh_projection,
@@ -3235,6 +3242,8 @@ impl<'a> F3dDecodeSession<'a> {
             products: design_intent::DesignProducts {
                 occurrences: &model.occurrences,
                 assembly_joints: &model.assembly_joints,
+                definitions: &model.product_definitions,
+                component_definitions_by_record: &self.component_definitions_by_record,
             },
             geometry: design_intent::DesignGeometry {
                 primary_brep: match path {
@@ -3411,6 +3420,7 @@ impl<'a> F3dDecodeSession<'a> {
             &local_sources,
             &prereqs.design_types,
         )?;
+        self.component_definitions_by_record = local.component_definitions_by_record.clone();
         if let Some(table) = prereqs.xref_table() {
             let external =
                 crate::xref::project_occurrences(table, &local_sources, &local.occurrences)?;

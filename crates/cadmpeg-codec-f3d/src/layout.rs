@@ -7620,6 +7620,12 @@ pub(crate) mod extrude_selection_member_scope_tail {
 pub(crate) mod cut_paste_prefix {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 72;
+    /// Offset of `removal_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const REMOVAL_REFERENCE: usize = 21;
+    /// Offset of `relation_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RELATION_REFERENCE: usize = 59;
+    /// Offset of `identity_flag` (`u8`). Spec §3.1.
+    pub(crate) const IDENTITY_FLAG: usize = 71;
 }
 
 /// Byte offsets for the `copy_paste_prefix` record.
@@ -7630,6 +7636,36 @@ pub(crate) mod copy_paste_prefix {
     pub(crate) const LEN: usize = 190;
     /// Offset of `source_transform` (`f64[16]`, little-endian). Spec §3.1.
     pub(crate) const SOURCE_TRANSFORM: usize = 34;
+    /// Offset of `second_companion_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SECOND_COMPANION_REFERENCE: usize = 162;
+    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4: usize = 173;
+    /// Offset of `relation_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RELATION_REFERENCE: usize = 177;
+    /// Offset of `placement_flag` (`u8`). Spec §3.1.
+    pub(crate) const PLACEMENT_FLAG: usize = 188;
+    /// Offset of `identity_flag` (`u8`). Spec §3.1.
+    pub(crate) const IDENTITY_FLAG: usize = 189;
+}
+
+/// Byte offsets for the `copy_paste_identity_source_prefix` record.
+///
+/// Spec §3.1. Record length 62 B.
+pub(crate) mod copy_paste_identity_source_prefix {
+    /// Offset of `companion_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const COMPANION_REFERENCE: usize = 22;
+    /// Offset of `source_identity_flag` (`u8`). Spec §3.1.
+    pub(crate) const SOURCE_IDENTITY_FLAG: usize = 33;
+    /// Offset of `second_companion_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SECOND_COMPANION_REFERENCE: usize = 34;
+    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4: usize = 45;
+    /// Offset of `relation_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RELATION_REFERENCE: usize = 49;
+    /// Offset of `placement_flag` (`u8`). Spec §3.1.
+    pub(crate) const PLACEMENT_FLAG: usize = 60;
+    /// Offset of `identity_flag` (`u8`). Spec §3.1.
+    pub(crate) const IDENTITY_FLAG: usize = 61;
 }
 
 /// Byte offsets for the `paste_context_owner_tail` record.
