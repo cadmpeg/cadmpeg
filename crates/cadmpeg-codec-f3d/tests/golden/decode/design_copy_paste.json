@@ -757,6 +757,16 @@
             "history_state_id_offset": 4073,
             "kind": "CopyPaste",
             "kind_offset": 4081,
+            "occurrence_transfer_intent": {
+              "component_record_index": null,
+              "mode": "copy",
+              "occurrence_record_index": null,
+              "relation_record_index": 1500,
+              "source_owner_component_record_index": null,
+              "source_transform": null,
+              "target_owner_component_record_index": null,
+              "target_transform": null
+            },
             "paired_byte_offset": 4209,
             "paired_class_tag": "261",
             "previous_history_state_id_offset": 0,
