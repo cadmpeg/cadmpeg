@@ -66,6 +66,18 @@ fn counted_assembly_owners_keep_source_parameter_expressions() {
     let properties =
         scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &[(4, &parameter)]).unwrap();
     assert!(!properties.contains_key("parameter:d8"));
+    if let DesignScopePayloadMut::Assemble(slot) = scope.payload_mut() {
+        slot.as_mut().unwrap().additional_tail_reference = Some(Located {
+            value: 63,
+            offset: 290,
+        });
+    }
+    let properties =
+        scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &[(4, &parameter)]).unwrap();
+    assert_eq!(
+        properties.get("parameter:d8").map(String::as_str),
+        Some("-7.5 mm")
+    );
 }
 
 #[test]

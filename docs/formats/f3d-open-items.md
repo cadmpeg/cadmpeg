@@ -2493,3 +2493,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Controlled public saves that vary one enabled axis, one limit, or one rest position at a time and retain all joint and motion lanes. Distinguish the authored owner values from enabled solver limits for combined freedoms.
 
 **Note.** The neutral relation uses the decoded adjacent joint motion with a fixed relation fallback. `assembly.additional-owner-motion-assumed` names the assumption that the added owner-to-motion interpretation remains native. The feature retains each source parameter expression under `parameter:NAME` in its source properties. The native scope retains the counted references, owners, and evaluated values.
+
+### DR-489. Extended version-three Assemble tail reference
+
+**Question.** What constraint or solver role does the additional version-three tail reference select?
+
+**Known.** The extra nonnull reference follows the first tail reference and selects type `074F9459-89C2-4B7D-8AB4-DCE67AE944FE`, version 1. The tail consumes its complete bounded scope. Its two boolean state bytes and the adjacent joint retain their independent fields. The native alignment retains the extra target and marker offset.
+
+**Need.** Controlled public saves that vary the referenced object while preserving the joint, connectors, owner values, and motion record. Establish whether the target changes the joint's enabled constraints or solver membership.
+
+**Note.** The neutral relation uses the decoded joint motion with a fixed fallback. `assembly.extended-tail-assumed` names the assumption that the additional tail reference adds no further neutral constraint. Source parameter expressions remain under `parameter:NAME` in feature source properties.

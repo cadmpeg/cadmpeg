@@ -2421,10 +2421,11 @@ fn scope_properties(
     let mut properties = std::collections::BTreeMap::new();
     if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble
         && scope.assembly_alignment().is_some_and(|alignment| {
-            alignment
-                .additional_owner_run
-                .as_ref()
-                .is_some_and(|run| run.count.value != 0)
+            alignment.additional_tail_reference.is_some()
+                || alignment
+                    .additional_owner_run
+                    .as_ref()
+                    .is_some_and(|run| run.count.value != 0)
         })
     {
         for (_, parameter) in parameters {
