@@ -88,6 +88,22 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
             _ => panic!("unexpected tolerance"),
         };
         let magnitude_mm = magnitude.get().value.get();
+        if let PmiDefinition::GeometricTolerance { modifiers, .. } = &pmi.definition {
+            assert_eq!(
+                modifiers.iter().any(|modifier| modifier == "all_around"),
+                *tolerance == GeometricToleranceKind::SurfaceProfile
+                    && (magnitude_mm - 0.5).abs() < MAGNITUDE_TOLERANCE,
+            );
+        }
+        if *tolerance == GeometricToleranceKind::SurfaceProfile
+            && (magnitude_mm - 1.25).abs() < MAGNITUDE_TOLERANCE
+        {
+            assert!(result.ir().model.pmi.iter().any(|presentation| {
+                matches!(&presentation.definition,
+                    PmiDefinition::Presentation { text: Some(text), semantics, .. }
+                    if text.contains("A↔B") && semantics.as_slice() == [pmi.id.clone()])
+            }));
+        }
         match (tolerance, pmi.targets.as_slice()) {
             (GeometricToleranceKind::Flatness, [face]) => {
                 let (axis, offset) = target_plane(&result, face);

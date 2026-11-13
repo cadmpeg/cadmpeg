@@ -2,7 +2,7 @@
 use crate::records::feature::chamfer_set::{DesignChamferScope, DesignChamferSetList};
 
 fn wire(entry_count: u32, sets: &serde_json::Value) -> serde_json::Value {
-    serde_json::json!({"form": "current", "entry_count": entry_count, "sets": sets})
+    serde_json::json!({"form": "current", "corner_type": "miter", "entry_count": entry_count, "sets": sets})
 }
 
 fn set() -> serde_json::Value {
@@ -13,7 +13,8 @@ fn set() -> serde_json::Value {
         "group_record_index": 283,
         "spec": {"kind": "distance_angle", "distance_owner_record_index": 292, "angle_owner_record_index": 295},
         "auxiliary_record_index": 297,
-        "flag": true
+        "entry_count": 1,
+        "tangent_chain": true
     })
 }
 

@@ -643,6 +643,7 @@ fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
     if let DesignScopePayloadMut::Fillet(slot) = scope.payload_mut() {
         slot.sets = Some(DesignFilletSetList {
             form: DesignFilletSetListForm::Current,
+            rolling_ball_corner: true,
             sets: vec![DesignFilletSet {
                 record_index: 2,
                 byte_offset: 300,
@@ -652,7 +653,8 @@ fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
                     radius_owner_record_index: 4,
                 },
                 tangency_weight_owner_record_index: 5,
-                flag: false,
+                tangent_chain: false,
+                curvature_continuity: None,
             }],
         });
     }
@@ -673,12 +675,14 @@ fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
 fn chamfer_sets_round_trip_and_belong_to_chamfer_scopes() {
     use super::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut};
     use crate::records::feature::chamfer_set::{
-        DesignChamferSet, DesignChamferSetList, DesignChamferSetListForm, DesignChamferSetSpec,
+        DesignChamferCornerType, DesignChamferSet, DesignChamferSetList, DesignChamferSetListForm,
+        DesignChamferSetSpec,
     };
     let mut scope = DesignParameterScope::empty("f3d:scope#1", DesignFeatureKind::Chamfer, 1);
     if let DesignScopePayloadMut::Chamfer(slot) = scope.payload_mut() {
         slot.sets = Some(DesignChamferSetList {
             form: DesignChamferSetListForm::Compact,
+            corner_type: DesignChamferCornerType::Chamfer,
             entry_count: 6,
             sets: vec![DesignChamferSet {
                 record_index: 2,
@@ -689,7 +693,8 @@ fn chamfer_sets_round_trip_and_belong_to_chamfer_scopes() {
                     distance_owner_record_index: 4,
                 },
                 auxiliary_record_index: 5,
-                flag: true,
+                entry_count: 1,
+                tangent_chain: true,
             }],
         });
     }

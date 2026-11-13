@@ -1578,7 +1578,8 @@ A frame row stores its characteristic as the framed string `<GTOL-name>`:
 angularity, `FLAT` flatness, `STRAIGHT` straightness, `CIRC` roundness, `CYL`
 cylindricity, `SPROF` surface profile, `LPROF` line profile, `CONC`
 concentricity, `SYMMETRY` symmetry, `SRUN` circular runout, and `TRUN` total
-runout. The display's `moGtolData_c` object writes four adjacent framed
+runout. The same framed-string slot also stores `<IGTOL-FLAT>`.
+The display's `moGtolData_c` object writes four adjacent framed
 strings: the two between-extent labels, the frame template, which contains
 `<Gtol>`, and the note below the frame. A display depicts the semantic
 geometric-tolerance annotations that directly reference a feature on its

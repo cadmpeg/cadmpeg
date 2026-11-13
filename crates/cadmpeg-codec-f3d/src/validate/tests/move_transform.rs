@@ -194,6 +194,7 @@ fn move_prefix_validator_rejects_inconsistent_native_claims() {
         panic!("Move payload");
     };
     operation.prefix = Some(DesignMovePrefix {
+        leading: None,
         references: std::array::from_fn(|_| DesignMoveReference::Null),
         codes: [0; 2],
         matrix_omitted: true,

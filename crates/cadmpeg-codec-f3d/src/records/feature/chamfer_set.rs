@@ -34,6 +34,8 @@ impl DesignChamferScope {
 pub(crate) struct DesignChamferSetList {
     /// Byte run before the entry run.
     pub(crate) form: DesignChamferSetListForm,
+    /// Corner treatment where edges of the list meet.
+    pub(crate) corner_type: DesignChamferCornerType,
     /// Number of entries in the prefix entry run.
     pub(crate) entry_count: u32,
     /// Chamfer sets in prefix order.
@@ -44,6 +46,7 @@ pub(crate) struct DesignChamferSetList {
 #[serde(deny_unknown_fields)]
 struct DesignChamferSetListWire {
     form: DesignChamferSetListForm,
+    corner_type: DesignChamferCornerType,
     entry_count: u32,
     sets: Vec<DesignChamferSet>,
 }
@@ -57,10 +60,23 @@ impl TryFrom<DesignChamferSetListWire> for DesignChamferSetList {
         }
         Ok(Self {
             form: wire.form,
+            corner_type: wire.corner_type,
             entry_count: wire.entry_count,
             sets: wire.sets,
         })
     }
+}
+
+/// Corner treatment of a `Chamfer` scope, stored as `u32` 1, 2, or 3.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignChamferCornerType {
+    /// Value 1.
+    Chamfer,
+    /// Value 2.
+    Miter,
+    /// Value 3.
+    Blend,
 }
 
 /// Byte run before the entry run of a `Chamfer` scope prefix.
@@ -89,8 +105,10 @@ pub(crate) struct DesignChamferSet {
     pub(crate) spec: DesignChamferSetSpec,
     /// Indexed record referenced after the fixed words.
     pub(crate) auxiliary_record_index: u32,
-    /// Boolean byte at offset 21.
-    pub(crate) flag: bool,
+    /// Number of prefix entries that name this set.
+    pub(crate) entry_count: u32,
+    /// Edge-set tangent-chain flag.
+    pub(crate) tangent_chain: bool,
 }
 
 /// Parameter owners of one chamfer set's dimensional specification.

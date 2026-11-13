@@ -27,6 +27,7 @@ use crate::layout::move_transform_frame_284 as move_frame_284;
 use crate::layout::move_transform_frame_293 as move_frame_293;
 use crate::layout::move_transform_omitted_matrix_frame_125 as omitted_move_125;
 use crate::layout::move_transform_omitted_matrix_frame_126 as omitted_move_126;
+use crate::layout::rigid_transform_leading_prefix as leading_move;
 use crate::layout::scale_legacy_uniform_tail as scale_tail;
 use crate::layout::scale_matrix_marker_one_prologue as scale_matrix_one;
 use crate::layout::scale_matrix_marker_zero_prologue as scale_matrix_zero;
@@ -135,6 +136,25 @@ pub(super) fn exact_move_operation(
             class_types,
         )
     })
+}
+
+pub(super) fn exact_align_operation(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    envelope: &crate::records::feature::align::DesignAlignEnvelope,
+    class_types: &HashMap<u32, &SegmentType>,
+) -> Option<DesignMoveOperation> {
+    let mut operation = move_face_transform(bytes, records, envelope.first_reference.value)?;
+    let start = usize::try_from(operation.form_offset)
+        .ok()?
+        .checked_sub(operation.relative_form_offset()?)?;
+    if operation.form != direct_face::DesignMoveForm::Form4
+        || !rigid_transform_type_matches(bytes, start, class_types)
+    {
+        return None;
+    }
+    operation.transform_reference_offset = Some(envelope.first_reference.offset.checked_sub(1)?);
+    Some(operation)
 }
 
 /// The transform record that a `Move` scope selects by the marked reference
@@ -258,22 +278,21 @@ fn move_transform_at(
     paired: usize,
     record_index: u32,
 ) -> Option<DesignMoveOperation> {
-    use direct_face::{DesignMovePrefix, DesignMoveReference};
+    use direct_face::{DesignMoveLeading, DesignMovePrefix, DesignMoveReference};
 
     let frame = View::over_retained(bytes).child(start, paired)?;
     let bytes = frame.window();
-    if bytes.get(indexed_header::LEN..move_frame_293::FIRST_REFERENCE) != Some(&[0; 20]) {
+    if bytes.get(indexed_header::LEN..leading_move::SCALAR) != Some(&[0; 10]) {
         return None;
     }
-    let mut cursor = move_frame_293::FIRST_REFERENCE;
-    let mut prefix = DesignMovePrefix {
-        references: std::array::from_fn(|_| DesignMoveReference::Null),
-        codes: [0; 2],
-        matrix_omitted: false,
-    };
-    for (ordinal, reference) in prefix.references.iter_mut().enumerate() {
-        if ordinal == 3 {
-            prefix.codes[0] = View::u32_le_at(bytes, cursor)?;
+    let scalar =
+        cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(bytes, leading_move::SCALAR)?)?;
+    let mut cursor = leading_move::LEN;
+    let mut references = std::array::from_fn::<_, 6, _>(|_| DesignMoveReference::Null);
+    let mut codes = [0; 2];
+    for (ordinal, reference) in references.iter_mut().enumerate() {
+        if ordinal == 5 {
+            codes[0] = View::u32_le_at(bytes, cursor)?;
             cursor = cursor.checked_add(4)?;
         }
         *reference = match take_reference(bytes, &mut cursor)? {
@@ -294,10 +313,26 @@ fn move_transform_at(
             _ => return None,
         };
     }
-    prefix.codes[1] = View::u32_le_at(bytes, cursor)?;
+    codes[1] = View::u32_le_at(bytes, cursor)?;
     cursor = cursor.checked_add(4)?;
     let form_at = cursor;
     let form = direct_face::DesignMoveForm::try_from(View::u32_le_at(bytes, cursor)?).ok()?;
+    let [first, second, third, fourth, fifth, sixth] = references;
+    let leading = (form == direct_face::DesignMoveForm::Form4
+        || scalar.get() != 0.0
+        || [&first, &second]
+            .iter()
+            .any(|reference| !matches!(reference, DesignMoveReference::Null)))
+    .then_some(DesignMoveLeading {
+        scalar,
+        references: [first, second],
+    });
+    let mut prefix = DesignMovePrefix {
+        references: [third, fourth, fifth, sixth],
+        codes,
+        matrix_omitted: false,
+        leading,
+    };
     if form == direct_face::DesignMoveForm::Form2 && !prefix.full_references() {
         return None;
     }
@@ -307,21 +342,28 @@ fn move_transform_at(
         1 => true,
         _ => return None,
     };
+    let transform_at = cursor.checked_add(1)?;
     if prefix.matrix_omitted
-        && (form != direct_face::DesignMoveForm::Form5
-            || prefix.codes != [0; 2]
-            || prefix
-                .references
-                .iter()
-                .any(|reference| !matches!(reference, DesignMoveReference::Null))
+        && (!matches!(
+            form,
+            direct_face::DesignMoveForm::Form4 | direct_face::DesignMoveForm::Form5
+        ) || form == direct_face::DesignMoveForm::Form5
+            && (prefix.codes != [0; 2]
+                || prefix.leading.is_some()
+                || prefix
+                    .references
+                    .iter()
+                    .any(|reference| !matches!(reference, DesignMoveReference::Null)))
             || !matches!(
-                paired.checked_sub(start)?,
+                frame
+                    .window()
+                    .len()
+                    .checked_sub(form_at.checked_sub(move_frame::FORM)?)?,
                 omitted_move_125::LEN | omitted_move_126::LEN
             ))
     {
         return None;
     }
-    let transform_at = cursor.checked_add(1)?;
     let mut view = frame;
     view.seek(start.checked_add(transform_at)?)?;
     let transform = if prefix.matrix_omitted {
@@ -341,8 +383,9 @@ fn move_transform_at(
         .any(|reference| !matches!(reference, DesignMoveReference::Null))
         || prefix.codes != [0; 2]
         || form == direct_face::DesignMoveForm::Form2
-        || prefix.matrix_omitted)
-        .then_some(prefix);
+        || prefix.matrix_omitted
+        || prefix.leading.is_some())
+    .then_some(prefix);
     Some(DesignMoveOperation {
         transform,
         transform_offset: u64_from_index(start + transform_at),
@@ -374,7 +417,13 @@ pub(super) fn move_transform_prefix_losses(
     operation: &DesignMoveOperation,
 ) -> Vec<LossNote> {
     let prefix_assumed = operation.prefix.as_ref().is_some_and(|prefix| {
-        prefix.codes != [0; 2]
+        prefix.leading.as_ref().is_some_and(|leading| {
+            leading.scalar.get() != 0.0
+                || leading
+                    .references
+                    .iter()
+                    .any(|reference| !matches!(reference, direct_face::DesignMoveReference::Null))
+        }) || prefix.codes != [0; 2]
             || prefix
                 .references
                 .iter()
@@ -384,7 +433,7 @@ pub(super) fn move_transform_prefix_losses(
     });
     [
         operation.prefix.as_ref().is_some_and(|prefix| prefix.matrix_omitted).then_some(crate::loss::F3dLossCode::FeatureMoveTransformIdentityAssumed),
-        (operation.form == direct_face::DesignMoveForm::Form6).then_some(crate::loss::F3dLossCode::FeatureMoveTransformModeAssumed),
+        matches!(operation.form, direct_face::DesignMoveForm::Form4 | direct_face::DesignMoveForm::Form6).then_some(crate::loss::F3dLossCode::FeatureMoveTransformModeAssumed),
         prefix_assumed.then_some(crate::loss::F3dLossCode::FeatureMoveTransformPrefixAssumed),
     ].into_iter().flatten().map(|code| {
         if code == crate::loss::F3dLossCode::FeatureMoveTransformIdentityAssumed {
@@ -429,15 +478,12 @@ fn unique_move_transform<'a>(
     candidate
 }
 
-fn rigid_transform_rule_breaks(
+fn rigid_transform_type_matches(
     bytes: &[u8],
     start: usize,
-    paired: usize,
-    form: direct_face::DesignMoveForm,
     class_types: &HashMap<u32, &SegmentType>,
-) -> Vec<String> {
-    let mut breaks = Vec::new();
-    let typed = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
+) -> bool {
+    lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
         .and_then(|(class_tag, _)| class_tag.parse::<u32>().ok())
         .and_then(|class_tag| class_types.get(&class_tag))
         .is_some_and(|row| {
@@ -446,8 +492,18 @@ fn rigid_transform_rule_breaks(
                     .type_guid
                     .as_str()
                     .eq_ignore_ascii_case(RIGID_TRANSFORM_TYPE_GUID)
-        });
-    if !typed {
+        })
+}
+
+fn rigid_transform_rule_breaks(
+    bytes: &[u8],
+    start: usize,
+    paired: usize,
+    form: direct_face::DesignMoveForm,
+    class_types: &HashMap<u32, &SegmentType>,
+) -> Vec<String> {
+    let mut breaks = Vec::new();
+    if !rigid_transform_type_matches(bytes, start, class_types) {
         breaks.push(format!(
             "a class type other than {RIGID_TRANSFORM_TYPE_GUID} version {RIGID_TRANSFORM_TYPE_VERSION}"
         ));
@@ -578,15 +634,19 @@ pub(crate) fn move_operation_links_hold(
                     .values()
                     .any(|index| *index == operation.transform_record_index)
                 && header.record_index == operation.transform_record_index
+                && (operation.form != direct_face::DesignMoveForm::Form4
+                    || operation.prefix.as_ref().is_some_and(|prefix| prefix.leading.is_some()))
                 && operation.prefix.as_ref().is_none_or(|prefix| {
                     (operation.form != direct_face::DesignMoveForm::Form2
                         || prefix.full_references())
                         && (!prefix.matrix_omitted
-                            || operation.form == direct_face::DesignMoveForm::Form5
-                                && prefix.codes == [0; 2]
-                                && prefix.references.iter().all(|reference| {
-                                    matches!(reference, direct_face::DesignMoveReference::Null)
-                                })
+                            || (operation.form == direct_face::DesignMoveForm::Form4
+                                || operation.form == direct_face::DesignMoveForm::Form5
+                                    && prefix.codes == [0; 2]
+                                    && prefix.leading.is_none()
+                                    && prefix.references.iter().all(|reference| {
+                                        matches!(reference, direct_face::DesignMoveReference::Null)
+                                    }))
                                 && operation.transform
                                     == crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY)
                 })
