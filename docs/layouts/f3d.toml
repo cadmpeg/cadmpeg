@@ -33530,31 +33530,31 @@ parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_pattern.rs"
 
 [[record.gap]]
 offset = 0
-size = 25
+size = 24
 note = "Shared settings prefix."
 
 [[record.field]]
 name = "count_owner_reference"
-offset = 25
+offset = 24
 type = "bytes[11]"
 source = "spec"
-anchor = "Marked references at offsets 25 and 40 name the count owner and distance owner"
+anchor = "Marked references at offsets 24 and 39 name the count owner and distance owner"
 
 [[record.gap]]
-offset = 36
+offset = 35
 size = 4
 note = "Shared settings separator."
 
 [[record.field]]
 name = "distance_owner_reference"
-offset = 40
+offset = 39
 type = "bytes[11]"
 source = "spec"
-anchor = "Marked references at offsets 25 and 40 name the count owner and distance owner"
+anchor = "Marked references at offsets 24 and 39 name the count owner and distance owner"
 
 [[record.gap]]
-offset = 51
-size = 106
+offset = 50
+size = 107
 note = "Shared fixed controls through offset 156."
 
 [[record.field]]

@@ -9963,15 +9963,15 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 25 | 11 | `count_owner_reference` | `bytes[11]` | little | spec | Marked references at offsets 25 and 40 name the count owner and distance owner |
-| 40 | 11 | `distance_owner_reference` | `bytes[11]` | little | spec | Marked references at offsets 25 and 40 name the count owner and distance owner |
+| 24 | 11 | `count_owner_reference` | `bytes[11]` | little | spec | Marked references at offsets 24 and 39 name the count owner and distance owner |
+| 39 | 11 | `distance_owner_reference` | `bytes[11]` | little | spec | Marked references at offsets 24 and 39 name the count owner and distance owner |
 | 157 | 141 | `trailing_payload` | `bytes[141]` | little | spec | Its trailing payload occupies offsets 157 through 297 |
 
 Unstated regions:
 
-- `0..25` (25 B): Shared settings prefix.
-- `36..40` (4 B): Shared settings separator.
-- `51..157` (106 B): Shared fixed controls through offset 156.
+- `0..24` (24 B): Shared settings prefix.
+- `35..39` (4 B): Shared settings separator.
+- `50..157` (107 B): Shared fixed controls through offset 156.
 
 ## `path_pattern_start`
 

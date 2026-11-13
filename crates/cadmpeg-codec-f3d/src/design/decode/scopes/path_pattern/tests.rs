@@ -147,7 +147,7 @@ fn path_pattern_settings_read_the_settings_and_path_start_records() {
         settings_tail: 31,
         ..PathPatternFrame::default()
     });
-    for (offset, index) in [(25, 331), (40, 341)] {
+    for (offset, index) in [(24, 331), (39, 341)] {
         let mut reference = Vec::new();
         push_marked_reference(&mut reference, index);
         bytes[60 + offset..60 + offset + 11].copy_from_slice(&reference);
