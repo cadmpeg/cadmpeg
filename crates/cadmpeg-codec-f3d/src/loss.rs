@@ -164,6 +164,8 @@ pub(crate) enum F3dLossCode {
     /// A complete joint occurrence path has no unique merged insertion instance.
     AssemblyOperandDescentUnresolved,
     AssemblyJointSourceBindingAssumed,
+    AssemblyConnectorOperandsAssumed,
+    AssemblyMotionBindingAssumed,
     /// A joint operand path continues inside an unmerged inserted document; the
     /// remaining keys stay a nested occurrence path.
     AssemblyOperandNestedPathRetained,
@@ -784,6 +786,8 @@ impl F3dLossCode {
         Self::AssemblyOperandDescentAmbiguous,
         Self::AssemblyOperandDescentUnresolved,
         Self::AssemblyJointSourceBindingAssumed,
+        Self::AssemblyConnectorOperandsAssumed,
+        Self::AssemblyMotionBindingAssumed,
         Self::AssemblyOperandNestedPathRetained,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
@@ -1155,6 +1159,8 @@ impl F3dLossCode {
             Self::AssemblyOperandDescentAmbiguous => "assembly.operand-descent-ambiguous",
             Self::AssemblyOperandDescentUnresolved => "assembly.operand-descent-unresolved",
             Self::AssemblyJointSourceBindingAssumed => "assembly.joint-source-binding-assumed",
+            Self::AssemblyConnectorOperandsAssumed => "assembly.connector-operands-assumed",
+            Self::AssemblyMotionBindingAssumed => "assembly.motion-binding-assumed",
             Self::AssemblyOperandNestedPathRetained => "assembly.operand-nested-path-retained",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
@@ -1622,6 +1628,8 @@ impl F3dLossCode {
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyJointSourceBindingAssumed
+            | Self::AssemblyConnectorOperandsAssumed
+            | Self::AssemblyMotionBindingAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
@@ -2140,6 +2148,8 @@ impl F3dLossCode {
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyJointSourceBindingAssumed
+            | Self::AssemblyConnectorOperandsAssumed
+            | Self::AssemblyMotionBindingAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative

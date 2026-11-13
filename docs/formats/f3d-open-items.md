@@ -1660,7 +1660,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** The full-path audit retains consumer-pose residuals on V1.8 records 12428, 12811, 11527, 2578, and 2333. Their distances are 17.8801954, 42.9906967, 40.0011250, 373.6835274, and 373.6835274 mm. V1.8 record 146871 has a 6.50691939 mm current-carrier residual and a consumer residual below 0.0001 mm. RailCore v1 records 3068 and 3232 have residuals of 40 mm and 18.35 mm. The earlier admitted control at V1.8 record 985 has a current-carrier residual of 0.0405289814 mm.
 
-**Note.** Scope-level closure counts describe selected carrier pairs. Emitted-joint closure uses the actual neutral occurrence containers and complete insertion paths. Nonzero tail states retain native alignment with a partial report. Admission uses byte grammar and binding evidence independently of pose closure. Robot record 4614 has a 1472.38643012 mm current-carrier residual because its inserted occurrence stores the identity; DR-116 covers it. DR-113 and DR-116 cover their separate placement questions.
+**Note.** Scope-level closure counts describe selected carrier pairs. Emitted-joint closure uses the actual neutral occurrence containers and complete insertion paths. Nonzero tail states preserve the decoded alignment in a projected relation with assumed operand contexts and active state. Admission uses byte grammar and binding evidence independently of pose closure. Robot record 4614 has a 1472.38643012 mm current-carrier residual because its inserted occurrence stores the identity; DR-116 covers it. DR-113 and DR-116 cover their separate placement questions.
 
 ### DR-250. Motion of a joint record shared by several Assemble scopes
 
@@ -1672,7 +1672,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** These scopes keep their frames, facing, angle, and offsets natively and project no neutral joint until the binding is defined.
+**Note.** Scopes with decoded connector frames project a neutral relation that preserves their facing, angle, and offsets. Adjacent decoded motion supplies the motion when available; the relation is otherwise fixed. `assembly.motion-binding-assumed` records this binding assumption.
 
 ### DR-246. Additional version-five Assemble owners and extended spans
 
@@ -2433,3 +2433,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** A complete twenty-node program, four face candidates, and a shared transition set permit several member assignments. Selecting every transition candidate assumes a group-level rule.
 
 **Note.** The decoder retains the bounded-face operands and compact identity candidates. Group `4324` stays native with `feature.edge-selection-native`. DR-224 tracks Fillet transition ambiguities; DR-244 tracks treatment groups whose transitions supply no candidate set.
+
+### DR-482. Operand containers of unqualified Assemble connectors
+
+**Question.** Which occurrence or document contains a connector when its scope retains the connector reference and frame but its operand qualifier does not decode?
+
+**Known.** The Assemble connector grammar in §3.1 of `f3d.md` retains two native references, their operand-local frames, alignment scalars, and facing. Each reference identifies a source record within the Design stream.
+
+**Need.** Controlled public assemblies that identify both selected components and vary the operand paths independently of the connector frames and alignment values.
+
+**Note.** The neutral joint uses each native reference as its operand object identity with a missing document container. `assembly.connector-operands-assumed` names this operand-context assumption. `assembly.motion-binding-assumed` records the adjacent-motion or fixed-relation reading from DR-250. The timeline feature names the retained joint before archive operand descent.
