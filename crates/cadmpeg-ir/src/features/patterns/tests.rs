@@ -72,6 +72,46 @@ fn partial_curve_driven_preserves_independent_values_through_wire_and_units() {
     );
 }
 
+#[cfg(feature = "schema")]
+#[test]
+fn partial_curve_driven_schema_agrees_with_reader_on_optional_fields_and_count() {
+    use crate::features::patterns::curve_driven::CurveDrivenPatternParameters;
+    let schema = serde_json::to_value(schemars::schema_for!(CurveDrivenPatternParameters)).unwrap();
+    let properties = schema["properties"].as_object().unwrap();
+    assert!(schema.get("required").is_none());
+    for name in [
+        "path",
+        "count",
+        "spacing",
+        "distance",
+        "total_extent",
+        "reversed",
+        "path_oriented",
+        "start_parameter",
+    ] {
+        let property = &properties[name];
+        assert!(
+            !property.to_string().contains("\"null\""),
+            "{name}: {property}"
+        );
+        let mut fields = serde_json::Map::new();
+        fields.insert(name.into(), serde_json::Value::Null);
+        assert!(serde_json::from_value::<CurveDrivenPatternParameters>(fields.into()).is_err());
+    }
+    assert_eq!(properties["count"]["minimum"], json!(1));
+    for (count, accepted) in [(0, false), (1, true)] {
+        let value = json!({"kind":"curve_driven_partial", "parameters":{"count":count}});
+        assert_eq!(
+            serde_json::from_value::<PatternKind>(value).is_ok(),
+            accepted
+        );
+    }
+    assert!(serde_json::from_value::<PatternKind>(
+        json!({"kind":"curve_driven_partial", "parameters":{}})
+    )
+    .is_ok());
+}
+
 fn direction(x: f64, y: f64, z: f64) -> FeatureDirection3 {
     FeatureDirection3::new(Vector3::new(x, y, z)).unwrap()
 }

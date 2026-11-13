@@ -1424,7 +1424,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             &parameters,
                             &source_ordinals,
                             &mut projection_losses,
-                        )
+                        )?
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::MoveFace
                     {
@@ -2427,6 +2427,17 @@ fn scope_properties(
                 .ok_or_else(|| CodecError::malformed("reference property key is blank"))?,
             format!("{record_index}"),
         );
+        if scope.kind() == crate::records::feature::scope::DesignFeatureKind::PathPattern
+            && scope
+                .unclosed_construction_operand_groups
+                .contains(record_index)
+        {
+            properties.insert(
+                cadmpeg_core::text::NonBlankString::new(format!("unclosed-group:{ordinal}"))
+                    .ok_or_else(|| CodecError::malformed("unclosed group property key is blank"))?,
+                format!("{record_index}"),
+            );
+        }
     }
     if let Some(profile) = scope
         .extrude_profile()

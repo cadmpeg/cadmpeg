@@ -27,35 +27,36 @@ pub(super) fn exact_path_pattern_settings(
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::PathPattern {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    let prefix_end = usize::try_from(scope.reference_count_offset()).ok()?;
-    let prefix = bytes.get(..prefix_end)?;
-    let reference_at = if prefix.get(start + 11..start + 20)? == [0; 9]
-        && View::u32_le_at(prefix, start + 20)? == 1
-        && *prefix.get(start + 24)? == 0
-    {
-        start + 25
-    } else if prefix.get(start + 11..start + 21)? == [0; 10] {
-        start + 21
-    } else {
-        return None;
-    };
-    let settings_record_index = marked_record_reference(prefix, reference_at)?;
-    let regular = typed_record_frame(
-        bytes,
-        records,
-        class_types,
-        settings_record_index,
-        PATH_PATTERN_SETTINGS_TYPE,
-        settings_layout::LEN,
-    );
-    let reordered = regular.is_none();
-    let settings_at = regular.or_else(|| {
+    let settings_frame = (|| {
+        let start = usize::try_from(scope.byte_offset()).ok()?;
+        let prefix_end = usize::try_from(scope.reference_count_offset()).ok()?;
+        let prefix = bytes.get(..prefix_end)?;
+        let reference_at = if prefix.get(start.checked_add(11)?..start.checked_add(20)?)? == [0; 9]
+            && View::u32_le_at(prefix, start.checked_add(20)?)? == 1
+            && *prefix.get(start.checked_add(24)?)? == 0
+        {
+            start.checked_add(25)?
+        } else if prefix.get(start.checked_add(11)?..start.checked_add(21)?)? == [0; 10] {
+            start.checked_add(21)?
+        } else {
+            return None;
+        };
+        let index = marked_record_reference(prefix, reference_at)?;
+        if let Some(at) = typed_record_frame(
+            bytes,
+            records,
+            class_types,
+            index,
+            PATH_PATTERN_SETTINGS_TYPE,
+            settings_layout::LEN,
+        ) {
+            return Some((index, at, false));
+        }
         let at = typed_record_frame(
             bytes,
             records,
             class_types,
-            settings_record_index,
+            index,
             PATH_PATTERN_SETTINGS_TYPE,
             reordered_layout::LEN,
         )?;
@@ -69,32 +70,8 @@ pub(super) fn exact_path_pattern_settings(
             .values_in(1..3)?
             .copied()
             .eq(owners)
-            .then_some(at)
-    })?;
-    let settings = bytes.get(settings_at..settings_at.checked_add(settings_layout::LEN)?)?;
-    let flag = |offset: usize| {
-        let value = match settings.get(offset)? {
-            0 => false,
-            1 => true,
-            _ => return None,
-        };
-        Some(Located {
-            value,
-            offset: u64_from_index(settings_at.checked_add(offset)?),
-        })
-    };
-    if *settings.get(settings_layout::SETTINGS_MARKER)? != settings_layout::SETTINGS_MARKER_VALUE {
-        return None;
-    }
-    let total_extent = (settings
-        .get(settings_layout::DISTANCE_TYPE_MARKER..settings_layout::DISTANCE_TYPE)?
-        == [0xff; 4])
-        .then(|| flag(settings_layout::DISTANCE_TYPE))
-        .flatten();
-    let flipped = flag(settings_layout::FLIPPED);
-    let path_oriented = flag(settings_layout::PATH_ORIENTED);
-    let path_group_record_index =
-        marked_record_reference(settings, settings_layout::PATH_GROUP_REFERENCE);
+            .then_some((index, at, true))
+    })();
     let mut starts = scope.reference_members().values().filter(|record_index| {
         record_frames_of_type(
             bytes,
@@ -106,16 +83,23 @@ pub(super) fn exact_path_pattern_settings(
         .next()
         .is_some()
     });
-    let start_record_index = starts.next().copied().filter(|_| starts.next().is_none());
-    let start_parameter = start_record_index.and_then(|start_record_index| {
-        let start_record_at = typed_record_frame(
-            bytes,
-            records,
-            class_types,
-            start_record_index,
-            PATH_PATTERN_START_TYPE,
-            start_layout::LEN,
-        )?;
+    let start_record = starts
+        .next()
+        .copied()
+        .filter(|_| starts.next().is_none())
+        .and_then(|index| {
+            let at = typed_record_frame(
+                bytes,
+                records,
+                class_types,
+                index,
+                PATH_PATTERN_START_TYPE,
+                start_layout::LEN,
+            )?;
+            let end = at.checked_add(start_layout::LEN)?;
+            Some((index, at, end))
+        });
+    let start_parameter = start_record.and_then(|(_, start_record_at, _)| {
         let start_parameter_at = start_record_at.checked_add(start_layout::START_PARAMETER)?;
         let [start_parameter] = finite_reals_at::<1>(bytes, start_parameter_at)?;
         Some(Located {
@@ -123,17 +107,46 @@ pub(super) fn exact_path_pattern_settings(
             offset: u64_from_index(start_parameter_at),
         })
     });
-    Some(patterns::DesignPathPatternSettings {
-        reordered_owners: reordered,
-        settings_record_index,
-        settings_byte_offset: u64_from_index(settings_at),
-        total_extent,
-        flipped,
-        path_oriented,
-        path_group_record_index,
-        start_record_index,
+    let mut result = patterns::DesignPathPatternSettings {
+        start_record_index: start_record.map(|(index, _, _)| index),
+        start_frame_end: start_record.map(|(_, _, end)| u64_from_index(end)),
         start_parameter,
-    })
+        ..Default::default()
+    };
+    if let Some((index, settings_at, reordered)) = settings_frame {
+        result.settings_record_index = Some(index);
+        result.settings_byte_offset = Some(u64_from_index(settings_at));
+        result.reordered_owners = reordered;
+        if let Some(settings) =
+            bytes.get(settings_at..settings_at.checked_add(settings_layout::LEN)?)
+        {
+            if settings.get(settings_layout::SETTINGS_MARKER)
+                == Some(&settings_layout::SETTINGS_MARKER_VALUE)
+            {
+                let flag = |offset: usize| {
+                    let value = match settings.get(offset)? {
+                        0 => false,
+                        1 => true,
+                        _ => return None,
+                    };
+                    Some(Located {
+                        value,
+                        offset: u64_from_index(settings_at.checked_add(offset)?),
+                    })
+                };
+                result.total_extent = (settings
+                    .get(settings_layout::DISTANCE_TYPE_MARKER..settings_layout::DISTANCE_TYPE)
+                    == Some(&[0xff; 4]))
+                .then(|| flag(settings_layout::DISTANCE_TYPE))
+                .flatten();
+                result.flipped = flag(settings_layout::FLIPPED);
+                result.path_oriented = flag(settings_layout::PATH_ORIENTED);
+                result.path_group_record_index =
+                    marked_record_reference(settings, settings_layout::PATH_GROUP_REFERENCE);
+            }
+        }
+    }
+    (result != patterns::DesignPathPatternSettings::default()).then_some(result)
 }
 
 /// Header offsets of the frames of `record_index` whose class tag names
@@ -173,6 +186,10 @@ fn typed_record_frame(
     let (at, row) = frames.next()?;
     if frames.next().is_some()
         || row.version != version
+        || !row
+            .entities
+            .values()
+            .any(|entity| *entity == u64::from(record_index))
         || records.offsets(record_index).first() != Some(&at)
     {
         return None;

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct CurveDrivenPatternParameters {
     #[doc = "Ordered pattern path."]
+    #[cfg_attr(feature = "schema", schemars(with = "PathRef"))]
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -19,6 +20,7 @@ pub struct CurveDrivenPatternParameters {
     )]
     pub path: Option<PathRef>,
     #[doc = "Total instance count, including the seed."]
+    #[cfg_attr(feature = "schema", schemars(with = "std::num::NonZeroU32"))]
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -26,6 +28,7 @@ pub struct CurveDrivenPatternParameters {
     )]
     pub count: Option<u32>,
     #[doc = "Arc-length spacing between adjacent instances."]
+    #[cfg_attr(feature = "schema", schemars(with = "PositiveLength"))]
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -33,6 +36,7 @@ pub struct CurveDrivenPatternParameters {
     )]
     pub spacing: Option<PositiveLength>,
     #[doc = "Source distance before conversion from extent to adjacent spacing."]
+    #[cfg_attr(feature = "schema", schemars(with = "PositiveLength"))]
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -40,6 +44,7 @@ pub struct CurveDrivenPatternParameters {
     )]
     pub distance: Option<PositiveLength>,
     #[doc = "Whether distance spans from the seed to the last instance."]
+    #[cfg_attr(feature = "schema", schemars(with = "bool"))]
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -47,6 +52,7 @@ pub struct CurveDrivenPatternParameters {
     )]
     pub total_extent: Option<bool>,
     #[doc = "Whether instances follow the reverse path direction."]
+    #[cfg_attr(feature = "schema", schemars(with = "bool"))]
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -54,6 +60,7 @@ pub struct CurveDrivenPatternParameters {
     )]
     pub reversed: Option<bool>,
     #[doc = "Whether each instance turns with the path direction."]
+    #[cfg_attr(feature = "schema", schemars(with = "bool"))]
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -61,6 +68,7 @@ pub struct CurveDrivenPatternParameters {
     )]
     pub path_oriented: Option<bool>,
     #[doc = "Source path parameter at the pattern start."]
+    #[cfg_attr(feature = "schema", schemars(with = "FiniteReal"))]
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

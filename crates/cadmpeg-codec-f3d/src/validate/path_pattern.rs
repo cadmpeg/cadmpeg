@@ -43,12 +43,21 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                     .ok()?
                     .checked_sub(256)?,
             )?;
-            (headers.next().is_none() && row.version == version).then_some(header.byte_offset)
+            (headers.next().is_none()
+                && row.version == version
+                && row
+                    .entities
+                    .values()
+                    .any(|entity| *entity == u64::from(record_index)))
+            .then_some(header.byte_offset)
         };
         let at = |base: u64, offset: usize| base.checked_add(u64_from_index(offset));
-        let settings_valid =
-            typed_header(settings.settings_record_index, PATH_PATTERN_SETTINGS_TYPE)
-                .filter(|base| *base == settings.settings_byte_offset)
+        let settings_valid = match (
+            settings.settings_record_index,
+            settings.settings_byte_offset,
+        ) {
+            (Some(index), Some(offset)) => typed_header(index, PATH_PATTERN_SETTINGS_TYPE)
+                .filter(|base| *base == offset)
                 .is_some_and(|base| {
                     settings.flipped.as_ref().is_none_or(|value| {
                         Some(value.offset) == at(base, settings_layout::FLIPPED)
@@ -57,13 +66,40 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                     }) && settings.total_extent.as_ref().is_none_or(|value| {
                         Some(value.offset) == at(base, settings_layout::DISTANCE_TYPE)
                     })
+                }),
+            (None, None) => {
+                settings.flipped.is_none()
+                    && settings.path_oriented.is_none()
+                    && settings.total_extent.is_none()
+                    && settings.path_group_record_index.is_none()
+                    && !settings.reordered_owners
+            }
+            _ => false,
+        };
+        let start_base = settings
+            .start_record_index
+            .and_then(|index| typed_header(index, PATH_PATTERN_START_TYPE));
+        let start_valid = match (
+            settings.start_record_index,
+            start_base,
+            settings.start_frame_end,
+            &settings.start_parameter,
+        ) {
+            (None, None, None, None) => true,
+            (Some(_), Some(base), Some(end), value) => {
+                let no_inner_header = ctx.native.design_record_headers.iter().all(|header| {
+                    design_stream(&header.id) != stream
+                        || header.byte_offset <= base
+                        || header.byte_offset >= end
                 });
-        let start_valid = settings.start_parameter.as_ref().is_none_or(|value| {
-            settings
-                .start_record_index
-                .and_then(|index| typed_header(index, PATH_PATTERN_START_TYPE))
-                .is_some_and(|base| Some(value.offset) == at(base, start_layout::START_PARAMETER))
-        });
+                at(base, start_layout::LEN) == Some(end)
+                    && no_inner_header
+                    && value.as_ref().is_none_or(|value| {
+                        Some(value.offset) == at(base, start_layout::START_PARAMETER)
+                    })
+            }
+            _ => false,
+        };
         let members = scope.reference_members();
         let valid = scope.kind() == crate::records::feature::scope::DesignFeatureKind::PathPattern
             && settings_valid

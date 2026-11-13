@@ -1470,15 +1470,23 @@ pub(crate) const PATH_PATTERN_START_TYPE: (&str, u32) = ("69EE2FA7-BCC7-449E-9CA
 
 /// Fixed settings of a `PathPattern` scope, from its settings record and its
 /// path-start record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignPathPatternSettings {
     #[doc = "The scope reference table places both parameter owners before its seed group."]
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) reordered_owners: bool,
-    /// Settings record named by the scope prefix.
-    pub(crate) settings_record_index: u32,
-    /// Byte offset of the settings record header.
-    pub(crate) settings_byte_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_pattern_settings_index"
+    )]
+    pub(crate) settings_record_index: Option<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_pattern_settings_offset"
+    )]
+    pub(crate) settings_byte_offset: Option<u64>,
     /// The distance parameter is the total extent; otherwise it is the
     /// spacing between adjacent instances.
     #[serde(
@@ -1515,6 +1523,12 @@ pub(crate) struct DesignPathPatternSettings {
         deserialize_with = "deserialize_path_pattern_start_record_index"
     )]
     pub(crate) start_record_index: Option<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_pattern_start_frame_end"
+    )]
+    pub(crate) start_frame_end: Option<u64>,
     /// Path parameter of the pattern start point.
     #[serde(
         default,
@@ -1523,6 +1537,17 @@ pub(crate) struct DesignPathPatternSettings {
     )]
     pub(crate) start_parameter: Option<Located<FiniteReal>>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_path_pattern_settings_index,
+    u32,
+    "settings_record_index"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_path_pattern_settings_offset,
+    u64,
+    "settings_byte_offset"
+);
 
 cadmpeg_core::named_optional_field!(
     deserialize_path_pattern_total_extent,
@@ -1548,6 +1573,12 @@ cadmpeg_core::named_optional_field!(
     deserialize_path_pattern_start_record_index,
     u32,
     "start_record_index"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_path_pattern_start_frame_end,
+    u64,
+    "start_frame_end"
 );
 
 cadmpeg_core::named_optional_field!(

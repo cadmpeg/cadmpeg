@@ -34,8 +34,8 @@ fn settings(
 ) -> crate::records::feature::patterns::DesignPathPatternSettings {
     crate::records::feature::patterns::DesignPathPatternSettings {
         reordered_owners: false,
-        settings_record_index: 322,
-        settings_byte_offset: 1_000,
+        settings_record_index: Some(322),
+        settings_byte_offset: Some(1_000),
         total_extent: Some(Located {
             value: total_extent,
             offset: 0,
@@ -50,6 +50,7 @@ fn settings(
         }),
         path_group_record_index: Some(PATH_GROUP),
         start_record_index: Some(343),
+        start_frame_end: Some(197),
         start_parameter: Some(Located {
             value: cadmpeg_ir::scalar::FiniteReal::new(start_parameter).unwrap(),
             offset: 0,
@@ -388,8 +389,10 @@ fn partial(
         parameters,
         &[],
         &[],
+        &[],
         &std::collections::HashMap::new(),
-    );
+    )
+    .unwrap();
     assert!(projected
         .losses
         .iter()
@@ -413,7 +416,7 @@ fn partial_path_pattern_retains_independent_parameters_and_controls() {
         &[],
         &[(0, &count), (1, &distance)],
     );
-    assert!(matches!(seeds.as_slice(), [PatternSeed::Native(_)]));
+    assert!(seeds.is_empty());
     assert_eq!(
         parameters.path,
         Some(PathRef::Native(format!(
@@ -500,7 +503,7 @@ fn partial_path_pattern_keeps_ambiguous_and_foreign_inputs_native() {
     let mut foreign = scope();
     foreign.id = "unclassified-scope".into();
     let (seeds, retained) = partial(&foreign, &groups(DesignOperandRole::BODIES_B), &parameters);
-    assert!(matches!(seeds.as_slice(), [PatternSeed::Native(_)]));
+    assert!(seeds.is_empty());
     assert!(retained.path.is_none());
     assert_eq!(retained.count, Some(4));
     let mismatched = [
@@ -534,10 +537,12 @@ fn partial_path_pattern_reads_compact_feature_seed_in_the_owning_stream() {
         &scope(),
         &groups,
         &[],
+        &[],
         std::slice::from_ref(&selection),
         std::slice::from_ref(&seed),
         &ordinals,
-    );
+    )
+    .unwrap();
     assert_eq!(
         pattern(projected.definition).0,
         vec![PatternSeed::Feature(crate::ids::neutral_feature_id(&seed))]
@@ -554,10 +559,12 @@ fn partial_path_pattern_reads_compact_feature_seed_in_the_owning_stream() {
             &scope(),
             &groups,
             &[],
+            &[],
             std::slice::from_ref(&selection),
             &scopes,
             &ordinals,
-        );
+        )
+        .unwrap();
         assert!(matches!(
             pattern(projected.definition).0.as_slice(),
             [PatternSeed::Native(_)]
@@ -576,8 +583,10 @@ fn partial_path_pattern_retains_a_declared_path_outside_the_scope_reference_list
         &[],
         &[],
         &[],
+        &[],
         &std::collections::HashMap::new(),
-    );
+    )
+    .unwrap();
     assert!(
         projected
             .losses
@@ -620,10 +629,12 @@ fn partial_path_pattern_keeps_later_and_unordered_feature_candidates_native() {
             &scope(),
             &groups(DesignOperandRole::BODIES_A),
             &[(0, &count), (1, &distance)],
+            &[],
             std::slice::from_ref(&selection),
             std::slice::from_ref(&seed),
             &ordinals,
-        );
+        )
+        .unwrap();
         assert!(projected
             .losses
             .iter()
@@ -643,5 +654,252 @@ fn partial_path_pattern_keeps_later_and_unordered_feature_candidates_native() {
             Some(25.0)
         );
         assert!(parameters.path.is_some());
+    }
+}
+
+#[test]
+fn partial_path_pattern_retains_ordered_known_and_unknown_seed_members() {
+    use crate::design::feature_project::path_pattern::project_partial_path_pattern;
+    let earlier = super::pattern::seed_scope(5, Some(2));
+    let mut selection = super::pattern::compact_entity_selection(SEED_GROUP, 326, 5);
+    selection.scope_record_index = SCOPE;
+    let groups = [
+        group(SEED_GROUP, 1, DesignOperandRole::BODIES_A, &[326, 331]),
+        group(PATH_GROUP, 4, DesignOperandRole::ROLE_0X5, &[336]),
+    ];
+    let ordinals = std::collections::HashMap::from([((STREAM, SCOPE), 3), ((STREAM, 5), 1)]);
+    let projected = project_partial_path_pattern(
+        &scope(),
+        &groups,
+        &[],
+        &[],
+        &[selection],
+        &[earlier.clone()],
+        &ordinals,
+    )
+    .unwrap();
+    assert_eq!(
+        pattern(projected.definition).0,
+        vec![
+            PatternSeed::Feature(crate::ids::neutral_feature_id(&earlier)),
+            PatternSeed::Native(format!("{STREAM}:design-record#331")),
+        ]
+    );
+    assert!(projected
+        .losses
+        .iter()
+        .any(|loss| loss.code
+            == crate::loss::F3dLossCode::FeaturePathPatternFeatureSeedAssumed.kind()));
+    assert!(
+        projected
+            .losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::F3dLossCode::FeaturePathPatternSeedUnresolved.kind())
+    );
+}
+
+#[test]
+fn partial_path_pattern_retains_unclosed_candidates_and_range_losses() {
+    use crate::design::feature_project::path_pattern::project_partial_path_pattern;
+    let mut scoped = scope();
+    scoped.unclosed_construction_operand_groups.push(SEED_GROUP);
+    let huge = count(4_294_967_296.0);
+    for source in [0.0, -2.0] {
+        let source_distance = distance(source);
+        let projected = project_partial_path_pattern(
+            &scoped,
+            &groups(DesignOperandRole::BODIES_B)[1..],
+            &[(0, &huge), (1, &source_distance)],
+            &[],
+            &[],
+            &[],
+            &std::collections::HashMap::new(),
+        )
+        .unwrap();
+        let (seeds, PatternTransform::CurveDrivenPartial { parameters }) =
+            pattern(projected.definition)
+        else {
+            panic!("partial")
+        };
+        assert_eq!(
+            seeds,
+            vec![PatternSeed::Native(format!(
+                "{STREAM}:design-record#{SEED_GROUP}"
+            ))]
+        );
+        assert!(parameters.count.is_none() && parameters.distance.is_none());
+        assert!(projected
+            .losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::F3dLossCode::FeaturePathPatternCountOutOfRange.kind()));
+        assert!(projected.losses.iter().any(|loss| loss.code
+            == crate::loss::F3dLossCode::FeaturePathPatternDistanceNonpositive.kind()));
+    }
+    let mut competing = scope();
+    competing.unclosed_construction_operand_groups.push(331);
+    let projected = project_partial_path_pattern(
+        &competing,
+        &groups(DesignOperandRole::BODIES_B),
+        &[],
+        &[],
+        &[],
+        &[],
+        &std::collections::HashMap::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        pattern(projected.definition).0,
+        vec![
+            PatternSeed::Native(format!(
+                "{STREAM}:design-construction-operand-group#{SEED_GROUP}"
+            )),
+            PatternSeed::Native(format!("{STREAM}:design-record#331")),
+        ]
+    );
+    assert!(
+        projected
+            .losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::F3dLossCode::FeaturePathPatternSeedUnresolved.kind())
+    );
+}
+
+#[test]
+fn partial_path_pattern_keeps_face_evidence_and_ambiguous_members() {
+    use crate::design::feature_project::path_pattern::project_partial_path_pattern;
+    use crate::records::recipes::ConstructionRecipeKind;
+    use crate::records::topology::{body_recipe::DesignOperandGroup, face::DesignFaceOperand};
+    let mut face =
+        super::pattern::seed_face_operand(ConstructionRecipeKind::BoundedFace).into_draft();
+    face.id = format!("{STREAM}:face-operand#326");
+    face.scope_record_index = SCOPE;
+    face.group = Some(DesignOperandGroup {
+        group_record_index: SEED_GROUP,
+        group_member_ordinal: 0,
+    });
+    face.record_index = 326;
+    face.recipe_record_index = 329;
+    face.resolved_face_slots = vec![27];
+    let face = DesignFaceOperand::try_new(face).unwrap();
+    let mut scope = scope();
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let groups = groups(DesignOperandRole::BODIES_A);
+    let earlier = super::pattern::seed_scope(5, Some(2));
+    let mut selection = super::pattern::compact_entity_selection(SEED_GROUP, 326, 5);
+    selection.scope_record_index = SCOPE;
+    let ordinals = std::collections::HashMap::from([((STREAM, SCOPE), 3), ((STREAM, 5), 1)]);
+    let face_only = project_partial_path_pattern(
+        &scope,
+        &groups,
+        &[],
+        std::slice::from_ref(&face),
+        &[],
+        &[],
+        &ordinals,
+    )
+    .unwrap();
+    assert!(matches!(
+        pattern(face_only.definition).0.as_slice(),
+        [PatternSeed::Faces(FaceSelection::Historical { .. })]
+    ));
+    let ambiguous = project_partial_path_pattern(
+        &scope,
+        &groups,
+        &[],
+        &[face],
+        &[selection],
+        &[earlier],
+        &ordinals,
+    )
+    .unwrap();
+    assert_eq!(
+        pattern(ambiguous.definition).0,
+        vec![PatternSeed::Native(format!("{STREAM}:design-record#326"))]
+    );
+    assert!(
+        ambiguous
+            .losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::F3dLossCode::FeaturePathPatternSeedUnresolved.kind())
+    );
+}
+
+#[test]
+fn path_pattern_dispatch_retains_partial_data_for_unclosed_seed() {
+    let mut scope = scope();
+    scope.unclosed_construction_operand_groups.push(SEED_GROUP);
+    let count = count(4.0);
+    let distance = distance(3.0);
+    let groups = groups(DesignOperandRole::BODIES_B);
+    let inputs = crate::design::feature_project::ProjectInputs {
+        construction_groups: &groups[1..],
+        ..Default::default()
+    };
+    let mut losses = Vec::new();
+    let definition = crate::design::feature_project::path_pattern::path_pattern_definition(
+        &scope,
+        &inputs,
+        &[(0, &count), (1, &distance)],
+        &std::collections::HashMap::new(),
+        &mut losses,
+    )
+    .unwrap();
+    let (seeds, PatternTransform::CurveDrivenPartial { parameters }) = pattern(definition) else {
+        panic!("partial")
+    };
+    assert_eq!(
+        seeds,
+        vec![PatternSeed::Native(format!(
+            "{STREAM}:design-record#{SEED_GROUP}"
+        ))]
+    );
+    assert_eq!(parameters.count, Some(4));
+    assert_eq!(
+        parameters
+            .distance
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
+        Some(30.0)
+    );
+}
+
+#[test]
+fn partial_path_pattern_reports_missing_controls_and_count_one_nonpositive_distance() {
+    use crate::design::feature_project::path_pattern::project_partial_path_pattern;
+    let count = count(1.0);
+    for value in [0.0, -2.0] {
+        let distance = distance(value);
+        let projected = project_partial_path_pattern(
+            &scope_with(None),
+            &groups(DesignOperandRole::BODIES_B),
+            &[(0, &count), (1, &distance)],
+            &[],
+            &[],
+            &[],
+            &std::collections::HashMap::new(),
+        )
+        .unwrap();
+        let (_, PatternTransform::CurveDrivenPartial { parameters }) =
+            pattern(projected.definition)
+        else {
+            panic!("partial")
+        };
+        assert_eq!(parameters.count, Some(1));
+        assert!(parameters.distance.is_none() && parameters.spacing.is_none());
+        for code in [
+            crate::loss::F3dLossCode::FeaturePathPatternDistanceNonpositive,
+            crate::loss::F3dLossCode::FeaturePathPatternSettingsUnresolved,
+            crate::loss::F3dLossCode::FeaturePathPatternStartUnresolved,
+        ] {
+            assert!(projected.losses.iter().any(|loss| loss.code == code.kind()));
+        }
     }
 }

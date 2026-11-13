@@ -75,18 +75,19 @@ fn path_pattern_frame(frame: PathPatternFrame) -> Vec<u8> {
 fn path_pattern_settings_read_the_settings_and_path_start_records() {
     use crate::records::entity_header::SegmentType;
 
-    let segment_type = |guid: &str, version: u32| {
+    let segment_type = |guid: &str, version: u32, entities| {
         SegmentType::try_new(
             crate::ids::native_design_type_id("FusionAssetName[Active]/Design1/MetaStream.dat", 0),
-            crate::design::test_support::design_type(guid, None, version, "Fusion", vec![0]),
+            crate::design::test_support::design_type(guid, None, version, "Fusion", entities),
         )
         .unwrap()
     };
-    let settings = segment_type("BE1FB171-D98A-4A4D-99C2-3738627CF79C", 4);
-    let old_settings = segment_type("BE1FB171-D98A-4A4D-99C2-3738627CF79C", 3);
-    let start = segment_type("69EE2FA7-BCC7-449E-9CA9-976CEFDFED44", 3);
-    let newer_start = segment_type("69EE2FA7-BCC7-449E-9CA9-976CEFDFED44", 4);
-    let other = segment_type("5A1BF548-241F-46FD-9FB5-E4B05126EB9D", 1);
+    let settings = segment_type("BE1FB171-D98A-4A4D-99C2-3738627CF79C", 4, vec![322]);
+    let old_settings = segment_type("BE1FB171-D98A-4A4D-99C2-3738627CF79C", 3, vec![322]);
+    let start = segment_type("69EE2FA7-BCC7-449E-9CA9-976CEFDFED44", 3, vec![319, 320]);
+    let newer_start = segment_type("69EE2FA7-BCC7-449E-9CA9-976CEFDFED44", 4, vec![320]);
+    let other = segment_type("5A1BF548-241F-46FD-9FB5-E4B05126EB9D", 1, vec![320]);
+    let unregistered = segment_type("69EE2FA7-BCC7-449E-9CA9-976CEFDFED44", 3, vec![320]);
     let scope = |members: Vec<u32>| {
         let mut scope = DesignParameterScope::empty(
             "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#0",
@@ -124,18 +125,31 @@ fn path_pattern_settings_read_the_settings_and_path_start_records() {
         )
     };
     let valid = |frame: PathPatternFrame| read(frame, &settings, &other, vec![319, 320, 333]);
+    let bytes = path_pattern_frame(PathPatternFrame::default());
+    let classes =
+        std::collections::HashMap::from([(301, &settings), (302, &unregistered), (304, &other)]);
+    let partial = super::exact_path_pattern_settings(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope(vec![319, 333]),
+        &classes,
+    )
+    .unwrap();
+    assert!(partial.start_record_index.is_none() && partial.start_parameter.is_none());
+    assert!(partial.flipped.is_some());
     for compact_prefix in [false, true] {
         let settings_read = valid(PathPatternFrame {
             compact_prefix,
             ..PathPatternFrame::default()
         })
         .expect("path-pattern settings");
-        assert_eq!(settings_read.settings_record_index, 322);
+        assert_eq!(settings_read.settings_record_index, Some(322));
         assert!(settings_read.total_extent.unwrap().value);
         assert!(settings_read.flipped.unwrap().value);
         assert!(!settings_read.path_oriented.unwrap().value);
         assert_eq!(settings_read.path_group_record_index, Some(333));
         assert_eq!(settings_read.start_record_index, Some(319));
+        assert_eq!(settings_read.start_frame_end, Some(524));
         assert!((settings_read.start_parameter.unwrap().value.get() - 0.5).abs() <= f64::EPSILON);
     }
     assert!(valid(PathPatternFrame {
@@ -171,14 +185,14 @@ fn path_pattern_settings_read_the_settings_and_path_start_records() {
         &scope(vec![319, 341, 331, 333]),
         &class_types
     )
-    .is_none());
+    .is_some_and(|read| read.start_parameter.is_some() && read.settings_record_index.is_none()));
     assert!(super::exact_path_pattern_settings(
         &bytes,
         &records,
         &scope(vec![319, 331, 333, 341]),
         &class_types
     )
-    .is_none());
+    .is_some_and(|read| read.start_parameter.is_some() && read.settings_record_index.is_none()));
     for frame in [
         PathPatternFrame {
             distance_type: 2,
@@ -226,7 +240,9 @@ fn path_pattern_settings_read_the_settings_and_path_start_records() {
             ..PathPatternFrame::default()
         },
     ] {
-        assert!(valid(frame).is_none());
+        let retained = valid(frame).unwrap();
+        assert!(retained.start_parameter.is_some());
+        assert!(retained.flipped.is_none());
     }
     assert!(read(
         PathPatternFrame::default(),
@@ -234,7 +250,7 @@ fn path_pattern_settings_read_the_settings_and_path_start_records() {
         &other,
         vec![319, 320, 333]
     )
-    .is_none());
+    .is_some_and(|read| read.start_parameter.is_some() && read.settings_record_index.is_none()));
     assert!(read(
         PathPatternFrame::default(),
         &settings,

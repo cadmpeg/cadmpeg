@@ -9,8 +9,8 @@ use crate::records::identity::Located;
 fn settings() -> DesignPathPatternSettings {
     DesignPathPatternSettings {
         reordered_owners: false,
-        settings_record_index: 322,
-        settings_byte_offset: 1_000,
+        settings_record_index: Some(322),
+        settings_byte_offset: Some(1_000),
         total_extent: Some(Located {
             value: false,
             offset: 1_156,
@@ -25,6 +25,7 @@ fn settings() -> DesignPathPatternSettings {
         }),
         path_group_record_index: Some(333),
         start_record_index: Some(319),
+        start_frame_end: Some(2_197),
         start_parameter: Some(Located {
             value: cadmpeg_ir::scalar::FiniteReal::ZERO,
             offset: 2_025,
@@ -76,7 +77,9 @@ fn native(
                         version,
                         version_offset: 44,
                         module: "Fusion".into(),
-                        entities: crate::records::identity::ReferenceRun::unlocated(Vec::new()),
+                        entities: crate::records::identity::ReferenceRun::unlocated(vec![
+                            if offset == 0 { 322 } else { 319 },
+                        ]),
                     },
                 )
                 .unwrap()
@@ -85,7 +88,7 @@ fn native(
         design_record_headers: [
             (322, "256", 1_000),
             (319, "257", 2_000),
-            (319, "258", 2_197),
+            (320, "258", 2_300),
         ]
         .into_iter()
         .map(
@@ -115,10 +118,14 @@ fn finding_count(native: &crate::native::F3dNative) -> usize {
 #[test]
 fn path_pattern_settings_link_their_typed_records_and_offsets() {
     assert_eq!(finding_count(&native(settings(), vec![319, 333], 3)), 0);
+    let mut missing_value = settings();
+    missing_value.start_parameter = None;
+    assert_eq!(finding_count(&native(missing_value, vec![319, 333], 3)), 0);
     let mut partial = settings();
     partial.flipped = None;
     partial.start_parameter = None;
     partial.start_record_index = None;
+    partial.start_frame_end = None;
     assert_eq!(finding_count(&native(partial, vec![333], 3)), 0);
     let mut moved_flag = settings();
     moved_flag.flipped.as_mut().unwrap().offset = 1_079;
@@ -130,12 +137,39 @@ fn path_pattern_settings_link_their_typed_records_and_offsets() {
     assert_eq!(finding_count(&native(settings(), vec![319], 3)), 1);
     assert_eq!(finding_count(&native(settings(), vec![319, 333], 4)), 1);
     let mut moved_settings = settings();
-    moved_settings.settings_byte_offset = 1_001;
+    moved_settings.settings_byte_offset = Some(1_001);
     assert_eq!(finding_count(&native(moved_settings, vec![319, 333], 3)), 1);
     let mut unknown_settings = settings();
-    unknown_settings.settings_record_index = 321;
+    unknown_settings.settings_record_index = Some(321);
     assert_eq!(
         finding_count(&native(unknown_settings, vec![319, 333], 3)),
         1
     );
+    let mut wrong_start = settings();
+    wrong_start.start_parameter = None;
+    wrong_start.start_record_index = Some(333);
+    assert_eq!(finding_count(&native(wrong_start, vec![319, 333], 3)), 1);
+    let start_only = DesignPathPatternSettings {
+        start_record_index: Some(319),
+        start_frame_end: Some(2_197),
+        start_parameter: settings().start_parameter,
+        ..Default::default()
+    };
+    assert_eq!(finding_count(&native(start_only, vec![319], 3)), 0);
+    let mut missing_end = settings();
+    missing_end.start_frame_end = None;
+    assert_eq!(finding_count(&native(missing_end, vec![319, 333], 3)), 1);
+    let mut wrong_end = settings();
+    wrong_end.start_frame_end = Some(2_198);
+    assert_eq!(finding_count(&native(wrong_end, vec![319, 333], 3)), 1);
+    let mut inner = native(settings(), vec![319, 333], 3);
+    inner
+        .design_record_headers
+        .push(crate::records::decal::DesignRecordHeader {
+            id: "f3d:Design1/BulkStream.dat:design-record-header#2100".into(),
+            record_index: 321,
+            class_tag: "258".to_owned().try_into().unwrap(),
+            byte_offset: 2_100,
+        });
+    assert_eq!(finding_count(&inner), 1);
 }
