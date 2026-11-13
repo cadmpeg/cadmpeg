@@ -2417,6 +2417,8 @@ mod tests {
                 "assembly.connector-operands-assumed",
                 "assembly.motion-binding-assumed",
                 "assembly.additional-owner-motion-assumed",
+                "assembly.extended-tail-assumed",
+                "assembly.extended-typed-tail-assumed",
                 "assembly.operand-nested-path-retained",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
