@@ -25,7 +25,7 @@ const STREAM: &str = "f3d:Design/BulkStream.dat";
 const LINEAR_TOLERANCE: f64 = 1.0e-6;
 
 fn projected_fixture(
-    fixture: crate::test_support::pipe::Fixture,
+    fixture: &crate::test_support::pipe::Fixture,
     edit: impl FnOnce(&mut crate::native::F3dNative, &mut Feature),
 ) -> (Feature, Vec<LossKind>) {
     let ctx = cadmpeg_test_support::service_decode_context();
@@ -48,12 +48,6 @@ fn projected_fixture(
         }));
     edit(&mut native, &mut feature);
     fixture.with_scan(|scan| {
-        let sources = crate::design::decode::scopes::pipe::PipeSources {
-            types: &native.design_types,
-            headers: &native.design_record_headers,
-            owners: &native.design_parameter_owners,
-            groups: &native.design_construction_operand_groups,
-        };
         let inputs = PipeSectionInputs {
             scopes: &native.design_parameter_scopes,
             groups: &native.design_construction_operand_groups,
@@ -65,13 +59,24 @@ fn projected_fixture(
             linear_tolerance: LINEAR_TOLERANCE,
         };
         let mut features = vec![feature];
-        let losses = super::projection::project(scan, &sources, &mut features, &inputs).unwrap();
+        let losses = super::projection::project(
+            scan,
+            &native.design_types,
+            &native.design_record_headers,
+            &mut features,
+            &inputs,
+        )
+        .unwrap();
         let first = serde_json::to_value(&features).unwrap();
-        assert!(
-            super::projection::project(scan, &sources, &mut features, &inputs)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(super::projection::project(
+            scan,
+            &native.design_types,
+            &native.design_record_headers,
+            &mut features,
+            &inputs
+        )
+        .unwrap()
+        .is_empty());
         assert_eq!(serde_json::to_value(&features).unwrap(), first);
         (
             features.remove(0),
@@ -85,7 +90,7 @@ fn pipe_projection_retains_square_triangle_and_unknown_section_values() {
     use crate::test_support::pipe::{Config, Fixture, SectionFrame};
     for (stored, label) in [(1, Some("square")), (2, Some("triangular")), (99, None)] {
         let (feature, losses) = projected_fixture(
-            Fixture::new(Config {
+            &Fixture::new(Config {
                 values: [0.25, 0.75, 0.6, 0.15],
                 section: Some(SectionFrame::of(stored)),
                 ..Default::default()
@@ -154,7 +159,7 @@ fn pipe_projection_retains_square_triangle_and_unknown_section_values() {
 #[test]
 fn pipe_projection_preserves_inactive_thickness_and_out_of_range_fractions() {
     let (feature, losses) = projected_fixture(
-        crate::test_support::pipe::Fixture::new(crate::test_support::pipe::Config {
+        &crate::test_support::pipe::Fixture::new(crate::test_support::pipe::Config {
             values: [1.25, -0.25, 0.5, -1.0],
             hollow: false,
             ..Default::default()
@@ -198,7 +203,7 @@ fn pipe_projection_preserves_inactive_thickness_and_out_of_range_fractions() {
 fn pipe_projection_preserves_partial_point_data_and_prefix_controls() {
     use crate::test_support::pipe::{Config, Fixture, Layout};
     let (feature, losses) = projected_fixture(
-        Fixture::new(Config {
+        &Fixture::new(Config {
             values: [0.25, 0.75, 0.6, 0.15],
             point_version: Some(2),
             layout: Layout {
@@ -256,7 +261,7 @@ fn pipe_projection_preserves_partial_point_data_and_prefix_controls() {
 #[test]
 fn pipe_projection_keeps_unknown_operation_when_source_is_missing() {
     let (feature, losses) = projected_fixture(
-        crate::test_support::pipe::Fixture::new(Default::default()),
+        &crate::test_support::pipe::Fixture::new(Default::default()),
         |_, feature| feature.native_ref = None,
     );
     assert!(matches!(
@@ -299,7 +304,7 @@ fn pipe_projection_keeps_operation_with_invalid_hollow_control() {
         ..Default::default()
     });
     fixture.bulk[21] = 2;
-    let (feature, losses) = projected_fixture(fixture, |native, _| {
+    let (feature, losses) = projected_fixture(&fixture, |native, _| {
         assert!(matches!(
             native.design_parameter_scopes[0].payload(),
             DesignScopePayload::Pipe(None)
@@ -341,7 +346,7 @@ fn pipe_projection_uses_explicit_circle_with_partial_extent() {
         [(true, 0.1, Some(1.0), "0.1"), (false, -1.0, None, "-1")]
     {
         let (feature, losses) = projected_fixture(
-            Fixture::new(Config {
+            &Fixture::new(Config {
                 hollow,
                 values: [0.25, 0.75, 0.5, thickness],
                 section: Some(SectionFrame::of(0)),
@@ -384,7 +389,7 @@ fn pipe_projection_uses_explicit_circle_with_partial_extent() {
 fn pipe_projection_keeps_existing_explicit_circle_output() {
     use crate::test_support::pipe::{Config, Fixture, SectionFrame};
     let (feature, losses) = projected_fixture(
-        Fixture::new(Config {
+        &Fixture::new(Config {
             values: [1.0, 0.0, 0.5, 0.1],
             section: Some(SectionFrame::of(0)),
             ..Default::default()
@@ -414,7 +419,7 @@ fn pipe_projection_missing_or_ambiguous_owner_keeps_other_scalar_roles() {
     use crate::test_support::pipe::{Config, Fixture, SectionFrame};
     for duplicate in [false, true] {
         let (feature, losses) = projected_fixture(
-            Fixture::new(Config {
+            &Fixture::new(Config {
                 values: [0.25, 0.75, 0.6, 0.15],
                 section: Some(SectionFrame::of(1)),
                 ..Default::default()
@@ -431,7 +436,7 @@ fn pipe_projection_missing_or_ambiguous_owner_keeps_other_scalar_roles() {
                 } else {
                     native
                         .design_parameter_owners
-                        .retain(|owner| owner.record_index() != 103)
+                        .retain(|owner| owner.record_index() != 103);
                 }
             },
         );
@@ -476,7 +481,7 @@ fn pipe_projection_missing_or_ambiguous_owner_keeps_other_scalar_roles() {
 fn pipe_projection_keeps_cut_when_target_group_is_missing() {
     use crate::test_support::pipe::{Config, Fixture, Layout};
     let (feature, losses) = projected_fixture(
-        Fixture::new(Config {
+        &Fixture::new(Config {
             operation: 2,
             values: [0.25, 0.75, 0.6, 0.15],
             layout: Layout {
@@ -488,7 +493,7 @@ fn pipe_projection_keeps_cut_when_target_group_is_missing() {
         |native, _| {
             native
                 .design_construction_operand_groups
-                .retain(|group| group.role() == DesignOperandRole::ROLE_0X5)
+                .retain(|group| group.role() == DesignOperandRole::ROLE_0X5);
         },
     );
     assert!(matches!(
@@ -519,7 +524,7 @@ fn pipe_projection_keeps_cut_when_target_group_is_missing() {
 fn pipe_projection_keeps_intersect_and_names_generic_path_assumption() {
     use crate::test_support::pipe::{Config, Fixture, SectionFrame};
     let (feature, losses) = projected_fixture(
-        Fixture::new(Config {
+        &Fixture::new(Config {
             operation: 3,
             values: [0.25, 0.75, 0.6, 0.15],
             section: Some(SectionFrame::of(1)),
@@ -554,7 +559,7 @@ fn pipe_projection_keeps_intersect_and_names_generic_path_assumption() {
 #[test]
 fn pipe_projection_retains_ambiguous_scope_candidates_without_selecting_them() {
     let (feature, losses) = projected_fixture(
-        crate::test_support::pipe::Fixture::new(Default::default()),
+        &crate::test_support::pipe::Fixture::new(Default::default()),
         |native, _| {
             native
                 .design_parameter_scopes
@@ -603,7 +608,7 @@ fn pipe_projection_keeps_raw_unknown_operation_and_decoded_controls() {
         ..Default::default()
     });
     fixture.bulk[22..26].copy_from_slice(&99_u32.to_le_bytes());
-    let (feature, losses) = projected_fixture(fixture, |_, _| {});
+    let (feature, losses) = projected_fixture(&fixture, |_, _| {});
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Sweep {

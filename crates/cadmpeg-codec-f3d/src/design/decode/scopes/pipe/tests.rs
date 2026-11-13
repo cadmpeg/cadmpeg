@@ -682,7 +682,9 @@ fn pipe_prefix_retains_operation_when_hollow_is_invalid() {
     assert_eq!(prefix.is_hollow_value, Some(2));
     assert_eq!(prefix.is_hollow_offset, 21);
     assert_eq!(
-        prefix.opaque_post_operation.map(|bytes| bytes.into_inner()),
+        prefix
+            .opaque_post_operation
+            .map(cadmpeg_ir::native::bytes::NativeBytes::into_inner),
         Some([7, 9])
     );
     assert!(super::exact_pipe_prefix(&compact, 0).is_none());
@@ -702,7 +704,9 @@ fn pipe_prefix_retains_hollow_when_operation_is_unknown() {
     assert_eq!(prefix.is_hollow_value, Some(1));
     assert_eq!(prefix.is_hollow_offset, 25);
     assert_eq!(
-        prefix.opaque_post_operation.map(|bytes| bytes.into_inner()),
+        prefix
+            .opaque_post_operation
+            .map(cadmpeg_ir::native::bytes::NativeBytes::into_inner),
         Some([1, 255])
     );
     assert!(super::exact_pipe_prefix(&legacy, 0).is_none());

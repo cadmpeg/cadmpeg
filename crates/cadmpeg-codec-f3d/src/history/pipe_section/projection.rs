@@ -14,8 +14,10 @@ use crate::container::ContainerScan;
 use crate::design::decode::scopes::pipe::{observe_sources, PipeObservation, PipeSources};
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
+use crate::records::decal::DesignRecordHeader;
+use crate::records::entity_header::SegmentType;
 use crate::records::feature::extrude::DesignExtrudeOperation;
-use crate::records::feature::path_features::DesignPipeSectionShape;
+use crate::records::feature::path_features::{DesignPipeSection, DesignPipeSectionShape};
 use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
@@ -33,7 +35,8 @@ struct Evidence<'a> {
 
 pub(crate) fn project(
     scan: &ContainerScan,
-    sources: &PipeSources<'_>,
+    types: &[SegmentType],
+    headers: &[DesignRecordHeader],
     features: &mut [Feature],
     inputs: &PipeSectionInputs<'_>,
 ) -> Result<Vec<LossNote>, CodecError> {
@@ -68,7 +71,16 @@ pub(crate) fn project(
                 })
         })
         .collect::<Vec<_>>();
-    let observations = observe_sources(scan, sources, &incomplete)?;
+    let observations = observe_sources(
+        scan,
+        &PipeSources {
+            types,
+            headers,
+            owners: inputs.owners,
+            groups: inputs.groups,
+        },
+        &incomplete,
+    )?;
     for (_, feature) in planned
         .iter_mut()
         .filter(|(_, feature)| is_native_pipe(feature))
@@ -150,7 +162,7 @@ fn project_fallback(
     let section_shape = construction
         .and_then(|construction| construction.section)
         .or_else(|| observation.and_then(|observation| observation.section))
-        .and_then(|section| section.shape());
+        .and_then(DesignPipeSection::shape);
     let evidence = Evidence {
         scopes,
         owners,
@@ -172,7 +184,7 @@ fn project_fallback(
     )?;
     let mut losses = Vec::new();
     let mut note = |code: F3dLossCode, reason: &str| {
-        losses.push(code.note(format!("feature {}: {reason}", feature.id)))
+        losses.push(code.note(format!("feature {}: {reason}", feature.id)));
     };
     if construction.is_none() {
         note(F3dLossCode::FeaturePipeSourceUnresolved, "the complete Pipe source relation is unresolved; independent source facts are retained");
@@ -233,9 +245,7 @@ fn project_fallback(
             }
             SweepShape::Solid {
                 op,
-                section: circular
-                    .map(SweepSection::Generated)
-                    .unwrap_or_else(|| SweepSection::Unresolved(None)),
+                section: circular.map_or(SweepSection::Unresolved(None), SweepSection::Generated),
                 sections: Vec::new(),
             }
         }
