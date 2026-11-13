@@ -46,6 +46,7 @@ fn mesh_selections_reject_empty_repeated_blank_and_mixed_members() {
         serde_json::json!(["mesh id"]),
         serde_json::json!({"native":" "}),
         serde_json::json!({"native":"mesh:source", "members":[]}),
+        serde_json::json!({"native":"mesh:source", "members":null}),
         serde_json::json!({"native":"mesh:source", "members":[" "]}),
         serde_json::json!({"native":"mesh:source", "members":["7", "7"]}),
         serde_json::json!({"native":"mesh:source", "tessellations":["mesh:second"]}),

@@ -16,7 +16,11 @@ pub enum MeshSelection {
         #[doc = "Native expression identifying the source selection."]
         native: SelectionReference,
         #[doc = "Ordered member selectors relative to the native source."]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_members"
+        )]
         members: Option<NativeSelections>,
     },
     #[doc = "Unavailable source identified by the feature that retains its construction."]
@@ -25,6 +29,8 @@ pub enum MeshSelection {
         feature: FeatureId,
     },
 }
+
+cadmpeg_core::named_optional_field!(deserialize_members, NativeSelections, "members");
 
 mod decode_clone;
 
