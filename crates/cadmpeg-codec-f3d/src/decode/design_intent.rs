@@ -691,10 +691,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_surface_trim_operations,
         &mut losses,
     );
-    super::bind_mesh_feature_definitions(
+    super::mesh_import::bind_features(
+        ctx,
+        scan,
         &mut model.features,
         &design.design_parameter_scopes,
         geometry.mesh_projection,
+        &mut losses,
     )?;
     crate::design::feature_project::form_cages::bind_form_cages(
         ctx,
@@ -1194,9 +1197,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         products.occurrences,
         &design.design_parameter_scopes,
     );
-    crate::design::components::project_derived_instance_features(
-        &mut model.features,
-        &design.design_parameter_scopes,
+    losses.extend(
+        crate::design::components::project_derived_instance_features(
+            &mut model.features,
+            &design.design_parameter_scopes,
+        )?,
     );
     losses.extend(crate::design::components::paths::bind_feature_paths(
         &mut model.features,

@@ -8505,6 +8505,7 @@ fn bind_historical_edge_operand<'a>(
             operand.recipe_structure.as_ref(),
             &operand.recipe_references,
             &operand.preceding_boundary_edge_slots,
+            &operand.transition_deleted_edge_slots,
             topology,
             topology_queries,
         ) {
@@ -8531,8 +8532,9 @@ pub(crate) fn inferred_edge_selection_note(
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct SideOneEdge {
     pub(crate) slot: i64,
-    /// Whether the edge bounds none of the recipe's candidate faces, so the
-    /// named faces alone select it.
+    /// Whether no proven rule selects the edge: it bounds none of the
+    /// recipe's candidate faces and the operation's transition does not
+    /// prove it, so the named faces alone select it.
     pub(crate) inferred: bool,
 }
 

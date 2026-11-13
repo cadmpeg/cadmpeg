@@ -1347,6 +1347,24 @@ Eleven-reserved-byte variant. Offsets are relative to the typed body-map indexed
 | 11 | 11 | `reserved_zero_run` | `bytes[11]` | little | spec | either ten or eleven reserved zero bytes |
 | 22 | 4 | `pair_count` | `u32` | little | spec | and a `u32 count` |
 
+## `paramesh_compact_v6_body_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 38 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by ten zero bytes |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its indexed header is followed by ten zero bytes |
+| 21 | 4 | `body_word` | `u32` | little | spec | It stores a u32 at offset 21 |
+| 37 | 1 | `first_presence` | `u8` | little | spec | A compact version-6 body stores its first matrix presence byte at offset 37 |
+
+Unstated regions:
+
+- `25..37` (12 B): The compact body prologue between its word and first matrix presence byte.
+
 ## `paramesh_entry_name_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 32 B
@@ -1621,7 +1639,7 @@ Offsets are relative to the collection-owner indexed header. The record can cont
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The owner has type GUID |
-| 262 | 11 | `collection_backlink` | `bytes[11]` | little | spec | In versions 22 and 23, its marked same-segment reference at offset 262 points back to the collection. |
+| 262 | 11 | `collection_backlink` | `bytes[11]` | little | spec | In versions 22 and 23, the fixed-prefix form stores its marked same-segment reference at offset 262. |
 
 Unstated regions:
 
@@ -10257,6 +10275,21 @@ Parsed by:
 Unstated regions:
 
 - `48..125` (77 B): The common native tail precedes the same-index paired header.
+
+## `surface_delete_face_wide_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 132 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/feature_project/delete_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 128 | 4 | `reference_count` | `u32` | little | spec | which is 123, 127, 128, 131, 134, 138, or 142 |
+
+Unstated regions:
+
+- `0..128` (128 B): Indexed scope header and operation prologue; control semantics are tracked in DR-476.
 
 ## Not tabulated
 

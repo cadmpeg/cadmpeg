@@ -1595,6 +1595,7 @@ fn shared_curve_identity_pairs_project_distinct_entities() {
 
 const EPS_CONTAINMENT_DISTANCE: f64 = 1.0e-9;
 
+mod line_projection;
 mod spline_projection;
 
 /// A spatial sketch whose closed-profile search exceeds its local cap keeps

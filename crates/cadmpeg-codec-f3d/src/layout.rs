@@ -1122,6 +1122,14 @@ pub(crate) mod scale_legacy_uniform_tail {
     pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 31;
 }
 
+/// Byte offsets for the `paramesh_compact_v6_body_prefix` record.
+///
+/// Spec §3.1. Record length 38 B.
+pub(crate) mod paramesh_compact_v6_body_prefix {
+    /// Offset of `first_presence` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_PRESENCE: usize = 37;
+}
+
 /// Byte offsets for the `paramesh_entry_name_prefix` record.
 ///
 /// Spec §3.1. Record length 32 B.
@@ -9959,4 +9967,12 @@ pub(crate) mod move_transform_omitted_matrix_frame_126 {
 pub(crate) mod move_transform_omitted_matrix_frame_125 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 125;
+}
+
+/// Byte offsets for the `surface_delete_face_wide_prologue` record.
+///
+/// Spec §3.1. Record length 132 B.
+pub(crate) mod surface_delete_face_wide_prologue {
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 128;
 }

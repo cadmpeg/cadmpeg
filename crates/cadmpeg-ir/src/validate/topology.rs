@@ -3089,17 +3089,21 @@ fn check_feature_references(
             FeatureOperation::SewBodies { bodies, .. } => body_selections.push(bodies),
             FeatureOperation::BaseFeature { bodies } => body_selections.push(bodies),
             FeatureOperation::MeshImport { tessellations } => {
-                for tessellation in tessellations {
-                    if ids
-                        .tessellations(tessellation, crate::index::StandardIndex)
-                        .is_none()
-                    {
-                        ref_error(
-                            findings,
-                            feature.id.as_str(),
-                            "mesh import tessellation",
-                            tessellation,
-                        );
+                if let crate::features::mesh::MeshSelection::Tessellations(tessellations) =
+                    tessellations
+                {
+                    for tessellation in tessellations {
+                        if ids
+                            .tessellations(tessellation.as_str(), crate::index::StandardIndex)
+                            .is_none()
+                        {
+                            ref_error(
+                                findings,
+                                feature.id.as_str(),
+                                "mesh import tessellation",
+                                tessellation.as_str(),
+                            );
+                        }
                     }
                 }
             }
@@ -3112,6 +3116,18 @@ fn check_feature_references(
                         "inserted component occurrence",
                         occurrence.as_str(),
                     );
+                }
+            }
+            FeatureOperation::InsertComponents { components } => {
+                for occurrence in components.occurrences() {
+                    if !occurrence_ids.contains(occurrence.as_str()) {
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "inserted component occurrence",
+                            occurrence.as_str(),
+                        );
+                    }
                 }
             }
             FeatureOperation::ComponentTransfer {
