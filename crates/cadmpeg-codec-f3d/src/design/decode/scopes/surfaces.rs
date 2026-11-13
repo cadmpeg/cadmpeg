@@ -208,9 +208,9 @@ fn surface_untrim_frame<'a>(
     }
     Some(SurfaceUntrimFrame {
         groups,
+        extension_record_index,
         loops,
         loops_offset,
-        extension_record_index,
         face_group_record_index,
         padded,
     })
