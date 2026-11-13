@@ -2357,3 +2357,13 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** An unresolved scope keeps a native component selection inside a neutral component insertion and reports `feature.derived-instance-component-insert-assumed`. Its native scope reference and ordered reference properties remain present.
+
+### DR-466. Standalone joint source operand binding
+
+**Question.** Which document identity namespace and occurrence context do qualified source paths select when their keys do not match admitted occurrence carriers?
+
+**Known.** The qualified assembly scope carries connector frames and alignment values. Its occurrence path carries the source document identity, occurrence key, and ordered descendant keys. These fields describe a readable joint independently of availability of the referenced document.
+
+**Need.** Public document bundles with independently identified source documents and repeated component instances that bind each source path identity to its document and occurrence context.
+
+**Note.** A standalone timeline feature names its decoded neutral joint while source operands remain unresolved. The decoder preserves their identities and charges `assembly.joint-source-binding-assumed`.
