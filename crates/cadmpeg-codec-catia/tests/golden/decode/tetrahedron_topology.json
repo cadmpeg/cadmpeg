@@ -1415,60 +1415,61 @@
         },
         "catia:standard:edge#0": {
           "fields": {
-            "curve": "derived",
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
             "end": "derived",
-            "param_range": "derived",
             "start": "derived"
           },
           "scope": "fields"
         },
         "catia:standard:edge#1": {
           "fields": {
-            "curve": "derived",
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
             "end": "derived",
-            "param_range": "derived",
             "start": "derived"
           },
           "scope": "fields"
         },
         "catia:standard:edge#2": {
           "fields": {
-            "curve": "derived",
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
             "end": "derived",
-            "param_range": "derived",
             "start": "derived"
           },
           "scope": "fields"
         },
         "catia:standard:edge#3": {
           "fields": {
-            "curve": "derived",
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
             "end": "derived",
-            "param_range": "derived",
             "start": "derived"
           },
           "scope": "fields"
         },
         "catia:standard:edge#4": {
           "fields": {
-            "curve": "derived",
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
             "end": "derived",
-            "param_range": "derived",
             "start": "derived"
           },
           "scope": "fields"
         },
         "catia:standard:edge#5": {
           "fields": {
-            "curve": "derived",
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
             "end": "derived",
-            "param_range": "derived",
             "start": "derived"
           },
           "scope": "fields"
         },
         "catia:standard:face#0": {
           "fields": {
+            "loops": "derived",
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
@@ -1477,6 +1478,7 @@
         },
         "catia:standard:face#1": {
           "fields": {
+            "loops": "derived",
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
@@ -1485,6 +1487,7 @@
         },
         "catia:standard:face#2": {
           "fields": {
+            "loops": "derived",
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
@@ -1493,6 +1496,7 @@
         },
         "catia:standard:face#3": {
           "fields": {
+            "loops": "derived",
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
@@ -1501,37 +1505,33 @@
         },
         "catia:standard:loop#0:0": {
           "fields": {
-            "boundary_role": "derived",
-            "coedges": "derived",
-            "face": "derived",
-            "vertex_uses": "derived"
+            "boundary.coedges": "derived",
+            "boundary.vertex_uses": "derived",
+            "face": "derived"
           },
           "scope": "fields"
         },
         "catia:standard:loop#1:0": {
           "fields": {
-            "boundary_role": "derived",
-            "coedges": "derived",
-            "face": "derived",
-            "vertex_uses": "derived"
+            "boundary.coedges": "derived",
+            "boundary.vertex_uses": "derived",
+            "face": "derived"
           },
           "scope": "fields"
         },
         "catia:standard:loop#2:0": {
           "fields": {
-            "boundary_role": "derived",
-            "coedges": "derived",
-            "face": "derived",
-            "vertex_uses": "derived"
+            "boundary.coedges": "derived",
+            "boundary.vertex_uses": "derived",
+            "face": "derived"
           },
           "scope": "fields"
         },
         "catia:standard:loop#3:0": {
           "fields": {
-            "boundary_role": "derived",
-            "coedges": "derived",
-            "face": "derived",
-            "vertex_uses": "derived"
+            "boundary.coedges": "derived",
+            "boundary.vertex_uses": "derived",
+            "face": "derived"
           },
           "scope": "fields"
         },
@@ -1546,7 +1546,7 @@
         "catia:standard:shell#0-0": {
           "entity": "inferred",
           "fields": {
-            "faces": "derived",
+            "members": "derived",
             "region": "derived"
           },
           "scope": "entity"

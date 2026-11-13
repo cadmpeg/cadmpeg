@@ -430,7 +430,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(curve, Some(parameter_range))
             .map_err(cadmpeg_core::CodecError::malformed)?;
         annotations.derived(&ir.model.curves[curve_index].id, "geometry")?;
-        annotations.derived(&edge.id, "param_range")?;
+        annotations.derived(&edge.id, "carrier.param_range")?;
         seam_count += 1;
     }
     Ok((surface_bindings.len(), seam_count))
@@ -3915,7 +3915,7 @@ fn attach_standard_faces(
         Exactness::Inferred,
     )?;
     annotations.derived(&shell_id, "region")?;
-    annotations.derived(&shell_id, "faces")?;
+    annotations.derived(&shell_id, "members")?;
     admission.charge()?;
     ir.model.shells.push(
         Shell::with_faces(shell_id, region_id, face_ids)
@@ -4017,7 +4017,7 @@ fn partition_standard_face_components(
             body: body_id.clone(),
             shells: region_shells,
         });
-        for field in ["region", "faces"] {
+        for field in ["region", "members"] {
             annotations.derived(&shell_id, field)?;
         }
         admission.charge()?;
@@ -6372,12 +6372,12 @@ fn emit_standard_topology(
             Exactness::ByteExact,
         )?;
         if curve.is_some() {
-            annotations.derived(&id, "curve")?;
+            annotations.derived(&id, "carrier.curve")?;
         }
         annotations.derived(&id, "start")?;
         annotations.derived(&id, "end")?;
         if param_range.is_some() {
-            annotations.derived(&id, "param_range")?;
+            annotations.derived(&id, "carrier.param_range")?;
         }
         admission.charge()?;
         ir.model.edges.push(Edge {
@@ -6417,7 +6417,7 @@ fn emit_standard_topology(
             Some(ordered_range([start, end])),
         )
         .map_err(CodecError::malformed)?;
-        annotations.derived(&edge.id, "param_range")?;
+        annotations.derived(&edge.id, "carrier.param_range")?;
         if start > end {
             std::mem::swap(&mut edge.start, &mut edge.end);
             edge_reversed[row] = true;
@@ -6630,10 +6630,12 @@ refusal)?
                 Exactness::ByteExact,
             )?;
             annotations.derived(&loop_id, "face")?;
-            annotations.derived(&loop_id, "coedges")?;
-            annotations.derived(&loop_id, "vertex_uses")?;
+            annotations.derived(&loop_id, "boundary.coedges")?;
+            if !ring.vertex_uses().is_empty() {
+                annotations.derived(&loop_id, "boundary.vertex_uses")?;
+            }
             if face_loops.role(&loop_id) != LoopBoundaryRole::Unspecified {
-                annotations.derived(&loop_id, "boundary_role")?;
+                annotations.derived(&ir.model.faces[face_index].id, "loops")?;
             }
             admission.charge()?;
             ir.model.loops.push(Loop {

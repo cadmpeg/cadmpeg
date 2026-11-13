@@ -21,6 +21,21 @@ fn nist_ftc_07_transfers_every_solid_face_carrier() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode FTC-07 CATPart");
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let validation = cadmpeg_ir::validate::validate_neutral_with_annotations(
+        decoded.ir(),
+        &decoded.source_fidelity().annotations,
+        decoded.report().losses.clone(),
+    )
+    .expect("validate FTC-07 exactness paths");
+    let invalid_annotation = validation
+        .findings
+        .iter()
+        .find(|finding| finding.check == cadmpeg_ir::report::check::Check::Annotations);
+    assert!(
+        invalid_annotation.is_none(),
+        "invalid exactness annotation: {invalid_annotation:?}",
+    );
     let model = &decoded.ir().model;
     assert_eq!(
         model
