@@ -24,7 +24,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which analytic sketch-curve tail frames carry the construction flag, and how does the type version select each frame?
 
-**Known.** `f3d.md` §3.1 "Immediately after the 96-byte analytic payload, a planar sketch-curve record stores" describes one tail frame. The two-reference tails of the six public regression inputs start after the references with three zero bytes, byte `1`, a variable Boolean byte, and five or six further bytes before a u32 `1`. Eight curves reported as unprofiled have that variable byte set: two curves in z_mounts_front and six in standoff. The current reader's guard does not admit these frames.
+**Known.** `f3d.md` §3.1 "Immediately after the 96-byte analytic payload, a planar sketch-curve record stores" describes one tail frame. The two-reference tails of the six public regression inputs start after the references with three zero bytes, byte `1`, a variable Boolean byte, and five or six further bytes before a u32 `1`. Eight curves reported as unprofiled have that variable byte set: two curves in z_mounts_front and six in standoff. The current reader's guard does not admit these frames. The same tail question affects the public HexGrid, Wago, and both spool-mount inputs. HexGrid Sketch 245 has rectangle diagonals 278 and 279 at record offsets 110628 and 110935. Both spool-mount files have Sketch 265 diagonals 126 and 127 and divider 131; their two-reference tails contain the variable Boolean byte set to one. In the dual mount their records start at offsets 96792, 97095, and 99424; in the single mount they start at 80997, 81300, and 83629. Wago Sketch 187 rectangle curves 105 through 108 start at offsets 54038, 54345, 54652, and 54959 and carry the same variable byte. These curves participate in the current profile arrangement.
 
 **Need.** A type-version mapping and controlled construction/reference toggles that identify the Boolean byte and the complete tail boundary for each frame.
 
@@ -239,13 +239,13 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Need.** A positive direction-two symmetry control must bind the third rectangular flag to its serialized state. A circular pattern with a positive closing flag and a partial angular extent must distinguish symmetric from one-direction distribution. A non-empty two-direction rectangular map must identify its general instance-to-key rule. Empty maps remain valid and do not require that rule.
 
-### DR-31. Editable Pipe section-type carrier and path parameterization
+### DR-31. Pipe path parameterization and point-selection section frame
 
-**Question.** Which native carrier stores the editable `Pipe` section type? What sets the origin and orientation of a partially consumed path, and does a `Pipe` whose forward and reverse fractions both equal one sweep its whole path group when its section lies inside the path?
+**Question.** Where does the section frame of a `Pipe` with a point-selection pair sit? What sets the origin and orientation of a partially consumed `Pipe` path, and does a `Pipe` whose forward and reverse fractions both equal one sweep its whole path group when its section lies inside the path?
 
-**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin. The decoder reads a `Pipe` with a new-body, join, or cut result operation as a circular section swept along its whole path group when its forward and reverse fractions both equal one, or one equals one and the other zero. The decoder tests the result bodies of a new-body `Pipe` that has result bodies when no later feature names one of those bodies and every later body-changing feature names its own result bodies. The test passes when the result bodies are solids whose every face lies on a plane, on a cylinder whose radius is the outside radius or, for a hollow section, the inner radius, or on a torus whose minor radius is one of those radii, and the faces include at least one curved face of each radius. A `Pipe` that passes the test reports `feature.pipe-circular-section-inferred`, and a `Pipe` that fails it stays native. Every other `Pipe` with those fractions reports `feature.pipe-circular-section-assumed`; this includes a new-body `Pipe` followed by a body-changing feature that names no result bodies. Fractions that both equal one report `feature.pipe-whole-path-extent-assumed`. For one unit and one zero fraction, the decoder assumes that the section lies at the path end where the unit fraction starts, and reports `feature.pipe-path-end-section-assumed`.
+**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, the section frame and its section shape, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin. The decoder reads a `Pipe` with a new-body, join, or cut result operation as a circular section swept along its whole path group when its forward and reverse fractions both equal one, or one equals one and the other zero. A `Pipe` whose section frame stores the circular shape needs no further section test, and one whose frame stores another value stays native. Without a read shape, the decoder tests the result bodies of a new-body `Pipe` that has result bodies when no later feature names one of those bodies and every later body-changing feature names its own result bodies. The test passes when the result bodies are solids whose every face lies on a plane, on a cylinder whose radius is the outside radius or, for a hollow section, the inner radius, or on a torus whose minor radius is one of those radii, and the faces include at least one curved face of each radius. A `Pipe` that passes the test reports `feature.pipe-circular-section-inferred`, and a `Pipe` that fails it stays native. Every other `Pipe` with those fractions reports `feature.pipe-circular-section-assumed`; this includes a new-body `Pipe` followed by a body-changing feature that names no result bodies. Fractions that both equal one report `feature.pipe-whole-path-extent-assumed`. For one unit and one zero fraction, the decoder assumes that the section lies at the path end where the unit fraction starts, and reports `feature.pipe-path-end-section-assumed`.
 
-**Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links. Partial-path reconstruction needs the native path parameter origin and orientation. A `Pipe` with fractions of one whose section lies inside a multi-edge path, saved with its result body, shows which part of the path it sweeps. A `Pipe` with one unit and one zero fraction, saved with its result body, shows which path end holds the section.
+**Need.** A `Pipe` with a point-selection pair, saved with each section shape, shows where its section frame sits. Partial-path reconstruction needs the native path parameter origin and orientation. A `Pipe` with fractions of one whose section lies inside a multi-edge path, saved with its result body, shows which part of the path it sweeps. A `Pipe` with one unit and one zero fraction, saved with its result body, shows which path end holds the section.
 
 **Conflict.** None.
 
@@ -289,6 +289,16 @@ one record per operand. A ten-operand group with a one-record run occurs.
 it can bind a shorter run. The decoder binds only a run whose cardinality
 equals the operand count. The records of any other run stay unrepaired lost
 edge references.
+
+### DR-472. CopyPaste source occurrence identity
+
+**Question.** Which persistent identity selects the source occurrence of a CopyPaste scope whose occurrence key is the null GUID?
+
+**Known.** `f3d.md` §3.1 "A CopyPaste scope whose occurrence relation has an owner collection" gives the target occurrence relation and the source and target local placements. Identity flags can omit either placement matrix. A component definition can have several occurrences with equal local placements.
+
+**Need.** Join the source placement to one occurrence and its containing component through a persistent source reference.
+
+**Note.** The transfer retains its source placement and target operands. `feature.occurrence-transfer-source-unresolved` records the unresolved source occurrence identity.
 
 ### DR-75. Local occurrence carrier GUID
 
@@ -382,7 +392,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What do the flag byte at offset 20 and the u32 at offset 25 of a flagged mesh collection store, and what does the u32 of each flagged body entry store?
 
-**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. The u32 at offset 25 is `1` in every empty flagged collection, and in collections with bodies it is at least the body count: it equals the body count in six collections and in DR-337's collection 173, and it is 6 and 4 in two collections with two bodies and 3 in one collection with one body. Every body entry stores `1`. DR-337 records a flagged collection whose nested record lists two mesh bodies.
+**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. The u32 at offset 25 is `1` in an empty flagged collection. A nonempty flagged collection can store its body count in this word, or store 6 or 4 with two bodies and 3 with one body. Every counted body entry stores `1`. A flagged collection can terminate its nested body-reference run with a direct owner reference.
 
 **Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, establishes the meanings of these fields.
 
@@ -481,6 +491,8 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 **Known.** `f3d.md` §3.1 "A rectangular-pattern direction record has a 220-byte, 221-byte, or 195-byte form" gives the frame, the U-then-V order, and the direction as the normalized displacement. Kind `8` selects a linear edge, with the edge start point and the edge vector. A kind-`16` record stores a unit displacement and an origin on the selected entity. The reference at offset 138 names a record outside the scope reference table.
 
 **Need.** A writer must emit the selection kind, the origin, and the reference at offset 138 for a direction that does not come from a linear edge, and a reader must know whether a kind-`16` origin is a point of a planar face, an axis, or another entity.
+
+**Note.** In `Parametric_extrusion_generator.f3d`, R-Pattern 3 scope `4709` has kind-`16` direction record `4736` at Design byte `135573`. Its displacement is `(0, 0, 1)`, its U distance is `-1.5` cm, and payload record `4716` supplies V displacement `(1, 0, 0)` at byte `133177`. Both counts are two and the V distance is `1.5` cm. The decoder transfers the two directions and their 15 mm spacings. The auxiliary reference names record `7609`.
 
 ### DR-97. Freedom entry second value `0`
 
@@ -1021,15 +1033,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-120. Align operand roles and motion
 
-**Question.** Which referenced constructions identify the moved objects, the source and target frames, and the direction of the resulting motion? What do the prefix codes and the constructor codes and marked words control? What do the matrix block and separate scalar represent, and which units apply?
+**Question.** Does a form-four Align constructor matrix state the complete relative motion of its selected body group? What do its leading scalar, nullable reference slots, unsigned codes, auxiliary scope references, and omitted-matrix marker control? Which alignment geometry do the role-`0x0000000500000000` construction groups of the scope select? What do the codes and marked words of the eight-word constructor control?
 
-**Known.** The Align prefix contains two references, an unsigned code, and a zero GUID. The references join to the ordered scope table. The compact and extended forms differ by one u32 word of value 1. The role of this word is not defined. The constructor contains eight marked words, five codes, sixteen matrix scalars, and one separate scalar. Its two scope back-references identify its owner, but do not assign a moved body or a motion relation.
+**Known.** The Align prefix contains two references, an unsigned code, and a zero GUID. The references join to the ordered scope table. The compact and extended forms differ by one u32 word of value 1. The first reference selects the constructor. A version-two rigid-transform constructor stores source form four, a leading scalar, six nullable references, two unsigned codes, and a matrix-presence marker. Its row-major matrix has an orthonormal basis, a homogeneous final row, and translation in centimetres. The second prefix reference names the role-`0x0000000400000000` whole-body construction group at scope-reference ordinal zero. A one matrix-presence marker omits sixteen scalars and retains the common tail. The eight-word constructor form retains its marked words, codes, matrix scalars, separate scalar, and two scope back-references.
 
 **Need.** Controlled Align exports that change object selection, source and target frames, reversal, and angle independently. F22b supplies a body-alignment recipe.
 
-**Conflict.** A referenced solved frame alone does not establish the motion applied to a selected body.
+**Conflict.** The stored matrix can describe a solved frame or a relative motion.
 
-**Note.** Keep the operation native until each operand role and motion direction has a byte-defined rule.
+**Note.** Apply the form-four matrix to the selected body group with `feature.align-motion-assumed`. Treat an omitted matrix as identity with `feature.align-identity-assumed`. A scope with zero or several matching body groups projects an unresolved body selection with `feature.align-operands-unresolved`. Preserve the constructor fields and scope references natively. An unsupported motion reports `feature.align-motion-unprojected`.
 
 ### DR-144. Flag bytes of the discriminated parameter expression trailer
 
@@ -1081,9 +1093,9 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-306. Marked Move transform records outside the rigid-transform rules
 
-**Question.** What do the nullable reference slots, unsigned prefix codes, and source form six, and omitted-matrix marker of a rigid-transform record control, and what does a transform record that the marked reference of a `Move` or `Modify` scope selects store when its class type is not the rigid-transform type, its frame is not 253, 254, 273, 274, 283, 284, or 293 bytes, or its form word is not the form word of its frame length?
+**Question.** What do the leading scalar, nullable reference slots, unsigned prefix codes, source forms four and six, and omitted-matrix marker of a rigid-transform record control, and what does a transform record that the marked reference of a `Move` or `Modify` scope selects store when its class type is not the rigid-transform type, its frame is not 253, 254, 273, 274, 283, 284, or 293 bytes, or its form word is not the form word of its frame length?
 
-**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the rigid-transform type, the form word of each of the seven frame lengths, and the marked reference that selects the transform record. A marked reference selects a 256-byte record with form word `5`, the zero run, and a rigid matrix at offset 48. The decoder keeps the matrix of each marked record that has the zero run, form word `0`, `1`, `5`, or `6`, and a rigid matrix, or the plain or inline-typed fields of the form-2 frame, and records `feature.move-transform-assumed` with each rule that the record breaks. The general prefix has four nullable local references and two unsigned code words. A partially populated reference run or nonzero code words project with `feature.move-transform-prefix-assumed`. Form six projects with `feature.move-transform-mode-assumed`. These fields are assumed to leave the stored matrix motion unchanged. The native operation retains the references, inline type GUIDs, code words, and matrix-omission flag. A one matrix-presence marker omits 128 matrix bytes and preserves the common tail. The decoder takes identity motion with `feature.move-transform-identity-assumed`.
+**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the rigid-transform type, the form word of each of the seven frame lengths, and the marked reference that selects the transform record. A marked reference selects a 256-byte record with form word `5`, the zero run, and a rigid matrix at offset 48. The decoder keeps the matrix of each marked record with a finite leading scalar, six nullable reference slots, two unsigned code words, and source form `0`, `1`, `2`, `4`, `5`, or `6`. Zero leading scalar and first two null slots reduce this prefix to the four-slot form. `Move` and `Modify` scopes record `feature.move-transform-assumed` with each fixed-frame rule that the record breaks. A nonzero leading scalar, present leading references, partially populated remaining reference run, or nonzero code words project with `feature.move-transform-prefix-assumed`. Forms four and six project with `feature.move-transform-mode-assumed`. These fields are assumed to leave the stored matrix motion unchanged. The native operation retains the scalar, references, inline type GUIDs, code words, and matrix-omission flag. A one matrix-presence marker omits 128 matrix bytes and preserves the common tail. Form four, and form five with zero scalar, null references and zero codes, admit identity from a 77- or 78-byte tail with `feature.move-transform-identity-assumed`.
 
 **Need.** Controlled saves of one `Move` that change the transform type between translation, rotation, free move, and point-to-point, each recording the class type, frame length, and form word of the marked record and the bytes from offset 176 to the paired header.
 
@@ -1139,23 +1151,25 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Keep the operand proofs for these groups.
 
-### DR-390. Fillet set flag byte and set-list flag run
+The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are tracked in DR-481.
 
-**Question.** What do the flag byte of a fillet set record and the two flag-run forms of a parameter-owned `Fillet` scope prefix encode?
+### DR-390. Fillet set flag of the chordal and compact forms, marker bytes, and compact flag run
 
-**Known.** `f3d.md` §3.1 "A parameter-owned `Fillet` scope names its fillet sets in a prefix" gives the positions and admitted values of both. The flag byte is `0` or `1` at offset 26 of a 97-byte set frame and at offset 24 of a 93-byte set frame; the flag run is `01 00 01` or `01 01`, each followed by nine zero bytes. The decoder retains the raw byte as the set's `flag` and the run as the list's `form` (`current` or `compact`).
+**Question.** Do the flag bytes of the chordal and compact fillet set forms encode tangent chain, do those forms store curvature continuity, and what do the set marker byte, the `00 01` tail of the current flag run, and the compact flag-run form encode?
 
-**Need.** Controlled designs that vary one Fillet option at a time, saved by one Fusion version.
+**Known.** `f3d.md` §3.1 "A parameter-owned `Fillet` scope names its fillet sets in a prefix" gives their positions and admitted values. The decoder stores the flag of every set form as the set's `tangent_chain`, reads curvature continuity in the constant form only, and stores `rolling_ball_corner = true` for the compact flag run, whose first byte is `01`.
+
+**Need.** Chordal and compact Fillet saves with tangent chain off, with curvature continuity, and with setback corners.
 
 **Conflict.** None.
 
-### DR-460. Chamfer set flag, entry run, fixed words, and auxiliary record
+### DR-460. Chamfer set flag of the other forms, entry count, fixed byte, and auxiliary record
 
-**Question.** What do the prefix `u32 1` after the prologue, the chamfer set flag byte, the entry-run marker form, the prefix entry run, the fixed `u32 1` and `u8 1` words, and the auxiliary record of a parameter-owned `Chamfer` scope encode?
+**Question.** Do the flag bytes of the two-distance, distance-angle, and compact chamfer set forms encode tangent chain, does the entry run count the selected edges or the edges after tangent propagation, and what do the zero byte that ends each entry, the fixed `u8 1`, the entry-run marker forms, and the auxiliary record encode?
 
-**Known.** `f3d.md` §3.1 "A parameter-owned `Chamfer` scope names its chamfer sets in a prefix" gives their positions and admitted values. The decoder retains the flag byte as the set's `flag`, the marker as the list's `form` (`current` or `compact`), `E` as the list's `entry_count`, and the auxiliary record index as the set's `auxiliary_record_index`.
+**Known.** `f3d.md` §3.1 "A parameter-owned `Chamfer` scope names its chamfer sets in a prefix" gives their positions and admitted values. The decoder stores the flag of every set form as the set's `tangent_chain`, the marker as the list's `form`, the auxiliary record index as the set's `auxiliary_record_index`, and the entries per set as the set's `entry_count`. In every decoded save the selected edges have no tangent neighbour, and `E` equals the number of selected edges.
 
-**Need.** Controlled Chamfer designs that vary one option at a time and a multi-set Chamfer, saved by one Fusion version.
+**Need.** Controlled saves of two-distance, distance-angle, and compact chamfers with tangent chain off, and a chamfer on one edge with tangent neighbours.
 
 **Conflict.** None.
 
@@ -1211,7 +1225,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** How do the three u32 operands of a typed profile curve entry and the two nonzero incidence words of a counted profile member select a partial curve, and which curve's direction sets the direction flag of the members of a coincident edge?
 
-**Known.** The identity record stores region groups. Each region has counted boundary loops with exterior flags. Each curve entry stores a primary identity, a secondary identity, and three u32 operands. Counted profile members store a primary curve identity, a direction flag, and two nonzero incidence words. A complete neutral loop match, a unique atomic arrangement boundary program, or unique directed boundary rings resolve the selected region. The decoder builds the member-ring arrangement from lines, circles, circular arcs, bounded ellipses, and nonperiodic NURBS. A bounded ellipse leaves the arrangement undefined, because its edges have no certified pieces. The nodes are the end points of these curves and the intersection points of every two lines, circular arcs, or circles that are not collinear line segments. A node splits a line, circular arc, or circle that passes through it; a NURBS splits only at its end points. Edges leave a node in the counterclockwise order of their departure tangents, each turned by half its exact curvature over the linear tolerance. The tangents are exact for lines, circular arcs, and clamped NURBS ends with positive weights. Equal tangents order by signed curvature. A clamped NURBS end has only the sign of its curvature, so two equal signs leave the arrangement undefined, as do two equal exact curvatures. Another edge leaves along the first chord of its polyline, and a node with such a departure and more than two edges leaves the arrangement undefined. The selection stays native with `feature.profile-selection-native` when two edges meet away from their common nodes, as where a NURBS crosses another curve, or when one curve runs twice along one edge or in both directions along one fragment. The exact lines and circular arcs and the certified NURBS tubes of a face boundary, each in the direction of its walk, decide whether a point lies inside the face. A face holds a component when it holds the first node of the component that lies farther than the linear tolerance from every boundary piece. An island lies in each face that holds its component, and the innermost of these faces holds it; one face lies inside another when the other face holds its component. When no node of the component clears the pieces of a face, or no face that holds the island is the innermost, that face and the faces that hold the island have unknown islands. When the island has no unique outer walk, the innermost face and the island's own faces have unknown islands. A selection of a face with unknown islands stays native. A projected point within the linear tolerance of a NURBS tube of a face boundary takes the side of the face polyline, and the selection reports `feature.profile-polyline-side-assumed`. For member lists, projected points, curve programs, and self-crossing loops in the arrangement of every non-construction curve, a non-construction full ellipse or periodic NURBS without a negative weight has a box that holds it: the exact axis-aligned box of the ellipse, or the box of the control points of the NURBS. The box of a face holds its lines and circular arcs exactly and its NURBS edges within their certified tube bounds. The curve lies outside a face when its box misses the face box by more than the linear tolerance, or when its box, widened by the linear tolerance, meets and holds no boundary piece of the face and the box centre lies outside the face. When the widened box meets and holds no boundary piece of any face, the curve lies in the region of the smallest face that holds the box centre, and that face then bounds no arrangement region. For every other face that holds or can hold such a curve, and for every face and every other non-construction curve outside these families, the decoder takes the face without an island of that curve and reports `feature.profile-island-absence-assumed`. A selection whose profile takes no sketch regions reports neither loss. For a walk with an edge of coincident curves, the decoder accepts the edge when one distinct member that names one of its curves has that curve's traversal direction, and it checks no flag of the edge's other members. This filter can choose one of several walks with the list's curve identities and multiplicities, and it can reject the only such walk. The decoder reports `feature.profile-coincident-direction-assumed` for each bound selection in which a walk with such an edge has a list's curve identities and multiplicities. The member-ring search charges the arrangement work budget, and an exhausted budget leaves the selection native with `feature.profile-arrangement-capped`. The decoder matches a boundary program against the arrangement of the curves of the Sketch's profile loops, or of every non-construction curve when the Sketch has no profile loop. A typed region whose loops match no curve program is read through the same directed rings: each stored loop is a ring, its exterior flag makes it the outer ring or a hole, and the first operand of each entry is read as its traversal flag, with `1` against the curve's direction. Such a selection reports `feature.profile-loop-flags-assumed`. The other two operands are not read.
+**Known.** The identity record stores region groups. Each region has counted boundary loops with exterior flags. Each curve entry stores a primary identity, a secondary identity, and three u32 operands. Counted profile members store a primary curve identity, a direction flag, and two nonzero incidence words. A complete neutral loop match, a unique atomic arrangement boundary program, or unique directed boundary rings resolve the selected region. The decoder builds the member-ring arrangement from lines, circles, circular arcs, bounded ellipses, and nonperiodic NURBS. A bounded ellipse leaves the arrangement undefined, because its edges have no certified pieces. The nodes are the end points of these curves and the intersection points of every two lines, circular arcs, or circles that are not collinear line segments. A node splits a line, circular arc, or circle that passes through it; a NURBS splits only at its end points. Edges leave a node in the counterclockwise order of their departure tangents, each turned by half its exact curvature over the linear tolerance. The tangents are exact for lines, circular arcs, and clamped NURBS ends with positive weights. Equal tangents order by signed curvature. A clamped NURBS end has only the sign of its curvature, so two equal signs leave the arrangement undefined, as do two equal exact curvatures. Another edge leaves along the first chord of its polyline, and a node with such a departure and more than two edges leaves the arrangement undefined. The selection stays native with `feature.profile-selection-native` when two edges meet away from their common nodes, as where a NURBS crosses another curve, or when one curve runs twice along one edge or in both directions along one fragment. The exact lines and circular arcs and the certified NURBS tubes of a face boundary, each in the direction of its walk, decide whether a point lies inside the face. A face holds a component when it holds the first node of the component that lies farther than the linear tolerance from every boundary piece. An island lies in each face that holds its component, and the innermost of these faces holds it; one face lies inside another when the other face holds its component. When no node of the component clears the pieces of a face, or no face that holds the island is the innermost, that face and the faces that hold the island have unknown islands. When the island has no unique outer walk, the innermost face and the island's own faces have unknown islands. A selection of a face with unknown islands stays native. A projected point within the linear tolerance of a NURBS tube of a face boundary takes the side of the face polyline, and the selection reports `feature.profile-polyline-side-assumed`. For member lists, projected points, curve programs, and self-crossing loops in the arrangement of every non-construction curve, a non-construction full ellipse or periodic NURBS without a negative weight has a box that holds it: the exact axis-aligned box of the ellipse, or the box of the control points of the NURBS. The box of a face holds its lines and circular arcs exactly and its NURBS edges within their certified tube bounds. The curve lies outside a face when its box misses the face box by more than the linear tolerance, or when its box, widened by the linear tolerance, meets and holds no boundary piece of the face and the box centre lies outside the face. When the widened box meets and holds no boundary piece of any face, the curve lies in the region of the smallest face that holds the box centre, and that face then bounds no arrangement region. For every other face that holds or can hold such a curve, and for every face and every other non-construction curve outside these families, the decoder takes the face without an island of that curve and reports `feature.profile-island-absence-assumed`. A selection whose profile takes no sketch regions reports neither loss. For a walk with an edge of coincident curves, the decoder accepts the edge when one distinct member that names one of its curves has that curve's traversal direction, and it checks no flag of the edge's other members. This filter can choose one of several walks with the list's curve identities and multiplicities, and it can reject the only such walk. The decoder reports `feature.profile-coincident-direction-assumed` for each bound selection in which a walk with such an edge has a list's curve identities and multiplicities. The member-ring search charges the arrangement work budget, and an exhausted budget leaves the selection native with `feature.profile-arrangement-capped`. The decoder matches a boundary program against the arrangement of the curves of the Sketch's profile loops, or of every non-construction curve when the Sketch has no profile loop. A typed region whose loops match no curve program is read through the same directed rings: each stored loop is a ring, its exterior flag makes it the outer ring or a hole, and the first operand of each entry is read as its traversal flag, with `1` against the curve's direction. Such a selection reports `feature.profile-loop-flags-assumed`. The other two operands are not read. Public `Parametric_Wago_Mount v4.f3d` Extrude 3 scope 4302 has profile operand 4319 and counted selection 4322 at offset 112725. Its ordered members are 150, 147, 146, 145, 214, 210, 208, and 148; curve 150 carries incidence values `(2, 3)`. Sketch 187 has zero neutral profiles and contains partially overlapping lines. Public dual and single rolling-spool mounts have Extrude 2 scope 418, profile operand 429, and selection 432. Their selection headers are at offsets 105061 and 89266. Both list curves 140, 122, 114, 133, 124, and 117. Curves 122 and 124 carry `(2, 3)`; curves 114 and 117 carry `(3, 5)`. The short line 122 runs opposite the coincident part of long line 114, and both members have direction flag one. Curves 124 and 117 have the same relation on the opposite boundary. Each sketch has two complete neutral profiles. The decoder retains these three feature selections. All offsets refer to `FusionAssetName[Active]/Design1/BulkStream.dat`.
 
 **Need.** Controlled selections of adjacent regions with one shared curve, and of intersecting curves with distinct selected regions, to bind each operand to curve orientation and trim bounds. Selections with the same curve-identity multiset must vary the selected portions independently. Controlled selections of one region whose boundary edge is two coincident curves drawn in opposite directions, with each curve created first in turn, bind the direction flag of a coincident edge.
 
@@ -1231,6 +1245,8 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Candidate membership, planar support, and absence of changed faces do not by themselves identify a selected face.
 
+The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is tracked in DR-480.
+
 ### DR-122. Derived Base Feature source and frame
 
 **Question.** Which field of a `Derived Base Feature` scope identifies the derived source body, and which field stores its local frame or mirror plane?
@@ -1241,7 +1257,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding.
+**Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding. The public Voron Trident `z_mounts_front.f3d` has nine such scopes. Component context bindings identify their result owners. The source-body and source-frame joins require the derivation references independently of those owner bindings.
 
 ### DR-123. Typed-reference BoxPrimitive offsets and other forms
 
@@ -1353,15 +1369,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-164. Primary edge-recipe references with several face fragments
 
-**Question.** Which selector rule selects the edge when several edges remain after the primary-reference lane unions, distinct-support-face constraint, and recipe-boundary constraint? Can a recipe's candidate faces omit the edge that its first-side faces select?
+**Question.** Which selector rule selects the edge when several edges remain after the primary-reference lane unions, distinct-support-face constraint, and recipe-boundary constraint? Which face does a lane select when its persistent names bind to disjoint face sets? Does the singleton deletion proof apply to a one-side Chamfer recipe?
 
-**Known.** The first side carries one-based prefix-reference ordinals. A prefix reference can bind to several preceding faces through persistent token and Design-reference tags. Each first-side reference lane contributes the union of its live face-fragment loop edges. The lane intersection requires distinct supporting faces. The recipe-boundary constraint and singleton fallback select a unique edge. On the public Orbiter V2 test, two Orbiter X carriages, Zodiac BMO and Wago mount parts, the union rule selects the same edge for each of the 65 operand slots that the one-face-per-reference rule selects, and selects 19 further slots. Each of those further slots has an empty recipe candidate-face set. When the first-side faces share exactly one live edge and that edge bounds none of the recipe's candidate faces, the reading takes that edge and reports `history.edge-selection-inferred`.
+**Known.** The first side carries one-based prefix-reference ordinals. A prefix reference can bind to several preceding faces through persistent token and Design-reference tags. Each first-side reference lane contributes the union of its live face-fragment loop edges. The lane intersection requires distinct supporting faces. The recipe-boundary constraint selects a unique edge. A standard two-side Chamfer or Fillet recipe has transition proof for a singleton lane intersection when the owning transition deletes that edge and the persistent names within each lane have a common face. The public Trident front Z mounts have 69 singleton selections outside the candidate-face boundaries: 56 Chamfer and 13 Fillet operands, including one fragment-lane operand of each kind. Every selected edge is deleted, and its supporting faces change in the owning transition. Independent controls include the Micron beefy handle and B motor tail mount, Mini AfterSherpa Orbiter V2 test, and V6 Zodiac BMO. Stored recipe programs, face-loop boundaries, edge revisions, and state transitions prove the same reading in these controls. The Trident rear Z carriage has one one-side Chamfer operand at Design offset 1995667, scope record 115756. Its first side names faces 1602 and 2154, whose common edge is slot 1718 in state 353. State 354 deletes that edge and changes both faces. Its 37-word program starts at Design offset 1996254. The side header is `0`, its scalars are `[1, 2, 1]`, and its two topology entries have boundary counts `2` and `7`. The recipe candidate face is 1872. This one-side reading retains `history.edge-selection-inferred`. A disjoint-name lane still uses a deleted-edge restriction as an assumption.
 
-**Need.** The selector rule for several remaining edges. Controlled recipe changes that preserve the prefix references and vary the selected fragment, including a recipe whose candidate faces are known to bound the selected edge.
+**Need.** The selector rule for several remaining edges, the face-binding rule for disjoint persistent names, and an independent one-side Chamfer design that distinguishes the selected edge from collateral deletion. Controlled recipe changes that preserve the prefix references and vary the selected fragment must distinguish the candidate rules.
 
 **Conflict.** None.
 
-**Note.** An unresolved member retains the native group. A non-unique or incomplete reference proof reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
+**Note.** An unresolved member retains the native group. A singleton without the deletion proof and a disjoint-name reading report `history.edge-selection-inferred`. A non-unique or incomplete reference proof reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
 
 ### DR-170. Unresolved DeleteFace operand bindings
 
@@ -1620,6 +1636,8 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** Operand-level selector, reference, and boundary-count proofs operate on changed reference-edge sets; the missing proof is a group-level assignment from those sets to deleted edges without transition evidence. A multi-member group without that assignment keeps its native selection.
 
+DR-481 tracks a Chamfer group with two bounded-face members and a nonempty transition candidate set.
+
 ### DR-247. Top-level manifest lineage suffix semantics
 
 **Question.** What meaning do the code units in the fixed terminal lineage suffix carry?
@@ -1660,7 +1678,7 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** Which version-five fields encode additional parameter owners and the form with 22 extra bytes?
 
-**Known.** The four-owner version-five grammar has explicit angle, Z, X, and Y references, two zero bytes after the angle reference, and six zero bytes after the owner run. Version-four scopes store a counted limit-owner run after their four alignment references.
+**Known.** The four-owner version-five grammar has explicit angle, Z, X, and Y references, two zero bytes after the angle reference, and six zero bytes after the owner run. Version-four scopes store connector frames consecutively, then the alignment references and a counted limit-owner run. Their four-owner form follows the version-four grammar in §3.1 of `f3d.md`.
 
 **Need.** Public version-five controlled files with five and six owners, and a controlled pair whose scopes differ by 22 bytes. Vary one joint limit or owner-producing setting at a time. Identify each added reference target, its scalar lane, the run count, and complete paired-header closure.
 
@@ -1678,7 +1696,7 @@ when the operation transition carries no candidate for the group members?
 
 **Conflict.** None.
 
-**Note.** Equal matrix bytes corroborate a stored frame. Selection of an owner's current frame and of a captured state remains part of occurrence placement. The identity fallback records the unresolved placement proof.
+**Note.** The public Voron Trident `z_mounts_front.f3d` stores 55 registered version-2 Component placement entities, 43 bound component naming spaces, and 34 component paths. Its local occurrence set is empty. Definition context bindings identify component owners independently of these placement frames. Equal matrix bytes corroborate a stored frame. Selection of an owner's current frame and of a captured state remains part of occurrence placement. The identity fallback records the unresolved placement proof.
 
 ### DR-252. Saved scene framing and state selection
 
@@ -1706,15 +1724,23 @@ when the operation transition carries no candidate for the group members?
 
 ### DR-255. Decal target selected by a face-recipe entity selection
 
-**Question.** What does a Decal target group carry when its one member is a persistent entity selection whose identity record holds a face recipe instead of a whole-body recipe envelope, and which faces does it select?
+**Question.** What does a Decal target group carry when a member is a persistent entity selection whose identity record holds a face recipe instead of a whole-body recipe envelope, and which faces does it select?
 
-**Known.** `f3d.md` §3.1 "A `Decal` scope is a presentation timeline object" gives the scope prologue and a target group with role `0x0000000400000000` whose member is a whole-body recipe envelope. A localized `Aufkleber` scope selects the `Decal` family by its class type GUID. It stores mapping mode `0` at offset 32 and the marked target-group reference at offset 33, so the Decal image record decodes with an unrecognized mapping mode. Its target group has one member `N`. The records `N` through `N + 3` follow the entity-selection frame: a prefix with an asset GUID and a context GUID, the paired header `N`, and the nested records `N + 1` and `N + 2`. The identity record `N + 3` is 90 bytes long and contains a `face_recipe_data` program. Record `N + 4` stores the same asset and context GUIDs. The entity-selection frame grammar admits 29-byte and 45-byte identity records and the 49-byte class-338 sketch-curve identity with a class-361 identity record, so this member decodes as neither an entity-selection operand nor a body-recipe operand. Validation then refuses the Decal image join because the target member has no body-recipe operand. Projection keeps the Decal native because mapping mode `0` selects no neutral mapping.
+**Known.** `f3d.md` §3.1 "A `Decal` scope is a presentation timeline object" gives the scope prefix layouts and a target group with role `0x0000000400000000` whose whole-body recipe envelope members identify faces. A target group can have a member `N` of another form. The records `N` through `N + 3` follow the entity-selection frame: a prefix with an asset GUID and a context GUID, the paired header `N`, and the nested records `N + 1` and `N + 2`. The identity record `N + 3` is 90 bytes long and contains a `face_recipe_data` program. Record `N + 4` stores the same asset and context GUIDs. The entity-selection frame grammar admits 29-byte and 45-byte identity records and the 49-byte class-338 sketch-curve identity with a class-361 identity record, so this member decodes as neither an entity-selection operand nor a body-recipe operand.
 
-**Need.** Make controlled saves of one Decal on one planar face and on one cylindrical face, each with mapping mode `0x60` and `0`. Compare the target member records with the whole-body recipe form. Establish the grammar of the 90-byte identity record and of record `N + 4`, how the face recipe resolves to faces, and the meaning of mapping mode `0`.
+**Need.** Make controlled saves of one Decal on one planar face and on one cylindrical face. Compare the target member records with the whole-body recipe form. Establish the grammar of the 90-byte identity record and of record `N + 4`, and how the face recipe resolves to faces.
 
-**Conflict.** The specification gives mapping mode `0x60` and a whole-body recipe member. This scope stores mode `0` and a face-recipe entity selection.
+**Note.** The decoder projects the Decal with its image and a native face selection. It records `appearance.decal-target-unresolved`.
 
-**Note.** None.
+### DR-484. Decal mapping modes other than `0x60`
+
+**Question.** Which image mapping does each Decal mapping-mode byte other than `0x60` select?
+
+**Known.** `f3d.md` §3.1 "A `Decal` scope is a presentation timeline object" places the u8 mapping mode between the image-asset reference and the target-group reference and defines mode `0x60`. Decal scopes also store the modes `0x00`, `0x01`, `0x7D`, and `0xE2`. A larger indexed record with the image-asset record index precedes the image-asset record. It stores f32 coordinate pairs and u32 index runs.
+
+**Need.** Make controlled saves of one Decal that change one placement control at a time: scale, rotation, translation, each flip, and face chaining. Compare the mapping-mode byte and the larger same-index record across the saves.
+
+**Note.** The decoder projects the fit-to-faces mapping for every mode. It records `appearance.decal-mapping-assumed` for a mode other than `0x60` and keeps the byte in the native `mapping_mode` field.
 
 ### DR-256. Ordinal prefix of a leading-flag local component occurrence
 
@@ -1777,13 +1803,13 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** None.
 
-### DR-313. Flag bytes of the Thicken scope frame
+### DR-313. Prologue flag byte of the Thicken scope frame
 
-**Question.** Which Thicken settings do the prologue flag byte of the six-byte marker-one prologue and the two flag bytes between the marked group references and the marked scalar reference of a `Thicken` scope select?
+**Question.** Which Thicken setting does the prologue flag byte of the six-byte marker-one prologue of a `Thicken` scope select?
 
-**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the flag positions and admits `0` or `1` in each byte. The decoder records `feature.thicken-flags-assumed` with the flag bytes for each admitted scope and projects the Thicken side from the sign of the thickness scalar alone.
+**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the byte position and the two settled flag bytes. Saves that change the thickness sign, the symmetric direction, and tangent-chain selection store prologue flag byte `0`. The decoder records `feature.thicken-flags-assumed` when the byte is `1` and projects the Thicken from its symmetric flag and its thickness; the tangent-chain flag stays on the native record.
 
-**Need.** Saves of one `Thicken` that change the direction between one side and symmetric and change tangent-chain selection, one at a time, each recording the flag bytes.
+**Need.** Saves of one `Thicken` that change one further setting at a time and store prologue flag byte `1`.
 
 **Conflict.** None.
 
@@ -1834,6 +1860,18 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** The decoder reports `mesh.scope-prefix-uninterpreted`.
+
+### DR-478. Empty mesh-import source lists
+
+**Question.** Does an empty body-reference run identify an import whose source was removed, or an import that introduced no body?
+
+**Known.** A Base Mesh Feature can store body count zero while its operation scope remains in the timeline. Its scope identity identifies the retained import source.
+
+**Need.** Controlled saves of a newly created empty import and an import whose last body was removed, with their operation scopes compared.
+
+**Conflict.** None.
+
+**Note.** The decoder keeps a native mesh source selection and reports `feature.mesh-import-empty-source-assumed`. Unjoined nonempty body runs report `feature.mesh-import-tessellations-unresolved`. Unreadable source frames report `feature.mesh-import-source-unparsed`. DR-292 tracks the operation GUID bindings.
 
 ### DR-373. Mesh body and collection-owner payload fields
 
@@ -1902,6 +1940,8 @@ when the operation transition carries no candidate for the group members?
 **Need.** Saves of a symmetric direction with an extent distance, of a symmetric direction with an even count, and of a symmetric direction two, each compared against the instance positions.
 
 **Conflict.** None.
+
+**Note.** R-Pattern 3 in `Parametric_extrusion_generator.f3d` stores zero at payload byte `133223`, the direction-one symmetric field. Its two counts are two. In this case adjacent distance and total extent give the same 15 mm spacing.
 
 ### DR-298. SurfaceTrim cell-table entries outside the removal reading
 
@@ -2109,18 +2149,6 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder retains the scope and its six parameter values. Neutral projection requires the placement-owner layout and its motion binding together.
 
-### DR-337. Version-six mesh-body graph and flagged collection counts
-
-**Question.** What do the two prefix words of a flagged mesh collection select when its nested record lists mesh bodies, and how does that collection bind version-six mesh-body records?
-
-**Known.** One public strain-relief part stores collection 173, type `443807AD-8025-41A3-8A50-5157579C3D78` version 0, with flag 1, prefix words 0 and 2, and nested body members 177 and 563. Base Mesh Feature scopes 184 and 570 name body records 177 and 563 in their prefixes and records 188 and 574 in their reference tables. Both body records have type `EA90DA22-556C-4C61-89BB-20C2681B7A9D` version 6. The archive contains two `.paramesh` entries. Collection validation fails before body decoding with a mesh-body reader that admits only version 7. The mesh-body reader admits versions 6 and 7; `f3d.md` §3.1 "The mesh-body class" gives the version-6 layout, and DR-373 tracks its retained fields.
-
-**Need.** Define the two collection prefix words, the nested collection layout, the version-six body fields, and the reciprocal joins from each feature to its container. Preserve each body's affine placement and container identity through the join.
-
-**Conflict.** The specified flagged empty collection has equal first and nested body counts. Collection 173 has first count zero and two nested body references.
-
-**Note.** Collection validation failure prevents both mesh feature definitions from receiving tessellation references. DR-85 tracks the flagged-collection word. This part has not been decoded with the version-6 mesh-body reader.
-
 ### DR-338. Extended circular-pattern axis controls and selection runs
 
 **Question.** How do the controls and selection runs of the 220-, 221-, and 241-byte circular-pattern axis frames determine the directed axis and its selected entity?
@@ -2221,7 +2249,7 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** Which regions of a compact profile loop group form the feature selection when the group carries an initial region and further regions that divide it?
 
-**Known.** The HexGrid Extrude 3 profile operand names Sketch entity 245. Its nested record 7385 starts with a reference to profile operand 7382 and a counted loop recipe. The first region has exterior curve identities 276, 274, 275, 277 and hole identities 120:114, 122:118, 123:119, 121:116. Two further regions divide this rectangular annulus at the rectangle with curve identities 105 through 108. Each entry has kind 3, a primary and secondary identity, three operands, and eight zero bytes. Every listed identity binds to a curve owned by Sketch 245. The neutral Sketch carries two profile loops: the inner rectangle with primary identities 120 through 123 and the central hexagon with primary identities 131 through 136. The outer rectangles' curves stay outside those two loops. The decoder retains the compact loop groups in `design_profile_curve_selections`. Its complete-loop projection requires an exact loop join and a complete analytic Cut-transition certificate.
+**Known.** The HexGrid Extrude 3 profile operand names Sketch entity 245. Its nested record 7385 starts with a reference to profile operand 7382 and a counted loop recipe. The first region has exterior curve identities 276, 274, 275, 277 and hole identities 120:114, 122:118, 123:119, 121:116. Two further regions divide this rectangular annulus at the rectangle with curve identities 105 through 108. Each entry has kind 3, a primary and secondary identity, three operands, and eight zero bytes. Every listed identity binds to a curve owned by Sketch 245. The neutral Sketch carries two profile loops: the inner rectangle with primary identities 120 through 123 and the central hexagon with primary identities 131 through 136. The outer rectangles' curves stay outside those two loops. The decoder retains the compact loop groups in `design_profile_curve_selections`. Its complete-loop projection requires an exact loop join and a complete analytic Cut-transition certificate. In public `Parametric_HexGrid_Generator v1.f3d`, scope record 5927 starts at Design BulkStream offset 97111, profile operand 7382 starts at 114942, and its identity record starts at 115298. Construction group 7379 owns the profile operand. Persistent selection group 5948 at offset 98256 also belongs to the scope; its member 9569 at offset 141041 carries local identity 4696. The compact curve join requires an empty further-region list. All offsets refer to `FusionAssetName[Active]/Design1/BulkStream.dat`. Rectangle diagonals 278 and 279 use the construction-tail frame tracked in DR-463.
 
 **Need.** A selection rule for the initial region and its further regions, with cases that select different proper subsets of the descendants. Bind the three entry operands to direction and curve portions for the compact spelling.
 
@@ -2252,6 +2280,8 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** These start and termination groups retain their native identities when the candidate, support, complete-loop, and plane proofs remain unresolved.
+
+The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is tracked in DR-480.
 
 ### DR-359. Region selections with curve identities absent from their Sketch
 
@@ -2346,6 +2376,18 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder selects the listed groups and assumes that the additional groups select the same bodies. It records `feature.scale-unlisted-groups-assumed`.
 
+### DR-469. DerivedInstance sources without a local occurrence join
+
+**Question.** How does a `DerivedInstance` scope identify its inserted components when its ordered references do not give a unique local relation and occurrence carrier?
+
+**Known.** The canonical scope kind identifies the derivation family. Its ordered reference run retains the source record indices. A local three-reference relation links an occurrence carrier to its owning scope. Source membership and placement can remain unresolved when this join fails.
+
+**Need.** Identify the construction fields and definition references of the other scope generations and of references whose target records are absent.
+
+**Conflict.** None.
+
+**Note.** An unresolved scope keeps a native component selection inside a neutral component insertion and reports `feature.derived-instance-component-insert-assumed`. Its native scope reference and ordered reference properties remain present.
+
 ### DR-466. Standalone joint source operand binding
 
 **Question.** Which document identity namespace and occurrence context do qualified source paths select when their keys do not match admitted occurrence carriers?
@@ -2356,22 +2398,80 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** A standalone timeline feature names its decoded neutral joint while source operands remain unresolved. The decoder preserves their identities and charges `assembly.joint-source-binding-assumed`.
 
-### DR-482. SurfaceUntrim loop types and stored loop groups
+### DR-485. Missing Decal image definitions
 
-**Question.** Do loop types `1` and `2` select the interior and the exterior loops, and does a loop group stored with loop type `0`, `1`, or `2` change the removed loops?
+**Question.** Which source image and target does a Decal scope select when its image definition is absent or has an unparsed frame?
 
-**Known.** `f3d.md` §3.1 "A `SurfaceUntrim` scope removes trim loops" defines the loop type and the loop groups. Loop type `3` occurs with one loop group. Loop type `0` occurs with and without a loop group.
+**Known.** The Decal scope identifies a presentation operation. Its prefix stores the image-asset reference, mapping byte, and target-group reference. The referenced image definition supplies the image basename.
 
-**Need.** Saves of one untrim that change the loop choice one value at a time, each with the resulting face boundary.
+**Need.** A save that preserves the selected image and target while its definition uses another framing form.
 
-**Note.** The decoder reads `1` as interior and `2` as exterior, applies loop types `0`, `1`, and `2` to every selected face, and records `feature.surface-untrim-loop-type-assumed`.
+**Note.** The decoder retains the scope identity as an external image source and records `appearance.decal-definition-unresolved`. It preserves parsed prefix values in source properties and uses the target-group reference to select faces. Missing target bindings produce `appearance.decal-target-unresolved`. An absent mapping byte or a byte other than `0x60` produces `appearance.decal-mapping-assumed`.
 
-### DR-483. SurfaceUntrim frames outside the stated prologue and incomplete groups
+### DR-476. Controls of the wider SurfaceDeleteFace prologue
 
-**Question.** Which fields do further SurfaceUntrim frames carry, and which entities does a missing face or loop group select?
+**Question.** Which settings do the controls before the ordered-reference count of the wide surface-delete prologue encode?
 
-**Known.** `f3d.md` §3.1 "A `SurfaceUntrim` scope removes trim loops" defines the admitted frame. Every scope retains its ordered references.
+**Known.** `f3d.md` §3.1 "Unhealed surface-face removal" defines the ordered-reference partition. The scope names one role-`0x10` face group followed by its ordered members. Its fixed tail uses the common parameter-scope grammar. The wider prologue precedes the same reference partition.
 
-**Need.** Controlled saves with further prologue forms and complete native definitions for the referenced groups.
+**Need.** Saves that change one face-deletion setting at a time and identify the corresponding prologue control.
 
-**Note.** The decoder keeps the neutral untrim. It records `feature.surface-untrim-frame-assumed` for a frame outside the stated prologue and leaves the loops and the extension unresolved. It records `feature.surface-untrim-group-selection-assumed` for a missing face group or loop group and retains the scope references as the native face selection.
+**Note.** The decoder reads the group as an unhealed face deletion and records `feature.surface-delete-face-wide-prologue-assumed`.
+
+### DR-477. Additional face-deletion controls and incomplete group definitions
+
+**Question.** Which controls in further face-deletion frames change the selected group or removal mode, and which face selections do incomplete group definitions name?
+
+**Known.** `f3d.md` §3.1 "A `DeleteFace` scope has at least two ordered references" defines the face group and healing mode. The `SurfaceDeleteFace` family removes faces without healing. The scope retains its ordered references and source identity when its group cannot be bound.
+
+**Need.** Controlled saves that vary further frame controls and complete native definitions for the referenced face groups.
+
+**Note.** The decoder preserves the neutral deletion family. It records `feature.delete-face-frame-controls-assumed` for unfamiliar frames and `feature.delete-face-group-selection-assumed` for missing or inconsistent face groups.
+
+### DR-480. Extrude termination through a compact Sketch-point identity
+
+**Question.** How does an Extrude termination group use a compact Sketch-point selection to set its travel, including an offset and a two-sided extent?
+
+**Known.** In `M3 Parametric SHCS.f3d`, Extrude 4 scope `4751` owns termination group `4766` at Design byte `68879`. Its member `4769` starts at byte `69143`. Identity record `4772` starts at byte `69584` and ends at byte `69621`. It stores ten zero bytes after its indexed header, then u64 values `4125` and `128` at bytes `69605` and `69613`. This is the compact Sketch-point layout in `f3d.md` §3.1. Sketch `4125` owns point record `4168`, persistent identity `128`, at byte `32753`. Its stored coordinates at byte `32894` are `(-0.125, -0.13, 0)` cm. Placement record `4137` maps this point to `(0, -1.25, -1.3)` mm. The profile Sketch `4693` has an identity placement. The final socket floor uses plane surface `49` at `z = -1.3` mm. The Extrude input topology has ten faces. The final topology splits the floor into six faces on surface `49`. Entity-selection decoding admits this compact identity for Loft point groups; Extrude termination projection consumes face operands and WorkPlane selections.
+
+**Need.** A second independent design with this termination form and known point selection, plus paired point-height, offset, and sidedness changes. Establish the travel plane and the relation that preserves the selected Sketch point when its adjacent faces change.
+
+**Conflict.** The termination group role also carries face targets. A point at the floor height and several coplanar final faces permit different face assignments.
+
+**Note.** The decoder keeps group `4766` as the native termination and reports `feature.face-selection-native` and `feature.definition-incomplete`. DR-125 and DR-335 track counted face recipes.
+
+### DR-481. Chamfer edge selection carried by bounded-face recipes
+
+**Question.** Which edges do two bounded-face members of a Chamfer edge group select, and how do their boundary nodes assign the transition edges to each member?
+
+**Known.** In `Parametric_PTFE_Umbilcal_guide.f3z`, Chamfer 4 scope `4323` changes state `500` to `501`. Group `4324` starts at Design byte `85668`, has role `0x0000001000000000`, and names members `4327` and `4331`. Their compact identity prefixes start at bytes `85962` and `91136` and name local records `4330` and `4334`. Each local record carries `bounded_face_recipe_data`, at bytes `86988` and `92162`, followed by a counted program with twenty parsed nodes. Both operands retain preceding candidate faces `746`, `752`, `754`, and `760`. Their prefix references also name faces `631`, `634`, `748`, `750`, `756`, `758`, `762`, `764`, `769`, `820`, and `327`. References with Design values `324` and `326` have empty candidate lanes. The input topology has fifteen faces and thirty-eight edges. Each compact identity retains the same twenty-two transition edge candidates: `637` through `641`, `643` through `645`, `647` through `652`, `654` through `656`, and `658` through `662`. Each selected-face candidate has a four-edge preceding loop. The group has a 0.4 mm equal-distance Chamfer specification.
+
+**Need.** Independent Chamfer designs with bounded-face members, including one selected face, two adjacent selected faces, and a face whose boundary splits before the operation. Establish the selected boundary, the treatment of tangent boundary edges, and the binding of empty prefix lanes.
+
+**Conflict.** A complete twenty-node program, four face candidates, and a shared transition set permit several member assignments. Selecting every transition candidate assumes a group-level rule.
+
+**Note.** The decoder retains the bounded-face operands and compact identity candidates. Group `4324` stays native with `feature.edge-selection-native`. DR-224 tracks Fillet transition ambiguities; DR-244 tracks treatment groups whose transitions supply no candidate set.
+
+### DR-482. Source binding of timeline-owned Base Feature results
+
+**Question.** Which records bind the source bodies and placement of a timeline-owned `Base Feature` when its stored body runs have a complete result binding?
+
+**Known.** Eight recipe-absent scopes in six public designs have timeline owners. Four owners have paste type `BA3059E4-4B23-4D02-9D18-E7BB95C991F3`; four have body-to-component type `56225BC7-69B7-446A-9AEA-6AA25BC7806E`. The Mini AfterSherpa Mosquito scopes at Design offsets `576266` and `588319` have 324-byte frames and owners `5681` and `5752`. Both owner frames carry a null removal GUID. Their scopes contain parameter-body and result-body runs followed by a counted passive-reference run, shared metadata, and a result-record run. The paste GUID-pair reader stops at the counted passive-reference run and reports `feature.paste-sources-unresolved`. Trident z_carriage_rear scope `132579` at offset `2154855` and z_chain_lower scope `35911` at offset `692895` have 485-byte paste-owned frames. The body-to-component scopes occur in Mini AfterSherpa V6 Zodiac BMO, Molex panel mount parametric, and Trident z_mount_rear. All eight retain resolved stored-body definitions.
+
+**Need.** A source-identity join for the passive-reference form, and a source and destination component join for the body-to-component form. Check the joins on two independent designs and compare the source and result topology, placement, and history transition. A consumed source requires its preceding-state identity.
+
+**Conflict.** None.
+
+**Note.** DR-260 tracks placement of a pasted copy. The result binding establishes the captured bodies. The decoder reports `feature.stored-bodies-recipe-absent` for these eight scopes.
+
+### DR-483. Terminal marker in an ordinary Base Feature count field
+
+**Question.** What does the terminal byte of the marked null field mean when it is `1` before the repeated-reference count in a Base Feature envelope?
+
+**Known.** Mini AfterSherpa Orbiter V2 Test v2 has Base Feature scope record `213` at Design offset `107014`, class pair `329/264`, frame length `318`, and history transition `365` to `404`. Its first two marked fifteen-byte entries name `219` and `225`. Both targets have Body presentation-owner type `D3937028-C20C-4E65-B010-94AD418A5C20`. The eleven-byte field after those entries starts with `1`, has nine zero bytes, and ends with `1`. A u32 count `1` follows, then a marked reference to `219`, shared metadata record `217`, and result record `227`. The ordinary result-body reader requires ten zero bytes after the first marker and stops at the final byte. The history transition binds body `f3d:brep:entity#1` and supplies the resolved Base Feature result set.
+
+**Need.** A rule for the terminal marker and the roles of the two initial reference runs. Compare a controlled capture, paste, and body-to-component operation with equal geometry, including their referenced Body records and preceding ASM state. Confirm the role rule in a second independent design before selecting a source or construction operation.
+
+**Conflict.** None.
+
+**Note.** The specialized scope payload stays uninterpreted. The result bodies remain available with `feature.stored-bodies-recipe-absent`.

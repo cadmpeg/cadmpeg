@@ -1627,6 +1627,21 @@ pub(crate) fn bind_feature_outputs(
         let history_source = bound_history.and_then(|h| historical_brep_source(&histories[h].id));
         let cur_key = bound_history.map(|h| (h, state_id));
         let prev_key = bound_history.map(|h| (h, previous_state_id));
+        if bound_history.is_some_and(|h| {
+            histories[h].states().iter().any(|state| {
+                state.state_id == state_id
+                    && state.transition.as_ref().is_some_and(|transition| {
+                        transition.previous_state_id == Some(previous_state_id)
+                            && transition.geometry_unchanged
+                    })
+            })
+        }) {
+            feature.source_properties.insert(
+                cadmpeg_core::nonblank_literal!("transition_geometry"),
+                "unchanged".into(),
+            );
+        }
+
         let prev_feat_solid = bound_history.and_then(|h| prev_feature_solid.get(&h).copied());
         let feature_scope = feature
             .native_ref
@@ -8490,6 +8505,7 @@ fn bind_historical_edge_operand<'a>(
             operand.recipe_structure.as_ref(),
             &operand.recipe_references,
             &operand.preceding_boundary_edge_slots,
+            &operand.transition_deleted_edge_slots,
             topology,
             topology_queries,
         ) {
@@ -8516,8 +8532,9 @@ pub(crate) fn inferred_edge_selection_note(
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct SideOneEdge {
     pub(crate) slot: i64,
-    /// Whether the edge bounds none of the recipe's candidate faces, so the
-    /// named faces alone select it.
+    /// Whether no proven rule selects the edge: it bounds none of the
+    /// recipe's candidate faces and the operation's transition does not
+    /// prove it, so the named faces alone select it.
     pub(crate) inferred: bool,
 }
 

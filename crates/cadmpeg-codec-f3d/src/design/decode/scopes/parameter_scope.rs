@@ -408,6 +408,12 @@ pub(crate) fn decode_parameter_scopes(
                     envelope.construction = super::align::construction::decode_align_construction(
                         bytes, &records, &scope, envelope,
                     );
+                    envelope.motion = super::direct_face::exact_align_operation(
+                        bytes,
+                        &records,
+                        envelope,
+                        &class_types,
+                    );
                 }
                 if let scope::DesignScopePayloadMut::Align(slot) = scope.payload_mut() {
                     *slot = envelope;
@@ -704,6 +710,13 @@ pub(crate) fn decode_parameter_scopes(
                 &scope,
                 &stream_types,
             );
+            scope.occurrence_transfer_intent =
+                super::occurrence_transfer::occurrence_transfer_intent(
+                    bytes,
+                    &records,
+                    &scope,
+                    &stream_types,
+                );
             bind_component_pattern_occurrences(&mut scope, component_occurrences)?;
             {
                 let construction = exact_copy_paste_bodies_operation(bytes, &records, &scope);
@@ -731,10 +744,9 @@ pub(crate) fn decode_parameter_scopes(
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     out.dedup_by(|a, b| a.id == b.id);
-    for scope in out
-        .iter()
-        .filter(|scope| scope.kind() == scope::DesignFeatureKind::Align)
-    {
+    for scope in out.iter().filter(|scope| {
+        scope.kind() == scope::DesignFeatureKind::Align && scope.move_operation().is_none()
+    }) {
         losses.push(super::align::align_native_loss(
             scope,
             scope.align_envelope(),
@@ -1366,11 +1378,12 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
     (|| {
         let start = usize::try_from(byte_offset).ok()?;
         let paired_at = records.first_at_or_after(start.checked_add(11)?, record_index)?;
-        let paste_table_at = type_guid
-            .and_then(|guid| family::paste_prefix_table(guid, bytes.get(..paired_at)?, start));
+        let paste_prefix = type_guid
+            .and_then(|guid| family::paste_scope_prefix(guid, bytes.get(..paired_at)?, start));
+        let paste_table_at = paste_prefix.as_ref().map(|(table_at, _)| *table_at);
         let type_family = type_guid
             .and_then(family::from_type_guid)
-            .or_else(|| paste_table_at.map(|_| scope::DesignFeatureKind::CopyPaste));
+            .or_else(|| paste_prefix.map(|(_, family)| family));
         let (paired_class_tag, _) =
             lp_ascii_filtered_view(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
         let mut fixed_candidate = None;

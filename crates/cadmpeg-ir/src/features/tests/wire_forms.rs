@@ -1839,35 +1839,40 @@ fn planar_target_sources_round_trip_and_refuse_invalid_values() {
 }
 
 #[test]
-fn untrim_surface_carries_its_loops_and_extension_on_the_wire() {
-    use crate::features::{
-        EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, UntrimLoops,
-    };
+fn component_transfer_omits_unresolved_operands_and_refuses_their_null_spelling() {
+    use crate::features::{ComponentTransferMode, FeatureOperation};
 
-    for (loops, kind) in [
-        (UntrimLoops::Unresolved, "unresolved"),
-        (UntrimLoops::All, "all"),
-        (UntrimLoops::Internal, "internal"),
-        (UntrimLoops::External, "external"),
-        (
-            UntrimLoops::Selected {
-                edges: EdgeSelection::Native("native:loop-group".into()),
-            },
-            "selected",
-        ),
+    let operation = FeatureOperation::component_transfer(
+        ComponentTransferMode::Reparent,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let wire = serde_json::to_value(&operation).unwrap();
+    assert_eq!(
+        wire,
+        serde_json::json!({"definition": "component_transfer", "mode": "reparent"})
+    );
+    assert_eq!(
+        serde_json::from_value::<FeatureOperation>(wire.clone()).unwrap(),
+        operation
+    );
+    for key in [
+        "occurrence",
+        "component",
+        "source_owner",
+        "target_owner",
+        "source_transform",
+        "target_transform",
     ] {
-        let definition = FeatureDefinition::Operation(FeatureOperation::UntrimSurface {
-            faces: FaceSelection::Native("native:face-group".into()),
-            loops,
-            extension: crate::scalar::NonNegativeLength::new(3.0),
-        });
-        let wire = serde_json::to_value(&definition).unwrap();
-        assert_eq!(wire["definition"], "untrim_surface");
-        assert_eq!(wire["loops"]["kind"], kind);
-        assert_eq!(wire["extension"], 3.0);
-        assert_eq!(
-            serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
-            definition
-        );
+        let mut stated = wire.clone();
+        stated[key] = serde_json::Value::Null;
+        let error = serde_json::from_value::<FeatureOperation>(stated)
+            .expect_err("an unresolved operand is spelled by omission")
+            .to_string();
+        assert!(error.contains(key), "{error}");
     }
 }

@@ -1249,6 +1249,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 None => {
                     if let Some(primitive) = project_solid_primitive(scope) {
                         primitive
+                    } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Align {
+                        project_align(scope, construction_groups, &mut projection_losses)
+                            .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::JointOrigin
                     {
@@ -1436,13 +1439,18 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         crate::records::feature::scope::DesignFeatureKind::DeleteFace
                             | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                     ) {
-                        delete_face::project_delete_face(scope, construction_groups, face_operands)?
-                            .unwrap_or_else(|| {
-                                FeatureDefinition::Operation(FeatureOperation::Native {
-                                    kind: scope.kind_name().into(),
-                                    parameters: BTreeMap::new(),
-                                })
+                        delete_face::project_delete_face(
+                            scope,
+                            construction_groups,
+                            face_operands,
+                            &mut projection_losses,
+                        )?
+                        .unwrap_or_else(|| {
+                            FeatureDefinition::Operation(FeatureOperation::Native {
+                                kind: scope.kind_name().into(),
+                                parameters: BTreeMap::new(),
                             })
+                        })
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim
                     {
@@ -4225,7 +4233,9 @@ pub(super) fn project_thicken(
 
     let crate::records::feature::scope::DesignScopePayload::Thicken(Some(
         crate::records::feature::direct_face::DesignThickenOperation {
-            signed_thickness, ..
+            signed_thickness,
+            symmetric,
+            ..
         },
     )) = &scope.payload()
     else {
@@ -4253,10 +4263,12 @@ pub(super) fn project_thicken(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Thicken {
             faces,
-            thickness: Some(or_none!(cadmpeg_ir::scalar::PositiveLength::new(
-                signed_thickness.get().abs() * 10.0,
-            ))),
-            side: Some(if signed_thickness.get() > 0.0 {
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(
+                signed_thickness.get().abs() * if *symmetric { 20.0 } else { 10.0 },
+            ),
+            side: Some(if *symmetric {
+                ThickenSide::Both
+            } else if signed_thickness.get() > 0.0 {
                 ThickenSide::Forward
             } else {
                 ThickenSide::Reverse
@@ -4404,6 +4416,66 @@ pub(super) fn project_shell(
             allow_self_intersections: None,
         },
     )))
+}
+
+fn project_align(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    let envelope = scope.align_envelope()?;
+    let operation = envelope.motion.as_ref()?;
+    let stream = native_stream(&scope.id);
+    let mut matching = groups.iter().filter(|group| {
+        stream.is_some()
+            && native_stream(&group.id) == stream
+            && group.scope_record_index == scope.record_index
+            && group.scope_reference_ordinal == 0
+            && group.record_index == envelope.second_reference.value
+            && group.role() == DesignOperandRole::BODIES_A
+            && !group.members().is_empty()
+    });
+    let group = match (matching.next(), matching.next()) {
+        (Some(group), None) => Some(group),
+        _ => None,
+    };
+    let Some(definition) = move_body(
+        operation,
+        group.map_or(cadmpeg_ir::features::BodySelection::Unresolved, |group| {
+            cadmpeg_ir::features::BodySelection::Native(group.id.clone())
+        }),
+    ) else {
+        losses.push(crate::loss::F3dLossCode::FeatureAlignMotionUnprojected.note(format!(
+            "Align scope {} has no finite orientation-preserving body motion in canonical millimetres; its constructor is retained (DR-120).", scope.id
+        )));
+        return None;
+    };
+    if group.is_none() {
+        losses.push(crate::loss::F3dLossCode::AlignOperandsUnresolved.note(format!(
+            "Align scope {} projects its rigid matrix with an unresolved body selection because it has no unique moved-body group (DR-120).", scope.id
+        )));
+    }
+    losses.push(crate::loss::F3dLossCode::FeatureAlignMotionAssumed.note(format!(
+        "Align scope {} applies the stored matrix of constructor {} to {}; its source code {}, constructor prefix fields and scope references {:?} are assumed to leave that motion unchanged (DR-120).",
+        scope.id,
+        operation.transform_record_index,
+        group.map_or_else(
+            || "an unresolved body selection".to_owned(),
+            |group| format!("body group {}", group.record_index)
+        ),
+        envelope.source_code.value,
+        scope.reference_members().values().collect::<Vec<_>>()
+    )));
+    if operation
+        .prefix
+        .as_ref()
+        .is_some_and(|prefix| prefix.matrix_omitted)
+    {
+        losses.push(crate::loss::F3dLossCode::FeatureAlignIdentityAssumed.note(format!(
+            "Align scope {} takes identity motion from the omitted-matrix marker of constructor {} (DR-120).", scope.id, operation.transform_record_index
+        )));
+    }
+    Some(definition)
 }
 
 fn project_move(

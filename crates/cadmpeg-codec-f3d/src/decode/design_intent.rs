@@ -81,6 +81,9 @@ pub(super) struct DesignInputs<'a> {
 pub(super) struct DesignProducts<'a> {
     pub(super) occurrences: &'a [Occurrence],
     pub(super) assembly_joints: &'a [AssemblyJoint],
+    pub(super) definitions: &'a [cadmpeg_ir::products::ProductDefinition],
+    pub(super) component_definitions_by_record:
+        &'a std::collections::BTreeMap<(String, u64), cadmpeg_ir::ids::ProductDefinitionId>,
 }
 
 /// Decoded geometry that Design features bind to.
@@ -688,10 +691,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_surface_trim_operations,
         &mut losses,
     );
-    super::bind_mesh_feature_definitions(
+    super::mesh_import::bind_features(
+        ctx,
+        scan,
         &mut model.features,
         &design.design_parameter_scopes,
         geometry.mesh_projection,
+        &mut losses,
     )?;
     crate::design::feature_project::form_cages::bind_form_cages(
         ctx,
@@ -714,9 +720,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         scan,
         &design.design_parameter_scopes,
         &design.design_decal_images,
-        &design.design_construction_operand_groups,
-        &design.design_body_recipe_operands,
+        crate::design::decode::decal::DecalTargets {
+            groups: &design.design_construction_operand_groups,
+            operands: &design.design_body_recipe_operands,
+        },
         &mut model.features,
+        &mut losses,
     )?;
     extend_design_assets(geometry.assets, &mut model.assets, decal_assets)?;
     let mut scope_histories = crate::history::bind_scope_histories(
@@ -1188,20 +1197,26 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         products.occurrences,
         &design.design_parameter_scopes,
     );
-    crate::design::components::project_derived_instance_features(
-        &mut model.features,
-        &design.design_parameter_scopes,
-    );
-    crate::design::components::project_copy_paste_transfer_features(
-        &mut model.features,
-        &design.design_parameter_scopes,
-        &prereqs.design_component_occurrences,
-        products.occurrences,
+    losses.extend(
+        crate::design::components::project_derived_instance_features(
+            &mut model.features,
+            &design.design_parameter_scopes,
+        )?,
     );
     losses.extend(crate::design::components::paths::bind_feature_paths(
         &mut model.features,
         &occurrence_paths,
     ));
+    losses.extend(
+        crate::design::components::project_copy_paste_transfer_features(
+            &mut model.features,
+            &design.design_parameter_scopes,
+            &prereqs.design_component_occurrences,
+            products.occurrences,
+            products.definitions,
+            products.component_definitions_by_record,
+        ),
+    );
     crate::design::components::bind_unresolved_component_insert_features(
         &mut model.features,
         &design.design_parameter_scopes,
@@ -1311,6 +1326,17 @@ pub(super) fn scope_related_indices(
                     .into_iter()
                     .flat_map(crate::records::feature::occurrence_transfer::DesignOccurrenceTransfer::record_indices),
             )
+            .chain(scope.occurrence_transfer_intent.iter().flat_map(|intent| {
+                [
+                    intent.relation_record_index,
+                    intent.occurrence_record_index,
+                    intent.component_record_index.and_then(|index| u32::try_from(index).ok()),
+                    intent.source_owner_component_record_index,
+                    intent.target_owner_component_record_index,
+                ]
+                .into_iter()
+                .flatten()
+            }))
             .map(move |record_index| (stream, record_index))
     }))
 }

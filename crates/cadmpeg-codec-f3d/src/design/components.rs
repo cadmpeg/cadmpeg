@@ -57,6 +57,7 @@ pub(crate) struct LocalComponentProjection {
     pub(crate) definitions: Vec<ProductDefinition>,
     pub(crate) occurrences: Vec<Occurrence>,
     pub(crate) losses: Vec<LossNote>,
+    pub(crate) component_definitions_by_record: BTreeMap<(String, u64), ProductDefinitionId>,
 }
 
 /// Project local component definitions and their placed occurrences.
@@ -171,6 +172,7 @@ pub(crate) fn project_local_components_with_types(
     projector.attach_root_occurrences();
     projector.expand_nested_carriers()?;
     projector.apply_path_poses()?;
+    projector.retain_unplaced_definitions();
     projector.finish()
 }
 
@@ -217,6 +219,7 @@ struct Projector<'a> {
     native_by_guid: BTreeMap<(String, String), Option<&'a DesignComponentOccurrence>>,
     guid_stream_counts: BTreeMap<String, usize>,
     definitions: BTreeMap<String, ProductDefinition>,
+    component_definitions_by_record: BTreeMap<(String, u64), ProductDefinitionId>,
     occurrences: BTreeMap<String, (Occurrence, Option<&'a DesignComponentOccurrence>)>,
     unplaced: BTreeMap<Unplaced, usize>,
     rejected: BTreeSet<&'a str>,
@@ -450,6 +453,7 @@ impl<'a> Projector<'a> {
             native_by_guid,
             guid_stream_counts,
             definitions: BTreeMap::new(),
+            component_definitions_by_record: BTreeMap::new(),
             occurrences: BTreeMap::new(),
             unplaced: BTreeMap::new(),
             rejected: BTreeSet::new(),
@@ -538,8 +542,13 @@ impl<'a> Projector<'a> {
             ))
             .copied()
             .flatten();
-        let definition = match carrier.and_then(|carrier| self.carrier_definition(carrier)) {
-            Some((stream, root)) => self.naming_space_definition(stream, root),
+        let definition = match carrier {
+            Some(carrier) => match self.carrier_definition(carrier) {
+                Some((stream, root)) => {
+                    self.naming_space_definition(stream, carrier.component_record_index, root)
+                }
+                None => self.guid_definition(component_guid),
+            },
             None => self.guid_definition(component_guid),
         };
         let key = occurrence_id.as_str().to_owned();
@@ -649,10 +658,10 @@ impl<'a> Projector<'a> {
     /// one identity root occurrence of that component.
     fn attach_root_occurrences(&mut self) {
         for (stream, components) in self.sources.components {
-            let Some(root) = components
-                .root_component
-                .and_then(|root| components.roots.get(&root))
-            else {
+            let Some(root_record) = components.root_component else {
+                continue;
+            };
+            let Some(root) = components.roots.get(&root_record) else {
                 continue;
             };
             let root_occurrence = self.root_occurrence_id(stream, root);
@@ -671,7 +680,7 @@ impl<'a> Projector<'a> {
             if !contained {
                 continue;
             }
-            let definition = self.naming_space_definition(stream, root);
+            let definition = self.naming_space_definition(stream, root_record, root);
             let key = root_occurrence.as_str().to_owned();
             self.occurrences.insert(
                 key,
@@ -866,7 +875,11 @@ impl<'a> Projector<'a> {
                                 },
                                 Ok,
                             )?;
-                        let definition = self.naming_space_definition(stream, target);
+                        let definition = self.naming_space_definition(
+                            stream,
+                            carrier.component_record_index,
+                            target,
+                        );
                         self.occurrences.insert(
                             id.as_str().to_owned(),
                             (
@@ -1251,9 +1264,54 @@ impl<'a> Projector<'a> {
         Ok(())
     }
 
+    fn retain_unplaced_definitions(&mut self) {
+        for (stream, components) in self.sources.components {
+            if components.roots.len() == 1 {
+                continue;
+            }
+            for (&record, root) in &components.roots {
+                self.naming_space_definition(stream, record, root);
+            }
+        }
+    }
+
     fn finish(self) -> Result<LocalComponentProjection, cadmpeg_core::CodecError> {
         let overflow =
             || cadmpeg_core::CodecError::malformed("Fusion Design occurrence ordinal exceeds u32");
+        let mut component_definitions_by_record = self.component_definitions_by_record;
+        let mut ambiguous_component_records = BTreeSet::new();
+        for carrier in self.sources.occurrences {
+            let Some(stream) = crate::ids::native_stream(&carrier.id) else {
+                continue;
+            };
+            let mut named = self
+                .occurrences
+                .values()
+                .filter(|(_, source)| source.is_some_and(|source| source.id == carrier.id));
+            let (Some((occurrence, _)), None) = (named.next(), named.next()) else {
+                continue;
+            };
+            let PrototypeReference::Local { definition } = &occurrence.prototype else {
+                continue;
+            };
+            if !self.definitions.contains_key(definition.as_str()) {
+                continue;
+            }
+            let key = (stream.to_owned(), carrier.component_record_index);
+            if ambiguous_component_records.contains(&key) {
+                continue;
+            }
+            match component_definitions_by_record.get(&key) {
+                Some(existing) if existing != definition => {
+                    component_definitions_by_record.remove(&key);
+                    ambiguous_component_records.insert(key);
+                }
+                Some(_) => {}
+                None => {
+                    component_definitions_by_record.insert(key, definition.clone());
+                }
+            }
+        }
         let mut occurrences = self.occurrences.into_values().collect::<Vec<_>>();
         occurrences.sort_by(|(left, left_carrier), (right, right_carrier)| {
             (
@@ -1399,6 +1457,7 @@ impl<'a> Projector<'a> {
             definitions: self.definitions.into_values().collect(),
             occurrences,
             losses,
+            component_definitions_by_record,
         })
     }
 
@@ -1406,6 +1465,7 @@ impl<'a> Projector<'a> {
     fn naming_space_definition(
         &mut self,
         stream: &str,
+        component_record_index: u64,
         root: &ComponentDefinition,
     ) -> ProductDefinitionId {
         let id = crate::ids::neutral_component_id(&root.context_uuid);
@@ -1415,6 +1475,8 @@ impl<'a> Projector<'a> {
             definition.source_name.clone_from(&root.name);
             self.definitions.insert(id.as_str().to_owned(), definition);
         }
+        self.component_definitions_by_record
+            .insert((stream.to_owned(), component_record_index), id.clone());
         id
     }
 
@@ -1504,86 +1566,85 @@ fn component_definition(id: ProductDefinitionId, bodies: Vec<BodyId>) -> Product
     }
 }
 
-/// Project a proven local occurrence into a `DerivedInstance` feature.
 pub(crate) fn project_derived_instance_features(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
-) {
+) -> Result<Vec<LossNote>, cadmpeg_core::CodecError> {
+    let mut losses = Vec::new();
     for scope in scopes {
-        let Some(construction) = scope.derived_instance_construction() else {
+        if scope.kind() != crate::records::feature::scope::DesignFeatureKind::DerivedInstance {
             continue;
-        };
+        }
         let Some(feature) = features
             .iter_mut()
             .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
         else {
             continue;
         };
+        if let FeatureDefinition::Operation(FeatureOperation::InsertComponents { components }) =
+            feature.evaluation.definition()
+        {
+            if components.native_reference().as_str() != scope.id {
+                let mut components = components.clone();
+                let native = match &mut components {
+                    cadmpeg_ir::features::InsertedComponents::Native { native }
+                    | cadmpeg_ir::features::InsertedComponents::Resolved { native, .. }
+                    | cadmpeg_ir::features::InsertedComponents::Partial { native, .. } => native,
+                };
+                *native = cadmpeg_ir::features::SelectionReference::new(scope.id.clone())
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                feature
+                    .evaluation
+                    .set_definition(FeatureDefinition::Operation(
+                        FeatureOperation::InsertComponents { components },
+                    ));
+            }
+            continue;
+        }
         if !matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Native { .. })
         ) {
             continue;
         }
+        let definition = if let Some(construction) = scope.derived_instance_construction() {
+            FeatureOperation::InsertComponent {
+                occurrence: crate::ids::neutral_component_occurrence_id(
+                    &construction.occurrence_guid,
+                ),
+            }
+        } else {
+            let components = cadmpeg_ir::features::InsertedComponents::native(scope.id.clone())
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            losses.push(F3dLossCode::FeatureDerivedInstanceComponentInsertAssumed.note(format!(
+                "{} is represented as a component insertion with unresolved source membership and placement; its native scope reference is retained (DR-469).", scope.id
+            )));
+            FeatureOperation::InsertComponents { components }
+        };
         feature
             .evaluation
-            .set_definition(FeatureDefinition::Operation(
-                FeatureOperation::InsertComponent {
-                    occurrence: crate::ids::neutral_component_occurrence_id(
-                        &construction.occurrence_guid,
-                    ),
-                },
-            ));
+            .set_definition(FeatureDefinition::Operation(definition));
     }
+    Ok(losses)
 }
 
-/// Project the copied carrier of a `CopyPaste` occurrence transfer into an
-/// `InsertComponent` feature.
 pub(crate) fn project_copy_paste_transfer_features(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
     occurrences: &[DesignComponentOccurrence],
     projected: &[Occurrence],
-) {
+    definitions: &[ProductDefinition],
+    component_definitions_by_record: &BTreeMap<(String, u64), ProductDefinitionId>,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use crate::records::feature::occurrence_transfer::{
+        DesignOccurrenceTransferMode, DesignOccurrenceTransferSource,
+    };
+    use cadmpeg_ir::features::{ComponentTransferMode, FeatureOperation};
+    let mut losses = Vec::new();
     for scope in scopes {
-        let Some(transfer) = scope.occurrence_transfer.as_ref() else {
-            continue;
-        };
-        if !matches!(
-            transfer.source,
-            crate::records::feature::occurrence_transfer::DesignOccurrenceTransferSource::Copy { .. }
-        ) {
-            continue;
-        }
         let Some(stream) = crate::ids::native_stream(&scope.id) else {
             continue;
         };
-        let carriers = || {
-            occurrences
-                .iter()
-                .filter(|occurrence| crate::ids::native_stream(&occurrence.id) == Some(stream))
-        };
-        let mut named = carriers()
-            .filter(|occurrence| occurrence.record_index == transfer.occurrence_record_index);
-        let (Some(copied), None) = (named.next(), named.next()) else {
-            continue;
-        };
-        let placement = copied.transform().map_or(
-            crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
-            |frame| frame.value,
-        );
-        let occurrence = crate::ids::neutral_component_occurrence_id(&copied.occurrence_guid);
-        if placement != transfer.target_transform
-            || copied.component_record_index != transfer.component_record_index
-            || !projected.iter().any(|candidate| candidate.id == occurrence)
-            || !carriers().any(|source| {
-                source.byte_offset() < copied.byte_offset()
-                    && source.occurrence_ordinal() == 1
-                    && source.component_record_index == copied.component_record_index
-            })
-        {
-            continue;
-        }
         let Some(feature) = features
             .iter_mut()
             .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
@@ -1596,12 +1657,177 @@ pub(crate) fn project_copy_paste_transfer_features(
         ) {
             continue;
         }
+        if let Some(transfer) = scope.occurrence_transfer.as_ref() {
+            if matches!(
+                &transfer.source,
+                DesignOccurrenceTransferSource::Copy { .. }
+            ) {
+                let mut native_carriers = occurrences
+                    .iter()
+                    .filter(|occurrence| crate::ids::native_stream(&occurrence.id) == Some(stream));
+                let mut copied_carriers = native_carriers.clone().filter(|occurrence| {
+                    occurrence.record_index == transfer.occurrence_record_index
+                });
+                if let (Some(copied), None) = (copied_carriers.next(), copied_carriers.next()) {
+                    let placement = copied.transform().map_or(
+                        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+                        |frame| frame.value,
+                    );
+                    let mut projected_carriers = projected.iter().filter(|candidate| {
+                        candidate.native_ref.as_deref() == Some(copied.id.as_str())
+                    });
+                    if let (Some(output), None) =
+                        (projected_carriers.next(), projected_carriers.next())
+                    {
+                        if placement == transfer.target_transform
+                            && copied.component_record_index == transfer.component_record_index
+                            && native_carriers.any(|source| {
+                                source.byte_offset() < copied.byte_offset()
+                                    && source.occurrence_ordinal() == 1
+                                    && source.component_record_index
+                                        == copied.component_record_index
+                            })
+                        {
+                            feature
+                                .evaluation
+                                .set_definition(FeatureDefinition::Operation(
+                                    FeatureOperation::InsertComponent {
+                                        occurrence: output.id.clone(),
+                                    },
+                                ));
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+        let Some(intent) = scope.occurrence_transfer_intent.as_ref() else {
+            continue;
+        };
+        let carriers = occurrences
+            .iter()
+            .filter(|occurrence| crate::ids::native_stream(&occurrence.id) == Some(stream));
+        let occurrence = intent.occurrence_record_index.and_then(|record_index| {
+            let mut named = carriers
+                .clone()
+                .filter(|carrier| carrier.record_index == record_index);
+            let (Some(carrier), None) = (named.next(), named.next()) else {
+                return None;
+            };
+            let mut output = projected
+                .iter()
+                .filter(|candidate| candidate.native_ref.as_deref() == Some(carrier.id.as_str()));
+            let (Some(candidate), None) = (output.next(), output.next()) else {
+                return None;
+            };
+            Some(candidate.id.clone())
+        });
+        let component = intent.component_record_index.and_then(|record_index| {
+            component_definition_for_record(
+                stream,
+                record_index,
+                definitions,
+                component_definitions_by_record,
+            )
+        });
+        let source_owner = intent
+            .source_owner_component_record_index
+            .and_then(|record_index| {
+                component_definition_for_record(
+                    stream,
+                    u64::from(record_index),
+                    definitions,
+                    component_definitions_by_record,
+                )
+            });
+        let target_owner = intent
+            .target_owner_component_record_index
+            .and_then(|record_index| {
+                component_definition_for_record(
+                    stream,
+                    u64::from(record_index),
+                    definitions,
+                    component_definitions_by_record,
+                )
+            });
+        let source_transform = match intent.mode {
+            DesignOccurrenceTransferMode::Copy => intent.source_transform.and_then(neutral_affine),
+            DesignOccurrenceTransferMode::Reparent => None,
+        };
+        let target_transform = intent.target_transform.and_then(neutral_affine);
+        let placement_unresolved = target_transform.is_none()
+            || (intent.mode == DesignOccurrenceTransferMode::Copy && source_transform.is_none());
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(
-                FeatureOperation::InsertComponent { occurrence },
+                FeatureOperation::component_transfer(
+                    match intent.mode {
+                        DesignOccurrenceTransferMode::Copy => ComponentTransferMode::Copy,
+                        DesignOccurrenceTransferMode::Reparent => ComponentTransferMode::Reparent,
+                    },
+                    occurrence.clone(),
+                    component.clone(),
+                    source_owner.clone(),
+                    target_owner.clone(),
+                    source_transform,
+                    target_transform,
+                ),
             ));
+        if occurrence.is_none() {
+            losses.push(
+                crate::loss::F3dLossCode::FeatureOccurrenceTransferOccurrenceUnresolved.note(
+                    format!(
+                        "{} scope {} has no unique projected occurrence for native record {:?}",
+                        scope.kind_name(),
+                        scope.id,
+                        intent.occurrence_record_index
+                    ),
+                ),
+            );
+        }
+        let source_owner_required = intent.mode == DesignOccurrenceTransferMode::Reparent;
+        if component.is_none()
+            || target_owner.is_none()
+            || (source_owner_required && source_owner.is_none())
+        {
+            losses.push(crate::loss::F3dLossCode::FeatureOccurrenceTransferOwnerUnresolved.note(format!(
+                "{} scope {} has no unique projected component definition for one or more owner references",
+                scope.kind_name(), scope.id
+            )));
+        }
+        if intent.mode == DesignOccurrenceTransferMode::Copy {
+            losses.push(crate::loss::F3dLossCode::FeatureOccurrenceTransferSourceUnresolved.note(format!(
+                "CopyPaste scope {} stores a source placement without a unique source occurrence identity",
+                scope.id
+            )));
+        }
+        if placement_unresolved {
+            losses.push(
+                crate::loss::F3dLossCode::FeatureOccurrenceTransferPlacementUnresolved.note(
+                    format!(
+                        "{} scope {} has an unreadable or unsupported placement matrix",
+                        scope.kind_name(),
+                        scope.id
+                    ),
+                ),
+            );
+        }
     }
+    losses
+}
+
+fn component_definition_for_record(
+    stream: &str,
+    component_record_index: u64,
+    definitions: &[ProductDefinition],
+    component_definitions_by_record: &BTreeMap<(String, u64), ProductDefinitionId>,
+) -> Option<ProductDefinitionId> {
+    let definition =
+        component_definitions_by_record.get(&(stream.to_owned(), component_record_index))?;
+    definitions
+        .iter()
+        .any(|candidate| candidate.id.as_str() == definition.as_str())
+        .then(|| definition.clone())
 }
 
 /// The occurrence of every top-level `Component Insert`.
@@ -2682,7 +2908,7 @@ mod tests {
         ] {
             let projection = project_carriers(&carriers, &components, &bodies);
             assert!(projection.occurrences.is_empty(), "{reason}");
-            assert!(projection.definitions.is_empty(), "{reason}");
+            assert_eq!(projection.definitions.len(), 2, "{reason}");
             assert_eq!(projection.losses.len(), 1, "{reason}");
             assert_eq!(
                 projection.losses[0].code,
@@ -2712,7 +2938,7 @@ mod tests {
             &[COMPONENT_BODY, ROOT_BODY],
         );
         assert!(projection.occurrences.is_empty());
-        assert!(projection.definitions.is_empty());
+        assert_eq!(projection.definitions.len(), 2);
         assert_eq!(projection.losses.len(), 1);
         assert_eq!(
             projection.losses[0].code,
@@ -2887,7 +3113,11 @@ mod tests {
                 }
             } else {
                 assert!(projection.occurrences.is_empty());
-                assert!(projection.definitions.is_empty());
+                assert_eq!(projection.definitions.len(), 3);
+                assert!(projection
+                    .definitions
+                    .iter()
+                    .all(|definition| definition.bodies.is_empty()));
                 assert!(projection
                     .losses
                     .iter()
@@ -3331,7 +3561,8 @@ mod tests {
         super::project_derived_instance_features(
             std::slice::from_mut(&mut feature),
             std::slice::from_ref(&scope),
-        );
+        )
+        .unwrap();
         assert_eq!(
             *feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::InsertComponent {
@@ -3354,7 +3585,8 @@ mod tests {
         super::project_derived_instance_features(
             std::slice::from_mut(&mut feature),
             std::slice::from_ref(&scope),
-        );
+        )
+        .unwrap();
         let paths = super::paths::LocalOccurrencePaths::new(&[], &[], &operation_occurrences, &[]);
         assert!(
             super::paths::bind_feature_paths(std::slice::from_mut(&mut feature), &paths).is_empty()

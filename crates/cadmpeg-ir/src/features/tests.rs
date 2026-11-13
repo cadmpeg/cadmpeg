@@ -1957,3 +1957,5 @@ fn feature_frames_hold_their_admitted_unit_axes() {
 }
 
 mod reference_views;
+
+mod component_insertions;
