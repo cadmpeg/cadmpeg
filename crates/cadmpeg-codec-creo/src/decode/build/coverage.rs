@@ -464,6 +464,7 @@ pub(super) fn collect_feature_coverage(
                 let unresolved_seeds = seeds.is_empty()
                     || seeds.iter().any(|seed| match seed {
                         cadmpeg_ir::features::patterns::PatternSeed::Feature(_) => false,
+                        cadmpeg_ir::features::patterns::PatternSeed::Native(_) => true,
                         cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) => {
                             face_selection_has_unresolved_operands(faces)
                         }

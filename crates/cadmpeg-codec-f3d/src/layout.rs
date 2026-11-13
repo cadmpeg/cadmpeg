@@ -9807,6 +9807,18 @@ pub(crate) mod path_pattern_settings {
     pub(crate) const DISTANCE_TYPE: usize = 156;
 }
 
+/// Byte offsets for the `path_pattern_reordered_settings` record.
+///
+/// Spec §Assembly operands. Record length 298 B.
+pub(crate) mod path_pattern_reordered_settings {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 298;
+    /// Offset of `count_owner_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const COUNT_OWNER_REFERENCE: usize = 25;
+    /// Offset of `distance_owner_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const DISTANCE_OWNER_REFERENCE: usize = 40;
+}
+
 /// Byte offsets for the `path_pattern_start` record.
 ///
 /// Spec §Assembly operands. Record length 197 B.

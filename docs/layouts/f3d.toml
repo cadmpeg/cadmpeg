@@ -33521,6 +33521,50 @@ size = 110
 note = "The specification states no field in this range."
 
 [[record]]
+name = "path_pattern_reordered_settings"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A reordered path-pattern settings record has a 298-byte frame"
+size = 298
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_pattern.rs"
+
+[[record.gap]]
+offset = 0
+size = 25
+note = "Shared settings prefix."
+
+[[record.field]]
+name = "count_owner_reference"
+offset = 25
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references at offsets 25 and 40 name the count owner and distance owner"
+
+[[record.gap]]
+offset = 36
+size = 4
+note = "Shared settings separator."
+
+[[record.field]]
+name = "distance_owner_reference"
+offset = 40
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references at offsets 25 and 40 name the count owner and distance owner"
+
+[[record.gap]]
+offset = 51
+size = 106
+note = "Shared fixed controls through offset 156."
+
+[[record.field]]
+name = "trailing_payload"
+offset = 157
+type = "bytes[141]"
+source = "spec"
+anchor = "Its trailing payload occupies offsets 157 through 297"
+
+[[record]]
 name = "path_pattern_start"
 kind = "byte"
 section = "Assembly operands"

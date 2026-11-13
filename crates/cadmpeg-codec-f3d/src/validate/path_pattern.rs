@@ -50,26 +50,30 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             typed_header(settings.settings_record_index, PATH_PATTERN_SETTINGS_TYPE)
                 .filter(|base| *base == settings.settings_byte_offset)
                 .is_some_and(|base| {
-                    Some(settings.flipped.offset) == at(base, settings_layout::FLIPPED)
-                        && Some(settings.path_oriented.offset)
-                            == at(base, settings_layout::PATH_ORIENTED)
-                        && Some(settings.total_extent.offset)
-                            == at(base, settings_layout::DISTANCE_TYPE)
+                    settings.flipped.as_ref().is_none_or(|value| {
+                        Some(value.offset) == at(base, settings_layout::FLIPPED)
+                    }) && settings.path_oriented.as_ref().is_none_or(|value| {
+                        Some(value.offset) == at(base, settings_layout::PATH_ORIENTED)
+                    }) && settings.total_extent.as_ref().is_none_or(|value| {
+                        Some(value.offset) == at(base, settings_layout::DISTANCE_TYPE)
+                    })
                 });
-        let start_valid = typed_header(settings.start_record_index, PATH_PATTERN_START_TYPE)
-            .is_some_and(|base| {
-                Some(settings.start_parameter.offset) == at(base, start_layout::START_PARAMETER)
-            });
+        let start_valid = settings.start_parameter.as_ref().is_none_or(|value| {
+            settings
+                .start_record_index
+                .and_then(|index| typed_header(index, PATH_PATTERN_START_TYPE))
+                .is_some_and(|base| Some(value.offset) == at(base, start_layout::START_PARAMETER))
+        });
         let members = scope.reference_members();
         let valid = scope.kind() == crate::records::feature::scope::DesignFeatureKind::PathPattern
             && settings_valid
             && start_valid
-            && members
-                .values()
-                .any(|member| *member == settings.start_record_index)
-            && members
-                .values()
-                .any(|member| *member == settings.path_group_record_index);
+            && settings
+                .start_record_index
+                .is_none_or(|index| members.values().any(|member| *member == index))
+            && settings
+                .path_group_record_index
+                .is_none_or(|index| members.values().any(|member| *member == index));
         if !valid {
             super::push_constant_finding(
                 findings,

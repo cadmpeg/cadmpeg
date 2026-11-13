@@ -2475,3 +2475,15 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The specialized scope payload stays uninterpreted. The result bodies remain available with `feature.stored-bodies-recipe-absent`.
+
+### DR-487. Partial PathPattern seed and placement semantics
+
+**Question.** Which native evidence distinguishes a feature index from a coincident topology identity in a role-`0x4` PathPattern seed, and how does the reordered settings instance table define placement?
+
+**Known.** Role-`0x4` seed members carry a 29-byte compact identity that matches a history-bearing feature scope. The decoder assumes the feature-index reading and reports `feature.path-pattern-feature-seed-assumed`. Reordered references place count and distance owners before the seed group. A 298-byte settings record shares the fixed controls of the 267-byte form; this reading reports `feature.path-pattern-reordered-settings-assumed`. Independently decoded count, source distance, adjacent spacing, path, flip, orientation, and start parameter survive in a partial curve-driven definition with `feature.path-pattern-definition-partial`. An unresolved seed retains its native identity with `feature.path-pattern-seed-unresolved`. A marked path reference survives an unclosed group join with `feature.path-pattern-path-unresolved`.
+
+**Need.** Independent feature and face seeds with colliding identity values, and controlled edits that vary instance count and distribution in the reordered settings form.
+
+**Conflict.** A compact identity can also match a topology identity in the captured history.
+
+**Note.** DR-290 tracks the scalar controls at settings offsets 94 and 124.

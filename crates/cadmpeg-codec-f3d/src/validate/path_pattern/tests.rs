@@ -8,26 +8,27 @@ use crate::records::identity::Located;
 
 fn settings() -> DesignPathPatternSettings {
     DesignPathPatternSettings {
+        reordered_owners: false,
         settings_record_index: 322,
         settings_byte_offset: 1_000,
-        total_extent: Located {
+        total_extent: Some(Located {
             value: false,
             offset: 1_156,
-        },
-        flipped: Located {
+        }),
+        flipped: Some(Located {
             value: false,
             offset: 1_080,
-        },
-        path_oriented: Located {
+        }),
+        path_oriented: Some(Located {
             value: false,
             offset: 1_081,
-        },
-        path_group_record_index: 333,
-        start_record_index: 319,
-        start_parameter: Located {
+        }),
+        path_group_record_index: Some(333),
+        start_record_index: Some(319),
+        start_parameter: Some(Located {
             value: cadmpeg_ir::scalar::FiniteReal::ZERO,
             offset: 2_025,
-        },
+        }),
     }
 }
 
@@ -114,11 +115,16 @@ fn finding_count(native: &crate::native::F3dNative) -> usize {
 #[test]
 fn path_pattern_settings_link_their_typed_records_and_offsets() {
     assert_eq!(finding_count(&native(settings(), vec![319, 333], 3)), 0);
+    let mut partial = settings();
+    partial.flipped = None;
+    partial.start_parameter = None;
+    partial.start_record_index = None;
+    assert_eq!(finding_count(&native(partial, vec![333], 3)), 0);
     let mut moved_flag = settings();
-    moved_flag.flipped.offset = 1_079;
+    moved_flag.flipped.as_mut().unwrap().offset = 1_079;
     assert_eq!(finding_count(&native(moved_flag, vec![319, 333], 3)), 1);
     let mut moved_start = settings();
-    moved_start.start_parameter.offset = 2_026;
+    moved_start.start_parameter.as_mut().unwrap().offset = 2_026;
     assert_eq!(finding_count(&native(moved_start, vec![319, 333], 3)), 1);
     assert_eq!(finding_count(&native(settings(), vec![333], 3)), 1);
     assert_eq!(finding_count(&native(settings(), vec![319], 3)), 1);

@@ -131,45 +131,98 @@ fn path_pattern_settings_read_the_settings_and_path_start_records() {
         })
         .expect("path-pattern settings");
         assert_eq!(settings_read.settings_record_index, 322);
-        assert!(settings_read.total_extent.value);
-        assert!(settings_read.flipped.value);
-        assert!(!settings_read.path_oriented.value);
-        assert_eq!(settings_read.path_group_record_index, 333);
-        assert_eq!(settings_read.start_record_index, 319);
-        assert!((settings_read.start_parameter.value.get() - 0.5).abs() <= f64::EPSILON);
+        assert!(settings_read.total_extent.unwrap().value);
+        assert!(settings_read.flipped.unwrap().value);
+        assert!(!settings_read.path_oriented.unwrap().value);
+        assert_eq!(settings_read.path_group_record_index, Some(333));
+        assert_eq!(settings_read.start_record_index, Some(319));
+        assert!((settings_read.start_parameter.unwrap().value.get() - 0.5).abs() <= f64::EPSILON);
     }
     assert!(valid(PathPatternFrame {
         distance_type: 0,
         ..PathPatternFrame::default()
     })
-    .is_some_and(|read| !read.total_extent.value));
+    .is_some_and(|read| !read.total_extent.unwrap().value));
+    let mut bytes = path_pattern_frame(PathPatternFrame {
+        settings_tail: 31,
+        ..PathPatternFrame::default()
+    });
+    for (offset, index) in [(25, 331), (40, 341)] {
+        let mut reference = Vec::new();
+        push_marked_reference(&mut reference, index);
+        bytes[60 + offset..60 + offset + 11].copy_from_slice(&reference);
+    }
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let class_types =
+        std::collections::HashMap::from([(301, &settings), (302, &start), (304, &other)]);
+    let reordered = super::exact_path_pattern_settings(
+        &bytes,
+        &records,
+        &scope(vec![319, 331, 341, 333]),
+        &class_types,
+    )
+    .unwrap();
+    assert!(reordered.reordered_owners);
+    assert!(reordered.total_extent.unwrap().value);
+    assert_eq!(reordered.start_parameter.unwrap().value.get(), 0.5);
+    assert!(super::exact_path_pattern_settings(
+        &bytes,
+        &records,
+        &scope(vec![319, 341, 331, 333]),
+        &class_types
+    )
+    .is_none());
+    assert!(super::exact_path_pattern_settings(
+        &bytes,
+        &records,
+        &scope(vec![319, 331, 333, 341]),
+        &class_types
+    )
+    .is_none());
     for frame in [
         PathPatternFrame {
             distance_type: 2,
             ..PathPatternFrame::default()
         },
         PathPatternFrame {
-            flip: 2,
+            distance_marker: [0; 4],
             ..PathPatternFrame::default()
         },
-        PathPatternFrame {
-            marker: 0,
-            ..PathPatternFrame::default()
-        },
-        PathPatternFrame {
-            distance_marker: [0xff, 0xff, 0xff, 0],
-            ..PathPatternFrame::default()
-        },
-        PathPatternFrame {
-            settings_tail: 1,
-            ..PathPatternFrame::default()
-        },
+    ] {
+        let retained = valid(frame).unwrap();
+        assert!(retained.total_extent.is_none());
+        assert!(retained.flipped.is_some());
+        assert!(retained.start_parameter.is_some());
+    }
+    let retained = valid(PathPatternFrame {
+        flip: 2,
+        ..PathPatternFrame::default()
+    })
+    .unwrap();
+    assert!(retained.flipped.is_none());
+    assert!(retained.total_extent.is_some());
+    for frame in [
         PathPatternFrame {
             start_parameter: f64::NAN,
             ..PathPatternFrame::default()
         },
         PathPatternFrame {
             foreign_start_frame: true,
+            ..PathPatternFrame::default()
+        },
+    ] {
+        let retained = valid(frame).unwrap();
+        assert!(retained.start_parameter.is_none());
+        assert!(retained.total_extent.is_some());
+        assert!(retained.flipped.is_some());
+    }
+    for frame in [
+        PathPatternFrame {
+            marker: 0,
+            ..PathPatternFrame::default()
+        },
+        PathPatternFrame {
+            settings_tail: 1,
             ..PathPatternFrame::default()
         },
     ] {
@@ -188,26 +241,27 @@ fn path_pattern_settings_read_the_settings_and_path_start_records() {
         &start,
         vec![319, 320, 333]
     )
-    .is_none());
+    .is_some_and(|settings| settings.start_parameter.is_none() && settings.flipped.is_some()));
     assert!(read(
         PathPatternFrame::default(),
         &settings,
         &newer_start,
         vec![319, 320, 333]
     )
-    .is_none());
+    .is_some_and(|settings| settings.start_parameter.is_none() && settings.flipped.is_some()));
     assert!(read(
         PathPatternFrame::default(),
         &settings,
         &other,
         vec![320, 333]
     )
-    .is_none());
+    .is_some_and(|settings| settings.start_parameter.is_none() && settings.flipped.is_some()));
     assert!(read(
         PathPatternFrame::default(),
         &settings,
         &other,
         vec![319, 320]
     )
-    .is_none());
+    .is_some_and(|settings| settings.path_group_record_index == Some(333)
+        && settings.start_parameter.is_some()));
 }

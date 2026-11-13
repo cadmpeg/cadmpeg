@@ -9954,6 +9954,25 @@ Unstated regions:
 - `132..152` (20 B): The specification states no field in this range.
 - `157..267` (110 B): The specification states no field in this range.
 
+## `path_pattern_reordered_settings`
+
+Spec §Assembly operands · layout: byte offsets · size: 298 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 25 | 11 | `count_owner_reference` | `bytes[11]` | little | spec | Marked references at offsets 25 and 40 name the count owner and distance owner |
+| 40 | 11 | `distance_owner_reference` | `bytes[11]` | little | spec | Marked references at offsets 25 and 40 name the count owner and distance owner |
+| 157 | 141 | `trailing_payload` | `bytes[141]` | little | spec | Its trailing payload occupies offsets 157 through 297 |
+
+Unstated regions:
+
+- `0..25` (25 B): Shared settings prefix.
+- `36..40` (4 B): Shared settings separator.
+- `51..157` (106 B): Shared fixed controls through offset 156.
+
 ## `path_pattern_start`
 
 Spec §Assembly operands · layout: byte offsets · size: 197 B

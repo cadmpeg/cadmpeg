@@ -4,7 +4,10 @@
 use super::shared_frames::marked_record_reference;
 use crate::bytes::finite_reals_at;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
-use crate::layout::{path_pattern_settings as settings_layout, path_pattern_start as start_layout};
+use crate::layout::{
+    path_pattern_reordered_settings as reordered_layout, path_pattern_settings as settings_layout,
+    path_pattern_start as start_layout,
+};
 use crate::records::feature::patterns::{
     self, PATH_PATTERN_SETTINGS_TYPE, PATH_PATTERN_START_TYPE,
 };
@@ -38,14 +41,36 @@ pub(super) fn exact_path_pattern_settings(
         return None;
     };
     let settings_record_index = marked_record_reference(prefix, reference_at)?;
-    let settings_at = typed_record_frame(
+    let regular = typed_record_frame(
         bytes,
         records,
         class_types,
         settings_record_index,
         PATH_PATTERN_SETTINGS_TYPE,
         settings_layout::LEN,
-    )?;
+    );
+    let reordered = regular.is_none();
+    let settings_at = regular.or_else(|| {
+        let at = typed_record_frame(
+            bytes,
+            records,
+            class_types,
+            settings_record_index,
+            PATH_PATTERN_SETTINGS_TYPE,
+            reordered_layout::LEN,
+        )?;
+        let frame = bytes.get(at..at.checked_add(reordered_layout::LEN)?)?;
+        let owners = [
+            marked_record_reference(frame, reordered_layout::COUNT_OWNER_REFERENCE)?,
+            marked_record_reference(frame, reordered_layout::DISTANCE_OWNER_REFERENCE)?,
+        ];
+        scope
+            .reference_members()
+            .values_in(1..3)?
+            .copied()
+            .eq(owners)
+            .then_some(at)
+    })?;
     let settings = bytes.get(settings_at..settings_at.checked_add(settings_layout::LEN)?)?;
     let flag = |offset: usize| {
         let value = match settings.get(offset)? {
@@ -58,24 +83,18 @@ pub(super) fn exact_path_pattern_settings(
             offset: u64_from_index(settings_at.checked_add(offset)?),
         })
     };
-    if *settings.get(settings_layout::SETTINGS_MARKER)? != settings_layout::SETTINGS_MARKER_VALUE
-        || settings.get(settings_layout::DISTANCE_TYPE_MARKER..settings_layout::DISTANCE_TYPE)?
-            != [0xff; 4]
-    {
+    if *settings.get(settings_layout::SETTINGS_MARKER)? != settings_layout::SETTINGS_MARKER_VALUE {
         return None;
     }
-    let total_extent = flag(settings_layout::DISTANCE_TYPE)?;
-    let flipped = flag(settings_layout::FLIPPED)?;
-    let path_oriented = flag(settings_layout::PATH_ORIENTED)?;
+    let total_extent = (settings
+        .get(settings_layout::DISTANCE_TYPE_MARKER..settings_layout::DISTANCE_TYPE)?
+        == [0xff; 4])
+        .then(|| flag(settings_layout::DISTANCE_TYPE))
+        .flatten();
+    let flipped = flag(settings_layout::FLIPPED);
+    let path_oriented = flag(settings_layout::PATH_ORIENTED);
     let path_group_record_index =
-        marked_record_reference(settings, settings_layout::PATH_GROUP_REFERENCE)?;
-    if !scope
-        .reference_members()
-        .values()
-        .any(|member| *member == path_group_record_index)
-    {
-        return None;
-    }
+        marked_record_reference(settings, settings_layout::PATH_GROUP_REFERENCE);
     let mut starts = scope.reference_members().values().filter(|record_index| {
         record_frames_of_type(
             bytes,
@@ -87,21 +106,25 @@ pub(super) fn exact_path_pattern_settings(
         .next()
         .is_some()
     });
-    let start_record_index = *starts.next()?;
-    if starts.next().is_some() {
-        return None;
-    }
-    let start_record_at = typed_record_frame(
-        bytes,
-        records,
-        class_types,
-        start_record_index,
-        PATH_PATTERN_START_TYPE,
-        start_layout::LEN,
-    )?;
-    let start_parameter_at = start_record_at.checked_add(start_layout::START_PARAMETER)?;
-    let [start_parameter] = finite_reals_at::<1>(bytes, start_parameter_at)?;
+    let start_record_index = starts.next().copied().filter(|_| starts.next().is_none());
+    let start_parameter = start_record_index.and_then(|start_record_index| {
+        let start_record_at = typed_record_frame(
+            bytes,
+            records,
+            class_types,
+            start_record_index,
+            PATH_PATTERN_START_TYPE,
+            start_layout::LEN,
+        )?;
+        let start_parameter_at = start_record_at.checked_add(start_layout::START_PARAMETER)?;
+        let [start_parameter] = finite_reals_at::<1>(bytes, start_parameter_at)?;
+        Some(Located {
+            value: start_parameter,
+            offset: u64_from_index(start_parameter_at),
+        })
+    });
     Some(patterns::DesignPathPatternSettings {
+        reordered_owners: reordered,
         settings_record_index,
         settings_byte_offset: u64_from_index(settings_at),
         total_extent,
@@ -109,10 +132,7 @@ pub(super) fn exact_path_pattern_settings(
         path_oriented,
         path_group_record_index,
         start_record_index,
-        start_parameter: Located {
-            value: start_parameter,
-            offset: u64_from_index(start_parameter_at),
-        },
+        start_parameter,
     })
 }
 

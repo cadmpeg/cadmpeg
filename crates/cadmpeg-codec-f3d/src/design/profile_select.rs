@@ -376,8 +376,7 @@ pub(crate) fn bind_path_pattern_sketch_selections(
     resolution: &SketchCurveSelectionResolution<'_>,
 ) {
     use cadmpeg_ir::features::{
-        patterns::{PatternKind, PatternTransform},
-        FeatureDefinition, FeatureOperation, PathRef,
+        patterns::PatternTransform, FeatureDefinition, FeatureOperation, PathRef,
     };
 
     let path_resolution = resolution.path_resolution();
@@ -388,13 +387,18 @@ pub(crate) fn bind_path_pattern_sketch_selections(
             else {
                 break 'feature_edit;
             };
-            let PatternTransform::CurveDriven {
-                path: Some(PathRef::Native(group_id)),
-                spacing,
-                count,
-            } = pattern.definition()
-            else {
-                break 'feature_edit;
+            let group_id = match pattern.definition() {
+                PatternTransform::CurveDriven {
+                    path: Some(PathRef::Native(group_id)),
+                    ..
+                } => group_id,
+                PatternTransform::CurveDrivenPartial { parameters } => {
+                    let Some(PathRef::Native(group_id)) = parameters.path.as_ref() else {
+                        break 'feature_edit;
+                    };
+                    group_id
+                }
+                _ => break 'feature_edit,
             };
             let mut matching_groups = resolution.groups.iter().filter(|group| {
                 group.id == *group_id
@@ -416,12 +420,8 @@ pub(crate) fn bind_path_pattern_sketch_selections(
             let Some(path) = resolve_entity_selection_path(group, &path_resolution) else {
                 break 'feature_edit;
             };
-            if let Ok(resolved) = PatternKind::new(PatternTransform::CurveDriven {
-                path: Some(path),
-                spacing: *spacing,
-                count: *count,
-            }) {
-                *pattern = resolved;
+            if let Some(slot) = pattern.curve_path_mut() {
+                *slot = Some(path);
             }
         });
     }

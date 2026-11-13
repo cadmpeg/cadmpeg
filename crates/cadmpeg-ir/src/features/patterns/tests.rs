@@ -13,6 +13,65 @@ use crate::{
 };
 use serde_json::json;
 
+#[test]
+fn partial_curve_driven_preserves_independent_values_through_wire_and_units() {
+    use crate::features::patterns::curve_driven::CurveDrivenPatternParameters;
+    use crate::features::PathRef;
+
+    let parameters = CurveDrivenPatternParameters {
+        path: Some(PathRef::Native("synthetic:path".into())),
+        count: Some(4),
+        distance: PositiveLength::new(24.0),
+        spacing: PositiveLength::new(8.0),
+        total_extent: Some(true),
+        reversed: Some(true),
+        path_oriented: Some(false),
+        start_parameter: crate::scalar::FiniteReal::new(0.25),
+    };
+    let pattern = PatternKind::<CompositePattern>::new(PatternTransform::CurveDrivenPartial {
+        parameters: parameters.clone(),
+    })
+    .unwrap();
+    assert_eq!(pattern.occurrence_count(), Some(4));
+    let wire = serde_json::to_value(&pattern).unwrap();
+    assert_eq!(
+        serde_json::from_value::<PatternKind>(wire).unwrap(),
+        pattern
+    );
+    let scaled = pattern
+        .try_map_lengths_owned(&mut |field| {
+            if let PatternLengthField::PositiveLength(length) = field {
+                *length = PositiveLength::new(length.get() * 10.0).unwrap();
+            }
+            Ok::<_, ()>(())
+        })
+        .unwrap();
+    let PatternTransform::CurveDrivenPartial { parameters: scaled } = scaled.definition() else {
+        panic!("partial curve-driven");
+    };
+    assert_eq!(scaled.spacing.map(PositiveLength::get), Some(80.0));
+    assert_eq!(scaled.distance.map(PositiveLength::get), Some(240.0));
+    assert_eq!(scaled.start_parameter, parameters.start_parameter);
+    assert_eq!(scaled.reversed, parameters.reversed);
+    assert!(serde_json::from_value::<PatternKind>(
+        json!({"kind":"curve_driven_partial", "parameters":{"count":0}})
+    )
+    .is_err());
+    assert!(serde_json::from_value::<PatternKind>(
+        json!({"kind":"curve_driven_partial", "parameters":{"count":null}})
+    )
+    .is_err());
+    let empty = PatternKind::<CompositePattern>::new(PatternTransform::CurveDrivenPartial {
+        parameters: CurveDrivenPatternParameters::default(),
+    })
+    .unwrap();
+    assert_eq!(empty.occurrence_count(), None);
+    assert_eq!(
+        serde_json::to_value(empty).unwrap(),
+        json!({"kind":"curve_driven_partial", "parameters":{}})
+    );
+}
+
 fn direction(x: f64, y: f64, z: f64) -> FeatureDirection3 {
     FeatureDirection3::new(Vector3::new(x, y, z)).unwrap()
 }

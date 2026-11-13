@@ -1420,10 +1420,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     {
                         path_pattern::path_pattern_definition(
                             scope,
-                            construction_groups,
+                            inputs,
                             &parameters,
                             &mut projection_losses,
-                        )?
+                        )
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::MoveFace
                     {
@@ -1554,7 +1554,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 source_properties: if matches!(
                     &definition,
                     FeatureDefinition::Operation(FeatureOperation::Native { .. })
-                ) || matches!(family, Some(DesignFeatureFamily::Hole))
+                ) || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CurveDrivenPartial { .. }))
+                    || matches!(family, Some(DesignFeatureFamily::Hole))
                 {
                     scope_properties(scope, native_scope, placements, &parameters)?
                 } else {
