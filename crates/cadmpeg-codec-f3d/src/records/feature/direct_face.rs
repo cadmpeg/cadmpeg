@@ -120,6 +120,10 @@ pub(crate) struct DesignThickenOperation {
     pub(crate) thickness_record_index: u32,
     /// Byte offset of the scalar.
     pub(crate) thickness_offset: u64,
+    /// Whether the thickness is added on both sides of the selected faces.
+    pub(crate) symmetric: bool,
+    /// Whether the selection extends along tangent faces.
+    pub(crate) tangent_chain: bool,
 }
 
 cadmpeg_core::named_optional_field!(deserialize_move_prefix, DesignMovePrefix, "prefix");
