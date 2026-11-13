@@ -113,6 +113,58 @@ fn thicken_projects_native_group() {
 }
 
 #[test]
+fn thicken_retains_direct_scope_faces_with_declared_input_groups() {
+    for missing_group in [false, true] {
+        let mut scope = thicken_after_state(5);
+        if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+            operation.group_record_indices = if missing_group {
+                vec![100, 110]
+            } else {
+                vec![100]
+            };
+        }
+        let mut operand = resolved_member_operand();
+        operand.group = None;
+        let mut losses = Vec::new();
+        let FeatureOperation::Thicken { faces, .. } =
+            projected_operation(Ok(super::super::thicken::project_thicken(
+                &scope,
+                &[operand],
+                &[group(DesignOperandRole::ROLE_0X12)],
+                &mut losses,
+            )))
+        else {
+            panic!("Thicken");
+        };
+        let expected = crate::ids::history_input_face_id(
+            &crate::ids::feature_input_prefix(&crate::ids::neutral_feature_id(&scope), 5),
+            27,
+        );
+        match faces {
+            FaceSelection::Historical { faces, .. } => {
+                assert!(!missing_group);
+                assert_eq!(faces.as_slice(), [expected]);
+            }
+            FaceSelection::HistoricalPartial {
+                faces, unresolved, ..
+            } => {
+                assert!(missing_group);
+                assert_eq!(faces.as_slice(), [expected]);
+                assert_eq!(unresolved.as_slice(), [scope.id]);
+            }
+            _ => panic!("direct historical face is retained"),
+        }
+        assert_eq!(losses.len(), usize::from(missing_group));
+        if missing_group {
+            assert_eq!(
+                losses[0].code.local_code(),
+                "feature.thicken-face-selection-assumed"
+            );
+        }
+    }
+}
+
+#[test]
 fn thicken_boolean_results_survive_missing_scalar_and_target_definitions() {
     use crate::records::feature::direct_face::{
         DesignThickenBoolean, DesignThickenBooleanOperation,

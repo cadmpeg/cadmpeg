@@ -302,7 +302,7 @@ pub(super) fn bind_face_selection(
                     operation.group_record_indices.is_empty()
                         || operand
                             .group_record_index()
-                            .is_some_and(|index| operation.group_record_indices.contains(&index))
+                            .is_none_or(|index| operation.group_record_indices.contains(&index))
                 }
                 _ => true,
             };

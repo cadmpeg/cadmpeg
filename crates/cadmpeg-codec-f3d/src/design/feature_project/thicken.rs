@@ -53,7 +53,7 @@ pub(crate) fn project_thicken(
         operands.iter().filter(|operand| {
             operation.as_ref().is_none_or(|operation| {
                 operation.group_record_indices.is_empty()
-                    || operand.group_record_index().is_some_and(selected)
+                    || operand.group_record_index().is_none_or(selected)
             })
         }),
     )
