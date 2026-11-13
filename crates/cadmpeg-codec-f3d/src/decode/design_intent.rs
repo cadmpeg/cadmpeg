@@ -717,9 +717,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         scan,
         &design.design_parameter_scopes,
         &design.design_decal_images,
-        &design.design_construction_operand_groups,
-        &design.design_body_recipe_operands,
+        crate::design::decode::decal::DecalTargets {
+            groups: &design.design_construction_operand_groups,
+            operands: &design.design_body_recipe_operands,
+        },
         &mut model.features,
+        &mut losses,
     )?;
     extend_design_assets(geometry.assets, &mut model.assets, decal_assets)?;
     let mut scope_histories = crate::history::bind_scope_histories(

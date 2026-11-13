@@ -1884,56 +1884,33 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         let group = ctx
             .operand_groups_by_index
             .get(&(native_stream, image.target_group_record_index));
-        let operand = group.and_then(|group| {
-            let member = group.members().first()?.value;
-            ctx.native
-                .design_body_recipe_operands
+        let neutral_is_valid = scope.is_none_or(|scope| {
+            let expected_faces = crate::design::decode::decal::DecalTargets {
+                groups: &ctx.native.design_construction_operand_groups,
+                operands: &ctx.native.design_body_recipe_operands,
+            }
+            .faces(scope, image)
+            .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(scope.id.clone()));
+            ctx.ir
+                .model
+                .features
                 .iter()
-                .find(|operand| {
-                    design_stream(&operand.id) == native_stream
-                        && operand.scope_record_index == image.scope_record_index()
-                        && operand.record_index() == member
-                        && operand.owner.group() == Some((group.record_index, 0))
+                .filter(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+                .all(|feature| {
+                    matches!(
+                        feature.evaluation.definition(),
+                        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Decal {
+                            asset,
+                            faces,
+                            mapping: cadmpeg_ir::features::DecalMapping::FitToFaces,
+                            opacity: None,
+                        }) if faces == &expected_faces
+                            && ctx.ir.model.assets.iter().any(|candidate| {
+                                candidate.id == *asset
+                                    && candidate.name.as_ref().map(cadmpeg_core::text::NonBlankString::as_str) == Some(image.asset.name())
+                            })
+                    )
                 })
-        });
-        let projected =
-            if image.mapping_mode == crate::records::decal::DesignDecalMappingMode::FitToFaces {
-                if let Some(operand) = operand {
-                    let mut faces = (operand
-                        .references()
-                        .iter()
-                        .flat_map(|reference| reference.candidate_faces.iter()))
-                    .cloned()
-                    .collect::<Vec<_>>();
-                    faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-                    faces.dedup();
-                    (!faces.is_empty()).then_some((operand, faces))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-        let neutral_is_valid = projected.is_none_or(|(operand, expected_faces)| {
-            scope.is_some_and(|scope| {
-                ctx.ir.model.features.iter().any(|feature| {
-                    feature.native_ref.as_deref() == Some(scope.id.as_str())
-                        && matches!(
-                            feature.evaluation.definition(),
-                            cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Decal {
-                                asset,
-                                faces: cadmpeg_ir::features::FaceSelection::Resolved { faces, native },
-                                mapping: cadmpeg_ir::features::DecalMapping::FitToFaces,
-                                opacity: None,
-                            }) if faces == &expected_faces
-                                && native == &operand.id
-                                && ctx.ir.model.assets.iter().any(|candidate| {
-                                    candidate.id == *asset
-                                        && candidate.name.as_ref().map(cadmpeg_core::text::NonBlankString::as_str) == Some(image.asset.name())
-                                })
-                        )
-                })
-            })
         });
         let scope_valid = scope.is_some_and(|scope| {
             scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal
@@ -1956,9 +1933,7 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             && group.is_some_and(|group| {
                 group.scope_record_index == image.scope_record_index()
                     && group.role() == TARGET_ROLE
-                    && group.members().len() == 1
             })
-            && operand.is_some()
             && neutral_is_valid;
         if !valid {
             push_constant_finding(

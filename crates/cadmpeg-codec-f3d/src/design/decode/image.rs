@@ -20,19 +20,7 @@ pub(super) fn embedded_image_asset(
     let (Some(entry), None) = (entries.next(), entries.next()) else {
         return Ok(None);
     };
-    let media_type = std::path::Path::new(asset_name)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .and_then(|extension| {
-            if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
-                Some("image/jpeg")
-            } else if extension.eq_ignore_ascii_case("png") {
-                Some("image/png")
-            } else {
-                None
-            }
-        })
-        .map(str::to_owned);
+    let media_type = image_media_type(asset_name);
     if entry.attributes.contains_key("payload_error") {
         return Ok(None);
     }
@@ -55,6 +43,22 @@ pub(super) fn embedded_image_asset(
         )
         .map_err(CodecError::Malformed)?,
     ))
+}
+
+pub(super) fn image_media_type(asset_name: &str) -> Option<String> {
+    std::path::Path::new(asset_name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .and_then(|extension| {
+            if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
+                Some("image/jpeg")
+            } else if extension.eq_ignore_ascii_case("png") {
+                Some("image/png")
+            } else {
+                None
+            }
+        })
+        .map(str::to_owned)
 }
 
 /// Decode image scopes in their owning streams, ordered by native identity.
