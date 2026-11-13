@@ -634,6 +634,7 @@ fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_inf
             Some(&structure),
             references,
             candidate_edges,
+            &[],
             &topology,
             &mut queries,
         )
