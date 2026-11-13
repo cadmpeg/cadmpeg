@@ -954,6 +954,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::Emboss) => project_emboss(
                     scope,
                     &parameters,
+                    owners,
                     construction_groups,
                     face_operands,
                     &mut projection_losses,
@@ -2522,28 +2523,28 @@ fn scope_properties(
             (
                 "Depth",
                 "mm",
-                emboss_parameter(parameters, "Depth")
+                emboss_parameter(scope, parameters, "Depth")
                     .and_then(design_length)
                     .map(|v| v.get()),
             ),
             (
                 "Horizontal Distance",
                 "mm",
-                emboss_parameter(parameters, "Horizontal Distance")
+                emboss_parameter(scope, parameters, "Horizontal Distance")
                     .and_then(design_length)
                     .map(|v| v.get()),
             ),
             (
                 "Vertical Distance",
                 "mm",
-                emboss_parameter(parameters, "Vertical Distance")
+                emboss_parameter(scope, parameters, "Vertical Distance")
                     .and_then(design_length)
                     .map(|v| v.get()),
             ),
             (
                 "Rotation Angle",
                 "rad",
-                emboss_parameter(parameters, "Rotation Angle")
+                emboss_parameter(scope, parameters, "Rotation Angle")
                     .and_then(design_angle)
                     .map(|v| v.get()),
             ),
@@ -8026,20 +8027,90 @@ fn hole_placements(
 }
 
 fn emboss_parameter<'b>(
+    scope: &DesignParameterScope,
     parameters: &[(u32, &'b DesignParameter)],
     source_kind: &str,
 ) -> Option<&'b DesignParameter> {
-    let mut matches = parameters
+    if let Some(reference) = scope.emboss_construction().and_then(|construction| {
+        construction
+            .scalar_owners()
+            .into_iter()
+            .find_map(|(reference, role)| (role == source_kind).then_some(reference.value))
+    }) {
+        let mut named = parameters.iter().filter(|(_, parameter)| {
+            parameter.source_kind_str() == source_kind
+                && parameter.owner_record_index() == Some(reference)
+        });
+        if let Some((_, parameter)) = named.next() {
+            if named.next().is_none() {
+                return Some(parameter);
+            }
+        }
+    }
+    let mut matching = parameters
         .iter()
         .filter(|(_, parameter)| parameter.source_kind_str() == source_kind)
         .map(|(_, parameter)| *parameter);
-    let parameter = matches.next()?;
-    matches.next().is_none().then_some(parameter)
+    let parameter = matching.next()?;
+    matching.next().is_none().then_some(parameter)
+}
+
+fn emboss_group<'a>(
+    scope: &DesignParameterScope,
+    groups: &'a [DesignConstructionOperandGroup],
+    record_index: u32,
+) -> Option<&'a DesignConstructionOperandGroup> {
+    let mut matching = groups.iter().filter(|group| {
+        native_stream(&group.id) == native_stream(&scope.id)
+            && group.scope_record_index == scope.record_index
+            && group.record_index == record_index
+    });
+    let group = matching.next()?;
+    matching.next().is_none().then_some(group)
+}
+
+fn emboss_scalar_owner_is_proven(
+    scope: &DesignParameterScope,
+    parameter: &DesignParameter,
+    owners: &[DesignParameterOwner],
+) -> bool {
+    let Some(reference) = scope.emboss_construction().and_then(|construction| {
+        construction
+            .scalar_owners()
+            .into_iter()
+            .find_map(|(reference, role)| {
+                (role == parameter.source_kind_str()).then_some(reference.value)
+            })
+    }) else {
+        return false;
+    };
+    let mut matching = owners.iter().filter(|owner| {
+        native_stream(owner.id()) == native_stream(&scope.id)
+            && owner.scope_record_index() == scope.record_index
+            && owner.record_index() == reference
+    });
+    let Some(owner) = matching.next() else {
+        return false;
+    };
+    matching.next().is_none()
+        && parameter.owner_record_index() == Some(reference)
+        && parameter.record_index == owner.parameter_record_index()
+        && native_stream(&parameter.id) == native_stream(&scope.id)
+        && parameter.kind() == DesignParameterKind::Feature
+        && parameter.evaluated_value() == owner.evaluated_value()
+        && parameter.unit().is_some_and(|unit| {
+            if parameter.source_kind_str() == "Rotation Angle" {
+                design_angle_unit(unit.value.as_str())
+            } else {
+                design_length_unit(unit.value.as_str())
+            }
+        })
 }
 
 fn project_emboss(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
+    owners: &[DesignParameterOwner],
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -8051,19 +8122,32 @@ fn project_emboss(
     let source_scope = scope.id.as_str();
     let construction = scope.emboss_construction();
     let profile_source = construction
-        .and_then(|value| {
-            let mut matching = groups.iter().filter(|group| {
-                native_stream(&group.id) == native_stream(&scope.id)
-                    && group.scope_record_index == scope.record_index
-                    && group.record_index == value.profile_group.value
-            });
-            let group = matching.next()?;
-            matching.next().is_none().then(|| group.id.clone())
-        })
-        .unwrap_or_else(|| source_scope.to_owned());
+        .and_then(|value| emboss_group(scope, groups, value.profile_group.value))
+        .map_or_else(|| source_scope.to_owned(), |group| group.id.clone());
     let profile = PlanarProfileRef::Native(profile_source);
-    let target = resolved_direct_face_selection(scope, face_operands)?
-        .unwrap_or_else(|| FaceSelection::Native(source_scope.to_owned()));
+    let target = if let Some(group) =
+        construction.and_then(|value| emboss_group(scope, groups, value.face_group.value))
+    {
+        resolved_face_group(group, face_operands)?
+            .unwrap_or_else(|| FaceSelection::Native(group.id.clone()))
+    } else {
+        FaceSelection::Native(source_scope.to_owned())
+    };
+    for role in [
+        "Depth",
+        "Horizontal Distance",
+        "Vertical Distance",
+        "Rotation Angle",
+    ] {
+        if let Some(parameter) = emboss_parameter(scope, parameters, role) {
+            if !emboss_scalar_owner_is_proven(scope, parameter, owners) {
+                losses.push(crate::loss::F3dLossCode::EmbossScalarOwnerAssumed.note(format!(
+                    "Emboss scope {} retains its {} parameter independently of an unresolved or inconsistent scalar-owner association (DR-121).",
+                    scope.id, role
+                )));
+            }
+        }
+    }
     losses.push(crate::loss::F3dLossCode::EmbossProfileSelectionNative.note(format!(
         "Emboss scope {} retains its native sketch-profile reference because the selected contour mapping is unresolved.",
         scope.id
@@ -8074,7 +8158,7 @@ fn project_emboss(
             scope.id
         )));
     }
-    let depth = emboss_parameter(parameters, "Depth").and_then(design_length);
+    let depth = emboss_parameter(scope, parameters, "Depth").and_then(design_length);
     let mode = depth
         .and_then(|signed| {
             cadmpeg_ir::scalar::PositiveLength::new(signed.get().abs()).map(|magnitude| {

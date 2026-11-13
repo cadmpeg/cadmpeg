@@ -284,6 +284,7 @@ pub(crate) enum F3dLossCode {
     EmbossTargetSelectionNative,
     EmbossDepthUnresolved,
     EmbossDepthSignAssumed,
+    EmbossScalarOwnerAssumed,
     EmbossPlacementNative,
     /// A non-equivalent duplicate scope envelope was superseded by the
     /// primary-indexed envelope.
@@ -859,6 +860,7 @@ impl F3dLossCode {
         Self::EmbossTargetSelectionNative,
         Self::EmbossDepthUnresolved,
         Self::EmbossDepthSignAssumed,
+        Self::EmbossScalarOwnerAssumed,
         Self::EmbossPlacementNative,
         Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
@@ -1241,6 +1243,7 @@ impl F3dLossCode {
             Self::EmbossTargetSelectionNative => "feature.emboss-target-selection-native",
             Self::EmbossDepthUnresolved => "feature.emboss-depth-unresolved",
             Self::EmbossDepthSignAssumed => "feature.emboss-depth-sign-assumed",
+            Self::EmbossScalarOwnerAssumed => "feature.emboss-scalar-owner-assumed",
             Self::EmbossPlacementNative => "feature.emboss-placement-native",
             Self::AlignOperandsUnresolved => "feature.align-operands-unresolved",
             Self::AlignEnvelopeUnparsed => "feature.align-envelope-unparsed",
@@ -1694,6 +1697,7 @@ impl F3dLossCode {
             | Self::EmbossTargetSelectionNative
             | Self::EmbossDepthUnresolved
             | Self::EmbossDepthSignAssumed
+            | Self::EmbossScalarOwnerAssumed
             | Self::EmbossPlacementNative
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
@@ -2021,6 +2025,7 @@ impl F3dLossCode {
             | Self::EmbossTargetSelectionNative
             | Self::EmbossDepthUnresolved
             | Self::EmbossDepthSignAssumed
+            | Self::EmbossScalarOwnerAssumed
             | Self::EmbossPlacementNative
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
@@ -2434,6 +2439,7 @@ mod tests {
                 "feature.emboss-target-selection-native",
                 "feature.emboss-depth-unresolved",
                 "feature.emboss-depth-sign-assumed",
+                "feature.emboss-scalar-owner-assumed",
                 "feature.emboss-placement-native",
                 "feature.scope-envelope-superseded",
                 "parameter.unprojected",

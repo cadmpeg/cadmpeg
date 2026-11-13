@@ -5672,7 +5672,9 @@ pub enum BodyRetentionMode {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum WrapMode {
+    #[doc = "Material effect with an independently retained signed depth."]
     Unresolved {
+        #[doc = "Signed depth in millimetres when available."]
         depth: Option<Length>,
     },
     /// Add material above the target face.
