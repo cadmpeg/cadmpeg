@@ -418,6 +418,12 @@ pub(crate) fn decode_parameter_scopes(
                     envelope.construction = super::align::construction::decode_align_construction(
                         bytes, &records, &scope, envelope,
                     );
+                    envelope.motion = super::direct_face::exact_align_operation(
+                        bytes,
+                        &records,
+                        envelope,
+                        &class_types,
+                    );
                 }
                 if let scope::DesignScopePayloadMut::Align(slot) = scope.payload_mut() {
                     *slot = envelope;
@@ -742,10 +748,9 @@ pub(crate) fn decode_parameter_scopes(
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     out.dedup_by(|a, b| a.id == b.id);
-    for scope in out
-        .iter()
-        .filter(|scope| scope.kind() == scope::DesignFeatureKind::Align)
-    {
+    for scope in out.iter().filter(|scope| {
+        scope.kind() == scope::DesignFeatureKind::Align && scope.move_operation().is_none()
+    }) {
         losses.push(super::align::align_native_loss(
             scope,
             scope.align_envelope(),

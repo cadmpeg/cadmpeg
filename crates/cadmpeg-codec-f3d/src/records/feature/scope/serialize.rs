@@ -181,11 +181,13 @@ impl Serialize for DesignParameterScope {
             DesignScopePayload::Thicken(Some(value)) => {
                 emit!("direct_face_operation", DirectFaceRef::Thicken(value));
             }
+            DesignScopePayload::Move(Some(value)) | DesignScopePayload::MoveFace(Some(value)) => {
+                emit!("move_operation", value);
+            }
             _ => {}
         }
 
         emit_opt!("align_envelope", self.align_envelope());
-        emit_opt!("move_operation", self.move_operation());
         emit_opt!("modify_operation", self.modify_operation());
         emit_opt!("scale_operation", self.scale_operation());
         emit_opt!("reverse_normal_operation", self.reverse_normal_operation());
