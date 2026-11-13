@@ -11,6 +11,9 @@ use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 
+/// Body-group reference offset of a scope without the marker word at offset 21.
+const UNMARKED_BODY_GROUP_REFERENCE: usize = 29;
+
 pub(super) fn exact_copy_paste_bodies_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -33,10 +36,13 @@ pub(super) fn exact_copy_paste_bodies_operation(
             {
                 start + prefix::BODY_GROUP_REFERENCE
             } else {
-                start + 29
+                start + UNMARKED_BODY_GROUP_REFERENCE
             };
         let body_group_record_index = marked_record_reference(bytes, references_at)?;
-        let relation_record_index = marked_record_reference(bytes, references_at + 11)?;
+        let relation_record_index = marked_record_reference(
+            bytes,
+            references_at + (prefix::RELATION_REFERENCE - prefix::BODY_GROUP_REFERENCE),
+        )?;
         if *scope.reference_members().values().next()? != body_group_record_index {
             return None;
         }

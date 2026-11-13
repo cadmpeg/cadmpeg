@@ -116,7 +116,9 @@ fn a_prologue_zero_scope_reads_its_references_after_the_marker_word() {
     let operation = decode(&bytes).expect("prologue-zero CopyPasteBodies operation");
     assert_eq!(operation.body_group_record_index, 1_500);
     assert_eq!(operation.relation_record_index, 1_700);
-    let mut other_marker = bytes.clone();
-    other_marker[start + 21] = 2;
-    assert!(decode(&other_marker).is_none());
+    for (at, value) in [(start + 21, 2), (start + 15, 7), (start + 20, 1)] {
+        let mut other = bytes.clone();
+        other[at] = value;
+        assert!(decode(&other).is_none(), "byte {at} = {value}");
+    }
 }

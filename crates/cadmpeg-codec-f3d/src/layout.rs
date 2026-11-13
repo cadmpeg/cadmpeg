@@ -659,7 +659,7 @@ pub(crate) mod shell_marked_slot_scope_prefix {
 /// Spec §3.1. Record length 47 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header of a CopyPasteBodies scope whose prologue byte is zero.
+/// Offsets are relative to the primary indexed header of a CopyPasteBodies scope with the marker word at offset 21.
 /// ```
 pub(crate) mod copy_paste_bodies_scope_prefix {
     /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
@@ -672,6 +672,8 @@ pub(crate) mod copy_paste_bodies_scope_prefix {
     pub(crate) const MARKER_WORD_VALUE: u32 = 0x0000_0001;
     /// Offset of `body_group_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const BODY_GROUP_REFERENCE: usize = 25;
+    /// Offset of `relation_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RELATION_REFERENCE: usize = 36;
 }
 
 /// Byte offsets for the `chamfer_scope_prologue` record.
