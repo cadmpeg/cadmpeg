@@ -1153,23 +1153,23 @@ The first closing reference run identifies a direct contained child by its local
 
 The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are tracked in DR-481.
 
-### DR-390. Fillet set flag byte and set-list flag run
+### DR-390. Fillet set marker bytes and compact flag-run form
 
-**Question.** What do the flag byte of a fillet set record and the two flag-run forms of a parameter-owned `Fillet` scope prefix encode?
+**Question.** What do the fillet set marker byte, the `00 01` tail of the current flag run, and the compact flag-run form encode, and do the chordal and compact set forms store curvature continuity?
 
-**Known.** `f3d.md` §3.1 "A parameter-owned `Fillet` scope names its fillet sets in a prefix" gives the positions and admitted values of both. The flag byte is `0` or `1` at offset 26 of a 97-byte set frame and at offset 24 of a 93-byte set frame; the flag run is `01 00 01` or `01 01`, each followed by nine zero bytes. The decoder retains the raw byte as the set's `flag` and the run as the list's `form` (`current` or `compact`).
+**Known.** `f3d.md` §3.1 "A parameter-owned `Fillet` scope names its fillet sets in a prefix" gives their positions and admitted values. The decoder reads the tangent-chain byte in all three set forms and the curvature-continuity byte in the 97-byte constant form only, where controlled saves vary each setting alone.
 
-**Need.** Controlled designs that vary one Fillet option at a time, saved by one Fusion version.
+**Need.** Chordal and compact Fillet saves with tangent chain off and with curvature continuity.
 
 **Conflict.** None.
 
-### DR-460. Chamfer set flag, entry run, fixed words, and auxiliary record
+### DR-460. Chamfer entry trailing byte, fixed byte, and auxiliary record
 
-**Question.** What do the prefix `u32 1` after the prologue, the chamfer set flag byte, the entry-run marker form, the prefix entry run, the fixed `u32 1` and `u8 1` words, and the auxiliary record of a parameter-owned `Chamfer` scope encode?
+**Question.** What do the zero byte that ends each prefix entry, the fixed `u8 1` of the equal, two-distance, and distance-angle set forms, the entry-run marker forms, and the auxiliary record of a parameter-owned `Chamfer` scope encode?
 
-**Known.** `f3d.md` §3.1 "A parameter-owned `Chamfer` scope names its chamfer sets in a prefix" gives their positions and admitted values. The decoder retains the flag byte as the set's `flag`, the marker as the list's `form` (`current` or `compact`), `E` as the list's `entry_count`, and the auxiliary record index as the set's `auxiliary_record_index`.
+**Known.** `f3d.md` §3.1 "A parameter-owned `Chamfer` scope names its chamfer sets in a prefix" gives their positions and admitted values. The decoder retains the marker as the list's `form` and the auxiliary record index as the set's `auxiliary_record_index`.
 
-**Need.** Controlled Chamfer designs that vary one option at a time and a multi-set Chamfer, saved by one Fusion version.
+**Need.** Controlled Chamfer saves that vary distance mode, flip direction, and edge chaining one at a time.
 
 **Conflict.** None.
 

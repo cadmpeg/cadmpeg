@@ -202,7 +202,9 @@ fn constant_set_names_group_radius_and_tangency_owners() {
         }
     );
     assert_eq!(set.tangency_weight_owner_record_index, TANGENCY_OWNER);
-    assert!(set.flag);
+    assert!(set.tangent_chain);
+    assert_eq!(set.curvature_continuity, Some(false));
+    assert!(list.rolling_ball_corner);
 }
 
 #[test]
@@ -498,4 +500,47 @@ fn a_set_ordinal_other_than_its_position_rejects_the_set() {
         &[law_owner, tangency_owner],
     )
     .is_none());
+}
+
+#[test]
+fn rolling_ball_corner_and_curvature_continuity_read_from_their_bytes() {
+    let (mut bytes, scope) = stream(&Fixture::default());
+    let set_start =
+        crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
+    bytes[40] = 0;
+    bytes[set_start + 25] = 1;
+    let (law_parameter, law_owner) = owned(LAW_OWNER, "Radius");
+    let (tangency_parameter, tangency_owner) = owned(TANGENCY_OWNER, "TangencyWeight");
+    let parameters = [law_parameter, tangency_parameter];
+    let owners = [law_owner, tangency_owner];
+    let list = fillet_set_list(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+        &parameters,
+        &owners,
+    )
+    .unwrap();
+    assert!(!list.rolling_ball_corner);
+    assert_eq!(list.sets[0].curvature_continuity, Some(true));
+    for (at, value) in [(40, 2), (set_start + 25, 2)] {
+        let mut bytes = bytes.clone();
+        bytes[at] = value;
+        assert!(fillet_set_list(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &parameters,
+            &owners,
+        )
+        .is_none());
+    }
+    let chordal = Fixture {
+        set_form: Form::Chordal,
+        ..Fixture::default()
+    };
+    assert_eq!(
+        decode(&chordal, "ChordLen").unwrap().sets[0].curvature_continuity,
+        None
+    );
 }

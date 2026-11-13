@@ -2,7 +2,8 @@
 #[test]
 fn chamfer_sets_name_scope_members_and_owners_of_their_namespace() {
     use crate::records::feature::chamfer_set::{
-        DesignChamferSet, DesignChamferSetList, DesignChamferSetListForm, DesignChamferSetSpec,
+        DesignChamferCornerType, DesignChamferSet, DesignChamferSetList, DesignChamferSetListForm,
+        DesignChamferSetSpec,
     };
     use crate::records::feature::scope::{
         DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
@@ -35,6 +36,7 @@ fn chamfer_sets_name_scope_members_and_owners_of_their_namespace() {
         };
         slot.sets = Some(DesignChamferSetList {
             form: DesignChamferSetListForm::Current,
+            corner_type: DesignChamferCornerType::Chamfer,
             entry_count: 1,
             sets: vec![
                 DesignChamferSet {
@@ -44,7 +46,8 @@ fn chamfer_sets_name_scope_members_and_owners_of_their_namespace() {
                     group_record_index: 100,
                     spec,
                     auxiliary_record_index: 12,
-                    flag: true,
+                    entry_count: 1,
+                    tangent_chain: true,
                 };
                 sets
             ],

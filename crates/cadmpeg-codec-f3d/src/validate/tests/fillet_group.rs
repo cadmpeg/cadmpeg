@@ -318,6 +318,7 @@ fn fillet_set_native_with(
     };
     slot.sets = Some(DesignFilletSetList {
         form: DesignFilletSetListForm::Current,
+        rolling_ball_corner: true,
         sets: vec![DesignFilletSet {
             record_index: 11,
             byte_offset: 500,
@@ -327,7 +328,8 @@ fn fillet_set_native_with(
                 radius_owner_record_index,
             },
             tangency_weight_owner_record_index,
-            flag: false,
+            tangent_chain: false,
+            curvature_continuity: None,
         }],
     });
     native

@@ -239,7 +239,12 @@ fn each_set_form_names_its_group_owners_and_auxiliary_record() {
         (SET, 83, GROUP)
     );
     assert_eq!(set.auxiliary_record_index, AUXILIARY);
-    assert!(set.flag);
+    assert!(set.tangent_chain);
+    assert_eq!(set.entry_count, 2);
+    assert_eq!(
+        list.corner_type,
+        crate::records::feature::chamfer_set::DesignChamferCornerType::Chamfer
+    );
     assert_eq!(
         set.spec,
         DesignChamferSetSpec::EqualDistance {
@@ -282,7 +287,8 @@ fn each_unadmitted_byte_rejects_the_set_list() {
     let cases = [
         (15, 1),
         (20, 2),
-        (21, 2),
+        (21, 4),
+        (39, 2),
         (25, 2),
         (31, 3),
         (39, 0),
@@ -389,13 +395,15 @@ fn crossed_sets(crossed: bool) -> (DesignParameterScope, [DesignParameterOwner; 
             distance_owner_record_index,
         },
         auxiliary_record_index: AUXILIARY,
-        flag: true,
+        entry_count: 1,
+        tangent_chain: true,
     };
     if let crate::records::feature::scope::DesignScopePayloadMut::Chamfer(slot) =
         scope.payload_mut()
     {
         slot.sets = Some(DesignChamferSetList {
             form: DesignChamferSetListForm::Current,
+            corner_type: crate::records::feature::chamfer_set::DesignChamferCornerType::Chamfer,
             entry_count: 1,
             sets: vec![set(GROUP, first), set(GROUP + 1, second)],
         });
@@ -451,4 +459,23 @@ fn an_ungrouped_set_list_is_cleared() {
     assert!(conflicts.is_empty());
     assert!(scopes[0].chamfer_sets().is_none());
     assert!(scopes[0].payload().is_uninterpreted());
+}
+
+#[test]
+fn corner_type_and_tangent_chain_read_from_their_bytes() {
+    use crate::records::feature::chamfer_set::DesignChamferCornerType;
+    let (bytes, scope) = stream(Form::Equal, false);
+    let set_start =
+        crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
+    for (value, corner_type) in [
+        (2, DesignChamferCornerType::Miter),
+        (3, DesignChamferCornerType::Blend),
+    ] {
+        let mut bytes = bytes.clone();
+        bytes[21] = value;
+        bytes[set_start + 21] = 0;
+        let list = decode_bytes(&bytes, &scope, ["Distance", "Angle"]).unwrap();
+        assert_eq!(list.corner_type, corner_type);
+        assert!(!list.sets[0].tangent_chain);
+    }
 }
