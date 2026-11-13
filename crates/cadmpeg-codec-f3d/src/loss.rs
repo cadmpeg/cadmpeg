@@ -349,6 +349,8 @@ pub(crate) enum F3dLossCode {
     SketchPlacementUnprojected,
     /// Decoded sketch points have no neutral sketch entity.
     SketchPointUnprojected,
+    /// One indexed sketch-point record failed decoding.
+    SketchPointUndecoded,
     /// Decoded sketch curves have no neutral sketch entity.
     SketchCurveUnprojected,
     /// Decoded sketch surfaces have no neutral spatial sketch entity.
@@ -891,6 +893,7 @@ impl F3dLossCode {
         Self::SketchDimensionNativeRetained,
         Self::SketchPlacementUnprojected,
         Self::SketchPointUnprojected,
+        Self::SketchPointUndecoded,
         Self::SketchCurveUnprojected,
         Self::SketchSurfaceUnprojected,
         Self::SketchTextUnprojected,
@@ -1295,6 +1298,7 @@ impl F3dLossCode {
             Self::SketchDimensionNativeRetained => "sketch.dimension-native",
             Self::SketchPlacementUnprojected => "sketch.placement-unprojected",
             Self::SketchPointUnprojected => "sketch.point-unprojected",
+            Self::SketchPointUndecoded => "sketch.point-undecoded",
             Self::SketchCurveUnprojected => "sketch.curve-unprojected",
             Self::SketchSurfaceUnprojected => "sketch.surface-unprojected",
             Self::SketchTextUnprojected => "sketch.text-unprojected",
@@ -1739,6 +1743,7 @@ impl F3dLossCode {
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
             | Self::SketchPointUnprojected
+            | Self::SketchPointUndecoded
             | Self::SketchCurveUnprojected
             | Self::SketchSurfaceUnprojected
             | Self::SketchTextUnprojected
@@ -2222,7 +2227,8 @@ impl F3dLossCode {
             Self::BrepBlobUndecoded
             | Self::SurfaceShapeNotDecoded
             | Self::GeometryNotTransferred
-            | Self::TsplineCageUndecoded => LossTaxonomy::GeometryNotTransferred,
+            | Self::TsplineCageUndecoded
+            | Self::SketchPointUndecoded => LossTaxonomy::GeometryNotTransferred,
             Self::MeshContainerUnjoined | Self::MeshContainerMissing => {
                 LossTaxonomy::AssetNotTransferred
             }
@@ -2474,6 +2480,7 @@ mod tests {
                 "sketch.dimension-native",
                 "sketch.placement-unprojected",
                 "sketch.point-unprojected",
+                "sketch.point-undecoded",
                 "sketch.curve-unprojected",
                 "sketch.surface-unprojected",
                 "sketch.text-unprojected",
