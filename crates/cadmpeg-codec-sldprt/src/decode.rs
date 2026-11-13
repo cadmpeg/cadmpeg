@@ -1321,6 +1321,31 @@ pub(crate) fn append_design_losses(
                                 .any(|candidate| candidate.id == *occurrence)
                         })
                 }
+                FeatureOperation::ComponentTransfer {
+                    occurrence,
+                    component,
+                    source_owner,
+                    target_owner,
+                    target_transform,
+                    ..
+                } => {
+                    occurrence.as_ref().is_none_or(|occurrence| {
+                        !ir.model
+                            .occurrences
+                            .iter()
+                            .any(|candidate| candidate.id == *occurrence)
+                    }) || [component, source_owner, target_owner]
+                        .into_iter()
+                        .any(|definition| {
+                            definition.as_ref().is_none_or(|definition| {
+                                !ir.model
+                                    .product_definitions
+                                    .iter()
+                                    .any(|candidate| candidate.id == *definition)
+                            })
+                        })
+                        || target_transform.is_none()
+                }
                 FeatureOperation::AssemblyJoint { joint } => !ir
                     .model
                     .assembly_joints

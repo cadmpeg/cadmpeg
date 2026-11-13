@@ -1759,8 +1759,8 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         neutral.native_ref.as_deref() == Some(scope.id.as_str())
                             && matches!(
                                 neutral.evaluation.definition(),
-                                cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MeshImport { tessellations })
-                                    if tessellations.iter().map(String::as_str).eq(projected())
+                                cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MeshImport { tessellations: cadmpeg_ir::features::mesh::MeshSelection::Tessellations(tessellations) })
+                                    if tessellations.iter().map(cadmpeg_ir::tessellation::TessellationId::as_str).eq(projected())
                             )
                     })
                 });
@@ -3447,6 +3447,33 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         });
         let work_point_link = valid_work_point_construction(ctx, scope, native_stream)?;
         let work_plane_link = valid_work_plane_construction(ctx, scope, native_stream);
+        let record_offset = |index| {
+            records_by_index
+                .get(&(native_stream, index))
+                .map(|header| header.byte_offset)
+        };
+        let before_scope =
+            |index| record_offset(index).is_some_and(|offset| offset < scope.byte_offset());
+        let before = |left, right| {
+            record_offset(left)
+                .zip(record_offset(right))
+                .is_some_and(|(left, right)| left < right)
+        };
+        let has_type = |index, guid: &str| {
+            native
+                .design_types
+                .iter()
+                .filter(|kind| {
+                    ids::design_segment(kind.id()) == ids::design_segment(&scope.id)
+                        && kind.type_guid.as_str().eq_ignore_ascii_case(guid)
+                        && kind
+                            .entities
+                            .values()
+                            .any(|entity| *entity == u64::from(index))
+                })
+                .count()
+                == 1
+        };
         let valid = match scope.extrude_prologue() {
             Some(prologue) if through_all::matches_scope(scope) => {
                 through_all::valid_prologue(scope, prologue)
@@ -4374,30 +4401,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && component_insert_link
             && copy_paste_component_link
             && scope.occurrence_transfer.as_ref().is_none_or(|operation| {
-                operation.links_valid(
-                    scope,
-                    |index| {
-                        records_by_index
-                            .get(&(native_stream, index))
-                            .map(|header| header.byte_offset)
-                    },
-                    |index, guid| {
-                        native
-                            .design_types
-                            .iter()
-                            .filter(|kind| {
-                                ids::design_segment(kind.id()) == ids::design_segment(&scope.id)
-                                    && kind.type_guid.as_str().eq_ignore_ascii_case(guid)
-                                    && kind
-                                        .entities
-                                        .values()
-                                        .any(|entity| *entity == u64::from(index))
-                            })
-                            .count()
-                            == 1
-                    },
-                )
+                operation.links_valid(scope, record_offset, |index, guid| has_type(index, guid))
             })
+            && scope
+                .occurrence_transfer_intent
+                .as_ref()
+                .is_none_or(|intent| {
+                    intent.links_valid(scope, before_scope, before, |index, guid| {
+                        has_type(index, guid)
+                    })
+                })
             && draft_link
             && combine_link
             && thread_link

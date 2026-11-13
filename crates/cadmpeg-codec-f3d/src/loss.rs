@@ -192,6 +192,9 @@ pub(crate) enum F3dLossCode {
     EdgeReferenceLostUnrepaired,
     /// Feature scopes have no complete neutral feature definition.
     FeatureDefinitionIncomplete,
+    FeatureMeshImportTessellationsUnresolved,
+    FeatureMeshImportEmptySourceAssumed,
+    FeatureMeshImportSourceUnparsed,
     /// A historical Thread selection has no complete proof of its live faces.
     ThreadLiveFaceUnproven,
     /// A stored-body operation has an empty proven body set.
@@ -209,6 +212,10 @@ pub(crate) enum F3dLossCode {
     FeatureDerivedInstanceDefinitionUnresolved,
     /// A paste keeps its bodies; its source pairs or a source node do not resolve.
     FeaturePasteSourcesUnresolved,
+    FeatureOccurrenceTransferSourceUnresolved,
+    FeatureOccurrenceTransferOwnerUnresolved,
+    FeatureOccurrenceTransferOccurrenceUnresolved,
+    FeatureOccurrenceTransferPlacementUnresolved,
     /// Several timeline objects name one owned scope; the lowest readable record owns it.
     FeatureTimelineOwnerCompeting,
     /// A timeline owner has no same-index paired header; its copy form stays unread.
@@ -429,6 +436,9 @@ pub(crate) enum F3dLossCode {
     FeaturePathSelectionNative,
     /// Feature face selections retain native candidates; no unique face.
     FeatureFaceSelectionNative,
+    DeleteFaceFrameControlsAssumed,
+    DeleteFaceGroupSelectionAssumed,
+    SurfaceDeleteFaceWidePrologueAssumed,
     /// Legacy face operands use a current active face after no historical slot proof.
     FeatureFaceSelectionActiveSubstituted,
     /// Offset Surface support groups with different ordinals are read as one
@@ -794,6 +804,9 @@ impl F3dLossCode {
         Self::DecalNativeRetained,
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
+        Self::FeatureMeshImportTessellationsUnresolved,
+        Self::FeatureMeshImportEmptySourceAssumed,
+        Self::FeatureMeshImportSourceUnparsed,
         Self::ThreadLiveFaceUnproven,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
@@ -806,6 +819,10 @@ impl F3dLossCode {
         Self::FeatureDerivedInstancePlacementUnrepresentable,
         Self::FeatureDerivedInstanceDefinitionUnresolved,
         Self::FeaturePasteSourcesUnresolved,
+        Self::FeatureOccurrenceTransferSourceUnresolved,
+        Self::FeatureOccurrenceTransferOwnerUnresolved,
+        Self::FeatureOccurrenceTransferOccurrenceUnresolved,
+        Self::FeatureOccurrenceTransferPlacementUnresolved,
         Self::FeatureTimelineOwnerCompeting,
         Self::FeatureTimelineOwnerUnpaired,
         Self::FeaturePasteCopyPlacementAssumed,
@@ -920,6 +937,9 @@ impl F3dLossCode {
         Self::FeatureProfileRegionHoleInferred,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
+        Self::DeleteFaceFrameControlsAssumed,
+        Self::DeleteFaceGroupSelectionAssumed,
+        Self::SurfaceDeleteFaceWidePrologueAssumed,
         Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureSurfaceOffsetGroupOrdinalsAssumed,
         Self::FeatureFormCageOrderAssumed,
@@ -1185,6 +1205,18 @@ impl F3dLossCode {
                 "feature.derived-instance-definition-unresolved"
             }
             Self::FeaturePasteSourcesUnresolved => "feature.paste-sources-unresolved",
+            Self::FeatureOccurrenceTransferSourceUnresolved => {
+                "feature.occurrence-transfer-source-unresolved"
+            }
+            Self::FeatureOccurrenceTransferOwnerUnresolved => {
+                "feature.occurrence-transfer-owner-unresolved"
+            }
+            Self::FeatureOccurrenceTransferOccurrenceUnresolved => {
+                "feature.occurrence-transfer-occurrence-unresolved"
+            }
+            Self::FeatureOccurrenceTransferPlacementUnresolved => {
+                "feature.occurrence-transfer-placement-unresolved"
+            }
             Self::FeatureTimelineOwnerCompeting => "feature.timeline-owner-competing",
             Self::FeatureTimelineOwnerUnpaired => "feature.timeline-owner-unpaired",
             Self::FeaturePasteCopyPlacementAssumed => "feature.paste-copy-placement-assumed",
@@ -1213,6 +1245,11 @@ impl F3dLossCode {
             }
             Self::FeatureBoxPrimitiveUnresolved => "feature.box-primitive-unresolved",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
+            Self::FeatureMeshImportTessellationsUnresolved => {
+                "feature.mesh-import-tessellations-unresolved"
+            }
+            Self::FeatureMeshImportEmptySourceAssumed => "feature.mesh-import-empty-source-assumed",
+            Self::FeatureMeshImportSourceUnparsed => "feature.mesh-import-source-unparsed",
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
@@ -1333,6 +1370,11 @@ impl F3dLossCode {
             Self::FeatureProfileRegionHoleInferred => "feature.profile-region-hole-inferred",
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
             Self::FeatureFaceSelectionNative => "feature.face-selection-native",
+            Self::DeleteFaceFrameControlsAssumed => "feature.delete-face-frame-controls-assumed",
+            Self::DeleteFaceGroupSelectionAssumed => "feature.delete-face-group-selection-assumed",
+            Self::SurfaceDeleteFaceWidePrologueAssumed => {
+                "feature.surface-delete-face-wide-prologue-assumed"
+            }
             Self::FeatureFaceSelectionActiveSubstituted => {
                 "feature.face-selection-active-substituted"
             }
@@ -1632,6 +1674,10 @@ impl F3dLossCode {
             | Self::FeatureDerivedInstancePlacementUnrepresentable
             | Self::FeatureDerivedInstanceDefinitionUnresolved
             | Self::FeaturePasteSourcesUnresolved
+            | Self::FeatureOccurrenceTransferSourceUnresolved
+            | Self::FeatureOccurrenceTransferOwnerUnresolved
+            | Self::FeatureOccurrenceTransferOccurrenceUnresolved
+            | Self::FeatureOccurrenceTransferPlacementUnresolved
             | Self::FeatureTimelineOwnerCompeting
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
@@ -1648,6 +1694,9 @@ impl F3dLossCode {
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
+            | Self::FeatureMeshImportTessellationsUnresolved
+            | Self::FeatureMeshImportEmptySourceAssumed
+            | Self::FeatureMeshImportSourceUnparsed
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
             | Self::HoleExtentFaceAssumed
@@ -1744,6 +1793,9 @@ impl F3dLossCode {
             | Self::FeatureProfileRegionHoleInferred
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
+            | Self::DeleteFaceFrameControlsAssumed
+            | Self::DeleteFaceGroupSelectionAssumed
+            | Self::SurfaceDeleteFaceWidePrologueAssumed
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
             | Self::FeatureFormCageOrderAssumed
@@ -1946,6 +1998,10 @@ impl F3dLossCode {
             | Self::FeatureDerivedInstancePlacementUnrepresentable
             | Self::FeatureDerivedInstanceDefinitionUnresolved
             | Self::FeaturePasteSourcesUnresolved
+            | Self::FeatureOccurrenceTransferSourceUnresolved
+            | Self::FeatureOccurrenceTransferOwnerUnresolved
+            | Self::FeatureOccurrenceTransferOccurrenceUnresolved
+            | Self::FeatureOccurrenceTransferPlacementUnresolved
             | Self::FeatureTimelineOwnerCompeting
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
@@ -1962,6 +2018,9 @@ impl F3dLossCode {
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
+            | Self::FeatureMeshImportTessellationsUnresolved
+            | Self::FeatureMeshImportEmptySourceAssumed
+            | Self::FeatureMeshImportSourceUnparsed
             | Self::ThreadLiveFaceUnproven
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound
@@ -2058,6 +2117,9 @@ impl F3dLossCode {
             | Self::FeatureProfileRegionHoleInferred
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
+            | Self::DeleteFaceFrameControlsAssumed
+            | Self::DeleteFaceGroupSelectionAssumed
+            | Self::SurfaceDeleteFaceWidePrologueAssumed
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
             | Self::FeatureFormCageOrderAssumed
@@ -2333,6 +2395,9 @@ mod tests {
                 "appearance.decal-native",
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
+                "feature.mesh-import-tessellations-unresolved",
+                "feature.mesh-import-empty-source-assumed",
+                "feature.mesh-import-source-unparsed",
                 "feature.thread-live-face-unproven",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
@@ -2345,6 +2410,10 @@ mod tests {
                 "feature.derived-instance-placement-unrepresentable",
                 "feature.derived-instance-definition-unresolved",
                 "feature.paste-sources-unresolved",
+                "feature.occurrence-transfer-source-unresolved",
+                "feature.occurrence-transfer-owner-unresolved",
+                "feature.occurrence-transfer-occurrence-unresolved",
+                "feature.occurrence-transfer-placement-unresolved",
                 "feature.timeline-owner-competing",
                 "feature.timeline-owner-unpaired",
                 "feature.paste-copy-placement-assumed",
@@ -2459,6 +2528,9 @@ mod tests {
                 "feature.profile-region-hole-inferred",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
+                "feature.delete-face-frame-controls-assumed",
+                "feature.delete-face-group-selection-assumed",
+                "feature.surface-delete-face-wide-prologue-assumed",
                 "feature.face-selection-active-substituted",
                 "feature.surface-offset-group-ordinals-assumed",
                 "feature.form-cage-order-assumed",
