@@ -201,12 +201,11 @@ pub(super) fn project_thicken(feature: &Feature) -> FeatureDefinition {
         (Some(Some(false)), _) | (_, Some(Some(false))) => Some(ThickenSide::Forward),
         (None, None) => Some(ThickenSide::Forward),
     };
-    FeatureDefinition::Operation(FeatureOperation::Thicken {
-        faces: property_text(feature, "Faces")
-            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
+    FeatureDefinition::Operation(FeatureOperation::thicken(
+        property_text(feature, "Faces").map_or(FaceSelection::Unresolved, FaceSelection::Native),
         thickness,
         side,
-    })
+    ))
 }
 
 pub(super) fn project_draft(feature: &Feature) -> FeatureDefinition {

@@ -1395,8 +1395,8 @@ pub(crate) fn append_design_losses(
                         construction.placement,
                         cadmpeg_ir::features::CoilPlacement::Native { .. }
                     ) || match result {
-                        cadmpeg_ir::features::CoilResult::NewBody {} => false,
-                        cadmpeg_ir::features::CoilResult::Boolean { targets, .. } => {
+                        cadmpeg_ir::features::SolidFeatureResult::NewBody {} => false,
+                        cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. } => {
                             incomplete_body_selection(targets)
                         }
                     }
@@ -1686,8 +1686,8 @@ pub(crate) fn append_design_losses(
                 FeatureOperation::Thicken {
                     faces,
                     thickness,
-                    side,
-                } => incomplete_face_selection(faces) || thickness.is_none() || side.is_none(),
+                    side, result, .. } => incomplete_face_selection(faces) || thickness.is_none() || side.is_none()
+                    || matches!(result, Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }) if incomplete_body_selection(targets)),
                 FeatureOperation::OffsetSurface { faces, distance } => {
                     incomplete_face_selection(faces) || distance.is_none()
                 }

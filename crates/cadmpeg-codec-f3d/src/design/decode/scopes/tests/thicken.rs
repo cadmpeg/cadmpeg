@@ -24,6 +24,7 @@ struct ThickenFrame<'a> {
     runs: [&'a [u32]; 3],
     table: &'a [u32],
     thickness: f64,
+    typed: bool,
 }
 
 impl ThickenFrame<'_> {
@@ -37,6 +38,7 @@ impl ThickenFrame<'_> {
             runs: [&[300], &[], &[]],
             table: &[200, 201, 74],
             thickness: -1.0,
+            typed: false,
         }
     }
 
@@ -48,17 +50,17 @@ impl ThickenFrame<'_> {
         bytes.extend_from_slice(&self.form.to_le_bytes());
         bytes.extend_from_slice(&u32::try_from(self.groups.len()).unwrap().to_le_bytes());
         for group in self.groups {
-            push_marked_reference(&mut bytes, *group);
+            self.push_reference(&mut bytes, *group);
         }
         bytes.extend_from_slice(&self.flags);
-        push_marked_reference(&mut bytes, 74);
+        self.push_reference(&mut bytes, 74);
         if self.scalar_zero {
             bytes.extend_from_slice(&0u32.to_le_bytes());
         }
         for run in self.runs {
             bytes.extend_from_slice(&u32::try_from(run.len()).unwrap().to_le_bytes());
             for reference in run {
-                push_marked_reference(&mut bytes, *reference);
+                self.push_reference(&mut bytes, *reference);
             }
         }
         bytes.extend_from_slice(&36u32.to_le_bytes());
@@ -100,6 +102,18 @@ impl ThickenFrame<'_> {
         let (bytes, scope) = self.encode();
         decode(&bytes, &scope)
     }
+
+    fn push_reference(&self, bytes: &mut Vec<u8>, reference: u32) {
+        if self.typed {
+            bytes.push(1);
+            bytes.extend_from_slice(&u64::from(reference).to_le_bytes());
+            bytes.extend_from_slice(&36u32.to_le_bytes());
+            bytes.extend_from_slice(b"00000000-0000-0000-0000-000000000000");
+            bytes.extend_from_slice(&[0, 0]);
+        } else {
+            push_marked_reference(bytes, reference);
+        }
+    }
 }
 
 fn decode(
@@ -107,19 +121,23 @@ fn decode(
     scope: &DesignParameterScope,
 ) -> (Option<DesignThickenOperation>, Vec<LossNote>) {
     let mut losses = Vec::new();
-    let operation = exact_thicken_operation(
-        bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(bytes),
-        scope,
-        &mut losses,
-    );
+    let operation = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_thicken_operation(
+            ctx,
+            bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+            scope,
+            &mut losses,
+        )
+        .unwrap()
+    });
     (operation, losses)
 }
 
 fn thickness(frame: &ThickenFrame<'_>) -> Option<(f64, u32)> {
     frame.decode().0.map(|operation| {
         (
-            operation.signed_thickness.get(),
+            operation.signed_thickness.unwrap().get(),
             operation.thickness_record_index,
         )
     })
@@ -254,10 +272,6 @@ fn frame_outside_the_grammar_stays_unread() {
             table: &[200, 74, 201],
             ..ThickenFrame::group_first()
         },
-        ThickenFrame {
-            thickness: 0.0,
-            ..ThickenFrame::group_first()
-        },
     ];
     for frame in &rejected {
         let (operation, losses) = frame.decode();
@@ -307,7 +321,7 @@ fn join_cut_and_intersect_forms_read_the_target_body_group() {
                     ..boolean_frame(prologue, form, identities)
                 };
                 let operation_record = frame.decode().0.unwrap();
-                assert_eq!(operation_record.signed_thickness.get(), -1.0);
+                assert_eq!(operation_record.signed_thickness.unwrap().get(), -1.0);
                 assert_eq!(
                     operation_record.boolean,
                     Some(DesignThickenBoolean {
@@ -366,4 +380,67 @@ fn boolean_frames_outside_the_run_grammar_stay_unread() {
         assert_eq!(operation, None);
         assert!(losses.is_empty());
     }
+}
+
+#[test]
+fn typed_prefix_references_retain_groups_identities_and_result() {
+    let (operation, losses) = ThickenFrame {
+        typed: true,
+        ..boolean_frame(MARKER_ONE, 2, &[300, 301])
+    }
+    .decode();
+    let operation = operation.unwrap();
+    assert_eq!(operation.group_record_indices, [200]);
+    assert_eq!(operation.identity_record_indices, [300, 301]);
+    assert_eq!(operation.boolean.unwrap().target_group_record_index, 202);
+    assert_eq!(operation.signed_thickness.unwrap().get(), -1.0);
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn missing_or_ambiguous_scalar_keeps_the_boolean_frame() {
+    let frame = boolean_frame(MARKER_ZERO, 2, &[300]);
+    let (bytes, scope) = frame.encode();
+    let scalar_at = bytes.len() - 115;
+    for ambiguous in [false, true] {
+        let mut changed = bytes[..scalar_at].to_vec();
+        if ambiguous {
+            changed.extend_from_slice(&bytes[scalar_at..]);
+            changed.extend_from_slice(&bytes[scalar_at..]);
+        }
+        let (operation, losses) = decode(&changed, &scope);
+        let operation = operation.unwrap();
+        assert_eq!(operation.signed_thickness, None);
+        assert_eq!(operation.thickness_offset, None);
+        assert_eq!(operation.group_record_indices, [200]);
+        assert_eq!(operation.identity_record_indices, [300]);
+        assert_eq!(
+            operation.boolean.unwrap().operation,
+            DesignThickenBooleanOperation::Cut
+        );
+        assert!(operation.tangent_chain);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "feature.thicken-thickness-unresolved"
+        );
+    }
+}
+
+#[test]
+fn zero_thickness_remains_a_native_scalar() {
+    let (operation, losses) = ThickenFrame {
+        thickness: 0.0,
+        ..ThickenFrame::group_first()
+    }
+    .decode();
+    assert_eq!(operation.unwrap().signed_thickness.unwrap().get(), 0.0);
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn counted_groups_are_bounded_by_the_prefix() {
+    let (mut bytes, scope) = ThickenFrame::group_first().encode();
+    bytes[29..33].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(decode(&bytes, &scope).0.is_none());
 }

@@ -54,6 +54,7 @@ mod reverse_normal;
 mod revolve_target;
 mod surface_offset;
 mod surface_patch;
+pub(crate) mod thicken;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
 const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
@@ -1040,7 +1041,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Thicken) => {
-                    project_thicken(scope, face_operands, construction_groups)?
+                    thicken::project_thicken(scope, face_operands, construction_groups, &mut projection_losses)
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Coil) => project_coil(
@@ -4214,109 +4215,6 @@ pub(super) fn project_offset_faces(
     )))
 }
 
-pub(super) fn project_thicken(
-    scope: &DesignParameterScope,
-    operands: &[DesignFaceOperand],
-    groups: &[DesignConstructionOperandGroup],
-) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ThickenSide};
-
-    let crate::records::feature::scope::DesignScopePayload::Thicken(Some(
-        crate::records::feature::direct_face::DesignThickenOperation {
-            signed_thickness,
-            symmetric,
-            ..
-        },
-    )) = &scope.payload()
-    else {
-        return Ok(None);
-    };
-    let faces = if let Some(mut faces) = direct_face_selection(scope, operands) {
-        list_thicken_whole_bodies(&mut faces, scope, groups);
-        faces
-    } else {
-        let mut candidates = groups.iter().filter(|group| {
-            native_stream(&group.id) == native_stream(&scope.id)
-                && group.scope_record_index == scope.record_index
-                && matches!(
-                    group.role(),
-                    DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X12
-                )
-                && !group.members().is_empty()
-        });
-        let group = or_none!(candidates.next());
-        if candidates.next().is_some() {
-            return Ok(None);
-        }
-        FaceSelection::Native(group.id.clone())
-    };
-    Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::Thicken {
-            faces,
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(
-                signed_thickness.get().abs() * if *symmetric { 20.0 } else { 10.0 },
-            ),
-            side: Some(if *symmetric {
-                ThickenSide::Both
-            } else if signed_thickness.get() > 0.0 {
-                ThickenSide::Forward
-            } else {
-                ThickenSide::Reverse
-            }),
-        },
-    )))
-}
-
-pub(crate) fn list_thicken_whole_bodies(
-    selection: &mut cadmpeg_ir::features::FaceSelection,
-    scope: &DesignParameterScope,
-    groups: &[DesignConstructionOperandGroup],
-) {
-    use cadmpeg_ir::features::FaceSelection;
-
-    let (state, faces, mut unresolved, native) = match &*selection {
-        FaceSelection::Historical {
-            state,
-            faces,
-            native,
-        } => (state, faces.as_slice(), Vec::new(), native),
-        FaceSelection::HistoricalPartial {
-            state,
-            faces,
-            unresolved,
-            native,
-        } => (
-            state,
-            faces.as_slice(),
-            unresolved.as_slice().to_vec(),
-            native,
-        ),
-        _ => return,
-    };
-    let listed = unresolved.len();
-    for group in groups.iter().filter(|group| {
-        native_stream(&group.id) == native_stream(&scope.id)
-            && group.scope_record_index == scope.record_index
-            && group.role() == DesignOperandRole::ROLE_0X5
-            && !group.members().is_empty()
-    }) {
-        if !unresolved.contains(&group.id) {
-            unresolved.push(group.id.clone());
-        }
-    }
-    if unresolved.len() == listed {
-        return;
-    }
-    let partial = FaceSelection::historical_partial(
-        state.clone(),
-        faces.to_vec(),
-        unresolved,
-        native.to_string(),
-    )
-    .unwrap_or_else(|_| FaceSelection::Native(scope.id.clone()));
-    *selection = partial;
-}
-
 pub(super) fn shell_table_member_loss(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
@@ -5475,14 +5373,14 @@ fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::
     })
 }
 
-pub(crate) fn direct_face_selection(
+pub(crate) fn direct_face_selection<'a>(
     scope: &DesignParameterScope,
-    operands: &[DesignFaceOperand],
+    operands: impl IntoIterator<Item = &'a DesignFaceOperand>,
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     use cadmpeg_ir::features::FaceSelection;
 
     let mut matching = Vec::new();
-    for operand in operands.iter().filter(|operand| {
+    for operand in operands.into_iter().filter(|operand| {
         native_stream(&operand.id) == native_stream(&scope.id)
             && operand.scope_record_index == scope.record_index
     }) {
@@ -9013,8 +8911,8 @@ fn project_coil(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
-        BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection,
-        CoilSectionPlacement, FeatureDefinition, FeatureOperation,
+        BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilSection,
+        CoilSectionPlacement, FeatureDefinition, FeatureOperation, SolidFeatureResult,
     };
 
     let parsed = (|| {
@@ -9150,8 +9048,8 @@ fn project_coil(
         return Ok(None);
     };
     let result = match (operation, first_body_group) {
-        (DesignExtrudeOperation::NewBody, None) => CoilResult::NewBody {},
-        (operation, Some(group)) => CoilResult::Boolean {
+        (DesignExtrudeOperation::NewBody, None) => SolidFeatureResult::NewBody {},
+        (operation, Some(group)) => SolidFeatureResult::Boolean {
             operation: match operation {
                 DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanKind::Join,
                 DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanKind::Cut,

@@ -23,11 +23,12 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
         }
         DesignScopePayloadMut::Thicken(slot) => {
             *slot = Some(DesignThickenOperation {
-                signed_thickness: cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
+                signed_thickness: cadmpeg_ir::scalar::FiniteReal::new(0.5),
                 thickness_record_index: 300,
-                thickness_offset: 0,
+                thickness_offset: Some(0),
                 symmetric: false,
                 tangent_chain: true,
+                ..Default::default()
             });
         }
         DesignScopePayloadMut::Shell(slot) => {
@@ -98,12 +99,189 @@ fn offset_faces_projects_native_group() {
 fn thicken_projects_native_group() {
     let scope = scope(DesignFeatureKind::Thicken);
     let group = group(DesignOperandRole::ROLE_0X5);
-    let FeatureOperation::Thicken { faces, .. } = projected_operation(
-        super::super::project_thicken(&scope, &[], std::slice::from_ref(&group)),
-    ) else {
+    let FeatureOperation::Thicken { faces, .. } =
+        projected_operation(Ok(super::super::thicken::project_thicken(
+            &scope,
+            &[],
+            std::slice::from_ref(&group),
+            &mut Vec::new(),
+        )))
+    else {
         panic!("expected a thicken");
     };
     assert_eq!(faces, FaceSelection::Native(group.id.clone()));
+}
+
+#[test]
+fn thicken_boolean_results_survive_missing_scalar_and_target_definitions() {
+    use crate::records::feature::direct_face::{
+        DesignThickenBoolean, DesignThickenBooleanOperation,
+    };
+    use cadmpeg_ir::features::{BooleanKind, SolidFeatureResult, ThickenSide};
+
+    for (stored, expected) in [
+        (DesignThickenBooleanOperation::Join, BooleanKind::Join),
+        (DesignThickenBooleanOperation::Cut, BooleanKind::Cut),
+        (
+            DesignThickenBooleanOperation::Intersect,
+            BooleanKind::Intersect,
+        ),
+    ] {
+        for has_target in [false, true] {
+            let mut scope = scope(DesignFeatureKind::Thicken);
+            if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+                operation.group_record_indices = vec![100];
+                operation.signed_thickness = None;
+                operation.thickness_offset = None;
+                operation.symmetric = true;
+                operation.boolean = Some(DesignThickenBoolean {
+                    operation: stored,
+                    operation_offset: 21,
+                    target_group_record_index: 110,
+                });
+            }
+            let mut groups = vec![group(DesignOperandRole::ROLE_0X12)];
+            let mut target = group(DesignOperandRole::BODIES_A);
+            target.id = "f3d:test:group#110".into();
+            target.record_index = 110;
+            if has_target {
+                groups.push(target.clone());
+            }
+            let mut losses = Vec::new();
+            let FeatureOperation::Thicken {
+                faces,
+                thickness,
+                side,
+                result,
+                tangent_chain,
+            } = projected_operation(Ok(super::super::thicken::project_thicken(
+                &scope,
+                &[],
+                &groups,
+                &mut losses,
+            )))
+            else {
+                panic!("Thicken");
+            };
+            assert_eq!(faces, FaceSelection::Native(groups[0].id.clone()));
+            assert_eq!(thickness, None);
+            assert_eq!(side, Some(ThickenSide::Both));
+            assert_eq!(tangent_chain, Some(true));
+            assert_eq!(
+                result,
+                Some(SolidFeatureResult::Boolean {
+                    operation: expected,
+                    targets: BodySelection::Native(if has_target { target.id } else { scope.id }),
+                })
+            );
+            assert_eq!(losses.len(), usize::from(!has_target));
+            if !has_target {
+                assert_eq!(
+                    losses[0].code.local_code(),
+                    "feature.thicken-target-selection-assumed"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn thicken_unknown_frame_and_missing_input_groups_still_project() {
+    let mut scope = scope(DesignFeatureKind::Thicken);
+    if let DesignScopePayloadMut::Thicken(slot) = scope.payload_mut() {
+        *slot = None;
+    }
+    let mut losses = Vec::new();
+    let FeatureOperation::Thicken {
+        faces,
+        thickness,
+        side,
+        result,
+        tangent_chain,
+    } = projected_operation(Ok(super::super::thicken::project_thicken(
+        &scope,
+        &[],
+        &[],
+        &mut losses,
+    )))
+    else {
+        panic!("Thicken");
+    };
+    assert_eq!(faces, FaceSelection::Native(scope.id.clone()));
+    assert_eq!(
+        (thickness, side, result, tangent_chain),
+        (None, None, None, None)
+    );
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.local_code())
+            .collect::<Vec<_>>(),
+        [
+            "feature.thicken-face-selection-assumed",
+            "feature.thicken-frame-assumed",
+        ]
+    );
+
+    let mut scope = thicken_after_state(5);
+    if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+        operation.group_record_indices = vec![100, 110];
+    }
+    let FeatureOperation::Thicken { faces, .. } =
+        projected_operation(Ok(super::super::thicken::project_thicken(
+            &scope,
+            &[resolved_member_operand()],
+            &[group(DesignOperandRole::ROLE_0X12)],
+            &mut Vec::new(),
+        )))
+    else {
+        panic!("Thicken");
+    };
+    let FaceSelection::HistoricalPartial {
+        faces, unresolved, ..
+    } = faces
+    else {
+        panic!("partial faces");
+    };
+    assert_eq!(faces.as_slice().len(), 1);
+    assert_eq!(unresolved.as_slice(), [scope.id]);
+}
+
+#[test]
+fn thicken_zero_and_overflow_keep_result_and_chain_settings() {
+    for value in [0.0, 1.5e307] {
+        let mut scope = scope(DesignFeatureKind::Thicken);
+        if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+            operation.signed_thickness = cadmpeg_ir::scalar::FiniteReal::new(value);
+            operation.symmetric = true;
+        }
+        let mut losses = Vec::new();
+        let FeatureOperation::Thicken {
+            thickness,
+            result,
+            tangent_chain,
+            ..
+        } = projected_operation(Ok(super::super::thicken::project_thicken(
+            &scope,
+            &[],
+            &[group(DesignOperandRole::ROLE_0X5)],
+            &mut losses,
+        )))
+        else {
+            panic!("Thicken");
+        };
+        assert_eq!(thickness, None);
+        assert_eq!(
+            result,
+            Some(cadmpeg_ir::features::SolidFeatureResult::NewBody {})
+        );
+        assert_eq!(tangent_chain, Some(true));
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "feature.thicken-thickness-unrepresentable"
+        );
+    }
 }
 
 #[test]
@@ -113,16 +291,16 @@ fn a_symmetric_thicken_adds_the_stored_thickness_on_each_side() {
         let mut scope = scope(DesignFeatureKind::Thicken);
         if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
             operation.symmetric = symmetric;
-            operation.signed_thickness =
-                cadmpeg_ir::scalar::FiniteReal::new(signed_thickness).unwrap();
+            operation.signed_thickness = cadmpeg_ir::scalar::FiniteReal::new(signed_thickness);
         }
         let FeatureOperation::Thicken {
             thickness, side, ..
-        } = projected_operation(super::super::project_thicken(
+        } = projected_operation(Ok(super::super::thicken::project_thicken(
             &scope,
             &[],
             std::slice::from_ref(&group),
-        ))
+            &mut Vec::new(),
+        )))
         else {
             panic!("expected a thicken");
         };
@@ -148,15 +326,16 @@ fn a_symmetric_thicken_adds_the_stored_thickness_on_each_side() {
     let mut scope = scope(DesignFeatureKind::Thicken);
     if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
         operation.symmetric = true;
-        operation.signed_thickness = cadmpeg_ir::scalar::FiniteReal::new(1.5e307).unwrap();
+        operation.signed_thickness = cadmpeg_ir::scalar::FiniteReal::new(1.5e307);
     }
     let FeatureOperation::Thicken {
         faces, thickness, ..
-    } = projected_operation(super::super::project_thicken(
+    } = projected_operation(Ok(super::super::thicken::project_thicken(
         &scope,
         &[],
         std::slice::from_ref(&group),
-    ))
+        &mut Vec::new(),
+    )))
     else {
         panic!("expected a thicken");
     };
@@ -183,13 +362,18 @@ fn thicken_lists_a_whole_body_group_beside_resolved_faces_as_unresolved() {
     whole_body.id = "f3d:test:group#110".into();
     whole_body.record_index = 110;
     let groups = [faces_group, whole_body.clone()];
-    let FeatureOperation::Thicken { faces, .. } = projected_operation(
-        super::super::project_thicken(&scope, &[resolved_member_operand()], &groups),
-    ) else {
+    let FeatureOperation::Thicken { faces, .. } =
+        projected_operation(Ok(super::super::thicken::project_thicken(
+            &scope,
+            &[resolved_member_operand()],
+            &groups,
+            &mut Vec::new(),
+        )))
+    else {
         panic!("expected a thicken");
     };
     let mut rebound = faces.clone();
-    super::super::list_thicken_whole_bodies(&mut rebound, &scope, &groups);
+    super::super::thicken::list_thicken_whole_bodies(&mut rebound, &scope, &groups);
     assert_eq!(rebound, faces);
     let FaceSelection::HistoricalPartial {
         faces,
@@ -209,11 +393,12 @@ fn thicken_lists_a_whole_body_group_beside_resolved_faces_as_unresolved() {
 fn thicken_keeps_resolved_faces_without_a_whole_body_group() {
     let scope = thicken_after_state(5);
     let FeatureOperation::Thicken { faces, .. } =
-        projected_operation(super::super::project_thicken(
+        projected_operation(Ok(super::super::thicken::project_thicken(
             &scope,
             &[resolved_member_operand()],
             &[group(DesignOperandRole::ROLE_0X12)],
-        ))
+            &mut Vec::new(),
+        )))
     else {
         panic!("expected a thicken");
     };
