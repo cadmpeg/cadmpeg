@@ -169,12 +169,8 @@ fn combine_prologues(
     start: usize,
     scope: &DesignParameterScope,
 ) -> Vec<CombinePrologue> {
-    let compact = scope.class_tag.as_str() == "387"
-        && scope.paired_class_tag.as_str() == "258"
-        && parameter_scope_payload_length(scope) == Some(314);
-    let extended_reference = scope.class_tag.as_str() == "329"
-        && scope.paired_class_tag.as_str() == "261"
-        && scope.frame_length() == 363;
+    let compact = parameter_scope_payload_length(scope) == Some(314);
+    let extended_reference = scope.frame_length() == 363;
     if compact && scope.combine_named_tail().is_none() {
         return compact_prologue(bytes, start).into_iter().collect();
     }

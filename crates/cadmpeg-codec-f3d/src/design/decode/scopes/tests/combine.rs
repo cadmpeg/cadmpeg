@@ -288,7 +288,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     );
 
     let mut compact_bytes = bytes.clone();
-    compact_bytes[4..7].copy_from_slice(b"387");
+    compact_bytes[4..7].copy_from_slice(b"901");
     compact_bytes[11..21].fill(0);
     compact_bytes[21..25].copy_from_slice(&1u32.to_le_bytes());
     compact_bytes[25] = 0;
@@ -300,9 +300,9 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     compact_bytes[44..46].fill(0);
     let mut compact_scope = scope.clone();
     compact_scope.class_tag =
-        crate::records::references::DesignClassTag::try_from("387".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("901".to_owned()).unwrap();
     compact_scope.paired_class_tag =
-        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("902".to_owned()).unwrap();
     compact_scope
         .try_edit(|draft| {
             draft.frame_length = 328;
@@ -419,7 +419,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     let scope_record_index = 90u32;
     let mut bytes = vec![0; 363];
     bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
-    bytes[4..7].copy_from_slice(b"329");
+    bytes[4..7].copy_from_slice(b"903");
     bytes[7..11].copy_from_slice(&scope_record_index.to_le_bytes());
     bytes[29] = 1;
     bytes[30] = 1;
@@ -450,9 +450,9 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         })
         .unwrap();
     scope.class_tag =
-        crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("903".to_owned()).unwrap();
     scope.paired_class_tag =
-        crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("904".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 363;
