@@ -267,6 +267,22 @@ fn unequal_decoded_wall_slots_project_without_a_symmetric_thickness() {
         FaceSelection::Native("f3d:test:group#91".into())
     );
     assert_eq!(join, Some(ShellJoin::Intersection));
+    let Some(FeatureDefinition::Operation(FeatureOperation::Shell {
+        thickness,
+        outward,
+        mode,
+        removed_faces,
+        bodies,
+        ..
+    })) = crate::design::feature_project::project_shell(&scope, &[], &[]).unwrap()
+    else {
+        panic!("expected an unresolved Shell");
+    };
+    assert_eq!(thickness, None);
+    assert_eq!(outward, None);
+    assert_eq!(mode, Some(ShellMode::BothSides));
+    assert_eq!(removed_faces, FaceSelection::Unresolved);
+    assert_eq!(bodies, None);
 }
 
 #[test]

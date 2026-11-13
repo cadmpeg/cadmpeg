@@ -4424,6 +4424,8 @@ pub(super) fn project_shell(
             FaceSelection::Native(group.id.clone())
         } else if bodies.is_some() {
             FaceSelection::Faces(Vec::new())
+        } else if wall.is_none() {
+            direct_face_selection(scope, operands).unwrap_or(FaceSelection::Unresolved)
         } else {
             or_none!(direct_face_selection(scope, operands))
         };
