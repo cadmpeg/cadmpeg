@@ -55,7 +55,7 @@ pub(crate) fn project(
         .collect::<Option<Vec<_>>>();
     let positions = positions?;
     losses.push(F3dLossCode::PositionSemanticsAssumed.note(format!(
-        "Position scope {} assumes that its ordered matrices capture independent occurrence poses in each occurrence's assembly context, with centimetre translations; captured-position semantics and frame remain inferred (DR-484).", scope.id
+        "Position scope {} assumes that its ordered matrices capture independent occurrence poses in each occurrence's assembly context, with centimetre translations; captured-position semantics and frame remain inferred (DR-486).", scope.id
     )));
     if captured
         .rows
@@ -63,7 +63,7 @@ pub(crate) fn project(
         .any(|position| position.matrix.is_none())
     {
         losses.push(F3dLossCode::PositionIdentityAssumed.note(format!(
-            "Position scope {} assumes identity for each omitted-matrix marker (DR-484).",
+            "Position scope {} assumes identity for each omitted-matrix marker (DR-486).",
             scope.id
         )));
     }
