@@ -395,9 +395,14 @@ impl NurbsChart<'_> {
                 return Err(UnavailableReason::BboxNonpositiveWeights);
             }
         }
+        let raw_poles: Vec<Point3> = self
+            .surface
+            .poles()
+            .into_iter()
+            .map(cadmpeg_ir::features::FinitePoint3::get)
+            .collect();
         let mut hull: Option<Aabb> = None;
-        for pole in self.surface.poles() {
-            let point = self.placement.point(pole.get());
+        for point in self.placement.points(&raw_poles) {
             match hull.as_mut() {
                 Some(hull) => hull.include(point),
                 None => hull = Some(Aabb::of_point(point)),

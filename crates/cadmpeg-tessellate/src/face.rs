@@ -16,6 +16,12 @@ use crate::surface::Carrier;
 use crate::triangulate::{triangulate, Rings};
 use crate::Tessellator;
 use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_gpu::{ClosestPointResult, RayHit3, RayQuery3, TriangleMeshView};
+
+/// Minimum batch size for multi-threaded Rayon mesh queries.
+const PARALLEL_MESH_THRESHOLD: usize = 256;
+/// Minimum batch size for routing mesh queries through `cadmpeg_gpu::global_dispatcher`.
+const GPU_MESH_DISPATCH_THRESHOLD: usize = 4096;
 
 /// Ratio of a parameter gap between two joined coedges to the size of
 /// their parameters above which the gap is a jump across a pole.
@@ -83,6 +89,108 @@ pub struct FaceMesh {
     pub coedges: Vec<CoedgeTrace>,
     /// The largest distance between a boundary sample and the surface.
     pub deviation: f64,
+}
+
+impl FaceMesh {
+    /// Returns the triangle index triples converted to `u32` for `cadmpeg-gpu` mesh views.
+    #[must_use]
+    pub fn triangle_indices_u32(&self) -> Vec<[u32; 3]> {
+        self.triangles
+            .iter()
+            .filter_map(|&[a, b, c]| {
+                Some([
+                    u32::try_from(a).ok()?,
+                    u32::try_from(b).ok()?,
+                    u32::try_from(c).ok()?,
+                ])
+            })
+            .collect()
+    }
+
+    /// Transforms the mesh vertex positions by a $4 \times 4$ homogeneous matrix via `cadmpeg-gpu`.
+    #[must_use]
+    pub fn transform_positions(&self, matrix: &[[f64; 4]; 4]) -> Vec<Point3> {
+        let homogeneous: Vec<[f64; 4]> = self
+            .positions
+            .iter()
+            .map(|p| [p.x, p.y, p.z, 1.0])
+            .collect();
+        let transformed = if homogeneous.len() < PARALLEL_MESH_THRESHOLD {
+            cadmpeg_gpu::cpu::batch_transform_4x4(matrix, &homogeneous)
+        } else if homogeneous.len() < GPU_MESH_DISPATCH_THRESHOLD {
+            cadmpeg_gpu::cpu::rayon_batch_transform_4x4(matrix, &homogeneous)
+        } else {
+            cadmpeg_gpu::transform_points_4x4(matrix, &homogeneous)
+        };
+        transformed
+            .into_iter()
+            .map(|[x, y, z, _]| Point3::new(x, y, z))
+            .collect()
+    }
+
+    /// Intersects a batch of rays against this face mesh via `cadmpeg-gpu`.
+    #[must_use]
+    pub fn intersect_rays(&self, rays: &[RayQuery3]) -> Vec<RayHit3> {
+        let tris = self.triangle_indices_u32();
+        let view = TriangleMeshView {
+            vertices: &self.positions,
+            triangles: &tris,
+        };
+        if rays.len() < PARALLEL_MESH_THRESHOLD {
+            cadmpeg_gpu::spatial::intersect_rays_mesh(rays, view)
+        } else if rays.len() < GPU_MESH_DISPATCH_THRESHOLD {
+            cadmpeg_gpu::spatial::rayon_intersect_rays_mesh(rays, view)
+        } else {
+            cadmpeg_gpu::intersect_rays_mesh(rays, view)
+        }
+    }
+
+    /// Determines inside/outside solid parity containment for query points against this mesh.
+    #[must_use]
+    pub fn points_in_solid_parity(&self, points: &[Point3]) -> Vec<bool> {
+        let tris = self.triangle_indices_u32();
+        let view = TriangleMeshView {
+            vertices: &self.positions,
+            triangles: &tris,
+        };
+        if points.len() < PARALLEL_MESH_THRESHOLD {
+            cadmpeg_gpu::spatial::points_in_solid_parity(points, view)
+        } else if points.len() < GPU_MESH_DISPATCH_THRESHOLD {
+            cadmpeg_gpu::spatial::rayon_points_in_solid_parity(points, view)
+        } else {
+            cadmpeg_gpu::points_in_solid_parity(points, view)
+        }
+    }
+
+    /// Projects a batch of 3D query points onto the closest points of this face mesh.
+    #[must_use]
+    pub fn closest_points(&self, points: &[Point3]) -> Vec<ClosestPointResult> {
+        let tris = self.triangle_indices_u32();
+        let view = TriangleMeshView {
+            vertices: &self.positions,
+            triangles: &tris,
+        };
+        if points.len() < PARALLEL_MESH_THRESHOLD {
+            cadmpeg_gpu::spatial::closest_points_on_mesh(points, view)
+        } else if points.len() < GPU_MESH_DISPATCH_THRESHOLD {
+            cadmpeg_gpu::spatial::rayon_closest_points_on_mesh(points, view)
+        } else {
+            cadmpeg_gpu::closest_points_on_mesh(points, view)
+        }
+    }
+
+    /// Computes the symmetric Hausdorff distance between the vertices of `self` and `other`.
+    #[must_use]
+    pub fn hausdorff_distance(&self, other: &Self) -> f64 {
+        let span = self.positions.len().max(other.positions.len());
+        if span < PARALLEL_MESH_THRESHOLD {
+            cadmpeg_gpu::spatial::kd_hausdorff_distance(&self.positions, &other.positions)
+        } else if span < GPU_MESH_DISPATCH_THRESHOLD {
+            cadmpeg_gpu::spatial::rayon_hausdorff_distance(&self.positions, &other.positions)
+        } else {
+            cadmpeg_gpu::hausdorff_distance(&self.positions, &other.positions)
+        }
+    }
 }
 
 /// A ring of domain nodes from a traced loop, oriented so that the face lies

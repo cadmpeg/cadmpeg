@@ -538,8 +538,9 @@ impl<'ir> Measurer<'ir> {
             }
         }
         if let Ok(placement) = placement {
-            for point in self.owners.body_vertex_points(body) {
-                aabb = union(aabb, Aabb::of_point(placement.point(point)));
+            let raw_vertices = self.owners.body_vertex_points(body);
+            for point in placement.points(&raw_vertices) {
+                aabb = union(aabb, Aabb::of_point(point));
             }
             if aabb.is_none() {
                 for face in self.owners.body_faces(body) {
