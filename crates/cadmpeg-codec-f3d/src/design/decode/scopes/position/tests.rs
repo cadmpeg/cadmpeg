@@ -145,7 +145,9 @@ fn position_retains_repeated_row_targets() {
 
 #[test]
 fn position_shares_large_repeated_paths_on_wire_and_enforces_aggregate_budget() {
-    let (mut bytes, mut scope, mut types) = fixture(&[None; 1024]);
+    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+
+    let (mut bytes, mut scope, mut types) = fixture(&vec![None; 1024]);
     for ordinal in 0..1024 {
         let at = 33 + ordinal * 13 + 2;
         bytes[at..at + 8].copy_from_slice(&700_u64.to_le_bytes());
@@ -201,7 +203,6 @@ fn position_shares_large_repeated_paths_on_wire_and_enforces_aggregate_budget() 
         invalid["captured_positions"]["rows"][1]["path_index"] = index;
         assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
     }
-    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     let mut rewritten = wire.clone();
     let mut identities = IdentityMap::new(|id: &str| Ok(id.to_owned()));
     DesignParameterScope::rewrite_native_value(

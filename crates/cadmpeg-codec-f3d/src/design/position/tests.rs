@@ -135,7 +135,7 @@ fn position_resolves_unique_complete_paths_despite_ambiguous_prefixes_and_the_co
             &[root.clone(), child.clone(), other],
             &[],
         );
-        let keys = vec![OCCURRENCE_KEY.to_owned(), CHILD.to_owned()];
+        let keys = [OCCURRENCE_KEY.to_owned(), CHILD.to_owned()];
         assert_eq!(
             paths.ambiguous("f3d:Design/BulkStream.dat", &keys[..1]),
             !ambiguous_full

@@ -24,14 +24,14 @@ pub(crate) fn project(
         .map(|(ordinal, position)| {
             let affine = if let Some(matrix) = &position.matrix {
                 let values = matrix.value.map(cadmpeg_ir::scalar::FiniteReal::get);
-                if values[12..] != [0.0, 0.0, 0.0, 1.0] {
-                    None
-                } else {
+                if values[12..] == [0.0, 0.0, 0.0, 1.0] {
                     let mut rows = std::array::from_fn(|r| std::array::from_fn(|c| values[r * 4 + c]));
                     for row in &mut rows {
                         row[3] *= DESIGN_LENGTH_TO_MILLIMETRE;
                     }
                     Transform::affine(rows)
+                } else {
+                    None
                 }
             } else {
                 Some(Transform::identity())

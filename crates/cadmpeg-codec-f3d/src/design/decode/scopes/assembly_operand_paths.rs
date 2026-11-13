@@ -30,6 +30,8 @@ use std::collections::HashMap;
 /// Record types of one Design stream by entity id: type GUID and version.
 pub(super) type StreamTypes<'a> = HashMap<u64, (&'a str, u32)>;
 
+const RETAINED_BYTES_PER_SOURCE_BYTE: u64 = 16;
+
 pub(super) fn exact_assembly_operand_paths(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -578,7 +580,6 @@ fn exact_assembly_operand_path_envelope(
             wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
             path_reference_offset,
         };
-        const RETAINED_BYTES_PER_SOURCE_BYTE: u64 = 16;
         let retained = u64::try_from(wrapper_at.checked_sub(path_at)?)
             .ok()?
             .checked_mul(RETAINED_BYTES_PER_SOURCE_BYTE)?;
