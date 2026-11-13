@@ -12,7 +12,7 @@ rewrite_native_record!(DesignDraftOperation, []; {angle, angle_record_index, ang
 rewrite_native_record!(DesignDraftFlags, []; {flipped, tangent_chain, two_sided});
 rewrite_native_scalar!(DesignDraftTwoSided);
 rewrite_native_scalar!(DesignMoveForm);
-rewrite_native_record!(DesignMoveOperation, []; {transform, transform_offset, transform_record_index, form, form_offset, prefix});
+rewrite_native_record!(DesignMoveOperation, []; {transform, transform_offset, transform_record_index, form, form_offset, transform_reference_offset, prefix, face_group});
 rewrite_native_record!(DesignMovePrefix, []; {references, codes, matrix_omitted, leading});
 rewrite_native_record!(DesignMoveLeading, []; {scalar, references});
 rewrite_native_enum!(DesignMoveReference, []; {Null, Local {record_index}, Typed {record_index, type_guid}});

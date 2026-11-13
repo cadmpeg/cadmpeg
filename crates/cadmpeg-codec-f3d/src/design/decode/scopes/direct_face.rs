@@ -16,6 +16,8 @@ use crate::design::DesignFeatureFamily;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::modify_marker_one_prologue as modify_one;
 use crate::layout::modify_marker_zero_prologue as modify_zero;
+use crate::layout::move_face_marker_one_prologue as face_one;
+use crate::layout::move_face_marker_zero_prologue as face_zero;
 use crate::layout::move_marked_transform_prologue as marked_move;
 use crate::layout::move_marker_one_transform_prologue as extended_move;
 use crate::layout::move_transform_frame_253 as move_frame;
@@ -196,61 +198,132 @@ fn marked_move_transform(
     Some(operation)
 }
 
-/// Primary-header offset of the marked transform reference of a `MoveFace`
-/// scope, or `None` when its prologue is not a known form.
-///
-/// A marker-one prologue stores `1` at offset 20 and a u32 zero at 21, so its
-/// fields start four bytes later than those of a marker-zero prologue.
-fn move_face_transform_marker(
+fn move_face_operand_markers(
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
-) -> Option<usize> {
+) -> Option<(usize, usize)> {
     let count_offset = usize::try_from(scope.reference_count_offset())
         .ok()?
         .checked_sub(start)?;
-    let transform_marker = match (bytes.get(start + 20)?, count_offset) {
-        (1, 131) if View::u32_le_at(bytes, start + 21) == Some(0) => 26,
-        (0, 127) => 22,
-        _ => return None,
-    };
-    // A byte one precedes the marked transform reference. A u32 one follows it,
-    // then the marked reference to the selected-face group.
-    (bytes.get(start + transform_marker - 1) == Some(&1)
-        && View::u32_le_at(bytes, start + transform_marker + 11) == Some(1))
-    .then_some(transform_marker)
+    let bytes = bytes.get(start..)?;
+    let (flag, transform, reference_flag, group) =
+        match (*bytes.get(face_zero::MARKER)?, count_offset) {
+            (face_one::MARKER_VALUE, face_one::REFERENCE_COUNT)
+                if View::u32_le_at(bytes, face_one::ZERO_WORD) == Some(0) =>
+            {
+                (
+                    face_one::TRANSFORM_FLAG,
+                    face_one::TRANSFORM_REFERENCE,
+                    face_one::REFERENCE_FLAG,
+                    face_one::GROUP_REFERENCE,
+                )
+            }
+            (face_zero::MARKER_VALUE, face_zero::REFERENCE_COUNT) => (
+                face_zero::TRANSFORM_FLAG,
+                face_zero::TRANSFORM_REFERENCE,
+                face_zero::REFERENCE_FLAG,
+                face_zero::GROUP_REFERENCE,
+            ),
+            _ => return None,
+        };
+    (bytes.get(flag) == Some(&1) && View::u32_le_at(bytes, reference_flag) == Some(1))
+        .then_some((transform, group))
 }
 
 pub(super) fn exact_move_face_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    class_types: &HashMap<u32, &SegmentType>,
+    losses: &mut Vec<LossNote>,
 ) -> Option<DesignMoveOperation> {
-    if !is_move_face(scope) || scope.reference_members().len() < 3 {
+    if scope.kind() != scope::DesignFeatureKind::MoveFace {
         return None;
     }
     let start = usize::try_from(scope.byte_offset()).ok()?;
-    let transform_marker = move_face_transform_marker(bytes, scope, start)?;
-    let transform = marked_record_reference(bytes, start + transform_marker)?;
-    let group = marked_record_reference(bytes, start + transform_marker + 15)?;
-    // The transform is the last reference after the group and its members, or
-    // the first reference before them.
-    let mut references = scope.reference_members().values().copied();
-    let first = references.next()?;
-    let second = references.next()?;
-    let last = references.next_back()?;
-    if !(first == group && last == transform || first == transform && second == group) {
-        return None;
+    let (transform_marker, group_marker) = move_face_operand_markers(bytes, scope, start)?;
+    let transform_at = start.checked_add(transform_marker)?;
+    let transform = marked_record_reference(bytes, transform_at)?;
+    let mut typed = None;
+    let mut unregistered = None;
+    let mut typed_ambiguous = false;
+    let mut unregistered_ambiguous = false;
+    let mut conflicting_registration = None;
+    for (frame_start, paired) in records.frames(transform) {
+        let Some((tag, after_tag)) =
+            lp_ascii_filtered_view(bytes, frame_start, 3..=3, u8::is_ascii_digit)
+        else {
+            continue;
+        };
+        if View::u32_le_at(bytes, after_tag) != Some(transform) {
+            continue;
+        }
+        let Ok(tag) = tag.parse::<u32>() else {
+            continue;
+        };
+        let registration = class_types.get(&tag);
+        if let Some(row) = registration.filter(|row| {
+            row.version != RIGID_TRANSFORM_TYPE_VERSION
+                || !row
+                    .type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(RIGID_TRANSFORM_TYPE_GUID)
+        }) {
+            conflicting_registration = Some((tag, *row));
+            continue;
+        }
+        let Some(next) = move_transform_at(bytes, frame_start, paired, transform) else {
+            continue;
+        };
+        if registration.is_some() {
+            typed_ambiguous |= typed.replace(next).is_some();
+        } else {
+            unregistered_ambiguous |= unregistered.replace(next).is_some();
+        }
     }
-    move_face_transform(bytes, records, transform)
+    let mut operation = if let Some(operation) = typed {
+        if typed_ambiguous {
+            return None;
+        }
+        operation
+    } else {
+        if unregistered_ambiguous {
+            return None;
+        }
+        let Some(operation) = unregistered else {
+            if let Some((tag, row)) = conflicting_registration {
+                losses.push(crate::loss::F3dLossCode::FeatureMoveFaceTypeConflict.note(format!(
+                    "MoveFace scope {} retains transform record {transform} natively after conflicting class registration {tag}: {} version {} (DR-401).",
+                    scope.id, row.type_guid.as_str(), row.version
+                )));
+            }
+            return None;
+        };
+        losses.push(crate::loss::F3dLossCode::FeatureMoveFaceTypeAssumed.note(format!(
+            "MoveFace scope {} reads marked transform record {transform} by its frame with unavailable type registration (DR-401).",
+            scope.id
+        )));
+        operation
+    };
+    operation.transform_reference_offset = Some(u64_from_index(transform_at));
+    operation.face_group = start.checked_add(group_marker).and_then(|at| {
+        Some(crate::records::identity::Located {
+            value: marked_record_reference(bytes, at)?,
+            offset: u64_from_index(at.checked_add(1)?),
+        })
+    });
+    let prefix_fields = bytes
+        .get(start.checked_add(face_zero::PREFIX_FIELDS)?..start.checked_add(face_zero::MARKER)?)?;
+    if prefix_fields != [0; 9] {
+        losses.push(crate::loss::F3dLossCode::FeatureMoveFacePrologueAssumed.note(format!(
+            "MoveFace scope {} keeps its marked transform while prefix fields {:?} are assumed to leave motion unchanged (DR-401).",
+            scope.id, prefix_fields
+        )));
+    }
+    Some(operation)
 }
 
-fn is_move_face(scope: &DesignParameterScope) -> bool {
-    scope.kind() == scope::DesignFeatureKind::MoveFace
-}
-
-/// The rigid transform of the record a `MoveFace` scope marks. The marked
-/// reference selects the record, so its class tag and frame length do not.
 fn move_face_transform(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -394,6 +467,7 @@ fn move_transform_at(
         form_offset: u64_from_index(start + form_at),
         transform_reference_offset: None,
         prefix,
+        ..DesignMoveOperation::default()
     })
 }
 
@@ -619,20 +693,36 @@ pub(crate) fn move_operation_links_hold(
     header: Option<&crate::records::decal::DesignRecordHeader>,
 ) -> bool {
     scope.move_operation().is_none_or(|operation| {
-        header.is_some_and(|header| {
-            (is_move_face(scope)
-                || operation.transform_reference_offset.is_none_or(|offset| {
-                    [
-                        marked_move::TRANSFORM_REFERENCE,
-                        extended_move::TRANSFORM_REFERENCE,
-                    ]
+        let face = scope.kind() == scope::DesignFeatureKind::MoveFace;
+        let face_offsets = [
+            (face_zero::REFERENCE_COUNT, face_zero::TRANSFORM_REFERENCE, face_zero::GROUP_REFERENCE),
+            (face_one::REFERENCE_COUNT, face_one::TRANSFORM_REFERENCE, face_one::GROUP_REFERENCE),
+        ].into_iter().find_map(|(count, transform, group)| {
+            if scope.byte_offset().checked_add(u64_from_index(count)) != Some(scope.reference_count_offset()) {
+                return None;
+            }
+            Some((
+                scope.byte_offset().checked_add(u64_from_index(transform))?,
+                scope.byte_offset().checked_add(u64_from_index(group))?.checked_add(1)?,
+            ))
+        });
+        let transform_offset_valid = operation.transform_reference_offset.is_none_or(|offset| {
+            if face {
+                face_offsets.is_some_and(|(expected, _)| offset == expected)
+            } else {
+                [marked_move::TRANSFORM_REFERENCE, extended_move::TRANSFORM_REFERENCE]
                     .into_iter()
                     .any(|at| scope.byte_offset().checked_add(u64_from_index(at)) == Some(offset))
-                }))
-                && scope
-                    .reference_members()
-                    .values()
-                    .any(|index| *index == operation.transform_record_index)
+            }
+        });
+        let marked_face_link = face && operation.transform_reference_offset.is_some() && transform_offset_valid;
+        header.is_some_and(|header| {
+            transform_offset_valid
+                && operation.face_group.as_ref().is_none_or(|group| {
+                    face && face_offsets.is_some_and(|(_, expected)| group.offset == expected)
+                })
+                && (scope.reference_members().values().any(|index| *index == operation.transform_record_index)
+                    || marked_face_link)
                 && header.record_index == operation.transform_record_index
                 && (operation.form != direct_face::DesignMoveForm::Form4
                     || operation.prefix.as_ref().is_some_and(|prefix| prefix.leading.is_some()))

@@ -7409,6 +7409,11 @@ pub enum FaceMotion {
         /// Signed rotation angle.
         angle: Angle,
     },
+    #[doc = "Complete model-space affine motion in canonical millimetres."]
+    Transform {
+        #[doc = "Row-major transform applied to the selected faces."]
+        transform: Transform,
+    },
 }
 
 /// Model-space axis-angle rotation.

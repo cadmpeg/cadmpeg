@@ -362,7 +362,7 @@ pub(crate) fn decode_parameter_scopes(
                     _ => {
                         return Err(CodecError::NotImplemented(
                             "F3D solid primitive payload kind mismatch".into(),
-                        ))
+                        ));
                     }
                 }
             }
@@ -450,7 +450,8 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_move_face_operation(bytes, &records, &scope);
+                let construction =
+                    exact_move_face_operation(bytes, &records, &scope, &class_types, &mut losses);
                 if let Some(operation) = &construction {
                     losses.extend(move_transform_references_loss(&scope, operation));
                     losses.extend(move_transform_prefix_losses(&scope, operation));
@@ -1501,7 +1502,18 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         let mut reference_table = None;
         for count_at in start + 11..reference_table_end {
             let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
-            if !reference_table_ends_at(count_at, count, stride, reference_table_end) {
+            let empty_move_face_table = kind == scope::DesignFeatureKind::MoveFace
+                && count == 0
+                && count_at.checked_add(4) == Some(reference_table_end)
+                && [
+                    crate::layout::move_face_marker_zero_prologue::REFERENCE_COUNT,
+                    crate::layout::move_face_marker_one_prologue::REFERENCE_COUNT,
+                ]
+                .into_iter()
+                .any(|offset| start.checked_add(offset) == Some(count_at));
+            if !reference_table_ends_at(count_at, count, stride, reference_table_end)
+                && !empty_move_face_table
+            {
                 continue;
             }
             let first = count_at.checked_add(4)?;

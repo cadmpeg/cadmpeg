@@ -5547,6 +5547,51 @@ Unstated regions:
 - `0..42` (42 B): The fixed section begins with the retained fields and common envelope before the gap-owner reference.
 - `75..81` (6 B): The fixed section has six bytes between the radius-owner reference and the rule-derived radius.
 
+## `move_face_marker_zero_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 131 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The marker-zero prologue stores `0` at offset 20 |
+| 11 | 9 | `prefix_fields` | `bytes[9]` | little | spec | The marker-zero prologue stores `0` at offset 20 |
+| 20 | 1 | `marker` | `u8` | little | spec | The marker-zero prologue stores `0` at offset 20 · value `0` |
+| 21 | 1 | `transform_flag` | `u8` | little | spec | The marker-zero prologue stores `0` at offset 20 · value `1` |
+| 22 | 11 | `transform_reference` | `bytes[11]` | little | spec | The marker-zero prologue stores `0` at offset 20 |
+| 33 | 4 | `reference_flag` | `u32` | little | spec | The marker-zero prologue stores `0` at offset 20 · value `1` |
+| 37 | 11 | `group_reference` | `bytes[11]` | little | spec | The marker-zero prologue stores `0` at offset 20 |
+| 127 | 4 | `reference_count` | `u32` | little | spec | the ordered-reference count is at 127 |
+
+Unstated regions:
+
+- `48..127` (79 B): The fixed native prologue continues to its ordered-reference count.
+
+## `move_face_marker_one_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 135 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The marker-one prologue stores `1` at offset 20 |
+| 11 | 9 | `prefix_fields` | `bytes[9]` | little | spec | The marker-one prologue stores `1` at offset 20 |
+| 20 | 1 | `marker` | `u8` | little | spec | The marker-one prologue stores `1` at offset 20 · value `1` |
+| 21 | 4 | `zero_word` | `u32` | little | spec | The marker-one prologue stores `1` at offset 20 · value `0` |
+| 25 | 1 | `transform_flag` | `u8` | little | spec | The marker-one prologue stores `1` at offset 20 · value `1` |
+| 26 | 11 | `transform_reference` | `bytes[11]` | little | spec | The marker-one prologue stores `1` at offset 20 |
+| 37 | 4 | `reference_flag` | `u32` | little | spec | The marker-one prologue stores `1` at offset 20 · value `1` |
+| 41 | 11 | `group_reference` | `bytes[11]` | little | spec | The marker-one prologue stores `1` at offset 20 |
+| 131 | 4 | `reference_count` | `u32` | little | spec | the ordered-reference count is at 131 |
+
+Unstated regions:
+
+- `52..131` (79 B): The fixed native prologue continues to its ordered-reference count.
+
 ## `move_marked_transform_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 47 B

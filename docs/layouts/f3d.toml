@@ -18160,6 +18160,158 @@ source = "spec"
 anchor = "its rule-derived inside bend radius starts"
 
 [[record]]
+name = "move_face_marker_zero_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "The marker-zero prologue stores `0` at offset 20"
+size = 131
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The marker-zero prologue stores `0` at offset 20"
+
+[[record.field]]
+name = "prefix_fields"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "The marker-zero prologue stores `0` at offset 20"
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "The marker-zero prologue stores `0` at offset 20"
+value = 0
+
+[[record.field]]
+name = "transform_flag"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "The marker-zero prologue stores `0` at offset 20"
+value = 1
+
+[[record.field]]
+name = "transform_reference"
+offset = 22
+type = "bytes[11]"
+source = "spec"
+anchor = "The marker-zero prologue stores `0` at offset 20"
+
+[[record.field]]
+name = "reference_flag"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "The marker-zero prologue stores `0` at offset 20"
+value = 1
+
+[[record.field]]
+name = "group_reference"
+offset = 37
+type = "bytes[11]"
+source = "spec"
+anchor = "The marker-zero prologue stores `0` at offset 20"
+
+[[record.gap]]
+offset = 48
+size = 79
+note = "The fixed native prologue continues to its ordered-reference count."
+
+[[record.field]]
+name = "reference_count"
+offset = 127
+type = "u32"
+source = "spec"
+anchor = "the ordered-reference count is at 127"
+
+[[record]]
+name = "move_face_marker_one_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "The marker-one prologue stores `1` at offset 20"
+size = 135
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The marker-one prologue stores `1` at offset 20"
+
+[[record.field]]
+name = "prefix_fields"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "The marker-one prologue stores `1` at offset 20"
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "The marker-one prologue stores `1` at offset 20"
+value = 1
+
+[[record.field]]
+name = "zero_word"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "The marker-one prologue stores `1` at offset 20"
+value = 0
+
+[[record.field]]
+name = "transform_flag"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "The marker-one prologue stores `1` at offset 20"
+value = 1
+
+[[record.field]]
+name = "transform_reference"
+offset = 26
+type = "bytes[11]"
+source = "spec"
+anchor = "The marker-one prologue stores `1` at offset 20"
+
+[[record.field]]
+name = "reference_flag"
+offset = 37
+type = "u32"
+source = "spec"
+anchor = "The marker-one prologue stores `1` at offset 20"
+value = 1
+
+[[record.field]]
+name = "group_reference"
+offset = 41
+type = "bytes[11]"
+source = "spec"
+anchor = "The marker-one prologue stores `1` at offset 20"
+
+[[record.gap]]
+offset = 52
+size = 79
+note = "The fixed native prologue continues to its ordered-reference count."
+
+[[record.field]]
+name = "reference_count"
+offset = 131
+type = "u32"
+source = "spec"
+anchor = "the ordered-reference count is at 131"
+
+[[record]]
 name = "move_marked_transform_prologue"
 kind = "byte"
 section = "3.1"

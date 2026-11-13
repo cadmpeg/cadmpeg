@@ -93,7 +93,7 @@ fn moved_face_selection(
 ) -> Option<Vec<i64>> {
     let magnitude = match motion {
         FaceMotion::Offset { distance } | FaceMotion::Translate { distance, .. } => distance.get(),
-        FaceMotion::Rotate { .. } => return None,
+        FaceMotion::Rotate { .. } | FaceMotion::Transform { .. } => return None,
     };
     if magnitude.abs() <= FACE_MOTION_POSITION_TOLERANCE {
         return None;

@@ -126,6 +126,11 @@ pub(crate) struct DesignThickenOperation {
     pub(crate) tangent_chain: bool,
 }
 
+cadmpeg_core::named_optional_field!(
+    deserialize_face_group,
+    crate::records::identity::Located<u32>,
+    "face_group"
+);
 cadmpeg_core::named_optional_field!(deserialize_move_prefix, DesignMovePrefix, "prefix");
 cadmpeg_core::named_optional_field!(deserialize_move_leading, DesignMoveLeading, "leading");
 
@@ -221,6 +226,27 @@ pub(crate) struct DesignMoveOperation {
         deserialize_with = "deserialize_move_prefix"
     )]
     pub(crate) prefix: Option<DesignMovePrefix>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_face_group"
+    )]
+    pub(crate) face_group: Option<crate::records::identity::Located<u32>>,
+}
+
+impl Default for DesignMoveOperation {
+    fn default() -> Self {
+        Self {
+            transform: SketchPlacementMatrix::IDENTITY,
+            transform_offset: 0,
+            transform_record_index: 0,
+            form: DesignMoveForm::Form5,
+            form_offset: 0,
+            transform_reference_offset: None,
+            prefix: None,
+            face_group: None,
+        }
+    }
 }
 
 impl DesignMoveOperation {
