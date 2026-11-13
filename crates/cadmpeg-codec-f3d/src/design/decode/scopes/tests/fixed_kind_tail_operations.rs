@@ -545,6 +545,8 @@ pub(super) fn fixed_kind_tail_operations(
                 signed_thickness: crate::test_support::real(-1.0),
                 thickness_record_index: 74,
                 thickness_offset: 40,
+                symmetric: false,
+                tangent_chain: true,
             },
         );
     }
