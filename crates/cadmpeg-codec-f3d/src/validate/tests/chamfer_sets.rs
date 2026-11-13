@@ -2,12 +2,16 @@
 #[test]
 fn chamfer_sets_name_scope_members_and_owners_of_their_namespace() {
     use crate::records::feature::chamfer_set::{
-        DesignChamferSet, DesignChamferSetList, DesignChamferSetListForm, DesignChamferSetSpec,
+        DesignChamferCornerType, DesignChamferSet, DesignChamferSetList, DesignChamferSetListForm,
+        DesignChamferSetSpec,
     };
     use crate::records::feature::scope::{
         DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
     };
-    let findings = |spec: DesignChamferSetSpec, group_member: bool, sets: usize| {
+    let findings = |spec: DesignChamferSetSpec,
+                    group_member: bool,
+                    sets: usize,
+                    list_entries: u32| {
         let mut native = super::fillet_group::radius_native(true);
         native.design_parameter_scopes[0] = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#10",
@@ -35,7 +39,8 @@ fn chamfer_sets_name_scope_members_and_owners_of_their_namespace() {
         };
         slot.sets = Some(DesignChamferSetList {
             form: DesignChamferSetListForm::Current,
-            entry_count: 1,
+            corner_type: DesignChamferCornerType::Chamfer,
+            entry_count: list_entries,
             sets: vec![
                 DesignChamferSet {
                     record_index: 11,
@@ -44,7 +49,8 @@ fn chamfer_sets_name_scope_members_and_owners_of_their_namespace() {
                     group_record_index: 100,
                     spec,
                     auxiliary_record_index: 12,
-                    flag: true,
+                    entry_count: 1,
+                    tangent_chain: true,
                 };
                 sets
             ],
@@ -60,14 +66,15 @@ fn chamfer_sets_name_scope_members_and_owners_of_their_namespace() {
     let equal = |distance_owner_record_index| DesignChamferSetSpec::EqualDistance {
         distance_owner_record_index,
     };
-    assert_eq!(findings(equal(204), true, 1), 0);
-    assert_eq!(findings(equal(204), false, 1), 1);
-    assert_eq!(findings(equal(204), true, 2), 1);
-    assert_eq!(findings(equal(200), true, 1), 1);
-    assert_eq!(findings(equal(999), true, 1), 1);
+    assert_eq!(findings(equal(204), true, 1, 1), 0);
+    assert_eq!(findings(equal(204), false, 1, 1), 1);
+    assert_eq!(findings(equal(204), true, 2, 2), 1);
+    assert_eq!(findings(equal(200), true, 1, 1), 1);
+    assert_eq!(findings(equal(999), true, 1, 1), 1);
     let mixed = DesignChamferSetSpec::TwoDistances {
         first_owner_record_index: 206,
         second_owner_record_index: 208,
     };
-    assert_eq!(findings(mixed, true, 1), 1);
+    assert_eq!(findings(mixed, true, 1, 1), 1);
+    assert_eq!(findings(equal(204), true, 1, 2), 1);
 }

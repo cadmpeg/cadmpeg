@@ -24,7 +24,7 @@ use cadmpeg_core::decode::View;
 const INDEXED_HEADER_LEN: usize = 11;
 const REFERENCE_LEN: usize = 11;
 const ENTITY_GUID_CODE_UNITS: u32 = 36;
-const CURRENT_FLAG_RUN: [u8; 12] = [1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+const CURRENT_FLAG_RUN_TAIL: [u8; 11] = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 const COMPACT_FLAG_RUN: [u8; 11] = [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 /// The fillet set list of `scope`, admitted when the prefix, every set frame,
@@ -57,8 +57,11 @@ pub(super) fn fillet_set_list(
         return None;
     }
     cursor += 4;
-    let form = if frame.get(cursor..cursor + CURRENT_FLAG_RUN.len())? == CURRENT_FLAG_RUN {
-        cursor += CURRENT_FLAG_RUN.len();
+    let rolling_ball = *frame.get(cursor)?;
+    let form = if matches!(rolling_ball, 0 | 1)
+        && frame.get(cursor + 1..cursor + 1 + CURRENT_FLAG_RUN_TAIL.len())? == CURRENT_FLAG_RUN_TAIL
+    {
+        cursor += 1 + CURRENT_FLAG_RUN_TAIL.len();
         DesignFilletSetListForm::Current
     } else if frame.get(cursor..cursor + COMPACT_FLAG_RUN.len())? == COMPACT_FLAG_RUN {
         cursor += COMPACT_FLAG_RUN.len();
@@ -101,7 +104,11 @@ pub(super) fn fillet_set_list(
     if sets.is_empty() {
         return None;
     }
-    Some(DesignFilletSetList { form, sets })
+    Some(DesignFilletSetList {
+        form,
+        rolling_ball_corner: rolling_ball == 1,
+        sets,
+    })
 }
 
 /// `count` consecutive marked references from `cursor`, each distinct.
@@ -142,7 +149,8 @@ impl LawRole {
 struct SetForm {
     len: usize,
     marker: usize,
-    flag: usize,
+    tangent_chain: usize,
+    curvature: Option<usize>,
     group: usize,
     law: (usize, LawRole),
     ordinal: usize,
@@ -153,7 +161,8 @@ const SET_FORMS: [SetForm; 3] = [
     SetForm {
         len: constant::LEN,
         marker: constant::FORM_MARKER,
-        flag: constant::FLAG,
+        tangent_chain: constant::TANGENT_CHAIN,
+        curvature: Some(constant::CURVATURE_CONTINUITY),
         group: constant::EDGE_GROUP_REFERENCE,
         law: (constant::RADIUS_OWNER_REFERENCE, LawRole::Radius),
         ordinal: constant::SET_ORDINAL,
@@ -162,7 +171,8 @@ const SET_FORMS: [SetForm; 3] = [
     SetForm {
         len: chordal::LEN,
         marker: chordal::FORM_MARKER,
-        flag: chordal::FLAG,
+        tangent_chain: chordal::FLAG,
+        curvature: None,
         group: chordal::EDGE_GROUP_REFERENCE,
         law: (chordal::CHORD_LENGTH_OWNER_REFERENCE, LawRole::ChordLength),
         ordinal: chordal::SET_ORDINAL,
@@ -171,7 +181,8 @@ const SET_FORMS: [SetForm; 3] = [
     SetForm {
         len: compact::LEN,
         marker: compact::FORM_MARKER,
-        flag: compact::FLAG,
+        tangent_chain: compact::FLAG,
+        curvature: None,
         group: compact::EDGE_GROUP_REFERENCE,
         law: (compact::RADIUS_OWNER_REFERENCE, LawRole::Radius),
         ordinal: compact::SET_ORDINAL,
@@ -185,7 +196,11 @@ impl SetForm {
         let fields = [
             (0, INDEXED_HEADER_LEN),
             (self.marker, 1),
-            (self.flag, 1),
+            (self.tangent_chain, 1),
+            (
+                self.curvature.unwrap_or(0),
+                usize::from(self.curvature.is_some()),
+            ),
             (self.group, REFERENCE_LEN),
             (self.law.0, REFERENCE_LEN),
             (self.ordinal, 4),
@@ -219,7 +234,10 @@ fn fillet_set(
         let frame = bytes.get(start..end)?;
         lp_ascii_filtered_view(bytes, end, 3..=3, u8::is_ascii_digit)?;
         if frame.get(form.marker) != Some(&1)
-            || !matches!(frame.get(form.flag), Some(0 | 1))
+            || !matches!(frame.get(form.tangent_chain), Some(0 | 1))
+            || form
+                .curvature
+                .is_some_and(|at| !matches!(frame.get(at), Some(0 | 1)))
             || View::u32_le_at(frame, form.ordinal)? != position
             || !form.unnamed_bytes_are_zero(frame)
         {
@@ -246,7 +264,8 @@ fn fillet_set(
             group_record_index: marked_record_reference(frame, form.group)?,
             law,
             tangency_weight_owner_record_index: owner(form.tangency_weight, "TangencyWeight")?,
-            flag: frame.get(form.flag) == Some(&1),
+            tangent_chain: frame.get(form.tangent_chain) == Some(&1),
+            curvature_continuity: form.curvature.map(|at| frame.get(at) == Some(&1)),
         })
     });
     let set = matches.next()?;
