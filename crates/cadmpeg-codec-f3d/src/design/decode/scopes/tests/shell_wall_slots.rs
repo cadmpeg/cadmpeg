@@ -196,6 +196,80 @@ fn each_wall_slot_selects_its_direction_and_scalar() {
 }
 
 #[test]
+fn unequal_decoded_wall_slots_project_without_a_symmetric_thickness() {
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
+    };
+    use crate::records::topology::construction::DesignConstructionOperandGroup;
+    use cadmpeg_ir::features::{
+        FaceSelection, FeatureDefinition, FeatureOperation, ShellJoin, ShellMode,
+    };
+
+    let operation = Fixture::new(Some(INSIDE), Some(OUTSIDE)).decode().unwrap();
+    assert_eq!(operation.thickness.get(), 0.25);
+    assert_eq!(
+        operation
+            .wall_slots
+            .as_ref()
+            .unwrap()
+            .outside
+            .as_ref()
+            .unwrap()
+            .thickness
+            .get(),
+        0.5
+    );
+    let mut scope = DesignParameterScope::empty("f3d:test:scope#90", DesignFeatureKind::Shell, 90);
+    let DesignScopePayloadMut::Shell(slot) = scope.payload_mut() else {
+        panic!("expected a Shell scope");
+    };
+    *slot = Some(operation);
+    let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+        "id": "f3d:test:group#91",
+        "scope_record_index": 90,
+        "scope_reference_ordinal": 0,
+        "record_index": 91,
+        "byte_offset": 1000,
+        "class_tag": "332",
+        "members": [92],
+        "member_offsets": [1026],
+        "frame": {
+            "member_count_offset": 1021,
+            "opaque_index": 1,
+            "opaque_index_offset": 1072,
+            "opaque_scalar": 0.0,
+            "opaque_scalar_offset": 1076,
+            "variant": false
+        },
+        "role": 68719476736_u64,
+        "role_offset": 1054,
+        "paired_class_tag": "259",
+        "paired_byte_offset": 1125
+    }))
+    .unwrap();
+    let Some(FeatureDefinition::Operation(FeatureOperation::Shell {
+        thickness,
+        outward,
+        mode,
+        removed_faces,
+        join,
+        ..
+    })) = crate::design::feature_project::project_shell(&scope, &[], std::slice::from_ref(&group))
+        .unwrap()
+    else {
+        panic!("expected a neutral Shell");
+    };
+    assert_eq!(thickness, None);
+    assert_eq!(outward, None);
+    assert_eq!(mode, Some(ShellMode::BothSides));
+    assert_eq!(
+        removed_faces,
+        FaceSelection::Native("f3d:test:group#91".into())
+    );
+    assert_eq!(join, Some(ShellJoin::Intersection));
+}
+
+#[test]
 fn the_form_has_no_class_requirement() {
     for class_tag in [*b"262", *b"369", *b"412"] {
         let mut fixture = Fixture::new(Some(INSIDE), None);

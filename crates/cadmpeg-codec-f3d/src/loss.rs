@@ -518,6 +518,7 @@ pub(crate) enum F3dLossCode {
     FeatureThickenFlagsAssumed,
     /// A `Shell` reference table stores references outside its face-group members.
     FeatureShellTableMembersAssumed,
+    FeatureShellIndependentWallsNative,
     /// A compact, marked, or counted `Shell` prefix stores an offset-21 Boolean whose Shell option is unresolved.
     FeatureShellPrefixFlagAssumed,
     /// Feature face operands stay unresolved inside historical selections.
@@ -983,6 +984,7 @@ impl F3dLossCode {
         Self::FeatureRectangularPatternPlacementNotTransferred,
         Self::FeatureThickenFlagsAssumed,
         Self::FeatureShellTableMembersAssumed,
+        Self::FeatureShellIndependentWallsNative,
         Self::FeatureShellPrefixFlagAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureTrimCellTableNative,
@@ -1427,6 +1429,7 @@ impl F3dLossCode {
             }
             Self::FeatureThickenFlagsAssumed => "feature.thicken-flags-assumed",
             Self::FeatureShellTableMembersAssumed => "feature.shell-table-members-assumed",
+            Self::FeatureShellIndependentWallsNative => "feature.shell-independent-walls-native",
             Self::FeatureShellPrefixFlagAssumed => "feature.shell-prefix-flag-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
@@ -1829,6 +1832,7 @@ impl F3dLossCode {
             | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
             | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellIndependentWallsNative
             | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
@@ -2150,6 +2154,7 @@ impl F3dLossCode {
             | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
             | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellIndependentWallsNative
             | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
@@ -2566,6 +2571,7 @@ mod tests {
                 "feature.rectangular-pattern-placement-not-transferred",
                 "feature.thicken-flags-assumed",
                 "feature.shell-table-members-assumed",
+                "feature.shell-independent-walls-native",
                 "feature.shell-prefix-flag-assumed",
                 "feature.face-operand-unresolved",
                 "feature.trim-cell-table-native",
