@@ -653,9 +653,16 @@ fn pipe_source_needs_the_whole_section_frame_before_the_table() {
         panic!("complete Pipe source")
     };
     let table = usize::try_from(pipe.section.expect("section frame").shape_offset).unwrap() + 4;
-    let mut unread = pipe.clone();
-    unread.section = None;
-    let read = |table: usize| super::section_frame_shape(&fixture.bulk, table, &unread, 200, 310);
+    let read = |table: usize| {
+        super::section_frame_shape(
+            &fixture.bulk,
+            table,
+            pipe.opaque_post_operation_offset,
+            pipe.record_indexes,
+            200,
+            310,
+        )
+    };
     assert_eq!(read(table), pipe.section);
     assert_eq!(read(table - 1), None);
 }
