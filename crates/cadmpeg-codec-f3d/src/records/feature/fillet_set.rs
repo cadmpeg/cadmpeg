@@ -4,6 +4,12 @@
 use super::fixed_parameters::DesignFixedFilletParameters;
 use serde::{Deserialize, Serialize};
 
+cadmpeg_core::named_optional_field!(
+    deserialize_curvature_continuity,
+    bool,
+    "curvature_continuity"
+);
+
 /// Operation data of a `Fillet` scope: fixed scalar lanes or the fillet sets of its prefix.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct DesignFilletScope {
@@ -34,6 +40,8 @@ impl DesignFilletScope {
 pub(crate) struct DesignFilletSetList {
     /// Byte run between the set list and the edge-group list.
     pub(crate) form: DesignFilletSetListForm,
+    /// Rolling-ball corner flag, the first byte of the flag run.
+    pub(crate) rolling_ball_corner: bool,
     /// Fillet sets in prefix order.
     pub(crate) sets: Vec<DesignFilletSet>,
 }
@@ -42,6 +50,7 @@ pub(crate) struct DesignFilletSetList {
 #[serde(deny_unknown_fields)]
 struct DesignFilletSetListWire {
     form: DesignFilletSetListForm,
+    rolling_ball_corner: bool,
     sets: Vec<DesignFilletSet>,
 }
 
@@ -54,6 +63,7 @@ impl TryFrom<DesignFilletSetListWire> for DesignFilletSetList {
         }
         Ok(Self {
             form: wire.form,
+            rolling_ball_corner: wire.rolling_ball_corner,
             sets: wire.sets,
         })
     }
@@ -63,9 +73,9 @@ impl TryFrom<DesignFilletSetListWire> for DesignFilletSetList {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DesignFilletSetListForm {
-    /// `01 00 01` and nine zero bytes.
+    /// The rolling-ball byte, `00 01`, and nine zero bytes.
     Current,
-    /// `01 01` and nine zero bytes.
+    /// The rolling-ball byte, `01`, and nine zero bytes.
     Compact,
 }
 
@@ -85,8 +95,15 @@ pub(crate) struct DesignFilletSet {
     pub(crate) law: DesignFilletSetLaw,
     /// Parameter owner of the set's `TangencyWeight`.
     pub(crate) tangency_weight_owner_record_index: u32,
-    /// Boolean byte at offset 26 of a 97-byte frame or offset 24 of a 93-byte frame.
-    pub(crate) flag: bool,
+    /// Edge-set tangent-chain flag.
+    pub(crate) tangent_chain: bool,
+    /// Curvature-continuity flag of the 97-byte constant form.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_curvature_continuity"
+    )]
+    pub(crate) curvature_continuity: Option<bool>,
 }
 
 /// Parameter owner that carries a fillet set's radius law.
