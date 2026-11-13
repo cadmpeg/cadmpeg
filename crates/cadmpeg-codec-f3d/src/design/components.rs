@@ -172,6 +172,7 @@ pub(crate) fn project_local_components_with_types(
     projector.attach_root_occurrences();
     projector.expand_nested_carriers()?;
     projector.apply_path_poses()?;
+    projector.retain_unplaced_definitions();
     projector.finish()
 }
 
@@ -1263,6 +1264,17 @@ impl<'a> Projector<'a> {
         Ok(())
     }
 
+    fn retain_unplaced_definitions(&mut self) {
+        for (stream, components) in self.sources.components {
+            if components.roots.len() == 1 {
+                continue;
+            }
+            for (&record, root) in &components.roots {
+                self.naming_space_definition(stream, record, root);
+            }
+        }
+    }
+
     fn finish(self) -> Result<LocalComponentProjection, cadmpeg_core::CodecError> {
         let overflow =
             || cadmpeg_core::CodecError::malformed("Fusion Design occurrence ordinal exceeds u32");
@@ -1554,37 +1566,66 @@ fn component_definition(id: ProductDefinitionId, bodies: Vec<BodyId>) -> Product
     }
 }
 
-/// Project a proven local occurrence into a `DerivedInstance` feature.
 pub(crate) fn project_derived_instance_features(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
-) {
+) -> Result<Vec<LossNote>, cadmpeg_core::CodecError> {
+    let mut losses = Vec::new();
     for scope in scopes {
-        let Some(construction) = scope.derived_instance_construction() else {
+        if scope.kind() != crate::records::feature::scope::DesignFeatureKind::DerivedInstance {
             continue;
-        };
+        }
         let Some(feature) = features
             .iter_mut()
             .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
         else {
             continue;
         };
+        if let FeatureDefinition::Operation(FeatureOperation::InsertComponents { components }) =
+            feature.evaluation.definition()
+        {
+            if components.native_reference().as_str() != scope.id {
+                let mut components = components.clone();
+                let native = match &mut components {
+                    cadmpeg_ir::features::InsertedComponents::Native { native }
+                    | cadmpeg_ir::features::InsertedComponents::Resolved { native, .. }
+                    | cadmpeg_ir::features::InsertedComponents::Partial { native, .. } => native,
+                };
+                *native = cadmpeg_ir::features::SelectionReference::new(scope.id.clone())
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                feature
+                    .evaluation
+                    .set_definition(FeatureDefinition::Operation(
+                        FeatureOperation::InsertComponents { components },
+                    ));
+            }
+            continue;
+        }
         if !matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Native { .. })
         ) {
             continue;
         }
+        let definition = if let Some(construction) = scope.derived_instance_construction() {
+            FeatureOperation::InsertComponent {
+                occurrence: crate::ids::neutral_component_occurrence_id(
+                    &construction.occurrence_guid,
+                ),
+            }
+        } else {
+            let components = cadmpeg_ir::features::InsertedComponents::native(scope.id.clone())
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            losses.push(F3dLossCode::FeatureDerivedInstanceComponentInsertAssumed.note(format!(
+                "{} is represented as a component insertion with unresolved source membership and placement; its native scope reference is retained (DR-469).", scope.id
+            )));
+            FeatureOperation::InsertComponents { components }
+        };
         feature
             .evaluation
-            .set_definition(FeatureDefinition::Operation(
-                FeatureOperation::InsertComponent {
-                    occurrence: crate::ids::neutral_component_occurrence_id(
-                        &construction.occurrence_guid,
-                    ),
-                },
-            ));
+            .set_definition(FeatureDefinition::Operation(definition));
     }
+    Ok(losses)
 }
 
 pub(crate) fn project_copy_paste_transfer_features(
@@ -2867,7 +2908,7 @@ mod tests {
         ] {
             let projection = project_carriers(&carriers, &components, &bodies);
             assert!(projection.occurrences.is_empty(), "{reason}");
-            assert!(projection.definitions.is_empty(), "{reason}");
+            assert_eq!(projection.definitions.len(), 2, "{reason}");
             assert_eq!(projection.losses.len(), 1, "{reason}");
             assert_eq!(
                 projection.losses[0].code,
@@ -2897,7 +2938,7 @@ mod tests {
             &[COMPONENT_BODY, ROOT_BODY],
         );
         assert!(projection.occurrences.is_empty());
-        assert!(projection.definitions.is_empty());
+        assert_eq!(projection.definitions.len(), 2);
         assert_eq!(projection.losses.len(), 1);
         assert_eq!(
             projection.losses[0].code,
@@ -3072,7 +3113,11 @@ mod tests {
                 }
             } else {
                 assert!(projection.occurrences.is_empty());
-                assert!(projection.definitions.is_empty());
+                assert_eq!(projection.definitions.len(), 3);
+                assert!(projection
+                    .definitions
+                    .iter()
+                    .all(|definition| definition.bodies.is_empty()));
                 assert!(projection
                     .losses
                     .iter()
@@ -3516,7 +3561,8 @@ mod tests {
         super::project_derived_instance_features(
             std::slice::from_mut(&mut feature),
             std::slice::from_ref(&scope),
-        );
+        )
+        .unwrap();
         assert_eq!(
             *feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::InsertComponent {
@@ -3539,7 +3585,8 @@ mod tests {
         super::project_derived_instance_features(
             std::slice::from_mut(&mut feature),
             std::slice::from_ref(&scope),
-        );
+        )
+        .unwrap();
         let paths = super::paths::LocalOccurrencePaths::new(&[], &[], &operation_occurrences, &[]);
         assert!(
             super::paths::bind_feature_paths(std::slice::from_mut(&mut feature), &paths).is_empty()

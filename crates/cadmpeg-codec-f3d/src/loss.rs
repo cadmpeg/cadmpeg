@@ -192,6 +192,9 @@ pub(crate) enum F3dLossCode {
     EdgeReferenceLostUnrepaired,
     /// Feature scopes have no complete neutral feature definition.
     FeatureDefinitionIncomplete,
+    FeatureMeshImportTessellationsUnresolved,
+    FeatureMeshImportEmptySourceAssumed,
+    FeatureMeshImportSourceUnparsed,
     /// A historical Thread selection has no complete proof of its live faces.
     ThreadLiveFaceUnproven,
     /// A stored-body operation has an empty proven body set.
@@ -200,6 +203,7 @@ pub(crate) enum F3dLossCode {
     FeatureStoredBodiesRecipeAbsent,
     /// A Base Feature has no complete unique body binding.
     FeatureStoredBodiesUnbound,
+    FeatureDerivedInstanceComponentInsertAssumed,
     /// A paste keeps its bodies; its source pairs or a source node do not resolve.
     FeaturePasteSourcesUnresolved,
     FeatureOccurrenceTransferSourceUnresolved,
@@ -795,10 +799,14 @@ impl F3dLossCode {
         Self::DecalNativeRetained,
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
+        Self::FeatureMeshImportTessellationsUnresolved,
+        Self::FeatureMeshImportEmptySourceAssumed,
+        Self::FeatureMeshImportSourceUnparsed,
         Self::ThreadLiveFaceUnproven,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureStoredBodiesUnbound,
+        Self::FeatureDerivedInstanceComponentInsertAssumed,
         Self::FeaturePasteSourcesUnresolved,
         Self::FeatureOccurrenceTransferSourceUnresolved,
         Self::FeatureOccurrenceTransferOwnerUnresolved,
@@ -1166,6 +1174,9 @@ impl F3dLossCode {
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
             Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
             Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
+            Self::FeatureDerivedInstanceComponentInsertAssumed => {
+                "feature.derived-instance-component-insert-assumed"
+            }
             Self::FeaturePasteSourcesUnresolved => "feature.paste-sources-unresolved",
             Self::FeatureOccurrenceTransferSourceUnresolved => {
                 "feature.occurrence-transfer-source-unresolved"
@@ -1207,6 +1218,11 @@ impl F3dLossCode {
             }
             Self::FeatureBoxPrimitiveUnresolved => "feature.box-primitive-unresolved",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
+            Self::FeatureMeshImportTessellationsUnresolved => {
+                "feature.mesh-import-tessellations-unresolved"
+            }
+            Self::FeatureMeshImportEmptySourceAssumed => "feature.mesh-import-empty-source-assumed",
+            Self::FeatureMeshImportSourceUnparsed => "feature.mesh-import-source-unparsed",
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
@@ -1631,6 +1647,7 @@ impl F3dLossCode {
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
+            | Self::FeatureDerivedInstanceComponentInsertAssumed
             | Self::FeaturePasteSourcesUnresolved
             | Self::FeatureOccurrenceTransferSourceUnresolved
             | Self::FeatureOccurrenceTransferOwnerUnresolved
@@ -1652,6 +1669,9 @@ impl F3dLossCode {
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
+            | Self::FeatureMeshImportTessellationsUnresolved
+            | Self::FeatureMeshImportEmptySourceAssumed
+            | Self::FeatureMeshImportSourceUnparsed
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
             | Self::HoleExtentFaceAssumed
@@ -1947,6 +1967,7 @@ impl F3dLossCode {
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
+            | Self::FeatureDerivedInstanceComponentInsertAssumed
             | Self::FeaturePasteSourcesUnresolved
             | Self::FeatureOccurrenceTransferSourceUnresolved
             | Self::FeatureOccurrenceTransferOwnerUnresolved
@@ -1968,6 +1989,9 @@ impl F3dLossCode {
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
+            | Self::FeatureMeshImportTessellationsUnresolved
+            | Self::FeatureMeshImportEmptySourceAssumed
+            | Self::FeatureMeshImportSourceUnparsed
             | Self::ThreadLiveFaceUnproven
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound
@@ -2344,10 +2368,14 @@ mod tests {
                 "appearance.decal-native",
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
+                "feature.mesh-import-tessellations-unresolved",
+                "feature.mesh-import-empty-source-assumed",
+                "feature.mesh-import-source-unparsed",
                 "feature.thread-live-face-unproven",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
                 "feature.stored-bodies-unbound",
+                "feature.derived-instance-component-insert-assumed",
                 "feature.paste-sources-unresolved",
                 "feature.occurrence-transfer-source-unresolved",
                 "feature.occurrence-transfer-owner-unresolved",
