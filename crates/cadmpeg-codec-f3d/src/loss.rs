@@ -517,7 +517,7 @@ pub(crate) enum F3dLossCode {
     FeaturePathPatternPlacementNotTransferred,
     /// A rectangular pattern's symmetric distribution or coincident direction has no linear pattern field.
     FeatureRectangularPatternPlacementNotTransferred,
-    /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
+    /// A `Thicken` scope stores a prologue flag byte `1` whose Thicken setting is unresolved.
     FeatureThickenFlagsAssumed,
     /// A `Shell` reference table stores references outside its face-group members.
     FeatureShellTableMembersAssumed,
