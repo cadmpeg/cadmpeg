@@ -109,17 +109,18 @@ pub(super) fn exact_thicken_operation(
     if scalar.value.get() == 0.0 {
         return None;
     }
-    let prologue = prologue_flag.map_or_else(String::new, |(at, flag)| {
-        format!(" and prologue flag byte {flag:02x} at byte {at}")
-    });
-    losses.push(crate::loss::F3dLossCode::FeatureThickenFlagsAssumed.note(format!(
-        "Thicken scope {} stores flag bytes {:02x} {:02x} at byte {flags_at}{prologue}; the Thicken settings these flags select are unresolved (DR-313), and a Thicken projected from the scope takes its side from the sign of the thickness.",
-        scope.id, flags[0], flags[1]
-    )));
+    if let Some((at, 1)) = prologue_flag {
+        losses.push(crate::loss::F3dLossCode::FeatureThickenFlagsAssumed.note(format!(
+            "Thicken scope {} stores prologue flag byte 01 at byte {at}; the Thicken setting this flag selects is unresolved (DR-313), and the Thicken is projected from its symmetric flag and its signed thickness alone.",
+            scope.id
+        )));
+    }
     Some(DesignThickenOperation {
         signed_thickness: scalar.value,
         thickness_record_index,
         thickness_offset: scalar.value_offset,
+        symmetric: flags[0] == 1,
+        tangent_chain: flags[1] == 1,
     })
 }
 
