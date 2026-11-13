@@ -1587,9 +1587,10 @@ mod tests {
         use cadmpeg_ir::transform::Transform;
 
         let transform =
-            Transform::affine([[0., -1., 0., 1.], [1., 0., 0., -2.], [0., 0., 1., 0.5]]).unwrap();
+            Transform::affine([[0., -1., 0., 1.], [1., 0., 0., -2.], [0., 0., 1., 0.5]])
+                .expect("finite affine fixture");
         let mut motion = FaceMotion::Transform { transform };
-        scale_face_motion(&mut motion, positive(25.4)).unwrap();
+        scale_face_motion(&mut motion, positive(25.4)).expect("finite scaled translation");
         let FaceMotion::Transform { transform } = motion else {
             panic!("expected complete transform");
         };
@@ -1608,7 +1609,7 @@ mod tests {
                 [0., 1., 0., 0.],
                 [0., 0., 1., 0.],
             ])
-            .unwrap(),
+            .expect("finite translation fixture before scaling"),
         };
         let original = overflowing.clone();
         assert!(matches!(
