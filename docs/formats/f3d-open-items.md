@@ -1029,7 +1029,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** Project a neutral Wrap from each independently decoded scope. Prefer the parameter bound to the named scalar owner; a unique parameter with the corresponding source kind remains an independent reading when that association is unresolved, with a named scalar-owner assumption loss. Map a nonzero signed Depth to Emboss or Deboss by sign, with a named assumption loss while the control fields remain unassigned. Keep zero, missing, ambiguous, and invalid Depth values in an unresolved material mode. Retain unresolved profile and target links in native selections. Retain horizontal, vertical, and rotation parameters as native source properties and neutral parameters while their Wrap placement mapping remains unresolved.
+**Note.** Project a neutral Wrap from each independently decoded scope. Prefer the parameter bound to the named scalar owner; a unique parameter with the corresponding source kind remains an independent reading when that association is unresolved, with a named scalar-owner assumption loss. Map a nonzero signed Depth to Emboss or Deboss by sign, with a named assumption loss while the control fields remain unassigned. Keep zero, missing, ambiguous, and invalid Depth values in an unresolved material mode. Interpret a missing or conflicting display-unit token through the scalar role's native centimetre or radian unit, with a named scalar-unit assumption loss. Retain unresolved profile and target links in native selections. Retain horizontal, vertical, and rotation parameters as native source properties and neutral parameters while their Wrap placement mapping remains unresolved.
 
 ### DR-120. Align operand roles and motion
 

@@ -401,3 +401,60 @@ fn named_depth_owner_precedes_other_depths_and_a_missing_owner_keeps_the_likely_
         Some("999")
     );
 }
+
+#[test]
+fn missing_and_conflicting_display_units_keep_native_scalar_values() {
+    let scope = construction_scope("f3d:Design/BulkStream.dat:scope#32", 32);
+    let depth = parse_design_parameter_record(&parameter_record(
+        Some(90),
+        "2 mm",
+        "Depth",
+        None,
+        "d7",
+        0.2,
+    ))
+    .unwrap();
+    let horizontal = parse_design_parameter_record(&parameter_record(
+        Some(92),
+        "3 mm",
+        "Horizontal Distance",
+        Some("rad"),
+        "d8",
+        0.3,
+    ))
+    .unwrap();
+    let rotation = parse_design_parameter_record(&parameter_record(
+        Some(93),
+        "0.25 rad",
+        "Rotation Angle",
+        Some("mm"),
+        "d10",
+        0.25,
+    ))
+    .unwrap();
+    let parameters = [(0, &depth), (1, &horizontal), (2, &rotation)];
+    let mut losses = Vec::new();
+    let definition = project_emboss(&scope, &parameters, &[], &[], &[], &mut losses).unwrap();
+    assert!(
+        matches!(definition, FeatureDefinition::Operation(FeatureOperation::Wrap { mode: WrapMode::Emboss {depth}, .. }) if depth == PositiveLength::new(2.0).unwrap())
+    );
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::F3dLossCode::EmbossScalarUnitAssumed.kind())
+            .count(),
+        3
+    );
+    let properties =
+        scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &parameters).unwrap();
+    for (key, expected) in [
+        ("emboss:scalar:Depth:mm", "2"),
+        ("emboss:scalar:Horizontal Distance:mm", "3"),
+        ("emboss:scalar:Rotation Angle:rad", "0.25"),
+        ("parameter:d7", "2 mm"),
+        ("parameter:d8", "3 mm"),
+        ("parameter:d10", "0.25 rad"),
+    ] {
+        assert_eq!(properties.get(key).map(String::as_str), Some(expected));
+    }
+}

@@ -2527,29 +2527,28 @@ fn scope_properties(
                 "Depth",
                 "mm",
                 emboss_parameter(scope, parameters, "Depth")
-                    .and_then(design_length)
+                    .and_then(emboss_length)
                     .map(cadmpeg_ir::scalar::Length::get),
             ),
             (
                 "Horizontal Distance",
                 "mm",
                 emboss_parameter(scope, parameters, "Horizontal Distance")
-                    .and_then(design_length)
+                    .and_then(emboss_length)
                     .map(cadmpeg_ir::scalar::Length::get),
             ),
             (
                 "Vertical Distance",
                 "mm",
                 emboss_parameter(scope, parameters, "Vertical Distance")
-                    .and_then(design_length)
+                    .and_then(emboss_length)
                     .map(cadmpeg_ir::scalar::Length::get),
             ),
             (
                 "Rotation Angle",
                 "rad",
                 emboss_parameter(scope, parameters, "Rotation Angle")
-                    .and_then(design_angle)
-                    .map(cadmpeg_ir::scalar::Angle::get),
+                    .map(|parameter| parameter.evaluated_value().get()),
             ),
         ] {
             if let Some(value) = value {
@@ -8161,13 +8160,10 @@ fn emboss_scalar_owner_is_proven(
         && native_stream(&parameter.id) == native_stream(&scope.id)
         && parameter.kind() == DesignParameterKind::Feature
         && parameter.evaluated_value() == owner.evaluated_value()
-        && parameter.unit().is_some_and(|unit| {
-            if parameter.source_kind_str() == "Rotation Angle" {
-                design_angle_unit(unit.value.as_str())
-            } else {
-                design_length_unit(unit.value.as_str())
-            }
-        })
+}
+
+fn emboss_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::scalar::Length> {
+    cadmpeg_ir::scalar::Length::new(parameter.evaluated_value().get() * DESIGN_LENGTH_TO_MILLIMETRE)
 }
 
 fn project_emboss(
@@ -8203,6 +8199,19 @@ fn project_emboss(
         "Rotation Angle",
     ] {
         if let Some(parameter) = emboss_parameter(scope, parameters, role) {
+            let unit_matches = parameter.unit().is_some_and(|unit| {
+                if role == "Rotation Angle" {
+                    design_angle_unit(unit.value.as_str())
+                } else {
+                    design_length_unit(unit.value.as_str())
+                }
+            });
+            if !unit_matches {
+                losses.push(crate::loss::F3dLossCode::EmbossScalarUnitAssumed.note(format!(
+                    "Emboss scope {} interprets {} in its role's native units despite a missing or conflicting display-unit token (DR-121).",
+                    scope.id, role
+                )));
+            }
             if !emboss_scalar_owner_is_proven(scope, parameter, owners) {
                 losses.push(crate::loss::F3dLossCode::EmbossScalarOwnerAssumed.note(format!(
                     "Emboss scope {} retains its {} parameter independently of an unresolved or inconsistent scalar-owner association (DR-121).",
@@ -8221,7 +8230,7 @@ fn project_emboss(
             scope.id
         )));
     }
-    let depth = emboss_parameter(scope, parameters, "Depth").and_then(design_length);
+    let depth = emboss_parameter(scope, parameters, "Depth").and_then(emboss_length);
     let mode = depth
         .and_then(|signed| {
             cadmpeg_ir::scalar::PositiveLength::new(signed.get().abs()).map(|magnitude| {

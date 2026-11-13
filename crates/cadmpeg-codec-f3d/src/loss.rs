@@ -285,6 +285,7 @@ pub(crate) enum F3dLossCode {
     EmbossDepthUnresolved,
     EmbossDepthSignAssumed,
     EmbossScalarOwnerAssumed,
+    EmbossScalarUnitAssumed,
     EmbossPlacementNative,
     /// A non-equivalent duplicate scope envelope was superseded by the
     /// primary-indexed envelope.
@@ -864,6 +865,7 @@ impl F3dLossCode {
         Self::EmbossDepthUnresolved,
         Self::EmbossDepthSignAssumed,
         Self::EmbossScalarOwnerAssumed,
+        Self::EmbossScalarUnitAssumed,
         Self::EmbossPlacementNative,
         Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
@@ -1250,6 +1252,7 @@ impl F3dLossCode {
             Self::EmbossDepthUnresolved => "feature.emboss-depth-unresolved",
             Self::EmbossDepthSignAssumed => "feature.emboss-depth-sign-assumed",
             Self::EmbossScalarOwnerAssumed => "feature.emboss-scalar-owner-assumed",
+            Self::EmbossScalarUnitAssumed => "feature.emboss-scalar-unit-assumed",
             Self::EmbossPlacementNative => "feature.emboss-placement-native",
             Self::AlignOperandsUnresolved => "feature.align-operands-unresolved",
             Self::AlignEnvelopeUnparsed => "feature.align-envelope-unparsed",
@@ -1707,6 +1710,7 @@ impl F3dLossCode {
             | Self::EmbossDepthUnresolved
             | Self::EmbossDepthSignAssumed
             | Self::EmbossScalarOwnerAssumed
+            | Self::EmbossScalarUnitAssumed
             | Self::EmbossPlacementNative
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
@@ -2038,6 +2042,7 @@ impl F3dLossCode {
             | Self::EmbossDepthUnresolved
             | Self::EmbossDepthSignAssumed
             | Self::EmbossScalarOwnerAssumed
+            | Self::EmbossScalarUnitAssumed
             | Self::EmbossPlacementNative
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
@@ -2455,6 +2460,7 @@ mod tests {
                 "feature.emboss-depth-unresolved",
                 "feature.emboss-depth-sign-assumed",
                 "feature.emboss-scalar-owner-assumed",
+                "feature.emboss-scalar-unit-assumed",
                 "feature.emboss-placement-native",
                 "feature.scope-envelope-superseded",
                 "parameter.unprojected",
