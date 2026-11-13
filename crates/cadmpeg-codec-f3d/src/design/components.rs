@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Project exact local component operations into neutral product structure.
 
+pub(crate) mod incomplete_inserts;
 pub(crate) mod owners;
 pub(crate) mod paths;
 
@@ -19,7 +20,11 @@ use crate::records::bodies::DesignBodyBinding;
 use crate::records::component_path::DesignComponentPath;
 use crate::records::entity_header::DesignFeatureTimeline;
 use crate::records::feature::{
-    assembly::DesignAssemblyOperandQualifier, assembly_features::DesignComponentOccurrence,
+    assembly::DesignAssemblyOperandQualifier,
+    assembly_features::{
+        DesignComponentInsertConstruction, DesignComponentInsertPlacement,
+        DesignComponentOccurrence,
+    },
     scope::DesignParameterScope,
 };
 use crate::records::mesh::DesignRelaxedGuidText;
@@ -1849,6 +1854,7 @@ pub(crate) struct ComponentInserts {
     unplaced: usize,
     /// Inserts with no container reference that no authored order classifies.
     unordered: usize,
+    assumed_containers: usize,
 }
 
 #[derive(Debug)]
@@ -1873,22 +1879,28 @@ impl ComponentInserts {
         references: &[crate::records::xref::XrefReference],
     ) -> Self {
         let mut inserts = Self::default();
-        if scopes
-            .iter()
-            .all(|scope| scope.component_insert_construction().is_none())
-        {
+        if scopes.iter().all(|scope| {
+            scope.component_insert_construction().is_none()
+                && scope.component_insert_placement().is_none()
+        }) {
             return inserts;
         }
         let authored =
             crate::design::feature_project::authored_scope_ordinals_per_stream(scopes, timelines)
                 .ok();
         for scope in scopes {
-            let Some(construction) = scope.component_insert_construction() else {
+            let construction = scope.component_insert_construction();
+            let partial = scope.component_insert_placement();
+            let Some(placement) = construction
+                .map(DesignComponentInsertConstruction::transform)
+                .or_else(|| partial.map(DesignComponentInsertPlacement::transform))
+            else {
                 continue;
             };
             let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-            let reference =
-                crate::xref::component_insert_reference(references, stream, construction);
+            let reference = construction.and_then(|construction| {
+                crate::xref::component_insert_reference(references, stream, construction)
+            });
             let Some(authored) = &authored else {
                 if reference.is_none() {
                     inserts.unordered += 1;
@@ -1908,18 +1920,31 @@ impl ComponentInserts {
                 );
                 continue;
             }
-            let Some(transform) = neutral_affine(*construction.transform()) else {
+            let Some(transform) = neutral_affine(*placement) else {
                 inserts.unplaced += 1;
                 continue;
             };
             let id = crate::ids::neutral_component_insert_occurrence_id(scope);
-            inserts.occurrences.insert(scope.id.clone(), id.clone());
+            if construction.is_some() {
+                inserts.occurrences.insert(scope.id.clone(), id.clone());
+            }
             inserts.unresolved.push(UnresolvedComponentInsert {
                 id,
                 scope: scope.id.clone(),
-                name: construction.neutron_role.clone(),
+                name: construction.map_or_else(
+                    || {
+                        scope.label.as_ref().map_or_else(
+                            || scope.kind_name().to_owned(),
+                            |label| label.value.clone(),
+                        )
+                    },
+                    |value| value.neutron_role.clone(),
+                ),
                 transform,
             });
+            if construction.is_none() {
+                inserts.assumed_containers += 1;
+            }
         }
         inserts
     }
@@ -1994,6 +2019,11 @@ impl ComponentInserts {
     /// Losses for the inserts that project no occurrence.
     pub(crate) fn losses(&self) -> Vec<LossNote> {
         let mut losses = Vec::new();
+        if self.assumed_containers != 0 {
+            losses.push(F3dLossCode::ComponentInsertContainerAssumed.note(format!(
+                "{} Component Insert occurrence(s) use their decoded scope placement in the document root with an unresolved prototype; the container frame is assumed (DR-487).", self.assumed_containers
+            )));
+        }
         if self.unplaced != 0 {
             losses.push(F3dLossCode::ComponentInsertUnplaced.note(format!(
                 "{} unresolved Component Insert occurrence(s) were not projected: the placement has no finite millimetre transform.",
@@ -3603,7 +3633,7 @@ mod tests {
         if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(slot) =
             scope.payload_mut()
         {
-            *slot = Some(
+            slot.construction = Some(
                 crate::records::feature::assembly_features::DesignComponentInsertConstruction {
                     relation_record_index: record_index + 1,
                     carrier_record_index: record_index + 2,
@@ -3628,9 +3658,12 @@ mod tests {
         for (row, value) in matrix.iter_mut().zip(translation) {
             row[3] = value;
         }
-        if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(Some(
-            construction,
-        )) = scope.payload_mut()
+        if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(
+            crate::records::feature::assembly_features::DesignComponentInsertScope {
+                construction: Some(construction),
+                ..
+            },
+        ) = scope.payload_mut()
         {
             construction.placement = Some(
                 crate::records::feature::assembly_features::DesignComponentInsertMatrix {
