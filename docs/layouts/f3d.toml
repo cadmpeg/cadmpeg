@@ -33748,3 +33748,566 @@ offset = 33
 type = "bytes[11]"
 source = "spec"
 anchor = "A matrix Scale scope has nine zero bytes"
+
+[[record]]
+name = "move_transform_typed_form_two_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The form-2 transform prefix also has an inline-typed reference spelling"
+size = 376
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The form-2 transform prefix also has an inline-typed reference spelling"
+
+[[record.field]]
+name = "header_zero"
+offset = 11
+type = "bytes[20]"
+source = "spec"
+anchor = "The form-2 transform prefix also has an inline-typed reference spelling"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_reference"
+offset = 31
+type = "bytes[51]"
+source = "spec"
+anchor = "The form-2 transform prefix also has an inline-typed reference spelling"
+
+[[record.field]]
+name = "second_reference"
+offset = 82
+type = "bytes[51]"
+source = "spec"
+anchor = "The form-2 transform prefix also has an inline-typed reference spelling"
+
+[[record.field]]
+name = "third_reference"
+offset = 133
+type = "bytes[51]"
+source = "spec"
+anchor = "The form-2 transform prefix also has an inline-typed reference spelling"
+
+[[record.field]]
+name = "zero_word"
+offset = 184
+type = "u32"
+source = "spec"
+anchor = "The form-2 transform prefix also has an inline-typed reference spelling"
+value = 0
+
+[[record.field]]
+name = "fourth_reference"
+offset = 188
+type = "bytes[51]"
+source = "spec"
+anchor = "The form-2 transform prefix also has an inline-typed reference spelling"
+
+[[record.field]]
+name = "tail_zero"
+offset = 239
+type = "bytes[4]"
+source = "spec"
+anchor = "The form-2 transform prefix also has an inline-typed reference spelling"
+value = [0, 0, 0, 0]
+
+[[record.field]]
+name = "form"
+offset = 243
+type = "u32"
+source = "spec"
+anchor = "The form-2 transform prefix also has an inline-typed reference spelling"
+value = 2
+
+[[record.field]]
+name = "reserved_zero"
+offset = 247
+type = "u8"
+source = "spec"
+anchor = "The form-2 transform prefix also has an inline-typed reference spelling"
+value = 0
+
+[[record.field]]
+name = "transform"
+offset = 248
+type = "f64[16]"
+source = "spec"
+anchor = "The form-2 transform prefix also has an inline-typed reference spelling"
+
+[[record]]
+name = "move_typed_transform_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "A `Move` prologue with inline-typed references"
+size = 127
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A `Move` prologue with inline-typed references"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "A `Move` prologue with inline-typed references"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "transform_reference"
+offset = 21
+type = "bytes[51]"
+source = "spec"
+anchor = "A `Move` prologue with inline-typed references"
+
+[[record.field]]
+name = "reference_flag"
+offset = 72
+type = "u32"
+source = "spec"
+anchor = "A `Move` prologue with inline-typed references"
+value = 1
+
+[[record.field]]
+name = "first_reference"
+offset = 76
+type = "bytes[51]"
+source = "spec"
+anchor = "A `Move` prologue with inline-typed references"
+
+
+[[record]]
+name = "move_marker_one_transform_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "A marker-one `Move` prologue stores nine zero bytes"
+size = 51
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A marker-one `Move` prologue stores nine zero bytes"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "A marker-one `Move` prologue stores nine zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "A marker-one `Move` prologue stores nine zero bytes"
+value = 1
+
+[[record.field]]
+name = "zero_word"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "A marker-one `Move` prologue stores nine zero bytes"
+value = 0
+
+[[record.field]]
+name = "transform_reference"
+offset = 25
+type = "bytes[11]"
+source = "spec"
+anchor = "A marker-one `Move` prologue stores nine zero bytes"
+
+[[record.field]]
+name = "reference_flag"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "A marker-one `Move` prologue stores nine zero bytes"
+value = 1
+
+[[record.field]]
+name = "first_reference"
+offset = 40
+type = "bytes[11]"
+source = "spec"
+anchor = "A marker-one `Move` prologue stores nine zero bytes"
+
+
+[[record]]
+name = "move_transform_null_reference_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "With four null slots, the two codes are at offsets 34 and 39"
+size = 176
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "With four null slots, the two codes are at offsets 34 and 39"
+
+[[record.field]]
+name = "header_zero"
+offset = 11
+type = "bytes[20]"
+source = "spec"
+anchor = "With four null slots, the two codes are at offsets 34 and 39"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_reference"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "With four null slots, the two codes are at offsets 34 and 39"
+value = 0
+
+[[record.field]]
+name = "second_reference"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "With four null slots, the two codes are at offsets 34 and 39"
+value = 0
+
+[[record.field]]
+name = "third_reference"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "With four null slots, the two codes are at offsets 34 and 39"
+value = 0
+
+[[record.field]]
+name = "first_code"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "With four null slots, the two codes are at offsets 34 and 39"
+
+[[record.field]]
+name = "fourth_reference"
+offset = 38
+type = "u8"
+source = "spec"
+anchor = "With four null slots, the two codes are at offsets 34 and 39"
+value = 0
+
+[[record.field]]
+name = "second_code"
+offset = 39
+type = "u32"
+source = "spec"
+anchor = "With four null slots, the two codes are at offsets 34 and 39"
+
+[[record.field]]
+name = "form"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "With four null slots, the two codes are at offsets 34 and 39"
+
+[[record.field]]
+name = "reserved_zero"
+offset = 47
+type = "u8"
+source = "spec"
+anchor = "With four null slots, the two codes are at offsets 34 and 39"
+value = 0
+
+[[record.field]]
+name = "transform"
+offset = 48
+type = "f64[16]"
+source = "spec"
+anchor = "With four null slots, the two codes are at offsets 34 and 39"
+
+[[record]]
+name = "move_transform_first_reference_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A prefix with one plain reference in the first slot"
+size = 186
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A prefix with one plain reference in the first slot"
+
+[[record.field]]
+name = "header_zero"
+offset = 11
+type = "bytes[20]"
+source = "spec"
+anchor = "A prefix with one plain reference in the first slot"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_reference"
+offset = 31
+type = "bytes[11]"
+source = "spec"
+anchor = "A prefix with one plain reference in the first slot"
+
+[[record.field]]
+name = "second_reference"
+offset = 42
+type = "u8"
+source = "spec"
+anchor = "A prefix with one plain reference in the first slot"
+value = 0
+
+[[record.field]]
+name = "third_reference"
+offset = 43
+type = "u8"
+source = "spec"
+anchor = "A prefix with one plain reference in the first slot"
+value = 0
+
+[[record.field]]
+name = "first_code"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "A prefix with one plain reference in the first slot"
+
+[[record.field]]
+name = "fourth_reference"
+offset = 48
+type = "u8"
+source = "spec"
+anchor = "A prefix with one plain reference in the first slot"
+value = 0
+
+[[record.field]]
+name = "second_code"
+offset = 49
+type = "u32"
+source = "spec"
+anchor = "A prefix with one plain reference in the first slot"
+
+[[record.field]]
+name = "form"
+offset = 53
+type = "u32"
+source = "spec"
+anchor = "A prefix with one plain reference in the first slot"
+
+[[record.field]]
+name = "reserved_zero"
+offset = 57
+type = "u8"
+source = "spec"
+anchor = "A prefix with one plain reference in the first slot"
+value = 0
+
+[[record.field]]
+name = "transform"
+offset = 58
+type = "f64[16]"
+source = "spec"
+anchor = "A prefix with one plain reference in the first slot"
+
+[[record]]
+name = "move_transform_omitted_matrix_frame_126"
+kind = "byte"
+section = "3.1"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+size = 126
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+
+[[record.field]]
+name = "header_zero"
+offset = 11
+type = "bytes[20]"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_reference"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "second_reference"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "third_reference"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "first_code"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "fourth_reference"
+offset = 38
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "second_code"
+offset = 39
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "form"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 5
+
+[[record.field]]
+name = "matrix_omitted"
+offset = 47
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 1
+
+[[record.gap]]
+offset = 48
+size = 78
+note = "The common native tail precedes the same-index paired header."
+
+[[record]]
+name = "move_transform_omitted_matrix_frame_125"
+kind = "byte"
+section = "3.1"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+size = 125
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+
+[[record.field]]
+name = "header_zero"
+offset = 11
+type = "bytes[20]"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_reference"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "second_reference"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "third_reference"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "first_code"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "fourth_reference"
+offset = 38
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "second_code"
+offset = 39
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "form"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 5
+
+[[record.field]]
+name = "matrix_omitted"
+offset = 47
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 1
+
+[[record.gap]]
+offset = 48
+size = 77
+note = "The common native tail precedes the same-index paired header."

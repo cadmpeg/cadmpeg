@@ -129,6 +129,8 @@ pub(crate) enum SldprtLossCode {
     FeatureTypedOperandIncomplete,
     /// Extrusion profile curve data remains unresolved.
     FeatureProfileCurvesUnavailable,
+    /// Extrusion travel sense remains in its native feature-input lane.
+    FeatureExtrudeDirectionUnresolved,
     /// Thin extrusion retains an ambiguous inline Boolean operation.
     FeatureThinOperationAmbiguous,
     /// Native edge selection has a refused terminal feature owner.
@@ -357,6 +359,7 @@ impl SldprtLossCode {
         Self::FeatureInputArchiveWalkStopped,
         Self::FeatureTypedOperandIncomplete,
         Self::FeatureProfileCurvesUnavailable,
+        Self::FeatureExtrudeDirectionUnresolved,
         Self::FeatureThinOperationAmbiguous,
         Self::FeatureEdgeTerminalUnresolved,
         Self::FeatureBodyPathAmbiguous,
@@ -479,6 +482,7 @@ impl SldprtLossCode {
             Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
+            Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureEdgeTerminalUnresolved => "feature.edge-terminal-unresolved",
             Self::FeatureBodyPathAmbiguous => "feature.body-path-ambiguous",
@@ -638,6 +642,7 @@ impl SldprtLossCode {
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureProfileCurvesUnavailable
+            | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -835,6 +840,7 @@ impl SldprtLossCode {
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureProfileCurvesUnavailable
+            | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -1055,6 +1061,7 @@ mod tests {
                 "feature.input-archive-walk-stopped",
                 "feature.typed-operand-incomplete",
                 "feature.profile-curves-unavailable",
+                "feature.extrude-direction-unresolved",
                 "feature.thin-operation-ambiguous",
                 "feature.edge-terminal-unresolved",
                 "feature.body-path-ambiguous",
