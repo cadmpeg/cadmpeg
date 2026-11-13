@@ -241,7 +241,7 @@ fn unequal_decoded_wall_slots_project_without_a_symmetric_thickness() {
             "opaque_scalar_offset": 1076,
             "variant": false
         },
-        "role": 68719476736_u64,
+        "role": 68_719_476_736_u64,
         "role_offset": 1054,
         "paired_class_tag": "259",
         "paired_byte_offset": 1125
