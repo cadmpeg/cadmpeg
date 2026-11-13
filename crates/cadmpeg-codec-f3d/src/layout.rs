@@ -5609,14 +5609,8 @@ pub(crate) mod hem_teardrop_fixed_operation_section {
 /// Offsets are relative to the Move scope's primary indexed header. The marked reference at offset 21 selects the transform record whatever its class tag and frame length.
 /// ```
 pub(crate) mod move_marked_transform_prologue {
-    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_10: usize = 11;
     /// Offset of `transform_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const TRANSFORM_REFERENCE: usize = 21;
-    /// Offset of `reference_flag` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_FLAG: usize = 32;
-    /// Offset of `first_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const FIRST_REFERENCE: usize = 36;
 }
 
 /// Byte offsets for the `move_transform_frame_253` record.
@@ -5631,10 +5625,6 @@ pub(crate) mod move_transform_frame_253 {
     pub(crate) const LEN: usize = 253;
     /// Offset of `form` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FORM: usize = 43;
-    /// Offset of `reserved_zero` (`u8`). Spec §3.1.
-    pub(crate) const RESERVED_ZERO: usize = 47;
-    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
-    pub(crate) const TRANSFORM: usize = 48;
 }
 
 /// Byte offsets for the `move_transform_frame_254` record.
@@ -5709,22 +5699,8 @@ pub(crate) mod move_transform_frame_293 {
     pub(crate) const LEN: usize = 293;
     /// Offset of `first_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const FIRST_REFERENCE: usize = 31;
-    /// Offset of `second_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const SECOND_REFERENCE: usize = 42;
-    /// Offset of `third_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const THIRD_REFERENCE: usize = 53;
-    /// Offset of `zero_word` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const ZERO_WORD: usize = 64;
-    /// Offset of `fourth_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const FOURTH_REFERENCE: usize = 68;
     /// Offset of `form` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FORM: usize = 83;
-    /// Stated value of `form` (`u32`). Spec §3.1.
-    pub(crate) const FORM_VALUE: u32 = 0x0000_0002;
-    /// Offset of `reserved_zero` (`u8`). Spec §3.1.
-    pub(crate) const RESERVED_ZERO: usize = 87;
-    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
-    pub(crate) const TRANSFORM: usize = 88;
 }
 
 /// Byte offsets for the `modify_marker_zero_prologue` record.
@@ -9855,6 +9831,34 @@ pub(crate) mod scale_matrix_marker_one_prologue {
     pub(crate) const BODY_COUNT: usize = 29;
     /// Offset of `first_body_group` (`bytes[11]`). Spec §3.1.
     pub(crate) const FIRST_BODY_GROUP: usize = 33;
+}
+
+/// Byte offsets for the `move_marker_one_transform_prologue` record.
+///
+/// Spec §3.1. Record length 51 B.
+pub(crate) mod move_marker_one_transform_prologue {
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 20;
+    /// Offset of `zero_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_WORD: usize = 21;
+    /// Offset of `transform_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TRANSFORM_REFERENCE: usize = 25;
+}
+
+/// Byte offsets for the `move_transform_omitted_matrix_frame_126` record.
+///
+/// Spec §3.1. Record length 126 B.
+pub(crate) mod move_transform_omitted_matrix_frame_126 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 126;
+}
+
+/// Byte offsets for the `move_transform_omitted_matrix_frame_125` record.
+///
+/// Spec §3.1. Record length 125 B.
+pub(crate) mod move_transform_omitted_matrix_frame_125 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 125;
 }
 
 /// Byte offsets for the `surface_delete_face_wide_prologue` record.

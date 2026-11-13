@@ -25,6 +25,7 @@ mod history_admission;
 mod legacy_class_397;
 mod legacy_frames;
 mod legacy_work_planes;
+mod move_reference_forms;
 mod move_transform;
 mod named_delete_face;
 mod named_empty_label;
