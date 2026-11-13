@@ -40,6 +40,35 @@ fn row_follows(before: Carrier<'_>, after: Carrier<'_>, motion: &FaceMotion) -> 
                 && (shift - direction.scale(distance.get())).norm()
                     <= FACE_MOTION_POSITION_TOLERANCE
         }
+        (FaceMotion::Transform { transform }, Carrier::Plane(before), Carrier::Plane(after)) => {
+            let (Some(origin), Some(normal)) = (
+                transform.apply_point(before.origin),
+                transform.apply_normal(before.normal),
+            ) else {
+                return false;
+            };
+            (after.origin.vector_from(before.origin).norm() > FACE_MOTION_POSITION_TOLERANCE
+                || same_direction(before.normal, after.normal) == Some(false))
+                && origin.get().vector_from(after.origin).norm() <= FACE_MOTION_POSITION_TOLERANCE
+                && same_direction(*normal.as_raw(), after.normal) == Some(true)
+        }
+        (
+            FaceMotion::Transform { transform },
+            Carrier::Cylinder(before),
+            Carrier::Cylinder(after),
+        ) => {
+            let (Some(origin), Some(axis)) = (
+                transform.apply_point(before.origin),
+                transform.apply_vector(before.axis),
+            ) else {
+                return false;
+            };
+            (after.origin.vector_from(before.origin).norm() > FACE_MOTION_POSITION_TOLERANCE
+                || same_direction(before.axis, after.axis) == Some(false))
+                && origin.get().vector_from(after.origin).norm() <= FACE_MOTION_POSITION_TOLERANCE
+                && same_direction(axis.get(), after.axis) == Some(true)
+                && close(after.radius - before.radius)
+        }
         (
             FaceMotion::Translate {
                 direction,
@@ -91,12 +120,14 @@ fn moved_face_selection(
     input: &AsmHistoricalTopology,
     output: &AsmHistoricalTopology,
 ) -> Option<Vec<i64>> {
-    let magnitude = match motion {
-        FaceMotion::Offset { distance } | FaceMotion::Translate { distance, .. } => distance.get(),
-        FaceMotion::Rotate { .. } | FaceMotion::Transform { .. } => return None,
-    };
-    if magnitude.abs() <= FACE_MOTION_POSITION_TOLERANCE {
-        return None;
+    match motion {
+        FaceMotion::Offset { distance } | FaceMotion::Translate { distance, .. } => {
+            if distance.get().abs() <= FACE_MOTION_POSITION_TOLERANCE {
+                return None;
+            }
+        }
+        FaceMotion::Rotate { .. } => return None,
+        FaceMotion::Transform { .. } => {}
     }
     let input_rows = StateRows::new(input);
     let output_rows = StateRows::new(output);
