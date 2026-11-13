@@ -208,6 +208,9 @@ pub(crate) fn joint_placed_identity_occurrences<'a>(
             cadmpeg_ir::OperandContainer::Occurrence { occurrence, .. } => {
                 named.insert(occurrence);
             }
+            cadmpeg_ir::OperandContainer::External {
+                external_document: ExternalDocument::Missing {},
+            } => {}
             cadmpeg_ir::OperandContainer::External { external_document } => {
                 if !documents.contains(&external_document) {
                     documents.push(external_document);
@@ -2613,6 +2616,18 @@ mod tests {
             "container": "occurrence",
             "occurrence": "f3d:model:occurrence#xref-1-0",
         }));
+        let missing = container(serde_json::json!({
+            "container": "external",
+            "external_document": {"resolution": "missing"},
+        }));
+        assert_eq!(
+            super::joint_placed_identity_occurrences(&occurrences, [&missing, &missing]),
+            0
+        );
+        assert_eq!(
+            super::joint_placed_identity_occurrences(&occurrences, [&missing, &named]),
+            1
+        );
         // One inserted design named twice accounts for one occurrence.
         assert_eq!(
             super::joint_placed_identity_occurrences(&occurrences, [&external, &external]),
