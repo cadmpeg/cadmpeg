@@ -41,6 +41,7 @@ fn state(
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         transition: Some(AsmHistoricalTransition {
+            geometry_unchanged: false,
             previous_state_id,
             records: Default::default(),
             topology: Default::default(),

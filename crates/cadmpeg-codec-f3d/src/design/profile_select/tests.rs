@@ -1841,6 +1841,7 @@ fn linked_state(
         records: Vec::new(),
         transition: previous_state_id.map(|previous_state_id| {
             crate::history_records::AsmHistoricalTransition {
+                geometry_unchanged: false,
                 previous_state_id: Some(previous_state_id),
                 records: crate::history_records::AsmHistoricalEntityDelta::default(),
                 topology,

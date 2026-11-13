@@ -797,6 +797,7 @@ fn empty_deltas_leave_family_storage_untouched() {
     let before_members = family.faces.as_ptr();
     let before_tags = family.persistent_subentity_tags.as_ptr();
     AsmHistoricalTransition {
+        geometry_unchanged: false,
         previous_state_id: None,
         records: AsmHistoricalEntityDelta::default(),
         record_revisions: Vec::new(),
