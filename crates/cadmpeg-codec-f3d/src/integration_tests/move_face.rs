@@ -34,7 +34,14 @@ fn project(fixture: &MoveFaceFixture) -> Projection {
             },
         )
         .unwrap();
-        assert_eq!(decoded.scopes.len(), 1);
+        assert_eq!(
+            decoded.scopes.len(),
+            1,
+            "table {:?}, group {:?}, role {:?}",
+            fixture.references,
+            fixture.group_mark,
+            fixture.group_role
+        );
         assert!(decoded.scopes[0]
             .reference_members()
             .values()
@@ -230,22 +237,28 @@ fn framed_move_face_decodes_middle_transform_trailing_references_and_source_form
 
 #[test]
 fn framed_move_face_retains_motion_through_inconsistent_selection_tables() {
-    for table in [
-        &[][..],
-        &[50],
-        &[50, 60],
-        &[50, 60, 71, 71],
-        &[60, 50, 71],
-        &[50, 71, 60],
-    ] {
-        let result = project(&MoveFaceFixture {
-            references: table.to_vec(),
-            ..Default::default()
-        });
-        assert_projected(&result, TRANSLATION, false);
-        assert!(result
-            .losses
-            .contains(&F3dLossCode::FeatureMoveFaceScopeReferencesAssumed.kind()));
+    for marker_one in [false, true] {
+        for with_metadata in [false, true] {
+            for table in [
+                &[][..],
+                &[50],
+                &[50, 60],
+                &[50, 60, 71, 71],
+                &[60, 50, 71],
+                &[50, 71, 60],
+            ] {
+                let result = project(&MoveFaceFixture {
+                    marker_one,
+                    with_metadata,
+                    references: table.to_vec(),
+                    ..Default::default()
+                });
+                assert_projected(&result, TRANSLATION, false);
+                assert!(result
+                    .losses
+                    .contains(&F3dLossCode::FeatureMoveFaceScopeReferencesAssumed.kind()));
+            }
+        }
     }
     for fixture in [
         MoveFaceFixture {
