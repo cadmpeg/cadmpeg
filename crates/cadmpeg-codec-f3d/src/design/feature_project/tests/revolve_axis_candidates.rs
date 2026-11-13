@@ -158,7 +158,9 @@ fn an_origin_axis_identity_keeps_its_axis_when_an_asm_entity_shares_it() {
         direction: cadmpeg_ir::features::FeatureDirection3::from(
             cadmpeg_ir::units::UnitVector3::Y_AXIS,
         ),
-        reference: None,
+        reference: Some(cadmpeg_ir::features::PathRef::Native(
+            "f3d:Design/BulkStream.dat:entity-selection#201".into(),
+        )),
     };
     let y = ORIGIN_FIRST + 1;
     for (name, selection) in [

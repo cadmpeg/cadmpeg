@@ -6433,7 +6433,9 @@ pub(super) fn project_fixed_revolve_with_entities(
         axis_operand.resolved_axis.map(|axis| RevolutionAxis {
             origin: axis.origin,
             direction: cadmpeg_ir::features::FeatureDirection3::from(axis.direction),
-            reference: None,
+            reference: Some(cadmpeg_ir::features::PathRef::Native(
+                axis_operand.id.clone(),
+            )),
         })
     } else if first.is_none() {
         let resolved = resolve_sketch_axis_selection(
@@ -6603,33 +6605,101 @@ pub(crate) fn orient_revolve_axes(
             ) {
                 return;
             }
-            let oriented = match construction.profile() {
-                Some(PlanarProfileRef::Sketch(sketch)) => sketches
+            let oriented = construction.profile().and_then(|profile| {
+                let (PlanarProfileRef::Sketch(sketch_id)
+                | PlanarProfileRef::SketchProfiles {
+                    sketch: sketch_id, ..
+                }
+                | PlanarProfileRef::SketchRegions {
+                    sketch: sketch_id, ..
+                }
+                | PlanarProfileRef::SketchEntities {
+                    sketch: sketch_id, ..
+                }) = profile
+                else {
+                    return None;
+                };
+                sketches
                     .iter()
-                    .find(|candidate| &candidate.id == sketch)
+                    .find(|sketch| &sketch.id == sketch_id)
                     .and_then(|sketch| {
                         oriented_revolve_axis(
                             &axis,
                             sketch,
+                            profile,
                             sketch_entities,
                             reversed,
                             (linear_tolerance, angular_tolerance),
                         )
-                    }),
-                _ => None,
-            };
+                    })
+            });
             construction.set_axis(oriented);
         });
     }
 }
 
-/// The axis directed so that a right-handed turn carries the profile of
-/// `sketch` toward the sketch normal, or toward its reverse when `reversed`, or
+fn selected_revolve_profile_entities<'a>(
+    profile: &'a cadmpeg_ir::features::PlanarProfileRef,
+    sketch: &'a cadmpeg_ir::sketches::Sketch,
+) -> Option<Vec<&'a cadmpeg_ir::sketches::SketchEntityId>> {
+    use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileRegion};
+    let mut entities = Vec::new();
+    let mut add_loop = |index: u32| {
+        let loop_ = sketch.profiles.get(usize::try_from(index).ok()?)?;
+        entities.extend(loop_.iter().map(|use_| &use_.entity));
+        Some(())
+    };
+    match profile {
+        PlanarProfileRef::Sketch(_) => {
+            entities.extend(sketch.profiles.iter().flatten().map(|use_| &use_.entity));
+        }
+        PlanarProfileRef::SketchProfiles { profiles, .. } => {
+            for index in profiles {
+                add_loop(*index)?;
+            }
+        }
+        PlanarProfileRef::SketchRegions { regions, .. } => {
+            for region in regions.iter() {
+                if let SketchProfileRegion::Loops { loops } = region {
+                    add_loop(loops.outer())?;
+                    for index in loops.holes() {
+                        add_loop(*index)?;
+                    }
+                }
+            }
+            for region in regions.iter() {
+                if let SketchProfileRegion::Trimmed {
+                    outer_boundary,
+                    hole_boundaries,
+                } = region
+                {
+                    entities.extend(
+                        outer_boundary
+                            .iter()
+                            .chain(hole_boundaries.iter().flatten())
+                            .map(|use_| &use_.entity),
+                    );
+                }
+            }
+        }
+        PlanarProfileRef::SketchEntities {
+            entities: selected, ..
+        } => {
+            entities.extend(selected.iter());
+        }
+        _ => return None,
+    }
+    Some(entities)
+}
+
+/// The axis directed so that a right-handed turn carries the selected profile
+/// toward the sketch normal, or toward its reverse when `reversed`, or
 /// `None` when the axis is not parallel to the sketch plane or the profile does
 /// not lie on one side of the axis.
 fn oriented_revolve_axis(
     axis: &cadmpeg_ir::features::RevolutionAxis,
     sketch: &cadmpeg_ir::sketches::Sketch,
+    profile: &cadmpeg_ir::features::PlanarProfileRef,
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     reversed: bool,
     (linear_tolerance, angular_tolerance): (f64, f64),
@@ -6645,10 +6715,10 @@ fn oriented_revolve_axis(
     // In-plane and perpendicular to the axis: its sign names the profile side.
     let across = normal.cross(direction);
     let mut positive_side = None;
-    for entity_use in sketch.profiles.iter().flatten() {
+    for entity_id in selected_revolve_profile_entities(profile, sketch)? {
         let entity = sketch_entities
             .iter()
-            .find(|entity| entity.id() == &entity_use.entity)?;
+            .find(|entity| entity.id() == entity_id)?;
         for point in revolve_profile_sample_points(&entity.geometry) {
             let offset = origin
                 .get()
@@ -6805,7 +6875,7 @@ pub(crate) fn bind_revolve_face_axes(
                         })
                         .then_some(first)
                 });
-            construction.set_axis(match (entity_axis, recipe_axis) {
+            let axis = match (entity_axis, recipe_axis) {
                 (Some(entity), Some(recipe))
                     if crate::history::same_axis_line(
                         (entity.origin.get(), entity.direction.get()),
@@ -6816,7 +6886,11 @@ pub(crate) fn bind_revolve_face_axes(
                 }
                 (Some(axis), None) | (None, Some(axis)) => Some(axis),
                 _ => None,
-            });
+            };
+            construction.set_axis(axis.map(|mut axis| {
+                axis.reference = Some(cadmpeg_ir::features::PathRef::Native(group.id.clone()));
+                axis
+            }));
         });
     }
 }
@@ -6905,7 +6979,7 @@ fn design_geometry_axis_selection(
     Some(cadmpeg_ir::features::RevolutionAxis {
         origin: cadmpeg_ir::features::FinitePoint3::ZERO,
         direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
-        reference: None,
+        reference: Some(cadmpeg_ir::features::PathRef::Native(selection.id.clone())),
     })
 }
 
@@ -6974,7 +7048,7 @@ fn resolve_sketch_axis_selection(
         direction: cadmpeg_ir::features::FeatureDirection3::from(
             cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(direction)?,
         ),
-        reference: None,
+        reference: Some(cadmpeg_ir::features::PathRef::Native(selection.id.clone())),
     })
 }
 
