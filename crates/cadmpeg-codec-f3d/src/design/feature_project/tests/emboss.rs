@@ -93,7 +93,7 @@ fn emboss_source_properties_keep_controls_pairs_owners_and_each_scalar_lane() {
             "Rotation Angle",
             Some("rad"),
             "d10",
-            1.5707963267948966,
+            f64::from_bits(0x3ff9_21fb_5444_2d18),
         ))
         .unwrap(),
     ];

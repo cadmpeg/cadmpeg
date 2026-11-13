@@ -2525,28 +2525,28 @@ fn scope_properties(
                 "mm",
                 emboss_parameter(scope, parameters, "Depth")
                     .and_then(design_length)
-                    .map(|v| v.get()),
+                    .map(cadmpeg_ir::scalar::Length::get),
             ),
             (
                 "Horizontal Distance",
                 "mm",
                 emboss_parameter(scope, parameters, "Horizontal Distance")
                     .and_then(design_length)
-                    .map(|v| v.get()),
+                    .map(cadmpeg_ir::scalar::Length::get),
             ),
             (
                 "Vertical Distance",
                 "mm",
                 emboss_parameter(scope, parameters, "Vertical Distance")
                     .and_then(design_length)
-                    .map(|v| v.get()),
+                    .map(cadmpeg_ir::scalar::Length::get),
             ),
             (
                 "Rotation Angle",
                 "rad",
                 emboss_parameter(scope, parameters, "Rotation Angle")
                     .and_then(design_angle)
-                    .map(|v| v.get()),
+                    .map(cadmpeg_ir::scalar::Angle::get),
             ),
         ] {
             if let Some(value) = value {
