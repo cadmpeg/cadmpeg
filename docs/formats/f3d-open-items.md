@@ -72,7 +72,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which hole settings do Hole tap-type values other than `0`, `1`, and `2` encode?
 
-**Known.** `f3d.md` §3.1 "Type versions `5` and `7` store a u32 tap type" gives the settled values. The decoder retains any other value in the extent's `leading_word` and the `hole:extent_leading_word` source property, and reports `feature.hole-extent-leading-word-assumed` for the reading that the stored scalar geometry remains independent of it. The value `1867538229` seen in one System76 chassis Hole has the bytes `35 5F 50 6F`, which read as ASCII text, so the extent block of that Hole can begin at another offset.
+**Known.** `f3d.md` §3.1 "A `Hole` scope starts after its indexed header with eight zero bytes" gives the settled tap-type values. The decoder retains any other value in the extent's `leading_word` and the `hole:extent_leading_word` source property, and reports `feature.hole-extent-leading-word-assumed` for the reading that the stored scalar geometry remains independent of it. The value `1867538229` seen in one System76 chassis Hole has the bytes `35 5F 50 6F`, which read as ASCII text, so the extent block of that Hole can begin at another offset.
 
 **Need.** A controlled taper-tapped Hole, and the setting that writes the word value seen in one System76 chassis Hole.
 
