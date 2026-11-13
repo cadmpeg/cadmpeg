@@ -136,21 +136,30 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
 fn mesh_modifications_keep_their_tagged_wire_forms() {
     for (wire, expected) in [
         (
+            serde_json::json!({"kind":"reduce","target":{"kind":"maximum_deviation","value":0.0}}),
+            MeshModification::Reduce {
+                distribution: None,
+                target: Some(MeshReduceTarget::MaximumDeviation {
+                    value: crate::scalar::NonNegativeLength::new(0.0).unwrap(),
+                }),
+            },
+        ),
+        (
             serde_json::json!({"kind":"reduce","distribution":"uniform","target":{"kind":"face_count","value":6}}),
             MeshModification::Reduce {
                 distribution: Some(MeshFaceDistribution::Uniform),
-                target: Some(MeshReduceTarget::FaceCount(
-                    std::num::NonZeroU32::new(6).unwrap(),
-                )),
+                target: Some(MeshReduceTarget::FaceCount {
+                    value: std::num::NonZeroU32::new(6).unwrap(),
+                }),
             },
         ),
         (
             serde_json::json!({"kind":"reduce","target":{"kind":"face_proportion","value":0.5}}),
             MeshModification::Reduce {
                 distribution: None,
-                target: Some(MeshReduceTarget::FaceProportion(
-                    crate::scalar::Fraction::new(0.5).unwrap(),
-                )),
+                target: Some(MeshReduceTarget::FaceProportion {
+                    value: crate::scalar::Fraction::new(0.5).unwrap(),
+                }),
             },
         ),
         (
@@ -166,7 +175,13 @@ fn mesh_modifications_keep_their_tagged_wire_forms() {
         (
             serde_json::json!({"kind":"repair","method":{"kind":"close_holes"}}),
             MeshModification::Repair {
-                method: Some(MeshRepair::CloseHoles),
+                method: Some(MeshRepair::CloseHoles {}),
+            },
+        ),
+        (
+            serde_json::json!({"kind":"repair","method":{"kind":"stitch_and_remove"}}),
+            MeshModification::Repair {
+                method: Some(MeshRepair::StitchAndRemove {}),
             },
         ),
         (
@@ -194,6 +209,26 @@ fn mesh_modifications_keep_their_tagged_wire_forms() {
         serde_json::json!({"kind":"reduce","target":{"kind":"face_count","value":0}}),
     ] {
         assert!(serde_json::from_value::<MeshModification>(invalid).is_err());
+    }
+}
+
+#[test]
+fn mesh_reduction_bounds_and_repair_methods_reject_unknown_keys() {
+    for target in [
+        serde_json::json!({"kind":"maximum_deviation","value":1.0,"extra":true}),
+        serde_json::json!({"kind":"face_proportion","value":0.5,"extra":true}),
+        serde_json::json!({"kind":"face_count","value":6,"extra":true}),
+        serde_json::json!({"kind":"face_count","value":0}),
+        serde_json::json!({"kind":"face_count","value":null}),
+        serde_json::json!({"kind":"face_count","value":6.5}),
+    ] {
+        assert!(serde_json::from_value::<MeshReduceTarget>(target).is_err());
+    }
+    for method in [
+        serde_json::json!({"kind":"close_holes","extra":true}),
+        serde_json::json!({"kind":"stitch_and_remove","extra":true}),
+    ] {
+        assert!(serde_json::from_value::<MeshRepair>(method).is_err());
     }
 }
 

@@ -45,19 +45,23 @@ pub enum MeshFaceDistribution {
 #[doc = "Quantity that bounds a mesh reduction."]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshReduceTarget {
     #[doc = "Largest distance between the result and the source in canonical millimeters."]
-    MaximumDeviation(NonNegativeLength),
+    MaximumDeviation {
+        #[doc = "Nonnegative distance bound."]
+        value: NonNegativeLength,
+    },
     #[doc = "Share of the source faces that the result keeps."]
-    FaceProportion(Fraction),
+    FaceProportion {
+        #[doc = "Inclusive fraction from zero to one."]
+        value: Fraction,
+    },
     #[doc = "Number of faces in the result."]
-    FaceCount(std::num::NonZeroU32),
+    FaceCount {
+        #[doc = "Positive face count."]
+        value: std::num::NonZeroU32,
+    },
 }
 
 #[doc = "Reconstruction quality of a mesh rebuild."]
@@ -77,9 +81,9 @@ pub enum MeshRebuildMode {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshRepair {
     #[doc = "Fills the open boundaries."]
-    CloseHoles,
+    CloseHoles {},
     #[doc = "Joins coincident boundaries and removes defective faces."]
-    StitchAndRemove,
+    StitchAndRemove {},
     #[doc = "Reconstructs the mesh from its volume."]
     Rebuild {
         #[doc = "Reconstruction quality, when resolved."]

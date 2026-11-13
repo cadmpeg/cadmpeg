@@ -47,9 +47,9 @@ fn reduce_target_selector_names_the_active_bound() {
         deviation,
         MeshModification::Reduce {
             distribution: Some(MeshFaceDistribution::Adaptive),
-            target: Some(MeshReduceTarget::MaximumDeviation(
-                NonNegativeLength::new(1.0).unwrap()
-            )),
+            target: Some(MeshReduceTarget::MaximumDeviation {
+                value: NonNegativeLength::new(1.0).unwrap(),
+            }),
         }
     );
     assert!(codes.is_empty());
@@ -58,18 +58,18 @@ fn reduce_target_selector_names_the_active_bound() {
         convert(reduce(1, 1), &REDUCE_VALUES).0,
         MeshModification::Reduce {
             distribution: Some(MeshFaceDistribution::Uniform),
-            target: Some(MeshReduceTarget::FaceProportion(
-                Fraction::new(0.5).unwrap()
-            )),
+            target: Some(MeshReduceTarget::FaceProportion {
+                value: Fraction::new(0.5).unwrap(),
+            }),
         }
     );
     assert_eq!(
         convert(reduce(0, 2), &REDUCE_VALUES).0,
         MeshModification::Reduce {
             distribution: Some(MeshFaceDistribution::Adaptive),
-            target: Some(MeshReduceTarget::FaceCount(
-                std::num::NonZeroU32::new(6).unwrap()
-            )),
+            target: Some(MeshReduceTarget::FaceCount {
+                value: std::num::NonZeroU32::new(6).unwrap(),
+            }),
         }
     );
 }
@@ -135,13 +135,13 @@ fn repair_method_selector_names_the_method_and_rebuild_controls() {
     assert_eq!(
         convert(repair(0, 0), &values).0,
         MeshModification::Repair {
-            method: Some(MeshRepair::CloseHoles)
+            method: Some(MeshRepair::CloseHoles {})
         }
     );
     assert_eq!(
         convert(repair(0, 1), &values).0,
         MeshModification::Repair {
-            method: Some(MeshRepair::StitchAndRemove)
+            method: Some(MeshRepair::StitchAndRemove {})
         }
     );
     let (rebuild, codes, _) = convert(repair(2, 3), &values);
@@ -846,12 +846,56 @@ fn section_prefers_the_linked_model_sketch_plane() {
     assert_eq!(sketch, Some(features[0].id.clone()));
 }
 
-#[test]
-fn shell_keeps_ordered_local_bodies_and_unknown_controls() {
+fn parameter_inputs(
+    value: f64,
+    unit: Option<&str>,
+    owner_scope: u32,
+) -> ([DesignParameterOwner; 1], [DesignParameter; 1]) {
     use crate::records::parameters::{
         DesignParameterDraft, DesignParameterOwnerWire, DesignParameterSource,
     };
 
+    let owners = [DesignParameterOwner::try_from(DesignParameterOwnerWire {
+        id: format!("f3d:{ENTRY}:parameter-owner#11"),
+        byte_offset: 0,
+        frame_length: 103,
+        class_tag: "292".to_owned().try_into().unwrap(),
+        record_index: 11,
+        scope_record_index: owner_scope,
+        local_ordinal: 0,
+        evaluated_value: value,
+        evaluated_value_offset: 40,
+        parameter_record_index: 12,
+        owned_ordinal: 0,
+        variant: None,
+        companion_record_index: 13,
+    })
+    .unwrap()];
+    let parameters = [DesignParameter::try_from(DesignParameterDraft {
+        id: format!("f3d:{ENTRY}:parameter#12"),
+        byte_offset: 0,
+        class_tag: "292".to_owned().try_into().unwrap(),
+        record_index: 12,
+        source_ordinal: 0,
+        source: DesignParameterSource::new("FeatureInput".into(), Some(11), None).unwrap(),
+        expression: format!("{value} {}", unit.unwrap_or_default()),
+        expression_offset: 20,
+        source_kind_offset: 40,
+        unit: unit.map(|unit| crate::records::identity::RecordedValue {
+            value: unit.into(),
+            offset: 80,
+        }),
+        name: "Thickness".into(),
+        name_offset: 90,
+        evaluated_value: value,
+        evaluated_value_offset: 120,
+    })
+    .unwrap()];
+    (owners, parameters)
+}
+
+#[test]
+fn shell_keeps_ordered_local_bodies_and_unknown_controls() {
     let mut bytes = record(7, 128);
     bytes[21..32].copy_from_slice(&reference(11));
     bytes[32..43].copy_from_slice(&reference(30));
@@ -860,42 +904,7 @@ fn shell_keeps_ordered_local_bodies_and_unknown_controls() {
     let fixture = with_source_records(bytes, "MeshShell", &[9, 3]);
     let (native, scope) = scope("MeshShell", 7);
     for value in [0.2, 0.0] {
-        let owners = [DesignParameterOwner::try_from(DesignParameterOwnerWire {
-            id: format!("f3d:{ENTRY}:parameter-owner#11"),
-            byte_offset: 0,
-            frame_length: 103,
-            class_tag: "292".to_owned().try_into().unwrap(),
-            record_index: 11,
-            scope_record_index: 7,
-            local_ordinal: 0,
-            evaluated_value: value,
-            evaluated_value_offset: 40,
-            parameter_record_index: 12,
-            owned_ordinal: 0,
-            variant: None,
-            companion_record_index: 13,
-        })
-        .unwrap()];
-        let parameters = [DesignParameter::try_from(DesignParameterDraft {
-            id: format!("f3d:{ENTRY}:parameter#12"),
-            byte_offset: 0,
-            class_tag: "292".to_owned().try_into().unwrap(),
-            record_index: 12,
-            source_ordinal: 0,
-            source: DesignParameterSource::new("FeatureInput".into(), Some(11), None).unwrap(),
-            expression: format!("{value} cm"),
-            expression_offset: 20,
-            source_kind_offset: 40,
-            unit: Some(crate::records::identity::RecordedValue {
-                value: "cm".into(),
-                offset: 80,
-            }),
-            name: "Thickness".into(),
-            name_offset: 90,
-            evaluated_value: value,
-            evaluated_value_offset: 120,
-        })
-        .unwrap()];
+        let (owners, parameters) = parameter_inputs(value, Some("cm"), 7);
         let mut features = [feature(
             "synthetic:model:feature#shell",
             "MeshShell",
@@ -950,4 +959,95 @@ fn shell_keeps_ordered_local_bodies_and_unknown_controls() {
         expected.push("feature.mesh-shell-controls-unresolved");
         assert_eq!(codes, expected);
     }
+}
+
+#[test]
+fn smoothness_requires_a_dimensionless_parameter_owned_by_its_scope() {
+    let mut bytes = record(7, 128);
+    bytes[21..32].copy_from_slice(&reference(11));
+    bytes[32..43].copy_from_slice(&reference(30));
+    bytes[43..54].copy_from_slice(&reference(20));
+    bytes[58..69].copy_from_slice(&reference(8));
+    let fixture = with_source_records(bytes, "MeshSmooth", &[9]);
+    let (native, scope) = scope("MeshSmooth", 7);
+    for (unit, owner_scope, expected) in [
+        (None, 7, Some(0.25)),
+        (Some("cm"), 7, None),
+        (Some("rad"), 7, None),
+        (Some("unknown"), 7, None),
+        (None, 99, None),
+    ] {
+        let (owners, parameters) = parameter_inputs(0.25, unit, owner_scope);
+        let mut features = [feature(
+            "synthetic:model:feature#smooth",
+            "MeshSmooth",
+            Some(native.clone()),
+        )];
+        let codes = bind_inputs(
+            &fixture,
+            &mut features,
+            MeshOperationInputs {
+                scopes: std::slice::from_ref(&scope),
+                owners: &owners,
+                parameters: &parameters,
+                placements: &[],
+                sketches: &[],
+            },
+        );
+        let FeatureDefinition::Operation(FeatureOperation::MeshModify {
+            source:
+                MeshSelection::Native {
+                    native: selection,
+                    members: Some(members),
+                },
+            modification: MeshModification::Smooth { smoothness },
+        }) = features[0].evaluation.definition()
+        else {
+            panic!("mesh smooth");
+        };
+        assert_eq!(selection.as_str(), native);
+        assert_eq!(members.as_slice(), ["9"]);
+        assert_eq!(*smoothness, expected.and_then(Fraction::new));
+        let mut expected_codes = vec![
+            "feature.mesh-body-selection-assumed",
+            "feature.mesh-operation-source-unresolved",
+        ];
+        if expected.is_none() {
+            expected_codes.push("feature.mesh-operation-parameter-unbound");
+        }
+        assert_eq!(codes, expected_codes);
+        assert_eq!(features[0].source_properties["mesh-input-geometry"], "20");
+    }
+}
+
+#[test]
+fn null_section_sketch_reference_ignores_zero_identity_records() {
+    let native = format!("f3d:{ENTRY}:design-parameter-scope#0");
+    let scopes = [DesignParameterScope::empty(
+        &native,
+        DesignFeatureKind::try_from("Sketch".to_owned()).unwrap(),
+        0,
+    )];
+    let features = [feature(
+        "synthetic:model:feature#sketch",
+        "Sketch",
+        Some(native),
+    )];
+    let placements = [placement(ENTRY, 0, false)];
+    let inputs = MeshOperationInputs {
+        scopes: &scopes,
+        owners: &[],
+        parameters: &[],
+        placements: &placements,
+        sketches: &[],
+    };
+    assert_eq!(
+        section_binding(
+            &inputs,
+            &features,
+            crate::ids::native_stream(&scopes[0].id),
+            0
+        ),
+        (None, None)
+    );
 }

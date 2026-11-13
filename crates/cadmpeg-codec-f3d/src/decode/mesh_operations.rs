@@ -119,21 +119,21 @@ fn modification(
                     tolerance_owner,
                     length(value(tolerance_owner))
                         .and_then(NonNegativeLength::new)
-                        .map(MeshReduceTarget::MaximumDeviation),
+                        .map(|value| MeshReduceTarget::MaximumDeviation { value }),
                 )),
                 1 => Some((
                     "proportion",
                     proportion_owner,
                     number(value(proportion_owner))
                         .and_then(|percent| Fraction::new(percent / PERCENT))
-                        .map(MeshReduceTarget::FaceProportion),
+                        .map(|value| MeshReduceTarget::FaceProportion { value }),
                 )),
                 2 => Some((
                     "face count",
                     face_count_owner,
                     number(value(face_count_owner))
                         .and_then(face_count)
-                        .map(MeshReduceTarget::FaceCount),
+                        .map(|value| MeshReduceTarget::FaceCount { value }),
                 )),
                 _ => None,
             };
@@ -156,8 +156,8 @@ fn modification(
             method,
         } => {
             let ruled = match method {
-                0 => Some(MeshRepair::CloseHoles),
-                1 => Some(MeshRepair::StitchAndRemove),
+                0 => Some(MeshRepair::CloseHoles {}),
+                1 => Some(MeshRepair::StitchAndRemove {}),
                 3 => Some(MeshRepair::Rebuild {
                     mode: None,
                     density: None,
@@ -360,6 +360,9 @@ fn section_binding(
     stream: Option<&str>,
     sketch_scope: u32,
 ) -> (Option<FeatureSupportPlaneFrame>, Option<FeatureId>) {
+    if sketch_scope == 0 {
+        return (None, None);
+    }
     let mut scopes = inputs.scopes.iter().filter(|candidate| {
         crate::ids::native_stream(&candidate.id) == stream && candidate.record_index == sketch_scope
     });
@@ -511,19 +514,32 @@ pub(super) fn bind_features(
                 }
                 let stream = crate::ids::native_stream(&scope.id);
                 let value = |owner: u32| {
+                    if owner == 0 {
+                        return None;
+                    }
                     let owner = owners.iter().find(|candidate| {
                         crate::ids::native_stream(candidate.id()) == stream
                             && candidate.record_index() == owner
+                            && candidate.scope_record_index() == scope.record_index
                     })?;
                     let parameter = parameters.iter().find(|candidate| {
                         crate::ids::native_stream(&candidate.id) == stream
                             && candidate.record_index == owner.parameter_record_index()
                     })?;
+                    let length = match parameter.unit() {
+                        None => false,
+                        Some(unit)
+                            if crate::design::feature_project::design_length_unit(
+                                unit.value.as_str(),
+                            ) =>
+                        {
+                            true
+                        }
+                        Some(_) => return None,
+                    };
                     Some(OwnerValue {
                         value: parameter.evaluated_value().get(),
-                        length: parameter.unit().is_some_and(|unit| {
-                            crate::design::feature_project::design_length_unit(unit.value.as_str())
-                        }),
+                        length,
                     })
                 };
                 let (plane, sketch) = match operation.fields {

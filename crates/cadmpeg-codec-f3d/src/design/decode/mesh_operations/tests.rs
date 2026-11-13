@@ -300,6 +300,20 @@ fn source_group_members_name_their_bodies_in_group_order() {
 }
 
 #[test]
+fn null_source_group_reference_ignores_zero_identity_metadata() {
+    let (mut stream, mut meta) = source_stream(1, &[(41, 9)]);
+    put(&mut stream, 7, &0u32.to_le_bytes());
+    let changed = std::sync::Arc::make_mut(&mut meta);
+    changed.records[0].entity_id = 0;
+    changed.types[0].entities = crate::records::identity::ReferenceRun::unlocated(vec![0]);
+    let bodies = crate::test_support::with_decode_context(|ctx| {
+        MeshOperationRecords::index(&stream, meta).group_bodies(ctx, 0)
+    })
+    .unwrap();
+    assert_eq!(bodies, Err(MeshOperationFraming("source group record")));
+}
+
+#[test]
 fn source_group_member_count_is_bounded_before_allocation() {
     for (count, members) in [(u32::MAX, vec![(41, 9)]), (0, vec![])] {
         let (stream, meta) = source_stream(count, &members);

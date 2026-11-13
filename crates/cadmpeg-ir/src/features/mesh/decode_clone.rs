@@ -13,14 +13,14 @@ rewrite_scalar!(MeshFaceDistribution);
 rewrite_scalar!(MeshRebuildMode);
 
 rewrite_enum!(MeshReduceTarget, []; {
-    MaximumDeviation(field0),
-    FaceProportion(field0),
-    FaceCount(field0),
+    MaximumDeviation { value },
+    FaceProportion { value },
+    FaceCount { value },
 });
 
 rewrite_enum!(MeshRepair, []; {
-    CloseHoles,
-    StitchAndRemove,
+    CloseHoles {},
+    StitchAndRemove {},
     Rebuild { mode, density, offset },
 });
 

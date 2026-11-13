@@ -344,6 +344,9 @@ impl<'a> MeshOperationRecords<'a> {
         version: Option<u32>,
     ) -> Result<&'a [u8], MeshOperationFraming> {
         let error = MeshOperationFraming(field);
+        if record_index == 0 {
+            return Err(error);
+        }
         let entity = u64::from(record_index);
         let ordinal = self.primary.get(&entity).copied().flatten().ok_or(error)?;
         let indexed = &self.meta.records[ordinal];
