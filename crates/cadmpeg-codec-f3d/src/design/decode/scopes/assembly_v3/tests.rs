@@ -831,9 +831,33 @@ fn version_four_connectors_cover_identity_expansion_and_plain_references() {
             for end in 0..bytes.len() {
                 assert!(parse(&bytes[..end], &scope, &types).is_none());
             }
-            let (typed_bytes, typed_scope, _, typed_types) =
-                versioned_fixture(4, 4, true, expanded, identity, 0);
-            assert!(parse(&typed_bytes, &typed_scope, &typed_types).is_none());
+            let first = usize::try_from(grammar.frames[0].reference_offset - 1).unwrap();
+            let mut typed_bytes = bytes.clone();
+            let mut typed_reference = Vec::new();
+            reference(&mut typed_reference, 10, true);
+            typed_bytes.splice(first..first + 11, typed_reference);
+            let mut typed_scope = scope.clone();
+            typed_scope
+                .try_edit(|draft| {
+                    draft.frame_length += 40;
+                    draft.paired_byte_offset += 40;
+                    draft.reference_count_offset += 40;
+                    draft.kind_offset += 40;
+                    draft.feature_ordinal_offset += 40;
+                    draft.reference_members = ReferenceRun::located(
+                        scope
+                            .reference_members()
+                            .values()
+                            .zip(scope.reference_members().offsets())
+                            .map(|(value, offset)| Located {
+                                value: *value,
+                                offset: *offset + 40,
+                            })
+                            .collect(),
+                    );
+                })
+                .unwrap();
+            assert!(parse(&typed_bytes, &typed_scope, &types).is_none());
         }
     }
 }
