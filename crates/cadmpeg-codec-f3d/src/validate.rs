@@ -5862,22 +5862,38 @@ fn validate_fillet_sets(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 })
                 .is_some_and(|parameter| parameter.source_kind() == kind)
         };
-        let valid = list.sets.iter().all(|set| {
-            let law = match set.law {
-                DesignFilletSetLaw::Constant {
-                    radius_owner_record_index,
-                } => owned_kind(radius_owner_record_index, "Radius"),
-                DesignFilletSetLaw::Chordal {
-                    chord_length_owner_record_index,
-                } => owned_kind(chord_length_owner_record_index, "ChordLen"),
-            };
-            law && owned_kind(set.tangency_weight_owner_record_index, "TangencyWeight")
-                && scope
-                    .reference_members()
-                    .values()
-                    .any(|member| *member == set.group_record_index)
-        }) && design::design_feature_family(&scope.kind())
-            == Some(design::DesignFeatureFamily::Fillet);
+        let constant_frame = |set: &records::feature::fillet_set::DesignFilletSet| {
+            set.frame_length == 97
+                && matches!(
+                    set.law,
+                    records::feature::fillet_set::DesignFilletSetLaw::Constant { .. }
+                )
+        };
+        let flags_admitted = (list.form
+            != records::feature::fillet_set::DesignFilletSetListForm::Compact
+            || list.rolling_ball_corner)
+            && list
+                .sets
+                .iter()
+                .all(|set| set.curvature_continuity.is_some() == constant_frame(set));
+        let valid = flags_admitted
+            && list.sets.iter().all(|set| {
+                let law = match set.law {
+                    DesignFilletSetLaw::Constant {
+                        radius_owner_record_index,
+                    } => owned_kind(radius_owner_record_index, "Radius"),
+                    DesignFilletSetLaw::Chordal {
+                        chord_length_owner_record_index,
+                    } => owned_kind(chord_length_owner_record_index, "ChordLen"),
+                };
+                law && owned_kind(set.tangency_weight_owner_record_index, "TangencyWeight")
+                    && scope
+                        .reference_members()
+                        .values()
+                        .any(|member| *member == set.group_record_index)
+            })
+            && design::design_feature_family(&scope.kind())
+                == Some(design::DesignFeatureFamily::Fillet);
         if !valid {
             push_constant_finding(
                 findings,

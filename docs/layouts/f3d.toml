@@ -1573,11 +1573,11 @@ source = "spec"
 anchor = "Every byte that the form does not name is zero"
 
 [[record.field]]
-name = "flag"
+name = "tangent_chain"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "`+21: u8 flag`"
+anchor = "`+21: u8 tangent chain`"
 
 [[record.field]]
 name = "zero_run_2_at_22"
@@ -1623,12 +1623,11 @@ source = "spec"
 anchor = "Every byte that the form does not name is zero"
 
 [[record.field]]
-name = "fixed_word"
+name = "set_number"
 offset = 53
 type = "u32"
 source = "spec"
-anchor = "`+53: u32 1`"
-value = 1
+anchor = "`+53: u32 set number`"
 
 [[record.field]]
 name = "fixed_byte"
@@ -1740,12 +1739,11 @@ source = "spec"
 anchor = "Every byte that the form does not name is zero"
 
 [[record.field]]
-name = "fixed_word"
+name = "set_number"
 offset = 63
 type = "u32"
 source = "spec"
-anchor = "`+63: u32 1`"
-value = 1
+anchor = "`+63: u32 set number`"
 
 [[record.field]]
 name = "fixed_byte"
@@ -1864,12 +1862,11 @@ source = "spec"
 anchor = "Every byte that the form does not name is zero"
 
 [[record.field]]
-name = "fixed_word"
+name = "set_number"
 offset = 63
 type = "u32"
 source = "spec"
-anchor = "`+63: u32 1`"
-value = 1
+anchor = "`+63: u32 set number`"
 
 [[record.field]]
 name = "fixed_byte"
@@ -1981,12 +1978,11 @@ source = "spec"
 anchor = "Every byte that the form does not name is zero"
 
 [[record.field]]
-name = "fixed_word"
+name = "set_number"
 offset = 53
 type = "u32"
 source = "spec"
-anchor = "`+53: u32 1`"
-value = 1
+anchor = "`+53: u32 set number`"
 
 [[record.field]]
 name = "zero_run_2_at_57"
@@ -2078,18 +2074,25 @@ anchor = "`+23: u8 1`"
 value = 1
 
 [[record.field]]
-name = "zero_run_2_at_24"
+name = "zero_run_1_at_24"
 offset = 24
-type = "bytes[2]"
+type = "bytes[1]"
 source = "spec"
 anchor = "Every byte that the form does not name is zero"
 
 [[record.field]]
-name = "flag"
+name = "curvature_continuity"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "`+25: u8 curvature continuity`"
+
+[[record.field]]
+name = "tangent_chain"
 offset = 26
 type = "u8"
 source = "spec"
-anchor = "`+26: u8 flag`"
+anchor = "`+26: u8 tangent chain`"
 
 [[record.field]]
 name = "zero_run_2_at_27"

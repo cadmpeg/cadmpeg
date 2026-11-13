@@ -13,7 +13,8 @@ use crate::layout::chamfer_set_distance_angle as distance_angle;
 use crate::layout::chamfer_set_equal as equal;
 use crate::layout::chamfer_set_two_distances as two_distances;
 use crate::records::feature::chamfer_set::{
-    DesignChamferSet, DesignChamferSetList, DesignChamferSetListForm, DesignChamferSetSpec,
+    DesignChamferCornerType, DesignChamferSet, DesignChamferSetList, DesignChamferSetListForm,
+    DesignChamferSetSpec,
 };
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameter;
@@ -66,9 +67,12 @@ pub(super) fn chamfer_set_list(
         1 if View::u32_le_at(frame, prologue::LEN)? == 0 => prologue::LEN + 4,
         _ => return None,
     };
-    if View::u32_le_at(frame, cursor)? != 1 {
-        return None;
-    }
+    let corner_type = match View::u32_le_at(frame, cursor)? {
+        1 => DesignChamferCornerType::Chamfer,
+        2 => DesignChamferCornerType::Miter,
+        3 => DesignChamferCornerType::Blend,
+        _ => return None,
+    };
     cursor += 4;
     let form = if frame.get(cursor..cursor + CURRENT_RUN.len())? == CURRENT_RUN {
         cursor += CURRENT_RUN.len();
@@ -84,12 +88,15 @@ pub(super) fn chamfer_set_list(
     if entry_count == 0 || usize::try_from(entry_count).ok()? > frame.len() / ENTRY_LEN {
         return None;
     }
+    let mut entry_sets = Vec::new();
     for ordinal in 1..=u64::from(entry_count) {
-        if View::u64_le_at(frame, cursor)? != ordinal
-            || frame.get(cursor + 8..cursor + ENTRY_LEN)? != [1, 0]
-        {
+        let [set_number, 0] = *frame.get(cursor + 8..cursor + ENTRY_LEN)? else {
+            return None;
+        };
+        if View::u64_le_at(frame, cursor)? != ordinal || set_number == 0 {
             return None;
         }
+        entry_sets.push(u32::from(set_number));
         cursor += ENTRY_LEN;
     }
     let count = View::u32_le_at(frame, cursor)?;
@@ -103,8 +110,11 @@ pub(super) fn chamfer_set_list(
     if View::u32_le_at(frame, cursor)? != ENTITY_GUID_CODE_UNITS {
         return None;
     }
+    let set_entry_counts = set_entry_counts(&entry_sets, count)?;
     let mut sets = Vec::new();
-    for (set_record_index, group_record_index) in set_references.into_iter().zip(group_references) {
+    for (set_number, (set_record_index, group_record_index)) in
+        (1_u32..).zip(set_references.into_iter().zip(group_references))
+    {
         if !scope
             .reference_members()
             .values()
@@ -112,10 +122,11 @@ pub(super) fn chamfer_set_list(
         {
             return None;
         }
+        let entries = *set_entry_counts.get(usize::try_from(set_number - 1).ok()?)?;
         let set = chamfer_set(
             bytes,
             records,
-            set_record_index,
+            (set_record_index, set_number, entries),
             scope,
             parameters,
             parameter_owners,
@@ -130,9 +141,34 @@ pub(super) fn chamfer_set_list(
     }
     Some(DesignChamferSetList {
         form,
+        corner_type,
         entry_count,
         sets,
     })
+}
+
+/// Entries per set, in set-number order, when every entry names a set from
+/// one to `set_count` and every set has at least one entry.
+pub(super) fn set_entry_counts(entry_sets: &[u32], set_count: u32) -> Option<Vec<u32>> {
+    if usize::try_from(set_count).ok()? > entry_sets.len()
+        || entry_sets
+            .iter()
+            .any(|set_number| *set_number == 0 || *set_number > set_count)
+    {
+        return None;
+    }
+    let counts = (1..=set_count)
+        .map(|set_number| {
+            u32::try_from(
+                entry_sets
+                    .iter()
+                    .filter(|entry_set| **entry_set == set_number)
+                    .count(),
+            )
+            .ok()
+        })
+        .collect::<Option<Vec<u32>>>()?;
+    counts.iter().all(|count| *count > 0).then_some(counts)
 }
 
 /// `count` consecutive distinct marked references from `cursor`.
@@ -164,13 +200,13 @@ enum SpecForm {
 /// Byte layout of one chamfer set form.
 struct SetForm {
     len: usize,
-    flag: usize,
+    tangent_chain: usize,
     spec: SpecForm,
     owners: [usize; 2],
     owner_count: usize,
     kind: (usize, u32),
     group: usize,
-    one_word: usize,
+    set_number: usize,
     one_byte: Option<usize>,
     auxiliary: usize,
     scope: usize,
@@ -179,20 +215,20 @@ struct SetForm {
 const SET_FORMS: [SetForm; 4] = [
     SetForm {
         len: equal::LEN,
-        flag: equal::FLAG,
+        tangent_chain: equal::TANGENT_CHAIN,
         spec: SpecForm::EqualDistance,
         owners: [equal::DISTANCE_OWNER_REFERENCE, 0],
         owner_count: 1,
         kind: (equal::SPEC_KIND, equal::SPEC_KIND_VALUE),
         group: equal::EDGE_GROUP_REFERENCE,
-        one_word: equal::FIXED_WORD,
+        set_number: equal::SET_NUMBER,
         one_byte: Some(equal::FIXED_BYTE),
         auxiliary: equal::AUXILIARY_REFERENCE,
         scope: equal::SCOPE_REFERENCE,
     },
     SetForm {
         len: two_distances::LEN,
-        flag: two_distances::FLAG,
+        tangent_chain: two_distances::FLAG,
         spec: SpecForm::TwoDistances,
         owners: [
             two_distances::FIRST_DISTANCE_OWNER_REFERENCE,
@@ -201,14 +237,14 @@ const SET_FORMS: [SetForm; 4] = [
         owner_count: 2,
         kind: (two_distances::SPEC_KIND, two_distances::SPEC_KIND_VALUE),
         group: two_distances::EDGE_GROUP_REFERENCE,
-        one_word: two_distances::FIXED_WORD,
+        set_number: two_distances::SET_NUMBER,
         one_byte: Some(two_distances::FIXED_BYTE),
         auxiliary: two_distances::AUXILIARY_REFERENCE,
         scope: two_distances::SCOPE_REFERENCE,
     },
     SetForm {
         len: distance_angle::LEN,
-        flag: distance_angle::FLAG,
+        tangent_chain: distance_angle::FLAG,
         spec: SpecForm::DistanceAngle,
         owners: [
             distance_angle::DISTANCE_OWNER_REFERENCE,
@@ -217,20 +253,20 @@ const SET_FORMS: [SetForm; 4] = [
         owner_count: 2,
         kind: (distance_angle::SPEC_KIND, distance_angle::SPEC_KIND_VALUE),
         group: distance_angle::EDGE_GROUP_REFERENCE,
-        one_word: distance_angle::FIXED_WORD,
+        set_number: distance_angle::SET_NUMBER,
         one_byte: Some(distance_angle::FIXED_BYTE),
         auxiliary: distance_angle::AUXILIARY_REFERENCE,
         scope: distance_angle::SCOPE_REFERENCE,
     },
     SetForm {
         len: compact::LEN,
-        flag: compact::FLAG,
+        tangent_chain: compact::FLAG,
         spec: SpecForm::EqualDistance,
         owners: [compact::DISTANCE_OWNER_REFERENCE, 0],
         owner_count: 1,
         kind: (compact::SPEC_KIND, compact::SPEC_KIND_VALUE),
         group: compact::EDGE_GROUP_REFERENCE,
-        one_word: compact::FIXED_WORD,
+        set_number: compact::SET_NUMBER,
         one_byte: None,
         auxiliary: compact::AUXILIARY_REFERENCE,
         scope: compact::SCOPE_REFERENCE,
@@ -242,10 +278,10 @@ impl SetForm {
     fn unnamed_bytes_are_zero(&self, frame: &[u8]) -> bool {
         let mut fields = vec![
             (0, INDEXED_HEADER_LEN),
-            (self.flag, 1),
+            (self.tangent_chain, 1),
             (self.kind.0, 4),
             (self.group, REFERENCE_LEN),
-            (self.one_word, 4),
+            (self.set_number, 4),
             (self.auxiliary, REFERENCE_LEN),
             (self.scope, REFERENCE_LEN),
         ];
@@ -274,11 +310,12 @@ impl SetForm {
     }
 }
 
-/// The chamfer set record `record_index`, admitted in exactly one form.
+/// The chamfer set record `record_index` with 1-based `set_number` and
+/// `entry_count` prefix entries, admitted in exactly one form.
 fn chamfer_set(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-    record_index: u32,
+    (record_index, set_number, entry_count): (u32, u32, u32),
     scope: &DesignParameterScope,
     parameters: &[DesignParameter],
     parameter_owners: &[DesignParameterOwner],
@@ -291,9 +328,9 @@ fn chamfer_set(
     let frame = bytes.get(start..end)?;
     let mut matches = SET_FORMS.iter().filter_map(|form| {
         if frame.len() != form.len
-            || !matches!(frame.get(form.flag), Some(0 | 1))
+            || !matches!(frame.get(form.tangent_chain), Some(0 | 1))
             || View::u32_le_at(frame, form.kind.0)? != form.kind.1
-            || View::u32_le_at(frame, form.one_word)? != 1
+            || View::u32_le_at(frame, form.set_number)? != set_number
             || form.one_byte.is_some_and(|at| frame.get(at) != Some(&1))
             || marked_record_reference(frame, form.scope)? != scope.record_index
             || !form.unnamed_bytes_are_zero(frame)
@@ -338,7 +375,8 @@ fn chamfer_set(
             group_record_index: marked_record_reference(frame, form.group)?,
             spec,
             auxiliary_record_index: marked_record_reference(frame, form.auxiliary)?,
-            flag: frame.get(form.flag) == Some(&1),
+            entry_count,
+            tangent_chain: frame.get(form.tangent_chain) == Some(&1),
         })
     });
     let set = matches.next()?;
