@@ -453,6 +453,8 @@ pub(crate) enum F3dLossCode {
     FeatureReverseNormalBodyUnverified,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
+    #[doc = "A Combine lacks a complete Boolean construction and remains typed as an unresolved Combine."]
+    FeatureCombineDefinitionUnresolved,
     FeatureCombineMiddleListOmittedAssumed,
     FeatureCombineComponentDestinationAssumed,
     FeatureCombineNamedTailPrologueAssumed,
@@ -941,6 +943,7 @@ impl F3dLossCode {
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
         Self::FeatureCombineSelectionNative,
+        Self::FeatureCombineDefinitionUnresolved,
         Self::FeatureCombineMiddleListOmittedAssumed,
         Self::FeatureCombineComponentDestinationAssumed,
         Self::FeatureCombineNamedTailPrologueAssumed,
@@ -1366,6 +1369,7 @@ impl F3dLossCode {
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
+            Self::FeatureCombineDefinitionUnresolved => "feature.combine-definition-unresolved",
             Self::FeatureCombineMiddleListOmittedAssumed => {
                 "feature.combine-middle-list-omitted-assumed"
             }
@@ -1783,6 +1787,7 @@ impl F3dLossCode {
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureCombineSelectionNative
+            | Self::FeatureCombineDefinitionUnresolved
             | Self::FeatureCombineMiddleListOmittedAssumed
             | Self::FeatureCombineComponentDestinationAssumed
             | Self::FeatureCombineNamedTailPrologueAssumed
@@ -2103,6 +2108,7 @@ impl F3dLossCode {
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureCombineSelectionNative
+            | Self::FeatureCombineDefinitionUnresolved
             | Self::FeatureCombineMiddleListOmittedAssumed
             | Self::FeatureCombineComponentDestinationAssumed
             | Self::FeatureCombineNamedTailPrologueAssumed

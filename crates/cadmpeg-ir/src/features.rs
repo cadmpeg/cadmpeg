@@ -4150,6 +4150,8 @@ pub enum UnresolvedFamily {
     Extrude,
     /// The `revolve` operation family.
     Revolve,
+    #[doc = "The `combine` operation family."]
+    Combine,
     /// The `fillet` operation family.
     Fillet,
     /// The `extract_face` operation family.
@@ -4244,6 +4246,7 @@ impl FeatureOperation {
                 UnresolvedFamily::DetailedThread => Some("detailed thread"),
                 UnresolvedFamily::Extrude => Some("extrude"),
                 UnresolvedFamily::Revolve => Some("revolve"),
+                UnresolvedFamily::Combine => Some("combine"),
                 UnresolvedFamily::Fillet => Some("fillet"),
                 UnresolvedFamily::DeleteFace => Some("delete face"),
                 UnresolvedFamily::DatumPlane
