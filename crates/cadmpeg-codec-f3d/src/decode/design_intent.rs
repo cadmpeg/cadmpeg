@@ -1194,9 +1194,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         products.occurrences,
         &design.design_parameter_scopes,
     );
-    crate::design::components::project_derived_instance_features(
-        &mut model.features,
-        &design.design_parameter_scopes,
+    losses.extend(
+        crate::design::components::project_derived_instance_features(
+            &mut model.features,
+            &design.design_parameter_scopes,
+        )?,
     );
     losses.extend(crate::design::components::paths::bind_feature_paths(
         &mut model.features,

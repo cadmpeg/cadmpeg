@@ -1312,6 +1312,15 @@ pub(crate) fn append_design_losses(
                     .occurrences
                     .iter()
                     .any(|candidate| candidate.id == *occurrence),
+                FeatureOperation::InsertComponents { components } => {
+                    !components.is_resolved()
+                        || components.occurrences().iter().any(|occurrence| {
+                            !ir.model
+                                .occurrences
+                                .iter()
+                                .any(|candidate| candidate.id == *occurrence)
+                        })
+                }
                 FeatureOperation::ComponentTransfer {
                     occurrence,
                     component,

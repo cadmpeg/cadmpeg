@@ -133,7 +133,7 @@ pub(super) fn generated_design_copy_paste_metastream(records: &[(u64, u64)]) -> 
     )
 }
 
-pub(super) fn generated_design_copy_paste_bodies_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(crate) fn generated_design_copy_paste_bodies_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::CopyPasteBodies,
