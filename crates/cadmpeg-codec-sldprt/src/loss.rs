@@ -90,6 +90,8 @@ pub(crate) enum SldprtLossCode {
     PmiSwiftSphericalDiameterTargetUnresolved,
     /// A SWIFT geometric-tolerance display has no established semantic annotation.
     PmiSwiftPresentationUnresolved,
+    /// Internal flatness rows use an inferred characteristic convention.
+    PmiSwiftInternalFlatnessSymbolAssumed,
     /// A SWIFT presentation archive declares displays that its framing discards.
     PmiSwiftPresentationUnframed,
     /// A SWIFT display selects faces through a one- or two-string in-place document.
@@ -340,6 +342,7 @@ impl SldprtLossCode {
         Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed,
         Self::PmiSwiftSphericalDiameterTargetUnresolved,
         Self::PmiSwiftPresentationUnresolved,
+        Self::PmiSwiftInternalFlatnessSymbolAssumed,
         Self::PmiSwiftPresentationUnframed,
         Self::PmiSwiftFaceDocumentLayoutAssumed,
         Self::PmiSwiftFaceDocumentTailAssumed,
@@ -463,6 +466,9 @@ impl SldprtLossCode {
                 "pmi.swift-spherical-diameter-target-unresolved"
             }
             Self::PmiSwiftPresentationUnresolved => "pmi.swift-presentation-unresolved",
+            Self::PmiSwiftInternalFlatnessSymbolAssumed => {
+                "pmi.swift-internal-flatness-symbol-assumed"
+            }
             Self::PmiSwiftPresentationUnframed => "pmi.swift-presentation-unframed",
             Self::PmiSwiftFaceDocumentLayoutAssumed => "pmi.swift-face-document-layout-assumed",
             Self::PmiSwiftFaceDocumentTailAssumed => "pmi.swift-face-document-tail-assumed",
@@ -623,6 +629,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed
             | Self::PmiSwiftSphericalDiameterTargetUnresolved
             | Self::PmiSwiftPresentationUnresolved
+            | Self::PmiSwiftInternalFlatnessSymbolAssumed
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed
@@ -805,6 +812,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed
             | Self::PmiSwiftSphericalDiameterTargetUnresolved
             | Self::PmiSwiftPresentationUnresolved
+            | Self::PmiSwiftInternalFlatnessSymbolAssumed
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed => LossTaxonomy::DecodeDiagnostic,
@@ -1042,6 +1050,7 @@ mod tests {
                 "pmi.swift-spherical-diameter-count-text-equal-radius-assumed",
                 "pmi.swift-spherical-diameter-target-unresolved",
                 "pmi.swift-presentation-unresolved",
+                "pmi.swift-internal-flatness-symbol-assumed",
                 "pmi.swift-presentation-unframed",
                 "pmi.swift-face-document-layout-assumed",
                 "pmi.swift-face-document-tail-assumed",
