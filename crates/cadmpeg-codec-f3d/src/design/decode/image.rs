@@ -25,6 +25,9 @@ pub(super) fn embedded_image_asset(
         return Ok(None);
     }
     let bytes = scan.entry_bytes(&entry.name)?;
+    if bytes.is_empty() {
+        return Ok(None);
+    }
     // The asset keeps a decoded copy of the source image bytes.
     ctx.retain_bytes(u64_from_index(bytes.len()), "retain F3D embedded image")?;
     let data = bytes.to_vec();
@@ -142,6 +145,28 @@ mod tests {
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                         && limit.operation == "retain F3D embedded image"
             ));
+        });
+    }
+
+    #[test]
+    fn empty_embedded_image_keeps_the_source_unresolved() {
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(
+            "FusionAssetName[Active]/Design1/Images.BlobParts/mark.png",
+            stored,
+        )
+        .unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        with_scan(&archive, |scan| {
+            assert!(super::embedded_image_asset(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                "mark.png"
+            )
+            .unwrap()
+            .is_none());
         });
     }
 

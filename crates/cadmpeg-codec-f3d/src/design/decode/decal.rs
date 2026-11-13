@@ -113,7 +113,7 @@ pub(crate) fn project_decal_images(
     assets.dedup_by(|a, b| a.id == b.id);
     if assumed_mappings != 0 {
         losses.push(F3dLossCode::DecalMappingAssumed.note(format!(
-            "{assumed_mappings} Decal feature(s) have a missing mapping mode or a mode other than 0x60; the decoder assumes the fit-to-faces mapping (DR-481)."
+            "{assumed_mappings} Decal feature(s) have a missing mapping mode or a mode other than 0x60; the decoder assumes the fit-to-faces mapping (DR-483)."
         )));
     }
     if unresolved_targets != 0 {

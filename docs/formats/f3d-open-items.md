@@ -1732,7 +1732,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder projects the Decal with its image and a native face selection. It records `appearance.decal-target-unresolved`.
 
-### DR-481. Decal mapping modes other than `0x60`
+### DR-483. Decal mapping modes other than `0x60`
 
 **Question.** Which image mapping does each Decal mapping-mode byte other than `0x60` select?
 
