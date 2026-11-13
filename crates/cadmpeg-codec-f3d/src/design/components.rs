@@ -1548,13 +1548,13 @@ impl<'a> Projector<'a> {
         }
         for (count, code, message) in [
             (self.derived.carrier_placements, F3dLossCode::FeatureDerivedInstanceCarrierPlacementAssumed,
-             "occurrence placement(s) use the carrier matrix because the scope has no unique usable source matrix (DR-482)"),
+             "occurrence placement(s) use the carrier matrix because the scope has no unique usable source matrix (DR-486)"),
             (self.derived.scope_placements, F3dLossCode::FeatureDerivedInstanceScopePlacementAssumed,
-             "occurrence placement(s) use the scope source matrix in place of a different carrier matrix; both values stay native (DR-482)"),
+             "occurrence placement(s) use the scope source matrix in place of a different carrier matrix; both values stay native (DR-486)"),
             (self.derived.context_transforms, F3dLossCode::FeatureDerivedInstanceContextTransformAssumed,
-             "DerivedInstance context matrix/matrices stay native and are not composed into the inserted occurrence placements (DR-483)"),
+             "DerivedInstance context matrix/matrices stay native and are not composed into the inserted occurrence placements (DR-487)"),
             (self.derived.unrepresentable_placements, F3dLossCode::FeatureDerivedInstancePlacementUnrepresentable,
-             "derived source placement(s) exceed finite millimetre coordinates and stay native (DR-482)"),
+             "derived source placement(s) exceed finite millimetre coordinates and stay native (DR-486)"),
             (self.derived.definitions, F3dLossCode::FeatureDerivedInstanceDefinitionUnresolved,
              "derived occurrence(s) reference partial component definitions identified by their stream and component record; definition metadata is unresolved (DR-75)"),
         ] {

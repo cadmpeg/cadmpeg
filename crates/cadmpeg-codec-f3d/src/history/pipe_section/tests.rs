@@ -3,7 +3,7 @@
 use super::{bind_circular_pipe_sections, PipeSectionInputs};
 use crate::loss::F3dLossCode;
 use crate::records::feature::extrude::DesignExtrudeOperation;
-use crate::records::feature::path_features::DesignPipeConstruction;
+use crate::records::feature::path_features::{DesignPipeConstruction, DesignPipeSection};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayload};
 use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
 use crate::records::references::DesignClassTag;
@@ -41,6 +41,7 @@ fn pipe_scope(operation: DesignExtrudeOperation, is_hollow: bool) -> DesignParam
                 opaque_post_operation_offset: 26,
                 record_indexes: [21, 22, 23, 24],
                 point_selection: None,
+                section: None,
             }));
             draft.reference_count_offset = 40;
             draft.layout_fixture_references();
@@ -250,7 +251,21 @@ fn bound_with_losses(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
     );
-    assert_eq!(losses.len(), if projected { 2 } else { 0 });
+    let read_circle = matches!(
+        scope.payload(),
+        DesignScopePayload::Pipe(Some(DesignPipeConstruction {
+            section: Some(DesignPipeSection { shape_value: 0, .. }),
+            ..
+        }))
+    );
+    assert_eq!(
+        losses.len(),
+        match (projected, read_circle) {
+            (false, _) => 0,
+            (true, true) => 1,
+            (true, false) => 2,
+        }
+    );
     (definition, losses)
 }
 
@@ -585,4 +600,71 @@ fn a_new_body_pipe_without_result_bodies_assumes_a_circle() {
             F3dLossCode::FeaturePipeWholePathExtentAssumed.kind()
         ]
     );
+}
+
+/// `pipe_scope` whose section frame stores `shape`.
+fn shaped_pipe_scope(operation: DesignExtrudeOperation, shape_value: u32) -> DesignParameterScope {
+    let mut scope = pipe_scope(operation, false);
+    scope
+        .try_edit(|draft| {
+            if let DesignScopePayload::Pipe(Some(construction)) = &mut draft.payload {
+                construction.section = Some(DesignPipeSection {
+                    shape_value,
+                    shape_offset: 95,
+                });
+            }
+            draft.reference_count_offset = 99;
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.kind_offset + 96;
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope
+}
+
+#[test]
+fn a_read_circular_shape_projects_without_a_section_test() {
+    let groups = [path_group(30, DesignOperandRole::ROLE_0X5)];
+    let (definition, losses) = bound_with_losses(
+        &shaped_pipe_scope(DesignExtrudeOperation::NewBody, 0),
+        &owners(0.5, 0.1),
+        &groups,
+        &[cone(2.5)],
+        |_, _| {},
+    );
+    assert_eq!(circular_section(&definition), Some((2.5, None)));
+    assert_eq!(
+        losses,
+        [F3dLossCode::FeaturePipeWholePathExtentAssumed.kind()]
+    );
+}
+
+#[test]
+fn a_read_shape_other_than_a_circle_keeps_the_pipe_native() {
+    let groups = [
+        path_group(30, DesignOperandRole::BODIES_A),
+        path_group(40, DesignOperandRole::ROLE_0X5),
+    ];
+    for shape in [1, 2, 3] {
+        for operation in [
+            DesignExtrudeOperation::NewBody,
+            DesignExtrudeOperation::Join,
+        ] {
+            let groups = if operation == DesignExtrudeOperation::Join {
+                &groups[..]
+            } else {
+                &groups[1..]
+            };
+            assert!(matches!(
+                bound(
+                    &shaped_pipe_scope(operation, shape),
+                    &owners(0.5, 0.1),
+                    groups,
+                    &[cylinder(2.5)],
+                ),
+                FeatureDefinition::Operation(FeatureOperation::Native { .. })
+            ));
+        }
+    }
 }
