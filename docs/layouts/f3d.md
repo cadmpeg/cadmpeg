@@ -10180,7 +10180,7 @@ Parsed by:
 
 Unstated regions:
 
-- `0..128` (128 B): Indexed scope header and operation prologue; control semantics are tracked in DR-466.
+- `0..128` (128 B): Indexed scope header and operation prologue; control semantics are tracked in DR-476.
 
 ## Not tabulated
 

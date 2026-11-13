@@ -2346,7 +2346,17 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder selects the listed groups and assumes that the additional groups select the same bodies. It records `feature.scale-unlisted-groups-assumed`.
 
-### DR-466. Controls of the wider SurfaceDeleteFace prologue
+### DR-466. Standalone joint source operand binding
+
+**Question.** Which document identity namespace and occurrence context do qualified source paths select when their keys do not match admitted occurrence carriers?
+
+**Known.** The qualified assembly scope carries connector frames and alignment values. Its occurrence path carries the source document identity, occurrence key, and ordered descendant keys. These fields describe a readable joint independently of availability of the referenced document.
+
+**Need.** Public document bundles with independently identified source documents and repeated component instances that bind each source path identity to its document and occurrence context.
+
+**Note.** A standalone timeline feature names its decoded neutral joint while source operands remain unresolved. The decoder preserves their identities and charges `assembly.joint-source-binding-assumed`.
+
+### DR-476. Controls of the wider SurfaceDeleteFace prologue
 
 **Question.** Which settings do the controls before the ordered-reference count of the wide surface-delete prologue encode?
 
@@ -2356,7 +2366,7 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder reads the group as an unhealed face deletion and records `feature.surface-delete-face-wide-prologue-assumed`.
 
-### DR-467. Additional face-deletion controls and incomplete group definitions
+### DR-477. Additional face-deletion controls and incomplete group definitions
 
 **Question.** Which controls in further face-deletion frames change the selected group or removal mode, and which face selections do incomplete group definitions name?
 

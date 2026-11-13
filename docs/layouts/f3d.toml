@@ -34282,7 +34282,7 @@ parsed_by = "crates/cadmpeg-codec-f3d/src/design/feature_project/delete_face.rs"
 [[record.gap]]
 offset = 0
 size = 128
-note = "Indexed scope header and operation prologue; control semantics are tracked in DR-466."
+note = "Indexed scope header and operation prologue; control semantics are tracked in DR-476."
 
 [[record.field]]
 name = "reference_count"
