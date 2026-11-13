@@ -841,6 +841,18 @@ resolve a seed feature?
 
 **Note.** Retain these records under their current projection until the mapping resolves.
 
+### DI-68. Extrusion end-spec ownership and depth attribution
+
+**Question.** Which serialized children define the active termination kind, depth, direction, and second side of each withheld extrusion extent?
+
+**Known.** The unresolved-termination census contains 100 features in 33 parts. The primary cause counts assign each feature to one cause. Display-length parsing accounts for 64 features in 15 parts and two independent design groups. Its 66 direction-depth pairs contain 62 equal pairs and four unequal pairs in three features. Finite-cap checks give 25 agreements, two contrary cases, and 36 unavailable results in one group; the second group gives one agreement, zero contrary cases, and zero unavailable results. Face-reference forms account for 16 features in five parts and two groups. Vertex-reference forms account for five features in four parts and three groups. Traversal-tail forms account for four features in four parts and three groups. Unbound depth scalars account for four features in four parts and one group. Unsupported second-side codes account for three features in three parts and two groups. Unavailable end-spec headers account for two features in two parts and two groups. An additional first-direction code and surface-extrusion ownership each account for one feature in one part and one group. Configuration consensus disagreements account for zero features.
+
+**Need.** Bind each active end-spec, depth scalar, travel direction, and second-side reference to its extrusion. Check every proposed admission against the decoded B-rep cap distances in at least two independent design groups, including both caps for a two-sided or symmetric extent. Available truth and export geometry supply supplementary checks.
+
+**Conflict.** A decoded termination kind can coexist with an unresolved length. A retained display length and a named scalar can coexist with an incomplete depth binding. The scalar can equal the separation of surviving caps while their distances from the bound profile plane differ from the scalar.
+
+**Note.** Each census cause retains its unresolved extent and decode loss until its ownership and geometry checks succeed.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
