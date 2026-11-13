@@ -1988,18 +1988,21 @@ fn partial_connector_objects_follow_their_archive_source_scope() {
     use cadmpeg_ir::document::EntityRewrite;
     use cadmpeg_ir::products::{ExternalDocument, JointOperand};
     let (mut model, _) = standalone_joint_model(Vec::new());
+    model.assembly_joints[0].native_ref =
+        Some("f3d:Design/BulkStream.dat:design-parameter-scope#30".to_owned());
     for connector in model.assembly_joints[0].connectors_mut() {
         connector.operand = JointOperand::external(
             ExternalDocument::Missing {},
-            "f3d:scope#standalone",
+            "f3d:Design/BulkStream.dat:design-parameter-scope#30",
             vec!["construction-record#10".to_owned()],
         );
     }
     let ctx = cadmpeg_test_support::service_decode_context();
     for occurrence in ["first", "second"] {
-        let expected = format!("f3d:xref/{occurrence}/scope#standalone");
+        let expected =
+            format!("f3d:xref/{occurrence}/Design/BulkStream.dat:design-parameter-scope#30");
         let targets = std::collections::BTreeMap::from([(
-            "f3d:scope#standalone".to_owned(),
+            "f3d:Design/BulkStream.dat:design-parameter-scope#30".to_owned(),
             expected.clone(),
         )]);
         let native_text = TextReplacements::build(targets.iter()).unwrap();

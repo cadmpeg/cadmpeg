@@ -2349,6 +2349,8 @@ mod tests {
                 "assembly.operand-descent-ambiguous",
                 "assembly.operand-descent-unresolved",
                 "assembly.joint-source-binding-assumed",
+                "assembly.connector-operands-assumed",
+                "assembly.motion-binding-assumed",
                 "assembly.operand-nested-path-retained",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
