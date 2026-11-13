@@ -2485,3 +2485,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Controlled public assemblies that identify both selected components and vary the operand paths independently of the connector frames and alignment values.
 
 **Note.** The neutral joint uses the native scope identity as its operand object and the stored construction reference as its native element path, with a missing document container. `assembly.connector-operands-assumed` names this operand-context assumption. `assembly.motion-binding-assumed` records the adjacent-motion or fixed-relation reading from DR-250. The timeline feature names the retained joint before archive operand descent. A missing document identity supplies no implied occurrence placement.
+
+### DR-487. Source membership and container of an unbound Component Insert
+
+**Question.** Which source occurrence and containing component does a Component Insert scope select when its relation carrier or authored placement path remains unresolved?
+
+**Known.** The shared identity and matrix scope forms in §3.1 of `f3d.md` retain an occurrence identity, one relation reference, and a scope-local placement. The carrier contributes the source occurrence role used by external-reference binding. The scope occurrence identity can repeat across scopes.
+
+**Need.** Controlled public assemblies with independently varied source occurrences, containing components, and placement matrices, including a retained relation with an unresolved source document.
+
+**Note.** Each authored insertion scope with a decoded placement can produce one unresolved-prototype occurrence at the document root. The per-scope membership reading is assumed. `assembly.component-insert-container-assumed` records that container-frame reading. A feature with unresolved source membership uses its native selection in a neutral component insertion and reports `feature.component-insert-membership-assumed`. The native scope retains the relation reference, occurrence identity, and decoded placement.

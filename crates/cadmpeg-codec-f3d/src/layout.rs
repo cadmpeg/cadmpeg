@@ -7798,6 +7798,14 @@ pub(crate) mod component_insert_matrix_scope_400_prefix {
     pub(crate) const NULL_GUID: usize = 178;
 }
 
+/// Byte offsets for the `component_insert_matrix_scope_404_prefix` record.
+///
+/// Spec §3.1. Record length 258 B.
+pub(crate) mod component_insert_matrix_scope_404_prefix {
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 54;
+}
+
 /// Byte offsets for the `emboss_scope_reference_table_prefix` record.
 ///
 /// Spec §3.1. Record length 239 B.

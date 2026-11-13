@@ -264,7 +264,11 @@ impl Serialize for DesignParameterScope {
         emit_opt!("assembly_alignment", self.assembly_alignment());
         match &self.payload {
             DesignScopePayload::ComponentInsert(value) => {
-                emit_opt!("component_insert_construction", value.as_ref());
+                emit_opt!("component_insert_construction", value.construction.as_ref());
+                emit_opt!(
+                    "component_insert_placement",
+                    value.unresolved_placement.as_ref()
+                );
             }
             DesignScopePayload::DerivedInstance(value) => {
                 emit_opt!("derived_instance_construction", value.as_ref());

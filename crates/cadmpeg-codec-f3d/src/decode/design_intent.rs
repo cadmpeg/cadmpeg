@@ -1222,6 +1222,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         products.occurrences,
     );
+    losses.extend(
+        crate::design::components::incomplete_inserts::project_features(
+            &mut model.features,
+            &design.design_parameter_scopes,
+            products.occurrences,
+        )?,
+    );
     let mut types_by_stream = std::collections::HashMap::new();
     let bound_at_merge = design
         .design_parameter_scopes
