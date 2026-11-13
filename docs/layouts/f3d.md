@@ -5693,6 +5693,84 @@ Unstated regions:
 - `79..83` (4 B): Offsets 79 through 82 are zero.
 - `216..293` (77 B): The transform record's tail precedes the same-index paired header at offset 293.
 
+## `move_transform_v3_frame_256`
+
+Spec §3.1 · layout: byte offsets · size: 256 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | 256 bytes for form word `5` |
+| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `0`, `1`, or `5` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..256` (80 B): The transform record's native tail precedes the same-index paired header at offset 256.
+
+## `move_transform_v3_frame_276`
+
+Spec §3.1 · layout: byte offsets · size: 276 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | 276 bytes for form word `1` |
+| 43 | 4 | `form` | `u32` | little | spec | A 273- or 274-byte frame stores form word `1` · value `1` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..276` (100 B): The transform record's tail precedes the same-index paired header at offset 276.
+
+## `move_transform_v3_frame_286`
+
+Spec §3.1 · layout: byte offsets · size: 286 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | 286 bytes for form word `0` |
+| 43 | 4 | `form` | `u32` | little | spec | A 283- or 284-byte frame stores form word `0` · value `0` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..286` (110 B): The transform record's tail precedes the same-index paired header at offset 286.
+
+## `move_transform_v3_frame_296`
+
+Spec §3.1 · layout: byte offsets · size: 296 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | 296 bytes for form word `2` |
+| 31 | 11 | `first_reference` | `bytes[11]` | little | spec | marked references start at offsets 31, 42, and 53 |
+| 42 | 11 | `second_reference` | `bytes[11]` | little | spec | marked references start at offsets 31, 42, and 53 |
+| 53 | 11 | `third_reference` | `bytes[11]` | little | spec | marked references start at offsets 31, 42, and 53 |
+| 64 | 4 | `zero_word` | `u32` | little | spec | offset 64 stores u32 zero |
+| 68 | 11 | `fourth_reference` | `bytes[11]` | little | spec | a marked reference starts at offset 68 |
+| 83 | 4 | `form` | `u32` | little | spec | offset 83 stores the u32 form word · value `2` |
+| 87 | 1 | `reserved_zero` | `u8` | little | spec | offset 87 is zero |
+| 88 | 128 | `transform` | `f64[16]` | little | spec | the sixteen row-major f64 values begin at offset 88 |
+
+Unstated regions:
+
+- `11..31` (20 B): Offsets 11 through 30 are zero.
+- `79..83` (4 B): Offsets 79 through 82 are zero.
+- `216..296` (80 B): The transform record's tail precedes the same-index paired header at offset 296.
+
 ## `modify_marker_zero_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 47 B

@@ -5819,6 +5819,54 @@ pub(crate) mod move_transform_frame_293 {
     pub(crate) const FORM: usize = 83;
 }
 
+/// Byte offsets for the `move_transform_v3_frame_256` record.
+///
+/// Spec §3.1. Record length 256 B.
+///
+/// ```text
+/// Offsets are relative to the transform record's primary indexed header.
+/// ```
+pub(crate) mod move_transform_v3_frame_256 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 256;
+}
+
+/// Byte offsets for the `move_transform_v3_frame_276` record.
+///
+/// Spec §3.1. Record length 276 B.
+///
+/// ```text
+/// Offsets are relative to the transform record's primary indexed header.
+/// ```
+pub(crate) mod move_transform_v3_frame_276 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 276;
+}
+
+/// Byte offsets for the `move_transform_v3_frame_286` record.
+///
+/// Spec §3.1. Record length 286 B.
+///
+/// ```text
+/// Offsets are relative to the transform record's primary indexed header.
+/// ```
+pub(crate) mod move_transform_v3_frame_286 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 286;
+}
+
+/// Byte offsets for the `move_transform_v3_frame_296` record.
+///
+/// Spec §3.1. Record length 296 B.
+///
+/// ```text
+/// Offsets are relative to the transform record's primary indexed header.
+/// ```
+pub(crate) mod move_transform_v3_frame_296 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 296;
+}
+
 /// Byte offsets for the `modify_marker_zero_prologue` record.
 ///
 /// Spec §3.1. Record length 47 B.
