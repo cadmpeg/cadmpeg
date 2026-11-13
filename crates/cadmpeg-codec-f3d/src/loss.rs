@@ -451,6 +451,17 @@ pub(crate) enum F3dLossCode {
     FeatureBodySelectionNative,
     /// Reverse Normal body-group members lack the whole-body record type.
     FeatureReverseNormalBodyUnverified,
+    FeatureFaceGroupsTypeUnverified,
+    FeatureFaceGroupsPrefixUnparsed,
+    FeatureFaceGroupsSourceAssumed,
+    FeatureFaceGroupsSourceUnavailable,
+    FeatureFaceGroupsSourceTargetUnverified,
+    FeatureFaceGroupsGroupRolesAssumed,
+    FeatureFaceGroupsMemberRunUnrepresentable,
+    FeatureFaceGroupsMethodAssumed,
+    FeatureFaceGroupsMethodUnmapped,
+    FeatureFaceGroupsBoundaryDistanceAssumed,
+    FeatureFaceGroupsSettingUnassigned,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
     /// A Combine frame that matches the fixed fields of the operand-list
@@ -939,6 +950,17 @@ impl F3dLossCode {
         Self::FeatureWorkAxisEndpointToleranceAssumed,
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
+        Self::FeatureFaceGroupsTypeUnverified,
+        Self::FeatureFaceGroupsPrefixUnparsed,
+        Self::FeatureFaceGroupsSourceAssumed,
+        Self::FeatureFaceGroupsSourceUnavailable,
+        Self::FeatureFaceGroupsSourceTargetUnverified,
+        Self::FeatureFaceGroupsGroupRolesAssumed,
+        Self::FeatureFaceGroupsMemberRunUnrepresentable,
+        Self::FeatureFaceGroupsMethodAssumed,
+        Self::FeatureFaceGroupsMethodUnmapped,
+        Self::FeatureFaceGroupsBoundaryDistanceAssumed,
+        Self::FeatureFaceGroupsSettingUnassigned,
         Self::FeatureCombineSelectionNative,
         Self::FeatureCombinePrologueAssumed,
         Self::FeatureCombineOperandListRefused,
@@ -1362,6 +1384,29 @@ impl F3dLossCode {
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
+            Self::FeatureFaceGroupsTypeUnverified => "feature.mesh-face-groups-type-unverified",
+            Self::FeatureFaceGroupsPrefixUnparsed => "feature.mesh-face-groups-prefix-unparsed",
+            Self::FeatureFaceGroupsSourceAssumed => "feature.mesh-face-groups-source-assumed",
+            Self::FeatureFaceGroupsSourceUnavailable => {
+                "feature.mesh-face-groups-source-unavailable"
+            }
+            Self::FeatureFaceGroupsSourceTargetUnverified => {
+                "feature.mesh-face-groups-source-target-unverified"
+            }
+            Self::FeatureFaceGroupsGroupRolesAssumed => {
+                "feature.mesh-face-groups-group-roles-assumed"
+            }
+            Self::FeatureFaceGroupsMemberRunUnrepresentable => {
+                "feature.mesh-face-groups-member-run-unrepresentable"
+            }
+            Self::FeatureFaceGroupsMethodAssumed => "feature.mesh-face-groups-method-assumed",
+            Self::FeatureFaceGroupsMethodUnmapped => "feature.mesh-face-groups-method-unmapped",
+            Self::FeatureFaceGroupsBoundaryDistanceAssumed => {
+                "feature.mesh-face-groups-boundary-distance-assumed"
+            }
+            Self::FeatureFaceGroupsSettingUnassigned => {
+                "feature.mesh-face-groups-setting-unassigned"
+            }
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
@@ -1771,6 +1816,17 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
+            | Self::FeatureFaceGroupsTypeUnverified
+            | Self::FeatureFaceGroupsPrefixUnparsed
+            | Self::FeatureFaceGroupsSourceAssumed
+            | Self::FeatureFaceGroupsSourceTargetUnverified
+            | Self::FeatureFaceGroupsSourceUnavailable
+            | Self::FeatureFaceGroupsGroupRolesAssumed
+            | Self::FeatureFaceGroupsMemberRunUnrepresentable
+            | Self::FeatureFaceGroupsMethodAssumed
+            | Self::FeatureFaceGroupsMethodUnmapped
+            | Self::FeatureFaceGroupsBoundaryDistanceAssumed
+            | Self::FeatureFaceGroupsSettingUnassigned
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
@@ -2089,6 +2145,17 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
+            | Self::FeatureFaceGroupsTypeUnverified
+            | Self::FeatureFaceGroupsPrefixUnparsed
+            | Self::FeatureFaceGroupsSourceAssumed
+            | Self::FeatureFaceGroupsSourceTargetUnverified
+            | Self::FeatureFaceGroupsSourceUnavailable
+            | Self::FeatureFaceGroupsGroupRolesAssumed
+            | Self::FeatureFaceGroupsMemberRunUnrepresentable
+            | Self::FeatureFaceGroupsMethodAssumed
+            | Self::FeatureFaceGroupsMethodUnmapped
+            | Self::FeatureFaceGroupsBoundaryDistanceAssumed
+            | Self::FeatureFaceGroupsSettingUnassigned
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused

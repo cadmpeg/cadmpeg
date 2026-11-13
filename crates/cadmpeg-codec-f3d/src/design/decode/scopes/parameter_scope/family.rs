@@ -262,8 +262,14 @@ pub(super) fn paste_scope_prefix(
 }
 
 pub(super) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {
-    FAMILIES
+    crate::records::feature::mesh_face_groups::SCOPE_TYPES
         .iter()
-        .find(|(registered, _)| registered.eq_ignore_ascii_case(guid))
-        .map(|(_, kind)| kind.clone())
+        .find(|(registered, _, _)| registered.eq_ignore_ascii_case(guid))
+        .map(|(_, _, kind)| kind.clone())
+        .or_else(|| {
+            FAMILIES
+                .iter()
+                .find(|(registered, _)| registered.eq_ignore_ascii_case(guid))
+                .map(|(_, kind)| kind.clone())
+        })
 }

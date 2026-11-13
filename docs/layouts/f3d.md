@@ -10219,6 +10219,30 @@ Unstated regions:
 
 - `0..128` (128 B): Indexed scope header and operation prologue; control semantics are tracked in DR-476.
 
+## `mesh_face_groups_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 21 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/mesh_face_groups.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | after its eleven-byte indexed header |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | stores ten zero bytes |
+
+## `mesh_face_group_uuid`
+
+Spec §3.1 · layout: byte offsets · size: 40 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/mesh_face_groups.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `character_count` | `u32` | little | spec | its u32 character count is 36 · value `36` |
+| 4 | 36 | `text` | `bytes[36]` | little | spec | its 36 ASCII bytes start at token offset 4 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

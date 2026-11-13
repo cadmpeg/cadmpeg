@@ -2753,6 +2753,21 @@ pub enum FeatureOperation {
         #[serde(deserialize_with = "deserialize_local_tessellations")]
         tessellations: mesh::MeshSelection,
     },
+    #[doc = "Generate a mesh face-group partition from independently retained controls."]
+    MeshGenerateFaceGroups {
+        #[doc = "Mesh and optional group selection in its source history state."]
+        #[serde(deserialize_with = "deserialize_mesh_source")]
+        source: mesh::MeshSelection,
+        #[doc = "Decoded controls, including stored inactive values."]
+        #[serde(default)]
+        settings: mesh::MeshFaceGroupGenerationSettings,
+    },
+    #[doc = "Combine selected groups of a mesh face-group partition."]
+    MeshCombineFaceGroups {
+        #[doc = "Mesh and ordered groups in their source history state."]
+        #[serde(deserialize_with = "deserialize_mesh_source")]
+        source: mesh::MeshSelection,
+    },
     /// Independent bodies introduced by a copy-and-paste operation. The copies
     /// are the feature's outputs, so the selection carries only its native
     /// expression.
@@ -6329,6 +6344,7 @@ selection_field_deserializer!(deserialize_selection_selections, "selections");
 selection_field_deserializer!(deserialize_selection_curves, "curves");
 selection_field_deserializer!(deserialize_profile_parameter_range, "parameter_range");
 selection_field_deserializer!(deserialize_local_tessellations, "tessellations");
+selection_field_deserializer!(deserialize_mesh_source, "source");
 selection_field_deserializer!(deserialize_local_segments, "segments");
 selection_field_deserializer!(deserialize_local_axis_native_ref, "axis_native_ref");
 selection_field_deserializer!(deserialize_local_groups, "groups");

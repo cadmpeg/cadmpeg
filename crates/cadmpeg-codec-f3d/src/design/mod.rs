@@ -114,6 +114,8 @@ pub(crate) fn design_feature_family(
         | Kind::Canvas
         | Kind::Decal
         | Kind::BaseMeshFeature
+        | Kind::GenerateFaceGroups
+        | Kind::CombineFaceGroups
         | Kind::WorkPlane
         | Kind::WorkAxis
         | Kind::WorkPoint

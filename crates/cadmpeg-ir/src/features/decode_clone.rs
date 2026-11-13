@@ -196,6 +196,8 @@ rewrite_enum!(FeatureOperation, []; {
     TreeNode { role, children },
     BaseFeature { bodies },
     MeshImport { tessellations },
+    MeshGenerateFaceGroups { source, settings },
+    MeshCombineFaceGroups { source },
     InsertBodies { bodies },
     InsertComponent { occurrence },
     InsertComponents { components },

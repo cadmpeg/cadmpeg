@@ -518,3 +518,5 @@ The extract omits repeated faces, loops, coedges, edges, vertices, points, surfa
 ```sh
 cargo run -p cadmpeg-ir --example emit_cube > cube.cadir.json
 ```
+
+`MeshGenerateFaceGroups` records a mesh source selection and independently optional generation settings: Fast or Accurate method, angle threshold in radians, absolute boundary tolerance in millimetres, and minimum group area as a fraction. Absent settings remain unknown, and stored inactive settings survive. `MeshCombineFaceGroups` records the source selection of groups to combine. Both reuse `MeshSelection`: whole tessellations, a native expression with optional ordered group selectors, or an unavailable source identified by its feature. Feature-owned parameters retain the original expressions, quantities and identities. Saved triangle partitions remain on tessellations. Native selections retain their history state for later resolution.

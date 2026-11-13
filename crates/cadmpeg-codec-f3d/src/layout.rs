@@ -9912,3 +9912,23 @@ pub(crate) mod surface_delete_face_wide_prologue {
     /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REFERENCE_COUNT: usize = 128;
 }
+
+/// Byte offsets for the `mesh_face_groups_scope_prefix` record.
+///
+/// Spec §3.1. Record length 21 B.
+pub(crate) mod mesh_face_groups_scope_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 21;
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+}
+
+/// Byte offsets for the `mesh_face_group_uuid` record.
+///
+/// Spec §3.1. Record length 40 B.
+pub(crate) mod mesh_face_group_uuid {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 40;
+    /// Offset of `text` (`bytes[36]`). Spec §3.1.
+    pub(crate) const TEXT: usize = 4;
+}

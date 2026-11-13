@@ -1963,3 +1963,16 @@ fn refused_assemble_payloads_report_the_retained_scope_loss() {
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].message, "2 native feature scope(s) retain their source envelope without interpreted specialized operation data.");
 }
+#[test]
+fn native_mesh_face_group_sources_remain_incomplete() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    for definition in [
+        serde_json::json!({"definition":"mesh_generate_face_groups", "source":{"native":"mesh"}, "settings":{"method":"fast", "angle_threshold":0.73,"minimum_area_fraction":0.17}}),
+        serde_json::json!({"definition":"mesh_combine_face_groups", "source":{"native":"mesh", "members":["first", "second"]}}),
+    ] {
+        let operation: FeatureOperation = serde_json::from_value(definition).unwrap();
+        assert!(feature_definition_is_incomplete(
+            &FeatureDefinition::Operation(operation)
+        ));
+    }
+}

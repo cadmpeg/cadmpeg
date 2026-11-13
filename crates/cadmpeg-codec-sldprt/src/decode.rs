@@ -1307,6 +1307,8 @@ pub(crate) fn append_design_losses(
                 FeatureOperation::BaseFeature { bodies } => incomplete_body_selection(bodies),
                 FeatureOperation::InsertBodies { bodies } => !bodies.is_resolved(),
                 FeatureOperation::MeshImport { .. } => false,
+                FeatureOperation::MeshGenerateFaceGroups { .. }
+                | FeatureOperation::MeshCombineFaceGroups { .. } => true,
                 FeatureOperation::InsertComponent { occurrence } => !ir
                     .model
                     .occurrences

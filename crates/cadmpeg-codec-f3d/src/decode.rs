@@ -597,6 +597,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(
             FeatureOperation::ReferenceImage { .. } | FeatureOperation::DatumPrincipalPlane { .. },
         ) => false,
+        FeatureDefinition::Operation(FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. }) => true,
         FeatureDefinition::Operation(FeatureOperation::MeshImport { tessellations }) => {
             !matches!(tessellations, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
         }

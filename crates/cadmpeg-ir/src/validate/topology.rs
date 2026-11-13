@@ -3088,7 +3088,26 @@ fn check_feature_references(
             }
             FeatureOperation::SewBodies { bodies, .. } => body_selections.push(bodies),
             FeatureOperation::BaseFeature { bodies } => body_selections.push(bodies),
-            FeatureOperation::MeshImport { tessellations } => {
+            FeatureOperation::MeshGenerateFaceGroups {
+                source: tessellations,
+                ..
+            }
+            | FeatureOperation::MeshCombineFaceGroups {
+                source: tessellations,
+            }
+            | FeatureOperation::MeshImport { tessellations } => {
+                if let crate::features::mesh::MeshSelection::Unresolved { feature: origin } =
+                    tessellations
+                {
+                    if !features.contains(origin.as_str()) {
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "mesh source feature",
+                            origin.as_str(),
+                        );
+                    }
+                }
                 if let crate::features::mesh::MeshSelection::Tessellations(tessellations) =
                     tessellations
                 {
@@ -3100,7 +3119,11 @@ fn check_feature_references(
                             ref_error(
                                 findings,
                                 feature.id.as_str(),
-                                "mesh import tessellation",
+                                if matches!(definition, FeatureOperation::MeshImport { .. }) {
+                                    "mesh import tessellation"
+                                } else {
+                                    "mesh face-group tessellation"
+                                },
                                 tessellation.as_str(),
                             );
                         }
