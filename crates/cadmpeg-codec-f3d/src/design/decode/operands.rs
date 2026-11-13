@@ -6785,6 +6785,9 @@ pub(super) fn parse_face_operand(
         *slot = offset;
         position = offset.checked_add(11)?;
     }
+    if parse_sketch_profile_region_selection(bytes, header.record_index, offsets[0]).is_some() {
+        return None;
+    }
     let stream = native_stream(&scope.id)?;
     let recipe_start = u64::try_from(offsets[3]).ok()?;
     let first_recipe = recipes
