@@ -124,7 +124,7 @@ fn a_symmetric_thicken_adds_the_stored_thickness_on_each_side() {
         else {
             panic!("expected a thicken");
         };
-        (thickness.map(|thickness| thickness.get()), side)
+        (thickness.map(cadmpeg_ir::scalar::PositiveLength::get), side)
     };
     assert_eq!(
         project(true),
