@@ -13,8 +13,7 @@ fn set() -> serde_json::Value {
         "group_record_index": 284,
         "law": {"kind": "chordal", "chord_length_owner_record_index": 295},
         "tangency_weight_owner_record_index": 292,
-        "tangent_chain": true,
-        "curvature_continuity": false
+        "tangent_chain": true
     })
 }
 

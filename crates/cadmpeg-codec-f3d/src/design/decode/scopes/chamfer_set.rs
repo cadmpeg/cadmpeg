@@ -110,9 +110,7 @@ pub(super) fn chamfer_set_list(
     if View::u32_le_at(frame, cursor)? != ENTITY_GUID_CODE_UNITS {
         return None;
     }
-    if entry_sets.iter().any(|set_number| *set_number > count) {
-        return None;
-    }
+    let set_entry_counts = set_entry_counts(&entry_sets, count)?;
     let mut sets = Vec::new();
     for (set_number, (set_record_index, group_record_index)) in
         (1_u32..).zip(set_references.into_iter().zip(group_references))
@@ -124,17 +122,11 @@ pub(super) fn chamfer_set_list(
         {
             return None;
         }
-        let entries = entry_sets
-            .iter()
-            .filter(|entry_set| **entry_set == set_number)
-            .count();
-        if entries == 0 {
-            return None;
-        }
+        let entries = *set_entry_counts.get(usize::try_from(set_number - 1).ok()?)?;
         let set = chamfer_set(
             bytes,
             records,
-            (set_record_index, set_number, u32::try_from(entries).ok()?),
+            (set_record_index, set_number, entries),
             scope,
             parameters,
             parameter_owners,
@@ -153,6 +145,20 @@ pub(super) fn chamfer_set_list(
         entry_count,
         sets,
     })
+}
+
+/// Entries per set, in set-number order, when every entry names a set from
+/// one to `set_count` and every set has at least one entry.
+pub(super) fn set_entry_counts(entry_sets: &[u32], set_count: u32) -> Option<Vec<u32>> {
+    let mut counts = vec![0_u32; usize::try_from(set_count).ok()?.min(entry_sets.len())];
+    if counts.len() != usize::try_from(set_count).ok()? {
+        return None;
+    }
+    for set_number in entry_sets {
+        let slot = counts.get_mut(usize::try_from(set_number.checked_sub(1)?).ok()?)?;
+        *slot = slot.checked_add(1)?;
+    }
+    counts.iter().all(|count| *count > 0).then_some(counts)
 }
 
 /// `count` consecutive distinct marked references from `cursor`.
@@ -212,7 +218,7 @@ const SET_FORMS: [SetForm; 4] = [
     },
     SetForm {
         len: two_distances::LEN,
-        tangent_chain: two_distances::TANGENT_CHAIN,
+        tangent_chain: two_distances::FLAG,
         spec: SpecForm::TwoDistances,
         owners: [
             two_distances::FIRST_DISTANCE_OWNER_REFERENCE,
@@ -228,7 +234,7 @@ const SET_FORMS: [SetForm; 4] = [
     },
     SetForm {
         len: distance_angle::LEN,
-        tangent_chain: distance_angle::TANGENT_CHAIN,
+        tangent_chain: distance_angle::FLAG,
         spec: SpecForm::DistanceAngle,
         owners: [
             distance_angle::DISTANCE_OWNER_REFERENCE,
@@ -244,7 +250,7 @@ const SET_FORMS: [SetForm; 4] = [
     },
     SetForm {
         len: compact::LEN,
-        tangent_chain: compact::TANGENT_CHAIN,
+        tangent_chain: compact::FLAG,
         spec: SpecForm::EqualDistance,
         owners: [compact::DISTANCE_OWNER_REFERENCE, 0],
         owner_count: 1,

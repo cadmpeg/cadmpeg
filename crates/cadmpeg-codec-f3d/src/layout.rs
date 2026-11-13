@@ -710,8 +710,8 @@ pub(crate) mod chamfer_set_equal {
 pub(crate) mod chamfer_set_two_distances {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 93;
-    /// Offset of `tangent_chain` (`u8`). Spec §3.1.
-    pub(crate) const TANGENT_CHAIN: usize = 21;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 21;
     /// Offset of `first_distance_owner_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const FIRST_DISTANCE_OWNER_REFERENCE: usize = 24;
     /// Offset of `second_distance_owner_reference` (`bytes[11]`). Spec §3.1.
@@ -742,8 +742,8 @@ pub(crate) mod chamfer_set_two_distances {
 pub(crate) mod chamfer_set_distance_angle {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 93;
-    /// Offset of `tangent_chain` (`u8`). Spec §3.1.
-    pub(crate) const TANGENT_CHAIN: usize = 21;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 21;
     /// Offset of `angle_owner_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const ANGLE_OWNER_REFERENCE: usize = 23;
     /// Offset of `distance_owner_reference` (`bytes[11]`). Spec §3.1.
@@ -774,8 +774,8 @@ pub(crate) mod chamfer_set_distance_angle {
 pub(crate) mod chamfer_set_compact_equal {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 82;
-    /// Offset of `tangent_chain` (`u8`). Spec §3.1.
-    pub(crate) const TANGENT_CHAIN: usize = 21;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 21;
     /// Offset of `distance_owner_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const DISTANCE_OWNER_REFERENCE: usize = 24;
     /// Offset of `spec_kind` (`u32`, little-endian). Spec §3.1.
@@ -846,8 +846,8 @@ pub(crate) mod fillet_set_chordal {
     pub(crate) const LEN: usize = 97;
     /// Offset of `form_marker` (`u8`). Spec §3.1.
     pub(crate) const FORM_MARKER: usize = 22;
-    /// Offset of `tangent_chain` (`u8`). Spec §3.1.
-    pub(crate) const TANGENT_CHAIN: usize = 26;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 26;
     /// Offset of `chord_length_owner_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const CHORD_LENGTH_OWNER_REFERENCE: usize = 28;
     /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
@@ -870,8 +870,8 @@ pub(crate) mod fillet_set_compact_constant {
     pub(crate) const LEN: usize = 93;
     /// Offset of `form_marker` (`u8`). Spec §3.1.
     pub(crate) const FORM_MARKER: usize = 22;
-    /// Offset of `tangent_chain` (`u8`). Spec §3.1.
-    pub(crate) const TANGENT_CHAIN: usize = 24;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 24;
     /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const EDGE_GROUP_REFERENCE: usize = 27;
     /// Offset of `radius_owner_reference` (`bytes[11]`). Spec §3.1.

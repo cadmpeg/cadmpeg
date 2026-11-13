@@ -544,3 +544,40 @@ fn rolling_ball_corner_and_curvature_continuity_read_from_their_bytes() {
         None
     );
 }
+
+#[test]
+fn a_nonzero_byte_25_rejects_the_chordal_and_compact_forms() {
+    for (fixture, law_kind) in [
+        (
+            Fixture {
+                set_form: Form::Chordal,
+                ..Fixture::default()
+            },
+            "ChordLen",
+        ),
+        (
+            Fixture {
+                prologue_one: true,
+                compact_run: true,
+                set_form: Form::Compact,
+                ..Fixture::default()
+            },
+            "Radius",
+        ),
+    ] {
+        let (mut bytes, scope) = stream(&fixture);
+        let set_start =
+            crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
+        bytes[set_start + 25] = 1;
+        let (law_parameter, law_owner) = owned(LAW_OWNER, law_kind);
+        let (tangency_parameter, tangency_owner) = owned(TANGENCY_OWNER, "TangencyWeight");
+        assert!(fillet_set_list(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &[law_parameter, tangency_parameter],
+            &[law_owner, tangency_owner],
+        )
+        .is_none());
+    }
+}

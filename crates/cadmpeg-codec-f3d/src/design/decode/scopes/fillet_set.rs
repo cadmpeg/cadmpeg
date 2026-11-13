@@ -171,7 +171,7 @@ const SET_FORMS: [SetForm; 3] = [
     SetForm {
         len: chordal::LEN,
         marker: chordal::FORM_MARKER,
-        tangent_chain: chordal::TANGENT_CHAIN,
+        tangent_chain: chordal::FLAG,
         curvature: None,
         group: chordal::EDGE_GROUP_REFERENCE,
         law: (chordal::CHORD_LENGTH_OWNER_REFERENCE, LawRole::ChordLength),
@@ -181,7 +181,7 @@ const SET_FORMS: [SetForm; 3] = [
     SetForm {
         len: compact::LEN,
         marker: compact::FORM_MARKER,
-        tangent_chain: compact::TANGENT_CHAIN,
+        tangent_chain: compact::FLAG,
         curvature: None,
         group: compact::EDGE_GROUP_REFERENCE,
         law: (compact::RADIUS_OWNER_REFERENCE, LawRole::Radius),

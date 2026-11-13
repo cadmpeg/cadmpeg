@@ -289,6 +289,7 @@ fn each_unadmitted_byte_rejects_the_set_list() {
         (20, 2),
         (21, 4),
         (39, 2),
+        (40, 1),
         (25, 2),
         (31, 3),
         (39, 0),
@@ -478,4 +479,13 @@ fn corner_type_and_tangent_chain_read_from_their_bytes() {
         assert_eq!(list.corner_type, corner_type);
         assert!(!list.sets[0].tangent_chain);
     }
+}
+
+#[test]
+fn every_entry_names_a_set_and_every_set_has_an_entry() {
+    use super::super::chamfer_set::set_entry_counts;
+    assert_eq!(set_entry_counts(&[1, 2, 2], 2), Some(vec![1, 2]));
+    assert_eq!(set_entry_counts(&[1, 1], 2), None);
+    assert_eq!(set_entry_counts(&[1, 3], 2), None);
+    assert_eq!(set_entry_counts(&[0, 1], 1), None);
 }

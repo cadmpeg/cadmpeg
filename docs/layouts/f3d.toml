@@ -1689,11 +1689,11 @@ source = "spec"
 anchor = "Every byte that the form does not name is zero"
 
 [[record.field]]
-name = "tangent_chain"
+name = "flag"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "`+21: u8 tangent chain`"
+anchor = "`+21: u8 flag`"
 
 [[record.field]]
 name = "zero_run_2_at_22"
@@ -1805,11 +1805,11 @@ source = "spec"
 anchor = "Every byte that the form does not name is zero"
 
 [[record.field]]
-name = "tangent_chain"
+name = "flag"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "`+21: u8 tangent chain`"
+anchor = "`+21: u8 flag`"
 
 [[record.field]]
 name = "zero_run_1_at_22"
@@ -1928,11 +1928,11 @@ source = "spec"
 anchor = "Every byte that the form does not name is zero"
 
 [[record.field]]
-name = "tangent_chain"
+name = "flag"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "`+21: u8 tangent chain`"
+anchor = "`+21: u8 flag`"
 
 [[record.field]]
 name = "zero_run_2_at_22"
@@ -2178,7 +2178,7 @@ name = "form_marker"
 offset = 22
 type = "u8"
 source = "spec"
-anchor = "`+22: u8 1`; `+26: u8 tangent chain`"
+anchor = "`+22: u8 1`; `+26: u8 flag`"
 value = 1
 
 [[record.field]]
@@ -2189,11 +2189,11 @@ source = "spec"
 anchor = "Every byte that the form does not name is zero"
 
 [[record.field]]
-name = "tangent_chain"
+name = "flag"
 offset = 26
 type = "u8"
 source = "spec"
-anchor = "`+26: u8 tangent chain`"
+anchor = "`+26: u8 flag`"
 
 [[record.field]]
 name = "zero_run_1_at_27"
@@ -2272,7 +2272,7 @@ name = "form_marker"
 offset = 22
 type = "u8"
 source = "spec"
-anchor = "`+22: u8 1`; `+24: u8 tangent chain`"
+anchor = "`+22: u8 1`; `+24: u8 flag`"
 value = 1
 
 [[record.field]]
@@ -2283,11 +2283,11 @@ source = "spec"
 anchor = "Every byte that the form does not name is zero"
 
 [[record.field]]
-name = "tangent_chain"
+name = "flag"
 offset = 24
 type = "u8"
 source = "spec"
-anchor = "`+24: u8 tangent chain`"
+anchor = "`+24: u8 flag`"
 
 [[record.field]]
 name = "zero_run_2_at_25"
