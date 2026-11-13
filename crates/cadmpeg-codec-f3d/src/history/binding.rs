@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::{Duration, Instant};
 
 mod indexed;
+pub(crate) mod transition_geometry;
 use indexed::IndexedTopology;
 
 /// Local work cap for historical topology binding, in history records
@@ -133,10 +134,12 @@ pub(crate) fn bind(
                 topology: &newer_rows,
                 versions: &newer_versions,
             };
-            let Some(transition) = transition_for_changes(older, new, &changed) else {
+            let Some(mut transition) = transition_for_changes(older, new, &changed) else {
                 complete = false;
                 return;
             };
+            transition.geometry_unchanged =
+                transition_geometry::unchanged(&transition, older.versions, new.versions, &archive);
             transitions.push((index, transition));
         } else {
             if binder.update(&changed, versions).is_none() {

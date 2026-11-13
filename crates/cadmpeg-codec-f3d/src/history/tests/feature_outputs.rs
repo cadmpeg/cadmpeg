@@ -1882,3 +1882,5 @@ mod edge_midpoints;
 mod saved_edges;
 mod split_plane;
 mod stored_results;
+
+mod transition_geometry;
