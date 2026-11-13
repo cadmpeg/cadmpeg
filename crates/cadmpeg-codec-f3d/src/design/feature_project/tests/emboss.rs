@@ -458,3 +458,32 @@ fn missing_and_conflicting_display_units_keep_native_scalar_values() {
         assert_eq!(properties.get(key).map(String::as_str), Some(expected));
     }
 }
+
+#[test]
+fn repeated_links_to_the_same_parameter_keep_one_known_depth() {
+    let scope = construction_scope("f3d:Design/BulkStream.dat:scope#32", 32);
+    let depth = parse_design_parameter_record(&parameter_record(
+        Some(90),
+        "2 mm",
+        "Depth",
+        Some("mm"),
+        "d7",
+        0.2,
+    ))
+    .unwrap();
+    let parameters = [(0, &depth), (1, &depth)];
+    let definition = project_emboss(&scope, &parameters, &[], &[], &[], &mut Vec::new()).unwrap();
+    assert!(
+        matches!(definition, FeatureDefinition::Operation(FeatureOperation::Wrap { mode: WrapMode::Emboss {depth}, .. }) if depth == PositiveLength::new(2.0).unwrap())
+    );
+    let properties =
+        scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &parameters).unwrap();
+    assert_eq!(
+        properties.get("emboss:scalar:Depth:mm").map(String::as_str),
+        Some("2")
+    );
+    assert_eq!(
+        properties.get("parameter:d7").map(String::as_str),
+        Some("2 mm")
+    );
+}

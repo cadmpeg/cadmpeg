@@ -8104,7 +8104,7 @@ fn emboss_parameter<'b>(
                 && parameter.owner_record_index() == Some(reference)
         });
         if let Some((_, parameter)) = named.next() {
-            if named.next().is_none() {
+            if named.all(|(_, next)| next == parameter) {
                 return Some(parameter);
             }
         }
@@ -8114,7 +8114,7 @@ fn emboss_parameter<'b>(
         .filter(|(_, parameter)| parameter.source_kind_str() == source_kind)
         .map(|(_, parameter)| *parameter);
     let parameter = matching.next()?;
-    matching.next().is_none().then_some(parameter)
+    matching.all(|next| next == parameter).then_some(parameter)
 }
 
 fn emboss_group<'a>(
