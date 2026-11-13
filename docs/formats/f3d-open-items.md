@@ -68,17 +68,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The decoder checks that the u32 is nonzero, that the 93-byte tail repeats it, and that the final marked reference is present.
 
-### DR-106. Hole extent leading word
+### DR-461. Hole tap types above 2
 
-**Question.** What does the u32 word before the Hole extent controls in type versions 5 and 7 encode?
+**Question.** Which hole settings do Hole tap-type values other than `0`, `1`, and `2` encode?
 
-**Known.** Type versions 3 and 4 omit the word, and type version 3 omits the extent control. The word can be nonzero on Distance and non-distance holes.
+**Known.** `f3d.md` §3.1 "Type versions `5` and `7` store a u32 tap type" gives the settled values. The decoder retains any other value in the extent's `leading_word` and the `hole:extent_leading_word` source property, and reports `feature.hole-extent-leading-word-assumed` for the reading that the stored scalar geometry remains independent of it.
 
-**Need.** Controlled Holes of type version 5 or 7 that vary the hole, tap, and position settings independently and bind each word value to one setting.
+**Need.** A controlled taper-tapped Hole, and the setting that writes the word value seen in one System76 chassis Hole.
 
 **Conflict.** None.
-
-**Note.** The decoder retains the word on the native extent and in Hole source properties. A nonzero word reports `feature.hole-extent-leading-word-assumed` for the reading that the stored scalar geometry remains independent of it.
 
 ### DR-220. Hole carrier placement forms
 

@@ -7497,6 +7497,30 @@ fn project_rectangular_pattern_scalars(
     }))
 }
 
+/// Tap type of a simple Hole.
+const HOLE_TAP_SIMPLE: u32 = 0;
+/// Tap type of a clearance Hole.
+const HOLE_TAP_CLEARANCE: u32 = 1;
+/// Tap type of a tapped Hole.
+const HOLE_TAP_TAPPED: u32 = 2;
+
+/// The loss a Hole with tap type `tap_type` reports: none for simple and
+/// clearance holes, which model their stored diameter.
+pub(super) fn hole_tap_type_loss(
+    scope_id: &str,
+    tap_type: u32,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    match tap_type {
+        HOLE_TAP_SIMPLE | HOLE_TAP_CLEARANCE => None,
+        HOLE_TAP_TAPPED => Some(crate::loss::F3dLossCode::HoleTappedDiameterStored.note(format!(
+            "Tapped Hole {scope_id} keeps its stored HoleDiameter; Fusion models the bore diameter that its thread size gives."
+        ))),
+        other => Some(crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed.note(format!(
+            "Hole {scope_id} assumes its scalar geometry is independent of tap type {other} (DR-461)."
+        ))),
+    }
+}
+
 pub(super) fn project_fixed_sweep(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
@@ -8166,10 +8190,12 @@ fn project_hole(
         )));
     }
     if let Some(extent) = scope.hole_extent() {
-        if let Some(word) = extent.leading_word.as_ref().filter(|word| word.value != 0) {
-            losses.push(crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed.note(format!(
-                "Hole {} assumes its scalar geometry is independent of extent leading word {} (DR-106).", scope.id, word.value
-            )));
+        if let Some(loss) = extent
+            .leading_word
+            .as_ref()
+            .and_then(|word| hole_tap_type_loss(&scope.id, word.value))
+        {
+            losses.push(loss);
         }
         if extent.standard.is_some() {
             losses.push(crate::loss::F3dLossCode::HoleStandardSizingAssumed.note(format!(
