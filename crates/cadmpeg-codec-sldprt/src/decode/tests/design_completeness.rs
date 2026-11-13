@@ -20,6 +20,53 @@ use cadmpeg_ir::{
 use std::collections::BTreeMap;
 
 #[test]
+fn surface_untrim_requires_resolved_faces_loops_and_distance() {
+    use cadmpeg_ir::features::UntrimLoops;
+    let face = FaceSelection::Faces(vec![
+        cadmpeg_ir::ids::FaceId::mint("synthetic:test:face#1").unwrap()
+    ]);
+    let edge = EdgeSelection::Edges(vec![EdgeId::mint("synthetic:test:edge#1").unwrap()]);
+    for (loops, extension, incomplete) in [
+        (UntrimLoops::Unresolved, Length::new(3.0), true),
+        (UntrimLoops::All, None, true),
+        (
+            UntrimLoops::Selected {
+                edges: EdgeSelection::Native("native:loops".into()),
+            },
+            Length::new(3.0),
+            true,
+        ),
+        (
+            UntrimLoops::Selected { edges: edge },
+            Length::new(-3.0),
+            false,
+        ),
+    ] {
+        let mut ir = CadIr::empty();
+        let definition = FeatureDefinition::Operation(FeatureOperation::UntrimSurface {
+            faces: face.clone(),
+            loops,
+            extension,
+        });
+        ir.model.features.push(serde_json::from_value(serde_json::json!({
+            "id": "synthetic:test:feature#untrim", "ordinal": 0, "suppressed": false, "definition": definition
+        })).unwrap());
+        let mut report = super::empty_report(true);
+        append_design_losses(
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            &mut report,
+        )
+        .unwrap();
+        assert_eq!(
+            report.losses.iter().any(|loss| loss.message
+                == "1 typed feature(s) retain native or unresolved required operation operands."),
+            incomplete
+        );
+    }
+}
+
+#[test]
 fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
     let mut ir = CadIr::empty();
     let feature = |id: &str, ordinal, definition| Feature {

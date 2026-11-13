@@ -21,7 +21,7 @@ use super::{
     SketchPointSelection, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion,
     SketchProfileRegions, SplitBodyTool, SplitFacePlanes, SplitFaceTool, SurfaceBoundary,
     SweepGuideRail, SweepOrientation, SweepSection, SweepShape, ThreePointSelection, TreeChildren,
-    TrimBodyOperands, TrimCellSelection, TrimRegion, VertexSelection,
+    TrimBodyOperands, TrimCellSelection, TrimRegion, UntrimLoops, VertexSelection,
 };
 
 rewrite_enum!(AngularTermination, []; {
@@ -270,6 +270,7 @@ rewrite_enum!(FeatureOperation, []; {
     FilledSurface { boundary, support_faces, continuity, merge_result, interior_constraints, reverse_normal },
     TrimSurface { faces, tool, keep },
     ExtendSurface { faces, distance, method },
+    UntrimSurface { faces, loops, extension },
     RuledSurface { edges, support_faces, mode, angle, alternate_face, corner },
     Draft { faces, anchor, angle, outward, second_side },
     Combine { operands, op, keep_tools },
@@ -528,6 +529,14 @@ rewrite_enum!(SplitFaceTool, []; {
     Path(field0),
     Plane { plane },
     Planes { planes },
+});
+
+rewrite_enum!(UntrimLoops, []; {
+    Unresolved,
+    All,
+    Internal,
+    External,
+    Selected { edges },
 });
 
 rewrite_enum!(SurfaceBoundary, []; {

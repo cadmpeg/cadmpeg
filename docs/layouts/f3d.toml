@@ -20340,6 +20340,35 @@ source = "spec"
 anchor = "The bytes from indexed-header offset 11 through 20 are zero"
 
 [[record]]
+name = "surface_untrim_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "The SurfaceUntrim prologue"
+size = 25
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/surfaces.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The SurfaceUntrim prologue"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes"
+
+[[record.field]]
+name = "loop_group_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "u32 loop-group count"
+
+[[record]]
 name = "surface_patch_boundary_settings_prefix"
 kind = "byte"
 section = "3.1"

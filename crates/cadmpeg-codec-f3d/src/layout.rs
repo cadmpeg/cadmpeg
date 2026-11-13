@@ -6161,6 +6161,16 @@ pub(crate) mod placement_indexed_prefix {
     pub(crate) const ZERO_PREFIX: usize = 11;
 }
 
+/// Byte offsets for the `surface_untrim_prologue` record.
+///
+/// Spec §3.1. Record length 25 B.
+pub(crate) mod surface_untrim_prologue {
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `loop_group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LOOP_GROUP_COUNT: usize = 21;
+}
+
 /// Byte offsets for the `surface_patch_boundary_settings_prefix` record.
 ///
 /// Spec §3.1. Record length 38 B.

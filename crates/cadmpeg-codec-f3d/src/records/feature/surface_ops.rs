@@ -46,12 +46,46 @@ pub(crate) struct DesignSurfaceExtendOperation {
 pub(crate) struct DesignSurfaceUntrimOperation {
     pub(crate) loops: DesignSurfaceUntrimLoops,
     pub(crate) loops_offset: u64,
-    pub(crate) extension: FiniteReal,
-    pub(crate) extension_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_untrim_extension"
+    )]
+    pub(crate) extension: Option<FiniteReal>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_untrim_extension_offset"
+    )]
+    pub(crate) extension_offset: Option<u64>,
     pub(crate) extension_record_index: u32,
     pub(crate) face_group_record_index: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) loop_group_record_indices: Vec<u32>,
+    pub(crate) padded: bool,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_untrim_extension, FiniteReal, "extension");
+cadmpeg_core::named_optional_field!(deserialize_untrim_extension_offset, u64, "extension_offset");
+
+impl DesignSurfaceUntrimOperation {
+    pub(crate) fn new(
+        loops: DesignSurfaceUntrimLoops,
+        loops_offset: u64,
+        extension_record_index: u32,
+        face_group_record_index: u32,
+    ) -> Self {
+        Self {
+            loops,
+            loops_offset,
+            extension: None,
+            extension_offset: None,
+            extension_record_index,
+            face_group_record_index,
+            loop_group_record_indices: Vec::new(),
+            padded: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

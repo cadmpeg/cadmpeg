@@ -6213,6 +6213,19 @@ Class members follow this 21-byte prefix. Version 4 admits marked and unmarked m
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is |
 | 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | The bytes from indexed-header offset 11 through 20 are zero |
 
+## `surface_untrim_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/surfaces.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The SurfaceUntrim prologue |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | ten zero bytes |
+| 21 | 4 | `loop_group_count` | `u32` | little | spec | u32 loop-group count |
+
 ## `surface_patch_boundary_settings_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 38 B

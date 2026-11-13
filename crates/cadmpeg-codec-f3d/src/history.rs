@@ -3552,6 +3552,25 @@ pub(crate) fn bind_feature_face_selections(
                     );
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::UntrimSurface { faces, .. },
+                ) => {
+                    selection::bind_face_selection(
+                        faces,
+                        scope,
+                        groups,
+                        operands,
+                        &transition.topology.faces.updated,
+                    );
+                    selection::bind_body_recipe_face_selection(
+                        faces,
+                        feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                }
+                cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Shell {
                         removed_faces,
                         thickness: Some(thickness),

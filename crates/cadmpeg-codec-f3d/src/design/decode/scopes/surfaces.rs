@@ -75,28 +75,109 @@ const MARKED_REFERENCE_LEN: usize = 11;
 const U32_LEN: usize = 4;
 
 pub(super) fn exact_surface_untrim_operation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignSurfaceUntrimOperation> {
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Option<DesignSurfaceUntrimOperation>, CodecError> {
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim {
-        return None;
+        return Ok(None);
     }
+    let Some(frame) = surface_untrim_frame(bytes, scope) else {
+        return Ok(None);
+    };
+    let Some(count) = View::over_retained(frame.groups).counted(
+        u64_from_index(frame.groups.len() / MARKED_REFERENCE_LEN),
+        MARKED_REFERENCE_LEN,
+    ) else {
+        return Ok(None);
+    };
+    let mut operation = DesignSurfaceUntrimOperation::new(
+        frame.loops,
+        u64_from_index(frame.loops_offset),
+        frame.extension_record_index,
+        frame.face_group_record_index,
+    );
+    operation.padded = frame.padded;
+    operation.loop_group_record_indices =
+        ctx.alloc_filled(count.get(), 0u32, "F3D untrim loop references")?;
+    for (target, chunk) in operation
+        .loop_group_record_indices
+        .iter_mut()
+        .zip(frame.groups.chunks_exact(MARKED_REFERENCE_LEN))
+    {
+        let Some(reference) = marked_record_reference(chunk, 0) else {
+            return Ok(None);
+        };
+        *target = reference;
+    }
+    let mut owners =
+        records
+            .frames(frame.extension_record_index)
+            .filter_map(|(frame_start, frame_end)| {
+                let owner = parse_parameter_owner(bytes.get(frame_start..frame_end)?)?;
+                (owner.record_index == frame.extension_record_index
+                    && owner.scope_record_index == scope.record_index
+                    && owner.local_ordinal == 0)
+                    .then_some(())?;
+                let offset = owner
+                    .evaluated_value_offset
+                    .absolute(u64_from_index(frame_start))?;
+                Some((owner.evaluated_value, offset))
+            });
+    if let (Some((extension, offset)), None) = (owners.next(), owners.next()) {
+        operation.extension = Some(extension);
+        operation.extension_offset = Some(offset);
+    } else {
+        losses.push(crate::loss::F3dLossCode::SurfaceUntrimExtensionUnresolved.note(format!(
+            "SurfaceUntrim {} retains extension reference {} because its numeric owner is missing, ambiguous or inconsistent (DR-491).",
+            scope.id, frame.extension_record_index
+        )));
+    }
+    if !frame.padded {
+        losses.push(crate::loss::F3dLossCode::SurfaceUntrimPaddingAssumed.note(format!(
+            "SurfaceUntrim {} reads the uniquely closed unpadded reference runs as the same loop-removal frame (DR-490).", scope.id
+        )));
+    }
+    Ok(Some(operation))
+}
+
+struct SurfaceUntrimFrame<'a> {
+    groups: &'a [u8],
+    extension_record_index: u32,
+    loops: DesignSurfaceUntrimLoops,
+    loops_offset: usize,
+    face_group_record_index: u32,
+    padded: bool,
+}
+
+fn surface_untrim_frame<'a>(
+    bytes: &'a [u8],
+    scope: &DesignParameterScope,
+) -> Option<SurfaceUntrimFrame<'a>> {
+    let prefix_end = usize::try_from(scope.reference_count_offset()).ok()?;
+    let bytes = bytes.get(..prefix_end)?;
     let start = usize::try_from(scope.byte_offset()).ok()?;
+    let count_at = start.checked_add(untrim::LOOP_GROUP_COUNT)?;
     if bytes
-        .get(start + untrim::ZERO_RUN..start + untrim::LOOP_GROUP_COUNT)?
+        .get(start.checked_add(untrim::ZERO_RUN)?..count_at)?
         .iter()
         .any(|byte| *byte != 0)
     {
         return None;
     }
-    let loop_group_count = View::u32_le_at(bytes, start + untrim::LOOP_GROUP_COUNT)?;
-    let mut cursor = start + untrim::LEN;
-    let mut loop_group_record_indices = Vec::new();
-    for _ in 0..loop_group_count {
-        loop_group_record_indices.push(marked_record_reference(bytes, cursor)?);
-        cursor = cursor.checked_add(MARKED_REFERENCE_LEN)?;
+    let mut view = View::over_retained(bytes.get(count_at..)?);
+    let count = view.u32_le()?;
+    let count = view.counted(u64::from(count), MARKED_REFERENCE_LEN)?.get();
+    let groups = view.take(count.checked_mul(MARKED_REFERENCE_LEN)?)?;
+    if groups
+        .chunks_exact(MARKED_REFERENCE_LEN)
+        .any(|chunk| marked_record_reference(chunk, 0).is_none())
+    {
+        return None;
     }
+    let mut cursor = count_at.checked_add(view.position())?;
     let extension_record_index = marked_record_reference(bytes, cursor)?;
     cursor = cursor.checked_add(MARKED_REFERENCE_LEN)?;
     let loops_offset = cursor;
@@ -108,57 +189,34 @@ pub(super) fn exact_surface_untrim_operation(
         _ => return None,
     };
     cursor = cursor.checked_add(U32_LEN)?;
-    let face_group_record_index = [cursor, cursor.checked_add(U32_LEN)?]
+    let mut endings = [cursor, cursor.checked_add(U32_LEN)?]
         .into_iter()
-        .filter(|runs_at| {
-            *runs_at == cursor || View::u32_le_at(bytes, cursor).is_some_and(|word| word == 0)
-        })
-        .find_map(|runs_at| untrim_face_group_reference(bytes, runs_at, scope))?;
+        .filter(|at| *at == cursor || View::u32_le_at(bytes, cursor) == Some(0))
+        .filter_map(|at| untrim_face_group_reference(bytes, at).map(|group| (group, at != cursor)));
+    let (Some((face_group_record_index, padded)), None) = (endings.next(), endings.next()) else {
+        return None;
+    };
     let mut references = scope.reference_members().values().copied();
     if references.next() != Some(extension_record_index)
         || references.next() != Some(face_group_record_index)
     {
         return None;
     }
-    for loop_group in &loop_group_record_indices {
-        references
-            .by_ref()
-            .find(|reference| reference == loop_group)?;
+    for chunk in groups.chunks_exact(MARKED_REFERENCE_LEN) {
+        let group = marked_record_reference(chunk, 0)?;
+        references.by_ref().find(|reference| *reference == group)?;
     }
-    let mut owners =
-        records
-            .frames(extension_record_index)
-            .filter_map(|(frame_start, frame_end)| {
-                let owner = parse_parameter_owner(bytes.get(frame_start..frame_end)?)?;
-                (owner.record_index == extension_record_index
-                    && owner.scope_record_index == scope.record_index
-                    && owner.local_ordinal == 0)
-                    .then_some(())?;
-                let offset = owner
-                    .evaluated_value_offset
-                    .absolute(u64::try_from(frame_start).ok()?)?;
-                Some((owner.evaluated_value, offset))
-            });
-    let (extension, extension_offset) = owners.next()?;
-    if owners.next().is_some() || extension.get() < 0.0 {
-        return None;
-    }
-    Some(DesignSurfaceUntrimOperation {
+    Some(SurfaceUntrimFrame {
+        groups,
         loops,
-        loops_offset: u64_from_index(loops_offset),
-        extension,
-        extension_offset,
+        loops_offset,
         extension_record_index,
         face_group_record_index,
-        loop_group_record_indices,
+        padded,
     })
 }
 
-fn untrim_face_group_reference(
-    bytes: &[u8],
-    runs_at: usize,
-    scope: &DesignParameterScope,
-) -> Option<u32> {
+fn untrim_face_group_reference(bytes: &[u8], runs_at: usize) -> Option<u32> {
     if View::u32_le_at(bytes, runs_at)? != 0
         || View::u32_le_at(bytes, runs_at.checked_add(U32_LEN)?)? != 0
         || View::u32_le_at(bytes, runs_at.checked_add(2 * U32_LEN)?)? != 1
@@ -169,9 +227,7 @@ fn untrim_face_group_reference(
     let face_group = marked_record_reference(bytes, reference_at)?;
     let guid_end = fixed_guid_end(bytes, reference_at.checked_add(MARKED_REFERENCE_LEN)?)?;
     let table_at = guid_end.checked_add(3)?;
-    (bytes.get(guid_end..table_at)? == [0; 3]
-        && u64_from_index(table_at) == scope.reference_count_offset())
-    .then_some(face_group)
+    (bytes.get(guid_end..table_at)? == [0; 3] && table_at == bytes.len()).then_some(face_group)
 }
 
 pub(super) fn exact_surface_offset_operation(

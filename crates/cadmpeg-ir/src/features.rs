@@ -3685,15 +3685,15 @@ pub enum FeatureOperation {
         /// Geometric continuation law.
         method: SurfaceExtension,
     },
-    /// Removes trim loops from selected surface faces.
+    #[doc = "Removes trim loops from selected surface faces."]
     UntrimSurface {
-        /// Surface faces whose trim loops are removed.
+        #[doc = "Surface faces whose trim loops are removed."]
         faces: FaceSelection,
-        /// Trim loops removed from the selected faces.
+        #[doc = "Trim loops removed from the selected faces."]
         loops: UntrimLoops,
-        /// Extension of the untrimmed boundary in canonical millimeters.
+        #[doc = "Signed exterior-boundary extension in canonical millimeters."]
         #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
-        extension: Option<NonNegativeLength>,
+        extension: Option<Length>,
     },
     /// Ruled surface grown from selected boundary edges.
     RuledSurface {
@@ -4183,6 +4183,15 @@ pub enum UnresolvedFamily {
 }
 
 impl FeatureOperation {
+    #[doc = "Construct a surface untrim with unresolved loop and extension settings."]
+    pub fn untrim_surface(faces: FaceSelection) -> Self {
+        Self::UntrimSurface {
+            faces,
+            loops: UntrimLoops::Unresolved,
+            extension: None,
+        }
+    }
+
     #[doc = "Construct a component-transfer operation from its readable operands."]
     pub fn component_transfer(
         mode: ComponentTransferMode,
@@ -4253,6 +4262,7 @@ impl FeatureOperation {
             Self::Loft { .. } => Some("loft"),
             Self::TrimSurface { .. } => Some("trim surface"),
             Self::ExtendSurface { .. } => Some("extend surface"),
+            Self::UntrimSurface { .. } => Some("untrim surface"),
             Self::RuledSurface { .. } => Some("ruled surface"),
             Self::Hole { .. } => Some("hole"),
             Self::Rib { .. } => Some("rib"),
@@ -5945,23 +5955,23 @@ pub enum SurfaceExtension {
     Perpendicular,
 }
 
-/// Trim loops removed by a surface untrim.
+#[doc = "Trim loops removed by a surface untrim."]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum UntrimLoops {
-    /// Loop choice is unresolved.
+    #[doc = "Loop choice is unresolved."]
     Unresolved,
-    /// Every trim loop of each selected face.
+    #[doc = "Every trim loop of each selected face."]
     All,
-    /// The interior trim loops of each selected face.
+    #[doc = "The interior trim loops of each selected face."]
     Internal,
-    /// The exterior trim loop of each selected face.
+    #[doc = "The exterior trim loop of each selected face."]
     External,
-    /// The selected trim loops.
+    #[doc = "The selected trim loops."]
     Selected {
-        /// Edges of the selected trim loops.
+        #[doc = "Edges of the selected trim loops."]
         edges: EdgeSelection,
     },
 }

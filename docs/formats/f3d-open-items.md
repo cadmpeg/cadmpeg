@@ -2003,6 +2003,26 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** None.
 
+### DR-490. SurfaceUntrim retained groups and prefix variants
+
+**Question.** How do stored manual-loop groups affect a nonmanual loop choice, and which selection does an incomplete group definition denote?
+
+**Known.** `f3d.md` §3.1 "A `SurfaceUntrim` scope removes trim loops" defines the loop choices and the ordered face and loop-group references. A nonmanual choice can retain loop-group references. The primary prefix closes at the ordered-reference count.
+
+**Need.** Saves that change the loop choice while retaining selected loops, complete definitions for each referenced group, and a save with the unpadded closed prefix.
+
+**Note.** `feature.surface-untrim-stored-loop-groups-assumed` reads stored groups alongside a nonmanual choice as inactive selections. `feature.surface-untrim-loop-groups-aggregated-assumed` represents multiple manual groups by their scope expression. `feature.surface-untrim-group-selection-assumed` retains a scope expression for missing, ambiguous or inconsistent groups. `feature.surface-untrim-padding-assumed` admits uniquely closed unpadded runs. `feature.surface-untrim-frame-assumed` projects the operation with unresolved settings when its prefix has no closed reading.
+
+### DR-491. SurfaceUntrim signed extension and missing scalar definitions
+
+**Question.** Does a negative evaluated extension contract the exterior boundary, and which scalar definition applies when a referenced owner is incomplete or duplicated?
+
+**Known.** The extension reference names a numeric owner of local ordinal zero in the same scope. Its evaluated scalar is finite and expressed in centimetres. Extension applies when an exterior boundary is removed.
+
+**Need.** A save with negative extension and its resulting boundary, and complete owner definitions for ambiguous extension references.
+
+**Note.** `feature.surface-untrim-negative-extension-assumed` retains a negative scalar as signed neutral extension. `feature.surface-untrim-extension-unresolved` preserves the parsed frame when its scalar owner does not resolve uniquely. `feature.surface-untrim-extension-unrepresentable` retains the native value when its millimetre conversion overflows.
+
 ### DR-311. Extension method of a SurfaceExtend scope
 
 **Question.** Which field of a `SurfaceExtend` scope stores the extension method, and which records can the trailing reference of a SurfaceExtend or boundary-carrier SurfaceOffset group name?

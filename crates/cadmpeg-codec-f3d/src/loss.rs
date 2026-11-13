@@ -457,7 +457,12 @@ pub(crate) enum F3dLossCode {
     FeatureReverseNormalBodyUnverified,
     SurfaceUntrimFrameAssumed,
     SurfaceUntrimGroupSelectionAssumed,
-    SurfaceUntrimLoopTypeAssumed,
+    SurfaceUntrimStoredLoopGroupsAssumed,
+    SurfaceUntrimLoopGroupsAggregatedAssumed,
+    SurfaceUntrimExtensionUnresolved,
+    SurfaceUntrimExtensionUnrepresentable,
+    SurfaceUntrimNegativeExtensionAssumed,
+    SurfaceUntrimPaddingAssumed,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
     /// A Combine frame that matches the fixed fields of the operand-list
@@ -955,7 +960,12 @@ impl F3dLossCode {
         Self::FeatureReverseNormalBodyUnverified,
         Self::SurfaceUntrimFrameAssumed,
         Self::SurfaceUntrimGroupSelectionAssumed,
-        Self::SurfaceUntrimLoopTypeAssumed,
+        Self::SurfaceUntrimStoredLoopGroupsAssumed,
+        Self::SurfaceUntrimLoopGroupsAggregatedAssumed,
+        Self::SurfaceUntrimExtensionUnresolved,
+        Self::SurfaceUntrimExtensionUnrepresentable,
+        Self::SurfaceUntrimNegativeExtensionAssumed,
+        Self::SurfaceUntrimPaddingAssumed,
         Self::FeatureCombineSelectionNative,
         Self::FeatureCombinePrologueAssumed,
         Self::FeatureCombineOperandListRefused,
@@ -1390,7 +1400,20 @@ impl F3dLossCode {
             Self::SurfaceUntrimGroupSelectionAssumed => {
                 "feature.surface-untrim-group-selection-assumed"
             }
-            Self::SurfaceUntrimLoopTypeAssumed => "feature.surface-untrim-loop-type-assumed",
+            Self::SurfaceUntrimStoredLoopGroupsAssumed => {
+                "feature.surface-untrim-stored-loop-groups-assumed"
+            }
+            Self::SurfaceUntrimLoopGroupsAggregatedAssumed => {
+                "feature.surface-untrim-loop-groups-aggregated-assumed"
+            }
+            Self::SurfaceUntrimExtensionUnresolved => "feature.surface-untrim-extension-unresolved",
+            Self::SurfaceUntrimExtensionUnrepresentable => {
+                "feature.surface-untrim-extension-unrepresentable"
+            }
+            Self::SurfaceUntrimNegativeExtensionAssumed => {
+                "feature.surface-untrim-negative-extension-assumed"
+            }
+            Self::SurfaceUntrimPaddingAssumed => "feature.surface-untrim-padding-assumed",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
@@ -1809,7 +1832,12 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalBodyUnverified
             | Self::SurfaceUntrimFrameAssumed
             | Self::SurfaceUntrimGroupSelectionAssumed
-            | Self::SurfaceUntrimLoopTypeAssumed
+            | Self::SurfaceUntrimStoredLoopGroupsAssumed
+            | Self::SurfaceUntrimLoopGroupsAggregatedAssumed
+            | Self::SurfaceUntrimExtensionUnresolved
+            | Self::SurfaceUntrimExtensionUnrepresentable
+            | Self::SurfaceUntrimNegativeExtensionAssumed
+            | Self::SurfaceUntrimPaddingAssumed
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
@@ -2133,7 +2161,12 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalBodyUnverified
             | Self::SurfaceUntrimFrameAssumed
             | Self::SurfaceUntrimGroupSelectionAssumed
-            | Self::SurfaceUntrimLoopTypeAssumed
+            | Self::SurfaceUntrimStoredLoopGroupsAssumed
+            | Self::SurfaceUntrimLoopGroupsAggregatedAssumed
+            | Self::SurfaceUntrimExtensionUnresolved
+            | Self::SurfaceUntrimExtensionUnrepresentable
+            | Self::SurfaceUntrimNegativeExtensionAssumed
+            | Self::SurfaceUntrimPaddingAssumed
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
@@ -2552,7 +2585,12 @@ mod tests {
                 "feature.reverse-normal-body-unverified",
                 "feature.surface-untrim-frame-assumed",
                 "feature.surface-untrim-group-selection-assumed",
-                "feature.surface-untrim-loop-type-assumed",
+                "feature.surface-untrim-stored-loop-groups-assumed",
+                "feature.surface-untrim-loop-groups-aggregated-assumed",
+                "feature.surface-untrim-extension-unresolved",
+                "feature.surface-untrim-extension-unrepresentable",
+                "feature.surface-untrim-negative-extension-assumed",
+                "feature.surface-untrim-padding-assumed",
                 "feature.combine-selection-native",
                 "feature.combine-prologue-assumed",
                 "feature.combine-operand-list-refused",

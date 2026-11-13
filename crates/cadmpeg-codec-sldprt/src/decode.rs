@@ -1701,6 +1701,21 @@ pub(crate) fn append_design_losses(
                         || merge_entities.is_none()
                         || create_solid.is_none()
                 }
+                FeatureOperation::UntrimSurface {
+                    faces,
+                    loops,
+                    extension,
+                } => {
+                    incomplete_face_selection(faces)
+                        || extension.is_none()
+                        || match loops {
+                            cadmpeg_ir::features::UntrimLoops::Unresolved => true,
+                            cadmpeg_ir::features::UntrimLoops::Selected { edges } => {
+                                incomplete_edge_selection(edges)
+                            }
+                            _ => false,
+                        }
+                }
                 FeatureOperation::ExtendSurface {
                     faces,
                     distance,

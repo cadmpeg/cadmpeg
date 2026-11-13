@@ -489,7 +489,8 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_surface_untrim_operation(bytes, &records, &scope);
+                let construction =
+                    exact_surface_untrim_operation(ctx, bytes, &records, &scope, &mut losses)?;
                 if let scope::DesignScopePayloadMut::SurfaceUntrim(slot) = scope.payload_mut() {
                     *slot = construction;
                 }

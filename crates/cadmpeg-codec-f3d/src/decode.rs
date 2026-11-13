@@ -873,6 +873,15 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || thickness.is_none()
                 || (outward.is_none() && *mode != Some(cadmpeg_ir::features::ShellMode::BothSides))
         }
+        FeatureDefinition::Operation(FeatureOperation::UntrimSurface { faces, loops, extension }) => {
+            !face_selection_is_resolved(faces)
+                || extension.is_none()
+                || match loops {
+                    cadmpeg_ir::features::UntrimLoops::Unresolved => true,
+                    cadmpeg_ir::features::UntrimLoops::Selected { edges } => !edge_selection_is_resolved(edges),
+                    _ => false,
+                }
+        }
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
             thickness,
@@ -1840,6 +1849,14 @@ fn design_projection_gaps(
                 FeatureOperation::DeleteFace { faces, .. }
                 | FeatureOperation::OffsetSurface { faces, .. },
             ) => face_selection(faces),
+            FeatureDefinition::Operation(FeatureOperation::UntrimSurface {
+                faces, loops, ..
+            }) => {
+                face_selection(faces);
+                if let cadmpeg_ir::features::UntrimLoops::Selected { edges } = loops {
+                    edge_selection(edges);
+                }
+            }
             FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) => {
                 let targets = operands.targets();
                 let replacements = operands.replacements();

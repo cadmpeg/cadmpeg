@@ -4,6 +4,65 @@
 use super::super::feature_definition_is_incomplete;
 
 #[test]
+fn surface_untrim_completeness_tracks_faces_loops_and_extension_independently() {
+    use cadmpeg_ir::features::{
+        EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, UntrimLoops,
+    };
+    let faces = FaceSelection::Faces(vec![
+        cadmpeg_ir::ids::FaceId::mint("synthetic:test:face#1").unwrap()
+    ]);
+    let edges = EdgeSelection::Edges(vec![
+        cadmpeg_ir::ids::EdgeId::mint("synthetic:test:edge#1").unwrap()
+    ]);
+    for (faces, loops, extension, incomplete) in [
+        (
+            FaceSelection::Native("native:faces".into()),
+            UntrimLoops::All,
+            cadmpeg_ir::scalar::Length::new(3.0),
+            true,
+        ),
+        (
+            faces.clone(),
+            UntrimLoops::Unresolved,
+            cadmpeg_ir::scalar::Length::new(3.0),
+            true,
+        ),
+        (faces.clone(), UntrimLoops::All, None, true),
+        (
+            faces.clone(),
+            UntrimLoops::Selected {
+                edges: EdgeSelection::Native("native:loops".into()),
+            },
+            cadmpeg_ir::scalar::Length::new(3.0),
+            true,
+        ),
+        (
+            faces.clone(),
+            UntrimLoops::All,
+            cadmpeg_ir::scalar::Length::new(0.0),
+            false,
+        ),
+        (
+            faces,
+            UntrimLoops::Selected { edges },
+            cadmpeg_ir::scalar::Length::new(-3.0),
+            false,
+        ),
+    ] {
+        assert_eq!(
+            feature_definition_is_incomplete(&FeatureDefinition::Operation(
+                FeatureOperation::UntrimSurface {
+                    faces,
+                    loops,
+                    extension
+                }
+            )),
+            incomplete
+        );
+    }
+}
+
+#[test]
 fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
     let mut report = cadmpeg_ir::codec::DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),

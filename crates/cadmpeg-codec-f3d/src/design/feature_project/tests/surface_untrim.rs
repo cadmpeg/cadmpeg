@@ -52,15 +52,11 @@ fn scope(operation: Option<DesignSurfaceUntrimOperation>) -> DesignParameterScop
 }
 
 fn operation(loops: DesignSurfaceUntrimLoops, loop_groups: &[u32]) -> DesignSurfaceUntrimOperation {
-    DesignSurfaceUntrimOperation {
-        loops,
-        loops_offset: 36,
-        extension: crate::test_support::real(0.3),
-        extension_offset: 400,
-        extension_record_index: 41,
-        face_group_record_index: 44,
-        loop_group_record_indices: loop_groups.to_vec(),
-    }
+    let mut operation = DesignSurfaceUntrimOperation::new(loops, 36, 41, 44);
+    operation.extension = Some(crate::test_support::real(0.3));
+    operation.extension_offset = Some(400);
+    operation.loop_group_record_indices = loop_groups.to_vec();
+    operation
 }
 
 fn project(
@@ -72,14 +68,14 @@ fn project(
         faces,
         loops,
         extension,
-    }) = project_surface_untrim(&scope(operation), groups, &[], &mut losses)
+    }) = project_surface_untrim(&scope(operation), groups, &[], &[], &mut losses)
     else {
         panic!("expected an untrim");
     };
     (
         faces,
         loops,
-        extension.map(cadmpeg_ir::scalar::NonNegativeLength::get),
+        extension.map(cadmpeg_ir::scalar::Length::get),
         losses,
     )
 }
@@ -107,15 +103,14 @@ fn an_all_loops_untrim_projects_its_face_group_and_extension_in_millimetres() {
 }
 
 #[test]
-fn interior_and_exterior_loop_types_charge_the_loop_type_assumption() {
+fn interior_and_exterior_loop_types_keep_the_settled_choice() {
     for (stored, expected) in [
         (DesignSurfaceUntrimLoops::Internal, UntrimLoops::Internal),
         (DesignSurfaceUntrimLoops::External, UntrimLoops::External),
     ] {
         let (_, loops, _, losses) = project(Some(operation(stored, &[])), &[group(44, 47)]);
         assert_eq!(loops, expected);
-        assert_eq!(count(&losses, F3dLossCode::SurfaceUntrimLoopTypeAssumed), 1);
-        assert_eq!(losses.len(), 1);
+        assert!(losses.is_empty());
     }
 }
 
@@ -126,7 +121,10 @@ fn an_all_loops_untrim_with_a_stored_loop_group_charges_the_loop_type_assumption
         &[group(44, 47), group(50, 53)],
     );
     assert_eq!(loops, UntrimLoops::All);
-    assert_eq!(count(&losses, F3dLossCode::SurfaceUntrimLoopTypeAssumed), 1);
+    assert_eq!(
+        count(&losses, F3dLossCode::SurfaceUntrimStoredLoopGroupsAssumed),
+        1
+    );
 }
 
 #[test]
@@ -158,13 +156,101 @@ fn missing_groups_keep_the_untrim_and_charge_the_group_assumption() {
     assert_eq!(
         loops,
         UntrimLoops::Selected {
-            edges: EdgeSelection::Unresolved,
+            edges: EdgeSelection::Native(SCOPE_ID.into()),
         }
     );
     assert_eq!(
         count(&losses, F3dLossCode::SurfaceUntrimGroupSelectionAssumed),
         2
     );
+}
+
+#[test]
+fn manual_loop_groups_are_retained_as_a_scope_aggregate() {
+    for missing in [false, true] {
+        let mut groups = vec![group(44, 47), group(50, 53)];
+        if !missing {
+            groups.push(group(60, 63));
+        }
+        let (_, loops, _, losses) = project(
+            Some(operation(DesignSurfaceUntrimLoops::Manual, &[50, 60])),
+            &groups,
+        );
+        assert_eq!(
+            loops,
+            UntrimLoops::Selected {
+                edges: EdgeSelection::Native(SCOPE_ID.into())
+            }
+        );
+        assert_eq!(
+            count(
+                &losses,
+                F3dLossCode::SurfaceUntrimLoopGroupsAggregatedAssumed
+            ),
+            1
+        );
+        assert_eq!(
+            count(&losses, F3dLossCode::SurfaceUntrimGroupSelectionAssumed),
+            usize::from(missing)
+        );
+    }
+}
+
+#[test]
+fn duplicate_and_wrong_role_groups_preserve_the_scope_selection() {
+    let mut wrong = serde_json::to_value(group(44, 47)).unwrap();
+    wrong["role"] = serde_json::json!(68_719_476_736_u64);
+    for groups in [
+        vec![group(44, 47), group(44, 47)],
+        vec![serde_json::from_value(wrong).unwrap()],
+    ] {
+        let (faces, loops, _, losses) =
+            project(Some(operation(DesignSurfaceUntrimLoops::All, &[])), &groups);
+        assert_eq!(faces, FaceSelection::Native(SCOPE_ID.into()));
+        assert_eq!(loops, UntrimLoops::All);
+        assert_eq!(
+            count(&losses, F3dLossCode::SurfaceUntrimGroupSelectionAssumed),
+            1
+        );
+    }
+}
+
+#[test]
+fn signed_missing_and_overflowing_extensions_keep_the_other_settings() {
+    for (value, expected, loss) in [
+        (
+            Some(-0.3),
+            Some(-3.0),
+            Some(F3dLossCode::SurfaceUntrimNegativeExtensionAssumed),
+        ),
+        (
+            Some(f64::MAX),
+            None,
+            Some(F3dLossCode::SurfaceUntrimExtensionUnrepresentable),
+        ),
+        (None, None, None),
+    ] {
+        let mut operation = operation(DesignSurfaceUntrimLoops::Manual, &[50]);
+        operation.extension = value.map(crate::test_support::real);
+        operation.extension_offset = value.map(|_| 400);
+        let (faces, loops, extension, losses) =
+            project(Some(operation), &[group(44, 47), group(50, 53)]);
+        assert_eq!(
+            faces,
+            FaceSelection::Native("f3d:Design/BulkStream.dat:group#44".into())
+        );
+        assert_eq!(
+            loops,
+            UntrimLoops::Selected {
+                edges: EdgeSelection::Native("f3d:Design/BulkStream.dat:group#50".into())
+            }
+        );
+        assert_eq!(extension, expected);
+        assert_eq!(losses.len(), usize::from(loss.is_some()));
+        if let Some(loss) = loss {
+            assert_eq!(count(&losses, loss), 1);
+        }
+    }
 }
 
 #[test]

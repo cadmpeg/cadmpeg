@@ -1458,6 +1458,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             scope,
                             construction_groups,
                             face_operands,
+                            body_recipe_operands,
                             &mut projection_losses,
                         )
                     } else if scope.kind()
