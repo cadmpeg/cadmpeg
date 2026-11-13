@@ -1125,6 +1125,8 @@ A relation instance without a driving scalar carries a measured value in its dis
 
 Distance, horizontal-distance, vertical-distance, and circular-dimension driving scalars store metres. Angular driving scalars store radians. These relation-family units apply independently of the owning Keywords dimension's expression spelling.
 
+A same-feature, same-name Keywords dimension with a finite bare floating-point literal uses the unique nonnegative owned driving scalar of its point-point or point-line distance instance as its evaluated length. The driving binding requires one scalar record for that dimension. A driving value and its resolved operand loci form an active dimensional constraint when their solved distance agrees with that value.
+
 A bare integer Keywords dimension bound to a unique driving distance or circular-dimension scalar denotes millimetres rather than a discrete count. The scalar supplies its evaluated length and native identity while the original expression remains unchanged.
 
 A bare `0` or `1` Keywords dimension bound to a unique driving distance or circular-dimension scalar denotes millimetres rather than a Boolean. The scalar supplies its evaluated length and native identity while the original expression remains unchanged.

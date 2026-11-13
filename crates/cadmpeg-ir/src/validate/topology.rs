@@ -2907,6 +2907,13 @@ fn check_feature_references(
             .iter()
             .map(|occurrence| occurrence.id.as_str()),
     );
+    let mut product_definition_ids = BorrowedIdentities::new();
+    product_definition_ids.extend_unique(
+        ir.model
+            .product_definitions
+            .iter()
+            .map(|definition| definition.id.as_str()),
+    );
     let mut assembly_joint_ids = BorrowedIdentities::new();
     assembly_joint_ids.extend_unique(
         ir.model
@@ -3111,6 +3118,66 @@ fn check_feature_references(
                         "inserted component occurrence",
                         occurrence.as_str(),
                     );
+                }
+            }
+            FeatureOperation::InsertComponents { components } => {
+                for occurrence in components.occurrences() {
+                    if !occurrence_ids.contains(occurrence.as_str()) {
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "inserted component occurrence",
+                            occurrence.as_str(),
+                        );
+                    }
+                }
+            }
+            FeatureOperation::ComponentTransfer {
+                occurrence,
+                component,
+                source_owner,
+                target_owner,
+                source_transform,
+                target_transform,
+                ..
+            } => {
+                if let Some(occurrence) = occurrence {
+                    if !occurrence_ids.contains(occurrence.as_str()) {
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "transferred component occurrence",
+                            occurrence.as_str(),
+                        );
+                    }
+                }
+                for (role, definition) in [
+                    ("transferred component", component),
+                    ("source component owner", source_owner),
+                    ("target component owner", target_owner),
+                ] {
+                    if let Some(definition) = definition {
+                        if !product_definition_ids.contains(definition.as_str()) {
+                            ref_error(findings, feature.id.as_str(), role, definition.as_str());
+                        }
+                    }
+                }
+                for transform in [source_transform, target_transform].into_iter().flatten() {
+                    if !transform
+                        .rows()
+                        .iter()
+                        .flatten()
+                        .all(|value| value.is_finite())
+                    {
+                        super::record_finding(
+                            findings,
+                            Check::ReferentialIntegrity,
+                            Severity::Error,
+                            Some(feature.id.as_str()),
+                            format_args!("component transfer placement contains non-finite values"),
+                        );
+                        break;
+                    }
                 }
             }
             FeatureOperation::AssemblyJoint { joint } => {

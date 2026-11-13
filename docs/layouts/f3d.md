@@ -7757,13 +7757,32 @@ Parsed by:
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
 | 11 | 11 | `zero_run` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
 | 22 | 11 | `companion_reference` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
-| 33 | 1 | `zero_separator` | `u8` | little | spec | The compact CopyPaste prefix |
+| 33 | 1 | `source_identity_flag` | `u8` | little | spec | The compact CopyPaste prefix · value `0` |
 | 34 | 128 | `source_transform` | `f64[16]` | little | spec | The compact CopyPaste prefix |
 | 162 | 11 | `second_companion_reference` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
 | 173 | 4 | `zero_run_4` | `bytes[4]` | little | spec | The compact CopyPaste prefix |
 | 177 | 11 | `relation_reference` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
 | 188 | 1 | `placement_flag` | `u8` | little | spec | The compact CopyPaste prefix |
 | 189 | 1 | `identity_flag` | `u8` | little | spec | The compact CopyPaste prefix |
+
+## `copy_paste_identity_source_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 62 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A CopyPaste prefix with identity source placement |
+| 11 | 11 | `zero_run` | `bytes[11]` | little | spec | A CopyPaste prefix with identity source placement |
+| 22 | 11 | `companion_reference` | `bytes[11]` | little | spec | A CopyPaste prefix with identity source placement |
+| 33 | 1 | `source_identity_flag` | `u8` | little | spec | A CopyPaste prefix with identity source placement · value `1` |
+| 34 | 11 | `second_companion_reference` | `bytes[11]` | little | spec | A CopyPaste prefix with identity source placement |
+| 45 | 4 | `zero_run_4` | `bytes[4]` | little | spec | A CopyPaste prefix with identity source placement |
+| 49 | 11 | `relation_reference` | `bytes[11]` | little | spec | A CopyPaste prefix with identity source placement |
+| 60 | 1 | `placement_flag` | `u8` | little | spec | A CopyPaste prefix with identity source placement · value `1` |
+| 61 | 1 | `identity_flag` | `u8` | little | spec | A CopyPaste prefix with identity source placement |
 
 ## `paste_occurrence_relation`
 
@@ -10312,6 +10331,21 @@ Parsed by:
 Unstated regions:
 
 - `48..125` (77 B): The common native tail precedes the same-index paired header.
+
+## `surface_delete_face_wide_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 132 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/feature_project/delete_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 128 | 4 | `reference_count` | `u32` | little | spec | which is 123, 127, 128, 131, 134, 138, or 142 |
+
+Unstated regions:
+
+- `0..128` (128 B): Indexed scope header and operation prologue; control semantics are tracked in DR-476.
 
 ## Not tabulated
 
