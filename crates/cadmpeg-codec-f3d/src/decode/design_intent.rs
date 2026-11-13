@@ -1194,16 +1194,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         products.occurrences,
         &design.design_parameter_scopes,
     );
-    losses.extend(
-        crate::design::components::project_copy_paste_transfer_features(
-            &mut model.features,
-            &design.design_parameter_scopes,
-            &prereqs.design_component_occurrences,
-            products.occurrences,
-            products.definitions,
-            products.component_definitions_by_record,
-        ),
-    );
     losses.extend(crate::design::components::paths::bind_feature_paths(
         &mut model.features,
         &occurrence_paths,
@@ -1215,6 +1205,16 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &occurrence_paths,
             products.occurrences,
         )?,
+    );
+    losses.extend(
+        crate::design::components::project_copy_paste_transfer_features(
+            &mut model.features,
+            &design.design_parameter_scopes,
+            &prereqs.design_component_occurrences,
+            products.occurrences,
+            products.definitions,
+            products.component_definitions_by_record,
+        ),
     );
     crate::design::components::bind_unresolved_component_insert_features(
         &mut model.features,
