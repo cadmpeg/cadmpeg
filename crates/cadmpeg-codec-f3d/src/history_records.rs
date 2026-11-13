@@ -450,6 +450,8 @@ pub(crate) struct AsmHistoricalOptionalCarrierBinding {
 /// Forward change from the older `next_ref` neighbour, or empty on the tail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalTransition {
+    #[serde(skip)]
+    pub(crate) geometry_unchanged: bool,
     /// Older state identity; absent only at the end of the reverse-history chain.
     #[serde(
         default,

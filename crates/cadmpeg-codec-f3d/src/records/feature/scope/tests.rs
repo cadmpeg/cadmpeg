@@ -580,6 +580,38 @@ fn hole_extent_without_point_carrier_round_trips_and_checks_kind() {
 }
 
 #[test]
+fn occurrence_transfer_intent_wire_accepts_absence_and_partial_value_but_refuses_null() {
+    let scope = super::DesignParameterScope::empty(
+        "f3d:scope#1",
+        super::DesignScopePayload::CopyPaste(None),
+        1,
+    );
+    let mut wire = serde_json::to_value(&scope).unwrap();
+    assert!(wire.get("occurrence_transfer_intent").is_none());
+    let loaded: super::DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+    assert!(loaded.occurrence_transfer_intent.is_none());
+    let partial = serde_json::json!({
+        "mode": "copy",
+        "relation_record_index": null,
+        "occurrence_record_index": null,
+        "component_record_index": null,
+        "source_owner_component_record_index": null,
+        "target_owner_component_record_index": null,
+        "source_transform": null,
+        "target_transform": null
+    });
+    wire["occurrence_transfer_intent"] = partial.clone();
+    let loaded: super::DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(loaded).unwrap()["occurrence_transfer_intent"],
+        partial
+    );
+    wire["occurrence_transfer_intent"] = serde_json::Value::Null;
+    let error = serde_json::from_value::<super::DesignParameterScope>(wire).unwrap_err();
+    assert!(error.to_string().contains("occurrence_transfer_intent"));
+}
+
+#[test]
 fn native_profile_wire_round_trips_and_rejects_null() {
     use super::DesignParameterScope;
     let (archive, mut scope, headers, entities) =
