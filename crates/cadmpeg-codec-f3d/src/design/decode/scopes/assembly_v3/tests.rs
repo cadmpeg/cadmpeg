@@ -538,11 +538,19 @@ fn version_three_decoder_keeps_qualified_scope_connectors_and_reports_partial_bi
     let connectors = joint.connectors().collect::<Vec<_>>();
     assert_eq!(
         connectors[0].operand.object,
-        "f3d:Design/BulkStream.dat:design-record#10"
+        "f3d:Design/BulkStream.dat:design-parameter-scope#0"
     );
     assert_eq!(
         connectors[1].operand.object,
-        "f3d:Design/BulkStream.dat:design-record#20"
+        "f3d:Design/BulkStream.dat:design-parameter-scope#0"
+    );
+    assert_eq!(
+        connectors[0].operand.subelements,
+        ["construction-record#10"]
+    );
+    assert_eq!(
+        connectors[1].operand.subelements,
+        ["construction-record#20"]
     );
     for connector in &connectors {
         assert_eq!(
