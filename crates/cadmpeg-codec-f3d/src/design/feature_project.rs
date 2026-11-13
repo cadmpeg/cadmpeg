@@ -4437,9 +4437,15 @@ fn project_align(
         )));
     }
     losses.push(crate::loss::F3dLossCode::FeatureAlignMotionAssumed.note(format!(
-        "Align scope {} applies the stored matrix of constructor {} to body group {:?}; its source code {}, prefix {:?} and auxiliary scope references {:?} are assumed to leave that motion unchanged (DR-120).",
-        scope.id, operation.transform_record_index, group.map(|group| group.record_index),
-        envelope.source_code.value, operation.prefix, scope.reference_members()
+        "Align scope {} applies the stored matrix of constructor {} to {}; its source code {}, constructor prefix fields and scope references {:?} are assumed to leave that motion unchanged (DR-120).",
+        scope.id,
+        operation.transform_record_index,
+        group.map_or_else(
+            || "an unresolved body selection".to_owned(),
+            |group| format!("body group {}", group.record_index)
+        ),
+        envelope.source_code.value,
+        scope.reference_members().values().collect::<Vec<_>>()
     )));
     if operation
         .prefix
