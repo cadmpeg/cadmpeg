@@ -652,6 +652,7 @@ fn exact_assembly_operand_path(
         let mut occurrence_guids = Vec::new();
         let mut identity_guids = Vec::new();
         let mut occurrence_lists = Vec::new();
+        let mut pair_words = Vec::new();
         match class_tag {
             "294" | "299" | "307" if type_guid.is_none() => {
                 let end = next_indexed_record_offset(bytes, start + 1)?;
@@ -790,7 +791,18 @@ fn exact_assembly_operand_path(
                             });
                             position = after_guid;
                         }
-                        if View::u64_le_at(bytes, position)? != 2 {
+                        // A typed path stores a word after each u32 value 2
+                        // that closes an identity pair.
+                        if View::u32_le_at(bytes, position)? != 2 {
+                            return None;
+                        }
+                        let word = View::u32_le_at(bytes, position + 4)?;
+                        if type_guid.is_some() {
+                            pair_words.push(crate::records::identity::Located {
+                                value: word,
+                                offset: u64::try_from(position + 4).ok()?,
+                            });
+                        } else if word != 0 {
                             return None;
                         }
                         position += 8;
@@ -811,16 +823,22 @@ fn exact_assembly_operand_path(
                             return None;
                         }
                         position += 4;
-                        // A typed path can end in a zero word, a list count, and
-                        // per list a key count and that many occurrence identities;
-                        // a zero tail has no lists, and only a typed path has them.
+                        if type_guid.is_some() {
+                            pair_words.push(crate::records::identity::Located {
+                                value: View::u32_le_at(bytes.get(..limit)?, position)?,
+                                offset: u64::try_from(position).ok()?,
+                            });
+                        }
+                        // After its pair word, a typed path can store a list count
+                        // and per list a key count and that many occurrence
+                        // identities; a zero tail has no lists.
                         if !bytes.get(position..limit)?.iter().all(|byte| *byte == 0) {
-                            if type_guid.is_none() || View::u32_le_at(bytes, position)? != 0 {
+                            if type_guid.is_none() || View::u32_le_at(bytes, position)? > 1 {
                                 return None;
                             }
                             let lists =
                                 usize::try_from(View::u32_le_at(bytes, position + 4)?).ok()?;
-                            if !(1..=64).contains(&lists) {
+                            if lists > 64 {
                                 return None;
                             }
                             position += 8;
@@ -873,6 +891,7 @@ fn exact_assembly_operand_path(
             identity_guids,
         )
         .and_then(|path| path.with_occurrence_lists(occurrence_lists))
+        .and_then(|path| path.with_identity_pair_words(pair_words))
         .ok()
         .map(Ok)
     })()

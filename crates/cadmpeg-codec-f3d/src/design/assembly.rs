@@ -893,6 +893,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     let mut assumed_additional_owner_motion = 0_usize;
     let mut assumed_extended_tails = 0_usize;
     let mut assumed_extended_typed_tails = 0_usize;
+    let mut assumed_path_words = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -942,6 +943,21 @@ pub(crate) fn project_assembly_joints_with_paths(
                     });
                 if paired {
                     paired_joints += 1;
+                }
+                let nonzero_word = |path: &DesignAssemblyOperandPath| {
+                    path.identity_pair_words()
+                        .iter()
+                        .any(|word| word.value != 0)
+                };
+                if scope.assembly_alignment().is_some_and(|alignment| {
+                    alignment
+                        .operand_path_refs()
+                        .is_some_and(|paths| paths.iter().any(|path| nonzero_word(path)))
+                        || alignment.additional_members.iter().any(|member| {
+                            member.qualifier.occurrence_path().is_some_and(nonzero_word)
+                        })
+                }) {
+                    assumed_path_words += 1;
                 }
                 joint.set_frame_sense(projected_frame_sense(scope));
                 if motion.is_some_and(zero_lane_rotation_limits) && undecoded.is_none() {
@@ -1059,6 +1075,11 @@ pub(crate) fn project_assembly_joints_with_paths(
     if assumed_active != 0 {
         losses.push(F3dLossCode::AssemblyJointActivationAssumed.note(format!(
             "{assumed_active} projected Design assembly joint(s) are assumed active: the activation meaning of their scope-tail booleans is unknown."
+        )));
+    }
+    if assumed_path_words != 0 {
+        losses.push(F3dLossCode::AssemblyOperandPathWordAssumed.note(format!(
+            "{assumed_path_words} projected Design assembly joint(s) read an operand path with a nonzero identity-pair word; the word is assumed to leave the selected occurrences unchanged."
         )));
     }
     AssemblyJointProjection {
