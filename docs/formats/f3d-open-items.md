@@ -2345,3 +2345,13 @@ when the operation transition carries no candidate for the group members?
 **Need.** Paired saves that vary the listed and additional selections independently.
 
 **Note.** The decoder selects the listed groups and assumes that the additional groups select the same bodies. It records `feature.scale-unlisted-groups-assumed`.
+
+### DR-466. Standalone joint source operand binding
+
+**Question.** Which document identity namespace and occurrence context do qualified source paths select when their keys do not match admitted occurrence carriers?
+
+**Known.** The qualified assembly scope carries connector frames and alignment values. Its occurrence path carries the source document identity, occurrence key, and ordered descendant keys. These fields describe a readable joint independently of availability of the referenced document.
+
+**Need.** Public document bundles with independently identified source documents and repeated component instances that bind each source path identity to its document and occurrence context.
+
+**Note.** A standalone timeline feature names its decoded neutral joint while source operands remain unresolved. The decoder preserves their identities and charges `assembly.joint-source-binding-assumed`.
