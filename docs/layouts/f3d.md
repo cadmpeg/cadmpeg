@@ -5709,7 +5709,7 @@ Offsets are relative to the transform record's primary indexed header.
 Unstated regions:
 
 - `11..43` (32 B): Offsets 11 through 42 are zero.
-- `176..256` (80 B): The transform record's native tail precedes the same-index paired header at offset 256.
+- `176..256` (80 B): The transform record's tail precedes the same-index paired header at offset 256.
 
 ## `move_transform_v3_frame_276`
 
@@ -5720,7 +5720,7 @@ Offsets are relative to the transform record's primary indexed header.
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | 276 bytes for form word `1` |
-| 43 | 4 | `form` | `u32` | little | spec | A 273- or 274-byte frame stores form word `1` · value `1` |
+| 43 | 4 | `form` | `u32` | little | spec | 276 bytes for form word `1` · value `1` |
 | 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
 | 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
 
@@ -5738,7 +5738,7 @@ Offsets are relative to the transform record's primary indexed header.
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | 286 bytes for form word `0` |
-| 43 | 4 | `form` | `u32` | little | spec | A 283- or 284-byte frame stores form word `0` · value `0` |
+| 43 | 4 | `form` | `u32` | little | spec | 286 bytes for form word `0` · value `0` |
 | 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
 | 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
 

@@ -471,7 +471,9 @@ fn unique_move_transform<'a>(
             let Some(next) = move_transform_at(bytes, start, paired, *record_index) else {
                 continue;
             };
-            if !rigid_transform_rule_breaks(bytes, start, paired, next.form, class_types).is_empty()
+            if !rigid_transform_type_matches(bytes, start, class_types)
+                || !rigid_transform_rule_breaks(bytes, start, paired, next.form, class_types)
+                    .is_empty()
             {
                 continue;
             }

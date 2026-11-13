@@ -762,3 +762,38 @@ fn a_version_three_transform_record_is_three_bytes_longer_than_version_two() {
         );
     }
 }
+
+#[test]
+fn a_version_three_record_at_a_version_two_length_reports_its_frame() {
+    for length in [273, 283] {
+        let (bytes, scope) = marked_move_fixture("452", length);
+        assert_eq!(
+            marked_move_loss_of(&bytes, &scope, 3).as_deref(),
+            Some(format!("Move scope f3d:test:scope#17 keeps the rigid matrix of its marked transform record 71, which has a {length}-byte frame (DR-306).").as_str())
+        );
+    }
+    let row = super::move_transform_type("84E6245F-1CDC-4FB8-8048-163A85FAD3F0", 3);
+    let class_types = super::move_transform_types(&row, &[424]);
+    let (bytes, scope) = form_two_fixture_of(293);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let decoded = exact_move_operation(&bytes, &records, &scope, &class_types).unwrap();
+    assert!(marked_move_transform_loss(&bytes, &records, &scope, &decoded, &class_types).is_some());
+}
+
+#[test]
+fn a_move_without_a_prologue_selects_only_a_version_two_record() {
+    for (version, length, form, selected) in
+        [(2, 253, 5u32, true), (3, 256, 5, false), (3, 276, 1, false)]
+    {
+        let row = super::move_transform_type("84E6245F-1CDC-4FB8-8048-163A85FAD3F0", version);
+        let class_types = super::move_transform_types(&row, &[452]);
+        let (mut bytes, scope) = fixture("452", length);
+        bytes[43..47].copy_from_slice(&form.to_le_bytes());
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        assert_eq!(
+            exact_move_operation(&bytes, &records, &scope, &class_types).is_some(),
+            selected,
+            "{version} {length}"
+        );
+    }
+}
