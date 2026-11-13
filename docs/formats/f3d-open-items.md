@@ -1158,23 +1158,23 @@ The first closing reference run identifies a direct contained child by its local
 
 The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are tracked in DR-481.
 
-### DR-390. Fillet set flag byte and set-list flag run
+### DR-390. Fillet set flag of the chordal and compact forms, marker bytes, and compact flag run
 
-**Question.** What do the flag byte of a fillet set record and the two flag-run forms of a parameter-owned `Fillet` scope prefix encode?
+**Question.** Do the flag bytes of the chordal and compact fillet set forms encode tangent chain, do those forms store curvature continuity, and what do the set marker byte, the `00 01` tail of the current flag run, and the compact flag-run form encode?
 
-**Known.** `f3d.md` §3.1 "A parameter-owned `Fillet` scope names its fillet sets in a prefix" gives the positions and admitted values of both. The flag byte is `0` or `1` at offset 26 of a 97-byte set frame and at offset 24 of a 93-byte set frame; the flag run is `01 00 01` or `01 01`, each followed by nine zero bytes. The decoder retains the raw byte as the set's `flag` and the run as the list's `form` (`current` or `compact`).
+**Known.** `f3d.md` §3.1 "A parameter-owned `Fillet` scope names its fillet sets in a prefix" gives their positions and admitted values. The decoder stores the flag of every set form as the set's `tangent_chain`, reads curvature continuity in the constant form only, and stores `rolling_ball_corner = true` for the compact flag run, whose first byte is `01`.
 
-**Need.** Controlled designs that vary one Fillet option at a time, saved by one Fusion version.
+**Need.** Chordal and compact Fillet saves with tangent chain off, with curvature continuity, and with setback corners.
 
 **Conflict.** None.
 
-### DR-460. Chamfer set flag, entry run, fixed words, and auxiliary record
+### DR-460. Chamfer set flag of the other forms, entry count, fixed byte, and auxiliary record
 
-**Question.** What do the prefix `u32 1` after the prologue, the chamfer set flag byte, the entry-run marker form, the prefix entry run, the fixed `u32 1` and `u8 1` words, and the auxiliary record of a parameter-owned `Chamfer` scope encode?
+**Question.** Do the flag bytes of the two-distance, distance-angle, and compact chamfer set forms encode tangent chain, does the entry run count the selected edges or the edges after tangent propagation, and what do the zero byte that ends each entry, the fixed `u8 1`, the entry-run marker forms, and the auxiliary record encode?
 
-**Known.** `f3d.md` §3.1 "A parameter-owned `Chamfer` scope names its chamfer sets in a prefix" gives their positions and admitted values. The decoder retains the flag byte as the set's `flag`, the marker as the list's `form` (`current` or `compact`), `E` as the list's `entry_count`, and the auxiliary record index as the set's `auxiliary_record_index`.
+**Known.** `f3d.md` §3.1 "A parameter-owned `Chamfer` scope names its chamfer sets in a prefix" gives their positions and admitted values. The decoder stores the flag of every set form as the set's `tangent_chain`, the marker as the list's `form`, the auxiliary record index as the set's `auxiliary_record_index`, and the entries per set as the set's `entry_count`. In every decoded save the selected edges have no tangent neighbour, and `E` equals the number of selected edges.
 
-**Need.** Controlled Chamfer designs that vary one option at a time and a multi-set Chamfer, saved by one Fusion version.
+**Need.** Controlled saves of two-distance, distance-angle, and compact chamfers with tangent chain off, and a chamfer on one edge with tangent neighbours.
 
 **Conflict.** None.
 
@@ -1800,13 +1800,13 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** None.
 
-### DR-313. Flag bytes of the Thicken scope frame
+### DR-313. Prologue flag byte of the Thicken scope frame
 
-**Question.** Which Thicken settings do the prologue flag byte of the six-byte marker-one prologue and the two flag bytes between the marked group references and the marked scalar reference of a `Thicken` scope select?
+**Question.** Which Thicken setting does the prologue flag byte of the six-byte marker-one prologue of a `Thicken` scope select?
 
-**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the flag positions and admits `0` or `1` in each byte. The decoder records `feature.thicken-flags-assumed` with the flag bytes for each admitted scope and projects the Thicken side from the sign of the thickness scalar alone.
+**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the byte position and the two settled flag bytes. Saves that change the thickness sign, the symmetric direction, and tangent-chain selection store prologue flag byte `0`. The decoder records `feature.thicken-flags-assumed` when the byte is `1` and projects the Thicken from its symmetric flag and its thickness; the tangent-chain flag stays on the native record.
 
-**Need.** Saves of one `Thicken` that change the direction between one side and symmetric and change tangent-chain selection, one at a time, each recording the flag bytes.
+**Need.** Saves of one `Thicken` that change one further setting at a time and store prologue flag byte `1`.
 
 **Conflict.** None.
 
