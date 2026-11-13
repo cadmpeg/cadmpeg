@@ -580,18 +580,24 @@ fn pipe_source_reads_the_section_shape_after_the_prefix() {
                     ..Default::default()
                 })
                 .expect("section frame");
-                assert_eq!(section.shape, shape);
+                assert_eq!(section.shape_value, stored);
+                assert_eq!(section.shape(), Some(shape));
                 assert_eq!(section.shape_offset, if legacy { 32 + 67 } else { 28 + 67 });
             }
         }
     }
     assert_eq!(decoded_section(Config::default()), None);
+    let unnamed = decoded_section(Config {
+        section: Some(SectionFrame::of(3)),
+        ..Default::default()
+    })
+    .expect("section frame");
+    assert_eq!((unnamed.shape_value, unnamed.shape()), (3, None));
 }
 
 #[test]
 fn pipe_source_leaves_an_inexact_section_frame_unread() {
     let frames = [
-        SectionFrame::of(3),
         SectionFrame {
             separator: 1,
             ..SectionFrame::of(0)
@@ -618,4 +624,38 @@ fn pipe_source_leaves_an_inexact_section_frame_unread() {
             None
         );
     }
+}
+
+#[test]
+fn pipe_source_leaves_the_section_frame_of_a_point_selection_unread() {
+    for point_version in [2, 3] {
+        assert_eq!(
+            decoded_section(Config {
+                point_version: Some(point_version),
+                section: Some(SectionFrame::of(1)),
+                ..Default::default()
+            }),
+            None
+        );
+    }
+}
+
+#[test]
+fn pipe_source_needs_the_whole_section_frame_before_the_table() {
+    let fixture = Fixture::new(Config {
+        section: Some(SectionFrame::of(1)),
+        ..Default::default()
+    });
+    let native = fixture
+        .decode(&cadmpeg_test_support::service_decode_context())
+        .unwrap();
+    let DesignScopePayload::Pipe(Some(pipe)) = native.design_parameter_scopes[0].payload() else {
+        panic!("complete Pipe source")
+    };
+    let table = usize::try_from(pipe.section.expect("section frame").shape_offset).unwrap() + 4;
+    let mut unread = pipe.clone();
+    unread.section = None;
+    let read = |table: usize| super::section_frame_shape(&fixture.bulk, table, &unread, 200, 310);
+    assert_eq!(read(table), pipe.section);
+    assert_eq!(read(table - 1), None);
 }

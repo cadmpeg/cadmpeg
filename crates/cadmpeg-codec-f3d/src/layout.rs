@@ -2662,7 +2662,7 @@ pub(crate) mod fixed_pipe_operation_prefix {
 /// Spec §3.1. Record length 71 B.
 ///
 /// ```text
-/// Offsets are relative to the byte after the two opaque bytes of the compact or legacy Pipe prefix.
+/// Offsets are relative to the byte after the two opaque bytes of the compact or legacy Pipe prefix of a Pipe without a point-selection pair.
 /// ```
 pub(crate) mod pipe_section_frame {
     /// Record length in bytes. Spec §3.1.

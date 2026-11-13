@@ -16,7 +16,7 @@ use crate::records::decal::DesignRecordHeader;
 use crate::records::entity_header::SegmentType;
 use crate::records::feature::path_features::pipe::{self, PipeIndex};
 use crate::records::feature::path_features::{
-    DesignPipeConstruction, DesignPipePointSelection, DesignPipeSection, DesignPipeSectionShape,
+    DesignPipeConstruction, DesignPipePointSelection, DesignPipeSection,
 };
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
@@ -213,7 +213,7 @@ fn read_construction(
         .copied()
         .filter(|id| frame(*id).is_some_and(|selected| pipe::is_settings(selected.design_type)))
         .collect::<Vec<_>>();
-    if let ([settings], [path]) = (settings.as_slice(), paths.as_slice()) {
+    if let (None, [settings], [path]) = (point, settings.as_slice(), paths.as_slice()) {
         construction.section = section_frame_shape(bytes, table, &construction, *settings, *path);
     }
     if let Some((id, selected)) = point {
@@ -288,10 +288,7 @@ fn section_frame_shape(
         return None;
     }
     Some(DesignPipeSection {
-        shape: DesignPipeSectionShape::from_stored(cadmpeg_core::decode::View::u32_le_at(
-            frame,
-            section_frame::SHAPE,
-        )?)?,
+        shape_value: cadmpeg_core::decode::View::u32_le_at(frame, section_frame::SHAPE)?,
         shape_offset: u64_from_index(start.checked_add(section_frame::SHAPE)?),
     })
 }

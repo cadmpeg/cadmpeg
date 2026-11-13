@@ -2809,7 +2809,7 @@ Offsets are relative to the primary indexed header. The variable reference table
 
 Spec §3.1 · layout: byte offsets · size: 71 B
 
-Offsets are relative to the byte after the two opaque bytes of the compact or legacy Pipe prefix.
+Offsets are relative to the byte after the two opaque bytes of the compact or legacy Pipe prefix of a Pipe without a point-selection pair.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

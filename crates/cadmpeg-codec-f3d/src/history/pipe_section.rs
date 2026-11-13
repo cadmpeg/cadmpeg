@@ -12,7 +12,9 @@ use cadmpeg_ir::topology::BodyKind;
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
 use crate::records::feature::extrude::DesignExtrudeOperation;
-use crate::records::feature::path_features::{DesignPipeConstruction, DesignPipeSectionShape};
+use crate::records::feature::path_features::{
+    DesignPipeConstruction, DesignPipeSection, DesignPipeSectionShape,
+};
 use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
@@ -65,8 +67,8 @@ impl ExtentReading {
 }
 
 /// Project each native Pipe with whole-path fractions as a Sweep of a
-/// circular region along its path group. A Pipe whose section frame stores a
-/// square or triangular shape stays native. Without a read shape, a new-body
+/// circular region along its path group. A Pipe whose section frame stores
+/// another shape value stays native. Without a read shape, a new-body
 /// Pipe whose result bodies no later feature changes projects only when its
 /// result faces fit the circle.
 #[must_use]
@@ -158,9 +160,9 @@ fn circular_pipe_sweep(
     let outer_radius = size * 10.0 / 2.0;
     let wall = construction.is_hollow.then_some(thickness * 10.0);
     let inner_radius = wall.map(|wall| outer_radius - wall);
-    let section = match construction.section.map(|section| section.shape) {
-        Some(DesignPipeSectionShape::Circular) => SectionReading::Read,
-        Some(DesignPipeSectionShape::Square | DesignPipeSectionShape::Triangular) => return None,
+    let section = match construction.section.map(DesignPipeSection::shape) {
+        Some(Some(DesignPipeSectionShape::Circular)) => SectionReading::Read,
+        Some(_) => return None,
         None if construction.operation == DesignExtrudeOperation::NewBody
             && !feature.evaluation.outputs().is_empty()
             && result_bodies_unchanged(feature, features) =>

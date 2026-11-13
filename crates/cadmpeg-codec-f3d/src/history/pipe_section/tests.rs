@@ -3,9 +3,7 @@
 use super::{bind_circular_pipe_sections, PipeSectionInputs};
 use crate::loss::F3dLossCode;
 use crate::records::feature::extrude::DesignExtrudeOperation;
-use crate::records::feature::path_features::{
-    DesignPipeConstruction, DesignPipeSection, DesignPipeSectionShape,
-};
+use crate::records::feature::path_features::{DesignPipeConstruction, DesignPipeSection};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayload};
 use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
 use crate::records::references::DesignClassTag;
@@ -256,10 +254,7 @@ fn bound_with_losses(
     let read_circle = matches!(
         scope.payload(),
         DesignScopePayload::Pipe(Some(DesignPipeConstruction {
-            section: Some(DesignPipeSection {
-                shape: DesignPipeSectionShape::Circular,
-                ..
-            }),
+            section: Some(DesignPipeSection { shape_value: 0, .. }),
             ..
         }))
     );
@@ -608,16 +603,13 @@ fn a_new_body_pipe_without_result_bodies_assumes_a_circle() {
 }
 
 /// `pipe_scope` whose section frame stores `shape`.
-fn shaped_pipe_scope(
-    operation: DesignExtrudeOperation,
-    shape: DesignPipeSectionShape,
-) -> DesignParameterScope {
+fn shaped_pipe_scope(operation: DesignExtrudeOperation, shape_value: u32) -> DesignParameterScope {
     let mut scope = pipe_scope(operation, false);
     scope
         .try_edit(|draft| {
             if let DesignScopePayload::Pipe(Some(construction)) = &mut draft.payload {
                 construction.section = Some(DesignPipeSection {
-                    shape,
+                    shape_value,
                     shape_offset: 95,
                 });
             }
@@ -635,10 +627,7 @@ fn shaped_pipe_scope(
 fn a_read_circular_shape_projects_without_a_section_test() {
     let groups = [path_group(30, DesignOperandRole::ROLE_0X5)];
     let (definition, losses) = bound_with_losses(
-        &shaped_pipe_scope(
-            DesignExtrudeOperation::NewBody,
-            DesignPipeSectionShape::Circular,
-        ),
+        &shaped_pipe_scope(DesignExtrudeOperation::NewBody, 0),
         &owners(0.5, 0.1),
         &groups,
         &[cone(2.5)],
@@ -652,15 +641,12 @@ fn a_read_circular_shape_projects_without_a_section_test() {
 }
 
 #[test]
-fn a_read_square_or_triangular_shape_keeps_the_pipe_native() {
+fn a_read_shape_other_than_a_circle_keeps_the_pipe_native() {
     let groups = [
         path_group(30, DesignOperandRole::BODIES_A),
         path_group(40, DesignOperandRole::ROLE_0X5),
     ];
-    for shape in [
-        DesignPipeSectionShape::Square,
-        DesignPipeSectionShape::Triangular,
-    ] {
+    for shape in [1, 2, 3] {
         for operation in [
             DesignExtrudeOperation::NewBody,
             DesignExtrudeOperation::Join,

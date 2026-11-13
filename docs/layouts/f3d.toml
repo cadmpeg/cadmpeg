@@ -8659,9 +8659,9 @@ anchor = "two opaque bytes at offsets 26 and 27"
 name = "pipe_section_frame"
 kind = "byte"
 section = "3.1"
-anchor = "The section frame follows the two opaque bytes"
+anchor = "the section frame follows the two opaque bytes"
 size = 71
-note = "Offsets are relative to the byte after the two opaque bytes of the compact or legacy Pipe prefix."
+note = "Offsets are relative to the byte after the two opaque bytes of the compact or legacy Pipe prefix of a Pipe without a point-selection pair."
 
 [[record.field]]
 name = "owner_and_settings_references"

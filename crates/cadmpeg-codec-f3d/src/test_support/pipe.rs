@@ -48,7 +48,7 @@ pub(crate) struct SectionFrame {
 }
 
 impl SectionFrame {
-    /// The frame Fusion writes for `shape`.
+    /// A frame that names the fixture's owners, settings and path.
     pub(crate) const fn of(shape: u32) -> Self {
         Self {
             references: [103, 100, 200, 106, 109],

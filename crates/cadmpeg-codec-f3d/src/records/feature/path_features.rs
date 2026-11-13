@@ -331,14 +331,21 @@ pub(crate) struct DesignPipeConstruction {
     pub(crate) section: Option<DesignPipeSection>,
 }
 
-/// Section shape of a `Pipe` and the offset of its u32.
+/// Section-shape u32 of a `Pipe` and its offset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignPipeSection {
-    /// Section shape.
-    pub(crate) shape: DesignPipeSectionShape,
+    /// Stored section-shape value.
+    pub(crate) shape_value: u32,
     /// Byte offset of the section-shape u32.
     pub(crate) shape_offset: u64,
+}
+
+impl DesignPipeSection {
+    /// The shape the stored value names.
+    pub(crate) const fn shape(self) -> Option<DesignPipeSectionShape> {
+        DesignPipeSectionShape::from_stored(self.shape_value)
+    }
 }
 
 /// Section shape stored by a `Pipe` scope.
@@ -450,11 +457,14 @@ impl DesignPipeConstruction {
                         .is_some_and(|end| end <= table)
             })
             && self.section.is_none_or(|section| {
-                prefix_end
-                    .and_then(|end| {
-                        end.checked_add(u64_from_index(crate::layout::pipe_section_frame::SHAPE))
-                    })
-                    .is_some_and(|at| at == section.shape_offset)
+                self.point_selection.is_none()
+                    && prefix_end
+                        .and_then(|end| {
+                            end.checked_add(u64_from_index(
+                                crate::layout::pipe_section_frame::SHAPE,
+                            ))
+                        })
+                        .is_some_and(|at| at == section.shape_offset)
                     && section
                         .shape_offset
                         .checked_add(4)
