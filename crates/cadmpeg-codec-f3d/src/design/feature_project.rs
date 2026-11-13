@@ -699,6 +699,25 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             let _ = owners_by_index.insert((stream, owner.record_index()), owner);
         }
     }
+    let extended_assembly_frames = scopes
+        .iter()
+        .filter(|scope| scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble)
+        .filter_map(|scope| {
+            scope
+                .assembly_alignment()
+                .filter(|alignment| alignment.additional_tail_reference.is_some())
+                .and_then(
+                    crate::records::feature::assembly::DesignAssemblyAlignment::operand_frames,
+                )
+        })
+        .flatten()
+        .map(|frame| {
+            (
+                (frame.reference_record_index, frame.transform_offset),
+                frame.transform,
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let mut features = scopes
         .iter()
         .filter(|scope| {
@@ -1530,6 +1549,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     }
                 }
             };
+            let extended_joint_origin = scope.joint_origin_frame().is_some_and(|origin| {
+                extended_assembly_frames.get(&(
+                    scope.record_index, origin.joint_origin_transform_offset,
+                )).is_some_and(|transform| *transform == origin.joint_origin_transform)
+            });
             let outputs = inserted_bodies;
             Ok(Feature {
                 product_definition: None,
@@ -1554,7 +1578,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 source_properties: if matches!(
                     &definition,
                     FeatureDefinition::Operation(FeatureOperation::Native { .. })
-                ) || matches!(family, Some(DesignFeatureFamily::Hole))
+                ) || matches!(family, Some(DesignFeatureFamily::Hole)) || extended_joint_origin
                 {
                     scope_properties(scope, native_scope, placements, &parameters)?
                 } else {
@@ -2419,14 +2443,15 @@ fn scope_properties(
     parameters: &[(u32, &DesignParameter)],
 ) -> Result<std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     let mut properties = std::collections::BTreeMap::new();
-    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble
-        && scope.assembly_alignment().is_some_and(|alignment| {
-            alignment.additional_tail_reference.is_some()
-                || alignment
-                    .additional_owner_run
-                    .as_ref()
-                    .is_some_and(|run| run.count.value != 0)
-        })
+    if scope.joint_origin_frame().is_some()
+        || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble
+            && scope.assembly_alignment().is_some_and(|alignment| {
+                alignment.additional_tail_reference.is_some()
+                    || alignment
+                        .additional_owner_run
+                        .as_ref()
+                        .is_some_and(|run| run.count.value != 0)
+            })
     {
         for (_, parameter) in parameters {
             properties.insert(

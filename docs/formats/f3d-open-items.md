@@ -2502,7 +2502,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Need.** Controlled public saves that vary the referenced object while preserving the joint, connectors, owner values, and motion record. Establish whether the target changes the joint's enabled constraints or solver membership.
 
-**Note.** The neutral relation uses the decoded joint motion with a fixed fallback. `assembly.extended-tail-assumed` names the assumption that the additional tail reference adds no further neutral constraint. Source parameter expressions remain under `parameter:NAME` in feature source properties.
+**Note.** The neutral relation uses the decoded joint motion with a fixed fallback. `assembly.extended-tail-assumed` names the assumption that the additional tail reference adds no further neutral constraint. Source parameter expressions remain under `parameter:NAME` in feature source properties. A JointOrigin coordinate system supplied by an extended-tail connector retains its source references and parameter expressions. The connector and origin share their stream, target index, transform, and transform location.
 
 ### DR-490. Typed spelling of the extended Assemble tail
 
