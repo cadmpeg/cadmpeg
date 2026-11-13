@@ -3,7 +3,7 @@
 
 use super::{
     DesignDraftFlags, DesignDraftOperation, DesignDraftTwoSided, DesignModifyOperation,
-    DesignMoveForm, DesignMoveOperation, DesignMovePrefix, DesignMoveReference,
+    DesignMoveForm, DesignMoveLeading, DesignMoveOperation, DesignMovePrefix, DesignMoveReference,
     DesignOffsetFacesOperation, DesignShellOperation, DesignShellOutsideWall,
     DesignShellPrefixFlag, DesignShellWallSlots, DesignThickenOperation,
 };
@@ -13,7 +13,8 @@ rewrite_native_record!(DesignDraftFlags, []; {flipped, tangent_chain, two_sided}
 rewrite_native_scalar!(DesignDraftTwoSided);
 rewrite_native_scalar!(DesignMoveForm);
 rewrite_native_record!(DesignMoveOperation, []; {transform, transform_offset, transform_record_index, form, form_offset, prefix});
-rewrite_native_record!(DesignMovePrefix, []; {references, codes, matrix_omitted});
+rewrite_native_record!(DesignMovePrefix, []; {references, codes, matrix_omitted, leading});
+rewrite_native_record!(DesignMoveLeading, []; {scalar, references});
 rewrite_native_enum!(DesignMoveReference, []; {Null, Local {record_index}, Typed {record_index, type_guid}});
 rewrite_native_record!(DesignModifyOperation, []; {motion, body_group_record_indices, body_count_offset});
 rewrite_native_record!(DesignOffsetFacesOperation, []; {distance, distance_record_index, distance_offset});

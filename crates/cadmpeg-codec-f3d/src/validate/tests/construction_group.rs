@@ -274,6 +274,48 @@ fn move_face_group_requires_the_selected_face_role() {
 }
 
 #[test]
+fn align_group_requires_the_body_or_geometry_role() {
+    use crate::records::{
+        feature::scope::{DesignFeatureKind, DesignParameterScope},
+        identity::ReferenceRun,
+        topology::{
+            construction::DesignConstructionOperandRole, extrude_selection::DesignOperandRole,
+        },
+    };
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::CadIr::empty();
+        let mut native = native(true, false);
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            DesignFeatureKind::Align,
+            10,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.reference_members = ReferenceRun::unlocated(vec![100, 101, 300]);
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        native.design_parameter_scopes = vec![scope];
+        for (role, findings_expected) in [
+            (DesignOperandRole::BODIES_A, 0),
+            (DesignOperandRole::ROLE_0X5, 0),
+            (DesignOperandRole::ROLE_0X10, 1),
+        ] {
+            native.design_construction_operand_groups[0].operand_role =
+                DesignConstructionOperandRole::Other(role);
+            let ctx = super::super::Ctx::new(&ir, &native, decode);
+            let mut findings = Vec::new();
+            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            assert_eq!(findings.len(), findings_expected, "{role:?} {findings:?}");
+        }
+    });
+}
+
+#[test]
 fn thread_face_group_does_not_require_a_specialized_thread_payload() {
     use crate::records::{
         feature::scope::{DesignFeatureKind, DesignParameterScope},

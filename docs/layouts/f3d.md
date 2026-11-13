@@ -10181,6 +10181,59 @@ Unstated regions:
 
 - `48..126` (78 B): The common native tail precedes the same-index paired header.
 
+## `rigid_transform_leading_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A rigid-transform prefix stores ten zero bytes |
+| 11 | 10 | `header_zero` | `bytes[10]` | little | spec | A rigid-transform prefix stores ten zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 8 | `scalar` | `f64` | little | spec | A rigid-transform prefix stores ten zero bytes |
+
+## `align_transform_two_reference_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 68 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An Align rigid-motion constructor has type GUID |
+| 11 | 10 | `header_zero` | `bytes[10]` | little | spec | An Align rigid-motion constructor has type GUID · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 8 | `scalar` | `f64` | little | spec | An Align rigid-motion constructor has type GUID |
+| 29 | 22 | `leading_references` | `bytes[22]` | little | spec | An Align rigid-motion constructor has type GUID |
+| 51 | 3 | `first_remaining_references` | `bytes[3]` | little | spec | An Align rigid-motion constructor has type GUID · value `[0, 0, 0]` |
+| 54 | 4 | `first_code` | `u32` | little | spec | An Align rigid-motion constructor has type GUID |
+| 58 | 1 | `last_reference` | `u8` | little | spec | An Align rigid-motion constructor has type GUID · value `0` |
+| 59 | 4 | `second_code` | `u32` | little | spec | An Align rigid-motion constructor has type GUID |
+| 63 | 4 | `form` | `u32` | little | spec | An Align rigid-motion constructor has type GUID · value `4` |
+| 67 | 1 | `matrix_presence` | `u8` | little | spec | An Align rigid-motion constructor has type GUID |
+
+## `align_transform_four_reference_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 88 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An Align rigid-motion constructor has type GUID |
+| 11 | 10 | `header_zero` | `bytes[10]` | little | spec | An Align rigid-motion constructor has type GUID · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 8 | `scalar` | `f64` | little | spec | An Align rigid-motion constructor has type GUID |
+| 29 | 2 | `leading_references` | `bytes[2]` | little | spec | An Align rigid-motion constructor has type GUID · value `[0, 0]` |
+| 31 | 33 | `first_remaining_references` | `bytes[33]` | little | spec | An Align rigid-motion constructor has type GUID |
+| 64 | 4 | `first_code` | `u32` | little | spec | An Align rigid-motion constructor has type GUID |
+| 68 | 11 | `last_reference` | `bytes[11]` | little | spec | An Align rigid-motion constructor has type GUID |
+| 79 | 4 | `second_code` | `u32` | little | spec | An Align rigid-motion constructor has type GUID |
+| 83 | 4 | `form` | `u32` | little | spec | An Align rigid-motion constructor has type GUID · value `4` |
+| 87 | 1 | `matrix_presence` | `u8` | little | spec | An Align rigid-motion constructor has type GUID |
+
 ## `move_transform_omitted_matrix_frame_125`
 
 Spec §3.1 · layout: byte offsets · size: 125 B

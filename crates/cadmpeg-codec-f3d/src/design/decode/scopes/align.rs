@@ -26,6 +26,12 @@ pub(crate) fn align_envelope_links_hold(
         && Some(envelope.source_code.offset) == offset(compact::SOURCE_CODE)
         && scope.reference_members().values().nth(2) == Some(&envelope.first_reference.value)
         && scope.reference_members().values().next() == Some(&envelope.second_reference.value)
+        && envelope.motion.as_ref().is_none_or(|motion| {
+            motion.form == crate::records::feature::direct_face::DesignMoveForm::Form4
+                && motion.transform_record_index == envelope.first_reference.value
+                && motion.transform_reference_offset
+                    == envelope.first_reference.offset.checked_sub(1)
+        })
         && envelope.construction.as_ref().is_none_or(|construction| {
             self::construction::align_construction_links_hold(scope, envelope, construction)
         })
@@ -106,6 +112,7 @@ pub(crate) fn decode_align_envelope(
         source_code: read(compact::SOURCE_CODE)?,
         second_reference: read(compact::SECOND_REFERENCE)?,
         construction: None,
+        motion: None,
     };
     align_envelope_links_hold(scope, &envelope).then_some(envelope)
 }
