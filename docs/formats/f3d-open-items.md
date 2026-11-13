@@ -492,6 +492,8 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer must emit the selection kind, the origin, and the reference at offset 138 for a direction that does not come from a linear edge, and a reader must know whether a kind-`16` origin is a point of a planar face, an axis, or another entity.
 
+**Note.** In `Parametric_extrusion_generator.f3d`, R-Pattern 3 scope `4709` has kind-`16` direction record `4736` at Design byte `135573`. Its displacement is `(0, 0, 1)`, its U distance is `-1.5` cm, and payload record `4716` supplies V displacement `(1, 0, 0)` at byte `133177`. Both counts are two and the V distance is `1.5` cm. The decoder transfers the two directions and their 15 mm spacings. The auxiliary reference names record `7609`.
+
 ### DR-97. Freedom entry second value `0`
 
 **Question.** What does a freedom entry state when its second f64 is `0` rather than π?
@@ -1149,6 +1151,8 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Keep the operand proofs for these groups.
 
+The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are tracked in DR-481.
+
 ### DR-390. Fillet set flag byte and set-list flag run
 
 **Question.** What do the flag byte of a fillet set record and the two flag-run forms of a parameter-owned `Fillet` scope prefix encode?
@@ -1240,6 +1244,8 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** None.
 
 **Note.** Candidate membership, planar support, and absence of changed faces do not by themselves identify a selected face.
+
+The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is tracked in DR-480.
 
 ### DR-122. Derived Base Feature source and frame
 
@@ -1630,6 +1636,8 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** Operand-level selector, reference, and boundary-count proofs operate on changed reference-edge sets; the missing proof is a group-level assignment from those sets to deleted edges without transition evidence. A multi-member group without that assignment keeps its native selection.
 
+DR-481 tracks a Chamfer group with two bounded-face members and a nonempty transition candidate set.
+
 ### DR-247. Top-level manifest lineage suffix semantics
 
 **Question.** What meaning do the code units in the fixed terminal lineage suffix carry?
@@ -1924,6 +1932,8 @@ when the operation transition carries no candidate for the group members?
 **Need.** Saves of a symmetric direction with an extent distance, of a symmetric direction with an even count, and of a symmetric direction two, each compared against the instance positions.
 
 **Conflict.** None.
+
+**Note.** R-Pattern 3 in `Parametric_extrusion_generator.f3d` stores zero at payload byte `133223`, the direction-one symmetric field. Its two counts are two. In this case adjacent distance and total extent give the same 15 mm spacing.
 
 ### DR-298. SurfaceTrim cell-table entries outside the removal reading
 
@@ -2263,6 +2273,8 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** These start and termination groups retain their native identities when the candidate, support, complete-loop, and plane proofs remain unresolved.
 
+The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is tracked in DR-480.
+
 ### DR-359. Region selections with curve identities absent from their Sketch
 
 **Question.** When a counted region selection names a curve identity that its Sketch no longer owns, do the atomic regions that the stored Cut transition removes equal the selected regions?
@@ -2397,3 +2409,27 @@ when the operation transition carries no candidate for the group members?
 **Need.** Controlled saves that vary further frame controls and complete native definitions for the referenced face groups.
 
 **Note.** The decoder preserves the neutral deletion family. It records `feature.delete-face-frame-controls-assumed` for unfamiliar frames and `feature.delete-face-group-selection-assumed` for missing or inconsistent face groups.
+
+### DR-480. Extrude termination through a compact Sketch-point identity
+
+**Question.** How does an Extrude termination group use a compact Sketch-point selection to set its travel, including an offset and a two-sided extent?
+
+**Known.** In `M3 Parametric SHCS.f3d`, Extrude 4 scope `4751` owns termination group `4766` at Design byte `68879`. Its member `4769` starts at byte `69143`. Identity record `4772` starts at byte `69584` and ends at byte `69621`. It stores ten zero bytes after its indexed header, then u64 values `4125` and `128` at bytes `69605` and `69613`. This is the compact Sketch-point layout in `f3d.md` §3.1. Sketch `4125` owns point record `4168`, persistent identity `128`, at byte `32753`. Its stored coordinates at byte `32894` are `(-0.125, -0.13, 0)` cm. Placement record `4137` maps this point to `(0, -1.25, -1.3)` mm. The profile Sketch `4693` has an identity placement. The final socket floor uses plane surface `49` at `z = -1.3` mm. The Extrude input topology has ten faces. The final topology splits the floor into six faces on surface `49`. Entity-selection decoding admits this compact identity for Loft point groups; Extrude termination projection consumes face operands and WorkPlane selections.
+
+**Need.** A second independent design with this termination form and known point selection, plus paired point-height, offset, and sidedness changes. Establish the travel plane and the relation that preserves the selected Sketch point when its adjacent faces change.
+
+**Conflict.** The termination group role also carries face targets. A point at the floor height and several coplanar final faces permit different face assignments.
+
+**Note.** The decoder keeps group `4766` as the native termination and reports `feature.face-selection-native` and `feature.definition-incomplete`. DR-125 and DR-335 track counted face recipes.
+
+### DR-481. Chamfer edge selection carried by bounded-face recipes
+
+**Question.** Which edges do two bounded-face members of a Chamfer edge group select, and how do their boundary nodes assign the transition edges to each member?
+
+**Known.** In `Parametric_PTFE_Umbilcal_guide.f3z`, Chamfer 4 scope `4323` changes state `500` to `501`. Group `4324` starts at Design byte `85668`, has role `0x0000001000000000`, and names members `4327` and `4331`. Their compact identity prefixes start at bytes `85962` and `91136` and name local records `4330` and `4334`. Each local record carries `bounded_face_recipe_data`, at bytes `86988` and `92162`, followed by a counted program with twenty parsed nodes. Both operands retain preceding candidate faces `746`, `752`, `754`, and `760`. Their prefix references also name faces `631`, `634`, `748`, `750`, `756`, `758`, `762`, `764`, `769`, `820`, and `327`. References with Design values `324` and `326` have empty candidate lanes. The input topology has fifteen faces and thirty-eight edges. Each compact identity retains the same twenty-two transition edge candidates: `637` through `641`, `643` through `645`, `647` through `652`, `654` through `656`, and `658` through `662`. Each selected-face candidate has a four-edge preceding loop. The group has a 0.4 mm equal-distance Chamfer specification.
+
+**Need.** Independent Chamfer designs with bounded-face members, including one selected face, two adjacent selected faces, and a face whose boundary splits before the operation. Establish the selected boundary, the treatment of tangent boundary edges, and the binding of empty prefix lanes.
+
+**Conflict.** A complete twenty-node program, four face candidates, and a shared transition set permit several member assignments. Selecting every transition candidate assumes a group-level rule.
+
+**Note.** The decoder retains the bounded-face operands and compact identity candidates. Group `4324` stays native with `feature.edge-selection-native`. DR-224 tracks Fillet transition ambiguities; DR-244 tracks treatment groups whose transitions supply no candidate set.
