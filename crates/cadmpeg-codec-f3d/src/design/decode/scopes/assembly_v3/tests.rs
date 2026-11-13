@@ -102,7 +102,7 @@ fn named_fixture(
                 bytes.extend(value.to_le_bytes());
             }
         }
-        if extended {
+        if version == 5 {
             bytes.extend(crate::bytes::lp_utf16_bytes(OTHER_GUID).unwrap());
         }
     }
@@ -721,7 +721,7 @@ fn version_four_grammar_reads_the_compact_extended_prologue_and_tail_marker() {
             let units = u64_from_index(name.encode_utf16().count());
             assert_eq!(
                 scope.frame_length(),
-                374 + (u64::from(count) + 12) * 11 + 256 + 2 * units - 16
+                222 + (u64::from(count) + 12) * 11 + 256 + 2 * units - 16
             );
             let grammar = parse(&bytes, &scope, &types).expect("version-4 grammar");
             assert_eq!(grammar.owners, [100, 109, 103, 106]);
@@ -803,4 +803,61 @@ fn version_four_grammar_refuses_other_versions_markers_and_names() {
         versioned_fixture(5, 14, false, false, false, 0);
     five_types.insert(30, (TYPE_GUID, 4));
     assert!(parse(&five_bytes, &five_scope, &five_types).is_none());
+}
+
+#[test]
+fn version_four_connectors_cover_identity_expansion_and_plain_references() {
+    for expanded in [false, true] {
+        for identity in [false, true] {
+            let (bytes, scope, owners, types) =
+                versioned_fixture(4, 4, false, expanded, identity, 0);
+            assert_eq!(
+                scope.frame_length(),
+                654 + 4 * u64::from(expanded) - 128 * u64::from(identity)
+            );
+            let grammar = parse(&bytes, &scope, &types).unwrap();
+            assert_eq!(grammar.frames[0].reference_record_index, 10);
+            assert_eq!(grammar.frames[1].reference_record_index, 20);
+            let decoded = alignment(
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                &scope,
+                &owners,
+                &types,
+            )
+            .unwrap()
+            .unwrap();
+            assert!(valid_alignment(&scope, &decoded, &types, &owners));
+            for end in 0..bytes.len() {
+                assert!(parse(&bytes[..end], &scope, &types).is_none());
+            }
+            let first = usize::try_from(grammar.frames[0].reference_offset - 1).unwrap();
+            let mut typed_bytes = bytes.clone();
+            let mut typed_reference = Vec::new();
+            reference(&mut typed_reference, 10, true);
+            typed_bytes.splice(first..first + 11, typed_reference);
+            let mut typed_scope = scope.clone();
+            typed_scope
+                .try_edit(|draft| {
+                    draft.frame_length += 40;
+                    draft.paired_byte_offset += 40;
+                    draft.reference_count_offset += 40;
+                    draft.kind_offset += 40;
+                    draft.feature_ordinal_offset += 40;
+                    draft.reference_members = ReferenceRun::located(
+                        scope
+                            .reference_members()
+                            .values()
+                            .zip(scope.reference_members().offsets())
+                            .map(|(value, offset)| Located {
+                                value: *value,
+                                offset: *offset + 40,
+                            })
+                            .collect(),
+                    );
+                })
+                .unwrap();
+            assert!(parse(&typed_bytes, &typed_scope, &types).is_none());
+        }
+    }
 }
