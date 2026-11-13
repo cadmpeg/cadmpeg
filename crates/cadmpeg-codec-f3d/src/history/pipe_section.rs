@@ -12,7 +12,7 @@ use cadmpeg_ir::topology::BodyKind;
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
 use crate::records::feature::extrude::DesignExtrudeOperation;
-use crate::records::feature::path_features::DesignPipeConstruction;
+use crate::records::feature::path_features::{DesignPipeConstruction, DesignPipeSectionShape};
 use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
@@ -30,9 +30,11 @@ pub(crate) struct PipeSectionInputs<'a> {
     pub(crate) linear_tolerance: f64,
 }
 
-/// How a Pipe's result faces settle its circular section.
+/// How a Pipe's circular section is settled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SectionReading {
+    /// The section frame stores the circular shape.
+    Read,
     /// Unchanged new-body result faces fit the circle.
     Inferred,
     /// No unchanged new-body result exists to test the circle against.
@@ -63,9 +65,10 @@ impl ExtentReading {
 }
 
 /// Project each native Pipe with whole-path fractions as a Sweep of a
-/// circular region along its path group. A new-body Pipe whose result bodies
-/// no later feature changes projects only when its result faces fit the
-/// circle.
+/// circular region along its path group. A Pipe whose section frame stores a
+/// square or triangular shape stays native. Without a read shape, a new-body
+/// Pipe whose result bodies no later feature changes projects only when its
+/// result faces fit the circle.
 #[must_use]
 pub(crate) fn bind_circular_pipe_sections(
     features: &mut [Feature],
@@ -88,15 +91,16 @@ pub(crate) fn bind_circular_pipe_sections(
             continue;
         };
         feature.evaluation.set_definition(definition);
-        losses.push(match section {
-            SectionReading::Inferred => F3dLossCode::FeaturePipeCircularSectionInferred.note(format!(
+        losses.extend(match section {
+            SectionReading::Read => None,
+            SectionReading::Inferred => Some(F3dLossCode::FeaturePipeCircularSectionInferred.note(format!(
                 "feature {}: the Pipe section is inferred as a circle from the planes, cylinders and tori of its result bodies",
                 feature.id
-            )),
-            SectionReading::Assumed => F3dLossCode::FeaturePipeCircularSectionAssumed.note(format!(
+            ))),
+            SectionReading::Assumed => Some(F3dLossCode::FeaturePipeCircularSectionAssumed.note(format!(
                 "feature {}: no unchanged new-body result tests the Pipe section, and the section is assumed to be a circle",
                 feature.id
-            )),
+            ))),
         });
         losses.push(match extent {
             ExtentReading::BothUnit => F3dLossCode::FeaturePipeWholePathExtentAssumed.note(format!(
@@ -154,14 +158,17 @@ fn circular_pipe_sweep(
     let outer_radius = size * 10.0 / 2.0;
     let wall = construction.is_hollow.then_some(thickness * 10.0);
     let inner_radius = wall.map(|wall| outer_radius - wall);
-    let section = if construction.operation == DesignExtrudeOperation::NewBody
-        && !feature.evaluation.outputs().is_empty()
-        && result_bodies_unchanged(feature, features)
-    {
-        result_faces_fit_circle(feature, inputs, surfaces, outer_radius, inner_radius)
-            .then_some(SectionReading::Inferred)?
-    } else {
-        SectionReading::Assumed
+    let section = match construction.section.map(|section| section.shape) {
+        Some(DesignPipeSectionShape::Circular) => SectionReading::Read,
+        Some(DesignPipeSectionShape::Square | DesignPipeSectionShape::Triangular) => return None,
+        None if construction.operation == DesignExtrudeOperation::NewBody
+            && !feature.evaluation.outputs().is_empty()
+            && result_bodies_unchanged(feature, features) =>
+        {
+            result_faces_fit_circle(feature, inputs, surfaces, outer_radius, inner_radius)
+                .then_some(SectionReading::Inferred)?
+        }
+        None => SectionReading::Assumed,
     };
     let op = match construction.operation {
         DesignExtrudeOperation::NewBody => SolidSweepOperation::NewBody,

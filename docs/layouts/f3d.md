@@ -2805,6 +2805,19 @@ Offsets are relative to the primary indexed header. The variable reference table
 | 22 | 4 | `operation` | `u32` | little | spec | the result-operation u32 at offset 22 |
 | 26 | 2 | `opaque_post_operation` | `bytes[2]` | little | spec | two opaque bytes at offsets 26 and 27 |
 
+## `pipe_section_frame`
+
+Spec §3.1 · layout: byte offsets · size: 71 B
+
+Offsets are relative to the byte after the two opaque bytes of the compact or legacy Pipe prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 55 | `owner_and_settings_references` | `bytes[55]` | little | spec | Five marked references occupy offsets 0 through 54 |
+| 55 | 1 | `zero_byte` | `u8` | little | spec | A zero byte is at offset 55 · value `0` |
+| 56 | 11 | `path_group_reference` | `bytes[11]` | little | spec | The marked reference at offset 56 |
+| 67 | 4 | `shape` | `u32` | little | spec | The u32 section shape at offset 67 |
+
 ## `legacy_pipe_operation_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 32 B

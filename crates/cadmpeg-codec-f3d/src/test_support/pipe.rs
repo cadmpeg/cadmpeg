@@ -33,7 +33,30 @@ pub(crate) struct Config {
     pub(crate) variant: bool,
     pub(crate) group_flags: &'static [u8],
     pub(crate) point_version: Option<u32>,
+    /// Section frame after the prefix: the references it names in order,
+    /// the byte at frame offset 55, the path reference, and the shape.
+    pub(crate) section: Option<SectionFrame>,
     pub(crate) layout: Layout,
+}
+
+#[derive(Clone)]
+pub(crate) struct SectionFrame {
+    pub(crate) references: [u32; 5],
+    pub(crate) separator: u8,
+    pub(crate) path: u32,
+    pub(crate) shape: u32,
+}
+
+impl SectionFrame {
+    /// The frame Fusion writes for `shape`.
+    pub(crate) const fn of(shape: u32) -> Self {
+        Self {
+            references: [103, 100, 200, 106, 109],
+            separator: 0,
+            path: 310,
+            shape,
+        }
+    }
 }
 
 impl Default for Config {
@@ -48,6 +71,7 @@ impl Default for Config {
             variant: false,
             group_flags: &[0, 0],
             point_version: None,
+            section: None,
             layout: Layout::default(),
         }
     }
@@ -106,8 +130,16 @@ impl Fixture {
         if config.point_version.is_some() {
             push_marked_reference(&mut bulk, 500);
         }
-        bulk.resize(64, 0);
-        let table = bulk.len();
+        if let Some(frame) = &config.section {
+            for id in frame.references {
+                push_marked_reference(&mut bulk, id);
+            }
+            bulk.push(frame.separator);
+            push_marked_reference(&mut bulk, frame.path);
+            bulk.extend_from_slice(&frame.shape.to_le_bytes());
+        }
+        let table = bulk.len().max(64);
+        bulk.resize(table, 0);
         bulk.extend_from_slice(&u32::try_from(refs.len()).unwrap().to_le_bytes());
         for id in &refs {
             push_marked_reference(&mut bulk, *id);

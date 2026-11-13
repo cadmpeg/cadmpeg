@@ -11,15 +11,19 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::design_segment;
 use crate::layout::fixed_pipe_operation_prefix as compact;
 use crate::layout::legacy_pipe_operation_prefix as legacy;
+use crate::layout::pipe_section_frame as section_frame;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::entity_header::SegmentType;
 use crate::records::feature::path_features::pipe::{self, PipeIndex};
-use crate::records::feature::path_features::{DesignPipeConstruction, DesignPipePointSelection};
+use crate::records::feature::path_features::{
+    DesignPipeConstruction, DesignPipePointSelection, DesignPipeSection, DesignPipeSectionShape,
+};
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
 };
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
+use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
@@ -135,6 +139,7 @@ fn exact_pipe_prefix(bytes: &[u8], start: usize) -> Option<DesignPipeConstructio
         opaque_post_operation_offset: at(opaque_at)?,
         record_indexes: [0; 4],
         point_selection: None,
+        section: None,
     })
 }
 
@@ -189,6 +194,7 @@ fn read_construction(
     if lanes != 4 {
         return None;
     }
+    let mut paths = Vec::new();
     for group in index.groups(segment, scope.record_index) {
         let selected = frame(group.record_index)?;
         if u64_from_index(selected.start) != group.byte_offset
@@ -197,6 +203,18 @@ fn read_construction(
         {
             return None;
         }
+        if group.role() == DesignOperandRole::ROLE_0X5 {
+            paths.push(group.record_index);
+        }
+    }
+    let settings = scope
+        .reference_members()
+        .values()
+        .copied()
+        .filter(|id| frame(*id).is_some_and(|selected| pipe::is_settings(selected.design_type)))
+        .collect::<Vec<_>>();
+    if let ([settings], [path]) = (settings.as_slice(), paths.as_slice()) {
+        construction.section = section_frame_shape(bytes, table, &construction, *settings, *path);
     }
     if let Some((id, selected)) = point {
         let types = HashMap::from([(
@@ -238,6 +256,44 @@ fn read_construction(
     }
     index.check_relation(scope, &construction)?;
     Some(construction)
+}
+
+/// Read the section shape when the section frame after the prefix names
+/// exactly the scalar owners and settings record, then the path group.
+fn section_frame_shape(
+    bytes: &[u8],
+    table: usize,
+    construction: &DesignPipeConstruction,
+    settings: u32,
+    path: u32,
+) -> Option<DesignPipeSection> {
+    let start = usize::try_from(construction.opaque_post_operation_offset)
+        .ok()?
+        .checked_add(2)?;
+    let frame = bytes.get(start..table)?;
+    if frame.len() < section_frame::LEN {
+        return None;
+    }
+    let mut named = (0..5)
+        .map(|ordinal| marked_record_reference(frame, ordinal * 11))
+        .collect::<Option<Vec<_>>>()?;
+    named.sort_unstable();
+    let mut expected = construction.record_indexes.to_vec();
+    expected.push(settings);
+    expected.sort_unstable();
+    if named != expected
+        || frame.get(section_frame::ZERO_BYTE) != Some(&section_frame::ZERO_BYTE_VALUE)
+        || marked_record_reference(frame, section_frame::PATH_GROUP_REFERENCE) != Some(path)
+    {
+        return None;
+    }
+    Some(DesignPipeSection {
+        shape: DesignPipeSectionShape::from_stored(cadmpeg_core::decode::View::u32_le_at(
+            frame,
+            section_frame::SHAPE,
+        )?)?,
+        shape_offset: u64_from_index(start.checked_add(section_frame::SHAPE)?),
+    })
 }
 
 #[cfg(test)]

@@ -8656,6 +8656,43 @@ source = "spec"
 anchor = "two opaque bytes at offsets 26 and 27"
 
 [[record]]
+name = "pipe_section_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The section frame follows the two opaque bytes"
+size = 71
+note = "Offsets are relative to the byte after the two opaque bytes of the compact or legacy Pipe prefix."
+
+[[record.field]]
+name = "owner_and_settings_references"
+offset = 0
+type = "bytes[55]"
+source = "spec"
+anchor = "Five marked references occupy offsets 0 through 54"
+
+[[record.field]]
+name = "zero_byte"
+offset = 55
+type = "u8"
+source = "spec"
+anchor = "A zero byte is at offset 55"
+value = 0
+
+[[record.field]]
+name = "path_group_reference"
+offset = 56
+type = "bytes[11]"
+source = "spec"
+anchor = "The marked reference at offset 56"
+
+[[record.field]]
+name = "shape"
+offset = 67
+type = "u32"
+source = "spec"
+anchor = "The u32 section shape at offset 67"
+
+[[record]]
 name = "legacy_pipe_operation_prefix"
 kind = "byte"
 section = "3.1"

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::records::feature::scope::DesignScopePayload;
-use crate::test_support::pipe::{Config, Fixture, Layout};
+use crate::test_support::pipe::{Config, Fixture, Layout, SectionFrame};
 
 #[test]
 fn pipe_source_binds_group_with_three_byte_flag_block() {
@@ -549,4 +549,73 @@ fn pipe_prefixes_keep_independent_hollow_and_opaque_fields() {
     unobserved[25..29].copy_from_slice(&4u32.to_le_bytes());
     unobserved[29..31].copy_from_slice(&[1, 1]);
     assert!(super::exact_pipe_prefix(&unobserved, 0).is_none());
+}
+
+fn decoded_section(
+    config: Config,
+) -> Option<crate::records::feature::path_features::DesignPipeSection> {
+    let native = Fixture::new(config)
+        .decode(&cadmpeg_test_support::service_decode_context())
+        .unwrap();
+    let DesignScopePayload::Pipe(Some(pipe)) = native.design_parameter_scopes[0].payload() else {
+        panic!("complete Pipe source")
+    };
+    pipe.section
+}
+
+#[test]
+fn pipe_source_reads_the_section_shape_after_the_prefix() {
+    use crate::records::feature::path_features::DesignPipeSectionShape;
+    for legacy in [false, true] {
+        for operation in [4, 1] {
+            for (stored, shape) in [
+                (0, DesignPipeSectionShape::Circular),
+                (1, DesignPipeSectionShape::Square),
+                (2, DesignPipeSectionShape::Triangular),
+            ] {
+                let section = decoded_section(Config {
+                    legacy,
+                    operation,
+                    section: Some(SectionFrame::of(stored)),
+                    ..Default::default()
+                })
+                .expect("section frame");
+                assert_eq!(section.shape, shape);
+                assert_eq!(section.shape_offset, if legacy { 32 + 67 } else { 28 + 67 });
+            }
+        }
+    }
+    assert_eq!(decoded_section(Config::default()), None);
+}
+
+#[test]
+fn pipe_source_leaves_an_inexact_section_frame_unread() {
+    let frames = [
+        SectionFrame::of(3),
+        SectionFrame {
+            separator: 1,
+            ..SectionFrame::of(0)
+        },
+        SectionFrame {
+            path: 410,
+            ..SectionFrame::of(0)
+        },
+        SectionFrame {
+            references: [103, 100, 310, 106, 109],
+            ..SectionFrame::of(0)
+        },
+        SectionFrame {
+            references: [103, 100, 100, 106, 109],
+            ..SectionFrame::of(0)
+        },
+    ];
+    for frame in frames {
+        assert_eq!(
+            decoded_section(Config {
+                section: Some(frame),
+                ..Default::default()
+            }),
+            None
+        );
+    }
 }
