@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Project exact Design assembly alignments into neutral joints.
 
 use cadmpeg_core::decode::u64_from_index;
 
@@ -887,6 +886,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     let mut malformed_rest_joints = 0_usize;
     let mut native_angular_limits = 0_usize;
     let mut assumed_active = 0_usize;
+    let mut assumed_connector_operands = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -894,6 +894,9 @@ pub(crate) fn project_assembly_joints_with_paths(
         let motion = scope_joint_motion(scope, stream, motions);
         match project_assembly_joint(scope, stream, &occurrences, scopes, inserts, motion, paths) {
             Ok(Some((mut joint, undecoded))) => {
+                if has_unqualified_assembly_connectors(scope) {
+                    assumed_connector_operands += 1;
+                }
                 if scope.assembly_alignment().is_some_and(|alignment| {
                     alignment
                         .operand_path_refs()
@@ -962,6 +965,14 @@ pub(crate) fn project_assembly_joints_with_paths(
         }
     }
     let mut losses = Vec::new();
+    if assumed_connector_operands != 0 {
+        losses.push(F3dLossCode::AssemblyConnectorOperandsAssumed.note(format!(
+            "{assumed_connector_operands} Design assembly joint(s) use native connector references as operand identities with missing document containers; the operand context is assumed."
+        )));
+        losses.push(F3dLossCode::AssemblyMotionBindingAssumed.note(format!(
+            "{assumed_connector_operands} Design assembly joint(s) use adjacent decoded motion when available and otherwise a fixed relation; the scope-to-motion binding is assumed."
+        )));
+    }
     if partial_alignments != 0 {
         losses.push(F3dLossCode::AssemblyAlignmentPartial.note(format!(
             "{partial_alignments} Design assembly joint scope(s) were retained natively with partial alignment: joint motion binding, tail activation state or operand paths are unresolved."
@@ -1110,6 +1121,17 @@ fn turn_frame_y_to_z(mut rows: [[f64; 4]; 4]) -> [[f64; 4]; 4] {
     rows
 }
 
+fn has_unqualified_assembly_connectors(scope: &DesignParameterScope) -> bool {
+    scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble
+        && scope.assembly_alignment().is_some_and(|alignment| {
+            alignment.frame_sense.is_some()
+                && matches!(
+                    alignment.form,
+                    Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Frames { .. })
+                )
+        })
+}
+
 fn project_assembly_joint(
     scope: &DesignParameterScope,
     stream: &str,
@@ -1180,8 +1202,21 @@ fn project_assembly_joint(
                 None,
             )
         }
-        // A wide scope always qualifies its operands; frames without
-        // qualifiers are an unprojected joint, not an absent one.
+        Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Frames { frames })
+            if has_unqualified_assembly_connectors(scope) =>
+        {
+            (
+                frames.clone(),
+                frames.each_ref().map(|frame| {
+                    JointOperand::external(
+                        ExternalDocument::Missing {},
+                        format!("{stream}:design-record#{}", frame.reference_record_index),
+                        Vec::new(),
+                    )
+                }),
+                None,
+            )
+        }
         Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Frames { .. })
             if AssemblyScopeGeneration::for_scope(scope)
                 .operand_frame_variant()

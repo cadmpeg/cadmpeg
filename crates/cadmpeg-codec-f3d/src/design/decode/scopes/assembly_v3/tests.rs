@@ -526,21 +526,74 @@ fn version_three_decoder_keeps_qualified_scope_connectors_and_reports_partial_bi
     if let DesignScopePayloadMut::Assemble(slot) = scope.payload_mut() {
         *slot = Some(partial);
     }
+    assert!(!joint_binds_after_merge(&scope, &types));
     let projection = crate::design::assembly::project_assembly_joints(
         &[scope],
         &[],
         &crate::design::components::ComponentInserts::decide(&[], &[], &[]),
         &[],
     );
-    assert!(projection.joints.is_empty());
-    assert!(projection
-        .losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::AssemblyAlignmentPartial.kind()));
+    assert_eq!(projection.joints.len(), 1);
+    let joint = &projection.joints[0];
+    let connectors = joint.connectors().collect::<Vec<_>>();
+    assert_eq!(
+        connectors[0].operand.object,
+        "f3d:Design/BulkStream.dat:design-record#10"
+    );
+    assert_eq!(
+        connectors[1].operand.object,
+        "f3d:Design/BulkStream.dat:design-record#20"
+    );
+    for connector in &connectors {
+        assert_eq!(
+            connector.operand.container,
+            cadmpeg_ir::products::OperandContainer::External {
+                external_document: cadmpeg_ir::products::ExternalDocument::Missing {},
+            }
+        );
+    }
+    let rows = connectors[1].frame.rows();
+    for (actual, expected) in [rows[0][3], rows[1][3], rows[2][3]]
+        .into_iter()
+        .zip([30.0, -20.0, 40.0])
+    {
+        assert!((actual - expected).abs() < EPS_ALIGNMENT);
+    }
+    assert_eq!(
+        joint.frame_sense(),
+        Some(cadmpeg_ir::products::PlaneSense::Opposed)
+    );
+    assert!(!joint.suppressed);
+    let cadmpeg_ir::products::JointOperands::Pair {
+        kind:
+            cadmpeg_ir::products::PairedJointKind::Fixed {
+                angle: Some(angle),
+                translation_offset: Some(offset),
+                ..
+            },
+        ..
+    } = joint.operands()
+    else {
+        panic!("fixed relation with scope alignment");
+    };
+    assert!((angle.get() - std::f64::consts::FRAC_PI_2).abs() < EPS_ALIGNMENT);
+    for (actual, expected) in offset.iter().zip([20.0, -30.0, 40.0]) {
+        assert!((actual.get() - expected).abs() < EPS_ALIGNMENT);
+    }
+    for code in [
+        crate::loss::F3dLossCode::AssemblyConnectorOperandsAssumed,
+        crate::loss::F3dLossCode::AssemblyMotionBindingAssumed,
+        crate::loss::F3dLossCode::AssemblyJointActivationAssumed,
+    ] {
+        assert!(projection
+            .losses
+            .iter()
+            .any(|loss| loss.code == code.kind()));
+    }
 }
 
 #[test]
-fn version_three_nonzero_tail_state_retains_partial_alignment() {
+fn version_three_nonzero_tail_state_projects_with_assumed_operand_context() {
     for state in [[0, 1], [1, 0], [1, 1]] {
         let (mut bytes, mut scope, owners, mut types) = fixture(false, false, false, 4);
         append_paths(&mut bytes, &mut types);
@@ -573,11 +626,12 @@ fn version_three_nonzero_tail_state_retains_partial_alignment() {
             &crate::design::components::ComponentInserts::decide(&[], &[], &[]),
             &[],
         );
-        assert!(projection.joints.is_empty());
+        assert_eq!(projection.joints.len(), 1);
         assert!(projection
             .losses
             .iter()
-            .any(|loss| loss.code == crate::loss::F3dLossCode::AssemblyAlignmentPartial.kind()));
+            .any(|loss| loss.code
+                == crate::loss::F3dLossCode::AssemblyConnectorOperandsAssumed.kind()));
     }
 }
 
@@ -662,7 +716,7 @@ fn version_five_locator_matrix_forms_qualify_validate_and_project() {
 }
 
 #[test]
-fn version_five_locator_wrong_word_and_span_keep_partial_alignment() {
+fn version_five_locator_wrong_word_and_span_project_with_assumed_operand_context() {
     for wrong_span in [false, true] {
         let (mut bytes, mut scope, owners, mut types) =
             versioned_fixture(5, 7, false, false, false, 0);
@@ -698,14 +752,13 @@ fn version_five_locator_wrong_word_and_span_keep_partial_alignment() {
             &crate::design::components::ComponentInserts::default(),
             &[],
         );
-        assert!(projection.joints.is_empty());
+        assert_eq!(projection.joints.len(), 1);
         assert_eq!(
             projection
                 .losses
                 .iter()
-                .filter(
-                    |loss| loss.code == crate::loss::F3dLossCode::AssemblyAlignmentPartial.kind()
-                )
+                .filter(|loss| loss.code
+                    == crate::loss::F3dLossCode::AssemblyConnectorOperandsAssumed.kind())
                 .count(),
             1
         );

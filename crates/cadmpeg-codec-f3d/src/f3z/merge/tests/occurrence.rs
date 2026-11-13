@@ -1941,3 +1941,44 @@ fn standalone_external_joint_binds_without_changing_source_operands() {
         })
     );
 }
+
+#[test]
+fn partial_connector_operands_survive_standalone_and_archive_rebinding() {
+    use cadmpeg_ir::products::{ExternalDocument, JointOperand};
+    for mode in [
+        super::super::JointRebind::CompleteScopes,
+        super::super::JointRebind::All,
+    ] {
+        let (mut model, _) = standalone_joint_model(Vec::new());
+        for (ordinal, connector) in model.assembly_joints[0].connectors_mut().enumerate() {
+            connector.operand = JointOperand::external(
+                ExternalDocument::Missing {},
+                format!("f3d:Design/BulkStream.dat:design-record#{}", ordinal + 10),
+                Vec::new(),
+            );
+        }
+        crate::design::assembly::bind_assembly_joint_features(
+            &mut model.features,
+            &model.assembly_joints,
+        );
+        let joints = model.assembly_joints.clone();
+        let features = model.features.clone();
+        let children = std::collections::BTreeMap::new();
+        let mut losses = Vec::new();
+        super::super::rebind_joints(
+            &mut super::super::JointRows {
+                occurrences: &model.occurrences,
+                joints: &mut model.assembly_joints,
+                features: &mut model.features,
+            },
+            &children,
+            &children,
+            &std::collections::BTreeSet::new(),
+            mode,
+            &mut losses,
+        );
+        assert_eq!(model.assembly_joints, joints);
+        assert_eq!(model.features, features);
+        assert!(losses.is_empty());
+    }
+}
