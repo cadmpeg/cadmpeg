@@ -598,7 +598,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             FeatureOperation::ReferenceImage { .. } | FeatureOperation::DatumPrincipalPlane { .. },
         ) => false,
         FeatureDefinition::Operation(FeatureOperation::MeshImport { tessellations }) => {
-            tessellations.is_empty()
+            !matches!(tessellations, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
         }
         FeatureDefinition::Operation(FeatureOperation::Decal { faces, .. }) => {
             !face_selection_is_resolved(faces)
@@ -852,6 +852,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !body_selection_is_resolved(source)
         }
         FeatureDefinition::Operation(FeatureOperation::InsertComponent { .. }) => false,
+        FeatureDefinition::Operation(FeatureOperation::InsertComponents { components }) => !components.is_resolved(),
         FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::Shell {
             bodies,
@@ -2472,7 +2473,10 @@ fn report_design_projection_gaps(
     )?;
     let mut uninterpreted_scopes = 0;
     for scope in &native.design_parameter_scopes {
-        if scope.occurrence_transfer.is_none() && scope.payload().is_uninterpreted() {
+        if scope.occurrence_transfer.is_none()
+            && scope.occurrence_transfer_intent.is_none()
+            && scope.payload().is_uninterpreted()
+        {
             uninterpreted_scopes += 1;
         }
     }
@@ -2940,6 +2944,8 @@ struct F3dDecodeSession<'a> {
     report_scope: crate::report::ReportScope,
     unknowns: Vec<UnknownRecord>,
     admitted_entities: u64,
+    component_definitions_by_record:
+        std::collections::BTreeMap<(String, u64), cadmpeg_ir::ids::ProductDefinitionId>,
 }
 
 impl<'a> F3dDecodeSession<'a> {
@@ -3016,6 +3022,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report_scope,
                 unknowns,
                 admitted_entities,
+                component_definitions_by_record: std::collections::BTreeMap::new(),
             },
             SessionPath::Geometry(Box::new(GeometrySessionPath {
                 index: GeometryIndex {
@@ -3061,6 +3068,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report_scope,
                 unknowns,
                 admitted_entities,
+                component_definitions_by_record: std::collections::BTreeMap::new(),
             },
             SessionPath::Bodyless {
                 mesh_projection,
@@ -3235,6 +3243,8 @@ impl<'a> F3dDecodeSession<'a> {
             products: design_intent::DesignProducts {
                 occurrences: &model.occurrences,
                 assembly_joints: &model.assembly_joints,
+                definitions: &model.product_definitions,
+                component_definitions_by_record: &self.component_definitions_by_record,
             },
             geometry: design_intent::DesignGeometry {
                 primary_brep: match path {
@@ -3411,6 +3421,7 @@ impl<'a> F3dDecodeSession<'a> {
             &local_sources,
             &prereqs.design_types,
         )?;
+        self.component_definitions_by_record = local.component_definitions_by_record.clone();
         if let Some(table) = prereqs.xref_table() {
             let external =
                 crate::xref::project_occurrences(table, &local_sources, &local.occurrences)?;
@@ -4397,63 +4408,6 @@ fn mesh_texture_assignments(
         });
     }
     Ok(assignments)
-}
-
-/// Replace the native definition of each mesh-import scope with its exact
-/// tessellation identities.
-fn mesh_feature_tessellations<'a>(
-    projection: &'a MeshProjection,
-    stream: &str,
-    record_index: u32,
-) -> Option<&'a [String]> {
-    let key = stream.to_string();
-    projection
-        .tessellations_by_scope
-        .get(&(key, record_index))
-        .map(Vec::as_slice)
-}
-
-fn bind_mesh_feature_definitions(
-    features: &mut [cadmpeg_ir::features::Feature],
-    scopes: &[crate::records::feature::scope::DesignParameterScope],
-    projection: &MeshProjection,
-) -> Result<(), cadmpeg_core::CodecError> {
-    for feature in features {
-        if feature.source_tag.as_deref() != Some("Base Mesh Feature") {
-            continue;
-        }
-        let Some(native_ref) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        let Some(scope) = scopes.iter().find(|scope| scope.id == native_ref) else {
-            continue;
-        };
-        let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-        let Some(tessellations) =
-            mesh_feature_tessellations(projection, stream, scope.record_index)
-        else {
-            continue;
-        };
-        if tessellations.is_empty() {
-            continue;
-        }
-        let mut copies = Vec::new();
-        for tessellation in tessellations {
-            let copy = tessellation.to_owned();
-            copies.push(copy);
-        }
-        feature
-            .evaluation
-            .set_definition(cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::MeshImport {
-                    tessellations: copies
-                        .try_into()
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
-                },
-            ));
-    }
-
-    Ok(())
 }
 
 /// Project channels with a settled element layout and count unresolved channels
@@ -6114,6 +6068,7 @@ pub(crate) fn apply_body_presentation_names(
 
 pub(crate) mod design_intent;
 mod geometry_admission;
+mod mesh_import;
 mod prereqs;
 
 #[cfg(test)]

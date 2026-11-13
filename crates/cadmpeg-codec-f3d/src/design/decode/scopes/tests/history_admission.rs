@@ -269,7 +269,8 @@ fn thicken_variants(first: f64, second: f64) -> Vec<DesignParameterScope> {
                     signed_thickness: crate::test_support::real(thickness),
                     thickness_record_index: 74,
                     thickness_offset: byte_offset + 40,
-                    boolean: None,
+                    symmetric: false,
+                    tangent_chain: true,
                 },
             );
             scope

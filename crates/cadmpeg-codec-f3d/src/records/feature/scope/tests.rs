@@ -580,6 +580,38 @@ fn hole_extent_without_point_carrier_round_trips_and_checks_kind() {
 }
 
 #[test]
+fn occurrence_transfer_intent_wire_accepts_absence_and_partial_value_but_refuses_null() {
+    let scope = super::DesignParameterScope::empty(
+        "f3d:scope#1",
+        super::DesignScopePayload::CopyPaste(None),
+        1,
+    );
+    let mut wire = serde_json::to_value(&scope).unwrap();
+    assert!(wire.get("occurrence_transfer_intent").is_none());
+    let loaded: super::DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+    assert!(loaded.occurrence_transfer_intent.is_none());
+    let partial = serde_json::json!({
+        "mode": "copy",
+        "relation_record_index": null,
+        "occurrence_record_index": null,
+        "component_record_index": null,
+        "source_owner_component_record_index": null,
+        "target_owner_component_record_index": null,
+        "source_transform": null,
+        "target_transform": null
+    });
+    wire["occurrence_transfer_intent"] = partial.clone();
+    let loaded: super::DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(loaded).unwrap()["occurrence_transfer_intent"],
+        partial
+    );
+    wire["occurrence_transfer_intent"] = serde_json::Value::Null;
+    let error = serde_json::from_value::<super::DesignParameterScope>(wire).unwrap_err();
+    assert!(error.to_string().contains("occurrence_transfer_intent"));
+}
+
+#[test]
 fn native_profile_wire_round_trips_and_rejects_null() {
     use super::DesignParameterScope;
     let (archive, mut scope, headers, entities) =
@@ -611,6 +643,7 @@ fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
     if let DesignScopePayloadMut::Fillet(slot) = scope.payload_mut() {
         slot.sets = Some(DesignFilletSetList {
             form: DesignFilletSetListForm::Current,
+            rolling_ball_corner: true,
             sets: vec![DesignFilletSet {
                 record_index: 2,
                 byte_offset: 300,
@@ -620,7 +653,8 @@ fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
                     radius_owner_record_index: 4,
                 },
                 tangency_weight_owner_record_index: 5,
-                flag: false,
+                tangent_chain: false,
+                curvature_continuity: None,
             }],
         });
     }
@@ -641,12 +675,14 @@ fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
 fn chamfer_sets_round_trip_and_belong_to_chamfer_scopes() {
     use super::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut};
     use crate::records::feature::chamfer_set::{
-        DesignChamferSet, DesignChamferSetList, DesignChamferSetListForm, DesignChamferSetSpec,
+        DesignChamferCornerType, DesignChamferSet, DesignChamferSetList, DesignChamferSetListForm,
+        DesignChamferSetSpec,
     };
     let mut scope = DesignParameterScope::empty("f3d:scope#1", DesignFeatureKind::Chamfer, 1);
     if let DesignScopePayloadMut::Chamfer(slot) = scope.payload_mut() {
         slot.sets = Some(DesignChamferSetList {
             form: DesignChamferSetListForm::Compact,
+            corner_type: DesignChamferCornerType::Chamfer,
             entry_count: 6,
             sets: vec![DesignChamferSet {
                 record_index: 2,
@@ -657,7 +693,8 @@ fn chamfer_sets_round_trip_and_belong_to_chamfer_scopes() {
                     distance_owner_record_index: 4,
                 },
                 auxiliary_record_index: 5,
-                flag: true,
+                entry_count: 1,
+                tangent_chain: true,
             }],
         });
     }

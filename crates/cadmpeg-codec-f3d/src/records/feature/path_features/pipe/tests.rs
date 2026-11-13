@@ -83,14 +83,20 @@ fn pipe_native_round_trips_point_relations_and_absent_construction() {
 }
 
 fn reject_mutation(arena: &str, mutate: impl FnOnce(&mut serde_json::Value)) {
+    reject_mutation_of(
+        Config {
+            point_version: Some(2),
+            operation: 1,
+            ..Default::default()
+        },
+        arena,
+        mutate,
+    );
+}
+
+fn reject_mutation_of(config: Config, arena: &str, mutate: impl FnOnce(&mut serde_json::Value)) {
     let ctx = cadmpeg_test_support::service_decode_context();
-    let native = Fixture::new(Config {
-        point_version: Some(2),
-        operation: 1,
-        ..Default::default()
-    })
-    .decode(&ctx)
-    .unwrap();
+    let native = Fixture::new(config).decode(&ctx).unwrap();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&ctx, &mut namespace).unwrap();
     let mut values = match arena {
@@ -273,4 +279,25 @@ fn pipe_native_load_rejects_an_empty_new_body_path() {
         crate::native::F3dNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidCollection(_))
     ));
+}
+
+#[test]
+fn pipe_native_load_rejects_a_misplaced_section_shape() {
+    let shaped = || Config {
+        section: Some(crate::test_support::pipe::SectionFrame::of(1)),
+        ..Default::default()
+    };
+    for offset in [94, 96, 99] {
+        reject_mutation_of(shaped(), "design_parameter_scopes", |rows| {
+            rows[0]["path_feature_construction"]["section"]["shape_offset"] = offset.into();
+        });
+    }
+    let pointed = Config {
+        point_version: Some(2),
+        ..shaped()
+    };
+    reject_mutation_of(pointed, "design_parameter_scopes", |rows| {
+        rows[0]["path_feature_construction"]["section"] =
+            serde_json::json!({ "shape_value": 1, "shape_offset": 95 });
+    });
 }

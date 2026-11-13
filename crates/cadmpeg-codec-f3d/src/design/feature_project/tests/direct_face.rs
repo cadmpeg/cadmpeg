@@ -26,7 +26,8 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
                 signed_thickness: cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
                 thickness_record_index: 300,
                 thickness_offset: 0,
-                boolean: None,
+                symmetric: false,
+                tangent_chain: true,
             });
         }
         DesignScopePayloadMut::Shell(slot) => {
@@ -98,11 +99,69 @@ fn thicken_projects_native_group() {
     let scope = scope(DesignFeatureKind::Thicken);
     let group = group(DesignOperandRole::ROLE_0X5);
     let FeatureOperation::Thicken { faces, .. } = projected_operation(
-        super::super::project_thicken(&scope, &[], std::slice::from_ref(&group), &mut Vec::new()),
+        super::super::project_thicken(&scope, &[], std::slice::from_ref(&group)),
     ) else {
         panic!("expected a thicken");
     };
     assert_eq!(faces, FaceSelection::Native(group.id.clone()));
+}
+
+#[test]
+fn a_symmetric_thicken_adds_the_stored_thickness_on_each_side() {
+    let group = group(DesignOperandRole::ROLE_0X5);
+    let project = |symmetric: bool, signed_thickness: f64| {
+        let mut scope = scope(DesignFeatureKind::Thicken);
+        if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+            operation.symmetric = symmetric;
+            operation.signed_thickness =
+                cadmpeg_ir::scalar::FiniteReal::new(signed_thickness).unwrap();
+        }
+        let FeatureOperation::Thicken {
+            thickness, side, ..
+        } = projected_operation(super::super::project_thicken(
+            &scope,
+            &[],
+            std::slice::from_ref(&group),
+        ))
+        else {
+            panic!("expected a thicken");
+        };
+        (thickness.map(cadmpeg_ir::scalar::PositiveLength::get), side)
+    };
+    assert_eq!(
+        project(true, 0.5),
+        (Some(10.0), Some(cadmpeg_ir::features::ThickenSide::Both))
+    );
+    assert_eq!(
+        project(true, -0.5),
+        (Some(10.0), Some(cadmpeg_ir::features::ThickenSide::Both))
+    );
+    assert_eq!(
+        project(false, 0.5),
+        (Some(5.0), Some(cadmpeg_ir::features::ThickenSide::Forward))
+    );
+    assert_eq!(
+        project(false, -0.5),
+        (Some(5.0), Some(cadmpeg_ir::features::ThickenSide::Reverse))
+    );
+
+    let mut scope = scope(DesignFeatureKind::Thicken);
+    if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+        operation.symmetric = true;
+        operation.signed_thickness = cadmpeg_ir::scalar::FiniteReal::new(1.5e307).unwrap();
+    }
+    let FeatureOperation::Thicken {
+        faces, thickness, ..
+    } = projected_operation(super::super::project_thicken(
+        &scope,
+        &[],
+        std::slice::from_ref(&group),
+    ))
+    else {
+        panic!("expected a thicken");
+    };
+    assert_eq!(faces, FaceSelection::Native(group.id.clone()));
+    assert!(thickness.is_none());
 }
 
 fn thicken_after_state(previous_state: i64) -> DesignParameterScope {
@@ -124,14 +183,9 @@ fn thicken_lists_a_whole_body_group_beside_resolved_faces_as_unresolved() {
     whole_body.id = "f3d:test:group#110".into();
     whole_body.record_index = 110;
     let groups = [faces_group, whole_body.clone()];
-    let FeatureOperation::Thicken { faces, .. } =
-        projected_operation(super::super::project_thicken(
-            &scope,
-            &[resolved_member_operand()],
-            &groups,
-            &mut Vec::new(),
-        ))
-    else {
+    let FeatureOperation::Thicken { faces, .. } = projected_operation(
+        super::super::project_thicken(&scope, &[resolved_member_operand()], &groups),
+    ) else {
         panic!("expected a thicken");
     };
     let mut rebound = faces.clone();
@@ -159,7 +213,6 @@ fn thicken_keeps_resolved_faces_without_a_whole_body_group() {
             &scope,
             &[resolved_member_operand()],
             &[group(DesignOperandRole::ROLE_0X12)],
-            &mut Vec::new(),
         ))
     else {
         panic!("expected a thicken");

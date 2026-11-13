@@ -3,10 +3,9 @@
 
 use super::{
     DesignDraftFlags, DesignDraftOperation, DesignDraftTwoSided, DesignModifyOperation,
-    DesignMoveForm, DesignMoveOperation, DesignMovePrefix, DesignMoveReference,
+    DesignMoveForm, DesignMoveLeading, DesignMoveOperation, DesignMovePrefix, DesignMoveReference,
     DesignOffsetFacesOperation, DesignShellOperation, DesignShellOutsideWall,
-    DesignShellPrefixFlag, DesignShellWallSlots, DesignThickenBoolean,
-    DesignThickenBooleanOperation, DesignThickenOperation,
+    DesignShellPrefixFlag, DesignShellWallSlots, DesignThickenOperation,
 };
 
 rewrite_native_record!(DesignDraftOperation, []; {angle, angle_record_index, angle_offset, opposite_angle_record_index, opposite_angle_offset, opposite_angle, flags});
@@ -14,7 +13,8 @@ rewrite_native_record!(DesignDraftFlags, []; {flipped, tangent_chain, two_sided}
 rewrite_native_scalar!(DesignDraftTwoSided);
 rewrite_native_scalar!(DesignMoveForm);
 rewrite_native_record!(DesignMoveOperation, []; {transform, transform_offset, transform_record_index, form, form_offset, prefix});
-rewrite_native_record!(DesignMovePrefix, []; {references, codes, matrix_omitted});
+rewrite_native_record!(DesignMovePrefix, []; {references, codes, matrix_omitted, leading});
+rewrite_native_record!(DesignMoveLeading, []; {scalar, references});
 rewrite_native_enum!(DesignMoveReference, []; {Null, Local {record_index}, Typed {record_index, type_guid}});
 rewrite_native_record!(DesignModifyOperation, []; {motion, body_group_record_indices, body_count_offset});
 rewrite_native_record!(DesignOffsetFacesOperation, []; {distance, distance_record_index, distance_offset});
@@ -22,6 +22,4 @@ rewrite_native_record!(DesignShellOperation, []; {thickness, thickness_record_in
 rewrite_native_record!(DesignShellPrefixFlag, []; {value, offset});
 rewrite_native_record!(DesignShellOutsideWall, []; {thickness, thickness_record_index, thickness_offset});
 rewrite_native_record!(DesignShellWallSlots, []; {tangent_chain, rounded_corners, outside});
-rewrite_native_record!(DesignThickenOperation, []; {signed_thickness, thickness_record_index, thickness_offset, boolean});
-rewrite_native_record!(DesignThickenBoolean, []; {operation, operation_offset, target_group_record_index});
-rewrite_native_scalar!(DesignThickenBooleanOperation);
+rewrite_native_record!(DesignThickenOperation, []; {signed_thickness, symmetric, tangent_chain, thickness_record_index, thickness_offset});

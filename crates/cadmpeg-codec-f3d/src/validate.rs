@@ -1759,8 +1759,8 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         neutral.native_ref.as_deref() == Some(scope.id.as_str())
                             && matches!(
                                 neutral.evaluation.definition(),
-                                cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MeshImport { tessellations })
-                                    if tessellations.iter().map(String::as_str).eq(projected())
+                                cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MeshImport { tessellations: cadmpeg_ir::features::mesh::MeshSelection::Tessellations(tessellations) })
+                                    if tessellations.iter().map(cadmpeg_ir::tessellation::TessellationId::as_str).eq(projected())
                             )
                     })
                 });
@@ -1884,56 +1884,33 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         let group = ctx
             .operand_groups_by_index
             .get(&(native_stream, image.target_group_record_index));
-        let operand = group.and_then(|group| {
-            let member = group.members().first()?.value;
-            ctx.native
-                .design_body_recipe_operands
+        let neutral_is_valid = !ctx.holds_design_intent() || scope.is_some_and(|scope| {
+            let expected_faces = crate::design::decode::decal::DecalTargets {
+                groups: &ctx.native.design_construction_operand_groups,
+                operands: &ctx.native.design_body_recipe_operands,
+            }
+            .faces(scope, image.target_group_record_index)
+            .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(scope.id.clone()));
+            ctx.ir
+                .model
+                .features
                 .iter()
-                .find(|operand| {
-                    design_stream(&operand.id) == native_stream
-                        && operand.scope_record_index == image.scope_record_index()
-                        && operand.record_index() == member
-                        && operand.owner.group() == Some((group.record_index, 0))
+                .any(|feature| {
+                    feature.native_ref.as_deref() == Some(scope.id.as_str()) &&
+                    matches!(
+                        feature.evaluation.definition(),
+                        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Decal {
+                            asset,
+                            faces,
+                            mapping: cadmpeg_ir::features::DecalMapping::FitToFaces,
+                            opacity: None,
+                        }) if faces == &expected_faces
+                            && ctx.ir.model.assets.iter().any(|candidate| {
+                                candidate.id == *asset
+                                    && candidate.name.as_ref().map(cadmpeg_core::text::NonBlankString::as_str) == Some(image.asset.name())
+                            })
+                    )
                 })
-        });
-        let projected =
-            if image.mapping_mode == crate::records::decal::DesignDecalMappingMode::FitToFaces {
-                if let Some(operand) = operand {
-                    let mut faces = (operand
-                        .references()
-                        .iter()
-                        .flat_map(|reference| reference.candidate_faces.iter()))
-                    .cloned()
-                    .collect::<Vec<_>>();
-                    faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-                    faces.dedup();
-                    (!faces.is_empty()).then_some((operand, faces))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-        let neutral_is_valid = projected.is_none_or(|(operand, expected_faces)| {
-            scope.is_some_and(|scope| {
-                ctx.ir.model.features.iter().any(|feature| {
-                    feature.native_ref.as_deref() == Some(scope.id.as_str())
-                        && matches!(
-                            feature.evaluation.definition(),
-                            cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Decal {
-                                asset,
-                                faces: cadmpeg_ir::features::FaceSelection::Resolved { faces, native },
-                                mapping: cadmpeg_ir::features::DecalMapping::FitToFaces,
-                                opacity: None,
-                            }) if faces == &expected_faces
-                                && native == &operand.id
-                                && ctx.ir.model.assets.iter().any(|candidate| {
-                                    candidate.id == *asset
-                                        && candidate.name.as_ref().map(cadmpeg_core::text::NonBlankString::as_str) == Some(image.asset.name())
-                                })
-                        )
-                })
-            })
         });
         let scope_valid = scope.is_some_and(|scope| {
             scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal
@@ -1956,9 +1933,7 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             && group.is_some_and(|group| {
                 group.scope_record_index == image.scope_record_index()
                     && group.role() == TARGET_ROLE
-                    && group.members().len() == 1
             })
-            && operand.is_some()
             && neutral_is_valid;
         if !valid {
             push_constant_finding(
@@ -3447,6 +3422,33 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         });
         let work_point_link = valid_work_point_construction(ctx, scope, native_stream)?;
         let work_plane_link = valid_work_plane_construction(ctx, scope, native_stream);
+        let record_offset = |index| {
+            records_by_index
+                .get(&(native_stream, index))
+                .map(|header| header.byte_offset)
+        };
+        let before_scope =
+            |index| record_offset(index).is_some_and(|offset| offset < scope.byte_offset());
+        let before = |left, right| {
+            record_offset(left)
+                .zip(record_offset(right))
+                .is_some_and(|(left, right)| left < right)
+        };
+        let has_type = |index, guid: &str| {
+            native
+                .design_types
+                .iter()
+                .filter(|kind| {
+                    ids::design_segment(kind.id()) == ids::design_segment(&scope.id)
+                        && kind.type_guid.as_str().eq_ignore_ascii_case(guid)
+                        && kind
+                            .entities
+                            .values()
+                            .any(|entity| *entity == u64::from(index))
+                })
+                .count()
+                == 1
+        };
         let valid = match scope.extrude_prologue() {
             Some(prologue) if through_all::matches_scope(scope) => {
                 through_all::valid_prologue(scope, prologue)
@@ -4374,30 +4376,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && component_insert_link
             && copy_paste_component_link
             && scope.occurrence_transfer.as_ref().is_none_or(|operation| {
-                operation.links_valid(
-                    scope,
-                    |index| {
-                        records_by_index
-                            .get(&(native_stream, index))
-                            .map(|header| header.byte_offset)
-                    },
-                    |index, guid| {
-                        native
-                            .design_types
-                            .iter()
-                            .filter(|kind| {
-                                ids::design_segment(kind.id()) == ids::design_segment(&scope.id)
-                                    && kind.type_guid.as_str().eq_ignore_ascii_case(guid)
-                                    && kind
-                                        .entities
-                                        .values()
-                                        .any(|entity| *entity == u64::from(index))
-                            })
-                            .count()
-                            == 1
-                    },
-                )
+                operation.links_valid(scope, record_offset, |index, guid| has_type(index, guid))
             })
+            && scope
+                .occurrence_transfer_intent
+                .as_ref()
+                .is_none_or(|intent| {
+                    intent.links_valid(scope, before_scope, before, |index, guid| {
+                        has_type(index, guid)
+                    })
+                })
             && draft_link
             && combine_link
             && thread_link
@@ -5366,6 +5354,14 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
                 }
                 None if scope.kind()
+                    == crate::records::feature::scope::DesignFeatureKind::Align =>
+                {
+                    matches!(
+                        group.role(),
+                        DesignOperandRole::BODIES_A | DesignOperandRole::ROLE_0X5
+                    ) && group.extrude_role().is_none()
+                }
+                None if scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::BaseFlange =>
                 {
                     group.role() == DesignOperandRole::PROFILE
@@ -5400,6 +5396,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::Decal
+                        | crate::records::feature::scope::DesignFeatureKind::Align
                         | crate::records::feature::scope::DesignFeatureKind::BaseFlange
                         | crate::records::feature::scope::DesignFeatureKind::EdgeFlange
                         | crate::records::feature::scope::DesignFeatureKind::Hem
@@ -5849,22 +5846,38 @@ fn validate_fillet_sets(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 })
                 .is_some_and(|parameter| parameter.source_kind() == kind)
         };
-        let valid = list.sets.iter().all(|set| {
-            let law = match set.law {
-                DesignFilletSetLaw::Constant {
-                    radius_owner_record_index,
-                } => owned_kind(radius_owner_record_index, "Radius"),
-                DesignFilletSetLaw::Chordal {
-                    chord_length_owner_record_index,
-                } => owned_kind(chord_length_owner_record_index, "ChordLen"),
-            };
-            law && owned_kind(set.tangency_weight_owner_record_index, "TangencyWeight")
-                && scope
-                    .reference_members()
-                    .values()
-                    .any(|member| *member == set.group_record_index)
-        }) && design::design_feature_family(&scope.kind())
-            == Some(design::DesignFeatureFamily::Fillet);
+        let constant_frame = |set: &records::feature::fillet_set::DesignFilletSet| {
+            set.frame_length == 97
+                && matches!(
+                    set.law,
+                    records::feature::fillet_set::DesignFilletSetLaw::Constant { .. }
+                )
+        };
+        let flags_admitted = (list.form
+            != records::feature::fillet_set::DesignFilletSetListForm::Compact
+            || list.rolling_ball_corner)
+            && list
+                .sets
+                .iter()
+                .all(|set| set.curvature_continuity.is_some() == constant_frame(set));
+        let valid = flags_admitted
+            && list.sets.iter().all(|set| {
+                let law = match set.law {
+                    DesignFilletSetLaw::Constant {
+                        radius_owner_record_index,
+                    } => owned_kind(radius_owner_record_index, "Radius"),
+                    DesignFilletSetLaw::Chordal {
+                        chord_length_owner_record_index,
+                    } => owned_kind(chord_length_owner_record_index, "ChordLen"),
+                };
+                law && owned_kind(set.tangency_weight_owner_record_index, "TangencyWeight")
+                    && scope
+                        .reference_members()
+                        .values()
+                        .any(|member| *member == set.group_record_index)
+            })
+            && design::design_feature_family(&scope.kind())
+                == Some(design::DesignFeatureFamily::Fillet);
         if !valid {
             push_constant_finding(
                 findings,
