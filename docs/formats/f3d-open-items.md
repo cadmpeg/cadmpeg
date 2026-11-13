@@ -2365,3 +2365,23 @@ when the operation transition carries no candidate for the group members?
 **Need.** Public document bundles with independently identified source documents and repeated component instances that bind each source path identity to its document and occurrence context.
 
 **Note.** A standalone timeline feature names its decoded neutral joint while source operands remain unresolved. The decoder preserves their identities and charges `assembly.joint-source-binding-assumed`.
+
+### DR-476. Controls of the wider SurfaceDeleteFace prologue
+
+**Question.** Which settings do the controls before the ordered-reference count of the wide surface-delete prologue encode?
+
+**Known.** `f3d.md` §3.1 "Unhealed surface-face removal" defines the ordered-reference partition. The scope names one role-`0x10` face group followed by its ordered members. Its fixed tail uses the common parameter-scope grammar. The wider prologue precedes the same reference partition.
+
+**Need.** Saves that change one face-deletion setting at a time and identify the corresponding prologue control.
+
+**Note.** The decoder reads the group as an unhealed face deletion and records `feature.surface-delete-face-wide-prologue-assumed`.
+
+### DR-477. Additional face-deletion controls and incomplete group definitions
+
+**Question.** Which controls in further face-deletion frames change the selected group or removal mode, and which face selections do incomplete group definitions name?
+
+**Known.** `f3d.md` §3.1 "A `DeleteFace` scope has at least two ordered references" defines the face group and healing mode. The `SurfaceDeleteFace` family removes faces without healing. The scope retains its ordered references and source identity when its group cannot be bound.
+
+**Need.** Controlled saves that vary further frame controls and complete native definitions for the referenced face groups.
+
+**Note.** The decoder preserves the neutral deletion family. It records `feature.delete-face-frame-controls-assumed` for unfamiliar frames and `feature.delete-face-group-selection-assumed` for missing or inconsistent face groups.
