@@ -2433,3 +2433,27 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** A complete twenty-node program, four face candidates, and a shared transition set permit several member assignments. Selecting every transition candidate assumes a group-level rule.
 
 **Note.** The decoder retains the bounded-face operands and compact identity candidates. Group `4324` stays native with `feature.edge-selection-native`. DR-224 tracks Fillet transition ambiguities; DR-244 tracks treatment groups whose transitions supply no candidate set.
+
+### DR-482. Source binding of timeline-owned Base Feature results
+
+**Question.** Which records bind the source bodies and placement of a timeline-owned `Base Feature` when its stored body runs have a complete result binding?
+
+**Known.** Eight recipe-absent scopes in six public designs have timeline owners. Four owners have paste type `BA3059E4-4B23-4D02-9D18-E7BB95C991F3`; four have body-to-component type `56225BC7-69B7-446A-9AEA-6AA25BC7806E`. The Mini AfterSherpa Mosquito scopes at Design offsets `576266` and `588319` have 324-byte frames and owners `5681` and `5752`. Both owner frames carry a null removal GUID. Their scopes contain parameter-body and result-body runs followed by a counted passive-reference run, shared metadata, and a result-record run. The paste GUID-pair reader stops at the counted passive-reference run and reports `feature.paste-sources-unresolved`. Trident z_carriage_rear scope `132579` at offset `2154855` and z_chain_lower scope `35911` at offset `692895` have 485-byte paste-owned frames. The body-to-component scopes occur in Mini AfterSherpa V6 Zodiac BMO, Molex panel mount parametric, and Trident z_mount_rear. All eight retain resolved stored-body definitions.
+
+**Need.** A source-identity join for the passive-reference form, and a source and destination component join for the body-to-component form. Check the joins on two independent designs and compare the source and result topology, placement, and history transition. A consumed source requires its preceding-state identity.
+
+**Conflict.** None.
+
+**Note.** DR-260 tracks placement of a pasted copy. The result binding establishes the captured bodies. The decoder reports `feature.stored-bodies-recipe-absent` for these eight scopes.
+
+### DR-483. Terminal marker in an ordinary Base Feature count field
+
+**Question.** What does the terminal byte of the marked null field mean when it is `1` before the repeated-reference count in a Base Feature envelope?
+
+**Known.** Mini AfterSherpa Orbiter V2 Test v2 has Base Feature scope record `213` at Design offset `107014`, class pair `329/264`, frame length `318`, and history transition `365` to `404`. Its first two marked fifteen-byte entries name `219` and `225`. Both targets have Body presentation-owner type `D3937028-C20C-4E65-B010-94AD418A5C20`. The eleven-byte field after those entries starts with `1`, has nine zero bytes, and ends with `1`. A u32 count `1` follows, then a marked reference to `219`, shared metadata record `217`, and result record `227`. The ordinary result-body reader requires ten zero bytes after the first marker and stops at the final byte. The history transition binds body `f3d:brep:entity#1` and supplies the resolved Base Feature result set.
+
+**Need.** A rule for the terminal marker and the roles of the two initial reference runs. Compare a controlled capture, paste, and body-to-component operation with equal geometry, including their referenced Body records and preceding ASM state. Confirm the role rule in a second independent design before selecting a source or construction operation.
+
+**Conflict.** None.
+
+**Note.** The specialized scope payload stays uninterpreted. The result bodies remain available with `feature.stored-bodies-recipe-absent`.
