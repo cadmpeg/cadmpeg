@@ -5,13 +5,14 @@ use super::{
     archived_active_record_count, decode_record_archive, historical_topology_with_tags,
     insert_only_active_record_count, walk_entity_versions, HistoricalRecordArchive,
 };
+use crate::clock::Instant;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition};
 use cadmpeg_asm::brep::attributes::{attribute_next, attribute_owner};
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_core::decode::{work_units, WorkBudget};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 mod indexed;
 pub(crate) mod transition_geometry;
