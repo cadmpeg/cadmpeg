@@ -2334,7 +2334,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which stored field assigns the first distance of a two-distance chamfer, or the distance of a distance-angle chamfer, to an input support face?
 
-**Known.** Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false.
+**Known.** Chamfer sets reference their edge groups and dimensional owners independently. One scope can combine equal-distance, two-distance, and distance-angle sets. Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false.
 
 **Need.** A rule that binds each selected input edge to its distance reference face, with both face widths checked against the stored dimensional specification. The rule must cover reversed recipe-reference order, propagated edge chains, and support faces split by earlier operations.
 

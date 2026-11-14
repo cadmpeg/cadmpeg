@@ -714,11 +714,13 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         });
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::Chamfer,
-            parameters,
-        }) if parameters.len() == 3
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
+            if groups.as_slice().iter().all(|group| group.spec.is_unresolved())
     ));
+    let retained: Vec<DesignParameter> = serde_json::from_str(
+        &features[0].source_properties["chamfer:parameters"],
+    ).unwrap();
+    assert_eq!(retained.len(), 3);
 
     let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
         crate::test_support::with_decode_context(|ctx| {
@@ -742,11 +744,13 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         });
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::Chamfer,
-            parameters,
-        }) if parameters.len() == 2
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
+            if groups.as_slice().iter().all(|group| group.spec.is_unresolved())
     ));
+    let retained: Vec<DesignParameter> = serde_json::from_str(
+        &features[0].source_properties["chamfer:parameters"],
+    ).unwrap();
+    assert_eq!(retained.len(), 2);
 
     let mut construction_groups = [construction_group(90, 17), construction_group(80, 4)];
     construction_groups[1]

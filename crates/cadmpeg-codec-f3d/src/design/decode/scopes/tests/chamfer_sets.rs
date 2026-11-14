@@ -489,3 +489,81 @@ fn every_entry_names_a_set_and_every_set_has_an_entry() {
     assert_eq!(set_entry_counts(&[1, 3], 2), None);
     assert_eq!(set_entry_counts(&[0, 1], 1), None);
 }
+
+#[test]
+fn a_scope_can_name_equal_and_two_distance_set_frames_together() {
+    let (_, mut scope) = stream(Form::Equal, false);
+    let other_set = SET + 20;
+    let other_group = GROUP + 20;
+    let mut bytes = header(b"261", SCOPE);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 1]);
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    for (ordinal, set_number) in [(1_u64, 1_u8), (2, 2)] {
+        bytes.extend_from_slice(&ordinal.to_le_bytes());
+        bytes.extend_from_slice(&[set_number, 0]);
+    }
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    bytes.extend(reference(SET));
+    bytes.extend(reference(other_set));
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    bytes.extend(reference(GROUP));
+    bytes.extend(reference(other_group));
+    bytes.extend_from_slice(&36_u32.to_le_bytes());
+    crate::design::test_support::name_scope_references(&mut scope, [GROUP, other_group]);
+    bytes.resize(usize::try_from(scope.frame_length()).unwrap(), 0);
+    bytes.extend(header(b"257", SCOPE));
+    bytes.extend(set_frame(Form::Equal));
+    bytes.extend(header(b"267", SET));
+    let mut second = set_frame(Form::TwoDistances);
+    second[7..11].copy_from_slice(&other_set.to_le_bytes());
+    second[24..35].copy_from_slice(&reference(FIRST_OWNER + 20));
+    second[35..46].copy_from_slice(&reference(SECOND_OWNER + 20));
+    second[50..61].copy_from_slice(&reference(other_group));
+    second[63..67].copy_from_slice(&2_u32.to_le_bytes());
+    bytes.extend(second);
+    bytes.extend(header(b"267", other_set));
+    bytes.extend(header(b"285", AUXILIARY));
+    bytes.resize(bytes.len() + 47, 0);
+    let owned = [
+        owned(FIRST_OWNER, "Distance"),
+        owned(FIRST_OWNER + 20, "Distance 1"),
+        owned(SECOND_OWNER + 20, "Distance 2"),
+    ];
+    let parameters = owned
+        .iter()
+        .map(|(parameter, _)| parameter.clone())
+        .collect::<Vec<_>>();
+    let owners = owned
+        .into_iter()
+        .map(|(_, owner)| owner)
+        .collect::<Vec<_>>();
+    let list = chamfer_set_list(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+        &parameters,
+        &owners,
+    )
+    .unwrap();
+    assert_eq!(list.sets.len(), 2);
+    assert!(matches!(
+        list.sets[0].spec,
+        DesignChamferSetSpec::EqualDistance { .. }
+    ));
+    assert!(matches!(
+        list.sets[1].spec,
+        DesignChamferSetSpec::TwoDistances { .. }
+    ));
+    for end in 0..usize::try_from(scope.frame_length()).unwrap() {
+        assert!(chamfer_set_list(
+            &bytes[..end],
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes[..end]),
+            &scope,
+            &parameters,
+            &owners
+        )
+        .is_none());
+    }
+}
