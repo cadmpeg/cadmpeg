@@ -167,6 +167,7 @@ pub(crate) enum F3dLossCode {
     AssemblyJointSourceBindingAssumed,
     AssemblyConnectorOperandsAssumed,
     AssemblyMotionBindingAssumed,
+    AssemblyAdditionalOwnerMotionAssumed,
     /// A joint operand path continues inside an unmerged inserted document; the
     /// remaining keys stay a nested occurrence path.
     AssemblyOperandNestedPathRetained,
@@ -849,6 +850,7 @@ impl F3dLossCode {
         Self::AssemblyJointSourceBindingAssumed,
         Self::AssemblyConnectorOperandsAssumed,
         Self::AssemblyMotionBindingAssumed,
+        Self::AssemblyAdditionalOwnerMotionAssumed,
         Self::AssemblyOperandNestedPathRetained,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
@@ -1281,6 +1283,9 @@ impl F3dLossCode {
             Self::AssemblyJointSourceBindingAssumed => "assembly.joint-source-binding-assumed",
             Self::AssemblyConnectorOperandsAssumed => "assembly.connector-operands-assumed",
             Self::AssemblyMotionBindingAssumed => "assembly.motion-binding-assumed",
+            Self::AssemblyAdditionalOwnerMotionAssumed => {
+                "assembly.additional-owner-motion-assumed"
+            }
             Self::AssemblyOperandNestedPathRetained => "assembly.operand-nested-path-retained",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
@@ -1832,6 +1837,7 @@ impl F3dLossCode {
             | Self::AssemblyJointSourceBindingAssumed
             | Self::AssemblyConnectorOperandsAssumed
             | Self::AssemblyMotionBindingAssumed
+            | Self::AssemblyAdditionalOwnerMotionAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
@@ -2462,6 +2468,7 @@ impl F3dLossCode {
             | Self::AssemblyJointSourceBindingAssumed
             | Self::AssemblyConnectorOperandsAssumed
             | Self::AssemblyMotionBindingAssumed
+            | Self::AssemblyAdditionalOwnerMotionAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
@@ -2670,6 +2677,7 @@ mod tests {
                 "assembly.joint-source-binding-assumed",
                 "assembly.connector-operands-assumed",
                 "assembly.motion-binding-assumed",
+                "assembly.additional-owner-motion-assumed",
                 "assembly.operand-nested-path-retained",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",

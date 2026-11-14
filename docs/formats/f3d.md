@@ -2165,9 +2165,19 @@ Two zero bytes follow the angle-owner reference. An additional nonnull
 reference follows the first tail reference. This tail uses separator length
 `S = 0`. One zero byte separates its two boolean bytes from its last
 reference. Version 5 uses eleven-byte plain local references. Its span is
-`377 + (R + 12) * 11 + 128 * M + 4 * E`. The four explicit owner references
-select angle, Z, X, and Y lanes. The zero run after the four owner references
-is six bytes. This form stores four alignment owners. The version-five
+`377 + (R + K + 12) * 11 + 128 * M + 4 * E`. The four explicit owner references
+select angle, Z, X, and Y lanes.
+An additional-owner run follows the four explicit alignment references.
+It stores two zero bytes, a u32 count `K`, and `K` nonnull plain local
+references. These references name the scope's additional parameter owners
+in local-ordinal order, starting at ordinal four. Their targets also occur
+in the scope reference table. Each additional reference follows the count
+or the preceding reference without padding. The four alignment owners
+remain separate from this run.
+Additional owners carry rotation and translation limits and rest values,
+including `RotateMinimum`, `RotateMaximum`, `RotateRest`, `SlideMinimum`,
+`SlideMaximum`, `SlideRest`, `YawMinimum`, `YawMaximum`, `YawRest`, and `RollRest`.
+The version-five
 expanded two-matrix layout with `R = 16` spans 945 bytes; its complete field
 table is in [the layout table](../layouts/f3d.md#assembly_version_five_scope).
 
@@ -2178,7 +2188,7 @@ reference, six zero bytes, an identity byte, and its explicit matrix when
 the identity byte is zero. The second connector follows the first connector
 frame directly. Four zero bytes follow the second connector frame. No zero
 bytes follow the angle-owner reference. The tail stores u8 `1` before its
-two boolean bytes, and no zero byte follows them. Its span is `222 + (R + 12) * 11 + 128 * M + 4 * E`.
+two boolean bytes, and no zero byte follows them. Its span is `222 + (R + K + 12) * 11 + 128 * M + 4 * E`.
 
 The span formulas count the eight code units of the stored family name
 `Assemble`. A stored family name of `L` UTF-16 code units adds `2 * (L - 8)`

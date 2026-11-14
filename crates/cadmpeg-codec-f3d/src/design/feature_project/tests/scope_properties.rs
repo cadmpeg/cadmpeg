@@ -19,6 +19,56 @@ fn scope_properties_record_reference_members() {
 }
 
 #[test]
+fn counted_assembly_owners_keep_source_parameter_expressions() {
+    use crate::design::decode::parameters::parse_design_parameter_record;
+    use crate::design::test_support::parameter_record;
+    use crate::records::feature::assembly::{DesignAssemblyAlignment, DesignAssemblyOwnerRun};
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    use crate::records::identity::Located;
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+        DesignFeatureKind::Assemble,
+        10,
+    );
+    let parameter = parse_design_parameter_record(&parameter_record(
+        Some(94),
+        "-7.5 mm",
+        "SlideMinimum",
+        Some("mm"),
+        "d8",
+        -0.75,
+    ))
+    .unwrap();
+    let mut alignment = DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), None).unwrap();
+    alignment.additional_owner_run = Some(DesignAssemblyOwnerRun {
+        count: Located {
+            value: 1,
+            offset: 273,
+        },
+        references: vec![Located {
+            value: 95,
+            offset: 277,
+        }],
+    });
+    if let DesignScopePayloadMut::Assemble(slot) = scope.payload_mut() {
+        *slot = Some(alignment);
+    }
+    let properties =
+        scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &[(4, &parameter)]).unwrap();
+    assert_eq!(
+        properties.get("parameter:d8").map(String::as_str),
+        Some("-7.5 mm")
+    );
+    if let DesignScopePayloadMut::Assemble(slot) = scope.payload_mut() {
+        slot.as_mut().unwrap().additional_owner_run = None;
+    }
+    let properties =
+        scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &[(4, &parameter)]).unwrap();
+    assert!(!properties.contains_key("parameter:d8"));
+}
+
+#[test]
 fn hole_properties_retain_expressions_controls_cache_and_sizing_names() {
     use crate::design::decode::parameters::parse_design_parameter_record;
     use crate::design::test_support::parameter_record;

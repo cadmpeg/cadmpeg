@@ -622,6 +622,7 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_assembly_alignment_with_types(
+                    ctx,
                     bytes,
                     &records,
                     &scope,
