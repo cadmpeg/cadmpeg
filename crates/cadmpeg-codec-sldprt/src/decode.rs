@@ -1638,6 +1638,15 @@ pub(crate) fn append_design_losses(
                 FeatureOperation::SheetMetalBend { attachment, .. } => {
                     incomplete_edge_selection(attachment)
                 }
+                FeatureOperation::SheetMetalContourFlange { construction } => {
+                    construction.profile.as_ref().is_none_or(incomplete_planar_profile)
+                        || construction.direction.is_none()
+                        || construction.extent.as_ref().is_none_or(incomplete_extrude_extent)
+                        || construction.thickness.is_none()
+                        || construction.inside_radius.is_none()
+                        || construction.side.is_none()
+                        || construction.neutral_factor.is_none()
+                }
                 FeatureOperation::SheetMetalUnfold { construction } => {
                     construction.stationary.as_ref().is_none_or(incomplete_face_selection)
                         || construction.all_bends.is_none()
