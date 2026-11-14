@@ -29,6 +29,14 @@ fn source_selection(
             if let Some(count) = captured.declared_count {
                 notes.property(format!("mesh-conversion-member-count:{ordinal}"), count);
             }
+            for (member, reference) in captured.member_references.iter().enumerate() {
+                if *reference != 0 {
+                    notes.property(
+                        format!("mesh-conversion-member:{ordinal}:{member}"),
+                        reference,
+                    );
+                }
+            }
             for (member, body) in captured.references.iter().enumerate() {
                 if *body != 0 {
                     notes.property(format!("mesh-conversion-body:{ordinal}:{member}"), body);

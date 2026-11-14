@@ -86,6 +86,7 @@ pub(crate) struct MeshOperationFraming(pub(crate) &'static str);
 
 pub(crate) struct MeshOperationBodyReferences {
     pub(crate) declared_count: Option<u32>,
+    pub(crate) member_references: Vec<u32>,
     pub(crate) references: Vec<u32>,
     pub(crate) framing: Option<MeshOperationFraming>,
 }
@@ -436,6 +437,7 @@ impl<'a> MeshOperationRecords<'a> {
     ) -> Result<MeshOperationBodyReferences, CodecError> {
         let mut captured = MeshOperationBodyReferences {
             declared_count: None,
+            member_references: Vec::new(),
             references: Vec::new(),
             framing: None,
         };
@@ -468,8 +470,14 @@ impl<'a> MeshOperationRecords<'a> {
                 return Ok(Err(MeshOperationFraming("source group member count")));
             };
             captured.references = ctx.alloc_filled(count, 0, "F3D mesh operation source bodies")?;
+            captured.member_references =
+                ctx.alloc_filled(count, 0, "F3D mesh operation source member references")?;
             let mut failure = None;
-            for body in &mut captured.references {
+            for (member, body) in captured
+                .member_references
+                .iter_mut()
+                .zip(&mut captured.references)
+            {
                 let index = match cursor.reference("source group member reference") {
                     Ok(index) => index,
                     Err(error) => {
@@ -477,6 +485,7 @@ impl<'a> MeshOperationRecords<'a> {
                         break;
                     }
                 };
+                *member = index;
                 let read = (|| {
                     let record = self.source_record(
                         index,

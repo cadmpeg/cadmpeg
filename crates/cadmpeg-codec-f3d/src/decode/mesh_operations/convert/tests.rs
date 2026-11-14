@@ -348,6 +348,33 @@ fn conversion_keeps_a_readable_body_reference_with_an_unusable_definition() {
 }
 
 #[test]
+fn conversion_keeps_a_member_reference_when_its_definition_is_missing() {
+    let (mut stream, meta) = fixture(4, 1);
+    stream[362..366].copy_from_slice(&99u32.to_le_bytes());
+    let (feature, codes) = project(&stream, Some(&meta), true);
+    assert!(matches!(
+        sources(&feature)[0],
+        MeshSelection::Native { members: None, .. }
+    ));
+    let MeshSelection::Native {
+        members: Some(members),
+        ..
+    } = &sources(&feature)[1]
+    else {
+        panic!("later input");
+    };
+    assert_eq!(members.as_slice(), ["31"]);
+    assert_eq!(
+        feature
+            .source_properties
+            .get("mesh-conversion-member:0:0")
+            .map(String::as_str),
+        Some("22")
+    );
+    assert!(codes.contains(&"feature.mesh-conversion-source-unresolved".to_owned()));
+}
+
+#[test]
 fn conversion_keeps_an_output_prefix_and_later_output_when_its_body_reference_is_missing() {
     let (mut stream, meta) = fixture(4, 1);
     stream.truncate(stream.len() - 11);
