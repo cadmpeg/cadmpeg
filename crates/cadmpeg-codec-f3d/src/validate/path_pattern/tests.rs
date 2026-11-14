@@ -147,6 +147,7 @@ fn path_pattern_settings_link_their_typed_records_and_offsets() {
     );
     let mut wrong_start = settings();
     wrong_start.start_parameter = None;
+    wrong_start.start_frame_end = None;
     wrong_start.start_record_index = Some(333);
     assert_eq!(finding_count(&native(wrong_start, vec![319, 333], 3)), 1);
     let start_only = DesignPathPatternSettings {
@@ -158,7 +159,7 @@ fn path_pattern_settings_link_their_typed_records_and_offsets() {
     assert_eq!(finding_count(&native(start_only, vec![319], 3)), 0);
     let mut missing_end = settings();
     missing_end.start_frame_end = None;
-    assert_eq!(finding_count(&native(missing_end, vec![319, 333], 3)), 1);
+    assert_eq!(finding_count(&native(missing_end, vec![319, 333], 3)), 0);
     let mut wrong_end = settings();
     wrong_end.start_frame_end = Some(2_198);
     assert_eq!(finding_count(&native(wrong_end, vec![319, 333], 3)), 1);
@@ -172,4 +173,16 @@ fn path_pattern_settings_link_their_typed_records_and_offsets() {
             byte_offset: 2_100,
         });
     assert_eq!(finding_count(&inner), 1);
+    if let crate::records::feature::scope::DesignScopePayloadMut::PathPattern(Some(settings)) =
+        inner.design_parameter_scopes[0].payload_mut()
+    {
+        settings.start_frame_end = None;
+    }
+    assert_eq!(finding_count(&inner), 1);
+    let mut overflowing = settings();
+    overflowing.start_frame_end = None;
+    overflowing.start_parameter = None;
+    let mut overflowing = native(overflowing, vec![319, 333], 3);
+    overflowing.design_record_headers[1].byte_offset = u64::MAX - 100;
+    assert_eq!(finding_count(&overflowing), 1);
 }

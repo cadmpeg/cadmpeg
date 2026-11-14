@@ -86,17 +86,18 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             &settings.start_parameter,
         ) {
             (None, None, None, None) => true,
-            (Some(_), Some(base), Some(end), value) => {
-                let no_inner_header = ctx.native.design_record_headers.iter().all(|header| {
-                    design_stream(&header.id) != stream
-                        || header.byte_offset <= base
-                        || header.byte_offset >= end
-                });
-                at(base, start_layout::LEN) == Some(end)
-                    && no_inner_header
-                    && value.as_ref().is_none_or(|value| {
-                        Some(value.offset) == at(base, start_layout::START_PARAMETER)
-                    })
+            (Some(_), Some(base), end, value) => {
+                at(base, start_layout::LEN).is_some_and(|expected_end| {
+                    end.is_none_or(|end| end == expected_end)
+                        && ctx.native.design_record_headers.iter().all(|header| {
+                            design_stream(&header.id) != stream
+                                || header.byte_offset <= base
+                                || header.byte_offset >= expected_end
+                        })
+                        && value.as_ref().is_none_or(|value| {
+                            Some(value.offset) == at(base, start_layout::START_PARAMETER)
+                        })
+                })
             }
             _ => false,
         };
