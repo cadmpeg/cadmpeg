@@ -701,6 +701,7 @@ design_feature_kinds! {
         SplitFace => "SplitFace",
         DeleteFace => "DeleteFace",
         SurfaceDeleteFace => "SurfaceDeleteFace",
+        UnStitch => "UnStitch",
         RemoveBody => "RemoveBody",
         Face => "Face",
     }
@@ -2094,6 +2095,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
             DesignFeatureKind::DeleteFace => DesignScopePayload::DeleteFace,
             DesignFeatureKind::SurfaceDeleteFace => DesignScopePayload::SurfaceDeleteFace,
+            DesignFeatureKind::UnStitch => DesignScopePayload::UnStitch,
             DesignFeatureKind::RemoveBody => DesignScopePayload::RemoveBody,
             DesignFeatureKind::Face => DesignScopePayload::Face,
             DesignFeatureKind::SpherePrimitive => {
@@ -2496,6 +2498,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::SplitFace
             | DesignScopePayload::DeleteFace
             | DesignScopePayload::SurfaceDeleteFace
+            | DesignScopePayload::UnStitch
             | DesignScopePayload::RemoveBody
             | DesignScopePayload::Face
             | DesignScopePayload::Native(_) => {}

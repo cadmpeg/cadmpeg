@@ -20,6 +20,8 @@ use crate::records::parameters::DesignParameterOwner;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
+pub(crate) mod projection;
+
 /// Native records and saved topology that bind a Pipe's section.
 pub(crate) struct PipeSectionInputs<'a> {
     pub(crate) scopes: &'a [DesignParameterScope],
@@ -72,17 +74,12 @@ impl ExtentReading {
 /// Pipe whose result bodies no later feature changes projects only when its
 /// result faces fit the circle.
 #[must_use]
+#[cfg(test)]
 pub(crate) fn bind_circular_pipe_sections(
     features: &mut [Feature],
     inputs: &PipeSectionInputs<'_>,
 ) -> Vec<LossNote> {
-    let mut surfaces = HashMap::<&SurfaceId, Option<&Surface>>::new();
-    for surface in inputs.surfaces {
-        surfaces
-            .entry(&surface.id)
-            .and_modify(|slot| *slot = None)
-            .or_insert(Some(surface));
-    }
+    let surfaces = surface_index(inputs.surfaces);
     let definitions = features
         .iter()
         .map(|feature| circular_pipe_sweep(feature, features, inputs, &surfaces))
@@ -93,7 +90,29 @@ pub(crate) fn bind_circular_pipe_sections(
             continue;
         };
         feature.evaluation.set_definition(definition);
-        losses.extend(match section {
+        losses.extend(circular_losses(feature, section, extent));
+    }
+    losses
+}
+
+fn surface_index(surfaces: &[Surface]) -> HashMap<&SurfaceId, Option<&Surface>> {
+    let mut indexed = HashMap::new();
+    for surface in surfaces {
+        indexed
+            .entry(&surface.id)
+            .and_modify(|slot| *slot = None)
+            .or_insert(Some(surface));
+    }
+    indexed
+}
+
+fn circular_losses(
+    feature: &Feature,
+    section: SectionReading,
+    extent: ExtentReading,
+) -> Vec<LossNote> {
+    let mut losses = Vec::new();
+    losses.extend(match section {
             SectionReading::Read => None,
             SectionReading::Inferred => Some(F3dLossCode::FeaturePipeCircularSectionInferred.note(format!(
                 "feature {}: the Pipe section is inferred as a circle from the planes, cylinders and tori of its result bodies",
@@ -104,7 +123,7 @@ pub(crate) fn bind_circular_pipe_sections(
                 feature.id
             ))),
         });
-        losses.push(match extent {
+    losses.push(match extent {
             ExtentReading::BothUnit => F3dLossCode::FeaturePipeWholePathExtentAssumed.note(format!(
                 "feature {}: the Pipe forward and reverse fractions are 1, and the sweep is assumed to cover its whole path group",
                 feature.id
@@ -113,8 +132,7 @@ pub(crate) fn bind_circular_pipe_sections(
                 "feature {}: one Pipe fraction is 1 and the other 0, and the section is assumed to lie at the path end where the unit fraction starts, so the sweep covers its whole path group",
                 feature.id
             )),
-        });
-    }
+    });
     losses
 }
 
