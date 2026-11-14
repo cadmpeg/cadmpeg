@@ -26,6 +26,14 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
+    BendLineOwnerOrderAssumed,
+    BendStationaryRoleAssumed,
+    BendAngleUnresolved,
+    BendRadiusFirstAssumed,
+    BendStationarySelectionNative,
+    BendRuleRadiusUnresolved,
+    BendAngleOwnerBacklinkAssumed,
+    BendCachedOwnerAngleAssumed,
     /// A displayed path matches several neutral occurrences.
     SceneOverrideAmbiguous,
     /// A displayed path has no neutral occurrence.
@@ -36,6 +44,8 @@ pub(crate) enum F3dLossCode {
     ScopeOwnerUnresolved,
     /// A history output body belongs to another product definition.
     ScopeOutputOwnerMismatch,
+    /// Unadmitted output membership prevents a unique history product owner.
+    ScopeOutputOwnerUnresolved,
     /// A bound sketch collection belongs to another product definition.
     ScopeSketchOwnerMismatch,
     /// Component-path constraints prevent a uniform operation-table pose.
@@ -55,7 +65,10 @@ pub(crate) enum F3dLossCode {
     WorkPlaneInferredAxisAssumed,
     /// A cylinder primitive has no unique checked solved placement.
     CylinderPlacementUnbound,
+    SpherePrefixFramingAssumed,
     SpherePlacementFlagsAssumed,
+    SphereLocalMatrixFramingAssumed,
+    SphereLocalFrameAssumed,
     SpherePlacementFrameAssumed,
     SphereDiameterOwnerAssumed,
     SphereDiameterSourceAssumed,
@@ -133,6 +146,11 @@ pub(crate) enum F3dLossCode {
     RootInstanceDefinitionUnbound,
     /// Alternate occurrence frames without a unique primary-indexed selection.
     LocalOccurrenceEnvelopeSuperseded,
+    /// A registered unnamed local occurrence has an unresolved envelope.
+    LocalOccurrenceEnvelopeNative,
+    /// A component-path record with only local elements matches no admitted
+    /// local path form.
+    LocalComponentPathNative,
     /// A leading-flag occurrence frame whose record the occurrence-placement
     /// type row does not register.
     LocalOccurrenceTypeUnregistered,
@@ -230,6 +248,13 @@ pub(crate) enum F3dLossCode {
     FeatureMeshOperationParameterUnbound,
     FeatureMeshOperationFieldsUninterpreted,
     FeatureMeshSectionCurvesUnresolved,
+    FeatureMeshConversionScopeUnparsed,
+    FeatureMeshConversionTailPartial,
+    FeatureMeshConversionMethodUnresolved,
+    FeatureMeshConversionMethodAssumed,
+    FeatureMeshConversionEnvelopeAssumed,
+    FeatureMeshConversionSourceUnresolved,
+    FeatureMeshConversionOutputUnresolved,
     /// A historical Thread selection has no complete proof of its live faces.
     ThreadLiveFaceUnproven,
     /// A stored-body operation has an empty proven body set.
@@ -639,6 +664,14 @@ pub(crate) enum F3dLossCode {
     ThickenFaceSelectionAssumed,
     /// A `Shell` reference table stores references outside its face-group members.
     FeatureShellTableMembersAssumed,
+    FeatureShellSourceUnavailable,
+    FeatureShellEnvelopeAssumed,
+    FeatureShellCountedControlAssumed,
+    FeatureShellSlotDirectionAssumed,
+    FeatureShellSelectionUnresolved,
+    FeatureShellWallValueUnresolved,
+    FeatureShellGroupRolesAssumed,
+    FeatureShellControlsUninterpreted,
     FeatureShellIndependentWallsNative,
     /// A compact, marked, or counted `Shell` prefix stores an offset-21 Boolean whose Shell option is unresolved.
     FeatureShellPrefixFlagAssumed,
@@ -853,6 +886,7 @@ impl F3dLossCode {
         Self::OperationPoseApplied,
         Self::ScopeOwnerUnresolved,
         Self::ScopeOutputOwnerMismatch,
+        Self::ScopeOutputOwnerUnresolved,
         Self::ScopeSketchOwnerMismatch,
         Self::OperationPoseDisagrees,
         Self::OperationPoseNative,
@@ -863,7 +897,10 @@ impl F3dLossCode {
         Self::WorkPlaneFrameUnbound,
         Self::WorkPlaneInferredAxisAssumed,
         Self::CylinderPlacementUnbound,
+        Self::SpherePrefixFramingAssumed,
         Self::SpherePlacementFlagsAssumed,
+        Self::SphereLocalMatrixFramingAssumed,
+        Self::SphereLocalFrameAssumed,
         Self::SpherePlacementFrameAssumed,
         Self::SphereDiameterOwnerAssumed,
         Self::SphereDiameterSourceAssumed,
@@ -909,6 +946,8 @@ impl F3dLossCode {
         Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
         Self::LocalOccurrenceEnvelopeSuperseded,
+        Self::LocalOccurrenceEnvelopeNative,
+        Self::LocalComponentPathNative,
         Self::LocalOccurrenceTypeUnregistered,
         Self::LocalOccurrenceYieldedToRegistered,
         Self::LocalOccurrenceKeyRepeated,
@@ -964,6 +1003,13 @@ impl F3dLossCode {
         Self::FeatureMeshOperationParameterUnbound,
         Self::FeatureMeshOperationFieldsUninterpreted,
         Self::FeatureMeshSectionCurvesUnresolved,
+        Self::FeatureMeshConversionScopeUnparsed,
+        Self::FeatureMeshConversionTailPartial,
+        Self::FeatureMeshConversionMethodUnresolved,
+        Self::FeatureMeshConversionMethodAssumed,
+        Self::FeatureMeshConversionEnvelopeAssumed,
+        Self::FeatureMeshConversionSourceUnresolved,
+        Self::FeatureMeshConversionOutputUnresolved,
         Self::ThreadLiveFaceUnproven,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
@@ -1225,6 +1271,14 @@ impl F3dLossCode {
         Self::ThickenThicknessUnrepresentable,
         Self::ThickenFaceSelectionAssumed,
         Self::FeatureShellTableMembersAssumed,
+        Self::FeatureShellSourceUnavailable,
+        Self::FeatureShellEnvelopeAssumed,
+        Self::FeatureShellCountedControlAssumed,
+        Self::FeatureShellSlotDirectionAssumed,
+        Self::FeatureShellSelectionUnresolved,
+        Self::FeatureShellWallValueUnresolved,
+        Self::FeatureShellGroupRolesAssumed,
+        Self::FeatureShellControlsUninterpreted,
         Self::FeatureShellIndependentWallsNative,
         Self::FeatureShellPrefixFlagAssumed,
         Self::FeatureFaceOperandUnresolved,
@@ -1329,10 +1383,19 @@ impl F3dLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::SceneOverrideRefused => "scene.override-refused",
+            Self::BendLineOwnerOrderAssumed => "feature.bend-line-owner-order-assumed",
+            Self::BendStationaryRoleAssumed => "feature.bend-stationary-role-assumed",
+            Self::BendAngleUnresolved => "feature.bend-angle-unresolved",
+            Self::BendRadiusFirstAssumed => "feature.bend-radius-first-assumed",
+            Self::BendStationarySelectionNative => "feature.bend-stationary-selection-native",
+            Self::BendRuleRadiusUnresolved => "feature.bend-rule-radius-unresolved",
+            Self::BendAngleOwnerBacklinkAssumed => "feature.bend-angle-owner-backlink-assumed",
+            Self::BendCachedOwnerAngleAssumed => "feature.bend-cached-owner-angle-assumed",
             Self::SceneOverrideAmbiguous => "scene.override-ambiguous",
             Self::SceneOverrideUnbound => "scene.override-unbound",
             Self::ScopeOwnerUnresolved => "scope.owner-unresolved",
             Self::ScopeOutputOwnerMismatch => "scope.output-owner-mismatch",
+            Self::ScopeOutputOwnerUnresolved => "scope.output-owner-unresolved",
             Self::ScopeSketchOwnerMismatch => "scope.sketch-owner-mismatch",
             Self::OperationPoseApplied => "assembly.operation-table-pose",
             Self::OperationPoseDisagrees => "assembly.operation-table-pose-disagrees",
@@ -1344,7 +1407,10 @@ impl F3dLossCode {
             Self::WorkPlaneFrameUnbound => "work-plane.frame-unbound",
             Self::WorkPlaneInferredAxisAssumed => "work-plane.inferred-axis-assumed",
             Self::CylinderPlacementUnbound => "feature.cylinder-placement-unbound",
+            Self::SpherePrefixFramingAssumed => "feature.sphere-prefix-framing-assumed",
             Self::SpherePlacementFlagsAssumed => "feature.sphere-placement-flags-assumed",
+            Self::SphereLocalMatrixFramingAssumed => "feature.sphere-local-matrix-framing-assumed",
+            Self::SphereLocalFrameAssumed => "feature.sphere-local-frame-assumed",
             Self::SpherePlacementFrameAssumed => "feature.sphere-placement-frame-assumed",
             Self::SphereDiameterOwnerAssumed => "feature.sphere-diameter-owner-assumed",
             Self::SphereDiameterSourceAssumed => "feature.sphere-diameter-source-assumed",
@@ -1399,6 +1465,8 @@ impl F3dLossCode {
             Self::ComponentNamingSpaceUnbound => "assembly.component-naming-space-unbound",
             Self::RootInstanceDefinitionUnbound => "assembly.root-instance-definition-unbound",
             Self::SavedFreeEdgeBodyUnowned => "assembly.saved-free-edge-body-unowned",
+            Self::LocalOccurrenceEnvelopeNative => "assembly.local-occurrence-envelope-native",
+            Self::LocalComponentPathNative => "assembly.local-component-path-native",
             Self::LocalOccurrenceIdentityOrdinalUnresolved => {
                 "assembly.local-occurrence-identity-ordinal-unresolved"
             }
@@ -1573,6 +1641,21 @@ impl F3dLossCode {
                 "feature.mesh-operation-fields-uninterpreted"
             }
             Self::FeatureMeshSectionCurvesUnresolved => "feature.mesh-section-curves-unresolved",
+            Self::FeatureMeshConversionScopeUnparsed => "feature.mesh-conversion-scope-unparsed",
+            Self::FeatureMeshConversionTailPartial => "feature.mesh-conversion-tail-partial",
+            Self::FeatureMeshConversionMethodUnresolved => {
+                "feature.mesh-conversion-method-unresolved"
+            }
+            Self::FeatureMeshConversionMethodAssumed => "feature.mesh-conversion-method-assumed",
+            Self::FeatureMeshConversionEnvelopeAssumed => {
+                "feature.mesh-conversion-envelope-assumed"
+            }
+            Self::FeatureMeshConversionSourceUnresolved => {
+                "feature.mesh-conversion-source-unresolved"
+            }
+            Self::FeatureMeshConversionOutputUnresolved => {
+                "feature.mesh-conversion-output-unresolved"
+            }
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
@@ -1849,6 +1932,14 @@ impl F3dLossCode {
             Self::ThickenThicknessUnrepresentable => "feature.thicken-thickness-unrepresentable",
             Self::ThickenFaceSelectionAssumed => "feature.thicken-face-selection-assumed",
             Self::FeatureShellTableMembersAssumed => "feature.shell-table-members-assumed",
+            Self::FeatureShellSourceUnavailable => "feature.shell-source-unavailable",
+            Self::FeatureShellEnvelopeAssumed => "feature.shell-envelope-assumed",
+            Self::FeatureShellCountedControlAssumed => "feature.shell-counted-control-assumed",
+            Self::FeatureShellSlotDirectionAssumed => "feature.shell-slot-direction-assumed",
+            Self::FeatureShellSelectionUnresolved => "feature.shell-selection-unresolved",
+            Self::FeatureShellWallValueUnresolved => "feature.shell-wall-value-unresolved",
+            Self::FeatureShellGroupRolesAssumed => "feature.shell-group-roles-assumed",
+            Self::FeatureShellControlsUninterpreted => "feature.shell-controls-uninterpreted",
             Self::FeatureShellIndependentWallsNative => "feature.shell-independent-walls-native",
             Self::FeatureShellPrefixFlagAssumed => "feature.shell-prefix-flag-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
@@ -1966,10 +2057,19 @@ impl F3dLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::SceneOverrideRefused => Severity::Warning,
+            Self::BendStationaryRoleAssumed
+            | Self::BendAngleUnresolved
+            | Self::BendRadiusFirstAssumed
+            | Self::BendLineOwnerOrderAssumed
+            | Self::BendStationarySelectionNative
+            | Self::BendRuleRadiusUnresolved
+            | Self::BendAngleOwnerBacklinkAssumed
+            | Self::BendCachedOwnerAngleAssumed => Severity::Warning,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => Severity::Info,
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
             Self::ScopeOwnerUnresolved
+            | Self::ScopeOutputOwnerUnresolved
             | Self::OperationPoseApplied
             | Self::OperationPoseNative
             | Self::BodylessDesignCarrier
@@ -2018,7 +2118,10 @@ impl F3dLossCode {
             | Self::WorkPlaneFrameUnbound
             | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
+            | Self::SpherePrefixFramingAssumed
             | Self::SpherePlacementFlagsAssumed
+            | Self::SphereLocalMatrixFramingAssumed
+            | Self::SphereLocalFrameAssumed
             | Self::SpherePlacementFrameAssumed
             | Self::SphereDiameterOwnerAssumed
             | Self::SphereDiameterSourceAssumed
@@ -2066,6 +2169,8 @@ impl F3dLossCode {
             | Self::LocalOccurrenceSourceUnregistered
             | Self::LocalOccurrenceKeyRepeated
             | Self::LocalOccurrenceFirstMatrixRefused
+            | Self::LocalOccurrenceEnvelopeNative
+            | Self::LocalComponentPathNative
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::LocalOccurrenceTypeUnregistered
             | Self::LocalOccurrenceYieldedToRegistered
@@ -2176,6 +2281,13 @@ impl F3dLossCode {
             | Self::FeatureMeshOperationParameterUnbound
             | Self::FeatureMeshOperationFieldsUninterpreted
             | Self::FeatureMeshSectionCurvesUnresolved
+            | Self::FeatureMeshConversionScopeUnparsed
+            | Self::FeatureMeshConversionTailPartial
+            | Self::FeatureMeshConversionMethodUnresolved
+            | Self::FeatureMeshConversionMethodAssumed
+            | Self::FeatureMeshConversionEnvelopeAssumed
+            | Self::FeatureMeshConversionSourceUnresolved
+            | Self::FeatureMeshConversionOutputUnresolved
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
@@ -2372,6 +2484,14 @@ impl F3dLossCode {
             | Self::ThickenFrameAssumed
             | Self::ThickenFaceSelectionAssumed
             | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellSourceUnavailable
+            | Self::FeatureShellEnvelopeAssumed
+            | Self::FeatureShellCountedControlAssumed
+            | Self::FeatureShellSlotDirectionAssumed
+            | Self::FeatureShellSelectionUnresolved
+            | Self::FeatureShellWallValueUnresolved
+            | Self::FeatureShellGroupRolesAssumed
+            | Self::FeatureShellControlsUninterpreted
             | Self::FeatureShellIndependentWallsNative
             | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
@@ -2445,12 +2565,20 @@ impl F3dLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::SceneOverrideRefused => LossTaxonomy::RecordNotTyped,
+            Self::BendStationaryRoleAssumed
+            | Self::BendAngleUnresolved
+            | Self::BendRadiusFirstAssumed
+            | Self::BendLineOwnerOrderAssumed
+            | Self::BendStationarySelectionNative
+            | Self::BendRuleRadiusUnresolved
+            | Self::BendAngleOwnerBacklinkAssumed
+            | Self::BendCachedOwnerAngleAssumed => LossTaxonomy::FeatureHistoryRetained,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => {
                 LossTaxonomy::FeatureHistoryRetained
             }
-            Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => {
-                LossTaxonomy::FeatureHistoryRetained
-            }
+            Self::ScopeOutputOwnerMismatch
+            | Self::ScopeOutputOwnerUnresolved
+            | Self::ScopeSketchOwnerMismatch => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
@@ -2608,12 +2736,22 @@ impl F3dLossCode {
             | Self::FeatureMeshOperationParameterUnbound
             | Self::FeatureMeshOperationFieldsUninterpreted
             | Self::FeatureMeshSectionCurvesUnresolved
+            | Self::FeatureMeshConversionScopeUnparsed
+            | Self::FeatureMeshConversionTailPartial
+            | Self::FeatureMeshConversionMethodUnresolved
+            | Self::FeatureMeshConversionMethodAssumed
+            | Self::FeatureMeshConversionEnvelopeAssumed
+            | Self::FeatureMeshConversionSourceUnresolved
+            | Self::FeatureMeshConversionOutputUnresolved
             | Self::ThreadLiveFaceUnproven
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound
             | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
+            | Self::SpherePrefixFramingAssumed
             | Self::SpherePlacementFlagsAssumed
+            | Self::SphereLocalMatrixFramingAssumed
+            | Self::SphereLocalFrameAssumed
             | Self::SpherePlacementFrameAssumed
             | Self::SphereDiameterOwnerAssumed
             | Self::SphereDiameterSourceAssumed
@@ -2807,6 +2945,14 @@ impl F3dLossCode {
             | Self::ThickenFrameAssumed
             | Self::ThickenFaceSelectionAssumed
             | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellSourceUnavailable
+            | Self::FeatureShellEnvelopeAssumed
+            | Self::FeatureShellCountedControlAssumed
+            | Self::FeatureShellSlotDirectionAssumed
+            | Self::FeatureShellSelectionUnresolved
+            | Self::FeatureShellWallValueUnresolved
+            | Self::FeatureShellGroupRolesAssumed
+            | Self::FeatureShellControlsUninterpreted
             | Self::FeatureShellIndependentWallsNative
             | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
@@ -2856,6 +3002,8 @@ impl F3dLossCode {
             | Self::LocalOccurrenceTypeUnregistered
             | Self::LocalOccurrenceKeyRepeated
             | Self::LocalOccurrenceFirstMatrixRefused
+            | Self::LocalOccurrenceEnvelopeNative
+            | Self::LocalComponentPathNative
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
@@ -2979,6 +3127,7 @@ mod tests {
                 "assembly.operation-table-pose",
                 "scope.owner-unresolved",
                 "scope.output-owner-mismatch",
+                "scope.output-owner-unresolved",
                 "scope.sketch-owner-mismatch",
                 "assembly.operation-table-pose-disagrees",
                 "assembly.operation-table-pose-native",
@@ -2989,7 +3138,10 @@ mod tests {
                 "work-plane.frame-unbound",
                 "work-plane.inferred-axis-assumed",
                 "feature.cylinder-placement-unbound",
+                "feature.sphere-prefix-framing-assumed",
                 "feature.sphere-placement-flags-assumed",
+                "feature.sphere-local-matrix-framing-assumed",
+                "feature.sphere-local-frame-assumed",
                 "feature.sphere-placement-frame-assumed",
                 "feature.sphere-diameter-owner-assumed",
                 "feature.sphere-diameter-source-assumed",
@@ -3035,6 +3187,8 @@ mod tests {
                 "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
                 "assembly.local-occurrence-envelope-superseded",
+                "assembly.local-occurrence-envelope-native",
+                "assembly.local-component-path-native",
                 "assembly.local-occurrence-type-unregistered",
                 "assembly.local-occurrence-yielded-to-registered",
                 "assembly.local-occurrence-key-repeated",
@@ -3090,6 +3244,13 @@ mod tests {
                 "feature.mesh-operation-parameter-unbound",
                 "feature.mesh-operation-fields-uninterpreted",
                 "feature.mesh-section-curves-unresolved",
+                "feature.mesh-conversion-scope-unparsed",
+                "feature.mesh-conversion-tail-partial",
+                "feature.mesh-conversion-method-unresolved",
+                "feature.mesh-conversion-method-assumed",
+                "feature.mesh-conversion-envelope-assumed",
+                "feature.mesh-conversion-source-unresolved",
+                "feature.mesh-conversion-output-unresolved",
                 "feature.thread-live-face-unproven",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
@@ -3351,6 +3512,14 @@ mod tests {
                 "feature.thicken-thickness-unrepresentable",
                 "feature.thicken-face-selection-assumed",
                 "feature.shell-table-members-assumed",
+                "feature.shell-source-unavailable",
+                "feature.shell-envelope-assumed",
+                "feature.shell-counted-control-assumed",
+                "feature.shell-slot-direction-assumed",
+                "feature.shell-selection-unresolved",
+                "feature.shell-wall-value-unresolved",
+                "feature.shell-group-roles-assumed",
+                "feature.shell-controls-uninterpreted",
                 "feature.shell-independent-walls-native",
                 "feature.shell-prefix-flag-assumed",
                 "feature.face-operand-unresolved",

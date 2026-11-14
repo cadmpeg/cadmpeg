@@ -53,6 +53,7 @@ mod path_pattern;
 mod pattern_seeds;
 mod reverse_normal;
 mod revolve_target;
+pub(crate) mod shell_fallback;
 mod surface_offset;
 mod surface_patch;
 pub(crate) mod sweep_fallback;
@@ -83,6 +84,7 @@ macro_rules! or_none {
     };
 }
 
+mod bend_lines;
 mod chamfer;
 mod delete_face;
 mod extrude;
@@ -1276,6 +1278,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs, ctx)?
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                Some(DesignFeatureFamily::SheetMetalBend) => {
+                    bend_lines::project(scope, &parameters, inputs, &mut projection_losses)?
+                }
                 None => {
                     if let Some(definition) = super::position::project(scope, &mut projection_losses) {
                         definition
@@ -2223,19 +2228,32 @@ fn project_solid_primitive(
         crate::records::feature::scope::DesignScopePayload::SpherePrimitive(Some(
             crate::records::feature::primitives::DesignSpherePrimitive {
                 transform,
+                support_transform,
                 diameter,
                 operation: result,
                 ..
             },
-        )) => FeatureDefinition::Operation(FeatureOperation::Sphere {
-            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                transform[0][3] * 10.0,
-                transform[1][3] * 10.0,
-                transform[2][3] * 10.0,
-            ))?,
-            radius: cadmpeg_ir::scalar::PositiveLength::new(diameter.get() * 5.0)?,
-            op: operation(*result),
-        }),
+        )) => {
+            let local = [transform[0][3], transform[1][3], transform[2][3]];
+            let support = support_transform.map_or(
+                crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+                |support| support.value,
+            );
+            let center = [0, 1, 2].map(|axis| {
+                (support[axis][0] * local[0]
+                    + support[axis][1] * local[1]
+                    + support[axis][2] * local[2]
+                    + support[axis][3])
+                    * 10.0
+            });
+            FeatureDefinition::Operation(FeatureOperation::Sphere {
+                center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    center[0], center[1], center[2],
+                ))?,
+                radius: cadmpeg_ir::scalar::PositiveLength::new(diameter.get() * 5.0)?,
+                op: operation(*result),
+            })
+        }
         crate::records::feature::scope::DesignScopePayload::TorusPrimitive(Some(
             crate::records::feature::primitives::DesignTorusPrimitive {
                 transform,

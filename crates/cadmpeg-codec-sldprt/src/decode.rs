@@ -1292,6 +1292,32 @@ pub(crate) fn append_design_losses(
             "{unresolved_extrude_directions} extrusion definition(s) retain native travel sense because finite start and opposite end caps contradict the implicit direction."
         )));
     }
+    let unresolved_extrude_starts = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.evaluation.definition())
+        .chain(ir.model.configurations.iter().flat_map(|configuration| {
+            configuration
+                .feature_states
+                .values()
+                .map(|state| &state.definition)
+        }))
+        .filter(|definition| {
+            matches!(
+                definition.operation(),
+                FeatureOperation::Extrude {
+                    start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
+                    ..
+                }
+            )
+        })
+        .count();
+    if unresolved_extrude_starts > 0 {
+        report.losses.push(SldprtLossCode::FeatureExtrudeStartUnresolved.note(format!(
+            "{unresolved_extrude_starts} extrusion definition(s) retain a native start condition that is neither the profile plane nor an offset plane with an owned scalar."
+        )));
+    }
     let incomplete_typed_features = evaluated_feature_states
         .iter()
         .filter(|state| {
@@ -1312,7 +1338,8 @@ pub(crate) fn append_design_losses(
                 | FeatureOperation::MeshCombineFaceGroups { .. } => true,
                 FeatureOperation::MeshImport { .. }
                 | FeatureOperation::MeshSection { .. }
-                | FeatureOperation::MeshModify { .. } => false,
+                | FeatureOperation::MeshModify { .. }
+                | FeatureOperation::MeshConvert(_) => false,
                 FeatureOperation::InsertComponent { occurrence } => !ir
                     .model
                     .occurrences
@@ -1610,6 +1637,15 @@ pub(crate) fn append_design_losses(
                 } => incomplete_planar_profile(profile) || incomplete_edge_selection(attachment),
                 FeatureOperation::SheetMetalBend { attachment, .. } => {
                     incomplete_edge_selection(attachment)
+                }
+                FeatureOperation::SheetMetalBendLines { construction } => {
+                    construction.bends.is_empty()
+                        || construction.bends.iter().any(|bend| {
+                            bend.angle.is_none()
+                                || bend.line.as_ref().is_none_or(incomplete_path)
+                        })
+                        || construction.stationary.as_ref().is_none_or(incomplete_face_selection)
+                        || construction.inside_radius.is_none()
                 }
                 FeatureOperation::SheetMetalCorner { .. } => false,
                 FeatureOperation::SheetMetalEdgeFlange { edges, .. } => {

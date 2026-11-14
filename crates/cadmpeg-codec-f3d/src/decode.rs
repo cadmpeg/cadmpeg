@@ -605,6 +605,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             | FeatureOperation::MeshSection { source, .. }
             | FeatureOperation::MeshModify { source, .. },
         ) => !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_)),
+        FeatureDefinition::Operation(FeatureOperation::MeshConvert(conversion)) => {
+            conversion.method.is_none()
+                || conversion.sources.is_empty()
+                || conversion.sources.iter().any(|source| {
+                    !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
+                })
+        }
         FeatureDefinition::Operation(FeatureOperation::Decal { faces, .. }) => {
             !face_selection_is_resolved(faces)
         }
@@ -631,6 +638,14 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || pitch.is_none()
                 || modeled.is_none()
                 || extent.is_none()
+        }
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalBendLines { construction }) => {
+            construction.bends.is_empty()
+                || construction.bends.iter().any(|bend| {
+                    bend.angle.is_none() || bend.line.as_ref().is_none_or(|line| !loft_path_is_resolved(line))
+                })
+                || construction.stationary.as_ref().is_none_or(|face| !face_selection_is_resolved(face))
+                || construction.inside_radius.is_none()
         }
         FeatureDefinition::Operation(FeatureOperation::Unresolved { .. }) => true,
         FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {

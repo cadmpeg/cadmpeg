@@ -51,6 +51,10 @@ use holes::{HoleBottom, HolePlacement, HoleProfileFilter, HoleShape};
 #[doc = "Mesh source selections."]
 pub mod mesh;
 
+#[doc = "Sheet-metal construction inputs and controls."]
+pub mod sheet_metal;
+use sheet_metal::SheetMetalBendLinesConstruction;
+
 pub mod patterns;
 use patterns::{PatternKind, PatternSeed};
 
@@ -2815,6 +2819,8 @@ pub enum FeatureOperation {
         #[doc = "Applied change."]
         modification: mesh::MeshModification,
     },
+    #[doc = "Conversion of meshes to solid or surface bodies."]
+    MeshConvert(mesh::MeshConversion),
     /// Independent bodies introduced by a copy-and-paste operation. The copies
     /// are the feature's outputs, so the selection carries only its native
     /// expression.
@@ -3457,6 +3463,11 @@ pub enum FeatureOperation {
         relief: SheetMetalRelief,
         /// Transition form and evaluated radius.
         transition: SheetMetalTransition,
+    },
+    #[doc = "Bends an existing sheet along selected sketch lines."]
+    SheetMetalBendLines {
+        #[doc = "Independently decoded bend inputs."]
+        construction: SheetMetalBendLinesConstruction,
     },
     /// Corner evaluation on a bend with an explicit geometric effect.
     SheetMetalCorner {

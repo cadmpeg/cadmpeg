@@ -221,7 +221,7 @@ pub(super) fn project_extrude(
     Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile,
         direction,
-        start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+        start: crate::resolved_features::extrusion_start::extrude_start(&feature.properties),
         extent,
         op,
         solid: Some(!matches!(
