@@ -836,4 +836,5 @@ impl From<DesignHemOperation> for DesignHemOperationWire {
 mod tests;
 
 pub(crate) mod fold;
+pub(crate) mod contour;
 mod identity_rewrite;

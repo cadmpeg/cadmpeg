@@ -1,6 +1,22 @@
 use super::*;
 use crate::test_support::{indexed_header, lp_utf16};
 
+fn matching_material_scalar(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    types: &Types<'_>,
+    index: u32,
+) -> Option<Located<FiniteReal>> {
+    rule_values(
+        bytes,
+        records,
+        types,
+        index,
+        RuleReadMode::MatchingThickness,
+    )
+    .map(|values| values.material_scalar)
+}
+
 fn reference(out: &mut Vec<u8>, index: u32, guid: Option<&str>) {
     out.push(1);
     out.extend(u64::from(index).to_le_bytes());
@@ -58,14 +74,14 @@ fn rule_material_scalar_requires_one_finite_trailer_and_bounded_consumers() {
             let records = IndexedRecordOffsets::build(&bytes);
             let types = HashMap::from([(60, (RULE_GUID, version))]);
             assert_eq!(
-                material_scalar(&bytes, &records, &types, 60)
+                matching_material_scalar(&bytes, &records, &types, 60)
                     .unwrap()
                     .value
                     .get(),
                 scalar
             );
             let duplicated = rule_bytes(version, scalar, true);
-            assert!(material_scalar(
+            assert!(matching_material_scalar(
                 &duplicated,
                 &IndexedRecordOffsets::build(&duplicated),
                 &types,
@@ -73,14 +89,17 @@ fn rule_material_scalar_requires_one_finite_trailer_and_bounded_consumers() {
             )
             .is_none());
             let invalid = rule_bytes(version, f64::INFINITY, false);
-            assert!(
-                material_scalar(&invalid, &IndexedRecordOffsets::build(&invalid), &types, 60)
-                    .is_none()
-            );
+            assert!(matching_material_scalar(
+                &invalid,
+                &IndexedRecordOffsets::build(&invalid),
+                &types,
+                60
+            )
+            .is_none());
             if version == 0 {
                 let mut invalid = bytes.clone();
                 invalid[21..25].copy_from_slice(&u32::MAX.to_le_bytes());
-                assert!(material_scalar(
+                assert!(matching_material_scalar(
                     &invalid,
                     &IndexedRecordOffsets::build(&invalid),
                     &types,
@@ -114,12 +133,18 @@ fn settings_rule_checks_versioned_optional_slots_and_owner_boundary() {
             let types = HashMap::from([(30, (SETTINGS_GUID, version))]);
             let records = IndexedRecordOffsets::build(&bytes);
             assert_eq!(
-                settings_rule(&bytes, &records, &types, 30, 80),
+                settings_rule(&bytes, &records, &types, 30, 80, UNFOLD_GUID),
                 Some((60, false))
             );
-            assert_eq!(settings_rule(&bytes, &records, &types, 30, 81), None);
+            assert_eq!(
+                settings_rule(&bytes, &records, &types, 30, 81, UNFOLD_GUID),
+                None
+            );
             bytes[11] = 1;
-            assert_eq!(settings_rule(&bytes, &records, &types, 30, 80), None);
+            assert_eq!(
+                settings_rule(&bytes, &records, &types, 30, 80, UNFOLD_GUID),
+                None
+            );
         }
     }
 }
@@ -155,12 +180,38 @@ fn settings_rule_recovers_unique_typed_target_with_present_inputs() {
             ]);
             let records = IndexedRecordOffsets::build(&bytes);
             assert_eq!(
-                settings_rule(&bytes, &records, &types, 30, 80),
+                settings_rule(&bytes, &records, &types, 30, 80, UNFOLD_GUID),
                 if ambiguous { None } else { Some((60, true)) }
             );
-            assert_eq!(settings_rule(&bytes, &records, &types, 30, 81), None);
+            assert_eq!(
+                settings_rule(&bytes, &records, &types, 30, 81, UNFOLD_GUID),
+                None
+            );
             bytes[11] = 1;
-            assert_eq!(settings_rule(&bytes, &records, &types, 30, 80), None);
+            assert_eq!(
+                settings_rule(&bytes, &records, &types, 30, 80, UNFOLD_GUID),
+                None
+            );
         }
     }
+}
+
+#[test]
+fn independent_rule_entries_preserve_radius_and_explicit_thickness_separately() {
+    let mut bytes = rule_bytes(1, 0.44, false);
+    bytes[47..55].copy_from_slice(&0.2_f64.to_le_bytes());
+    let records = IndexedRecordOffsets::build(&bytes);
+    let types = HashMap::from([(60, (RULE_GUID, 1))]);
+    assert!(matching_material_scalar(&bytes, &records, &types, 60).is_none());
+    let value = rule_values(
+        &bytes,
+        &records,
+        &types,
+        60,
+        RuleReadMode::IndependentEntries,
+    )
+    .unwrap();
+    assert_eq!(value.first_value.value.get(), 0.2);
+    assert_eq!(value.thickness.value.get(), 0.125);
+    assert_eq!(value.material_scalar.value.get(), 0.44);
 }

@@ -26,6 +26,27 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
+    ContourVectorOwnerDistanceRoleAssumed,
+    ContourProfileNative,
+    ContourDefaultSideOneLeftAssumed,
+    ContourEnvelopeUnresolved,
+    ContourOwnerVectorDirectionAssumed,
+    ContourOperationFourBodyAssumed,
+    ContourResultUnresolved,
+    ContourSettingsRuleReferenceAssumed,
+    ContourRuleFirstRadiusAssumed,
+    ContourMaterialScalarFactorAssumed,
+    ContourInlineThicknessAssumed,
+    ContourRadiusDatabaseUnitAssumed,
+    ContourDistanceDatabaseUnitAssumed,
+    ContourCachedOwnerDistanceAssumed,
+    ContourSingleDistanceOneSidedAssumed,
+    ContourDistanceUnresolved,
+    ContourFirstRadiusOverrideAssumed,
+    ContourDirectionUnresolved,
+    ContourThicknessUnresolved,
+    ContourRadiusUnresolved,
+    ContourRuleFactorUnresolved,
     UnfoldAllBendsFlagAssumed,
     UnfoldControlUnresolved,
     UnfoldSelectionSlotsAssumed,
@@ -904,6 +925,45 @@ impl F3dLossCode {
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
         Self::SceneOverrideRefused,
+        Self::ContourVectorOwnerDistanceRoleAssumed,
+        Self::ContourProfileNative,
+        Self::ContourDefaultSideOneLeftAssumed,
+        Self::ContourEnvelopeUnresolved,
+        Self::ContourOwnerVectorDirectionAssumed,
+        Self::ContourOperationFourBodyAssumed,
+        Self::ContourResultUnresolved,
+        Self::ContourSettingsRuleReferenceAssumed,
+        Self::ContourRuleFirstRadiusAssumed,
+        Self::ContourMaterialScalarFactorAssumed,
+        Self::ContourInlineThicknessAssumed,
+        Self::ContourRadiusDatabaseUnitAssumed,
+        Self::ContourDistanceDatabaseUnitAssumed,
+        Self::ContourCachedOwnerDistanceAssumed,
+        Self::ContourSingleDistanceOneSidedAssumed,
+        Self::ContourDistanceUnresolved,
+        Self::ContourFirstRadiusOverrideAssumed,
+        Self::ContourDirectionUnresolved,
+        Self::ContourThicknessUnresolved,
+        Self::ContourRadiusUnresolved,
+        Self::ContourRuleFactorUnresolved,
+        Self::UnfoldAllBendsFlagAssumed,
+        Self::UnfoldControlUnresolved,
+        Self::UnfoldSelectionSlotsAssumed,
+        Self::UnfoldSelectionNative,
+        Self::UnfoldEnvelopeUnresolved,
+        Self::UnfoldMaterialScalarFactorAssumed,
+        Self::UnfoldRuleFactorUnresolved,
+        Self::UnfoldSettingsRuleReferenceAssumed,
+        Self::RefoldGroupSourceAssumed,
+        Self::RefoldSourceUnresolved,
+        Self::BendLineOwnerOrderAssumed,
+        Self::BendStationaryRoleAssumed,
+        Self::BendAngleUnresolved,
+        Self::BendRadiusFirstAssumed,
+        Self::BendStationarySelectionNative,
+        Self::BendRuleRadiusUnresolved,
+        Self::BendAngleOwnerBacklinkAssumed,
+        Self::BendCachedOwnerAngleAssumed,
         Self::SceneOverrideAmbiguous,
         Self::SceneOverrideUnbound,
         Self::OperationPoseApplied,
@@ -1418,6 +1478,47 @@ impl F3dLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::SceneOverrideRefused => "scene.override-refused",
+            Self::ContourVectorOwnerDistanceRoleAssumed => {
+                "feature.contour-vector-owner-distance-role-assumed"
+            }
+            Self::ContourProfileNative => "feature.contour-profile-native",
+            Self::ContourDefaultSideOneLeftAssumed => {
+                "feature.contour-default-side-one-left-assumed"
+            }
+            Self::ContourEnvelopeUnresolved => "feature.contour-envelope-unresolved",
+            Self::ContourOwnerVectorDirectionAssumed => {
+                "feature.contour-owner-vector-direction-assumed"
+            }
+            Self::ContourOperationFourBodyAssumed => "feature.contour-operation-four-body-assumed",
+            Self::ContourResultUnresolved => "feature.contour-result-unresolved",
+            Self::ContourSettingsRuleReferenceAssumed => {
+                "feature.contour-settings-rule-reference-assumed"
+            }
+            Self::ContourRuleFirstRadiusAssumed => "feature.contour-rule-first-radius-assumed",
+            Self::ContourMaterialScalarFactorAssumed => {
+                "feature.contour-material-scalar-factor-assumed"
+            }
+            Self::ContourInlineThicknessAssumed => "feature.contour-inline-thickness-assumed",
+            Self::ContourRadiusDatabaseUnitAssumed => {
+                "feature.contour-radius-database-unit-assumed"
+            }
+            Self::ContourDistanceDatabaseUnitAssumed => {
+                "feature.contour-distance-database-unit-assumed"
+            }
+            Self::ContourCachedOwnerDistanceAssumed => {
+                "feature.contour-cached-owner-distance-assumed"
+            }
+            Self::ContourSingleDistanceOneSidedAssumed => {
+                "feature.contour-single-distance-one-sided-assumed"
+            }
+            Self::ContourDistanceUnresolved => "feature.contour-distance-unresolved",
+            Self::ContourFirstRadiusOverrideAssumed => {
+                "feature.contour-first-radius-override-assumed"
+            }
+            Self::ContourDirectionUnresolved => "feature.contour-direction-unresolved",
+            Self::ContourThicknessUnresolved => "feature.contour-thickness-unresolved",
+            Self::ContourRadiusUnresolved => "feature.contour-radius-unresolved",
+            Self::ContourRuleFactorUnresolved => "feature.contour-rule-factor-unresolved",
             Self::UnfoldAllBendsFlagAssumed => "feature.unfold-all-bends-flag-assumed",
             Self::UnfoldControlUnresolved => "feature.unfold-control-unresolved",
             Self::UnfoldSelectionSlotsAssumed => "feature.unfold-selection-slots-assumed",
@@ -2138,6 +2239,27 @@ impl F3dLossCode {
             | Self::BendRuleRadiusUnresolved
             | Self::BendAngleOwnerBacklinkAssumed
             | Self::BendCachedOwnerAngleAssumed
+            | Self::ContourVectorOwnerDistanceRoleAssumed
+            | Self::ContourProfileNative
+            | Self::ContourDefaultSideOneLeftAssumed
+            | Self::ContourEnvelopeUnresolved
+            | Self::ContourOwnerVectorDirectionAssumed
+            | Self::ContourOperationFourBodyAssumed
+            | Self::ContourResultUnresolved
+            | Self::ContourSettingsRuleReferenceAssumed
+            | Self::ContourRuleFirstRadiusAssumed
+            | Self::ContourMaterialScalarFactorAssumed
+            | Self::ContourInlineThicknessAssumed
+            | Self::ContourRadiusDatabaseUnitAssumed
+            | Self::ContourDistanceDatabaseUnitAssumed
+            | Self::ContourCachedOwnerDistanceAssumed
+            | Self::ContourSingleDistanceOneSidedAssumed
+            | Self::ContourDistanceUnresolved
+            | Self::ContourFirstRadiusOverrideAssumed
+            | Self::ContourDirectionUnresolved
+            | Self::ContourThicknessUnresolved
+            | Self::ContourRadiusUnresolved
+            | Self::ContourRuleFactorUnresolved
             | Self::UnfoldAllBendsFlagAssumed
             | Self::UnfoldControlUnresolved
             | Self::UnfoldSelectionSlotsAssumed
@@ -2668,6 +2790,27 @@ impl F3dLossCode {
             | Self::BendRuleRadiusUnresolved
             | Self::BendAngleOwnerBacklinkAssumed
             | Self::BendCachedOwnerAngleAssumed
+            | Self::ContourVectorOwnerDistanceRoleAssumed
+            | Self::ContourProfileNative
+            | Self::ContourDefaultSideOneLeftAssumed
+            | Self::ContourEnvelopeUnresolved
+            | Self::ContourOwnerVectorDirectionAssumed
+            | Self::ContourOperationFourBodyAssumed
+            | Self::ContourResultUnresolved
+            | Self::ContourSettingsRuleReferenceAssumed
+            | Self::ContourRuleFirstRadiusAssumed
+            | Self::ContourMaterialScalarFactorAssumed
+            | Self::ContourInlineThicknessAssumed
+            | Self::ContourRadiusDatabaseUnitAssumed
+            | Self::ContourDistanceDatabaseUnitAssumed
+            | Self::ContourCachedOwnerDistanceAssumed
+            | Self::ContourSingleDistanceOneSidedAssumed
+            | Self::ContourDistanceUnresolved
+            | Self::ContourFirstRadiusOverrideAssumed
+            | Self::ContourDirectionUnresolved
+            | Self::ContourThicknessUnresolved
+            | Self::ContourRadiusUnresolved
+            | Self::ContourRuleFactorUnresolved
             | Self::UnfoldAllBendsFlagAssumed
             | Self::UnfoldControlUnresolved
             | Self::UnfoldSelectionSlotsAssumed
@@ -3239,6 +3382,45 @@ mod tests {
             codes,
             [
                 "scene.override-refused",
+                "feature.contour-vector-owner-distance-role-assumed",
+                "feature.contour-profile-native",
+                "feature.contour-default-side-one-left-assumed",
+                "feature.contour-envelope-unresolved",
+                "feature.contour-owner-vector-direction-assumed",
+                "feature.contour-operation-four-body-assumed",
+                "feature.contour-result-unresolved",
+                "feature.contour-settings-rule-reference-assumed",
+                "feature.contour-rule-first-radius-assumed",
+                "feature.contour-material-scalar-factor-assumed",
+                "feature.contour-inline-thickness-assumed",
+                "feature.contour-radius-database-unit-assumed",
+                "feature.contour-distance-database-unit-assumed",
+                "feature.contour-cached-owner-distance-assumed",
+                "feature.contour-single-distance-one-sided-assumed",
+                "feature.contour-distance-unresolved",
+                "feature.contour-first-radius-override-assumed",
+                "feature.contour-direction-unresolved",
+                "feature.contour-thickness-unresolved",
+                "feature.contour-radius-unresolved",
+                "feature.contour-rule-factor-unresolved",
+                "feature.unfold-all-bends-flag-assumed",
+                "feature.unfold-control-unresolved",
+                "feature.unfold-selection-slots-assumed",
+                "feature.unfold-selection-native",
+                "feature.unfold-envelope-unresolved",
+                "feature.unfold-material-scalar-factor-assumed",
+                "feature.unfold-rule-factor-unresolved",
+                "feature.unfold-settings-rule-reference-assumed",
+                "feature.refold-group-source-assumed",
+                "feature.refold-source-unresolved",
+                "feature.bend-line-owner-order-assumed",
+                "feature.bend-stationary-role-assumed",
+                "feature.bend-angle-unresolved",
+                "feature.bend-radius-first-assumed",
+                "feature.bend-stationary-selection-native",
+                "feature.bend-rule-radius-unresolved",
+                "feature.bend-angle-owner-backlink-assumed",
+                "feature.bend-cached-owner-angle-assumed",
                 "scene.override-ambiguous",
                 "scene.override-unbound",
                 "assembly.operation-table-pose",

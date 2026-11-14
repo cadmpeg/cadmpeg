@@ -2,7 +2,7 @@ use crate::bytes::{lp_utf16_bounded, take_reference};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::identity::Located;
 use cadmpeg_core::decode::{u64_from_index, View};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use std::collections::HashMap;
 
 pub(super) type Types<'a> = HashMap<u64, (&'a str, u32)>;
@@ -56,6 +56,7 @@ pub(super) fn settings_rule(
     types: &Types<'_>,
     index: u32,
     owner: u32,
+    owner_guid: &str,
 ) -> Option<(u32, bool)> {
     if let Some(index) = exact_settings_rule(bytes, records, types, index, owner) {
         return Some((index, false));
@@ -82,7 +83,7 @@ pub(super) fn settings_rule(
             if tail.seek(at).is_none() {
                 continue;
             }
-            let Some(target) = local(&mut tail, types, Some(UNFOLD_GUID)) else {
+            let Some(target) = local(&mut tail, types, Some(owner_guid)) else {
                 continue;
             };
             if target.value != owner || !tail.is_empty() {
@@ -174,12 +175,25 @@ fn exact_settings_rule(
     result
 }
 
-pub(super) fn material_scalar(
+#[derive(Clone, Copy)]
+pub(super) enum RuleReadMode {
+    MatchingThickness,
+    IndependentEntries,
+}
+
+pub(super) struct RuleValues {
+    pub(super) first_value: Located<FiniteReal>,
+    pub(super) thickness: Located<PositiveReal>,
+    pub(super) material_scalar: Located<FiniteReal>,
+}
+
+pub(super) fn rule_values(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     types: &Types<'_>,
     index: u32,
-) -> Option<Located<FiniteReal>> {
+    mode: RuleReadMode,
+) -> Option<RuleValues> {
     let (guid, version) = *types.get(&u64::from(index))?;
     if !guid.eq_ignore_ascii_case(RULE_GUID) || !matches!(version, 0 | 1) {
         return None;
@@ -201,12 +215,16 @@ pub(super) fn material_scalar(
         }
         view.u32_le()?;
         let (name, after_name) = lp_utf16_bounded(bytes, view.position(), 1..=64)?;
-        if name != "Thickness" || after_name > end {
+        if after_name > end {
             continue;
         }
         view.seek(after_name)?;
-        let thickness = view.f64_le()?;
-        if !thickness.is_finite() || thickness <= 0.0 {
+        let Some(first) = FiniteReal::new(view.f64_le()?) else {
+            continue;
+        };
+        if matches!(mode, RuleReadMode::MatchingThickness)
+            && (name != "Thickness" || first.get() <= 0.0)
+        {
             continue;
         }
         for at in view.position()..end {
@@ -216,24 +234,37 @@ pub(super) fn material_scalar(
             if material.is_empty() || after_material > end {
                 continue;
             }
-            let Some((name, after_name)) = lp_utf16_bounded(bytes, after_material, 1..=64) else {
+            let Some((name, after_thickness)) = lp_utf16_bounded(bytes, after_material, 1..=64)
+            else {
                 continue;
             };
-            if name != "Thickness" || after_name.checked_add(8)? > end {
+            if name != "Thickness" || after_thickness.checked_add(8)? > end {
                 continue;
             }
             let mut scalar_view = frame;
-            scalar_view.seek(after_name)?;
-            if scalar_view.f64_le()? != thickness {
+            scalar_view.seek(after_thickness)?;
+            let thickness = scalar_view.f64_le()?;
+            if matches!(mode, RuleReadMode::MatchingThickness) && thickness != first.get() {
                 continue;
             }
+            let thickness = PositiveReal::new(thickness)?;
             let offset = at.checked_sub(8)?;
             scalar_view.seek(offset)?;
             let scalar = FiniteReal::new(scalar_view.f64_le()?)?;
             if result
-                .replace(Located {
-                    value: scalar,
-                    offset: u64_from_index(offset),
+                .replace(RuleValues {
+                    first_value: Located {
+                        value: first,
+                        offset: u64_from_index(after_name),
+                    },
+                    thickness: Located {
+                        value: thickness,
+                        offset: u64_from_index(after_thickness),
+                    },
+                    material_scalar: Located {
+                        value: scalar,
+                        offset: u64_from_index(offset),
+                    },
                 })
                 .is_some()
             {

@@ -14,6 +14,7 @@ pub(crate) mod chamfer_set;
 mod coil;
 mod combine;
 mod component_constructions;
+mod contour;
 mod copy_paste_bodies;
 mod derived_instance;
 pub(crate) mod direct_face;

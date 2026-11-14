@@ -1,5 +1,5 @@
 use super::sheet_metal_rule::{
-    local, material_scalar, settings_rule, typed, Types, SETTINGS_GUID, UNFOLD_GUID,
+    local, rule_values, settings_rule, typed, RuleReadMode, Types, SETTINGS_GUID, UNFOLD_GUID,
 };
 use crate::bytes::lp_utf16_bounded;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -63,11 +63,20 @@ fn unfold(
     {
         return None;
     }
-    let rule = settings_rule(bytes, records, types, settings.value, scope.record_index);
+    let rule = settings_rule(
+        bytes,
+        records,
+        types,
+        settings.value,
+        scope.record_index,
+        UNFOLD_GUID,
+    );
     let rule_record_index = rule.map(|(index, _)| index);
     let rule_reference_assumed = rule.is_some_and(|(_, assumed)| assumed);
-    let rule_material_scalar =
-        rule_record_index.and_then(|rule| material_scalar(bytes, records, types, rule));
+    let rule_material_scalar = rule_record_index.and_then(|rule| {
+        rule_values(bytes, records, types, rule, RuleReadMode::MatchingThickness)
+            .map(|values| values.material_scalar)
+    });
     Some(DesignUnfoldOperation {
         control,
         prefix_end: u64_from_index(view.position()),

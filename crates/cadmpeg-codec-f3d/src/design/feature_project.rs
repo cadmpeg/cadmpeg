@@ -87,6 +87,7 @@ macro_rules! or_none {
 
 mod bend_lines;
 mod chamfer;
+mod contour;
 mod delete_face;
 mod extrude;
 mod fold;
@@ -1280,6 +1281,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs, ctx)?
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                Some(DesignFeatureFamily::SheetMetalContourFlange) => contour::project(scope, &parameters, inputs, &mut projection_losses),
                 Some(DesignFeatureFamily::SheetMetalUnfold) => fold::unfold(scope, inputs, &mut projection_losses)?,
                 Some(DesignFeatureFamily::SheetMetalRefold) => fold::refold(scope, inputs, &scope_ids, &source_ordinals, &mut projection_losses),
                 Some(DesignFeatureFamily::SheetMetalBend) => {
@@ -3562,6 +3564,16 @@ pub(crate) fn bind_sketch_feature_geometry(
                 ..
             }) => {
                 add_dependency(planar_profile_dependency(profile))?;
+            }
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalContourFlange {
+                construction,
+            }) => {
+                add_dependency(
+                    construction
+                        .profile
+                        .as_ref()
+                        .and_then(planar_profile_dependency),
+                )?;
             }
             FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) => {
                 add_dependency(construction.profile().and_then(planar_profile_dependency))?;
