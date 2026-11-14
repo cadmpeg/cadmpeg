@@ -11,13 +11,15 @@ use std::collections::{BTreeSet, HashMap};
 
 use cadmpeg_asm::history::{
     archived_active_record_count, decode_record_archive, frame_history_chain,
-    insert_only_active_record_count, walk_entity_versions, ChainFraming,
+    insert_only_active_record_count, walk_entity_versions, ChainFraming, DeltaStateView,
+    HistoryChain, RecordArchiveFrames,
 };
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::history_body::HistoryBody;
 use cadmpeg_ir::report::loss::LossNote;
 use serde::{Deserialize, Serialize};
 
@@ -30,11 +32,11 @@ use crate::native::ActiveCarrierRecord;
 pub(crate) const MAX_STATE_SCAN_WORK: usize = 1 << 24;
 
 /// Source tag of a Split feature that partitions one body.
-const SPLIT_TAG: &str = "split_body";
+pub(crate) const SPLIT_TAG: &str = "split_body";
 /// Source tag of a stored-body base feature.
-const BASE_TAG: &str = "base";
+pub(crate) const BASE_TAG: &str = "base";
 /// Kind of a base feature whose result body does not join the current model.
-const NATIVE_BASE_KIND: &str = "native:Base";
+pub(crate) const NATIVE_BASE_KIND: &str = "native:Base";
 
 /// Schema-44 attribute families that carry source-name pairs.
 const SCHEMA_44_FAMILIES: [&str; 6] = [
@@ -86,8 +88,6 @@ pub(crate) enum Unread {
 /// Result of reading the history of a carrier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Reading {
-    /// The carrier holds no `delta_state` record.
-    Absent,
     /// The chain was not read.
     Unread(Unread),
     /// The chain closed.
@@ -161,35 +161,36 @@ fn classify(record: &Record) -> Option<Class> {
     naming_tag(record).map(|(schema, sources)| Class::Naming(schema, sources))
 }
 
-/// Read the state index of the history that follows the solved records of a
-/// kernel carrier. `bytes` is the carrier window and `width` its reference
-/// width. A resource refusal is an error; any other failure is
-/// [`Reading::Unread`].
-pub(crate) fn read_states(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    width: RefWidth,
-    schema: u32,
-) -> Result<Reading, CodecError> {
-    read_states_within(ctx, bytes, width, schema, MAX_STATE_SCAN_WORK)
+/// A framed chain together with the records it archives.
+pub(crate) struct Chain<'a> {
+    /// Views of the states, in stream order.
+    pub(crate) views: Vec<DeltaStateView<'a>>,
+    /// Framed active and archived records.
+    pub(crate) frames: RecordArchiveFrames,
+    /// Sorted revision identifiers of the archived records.
+    pub(crate) archived_ids: Vec<i64>,
+    /// Length of the active record table.
+    pub(crate) active_count: i64,
 }
 
-/// [`read_states`] with a work cap of `limit` live records inspected.
-fn read_states_within(
+/// Result of framing the chain of a carrier.
+pub(crate) enum Prepared<'a> {
+    /// The chain was not read.
+    Unread(Unread),
+    /// The chain frames and agrees with its archived records.
+    Ready(Box<Chain<'a>>),
+}
+
+/// Frame the chain of `bytes` and check it against the archived records.
+pub(crate) fn prepare<'a>(
     ctx: &DecodeContext<'_>,
-    bytes: &[u8],
+    chain: &'a HistoryChain,
+    bytes: &'a [u8],
     width: RefWidth,
-    schema: u32,
-    limit: usize,
-) -> Result<Reading, CodecError> {
-    let chain = match frame_history_chain(ctx, bytes, width)? {
-        ChainFraming::Absent => return Ok(Reading::Absent),
-        ChainFraming::Unframed => return Ok(Reading::Unread(Unread::Unclosed)),
-        ChainFraming::Framed(chain) => chain,
-    };
+) -> Result<Prepared<'a>, CodecError> {
     let views = chain.views(bytes);
     let Some(frames) = decode_record_archive(ctx, &views, bytes, width)? else {
-        return Ok(Reading::Unread(Unread::Unclosed));
+        return Ok(Prepared::Unread(Unread::Unclosed));
     };
     let archived_ids = views
         .iter()
@@ -202,13 +203,54 @@ fn read_states_within(
         .or_else(|| insert_only_active_record_count(&views))
         .and_then(|count| i64::try_from(count).ok());
     let Some(active_count) = active_count else {
-        return Ok(Reading::Unread(Unread::Unclosed));
+        return Ok(Prepared::Unread(Unread::Unclosed));
     };
     if frames.archived.len() != archived_ids.len()
         || i64::try_from(frames.active.len()).ok() != Some(active_count)
     {
-        return Ok(Reading::Unread(Unread::Unclosed));
+        return Ok(Prepared::Unread(Unread::Unclosed));
     }
+    Ok(Prepared::Ready(Box::new(Chain {
+        views,
+        frames,
+        archived_ids,
+        active_count,
+    })))
+}
+
+/// Result of framing the `delta_state` chain of a stream.
+pub(crate) enum Framing {
+    /// The stream holds no `delta_state` record.
+    Absent,
+    /// The chain does not frame.
+    Unread(Unread),
+    /// Every state frames.
+    Framed(HistoryChain),
+}
+
+/// Frame the `delta_state` chain of `bytes` as a stream of the given reference width.
+pub(crate) fn frame_chain(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    width: RefWidth,
+) -> Result<Framing, CodecError> {
+    Ok(match frame_history_chain(ctx, bytes, width)? {
+        ChainFraming::Absent => Framing::Absent,
+        ChainFraming::Unframed => Framing::Unread(Unread::Unclosed),
+        ChainFraming::Framed(chain) => Framing::Framed(chain),
+    })
+}
+
+/// Read the state index of a prepared chain with a work cap of `limit` live
+/// records inspected.
+pub(crate) fn index_chain(chain: &Chain<'_>, schema: u32, limit: usize) -> Reading {
+    let Chain {
+        views,
+        frames,
+        archived_ids,
+        active_count,
+    } = chain;
+    let active_count = *active_count;
 
     let mut classes = HashMap::new();
     for (revision, record) in frames.active.iter().enumerate() {
@@ -228,7 +270,7 @@ fn read_states_within(
     let mut latest = HashMap::<u32, usize>::new();
     let mut schema_mismatch = BTreeSet::new();
     let mut bounded = false;
-    let closed = walk_entity_versions(&views, active_count, &archived_ids, |ordinal, versions| {
+    let closed = walk_entity_versions(views, active_count, archived_ids, |ordinal, versions| {
         if bounded {
             return;
         }
@@ -259,25 +301,25 @@ fn read_states_within(
         });
     });
     if bounded {
-        return Ok(Reading::Unread(Unread::Bounded));
+        return Reading::Unread(Unread::Bounded);
     }
     if !closed || scanned.len() != views.len() {
-        return Ok(Reading::Unread(Unread::Unclosed));
+        return Reading::Unread(Unread::Unclosed);
     }
     let last = scanned.len() - 1;
     let mut first = HashMap::with_capacity(latest.len());
     for (source, visit) in latest {
         let Ok(ordinal) = u32::try_from(last - visit) else {
-            return Ok(Reading::Unread(Unread::Unclosed));
+            return Reading::Unread(Unread::Unclosed);
         };
         first.insert(source, ordinal);
     }
     scanned.reverse();
-    Ok(Reading::Read(StateIndex {
+    Reading::Read(StateIndex {
         states: scanned,
         first,
         schema_mismatch,
-    }))
+    })
 }
 
 /// A state of the chain by oldest-first ordinal.
@@ -356,6 +398,13 @@ pub(crate) struct FeatureHistoryState {
         deserialize_with = "deserialize_body_key"
     )]
     pub(crate) body_key: Option<i64>,
+    /// Nested history body of the Split or Base body in its state.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_history_body"
+    )]
+    pub(crate) history_body: Option<String>,
     /// Join outcome.
     #[serde(flatten)]
     pub(crate) binding: Binding,
@@ -364,6 +413,7 @@ pub(crate) struct FeatureHistoryState {
 cadmpeg_core::named_optional_field!(deserialize_state_after, StateRef, "state_after");
 cadmpeg_core::named_optional_field!(deserialize_state_before, u32, "state_before");
 cadmpeg_core::named_optional_field!(deserialize_body_key, i64, "body_key");
+cadmpeg_core::named_optional_field!(deserialize_history_body, String, "history_body");
 
 /// Records the join reads.
 pub(crate) struct Inputs<'a> {
@@ -484,6 +534,7 @@ pub(crate) fn join(index: &StateIndex, inputs: &Inputs<'_>) -> Vec<FeatureHistor
                 state_after: None,
                 state_before: None,
                 body_key: None,
+                history_body: None,
                 binding: Binding::Bound,
             },
             check,
@@ -555,6 +606,19 @@ pub(crate) struct Projection {
     /// Features that retain a state from a naming tag with a stored schema
     /// other than the carrier schema, bound or not.
     pub(crate) schema_assumed: usize,
+    /// Nested history bodies of the joined features.
+    pub(crate) bodies: super::history_bodies::Built,
+}
+
+impl Projection {
+    fn without_records(unread: Option<Unread>) -> Self {
+        Self {
+            records: Vec::new(),
+            unread,
+            schema_assumed: 0,
+            bodies: super::history_bodies::Built::default(),
+        }
+    }
 }
 
 /// Features that retain a state derived from a naming tag whose stored schema
@@ -574,38 +638,43 @@ pub(crate) fn project(
     carrier: &crate::kernel::ActiveCarrier<'_>,
     inputs: &Inputs<'_>,
 ) -> Result<Projection, CodecError> {
-    let none = Projection {
-        records: Vec::new(),
-        unread: None,
-        schema_assumed: 0,
-    };
     if carrier.family != crate::kernel::KernelFamily::Asm {
-        return Ok(none);
+        return Ok(Projection::without_records(None));
     }
     let Ok(header) = carrier.header.as_ref() else {
-        return Ok(none);
+        return Ok(Projection::without_records(None));
     };
-    match read_states(ctx, carrier.bytes.window(), header.width, carrier.schema)? {
-        Reading::Absent => Ok(none),
-        Reading::Unread(reason) => Ok(Projection {
-            records: Vec::new(),
-            unread: Some(reason),
-            schema_assumed: 0,
-        }),
-        Reading::Read(index) => {
-            let records = join(&index, inputs);
-            ctx.charge_entities(
-                cadmpeg_core::decode::u64_from_index(records.len()),
-                "join Inventor features to history states",
-            )?;
-            let schema_assumed = schema_assumed(&records, &index);
-            Ok(Projection {
-                records,
-                unread: None,
-                schema_assumed,
-            })
-        }
+    let bytes = carrier.bytes.window();
+    let framed = match frame_chain(ctx, bytes, header.width)? {
+        Framing::Framed(chain) => chain,
+        Framing::Absent => return Ok(Projection::without_records(None)),
+        Framing::Unread(reason) => return Ok(Projection::without_records(Some(reason))),
+    };
+    let chain = match prepare(ctx, &framed, bytes, header.width)? {
+        Prepared::Unread(reason) => return Ok(Projection::without_records(Some(reason))),
+        Prepared::Ready(chain) => chain,
+    };
+    let index = match index_chain(&chain, carrier.schema, MAX_STATE_SCAN_WORK) {
+        Reading::Read(index) => index,
+        Reading::Unread(reason) => return Ok(Projection::without_records(Some(reason))),
+    };
+    let mut records = join(&index, inputs);
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(records.len()),
+        "join Inventor features to history states",
+    )?;
+    let schema_assumed = schema_assumed(&records, &index);
+    let bodies =
+        super::history_bodies::build(ctx, carrier, *chain, &records, inputs.model_features)?;
+    for (&record, body) in &bodies.links {
+        records[record].history_body = Some(body.as_str().to_owned());
     }
+    Ok(Projection {
+        records,
+        unread: None,
+        schema_assumed,
+        bodies,
+    })
 }
 
 /// Losses that a projection reports: an unread chain, and Split and Base
@@ -649,6 +718,33 @@ pub(crate) fn losses(projection: &Projection) -> Vec<LossNote> {
             "Split and Base features have no bound history state: {no_tag} without a naming tag, {no_predecessor} at the oldest state, {unresolved} with an unresolved body key, {mismatch} with a body key that does not change as the feature requires."
         )));
     }
+    notes.extend(body_losses(&projection.bodies.outcome));
+    notes
+}
+
+/// Losses of the nests: bodies that were asked for and not produced.
+fn body_losses(outcome: &super::history_bodies::Outcome) -> Vec<LossNote> {
+    use crate::loss::InventorLossCode;
+    let mut notes = Vec::new();
+    if outcome.undecoded > 0 {
+        notes.push(InventorLossCode::FeatureHistoryBodyUndecoded.note(format!(
+            "{} history state(s) of Split and Base features did not materialize or decode to the body of the feature; those bodies have no history body.",
+            outcome.undecoded
+        )));
+    }
+    if outcome.not_closed() > 0 {
+        let [reference, kind, edge] = outcome.open;
+        notes.push(InventorLossCode::FeatureHistoryBodyNotClosed.note(format!(
+            "{} body(ies) of Split and Base features are not closed manifold solids in their history state ({reference} with a reference outside the body, {kind} not solid bodies, {edge} with an edge that does not join two coedges); those bodies have no history body.",
+            outcome.not_closed()
+        )));
+    }
+    if outcome.bounded > 0 {
+        notes.push(InventorLossCode::FeatureHistoryBodyBounded.note(format!(
+            "{} body(ies) of Split and Base features passed the local cap of history bodies; those bodies have no history body.",
+            outcome.bounded
+        )));
+    }
     notes
 }
 
@@ -657,8 +753,13 @@ pub(crate) fn validate(
     records: &[FeatureHistoryState],
     features: &[PmDcFeature],
     carrier: &ActiveCarrierRecord,
+    bodies: &[HistoryBody],
 ) -> Vec<String> {
     let mut findings = Vec::new();
+    let nests = bodies
+        .iter()
+        .map(|body| (body.id.as_str(), body))
+        .collect::<HashMap<_, _>>();
     let sources = features
         .iter()
         .map(|feature| (feature.id(), feature.header.source_index))
@@ -696,6 +797,26 @@ pub(crate) fn validate(
             ));
         }
         let bound = matches!(record.binding, Binding::Bound);
+        if let Some(link) = &record.history_body {
+            let expected = match record.kind.as_str() {
+                SPLIT_TAG => record.state_before,
+                BASE_TAG | NATIVE_BASE_KIND => record.state_after.map(|state| state.ordinal),
+                _ => None,
+            };
+            match nests.get(link.as_str()) {
+                None => findings.push(format!(
+                    "feature history state {} names no history body",
+                    record.id
+                )),
+                Some(body) if !bound || Some(body.state.ordinal) != expected => {
+                    findings.push(format!(
+                        "feature history state {} names a history body of another state",
+                        record.id
+                    ));
+                }
+                Some(_) => {}
+            }
+        }
         if bound && record.state_after.is_none() {
             findings.push(format!(
                 "bound feature history state {} has no state after",
