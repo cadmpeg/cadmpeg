@@ -5,6 +5,47 @@ use super::{
 use crate::features::FeatureOperation;
 
 #[test]
+fn face_group_operations_round_trip_partial_settings_and_rewrite_sources() {
+    use crate::features::FeatureOperation;
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+
+    for wire in [
+        serde_json::json!({"definition":"mesh_generate_face_groups", "source":{"feature":"test:model:feature#groups"}, "settings":{"boundary_tolerance":0.047, "minimum_area_fraction":0.17}}),
+        serde_json::json!({"definition":"mesh_combine_face_groups", "source":["test:mesh:tessellation#first"]}),
+        serde_json::json!({"definition":"mesh_combine_face_groups", "source":{"native":"native-mesh", "members":["second","first"]}}),
+    ] {
+        let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
+        crate::test_support::with_service_decode_context(|ctx| {
+            let mut map =
+                IdentityMap::new(|source: &str| Ok(source.replace("test:", "test:child/")));
+            let rewritten = operation.rewrite_identities(ctx, &mut map)?;
+            let rewritten = serde_json::to_value(rewritten).unwrap();
+            if let Some(feature) = wire["source"].get("feature") {
+                assert_eq!(
+                    rewritten["source"]["feature"],
+                    feature.as_str().unwrap().replace("test:", "test:child/")
+                );
+            } else if wire["source"].is_array() {
+                assert_eq!(rewritten["source"][0], "test:child/mesh:tessellation#first");
+            } else {
+                assert_eq!(rewritten, wire);
+            }
+            Ok(())
+        })
+        .unwrap();
+    }
+    for settings in [
+        serde_json::json!({"method":"other"}),
+        serde_json::json!({"boundary_tolerance":-0.5}),
+        serde_json::json!({"minimum_area_fraction":1.1}),
+        serde_json::json!({"angle_threshold":null}),
+    ] {
+        assert!(serde_json::from_value::<FeatureOperation>(serde_json::json!({"definition":"mesh_generate_face_groups", "source":{"native":"mesh"}, "settings":settings})).is_err());
+    }
+}
+
+#[test]
 fn resolved_mesh_selection_preserves_the_tessellation_array_wire_form() {
     let wire = serde_json::json!([
         "test:mesh:tessellation#first",

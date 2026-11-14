@@ -73,7 +73,8 @@ fn edge_midpoints_use_named_input_state_and_bound_history() {
             &owners,
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert_eq!(
             feature
                 .source_properties
@@ -112,7 +113,8 @@ fn edge_midpoints_refuse_missing_or_ambiguous_input_history() {
             &owners,
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert!(!feature
             .source_properties
             .contains_key(&cadmpeg_core::nonblank_literal!("edge_midpoints")));
@@ -142,7 +144,8 @@ fn edge_midpoints_refuse_a_truncated_state_chain() {
         &owners,
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(!feature
         .source_properties
         .contains_key(&cadmpeg_core::nonblank_literal!("edge_midpoints")));
@@ -175,7 +178,8 @@ fn edge_midpoints_keep_features_with_equal_state_numbers_separate() {
         &owners,
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     for (feature, expected) in features.iter().zip(["1,0,0", "2,0,0"]) {
         assert_eq!(
             feature
@@ -207,7 +211,8 @@ fn edge_midpoints_report_a_missing_input_carrier() {
         &owners,
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(!feature
         .source_properties
         .contains_key(&cadmpeg_core::nonblank_literal!("edge_midpoints")));
@@ -274,7 +279,8 @@ fn edge_midpoints_refuse_endpoint_average_without_carrier_sample() {
         &owners,
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(!feature
         .source_properties
         .contains_key(&cadmpeg_core::nonblank_literal!("edge_midpoints")));
@@ -330,7 +336,8 @@ fn edge_midpoints_refuse_endpoint_average_for_curved_edge() {
         &owners,
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(!feature
         .source_properties
         .contains_key(&cadmpeg_core::nonblank_literal!("edge_midpoints")));
@@ -367,7 +374,8 @@ fn edge_midpoints_preserve_explicit_edge_selections_without_deleted_edge_fallbac
         &owners,
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(!feature
         .source_properties
         .contains_key(&cadmpeg_core::nonblank_literal!("edge_midpoints")));

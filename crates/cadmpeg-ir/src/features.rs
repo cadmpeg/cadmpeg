@@ -2452,35 +2452,11 @@ impl Default for LoftGuidance {
     }
 }
 
-fn known_body_count(selection: &BodySelection) -> Option<usize> {
-    match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-            Some(bodies.len())
-        }
-        BodySelection::Local { bodies, .. } => Some(bodies.len()),
-        BodySelection::ResolvedSet { members } => Some(members.count()),
-        BodySelection::Historical { bodies, .. } => Some(bodies.len()),
-        BodySelection::HistoricalSet { members, .. } => Some(members.count()),
-        BodySelection::Generated { bodies, .. } => Some(bodies.len()),
-        BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => None,
-    }
-}
-
 /// A body selection with at least two members when membership is resolved.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct SewBodySelection(BodySelection);
-
-impl TryFrom<BodySelection> for SewBodySelection {
-    type Error = &'static str;
-    fn try_from(bodies: BodySelection) -> Result<Self, Self::Error> {
-        if known_body_count(&bodies).is_some_and(|count| count < 2) {
-            return Err("bodies must select at least two bodies for sewing");
-        }
-        Ok(Self(bodies))
-    }
-}
 
 impl std::ops::Deref for SewBodySelection {
     type Target = BodySelection;
@@ -2603,7 +2579,7 @@ selection_operands!(
     BodySelection,
     target,
     tools,
-    |first| known_body_count(first).is_none_or(|count| count == 1),
+    |first| body_selection::known_body_count(first).is_none_or(|count| count == 1),
     body_selections_overlap,
     try_edit
 );
@@ -2800,6 +2776,21 @@ pub enum FeatureOperation {
         #[doc = "Resolved tessellations or a retained mesh source."]
         #[serde(deserialize_with = "deserialize_local_tessellations")]
         tessellations: mesh::MeshSelection,
+    },
+    #[doc = "Generate a mesh face-group partition from independently retained controls."]
+    MeshGenerateFaceGroups {
+        #[doc = "Mesh and optional group selection in its source history state."]
+        #[serde(deserialize_with = "deserialize_mesh_source")]
+        source: mesh::MeshSelection,
+        #[doc = "Decoded controls, including stored inactive values."]
+        #[serde(default)]
+        settings: mesh::MeshFaceGroupGenerationSettings,
+    },
+    #[doc = "Combine selected groups of a mesh face-group partition."]
+    MeshCombineFaceGroups {
+        #[doc = "Mesh and ordered groups in their source history state."]
+        #[serde(deserialize_with = "deserialize_mesh_source")]
+        source: mesh::MeshSelection,
     },
     #[doc = "Planar section of a mesh whose curves belong to a sketch."]
     MeshSection {
@@ -6448,6 +6439,7 @@ selection_field_deserializer!(deserialize_selection_selections, "selections");
 selection_field_deserializer!(deserialize_selection_curves, "curves");
 selection_field_deserializer!(deserialize_profile_parameter_range, "parameter_range");
 selection_field_deserializer!(deserialize_local_tessellations, "tessellations");
+selection_field_deserializer!(deserialize_mesh_source, "source");
 selection_field_deserializer!(deserialize_local_segments, "segments");
 selection_field_deserializer!(deserialize_local_axis_native_ref, "axis_native_ref");
 selection_field_deserializer!(deserialize_local_groups, "groups");
