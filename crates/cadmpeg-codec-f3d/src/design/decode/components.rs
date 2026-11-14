@@ -69,7 +69,7 @@ pub(crate) fn decode_component_occurrences(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = crate::ids::native_scope(&entry.name);
-        let (frames, typed_frames, poses, path_carriers, source_entities) =
+        let (frames, typed_frames, poses, path_carriers, source_entities, unadmitted_paths) =
             if let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? {
                 let meta_name = format!(
                     "{}MetaStream.dat",
@@ -86,6 +86,7 @@ pub(crate) fn decode_component_occurrences(
                     crate::xref::local_component_path_poses(bytes, &meta, Some(magic))?,
                     crate::xref::component_path_carriers(bytes, &meta, Some(magic))?,
                     occurrence_source_entities(&meta),
+                    crate::xref::unadmitted_local_component_paths(bytes, &meta, Some(magic))?,
                 )
             } else {
                 (
@@ -94,6 +95,7 @@ pub(crate) fn decode_component_occurrences(
                     Vec::new(),
                     Vec::new(),
                     std::collections::BTreeSet::new(),
+                    0,
                 )
             };
         let typed_primary: std::collections::BTreeSet<(u64, u64)> = typed_frames
@@ -148,6 +150,11 @@ pub(crate) fn decode_component_occurrences(
         if unread != 0 {
             losses.push(crate::loss::F3dLossCode::LocalOccurrenceEnvelopeNative.note(format!(
                 "{unread} registered local occurrence envelope(s) retain their native records because their complete field grammar is unresolved."
+            )));
+        }
+        if unadmitted_paths != 0 {
+            losses.push(crate::loss::F3dLossCode::LocalComponentPathNative.note(format!(
+                "{unadmitted_paths} local component-path record(s) in {scope} match no admitted local path form; their poses stay native."
             )));
         }
         losses.extend(admitted.losses);
