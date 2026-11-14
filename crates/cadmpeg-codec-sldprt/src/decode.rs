@@ -1596,8 +1596,11 @@ pub(crate) fn append_design_losses(
                 }
                 FeatureOperation::SheetMetalBendLines { construction } => {
                     construction.bends.is_empty()
-                        || construction.bends.iter().any(|bend| bend.angle.is_none() || bend.line.as_ref().is_none_or(incomplete_path))
-                        || incomplete_optional_face_selection(&construction.stationary)
+                        || construction.bends.iter().any(|bend| {
+                            bend.angle.is_none()
+                                || bend.line.as_ref().is_none_or(incomplete_path)
+                        })
+                        || construction.stationary.as_ref().is_none_or(incomplete_face_selection)
                         || construction.inside_radius.is_none()
                 }
                 FeatureOperation::SheetMetalCorner { .. } => false,
