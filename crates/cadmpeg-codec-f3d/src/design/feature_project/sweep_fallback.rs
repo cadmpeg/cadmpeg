@@ -500,7 +500,7 @@ fn project_one(
     if matches!(mode, SweepMode::Unresolved {}) {
         note(
             F3dLossCode::FeatureSweepResultModeUnresolved,
-            "complete output kinds and source operation do not establish the result family",
+            "the bound output kinds and source operation do not establish a supported neutral result mode",
         );
     } else {
         note(F3dLossCode::FeatureSweepResultModeInferred, "the result family follows complete bound output kinds with the source operation preserved");
