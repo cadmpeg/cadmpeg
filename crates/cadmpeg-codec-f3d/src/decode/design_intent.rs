@@ -861,6 +861,18 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             primary_brep: geometry.primary_brep,
         },
     ));
+    losses.extend(crate::design::feature_project::shell_fallback::project(
+        &mut model.features,
+        &crate::design::feature_project::shell_fallback::Inputs {
+            scan,
+            ctx,
+            scopes: &design.design_parameter_scopes,
+            groups: &design.design_construction_operand_groups,
+            owners: &prereqs.design_parameter_owners,
+            parameters: &prereqs.design_parameters,
+            faces: &design.design_face_operands,
+        },
+    )?);
     crate::history::bind_feature_path_selections(
         &mut model.features,
         &design.design_parameter_scopes,

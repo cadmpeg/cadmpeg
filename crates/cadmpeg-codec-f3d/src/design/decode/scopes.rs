@@ -39,6 +39,7 @@ pub(crate) mod position;
 mod reverse_normal;
 pub(super) mod shared_frames;
 pub(crate) mod sheet_metal;
+pub(in crate::design) mod shell_observation;
 mod solid_primitive;
 mod sphere;
 mod surfaces;
