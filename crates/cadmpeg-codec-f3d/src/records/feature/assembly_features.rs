@@ -295,7 +295,11 @@ impl DesignDerivedInstanceConstruction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignDerivedInstanceSource {
     pub(crate) reference: DesignDerivedInstanceReference,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_derived_relation"
+    )]
     pub(crate) relation: Option<DesignDerivedInstanceRelation>,
 }
 
@@ -316,7 +320,11 @@ pub(crate) struct DesignDerivedInstanceRelation {
     pub(crate) carrier_reference: DesignDerivedInstanceReference,
     pub(crate) middle_reference: DesignDerivedInstanceReference,
     pub(crate) scope_reference: DesignDerivedInstanceReference,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_derived_carrier"
+    )]
     pub(crate) carrier: Option<DesignDerivedInstanceCarrier>,
 }
 
@@ -354,9 +362,25 @@ impl DesignDerivedInstancePlacement {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DesignDerivedInstanceReference {
     pub(crate) target: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_derived_type_guid"
+    )]
     pub(crate) type_guid: Option<DesignGuidText>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_derived_relation,
+    DesignDerivedInstanceRelation,
+    "relation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_derived_carrier,
+    DesignDerivedInstanceCarrier,
+    "carrier"
+);
+cadmpeg_core::named_optional_field!(deserialize_derived_type_guid, DesignGuidText, "type_guid");
 
 impl DesignDerivedInstanceReference {
     pub(crate) fn plain(target: u64) -> Self {
