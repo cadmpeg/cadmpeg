@@ -324,7 +324,7 @@ fn source_stream(
 fn source_group_members_name_their_bodies_in_group_order() {
     let (stream, meta) = source_stream(2, &[(41, 9), (40, 3)]);
     let bodies = crate::test_support::with_decode_context(|ctx| {
-        MeshOperationRecords::index(&stream, meta).group_bodies(ctx, 8)
+        MeshOperationRecords::index(View::over_retained(&stream), meta).group_bodies(ctx, 8)
     })
     .unwrap();
     assert_eq!(bodies, Ok(vec![9, 3]));
@@ -338,7 +338,7 @@ fn null_source_group_reference_ignores_zero_identity_metadata() {
     changed.records[0].entity_id = 0;
     changed.types[0].entities = crate::records::identity::ReferenceRun::unlocated(vec![0]);
     let bodies = crate::test_support::with_decode_context(|ctx| {
-        MeshOperationRecords::index(&stream, meta).group_bodies(ctx, 0)
+        MeshOperationRecords::index(View::over_retained(&stream), meta).group_bodies(ctx, 0)
     })
     .unwrap();
     assert_eq!(bodies, Err(MeshOperationFraming("source group record")));
@@ -349,7 +349,7 @@ fn source_group_member_count_is_bounded_before_allocation() {
     for (count, members) in [(u32::MAX, vec![(41, 9)]), (0, vec![])] {
         let (stream, meta) = source_stream(count, &members);
         let bodies = crate::test_support::with_decode_context(|ctx| {
-            MeshOperationRecords::index(&stream, meta).group_bodies(ctx, 8)
+            MeshOperationRecords::index(View::over_retained(&stream), meta).group_bodies(ctx, 8)
         })
         .unwrap();
         assert_eq!(
@@ -362,7 +362,7 @@ fn source_group_member_count_is_bounded_before_allocation() {
 #[test]
 fn missing_source_records_name_the_unresolved_hop() {
     let (stream, meta) = source_stream(1, &[(41, 9)]);
-    let records = MeshOperationRecords::index(&stream[..36], meta);
+    let records = MeshOperationRecords::index(View::over_retained(&stream[..36]), meta);
     let bodies = crate::test_support::with_decode_context(|ctx| {
         Ok::<_, CodecError>((
             records.group_bodies(ctx, 8)?,
@@ -394,7 +394,7 @@ fn selected_records_require_the_registered_type_and_unique_index() {
             _ => row.records.push(row.records[1]),
         }
         let result = crate::test_support::with_decode_context(|ctx| {
-            MeshOperationRecords::index(&stream, changed).group_bodies(ctx, 8)
+            MeshOperationRecords::index(View::over_retained(&stream), changed).group_bodies(ctx, 8)
         })
         .unwrap();
         assert_eq!(result, Err(MeshOperationFraming("source member record")));
@@ -406,13 +406,13 @@ fn source_body_identity_is_validated_without_reading_its_payload_version() {
     let (stream, mut meta) = source_stream(1, &[(41, 9)]);
     std::sync::Arc::make_mut(&mut meta).types[2].version = 999;
     let read = crate::test_support::with_decode_context(|ctx| {
-        MeshOperationRecords::index(&stream, meta.clone()).group_bodies(ctx, 8)
+        MeshOperationRecords::index(View::over_retained(&stream), meta.clone()).group_bodies(ctx, 8)
     })
     .unwrap();
     assert_eq!(read, Ok(vec![9]));
     std::sync::Arc::make_mut(&mut meta).types[2].module = "Other".into();
     let read = crate::test_support::with_decode_context(|ctx| {
-        MeshOperationRecords::index(&stream, meta).group_bodies(ctx, 8)
+        MeshOperationRecords::index(View::over_retained(&stream), meta).group_bodies(ctx, 8)
     })
     .unwrap();
     assert_eq!(read, Err(MeshOperationFraming("source body record")));
@@ -431,7 +431,7 @@ fn member_reference_cannot_cross_its_secondary_boundary() {
         },
     );
     let result = crate::test_support::with_decode_context(|ctx| {
-        MeshOperationRecords::index(&stream, meta).group_bodies(ctx, 8)
+        MeshOperationRecords::index(View::over_retained(&stream), meta).group_bodies(ctx, 8)
     })
     .unwrap();
     assert_eq!(
@@ -455,18 +455,22 @@ fn scope_validation_requires_the_operation_type_and_version() {
             .unwrap(),
         offset: 0,
     };
-    let records = MeshOperationRecords::index(&stream, meta.clone());
+    let records = MeshOperationRecords::index(View::over_retained(&stream), meta.clone());
     assert_eq!(
-        records.validate_scope(MeshOperationKind::ReverseNormals, 8),
+        records
+            .validate_scope(MeshOperationKind::ReverseNormals, 8)
+            .map(View::window),
         Ok(&stream[..36])
     );
     assert!(records
         .validate_scope(MeshOperationKind::Section, 8)
         .is_err());
     std::sync::Arc::make_mut(&mut meta).types[0].version = 1;
-    assert!(MeshOperationRecords::index(&stream, meta)
-        .validate_scope(MeshOperationKind::ReverseNormals, 8)
-        .is_err());
+    assert!(
+        MeshOperationRecords::index(View::over_retained(&stream), meta)
+            .validate_scope(MeshOperationKind::ReverseNormals, 8)
+            .is_err()
+    );
 }
 
 #[test]
@@ -501,4 +505,24 @@ fn null_smoothness_owner_retains_geometry_and_source_references() {
     assert_eq!(read.input_geometry, 20);
     assert_eq!(read.source_group, 8);
     assert_eq!(read.tail_error, None);
+}
+
+#[test]
+fn oversized_mesh_group_count_retains_readable_members_without_admitting_complete_selection() {
+    let (stream, meta) = source_stream(u32::MAX, &[(11, 21), (12, 22)]);
+    let records = MeshOperationRecords::index(View::over_retained(&stream), meta);
+    crate::test_support::with_decode_context(|ctx| {
+        let captured = records.group_body_references(ctx, 8).unwrap();
+        assert_eq!(captured.declared_count, Some(u32::MAX));
+        assert_eq!(captured.member_references, [11, 12]);
+        assert_eq!(captured.references, [21, 22]);
+        assert_eq!(
+            captured.framing,
+            Some(MeshOperationFraming("source group member count"))
+        );
+        assert_eq!(
+            records.group_bodies(ctx, 8).unwrap(),
+            Err(MeshOperationFraming("source group member count"))
+        );
+    });
 }

@@ -642,3 +642,58 @@ fn a_native_neutral_plane_is_complete_with_a_parallel_plane_frame() {
         Vector3::new(1.0, 0.0, 0.0)
     ))));
 }
+
+#[test]
+fn mesh_combination_local_operands_remain_incomplete_in_both_reports() {
+    use cadmpeg_ir::features::{
+        BodySelection, BooleanKind, CombineDestination, CombineOperands, Feature,
+        FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation, NativeSelections,
+        SelectionReference,
+    };
+    let local = |name: &str| BodySelection::Local {
+        bodies: NativeSelections::try_from(vec![name.to_owned()]).unwrap(),
+        native: SelectionReference::try_from("f3d:synthetic:scope#17".to_owned()).unwrap(),
+    };
+    let definition = FeatureDefinition::Operation(FeatureOperation::Combine {
+        operands: CombineOperands::new(local("7"), local("8")).unwrap(),
+        op: BooleanKind::Join,
+        keep_tools: false,
+        destination: CombineDestination::TargetComponent,
+    });
+    assert!(!feature_definition_is_incomplete(&definition));
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint("synthetic:model:feature#combination").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("MeshCombine".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: FeatureEvaluation::from_definition(definition),
+        native_ref: None,
+    });
+    assert!(super::super::feature_is_incomplete(&ir.model.features[0]));
+    assert_eq!(
+        super::super::incomplete_feature_families(&ir).get("MeshCombine"),
+        Some(&1)
+    );
+    assert_eq!(
+        super::super::design_projection_gaps(&ir, &crate::native::F3dNative::default())
+            .unwrap()
+            .incomplete_features,
+        1
+    );
+    ir.model.features[0].source_tag = Some("Combine".into());
+    assert!(!super::super::feature_is_incomplete(&ir.model.features[0]));
+    assert!(super::super::incomplete_feature_families(&ir).is_empty());
+    assert_eq!(
+        super::super::design_projection_gaps(&ir, &crate::native::F3dNative::default())
+            .unwrap()
+            .incomplete_features,
+        0
+    );
+}

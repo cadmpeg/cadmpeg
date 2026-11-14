@@ -587,6 +587,11 @@ fn loft_path_is_resolved(path: &cadmpeg_ir::features::PathRef) -> bool {
     }
 }
 
+fn feature_is_incomplete(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.source_tag.as_deref() == Some(mesh_operations::combine::SOURCE_KIND)
+        || feature_definition_is_incomplete(feature.evaluation.definition())
+}
+
 fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind};
 
@@ -1139,7 +1144,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
 fn incomplete_feature_families(ir: &CadIr) -> std::collections::BTreeMap<&str, usize> {
     let mut families = std::collections::BTreeMap::new();
     for feature in &ir.model.features {
-        if !feature_definition_is_incomplete(feature.evaluation.definition()) {
+        if !feature_is_incomplete(feature) {
             continue;
         }
         let family = feature.source_tag.as_deref().unwrap_or_else(|| {
@@ -1647,9 +1652,7 @@ fn design_projection_gaps(
         | BodySelection::Local { .. } => 0,
     };
     for feature in &ir.model.features {
-        gaps.incomplete_features += usize::from(feature_definition_is_incomplete(
-            feature.evaluation.definition(),
-        ));
+        gaps.incomplete_features += usize::from(feature_is_incomplete(feature));
         gaps.native_reference_images += usize::from(matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Native {

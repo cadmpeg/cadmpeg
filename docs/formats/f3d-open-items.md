@@ -2908,3 +2908,39 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** Treating every object-prelude closing matrix as a solved-body local placement gives the two incorrect mating placements above.
 
 **Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve.
+
+### MC-04. Mesh combination selector three
+
+**Question.** Which result structure does mesh combination selector `3` create?
+
+**Known.** The selector follows the mesh scope prefix. The decoder projects selector `3` as a compound with target members followed by tool members.
+
+**Need.** Controlled saves that distinguish preserved interior structures, ordered compound members, and the resulting mesh-body identity.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-combine-merge-assumed`.
+
+### MC-05. Mesh combination retention and destination
+
+**Question.** Which fields select tool retention and the result component of a mesh combination?
+
+**Known.** The version-2 prefix contains an additional control word. Both versions contain a control byte. Boolean projection assumes consumed tools and the target component. Compound projection retains the controls with unresolved retention and destination.
+
+**Need.** Controlled saves that change Keep Tools and New Component independently, with both scope versions.
+
+**Conflict.** None.
+
+**Note.** Boolean projection reports `feature.mesh-combine-keep-tools-assumed-false` and `feature.mesh-combine-destination-assumed-target-component`. Compound projection reports `feature.mesh-combine-keep-tools-unresolved` and `feature.mesh-combine-destination-unresolved`.
+
+### MC-06. Legacy mesh combination Boolean selectors
+
+**Question.** Which operations do version-1 mesh combination selectors `0`, `1`, and `2` select?
+
+**Known.** Both scope versions store an operation selector. The decoder applies the version-2 Boolean selector mapping to these version-1 values.
+
+**Need.** Version-1 saves with independently selected join, cut, and intersection operations.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-combine-legacy-boolean-assumed`.

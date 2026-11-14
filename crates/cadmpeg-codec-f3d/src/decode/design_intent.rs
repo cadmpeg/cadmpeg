@@ -1074,6 +1074,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &mut losses,
     )?;
+    super::mesh_operations::combine::bind_features(
+        ctx,
+        scan,
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &mut losses,
+    )?;
     losses.extend(crate::design::sketch_names::bind_sketch_names(
         &model.features,
         &design.design_parameter_scopes,

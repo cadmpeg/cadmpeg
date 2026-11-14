@@ -42,18 +42,20 @@ impl MeshOperationRecords<'_> {
             Ok(record) => record,
             Err(error) => return Ok(Err(error)),
         };
-        read_scope(ctx, record)
+        read_scope(ctx, record.window())
     }
 
     pub(crate) fn conversion_input_group(&self, index: u32) -> Result<u32, MeshOperationFraming> {
-        let record = self.record(
-            index,
-            "conversion input wrapper",
-            "D6FB6F05-98CD-4BFF-BF90-594F77725DC1",
-            "D0D7E795-ECF7-48A8-A7A3-F983C5A29F8B",
-            "Fusion",
-            Some(1),
-        )?;
+        let record = self
+            .record(
+                index,
+                "conversion input wrapper",
+                "D6FB6F05-98CD-4BFF-BF90-594F77725DC1",
+                "D0D7E795-ECF7-48A8-A7A3-F983C5A29F8B",
+                "Fusion",
+                Some(1),
+            )?
+            .window();
         if record
             .get(input::ZERO_RUN_11..input::GROUP_REFERENCE)
             .is_none_or(|run| run.iter().any(|byte| *byte != 0))
@@ -72,14 +74,16 @@ impl MeshOperationRecords<'_> {
         &self,
         index: u32,
     ) -> Result<MeshConversionOutput, MeshOperationFraming> {
-        let record = self.record(
-            index,
-            "conversion output wrapper",
-            "D26351F0-5940-4D23-AA20-2C35475A6D9E",
-            "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
-            "Fusion",
-            Some(2),
-        )?;
+        let record = self
+            .record(
+                index,
+                "conversion output wrapper",
+                "D26351F0-5940-4D23-AA20-2C35475A6D9E",
+                "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
+                "Fusion",
+                Some(2),
+            )?
+            .window();
         if record
             .get(output::ZERO_RUN_10..output::GUID_LENGTH)
             .is_none_or(|run| run.iter().any(|byte| *byte != 0))
