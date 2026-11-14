@@ -228,6 +228,17 @@ pub(crate) fn decode_parameter_scopes(
                 | scope::DesignScopePayloadMut::CombineFaceGroups(slot) => *slot = face_groups,
                 _ => {}
             }
+            if type_info
+                .is_some_and(|(guid, _)| guid.eq_ignore_ascii_case(super::position::TYPE_GUID))
+            {
+                scope.captured_positions =
+                    super::position::decode(ctx, bytes, &records, &scope, &stream_types)?;
+                if scope.captured_positions.is_none() {
+                    losses.push(crate::loss::F3dLossCode::PositionEnvelopeUnparsed.note(format!(
+                        "Position scope {} has no admitted version-six captured-position envelope; its native scope is retained.", scope.id
+                    )));
+                }
+            }
             let normal = super::super::patch::surface_patch_normal(bytes, &scope, type_info);
             let selection =
                 super::super::patch::surface_patch_selection(ctx, bytes, &scope, type_info)?;
@@ -1246,6 +1257,7 @@ enum ScopeTailForm {
     Named,
     /// The 76-byte fixed tail with its three references in the typed spelling.
     TypedFixed,
+    TypedExtended,
 }
 
 fn unparsed_rigid_group_tail_length(
@@ -1374,24 +1386,45 @@ fn unparsed_rigid_group_tail_length(
     paired.checked_sub(kind_end)
 }
 
-/// Whether `bytes[kind_end..paired_at]` is the typed-reference 196-byte tail:
-/// u32 ordinal, fifteen zero bytes, a typed reference, the preceding
-/// history-state identity, u32 + f64 + u32, a typed reference, two zero
-/// bytes, a typed reference, and two zero bytes.
-fn typed_fixed_scope_tail_is_valid(bytes: &[u8], kind_end: usize, paired_at: usize) -> bool {
+fn typed_fixed_scope_tail_is_valid(
+    bytes: &[u8],
+    kind_end: usize,
+    paired_at: usize,
+    extended: bool,
+) -> bool {
     use crate::bytes::typed_local_reference_target as target;
     (|| {
         let tail = bytes.get(kind_end..paired_at)?;
-        (tail.len() == typed_tail::LEN
+        let shift = usize::from(extended) * crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
+        let state =
+            tail.get(typed_tail::SECOND_ZERO_RUN_2 + shift..typed_tail::THIRD_REFERENCE + shift)?;
+        (tail.len() == typed_tail::LEN + shift
             && tail.get(typed_tail::ZERO_RUN_15..typed_tail::FIRST_REFERENCE)? == [0; 15]
             && target(tail, typed_tail::FIRST_REFERENCE).is_some()
-            && target(tail, typed_tail::SECOND_REFERENCE).is_some()
-            && tail.get(typed_tail::SECOND_ZERO_RUN_2..typed_tail::THIRD_REFERENCE)? == [0; 2]
-            && target(tail, typed_tail::THIRD_REFERENCE).is_some()
-            && tail.get(typed_tail::THIRD_ZERO_RUN_2..typed_tail::LEN)? == [0; 2])
+            && (!extended || target(tail, typed_tail::PREVIOUS_HISTORY_STATE_ID).is_some())
+            && target(tail, typed_tail::SECOND_REFERENCE + shift).is_some()
+            && if extended {
+                state.iter().all(|byte| *byte <= 1)
+            } else {
+                state == [0; 2]
+            }
+            && target(tail, typed_tail::THIRD_REFERENCE + shift).is_some()
+            && tail.get(typed_tail::THIRD_ZERO_RUN_2 + shift..typed_tail::LEN + shift)? == [0; 2])
             .then_some(())
     })()
     .is_some()
+}
+
+pub(crate) fn typed_scope_previous_history_offset(kind: &str, tail_length: usize) -> Option<usize> {
+    if tail_length == typed_tail::LEN {
+        Some(typed_tail::PREVIOUS_HISTORY_STATE_ID)
+    } else if kind == "Assemble"
+        && tail_length == typed_tail::LEN + crate::bytes::TYPED_LOCAL_REFERENCE_LEN
+    {
+        Some(typed_tail::PREVIOUS_HISTORY_STATE_ID + crate::bytes::TYPED_LOCAL_REFERENCE_LEN)
+    } else {
+        None
+    }
 }
 
 fn parameter_scope_previous_history_offset_for_form(
@@ -1403,7 +1436,9 @@ fn parameter_scope_previous_history_offset_for_form(
 ) -> Option<usize> {
     match tail_form {
         ScopeTailForm::Named => return None,
-        ScopeTailForm::TypedFixed => return Some(typed_tail::PREVIOUS_HISTORY_STATE_ID),
+        ScopeTailForm::TypedFixed | ScopeTailForm::TypedExtended => {
+            return typed_scope_previous_history_offset(kind, tail_length)
+        }
         ScopeTailForm::Fixed => {}
     }
     if rigid_group && kind == "As-built" {
@@ -1526,14 +1561,21 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             {
                 fixed_ambiguous = true;
             }
-            if kind != "Canvas"
-                && tail_length == typed_tail::LEN
-                && typed_fixed_scope_tail_is_valid(bytes, kind_end, paired_at)
-                && fixed_candidate
-                    .replace((at, kind_end, tail_length, ScopeTailForm::TypedFixed))
-                    .is_some()
+            if kind != "Canvas" && typed_scope_previous_history_offset(kind, tail_length).is_some()
             {
-                fixed_ambiguous = true;
+                let extended = tail_length != typed_tail::LEN;
+                let form = if extended {
+                    ScopeTailForm::TypedExtended
+                } else {
+                    ScopeTailForm::TypedFixed
+                };
+                if typed_fixed_scope_tail_is_valid(bytes, kind_end, paired_at, extended)
+                    && fixed_candidate
+                        .replace((at, kind_end, tail_length, form))
+                        .is_some()
+                {
+                    fixed_ambiguous = true;
+                }
             }
             let named_tail_possible = (78..=590).contains(&tail_length)
                 && tail_length.is_multiple_of(2)
@@ -1599,7 +1641,10 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         // tail selects the 51-byte typed reference-table entries.
         let typed_canvas =
             kind == scope::DesignFeatureKind::Canvas && tail_length == typed_canvas_tail::LEN;
-        let typed_references = tail_form == ScopeTailForm::TypedFixed || typed_canvas;
+        let typed_references = matches!(
+            tail_form,
+            ScopeTailForm::TypedFixed | ScopeTailForm::TypedExtended
+        ) || typed_canvas;
         let stride = if typed_references {
             crate::bytes::TYPED_LOCAL_REFERENCE_LEN
         } else {

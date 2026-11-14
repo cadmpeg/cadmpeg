@@ -2102,6 +2102,16 @@ For each selector, an edge is an incidence match when, for every present clause 
 
 A suppressed edge-treatment scope resolves its recipes against the unique terminal topology of its ASM history. The terminal state is the feature's replay input state. An operand's terminal face context is the ordered, deduplicated union of its primary persistent-reference faces and each prefix reference's exact-selector faces, falling back to that reference's alternate-selector faces only when its exact set is empty. Incidence, boundary-count, and common-triplet proofs operate on the resulting terminal boundaries without transition-only changed-edge filters and must resolve to one common slot. More than one terminal state in a history, or matching terminal states in more than one history, does not select a topology. Deleted-edge, treatment-radius, changed-context, and scope-partition proofs require an executed transition and do not apply. When the terminal recipe graph has no complete group proof, every proven edge and every unresolved operand identity form a partial historical selection.
 
+#### Captured component positions
+
+A Position scope has type GUID `8EE00B00-76BB-49AB-8C25-E837FEC5BDA5`, version 6. Its stored kind can be `Position` or `Posición`. The inline prefix starts with the eleven-byte indexed header, eighteen zero bytes at offset 11, and a u32 row count at offset 29. Ordered rows start at offset 33. The count includes every row in source order; repeated targets remain separate rows. An empty row sequence has count zero.
+
+Each Position row starts with byte zero at offset 0, a marked same-segment reference at offset 1, and a matrix marker at offset 12. The reference stores marker 1, a u64 record index at offset 2, and a zero u16 at offset 10. The record index fits u32. Matrix marker 0 is followed by sixteen row-major finite f64 coefficients at offset 13; that row spans 141 bytes. Matrix marker 1 omits the coefficients; that row spans 13 bytes.
+
+The Position suffix spans 83 bytes between the rows and the normal ordered-reference count. It stores u32 zero at offset 0, u32 value 36 at offset 4, the UTF-16LE text `00000000-0000-0000-0000-000000000000` at offset 8, and three zero bytes at offset 80. The last row ends at the suffix start. The suffix ends at the scope's ordered-reference count.
+
+Each row target selects an operand-path locator of type `2E3AC990-483D-4A55-8662-C064B976A957`, version 5. The locator's backlink names the Position scope. Its ordered typed path records and wrapper use the assembly operand-path envelope.
+
 #### Assembly operands
 
 The four direct-construction 421-byte `As-built` generations use one exact class and offset map:
@@ -2137,9 +2147,13 @@ plain local references or 51 bytes for typed local references. A typed
 reference's inline GUID equals its target's registered type GUID.
 
 Four zero bytes precede four nonnull alignment-owner references in angle,
-Z-offset, X-offset, Y-offset order. Six zero bytes, u32 locator count `2`, two
+Z-offset, X-offset, Y-offset order. Two zero bytes and a u32 additional-owner
+count `K` follow. A positive count supplies `K` nonnull owner references and
+selects the extended tail below. These owners follow the four alignment
+owners in local-ordinal order and occur in the scope reference table.
+The zero-count form occupies six zero bytes. U32 locator count `2`, two
 nonnull locator references, and a nonnull joint reference follow. The joint
-reference selects a version-3 or version-4 record of type GUID
+reference selects a version-3, version-4, or version-5 record of type GUID
 `7F5A0426-1D2A-4DC4-9F06-58631F69D2F5`, including a joint shared by several
 scopes. A length-prefixed UTF-16 GUID with 36 code units and three zero bytes
 precede the counted scope-reference table. The table contains `R` nonnull
@@ -2159,6 +2173,18 @@ paths of type GUID `96CBEA21-17E0-4BCB-BA77-04EA87B47934`. The ordered
 occurrence GUIDs traverse child occurrences within the selected insertion,
 including child occurrences that insert another document. The scope
 connector belongs to the innermost occurrence in that path.
+
+The extended version-three tail adds a nonnull reference immediately after
+the first tail reference and uses `S = 0`. Its target has type GUID
+`074F9459-89C2-4B7D-8AB4-DCE67AE944FE`, version 1. Its span is
+`190 + (R + K + 13) * W + 128 * M + 4 * E`. The native alignment retains
+this additional reference and its marker offset as `additional_tail_reference`.
+The plain-reference tail, from the feature ordinal through its final zero
+bytes, has the fixed fields in
+[the layout table](../layouts/f3d.md#assembly_version_three_extended_tail).
+The typed-reference extended tail has four 51-byte references with inline
+type GUIDs. Its previous-history word follows the added reference. Its fixed
+fields are in [the typed layout table](../layouts/f3d.md#assembly_version_three_typed_extended_tail).
 
 Version 5 uses the same type GUID and field order with these extensions.
 Its joint reference selects type version 6.

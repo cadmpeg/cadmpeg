@@ -14,6 +14,7 @@
 )]
 
 pub(crate) mod align;
+pub(crate) mod position;
 pub(crate) mod scene;
 
 use std::io::Write;
