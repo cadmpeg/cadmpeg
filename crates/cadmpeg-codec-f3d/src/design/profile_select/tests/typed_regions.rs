@@ -2,6 +2,7 @@
 
 use super::*;
 
+mod compact_binding;
 mod compact_exterior;
 use crate::records::topology::entity_selection::{
     DesignProfileCurveEntry, DesignProfileCurveLoop, DesignProfileCurveSelection,

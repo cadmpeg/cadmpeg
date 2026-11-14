@@ -24,7 +24,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which replacement curve closes a compact profile hole after a curve edit, and which descendant regions of the compact group form the selected material?
 
-**Known.** Public Micron_4010_Bed_FAN_v2 Extrusion 1 scope 1319 has profile group 1320 and selection record 1323. The compact selection names Sketch entity 177 through Sketch scope 182. Its exterior has eleven line members: 130, 132, 116, 114, 133, 118, 122, 120, 124, 128, and 126. Four hole rings each have one circle member: 352, 306, 260, and 168. Curve 352 is absent from both the native curve-identity arena and the projected Sketch. Extrusion 3 scope 1423 has profile group 1424 and selection record 1427. Its compact group has one initial exterior with ten entries and five further regions. Their outer/hole entry counts are 5/0, 12/1, 5/0, 1/0, and 1/1. Every named curve of this group resolves. The initial loop repeats curves 105 and 109 with fragment ordinals one, two, and three. DR-340 records the compact descendant-selection question. The complete-loop resolver requires empty further-region lists and incidence counts of one.
+**Known.** Public Micron_4010_Bed_FAN_v2 Extrusion 1 scope 1319 has profile group 1320 and selection record 1323. The compact selection names Sketch entity 177 through Sketch scope 182. Its exterior has eleven line members: 130, 132, 116, 114, 133, 118, 122, 120, 124, 128, and 126. Four hole rings each have one circle member: 352, 306, 260, and 168. Curve 352 is absent from both the native curve-identity arena and the projected Sketch. Current Sketch 177 curve 711 is a circle with radius 1.675 millimetres and centre `(53.5, 2.5)` millimetres; its persistent curve link names a BREP coedge. Indexed record 352 carries persistent primary curve identity 160. Extrusion 3 scope 1423 has profile group 1424 and selection record 1427. Its compact group has one initial exterior with ten entries and five further regions. Their outer/hole entry counts are 5/0, 12/1, 5/0, 1/0, and 1/1. Every named curve of this group resolves. The initial loop repeats curves 105 and 109 with fragment ordinals one, two, and three. Short lines 481 and 488 have opposing uses on coincident portions of 109 and 105. DR-340 records the compact descendant-selection question. The direct complete-loop join requires empty further-region lists and incidence counts of one. A complete initial boundary can also resolve across subdivisions when its directed curve intervals equal the boundary of the removed atomic regions and a complete analytic Cut-transition certificate agrees. Extrusion 5 scope 1687 has profile group 1695 and member 1698 with two initial five-entry exteriors. Members 109 and 105 each carry fragment ordinal two of three. These compact selections retain native operands.
 
 **Need.** A stored replacement or feature-time revision join for circle 352, and a material-selection rule for the initial region and its descendants. The rule must bind the compact incidence operands to directed curve intervals and identify the selected holes.
 
@@ -1142,6 +1142,30 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Draft and Revolve plane targets use the same selection member.
 
+### DR-401. MoveFace matrix interpretation and unclassified references
+
+**Question.** Which coordinate frame and composition order apply to the marked MoveFace matrix, how do unclassified references and prefix fields affect it, and which transform families occur when registration is unavailable?
+
+**Known.** `f3d.md` §3.1 defines the marked references and counted table. The decoder prefers a unique frame registered as rigid-transform GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`, version `2`. It excludes positively conflicting registrations and reports `feature.move-face-type-conflict` when they leave the marked record without an admitted candidate. With no admitted registered frame, a unique framed candidate whose registration is unavailable keeps its motion with `feature.move-face-type-assumed`. Two admitted candidates within the preferred category remain ambiguous. Nonzero scope prefix fields keep marked motion with `feature.move-face-prologue-assumed`. Each projected matrix carries `feature.move-face-matrix-assumed`: the row-major matrix maps input face points to output model coordinates, with its translation converted from centimetres to millimetres. The complete ordered table, transform coefficients, prefix references and source prologue remain retained. References outside a bound group/member run and the transform remain unclassified; an unresolved selection leaves the entire table unclassified. Each unresolved table and each bound table with surplus references carries `feature.move-face-scope-references-assumed`. Form-two construction references retain the separate assumption in DR-375, and other transform-prefix fields retain DR-306.
+
+**Need.** Controlled native saves that vary one pivot, construction point, selection, occurrence frame or move definition, joined through registered target identities, matrix coefficients and before/after geometry.
+
+**Conflict.** Public move API semantics permit arbitrary translation and orientation and use centimetres for database lengths. These facts leave the raw matrix frame, composition order and reference roles unresolved.
+
+**Note.** The most likely reading treats the matrix as evaluated face motion and the unclassified references as its construction history. Missing source and definition records preserve each decoded motion under the named assumptions. Historical face binding compares changed plane and cylinder rows under the complete projected motion, including small linear components retained by the transform law.
+
+### DR-402. MoveFace motion with an unresolved face group
+
+**Question.** Which face selection does a MoveFace scope name when its marked group cannot bind one complete ordered face-member run?
+
+**Known.** The decoder retains the marked motion with a scope-native face selection when the group mark, role, identity, ordinal or member run is unresolved, or the transform is missing or repeated in the ordered table. It reports `feature.move-face-selection-unresolved`. Repeated table values name one transform record. A bound group retains its native identity for the historical face-recipe rule in DR-222. Matrix interpretation and unclassified-reference assumptions in DR-401 also apply when the selection is unresolved.
+
+**Need.** A group grammar and membership proof for each unresolved native selection form.
+
+**Conflict.** None.
+
+**Note.** A table inconsistency leaves the independently decoded transform intact.
+
 ### DR-375. References of a form-2 rigid-transform record
 
 **Question.** What do the four marked references of a 293-byte form-2 rigid-transform record name, and do they change the motion that its matrix stores?
@@ -1284,6 +1308,30 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding. The public Voron Trident `z_mounts_front.f3d` has nine such scopes. Component context bindings identify their result owners. The source-body and source-frame joins require the derivation references independently of those owner bindings.
 
+### DR-552. Sphere placement flags and unresolved placement references
+
+**Question.** How do the inferred-axis and orientation flags change a sphere centre, and which placement supplies the centre when its reference is unresolved?
+
+**Known.** Reference-placed spheres retain a diameter owner, result operation, and placement reference. Placement constructions carry a solved matrix or an identity marker. Sphere axis rotation preserves its shape.
+
+**Need.** Controlled saves with nonzero placement flags and a changed sphere centre, and a reference-placed sphere with a resolvable external placement.
+
+**Conflict.** None.
+
+**Note.** The decoder uses the stored solved frame with `feature.sphere-placement-flags-assumed` when its flags are unresolved. It assumes an origin centre with `feature.sphere-placement-frame-assumed` when the referenced frame has no unique usable local definition.
+
+### DR-551. Sphere diameter references with incomplete ownership
+
+**Question.** Which diameter applies when the referenced scalar has incomplete scope ownership or parameter-source binding?
+
+**Known.** The sphere prefix identifies a diameter-owner record. Its evaluated scalar supplies the diameter in centimetres, and the owner names its scope and parameter source.
+
+**Need.** Controlled saves that distinguish a stale evaluated diameter from a live value after an ownership or source-reference failure.
+
+**Conflict.** None.
+
+**Note.** The decoder uses a unique positive referenced scalar with `feature.sphere-diameter-owner-assumed` when ownership is unresolved, and retains the evaluated diameter with `feature.sphere-diameter-source-assumed` when its parameter source has no unique local definition.
+
 ### DR-123. BoxPrimitive support frame and planar offset composition
 
 **Question.** How does a nonzero `OffsetDistanceX` or `OffsetDistanceY` owner combine with the stored frame in the typed-reference and marked-reference `BoxPrimitive` forms, and how do inferred-axis and flip fields change the support placement?
@@ -1394,15 +1442,19 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 ### DR-164. Primary edge-recipe references with several face fragments
 
-**Question.** Which selector rule selects the edge when several edges remain after the primary-reference lane unions, distinct-support-face constraint, and recipe-boundary constraint? Which face does a lane select when its persistent names bind to disjoint face sets? Does the singleton deletion proof apply to a one-side Chamfer recipe?
+**Question.** Which selector rule selects the edge when the primary-reference lane unions, distinct-support-face constraint, and recipe-boundary constraint leave zero or several edges? Which face does a lane select when its persistent names bind to disjoint face sets? Does the singleton deletion proof apply to a one-side Chamfer recipe?
 
 **Known.** The first side carries one-based prefix-reference ordinals. A prefix reference can bind to several preceding faces through persistent token and Design-reference tags. Each first-side reference lane contributes the union of its live face-fragment loop edges. The lane intersection requires distinct supporting faces. The recipe-boundary constraint selects a unique edge. A standard two-side Chamfer or Fillet recipe has transition proof for a singleton lane intersection when the owning transition deletes that edge and the persistent names within each lane have a common face. The public Trident front Z mounts have 69 singleton selections outside the candidate-face boundaries: 56 Chamfer and 13 Fillet operands, including one fragment-lane operand of each kind. Every selected edge is deleted, and its supporting faces change in the owning transition. Independent controls include the Micron beefy handle and B motor tail mount, Mini AfterSherpa Orbiter V2 test, and V6 Zodiac BMO. Stored recipe programs, face-loop boundaries, edge revisions, and state transitions prove the same reading in these controls. The Trident rear Z carriage has one one-side Chamfer operand at Design offset 1995667, scope record 115756. Its first side names faces 1602 and 2154, whose common edge is slot 1718 in state 353. State 354 deletes that edge and changes both faces. Its 37-word program starts at Design offset 1996254. The side header is `0`, its scalars are `[1, 2, 1]`, and its two topology entries have boundary counts `2` and `7`. The recipe candidate face is 1872. This one-side reading retains `history.edge-selection-inferred`. A disjoint-name lane still uses a deleted-edge restriction as an assumption.
 
-**Need.** The selector rule for several remaining edges, the face-binding rule for disjoint persistent names, and an independent one-side Chamfer design that distinguishes the selected edge from collateral deletion. Controlled recipe changes that preserve the prefix references and vary the selected fragment must distinguish the candidate rules.
+One local corpus file has two Fillet groups of the same form: two paired members per group each retain the same two edges, and the transition deletes both edges.
+
+Two public designs retain the same two-edge ambiguity after the candidate-boundary, deletion, and radius constraints. Trident ptfe_holder scope `13444` has operands `13457` and `13465` with remaining pairs `{4182, 7701}` and `{4002, 7704}`, respectively. Trident umbilical_mount_front scope `3648` has operands `4617` and `4621` with remaining pairs `{1896, 2465}` and `{1924, 2475}`, respectively. All four standard two-side recipes have compact payload prefixes, zero topology entries, and four populated preceding face lanes. Each operand's first side includes a face-fragment lane.
+
+**Need.** The selector rule for several remaining edges and for first-side lanes with disjoint edge sets, the face-binding rule for disjoint persistent names, and an independent one-side Chamfer design that distinguishes the selected edge from collateral deletion. Controlled recipe changes that preserve the prefix references and vary the selected fragment must distinguish the candidate rules. For paired members with the same two remaining edges, identify the fragment selector. Confirm the roles of the third and fourth prefix lanes in independent designs that distinguish selected-edge identity from neighboring-face context.
 
 **Conflict.** None.
 
-**Note.** An unresolved member retains the native group. A singleton without the deletion proof and a disjoint-name reading report `history.edge-selection-inferred`. A non-unique or incomplete reference proof reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
+**Note.** An unresolved member retains the native group. A singleton without the deletion proof and a disjoint-name reading report `history.edge-selection-inferred`. A non-unique or incomplete reference proof reports `history.edge-midpoints-unresolved` when the feature requires edge samples. In Micron z_belt_cover Chamfer 2, operand 19218 at Design offset 3619466 has common preceding edges 1686 and 119001 in state 178; the transition deletes 119001. In Mini AfterSherpa sailfin_strain_relief Chamfer 5, operand 29724 at Design offset 317965 has common preceding edges 4728 and 4742 in state 2638; the transition deletes both. In Micron b_tail_mount Fillet 4, operand 766 names faces 442, 444, and 69 in state 29; their edge-set intersection is empty. These cases require the recipe selector proof. A deletion filter changes the cardinality of an ambiguous intersection.
 
 ### DR-170. Unresolved DeleteFace operand bindings
 
@@ -1698,18 +1750,6 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 **Conflict.** None.
 
 **Note.** Scopes with decoded connector frames project a neutral relation that preserves their facing, angle, and offsets. Adjacent decoded motion supplies the motion when available; the relation is otherwise fixed. `assembly.motion-binding-assumed` records this binding assumption.
-
-### DR-246. Additional version-five Assemble owners and extended spans
-
-**Question.** Which version-five fields encode additional parameter owners and the form with 22 extra bytes?
-
-**Known.** The four-owner version-five grammar has explicit angle, Z, X, and Y references, two zero bytes after the angle reference, and six zero bytes after the owner run. Version-four scopes store connector frames consecutively, then the alignment references and a counted limit-owner run. Their four-owner form follows the version-four grammar in §3.1 of `f3d.md`.
-
-**Need.** Public version-five controlled files with five and six owners, and a controlled pair whose scopes differ by 22 bytes. Vary one joint limit or owner-producing setting at a time. Identify each added reference target, its scalar lane, the run count, and complete paired-header closure.
-
-**Conflict.** None.
-
-**Note.** Extended version-five scopes retain the opaque scope envelope and its uninterpreted-payload loss.
 
 ### DR-248. Legacy closing references and six-name placement bindings
 
@@ -2382,9 +2422,9 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which regions of a compact profile loop group form the feature selection when the group carries an initial region and further regions that divide it?
 
-**Known.** The HexGrid Extrude 3 profile operand names Sketch entity 245. Its nested record 7385 starts with a reference to profile operand 7382 and a counted loop recipe. The first region has exterior curve identities 276, 274, 275, 277 and hole identities 120:114, 122:118, 123:119, 121:116. Two further regions divide this rectangular annulus at the rectangle with curve identities 105 through 108. Each entry has kind 3, a primary and secondary identity, three operands, and eight zero bytes. Every listed identity binds to a curve owned by Sketch 245. The neutral Sketch carries two profile loops: the inner rectangle with primary identities 120 through 123 and the central hexagon with primary identities 131 through 136. The outer rectangles' curves stay outside those two loops. The decoder retains the compact loop groups in `design_profile_curve_selections`. Its complete-loop projection requires an exact loop join and a complete analytic Cut-transition certificate. In public `Parametric_HexGrid_Generator v1.f3d`, scope record 5927 starts at Design BulkStream offset 97111, profile operand 7382 starts at 114942, and its identity record starts at 115298. Construction group 7379 owns the profile operand. Persistent selection group 5948 at offset 98256 also belongs to the scope; its member 9569 at offset 141041 carries local identity 4696. The compact curve join requires an empty further-region list. All offsets refer to `FusionAssetName[Active]/Design1/BulkStream.dat`. Rectangle diagonals 278 and 279 use the construction-tail frame tracked in DR-463.
+**Known.** The HexGrid Extrude 3 profile operand names Sketch entity 245. Its nested record 7385 starts with a reference to profile operand 7382 and a counted loop recipe. The first region has exterior curve identities 276, 274, 275, 277 and hole identities 120:114, 122:118, 123:119, 121:116. Two further regions divide this rectangular annulus at the rectangle with curve identities 105 through 108. Each entry has kind 3, a primary and secondary identity, three operands, and eight zero bytes. Every listed identity binds to a curve owned by Sketch 245. The neutral Sketch carries two profile loops: the inner rectangle with primary identities 120 through 123 and the central hexagon with primary identities 131 through 136. The outer rectangles' curves stay outside those two loops. The decoder retains the compact loop groups in `design_profile_curve_selections`. Its complete-loop projection requires an exact loop join and a complete analytic Cut-transition certificate. In public `Parametric_HexGrid_Generator v1.f3d`, scope record 5927 starts at Design BulkStream offset 97111, profile operand 7382 starts at 114942, and its identity record starts at 115298. Construction group 7379 owns the profile operand. Persistent selection group 5948 at offset 98256 also belongs to the scope; its member 9569 at offset 141041 carries local identity 4696. The direct compact curve join requires an empty further-region list. A complete initial boundary can identify a union across subdivisions through directed interval equality, analytic output caps, and bounded lateral faces. State 8018 after 8017 inserts four lateral faces and updates parallel cap faces 19, 23, and 462. All offsets refer to `FusionAssetName[Active]/Design1/BulkStream.dat`. Rectangle diagonals 278 and 279 use the construction-tail frame tracked in DR-463.
 
-**Need.** A selection rule for the initial region and its further regions, with cases that select different proper subsets of the descendants. Bind the three entry operands to direction and curve portions for the compact spelling.
+**Need.** The stored discriminator for different proper subsets of the descendants. Bind the three entry operands to direction and curve portions for the compact spelling.
 
 **Conflict.** None.
 
@@ -2392,11 +2432,11 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-358. Compact complete-loop region identity across sketch arrangements
 
-**Question.** Which stored relation selects an atomic region when a compact complete-loop group names boundaries that occur in several nested or intersecting regions?
+**Question.** Which stored relation selects an atomic region for a compact complete-loop group when a Join updates its end caps, or the feature has an empty face delta, an unbound history state, or a selected-face start?
 
-**Known.** The compact group lists exterior and hole loops through persistent curve identities. An exact neutral loop join identifies each boundary. A one-sided blind Cut from the profile plane can certify its candidate set through the changed ASM planar regions and analytic lateral carriers. The decoder retains the native selection when this certificate is incomplete. A scope can have an empty face delta or an unbound history state.
+**Known.** The compact group lists exterior and hole loops through persistent curve identities. An exact neutral loop join identifies each boundary. A one-sided blind Cut from the profile plane can certify its candidate set through the changed ASM planar regions and analytic lateral carriers. The decoder retains the native selection when this certificate is incomplete. An inserted analytic end-cap union can certify a complete initial boundary for a one-sided blind Join or NewBody when its directed intervals agree and every inserted lateral face stays on the boundary within the sweep. A scope can have an updated end cap, an empty face delta, or an unbound history state.
 
-**Need.** The relation between the compact entry operands, the arrangement region identity, and the selected side of each boundary, including intersecting loops, nested loops, selected-face starts, and operations with an empty face delta.
+**Need.** The relation between the compact entry operands, the arrangement region identity, and the selected side of each boundary for these transition forms, including intersecting and nested loops.
 
 **Conflict.** None.
 
@@ -2555,6 +2595,26 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** All fields remain native. The second matrix is not composed into the neutral source occurrence pose; an explicit matrix reports `feature.derived-instance-context-transform-assumed`.
 
+### DR-620. Partial Sweep sections and controls
+
+**Question.** What assigns section semantics to the role-`0x43` group, and what distinguishes a profile carrier from its separate selection group? Which source controls encode tangent propagation and linearization?
+
+**Known.** Sweep scopes carry a role-`0x43` group before a path group, or a profile carrier with a path and guide-face group without a separate selection group. Scalar owner ordinals zero through five independently identify the two path fractions, two rail fractions, twist and taper. Complete homogeneous output bindings establish the result family when the source operation is known.
+
+**Need.** Controlled changes of the section representation, region membership, tangent propagation and linearization, with the remaining selections and scalar values held fixed.
+
+**Note.** Remaining native definitions project as partial Sweeps. `feature.sweep-section-role-assumed` interprets a unique role-`0x43` group as the section. `feature.sweep-profile-carrier-assumed` retains the carrier identity without widening it to the whole Sketch. Required tangent and linearize flags assume false with `feature.sweep-path-tangent-assumed-false` and `feature.sweep-linearize-assumed-false`. Source records and unclassified controls remain in `sweep:source` with `feature.sweep-controls-uninterpreted`; input-body groups carry `feature.sweep-targets-native`. Missing source, operation, selection, scalar and result-mode joins have separate `feature.sweep-*-unresolved` codes or `feature.sweep-source-unavailable`. Result-family inference carries `feature.sweep-result-mode-inferred` and preserves a known Boolean operation.
+
+### DR-621. Zero marker in the compact Sweep prefix
+
+**Question.** What does the compact Sweep marker distinguish when it is zero?
+
+**Known.** The ten-zero prefix and preceding word `1` occur with either marker value. The zero-marker form retains the six scalar-owner lanes and an existing-body group. The complete native parser requires marker `1`.
+
+**Need.** A controlled change that toggles this marker while retaining the operation, selections and scalar controls.
+
+**Note.** Partial projection reads the preceding word as Join with `feature.sweep-operation-prefix-assumed`. This reading does not depend on successful joins of unrelated scalars or selections. The marker and bounded source record fragments remain in `sweep:source`; complete native admission is unchanged.
+
 ### DR-485. Missing Decal image definitions
 
 **Question.** Which source image and target does a Decal scope select when its image definition is absent or has an unparsed frame?
@@ -2627,7 +2687,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Conflict.** A complete twenty-node program, four face candidates, and a shared transition set permit several member assignments. Selecting every transition candidate assumes a group-level rule.
 
-**Note.** The decoder retains the bounded-face operands and compact identity candidates. Group `4324` stays native with `feature.edge-selection-native`. DR-224 tracks Fillet transition ambiguities; DR-244 tracks treatment groups whose transitions supply no candidate set.
+**Note.** The decoder retains the bounded-face operands and compact identity candidates. Group `4324` stays native with `feature.edge-selection-native`. DR-224 tracks Fillet transition ambiguities; DR-244 tracks treatment groups whose transitions supply no candidate set. The same form occurs in Parametric_Wago_Mount_v4 Chamfer 3, scope 6500, with two bounded-face members and 13 transition candidates. Trident ba_pulley_align_Tool Chamfer 5 and Chamfer 6 each retain one unresolved bounded-face group beside a resolved edge group.
 
 ### DR-482. Source binding of timeline-owned Base Feature results
 
@@ -2653,6 +2713,42 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The specialized scope payload stays uninterpreted. The result bodies remain available with `feature.stored-bodies-recipe-absent`.
 
+### DR-492. Mesh face-group method, tolerance and selection semantics
+
+**Question.** How do the method code, dimensioned boundary tolerance, two mesh-GUID references, leading Combine UUID and ordered UUID run define the historical face-group edit?
+
+**Known.** `f3d.md` §3.1 "The mesh face-group parameter scopes" defines the registrations and prefix sequence. The method carrier stores `0` and `1`. Boundary tolerance has a length unit. The second mesh-GUID reference precedes the counted UUID run. Combine's leading UUID can also occur in that run. The construction member references a mesh body whose owning scope can precede the edit.
+
+**Need.** Independent saves that vary method, mesh scale, selected-group order and cardinality, including edits to an existing subset and saves with absent inactive settings. Bind each UUID to a historical triangle group through its mesh-GUID state.
+
+**Conflict.** The user-facing tolerance is described as a proportion of mesh extent; the native parameter is dimensioned as length.
+
+**Note.** The decoder reads method `0` as Fast and `1` as Accurate with `feature.mesh-face-groups-method-assumed`. It preserves dimensioned tolerance as an absolute millimetre distance with `feature.mesh-face-groups-boundary-distance-assumed`. It retains the scope as the mesh source expression with `feature.mesh-face-groups-source-assumed` and a complete UUID run as ordered group selectors with `feature.mesh-face-groups-group-roles-assumed`. The first mesh reference and leading Combine UUID survive in source properties with `feature.mesh-face-groups-related-role-unassigned` and `feature.mesh-face-groups-group-hint-role-unassigned`. A missing, ambiguous or unsupported first mesh registration reports `feature.mesh-face-groups-related-target-unverified`. Unassigned settings and incomplete member runs retain their native evidence with distinct loss codes.
+
+### DR-493. Partial PathPattern seed and placement semantics
+
+**Question.** Which native evidence distinguishes a feature index from a coincident topology identity in a role-`0x4` PathPattern seed, and how does the reordered settings instance table define placement?
+
+**Known.** Role-`0x4` seed members carry a 29-byte compact identity. The decoder requires a selected feature to precede the pattern in the authored timeline, assumes the feature-index reading, and reports `feature.path-pattern-feature-seed-assumed`. Reordered references place count and distance owners before the seed group. The decoder reads fixed controls of a 298-byte settings record by the 267-byte form and reports `feature.path-pattern-reordered-settings-assumed`. Independently decoded count, source distance, adjacent spacing, path, flip, orientation, and start parameter survive in a partial curve-driven definition with `feature.path-pattern-definition-partial`. An unresolved seed retains its native identity with `feature.path-pattern-seed-unresolved`. A marked path reference survives an unclosed group join with `feature.path-pattern-path-unresolved`. A nonpositive source distance and a count outside the neutral integer range stay in their source parameters with `feature.path-pattern-distance-nonpositive` and `feature.path-pattern-count-out-of-range`. An unavailable start parameter reports `feature.path-pattern-start-unresolved`.
+
+**Need.** Independent feature and face seeds with colliding identity values, and controlled edits that vary instance count and distribution in the reordered settings form.
+
+**Conflict.** A compact identity can also match a topology identity in the captured history.
+
+**Note.** DR-290 tracks the scalar controls at settings offsets 94 and 124. Unavailable placement controls report `feature.path-pattern-settings-unresolved`.
+
+### DR-550. Captured component-position semantics and frame
+
+**Question.** Do Position version-six row matrices represent captured occurrence poses in each occurrence's assembly context? Does marker 1 select identity? How do nested contexts and occurrence identity lists affect the frame?
+
+**Known.** `f3d.md` §3.1 "A Position scope has type GUID" defines the counted rows, matrix omission marker, suffix, and typed locator backlinks. [Capture Position](https://help.autodesk.com/view/fusion360/ENU/?contextId=ASM-CAPTURE-POSITION) captures the positions of moved or rotated components. [Snapshots](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Snapshots.htm) creates snapshots when transforms are pending. [Occurrence.transform2](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_transform2.htm) gives orientation and position in the occurrence's assembly context. The decoder assumes these semantics and centimetre translations for the binary matrices and reports `feature.position-semantics-assumed`. It reports `feature.position-identity-assumed` for omitted matrices. It retains unresolved selectors and transforms and reports `feature.position-occurrence-unresolved`. Final assembly placement remains the stored placement.
+
+**Need.** Controlled saves with one translated occurrence, one rotated occurrence, two independent poses, nested occurrences, a repeated selector, and a return to identity. Compare the row matrices with API snapshots and `transform2` values at each timeline state. Vary an occurrence identity list independently.
+
+**Conflict.** None.
+
+**Note.** Native rows retain the source coefficients and selector references. Neutral rows retain source order, repeated selectors, and unresolved occurrences.
+
 ### DR-490. Operand containers of unqualified Assemble connectors
 
 **Question.** Which occurrence or document contains a connector when its scope retains the connector reference and frame but its operand qualifier does not decode?
@@ -2672,3 +2768,45 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Controlled public assemblies with independently varied source occurrences, containing components, and placement matrices, including a retained relation with an unresolved source document.
 
 **Note.** Each authored insertion scope with a decoded placement can produce one unresolved-prototype occurrence at the document root. The per-scope membership reading is assumed. `assembly.component-insert-container-assumed` records that container-frame reading. A feature with unresolved source membership uses its native selection in a neutral component insertion and reports `feature.component-insert-membership-assumed`. The native scope retains the relation reference, occurrence identity, and decoded placement.
+
+### DR-506. Motion roles of additional Assemble owners
+
+**Question.** How do additional rotation, translation, yaw, and roll owners select enabled motion axes, limits, and rest positions when the joint motion is unresolved or has multiple freedom lanes?
+
+**Known.** The counted owner run in §3.1 of `f3d.md` names additional owners in local order. Parameter source kinds identify rotation and translation minimum, maximum, and rest values, and yaw and roll values. A two-reference run can contain a minimum and a rest value. Angular evaluated values use radians and linear evaluated values use centimetres. A scope can retain these owners when its joint motion remains unresolved.
+
+**Need.** Controlled public saves that vary one enabled axis, one limit, or one rest position at a time and retain all joint and motion lanes. Distinguish the authored owner values from enabled solver limits for combined freedoms.
+
+**Note.** The neutral relation uses the decoded adjacent joint motion with a fixed relation fallback. `assembly.additional-owner-motion-assumed` names the assumption that the added owner-to-motion interpretation remains native. The feature retains each source parameter expression under `parameter:NAME` in its source properties. The native scope retains the counted references, owners, and evaluated values.
+
+### DR-507. Extended version-three Assemble tail reference
+
+**Question.** What constraint or solver role does the additional version-three tail reference select?
+
+**Known.** The extra nonnull reference follows the first tail reference and selects type `074F9459-89C2-4B7D-8AB4-DCE67AE944FE`, version 1. The tail consumes its complete bounded scope. Its two boolean state bytes and the adjacent joint retain their independent fields. The native alignment retains the extra target and marker offset.
+
+**Need.** Controlled public saves that vary the referenced object while preserving the joint, connectors, owner values, and motion record. Establish whether the target changes the joint's enabled constraints or solver membership.
+
+**Note.** The neutral relation uses the decoded joint motion with a fixed fallback. `assembly.extended-tail-assumed` names the assumption that the additional tail reference adds no further neutral constraint. Source parameter expressions remain under `parameter:NAME` in feature source properties. A JointOrigin coordinate system supplied by an extended-tail connector retains its source references and parameter expressions. The connector and origin share their stream, target index, transform, and transform location.
+
+### DR-508. Typed spelling of the extended Assemble tail
+
+**Question.** Does the extra typed tail reference impose a different relation role from its plain spelling?
+
+**Known.** A standard typed scope tail has three 51-byte references with inline type GUIDs. The extended tail adds a fourth reference after the first. A uniform 51-byte width shifts the previous-history word and each later field by 51 bytes. The additional target's inline GUID agrees with its registered type.
+
+**Need.** Controlled public saves that preserve the same extended-tail target and joint while changing the reference spelling. Establish the additional reference's type-directed relation role.
+
+**Note.** `assembly.extended-typed-tail-assumed` names the assumption that the added reference uses the common typed spelling and retains the plain spelling's role. `assembly.extended-tail-assumed` separately names the neutral constraint assumption. Both source forms retain their target, marker offset, and source expressions.
+
+### DR-553. Treatment recipe references with empty preceding face lanes
+
+**Question.** Which historical face does a treatment recipe reference select when its persistent names bind to an empty face lane in the feature-input state?
+
+**Known.** The first-side reference ordinals select preceding face-boundary lanes. Micron dual_mount_rolling_spool and single_mount_rolling_spool Fillet 3 both use input state 39 and scope 973. Operand 998 starts at Design offsets 183307 and 167512, respectively. Its first lane names face 3307 in the dual mount and face 2418 in the single mount; its second lane is empty. The decoder retains the recipe programs, persistent names, and transition candidates.
+
+**Need.** The reference-to-face binding across the preceding topology revisions, with the selected faces and edges identified in independent designs.
+
+**Conflict.** None.
+
+**Note.** The unresolved members retain their native identities and report `history.edge-midpoints-unresolved`. DR-164 tracks selectors over populated lanes; DR-224 tracks incomplete transition proofs.

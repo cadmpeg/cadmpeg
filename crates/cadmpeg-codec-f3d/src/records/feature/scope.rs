@@ -76,6 +76,12 @@ cadmpeg_core::named_optional_field!(
     "occurrence_transfer_intent"
 );
 
+cadmpeg_core::named_optional_field!(
+    deserialize_captured_positions,
+    super::position::DesignCapturedPositions,
+    "captured_positions"
+);
+
 cadmpeg_core::named_optional_field!(deserialize_source_kind, String, "source_kind");
 cadmpeg_core::named_optional_field!(
     deserialize_label,
@@ -679,6 +685,8 @@ design_feature_kinds! {
         BaseFeature => "Base Feature": Option<DesignBaseFeatureConstruction>,
         CopyPasteBodies => "CopyPasteBodies": Option<DesignCopyPasteBodiesOperation>,
         ReverseNormal => "Reverse Normal": Option<DesignReverseNormalOperation>,
+        GenerateFaceGroups => "GenerateFaceGroups": Option<super::mesh_face_groups::DesignMeshFaceGroups>,
+        CombineFaceGroups => "CombineFaceGroups": Option<super::mesh_face_groups::DesignMeshFaceGroups>,
     }
     fixed {
         Revolve => "Revolve": Option<DesignRevolveConstruction>,
@@ -795,6 +803,8 @@ pub(crate) struct DesignParameterScope {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) occurrence_transfer_intent:
         Option<super::occurrence_transfer::DesignOccurrenceTransferIntent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) captured_positions: Option<super::position::DesignCapturedPositions>,
     /// Family-specific construction records.
     payload: DesignScopePayload,
     /// Reference members whose records open a construction-operand group the
@@ -860,6 +870,12 @@ pub(crate) struct DesignParameterScopeDraft {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
 struct DesignParameterScopeSerde {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_captured_positions"
+    )]
+    captured_positions: Option<super::position::DesignCapturedPositions>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1003,6 +1019,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_path_pattern_settings"
     )]
     path_pattern_settings: Option<crate::records::feature::patterns::DesignPathPatternSettings>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_mesh_face_groups"
+    )]
+    mesh_face_groups: Option<super::mesh_face_groups::DesignMeshFaceGroups>,
     /// Exact tolerance and setting-record references carried by a `SurfaceStitch` scope.
     #[serde(
         default,
@@ -1701,6 +1723,12 @@ pub(crate) struct DesignJointOriginReference {
     pub(crate) joint_origin_reference_offset: u64,
 }
 
+cadmpeg_core::named_optional_field!(
+    deserialize_mesh_face_groups,
+    super::mesh_face_groups::DesignMeshFaceGroups,
+    "mesh_face_groups"
+);
+
 impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
     type Error = DesignParameterScopePayloadError;
 
@@ -1771,6 +1799,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         }
         if wire.reverse_normal_operation.is_some() {
             present.push("reverse_normal_operation");
+        }
+        if wire.mesh_face_groups.is_some() {
+            present.push("mesh_face_groups");
         }
         if wire.path_pattern_settings.is_some() {
             present.push("path_pattern_settings");
@@ -2080,6 +2111,12 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::Canvas => DesignScopePayload::Canvas,
             DesignFeatureKind::Decal => DesignScopePayload::Decal,
             DesignFeatureKind::BaseMeshFeature => DesignScopePayload::BaseMeshFeature,
+            DesignFeatureKind::GenerateFaceGroups => {
+                DesignScopePayload::GenerateFaceGroups(wire.mesh_face_groups.take())
+            }
+            DesignFeatureKind::CombineFaceGroups => {
+                DesignScopePayload::CombineFaceGroups(wire.mesh_face_groups.take())
+            }
             DesignFeatureKind::WorkPlane => {
                 DesignScopePayload::WorkPlane(wire.work_plane_frame.take())
             }
@@ -2175,6 +2212,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.scale_operation.is_some()
             || wire.reverse_normal_operation.is_some()
             || wire.path_pattern_settings.is_some()
+            || wire.mesh_face_groups.is_some()
             || wire.surface_stitch_operation.is_some()
             || wire.surface_extend_operation.is_some()
             || wire.surface_offset_operation.is_some()
@@ -2219,6 +2257,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 "history_state_id_offset disagrees with kind_offset".into(),
             ));
         }
+        let captured_positions = wire.captured_positions.take();
         let occurrence_transfer = wire.occurrence_transfer.take();
         let occurrence_transfer_intent = wire.occurrence_transfer_intent.take();
         let mut admitted = Self::try_new(DesignParameterScopeDraft {
@@ -2255,6 +2294,14 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 .map_err(DesignParameterScopePayloadError)?,
             paired_byte_offset: wire.paired_byte_offset,
         })?;
+        if captured_positions
+            .as_ref()
+            .is_some_and(|positions| !positions.valid_for_scope(&admitted))
+        {
+            return Err(DesignParameterScopePayloadError(
+                "captured_positions disagrees with scope".into(),
+            ));
+        }
         if occurrence_transfer
             .as_ref()
             .is_some_and(|value| !value.valid_for_scope(&admitted))
@@ -2289,6 +2336,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         }
         admitted.source_kind = wire.source_kind;
         admitted.display_name = wire.display_name;
+        admitted.captured_positions = captured_positions;
         admitted.occurrence_transfer = occurrence_transfer;
         admitted.occurrence_transfer_intent = occurrence_transfer_intent;
         Ok(admitted)
@@ -2302,6 +2350,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
         let history_state_id_offset = scope.history_state_id_offset();
         let (reference_members, reference_member_offsets) = scope.reference_members.into_wire();
         let mut wire = DesignParameterScopeSerde {
+            captured_positions: scope.captured_positions,
             occurrence_transfer: scope.occurrence_transfer,
             occurrence_transfer_intent: scope.occurrence_transfer_intent,
             id: scope.id,
@@ -2333,6 +2382,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             scale_operation: None,
             reverse_normal_operation: None,
             path_pattern_settings: None,
+            mesh_face_groups: None,
             surface_stitch_operation: None,
             surface_extend_operation: None,
             surface_offset_operation: None,
@@ -2444,6 +2494,8 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.reverse_normal_operation = value;
             }
             DesignScopePayload::PathPattern(value) => wire.path_pattern_settings = value,
+            DesignScopePayload::GenerateFaceGroups(value)
+            | DesignScopePayload::CombineFaceGroups(value) => wire.mesh_face_groups = value,
             DesignScopePayload::SurfaceStitch(value) => wire.surface_stitch_operation = Some(value),
             DesignScopePayload::SurfaceExtend(value) => wire.surface_extend_operation = value,
             DesignScopePayload::SurfaceOffset(value) => wire.surface_offset_operation = value,
@@ -2612,7 +2664,10 @@ impl DesignParameterScope {
         let tail_valid = if typed_canvas {
             true
         } else if typed {
-            tail == crate::layout::typed_reference_parameter_scope_tail::LEN
+            crate::design::decode::scopes::parameter_scope::typed_scope_previous_history_offset(
+                kind, tail,
+            )
+            .is_some()
         } else {
             crate::design::decode::scopes::parameter_scope::parameter_scope_tail_length_is_valid(
                 kind, tail,
@@ -2627,7 +2682,7 @@ impl DesignParameterScope {
                 let relatives = if typed_canvas {
                     Vec::new()
                 } else if typed {
-                    vec![crate::layout::typed_reference_parameter_scope_tail::PREVIOUS_HISTORY_STATE_ID]
+                    crate::design::decode::scopes::parameter_scope::typed_scope_previous_history_offset(kind, tail).into_iter().collect()
                 } else {
                     [false, true]
                         .into_iter()
@@ -2679,7 +2734,17 @@ impl DesignParameterScope {
         if !(draft.byte_offset < draft.reference_count_offset
             && draft.reference_count_offset < draft.kind_offset)
             || (draft.reference_members.is_empty()
-                && empty_table_at != Some(draft.reference_count_offset))
+                && empty_table_at != Some(draft.reference_count_offset)
+                && !(kind == "MoveFace"
+                    && [
+                        crate::layout::move_face_marker_zero_prologue::REFERENCE_COUNT,
+                        crate::layout::move_face_marker_one_prologue::REFERENCE_COUNT,
+                    ]
+                    .into_iter()
+                    .any(|offset| {
+                        draft.byte_offset.checked_add(u64_from_index(offset))
+                            == Some(draft.reference_count_offset)
+                    })))
         {
             return Err(fail("reference_count_offset/reference_members"));
         }
@@ -2734,6 +2799,7 @@ impl DesignParameterScope {
             previous_history_state_id_offset: draft.previous_history_state_id_offset,
             reference_count_offset: draft.reference_count_offset,
             reference_members: draft.reference_members,
+            captured_positions: None,
             occurrence_transfer: None,
             occurrence_transfer_intent: None,
             payload: draft.payload,
@@ -2979,6 +3045,16 @@ impl DesignParameterScope {
     pub(crate) fn scale_operation(&self) -> Option<&DesignScaleOperation> {
         match &self.payload {
             DesignScopePayload::Scale(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn mesh_face_groups(
+        &self,
+    ) -> Option<&super::mesh_face_groups::DesignMeshFaceGroups> {
+        match &self.payload {
+            DesignScopePayload::GenerateFaceGroups(value)
+            | DesignScopePayload::CombineFaceGroups(value) => value.as_ref(),
             _ => None,
         }
     }

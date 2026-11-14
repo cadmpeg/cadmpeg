@@ -4,6 +4,35 @@
 use super::super::feature_definition_is_incomplete;
 
 #[test]
+fn position_completeness_requires_affine_pose_and_resolved_occurrence() {
+    use cadmpeg_ir::features::{
+        CapturedComponentPosition, CapturedPositionTransform, FeatureDefinition, FeatureOperation,
+    };
+    let mut position = CapturedComponentPosition::new(
+        cadmpeg_ir::ids::NativeId::mint("synthetic:test:selector#pose").unwrap(),
+        cadmpeg_ir::transform::Transform::identity(),
+    );
+    let definition = |position| {
+        FeatureDefinition::Operation(FeatureOperation::CapturedComponentPositions {
+            positions: vec![position],
+        })
+    };
+    assert!(feature_definition_is_incomplete(&definition(
+        position.clone()
+    )));
+    position.occurrence =
+        Some(cadmpeg_ir::ids::OccurrenceId::mint("synthetic:test:occurrence#one").unwrap());
+    assert!(!feature_definition_is_incomplete(&definition(
+        position.clone()
+    )));
+    position.transform = CapturedPositionTransform::Native {
+        scope: cadmpeg_ir::ids::NativeId::mint("synthetic:test:scope#capture").unwrap(),
+        row: 0,
+    };
+    assert!(feature_definition_is_incomplete(&definition(position)));
+}
+
+#[test]
 fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
     let mut report = cadmpeg_ir::codec::DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
@@ -306,6 +335,24 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
             motion: FaceMotion::Offset {
                 distance: Length::new(2.0).unwrap(),
             },
+        })
+    ));
+    let transform = cadmpeg_ir::transform::Transform::affine([
+        [0., -1., 0., 2.5],
+        [1., 0., 0., -5.],
+        [0., 0., 1., 1.25],
+    ])
+    .unwrap();
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::Operation(FeatureOperation::MoveFace {
+            faces: faces.clone(),
+            motion: FaceMotion::Transform { transform },
+        })
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::Operation(FeatureOperation::MoveFace {
+            faces: FaceSelection::Native("native:faces".into()),
+            motion: FaceMotion::Transform { transform },
         })
     ));
     assert!(!feature_definition_is_incomplete(

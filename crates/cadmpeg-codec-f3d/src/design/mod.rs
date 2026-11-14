@@ -17,6 +17,7 @@ pub(crate) mod face_resolve;
 pub(crate) mod feature_project;
 pub(crate) mod geometry;
 pub(crate) mod owners;
+pub(crate) mod position;
 pub(crate) mod presentation;
 pub(crate) mod profile_select;
 mod relation_kinds;
@@ -115,6 +116,8 @@ pub(crate) fn design_feature_family(
         | Kind::Canvas
         | Kind::Decal
         | Kind::BaseMeshFeature
+        | Kind::GenerateFaceGroups
+        | Kind::CombineFaceGroups
         | Kind::WorkPlane
         | Kind::WorkAxis
         | Kind::WorkPoint
