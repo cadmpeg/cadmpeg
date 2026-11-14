@@ -1091,3 +1091,13 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Conflict.** The Right matrix normal is +X. The retained Front component fallback normal is -Y.
 
 **Note.** Right component mappings retain their current interpretation and losses. The scoped and lane Front fallbacks retain their frames. Section 3.3 defines local Top component profile placement.
+
+### DI-69. Extrusion Boolean carriers
+
+**Question.** Which complete feature-input carriers select the Boolean operation of the remaining extrusion forms?
+
+**Known.** The withheld set has 45 features in 19 parts and 9 independent design groups. Sheet extrusions account for 24 features in 13 parts and 6 groups. Extended-reference continuations account for 12 features in 2 parts and 2 groups. Terminated headers account for 3 features in 3 parts and 2 groups. Compact join class bindings account for 6 features in 3 parts and 2 groups. The 62 saved configuration states have unresolved operations.
+
+**Need.** Establish the class-scoped operation carrier and the configuration-local state against producing-face orientation and body ownership.
+
+**Note.** Withheld operations retain their existing losses.

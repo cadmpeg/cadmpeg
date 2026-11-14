@@ -14272,3 +14272,97 @@ offset = 10
 type = "u32"
 source = "spec"
 anchor = "identifier u32 at prefix +10"
+
+[[record]]
+name = "extrusion_compact_operation_trailer"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs"
+kind = "byte"
+section = "2"
+anchor = "The 40-byte compact extrusion operation trailer has the same 16-byte operation header"
+size = 40
+endianness = "little"
+
+[[record.field]]
+name = "zero_header"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "followed by four zero bytes"
+
+[[record.field]]
+name = "family"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "The family word establishes the operation family independently of a shared class token"
+
+[[record.field]]
+name = "operation"
+offset = 6
+type = "u8"
+source = "spec"
+anchor = "a one-byte Boolean operation"
+
+[[record.field]]
+name = "schema"
+offset = 7
+type = "u8"
+source = "spec"
+anchor = "one schema byte"
+
+[[record.field]]
+name = "object_id"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "the repeated little-endian u32 object identifier"
+
+[[record.field]]
+name = "zero_after_object"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "and four zero bytes"
+
+[[record.field]]
+name = "continuation_word"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "a little-endian u16 continuation word"
+
+[[record.field]]
+name = "marker"
+offset = 18
+type = "u16"
+source = "spec"
+anchor = "a u16 marker equal to `1`"
+value = 1
+
+[[record.field]]
+name = "reference"
+offset = 20
+type = "u16"
+source = "spec"
+anchor = "a short archive object reference in `1..0x7fff`"
+
+[[record.field]]
+name = "zero_after_reference"
+offset = 22
+type = "bytes[12]"
+source = "spec"
+anchor = "twelve zero bytes, a nonzero u16 final token"
+
+[[record.field]]
+name = "final_token"
+offset = 34
+type = "u16"
+source = "spec"
+anchor = "a nonzero u16 final token"
+
+[[record.field]]
+name = "zero_tail"
+offset = 36
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero tail bytes"
