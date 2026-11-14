@@ -7,10 +7,6 @@
 /// Byte offsets for the `binary_flag` record.
 ///
 /// Spec §Physical representation. Record length 80 B.
-///
-/// ```text
-/// The six one-byte primitive length fields select the bit widths used by the remaining Binary representation. Each displacement counts its section and any following null padding.
-/// ```
 pub(crate) mod binary_flag {
     /// Record length in bytes. Spec §Physical representation.
     pub(crate) const LEN: usize = 80;

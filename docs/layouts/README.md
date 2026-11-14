@@ -3,7 +3,7 @@
 One `<format>.toml` per format holds the numbers each specification states:
 offsets, field widths, record sizes, endianness. `<format>.md` beside it is the
 rendered view the specification links to. Both are validated by
-`crates/cadmpeg/tests/layout_tables.rs`.
+`crates/cadmpeg/tests/layout_tables/main.rs`.
 
 Prose byte-offset paragraphs drift — against each other, and against the
 codecs. A table a test arithmetically closes does not. The division of labour
@@ -30,9 +30,12 @@ hand-written code. `[[record.code]]` pins remain only for facts the emitter
 cannot express (column slices, discrepant-record arithmetic, arity tables,
 scope-relative maps). Parsing functions are not generated.
 
+Generated Rust documentation gives record sizes, field types and specification
+sections. Record prose remains in the canonical tables and rendered layout pages.
+
 Decoder code imports a record module by path or alias (`use crate::layout::block_frame_header as block;`). Never glob-import a layout module.
 
-The mapping from table to generated file is the explicit list `GENERATED_LAYOUT_RS` in `crates/cadmpeg/tests/layout_tables.rs`. `step` is not in that list: it has no byte-layout records.
+The mapping from table to generated file is the explicit list `GENERATED_LAYOUT_RS` in `crates/cadmpeg/tests/layout_tables/main.rs`. `step` is not in that list: it has no byte-layout records.
 
 ## What the validator enforces
 

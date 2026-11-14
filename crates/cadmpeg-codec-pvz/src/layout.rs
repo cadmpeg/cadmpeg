@@ -81,10 +81,6 @@ pub(crate) mod pvs_header {
 /// Byte offsets for the `pvs_stream_entry_head` record.
 ///
 /// Spec §3.2. Record length 3 B.
-///
-/// ```text
-/// Fixed head only. `name_length` name bytes follow at +3, then the `u32` stored length.
-/// ```
 pub(crate) mod pvs_stream_entry_head {
     /// Record length in bytes. Spec §3.2.
     pub(crate) const LEN: usize = 3;
@@ -145,10 +141,6 @@ pub(crate) mod ol_preamble_block {
 /// Byte offsets for the `tlv_header` record.
 ///
 /// Spec §4.4. Record length 8 B.
-///
-/// ```text
-/// `length` payload bytes follow at +8.
-/// ```
 pub(crate) mod tlv_header {
     /// Record length in bytes. Spec §4.4.
     pub(crate) const LEN: usize = 8;
@@ -181,10 +173,6 @@ pub(crate) mod appearance_values {
 /// Byte offsets for the `patch_header_head` record.
 ///
 /// Spec §6.2. Record length 13 B.
-///
-/// ```text
-/// `ref_count` u32 values follow at +13; the payload length is 13 + 4 × ref_count.
-/// ```
 pub(crate) mod patch_header_head {
     /// Record length in bytes. Spec §6.2.
     pub(crate) const LEN: usize = 13;
@@ -197,10 +185,6 @@ pub(crate) mod patch_header_head {
 /// Byte offsets for the `vertex_block_head` record.
 ///
 /// Spec §6.3. Record length 5 B.
-///
-/// ```text
-/// vertex_count vertices follow at +5 with the stride the layout byte selects (12, 24, or 32).
-/// ```
 pub(crate) mod vertex_block_head {
     /// Record length in bytes. Spec §6.3.
     pub(crate) const LEN: usize = 5;

@@ -15,10 +15,6 @@ pub(crate) mod token {
 /// Byte offsets for the `outer_header` record.
 ///
 /// Spec §3.1. Record length 64 B.
-///
-/// ```text
-/// `directory_offset + directory_length == file_size`. The parser reads only the magic and the two directory words; the fill and flag regions are never read.
-/// ```
 pub(crate) mod outer_header {
     /// Stated value of `magic` (`bytes[8]`). Spec §3.1.
     pub(crate) const MAGIC_VALUE: [u8; 8] = *b"V5_CFV2\0";
@@ -33,10 +29,6 @@ pub(crate) mod outer_header {
 /// Byte offsets for the `inner_header` record.
 ///
 /// Spec §3.2. Record length 16 B.
-///
-/// ```text
-/// `inner` is the first `V5_CFV2\0` after outer byte 8. `diroff = inner + A`.
-/// ```
 pub(crate) mod inner_header {
     /// Record length in bytes. Spec §3.2.
     pub(crate) const LEN: usize = 16;
@@ -49,10 +41,6 @@ pub(crate) mod inner_header {
 /// Byte offsets for the `stream_descriptor_header` record.
 ///
 /// Spec §3.4. Record length 84 B.
-///
-/// ```text
-/// Descriptor-relative. `k` extent structs of 20 bytes each follow at ds+0x54. The standard name form ends at the three-byte tail ds-3..ds (`00 00 00`); the legacy form starts at ds+0x10 and ends with the same UTF-16LE terminator, with zero fill through ds+0x50.
-/// ```
 pub(crate) mod stream_descriptor_header {
     /// Record length in bytes. Spec §3.4.
     pub(crate) const LEN: usize = 84;
@@ -65,10 +53,6 @@ pub(crate) mod stream_descriptor_header {
 /// Byte offsets for the `extent_struct` record.
 ///
 /// Spec §3.4. Record length 20 B.
-///
-/// ```text
-/// `inner + phys_off + phys_len <= filesize`, `phys_len != 0`, `log_off` cumulative from 0, `log_len == phys_len`, and `sum(log_len) == logical_stream_length`.
-/// ```
 pub(crate) mod extent_struct {
     /// Record length in bytes. Spec §3.4.
     pub(crate) const LEN: usize = 20;
@@ -87,10 +71,6 @@ pub(crate) mod extent_struct {
 /// Byte offsets for the `vertex_roster_row` record.
 ///
 /// Spec §3.5. Record length 7 B.
-///
-/// ```text
-/// The tags are unique and strictly increasing across the run.
-/// ```
 pub(crate) mod vertex_roster_row {
     /// Record length in bytes. Spec §3.5.
     pub(crate) const LEN: usize = 7;
@@ -105,10 +85,6 @@ pub(crate) mod vertex_roster_row {
 /// Byte offsets for the `freeform_surface_core` record.
 ///
 /// Spec §3.5. Record length 47 B.
-///
-/// ```text
-/// `f[0:3]` is the trimmed face's AABB centre, `f[3:6]` its AABB half-extents, `f[6:9]` its bounding-sphere centre, and `f[9]` the bounding-sphere radius. The containment invariant `|f[i]−f[6+i]| + f[3+i] ≤ f[9]` holds.
-/// ```
 pub(crate) mod freeform_surface_core {
     /// Record length in bytes. Spec §3.5.
     pub(crate) const LEN: usize = 47;
@@ -123,10 +99,6 @@ pub(crate) mod freeform_surface_core {
 /// Byte offsets for the `analytic_surface_plane` record.
 ///
 /// Spec §5.8. Record length 49 B.
-///
-/// ```text
-/// Record start is `marker_pos − 5`. Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`. The payload holds BE f32 parameters; the spec states its slot order but no per-slot offsets.
-/// ```
 pub(crate) mod analytic_surface_plane {
     /// Record length in bytes. Spec §5.8.
     pub(crate) const LEN: usize = 49;
@@ -143,10 +115,6 @@ pub(crate) mod analytic_surface_plane {
 /// Byte offsets for the `analytic_surface_cylinder` record.
 ///
 /// Spec §5.8. Record length 73 B.
-///
-/// ```text
-/// Cylinder and cone share the parameter-length word and record length; the kind byte distinguishes them. Payload slots are `[px py pz ax ay radius]` as BE f32.
-/// ```
 pub(crate) mod analytic_surface_cylinder {
     /// Record length in bytes. Spec §5.8.
     pub(crate) const LEN: usize = 73;
@@ -203,10 +171,6 @@ pub(crate) mod analytic_surface_torus {
 /// Byte offsets for the `a_family_frame` record.
 ///
 /// Spec §6. Record length 7 B.
-///
-/// ```text
-/// Header only; the width-`W` header token occupies +7..+7+W and the payload starts at +7+W. `next = +7+W+payload_len`. The canonical header token is retained independently of the class-specific payload; it does not supply a per-record object id.
-/// ```
 pub(crate) mod a_family_frame {
     /// Record length in bytes. Spec §6.
     pub(crate) const LEN: usize = 7;
@@ -221,10 +185,6 @@ pub(crate) mod a_family_frame {
 /// Byte offsets for the `b_family_frame` record.
 ///
 /// Spec §6. Record length 4 B.
-///
-/// ```text
-/// Header only; the width-`W` header token occupies +4..+4+W and the payload starts at +4+W. `next = +4+W+payload_len`.
-/// ```
 pub(crate) mod b_family_frame {
     /// Record length in bytes. Spec §6.
     pub(crate) const LEN: usize = 4;
@@ -235,10 +195,6 @@ pub(crate) mod b_family_frame {
 /// Byte offsets for the `a9_03_frame` record.
 ///
 /// Spec §8. Record length 4 B.
-///
-/// ```text
-/// Header only; the payload of `YY + 8` bytes follows at +4, so the record length is `YY + 12`. Records reference each other by one-based global record ordinal into the `a9 03` stream.
-/// ```
 pub(crate) mod a9_03_frame {
     /// Record length in bytes. Spec §8.
     pub(crate) const LEN: usize = 4;
@@ -253,10 +209,6 @@ pub(crate) mod a9_03_frame {
 /// Byte offsets for the `zero_entity_edge_stride_5e1a` record.
 ///
 /// Spec §8. Record length 38 B.
-///
-/// ```text
-/// Each tagged allocation value is one tag byte plus a little-endian u32, so the five values run at stride 5.
-/// ```
 pub(crate) mod zero_entity_edge_stride_5e1a {
     /// Offset of `tagged_one_prefix` (`bytes[5]`). Spec §8.
     pub(crate) const TAGGED_ONE_PREFIX: usize = 7;
@@ -283,10 +235,6 @@ pub(crate) mod zero_entity_vertex_owner_5d06 {
 /// Byte offsets for the `zero_entity_pcurve_2171` record.
 ///
 /// Spec §8. Record length 125 B.
-///
-/// ```text
-/// One row of the §8 inline support-pcurve family table. Distinct f64 knots are followed by equally many tagged u32 multiplicities; `degree = first_multiplicity - 1` and `control_count = sum(multiplicities) - degree - 1`. The 125-byte total is the parser's required end for this tag; §8 states logical lengths only for `2145`, `2172`, and `219f`.
-/// ```
 pub(crate) mod zero_entity_pcurve_2171 {
     /// Record length in bytes. Spec §8.
     pub(crate) const LEN: usize = 125;
@@ -301,10 +249,6 @@ pub(crate) mod zero_entity_pcurve_2171 {
 /// Byte offsets for the `e5_record_frame` record.
 ///
 /// Spec §9. Record length 13 B.
-///
-/// ```text
-/// The 13-byte header precedes the counted payload; an initial payload reference-count byte is separate from the header.
-/// ```
 pub(crate) mod e5_record_frame {
     /// Record length in bytes. Spec §9.
     pub(crate) const LEN: usize = 13;
@@ -317,10 +261,6 @@ pub(crate) mod e5_record_frame {
 /// Byte offsets for the `value_block_7c0b` record.
 ///
 /// Spec §7.4. Record length 6 B.
-///
-/// ```text
-/// Header only. `declared_len` measures from the `7C0B` marker through the byte before the terminator, so the complete block occupies `declared_len + 1` bytes: payload of `declared_len - 6` bytes at +6, the `FE` terminator at `+declared_len`, then the associated `7C02` catalog.
-/// ```
 pub(crate) mod value_block_7c0b {
     /// Record length in bytes. Spec §7.4.
     pub(crate) const LEN: usize = 6;
@@ -331,10 +271,6 @@ pub(crate) mod value_block_7c0b {
 /// Byte offsets for the `outer_alias_row` record.
 ///
 /// Spec §7.5. Record length 24 B.
-///
-/// ```text
-/// Offsets are row-relative; the `01 00 04 00` marker sits at row offset 4. The lead is a u32 whose low byte is `0x01`, exact `0x8e`, or exact `0x8f`. The low 24 bits of `tag` are the persistent roster tag and the high byte remains part of the stored word.
-/// ```
 pub(crate) mod outer_alias_row {
     /// Record length in bytes. Spec §7.5.
     pub(crate) const LEN: usize = 24;
@@ -357,10 +293,6 @@ pub(crate) mod outer_alias_row {
 /// Byte offsets for the `fbb_face_row` record.
 ///
 /// Spec §7.4. Record length 8 B.
-///
-/// ```text
-/// The leading byte of a colour-bearing FBB marker can set bit 7 without changing its face-row role. §5.2 gives the row's marker form as `(30|b0) 04 04 ff` at stride 8.
-/// ```
 pub(crate) mod fbb_face_row {
     /// Record length in bytes. Spec §7.4.
     pub(crate) const LEN: usize = 8;
@@ -465,10 +397,6 @@ pub(crate) mod e5_nurbs_surface_limits {
 /// Byte offsets for the `b5_loop_numeric_terminal` record.
 ///
 /// Spec §6.7. Record length 62 B.
-///
-/// ```text
-/// Terminal-relative offsets; all six compact controls use the canonical one-byte form.
-/// ```
 pub(crate) mod b5_loop_numeric_terminal {
     /// Record length in bytes. Spec §6.7.
     pub(crate) const LEN: usize = 62;
@@ -485,10 +413,6 @@ pub(crate) mod b5_loop_numeric_terminal {
 /// Byte offsets for the `surface_terminal_span_tail` record.
 ///
 /// Spec §6.6. Record length 141 B.
-///
-/// ```text
-/// Tail-relative offsets. The generic 133-byte and 142-byte surface tails share the prefix through offset 71.
-/// ```
 pub(crate) mod surface_terminal_span_tail {
     /// Record length in bytes. Spec §6.6.
     pub(crate) const LEN: usize = 141;
@@ -735,10 +659,6 @@ pub(crate) mod indexed_visualization_scalar_prefix {
 /// Byte offsets for the `b_four_reference_edge_payload` record.
 ///
 /// Spec §6.3. Record length 5 B.
-///
-/// ```text
-/// Payload only; the surrounding B-family frame carries the independent width, flag and header token.
-/// ```
 pub(crate) mod b_four_reference_edge_payload {
     /// Record length in bytes. Spec §6.3.
     pub(crate) const LEN: usize = 5;

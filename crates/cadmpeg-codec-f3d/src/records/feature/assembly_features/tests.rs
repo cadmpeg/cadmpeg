@@ -6,6 +6,64 @@ use super::{
     COMPONENT_OCCURRENCE_CLONE_COUNT,
 };
 
+#[test]
+fn derived_instance_optional_keys_accept_omission_and_refuse_null() {
+    use super::{
+        DesignDerivedInstanceReference, DesignDerivedInstanceRelation, DesignDerivedInstanceSource,
+    };
+    use serde::{de::DeserializeOwned, Serialize};
+
+    fn check<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(record: &T, key: &str) {
+        let mut wire = serde_json::to_value(record).unwrap();
+        assert!(!wire.as_object().unwrap().contains_key(key));
+        assert_eq!(&serde_json::from_value::<T>(wire.clone()).unwrap(), record);
+        wire[key] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<T>(wire).is_err());
+    }
+    let reference = DesignDerivedInstanceReference::plain(7);
+    check(&reference, "type_guid");
+    let relation = DesignDerivedInstanceRelation {
+        carrier_reference: reference.clone(),
+        middle_reference: DesignDerivedInstanceReference::plain(8),
+        scope_reference: DesignDerivedInstanceReference::plain(9),
+        carrier: None,
+    };
+    check(&relation, "carrier");
+    let source = DesignDerivedInstanceSource {
+        reference: reference.clone(),
+        relation: None,
+    };
+    check(&source, "relation");
+
+    let source = DesignDerivedInstanceSource {
+        reference,
+        relation: Some(relation),
+    };
+    assert_eq!(
+        serde_json::from_value::<DesignDerivedInstanceSource>(
+            serde_json::to_value(&source).unwrap()
+        )
+        .unwrap(),
+        source
+    );
+    let reference = DesignDerivedInstanceReference {
+        target: 7,
+        type_guid: Some(
+            serde_json::from_value(serde_json::json!(
+                super::DERIVED_INSTANCE_RELATION_TYPE_GUID
+            ))
+            .unwrap(),
+        ),
+    };
+    assert_eq!(
+        serde_json::from_value::<DesignDerivedInstanceReference>(
+            serde_json::to_value(&reference).unwrap()
+        )
+        .unwrap(),
+        reference
+    );
+}
+
 fn occurrence(explicit: bool) -> DesignComponentOccurrence {
     let placement = if explicit {
         r#","occurrence_ordinal":2,"transform":[[1.0,0.0,0.0,2.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],"transform_offset":219,"owner_entity":3,"owner_entity_offset":357"#

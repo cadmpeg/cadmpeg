@@ -12,6 +12,22 @@ pub(crate) const OCCURRENCE_PLACEMENT_TYPE_GUID: &str = "CE2913AA-CFE0-4F04-9102
 pub(crate) const DERIVED_INSTANCE_RELATION_TYPE_GUID: &str = "2D6E13A1-BBEF-4FB3-9277-00D99F634136";
 
 cadmpeg_core::named_optional_field!(
+    deserialize_derived_source_relation,
+    DesignDerivedInstanceRelation,
+    "relation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_derived_relation_carrier,
+    DesignDerivedInstanceCarrier,
+    "carrier"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_derived_reference_type_guid,
+    DesignGuidText,
+    "type_guid"
+);
+
+cadmpeg_core::named_optional_field!(
     deserialize_carrier_transform_offset,
     u64,
     "carrier_transform_offset"
@@ -295,7 +311,11 @@ impl DesignDerivedInstanceConstruction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignDerivedInstanceSource {
     pub(crate) reference: DesignDerivedInstanceReference,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_derived_source_relation",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub(crate) relation: Option<DesignDerivedInstanceRelation>,
 }
 
@@ -316,7 +336,11 @@ pub(crate) struct DesignDerivedInstanceRelation {
     pub(crate) carrier_reference: DesignDerivedInstanceReference,
     pub(crate) middle_reference: DesignDerivedInstanceReference,
     pub(crate) scope_reference: DesignDerivedInstanceReference,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_derived_relation_carrier",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub(crate) carrier: Option<DesignDerivedInstanceCarrier>,
 }
 
@@ -354,7 +378,11 @@ impl DesignDerivedInstancePlacement {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DesignDerivedInstanceReference {
     pub(crate) target: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_derived_reference_type_guid",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub(crate) type_guid: Option<DesignGuidText>,
 }
 

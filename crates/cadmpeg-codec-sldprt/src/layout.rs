@@ -7,10 +7,6 @@
 /// Byte offsets for the `feature_input_shifted_scalar_trailer` record.
 ///
 /// Spec §2. Record length 35 B.
-///
-/// ```text
-/// The value-only scalar's fixed trailer prefix. Variable-count feature_input_operand_cell12 records follow at +35.
-/// ```
 pub(crate) mod feature_input_shifted_scalar_trailer {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 35;
@@ -31,10 +27,6 @@ pub(crate) mod feature_input_shifted_scalar_trailer {
 /// Byte offsets for the `feature_input_operand_cell12` record.
 ///
 /// Spec §2. Record length 12 B.
-///
-/// ```text
-/// Primary and legacy named-scalar operand cell. A lane-local class declaration can begin immediately after this cell.
-/// ```
 pub(crate) mod feature_input_operand_cell12 {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 12;
@@ -61,10 +53,6 @@ pub(crate) mod outer_header {
 /// Byte offsets for the `block_frame_header` record.
 ///
 /// Spec §1.1. Record length 26 B.
-///
-/// ```text
-/// Marker-relative zero-extra-length projection of the native ZIP local header; the marker starts four bytes after the substituted local signature. Names and compressed bytes follow this prefix. Existing constant names denote packed ZIP fields.
-/// ```
 pub(crate) mod block_frame_header {
     /// Record length in bytes. Spec §1.1.
     pub(crate) const LEN: usize = 26;
@@ -85,10 +73,6 @@ pub(crate) mod block_frame_header {
 /// Byte offsets for the `cache_cell_header` record.
 ///
 /// Spec §1.2. Record length 26 B.
-///
-/// ```text
-/// Marker-relative prefix. Its packed time/date word copies an attached physical successor local member; it is not selected through the decoded cell name.
-/// ```
 pub(crate) mod cache_cell_header {
     /// Record length in bytes. Spec §1.2.
     pub(crate) const LEN: usize = 26;
@@ -105,10 +89,6 @@ pub(crate) mod cache_cell_header {
 /// Byte offsets for the `tail_directory_entry` record.
 ///
 /// Spec §1.3. Record length 40 B.
-///
-/// ```text
-/// Compatibility scan projection for an empty local member with zero extra length. It is a subset of central-directory fields, not a separate native record family. Bytes after the name belong to the following central record or other archive structure.
-/// ```
 pub(crate) mod tail_directory_entry {
     /// Record length in bytes. Spec §1.3.
     pub(crate) const LEN: usize = 40;
@@ -129,10 +109,6 @@ pub(crate) mod tail_directory_entry {
 /// Byte offsets for the `zip_central_header` record.
 ///
 /// Spec §1.3. Record length 46 B.
-///
-/// ```text
-/// Complete ZIP central header from its substituted signature. Name, extra bytes, then comment follow. Local offset is relative to archive base at absolute file offset 8.
-/// ```
 pub(crate) mod zip_central_header {
     /// Record length in bytes. Spec §1.3.
     pub(crate) const LEN: usize = 46;
@@ -157,10 +133,6 @@ pub(crate) mod zip_central_header {
 /// Byte offsets for the `zip_central_descriptor` record.
 ///
 /// Spec §1.3. Record length 14 B.
-///
-/// ```text
-/// Final fourteen fixed bytes of a ZIP central header, beginning at central signature plus 32.
-/// ```
 pub(crate) mod zip_central_descriptor {
     /// Offset of `local_offset` (`u32`, little-endian). Spec §1.3.
     pub(crate) const LOCAL_OFFSET: usize = 10;
@@ -169,10 +141,6 @@ pub(crate) mod zip_central_descriptor {
 /// Byte offsets for the `zlb_wrapper_header` record.
 ///
 /// Spec §1. Record length 24 B.
-///
-/// ```text
-/// Fixed prefix only; the zlib member follows and an 8-byte trailer closes the wrapper.
-/// ```
 pub(crate) mod zlb_wrapper_header {
     /// Record length in bytes. Spec §1.
     pub(crate) const LEN: usize = 24;
@@ -190,10 +158,6 @@ pub(crate) mod zlb_wrapper_header {
 /// Byte offsets for the `parasolid_chain_section_header` record.
 ///
 /// Spec §1. Record length 20 B.
-///
-/// ```text
-/// The chain length is followed by the wrapper magic; frame headers and zero padding follow.
-/// ```
 pub(crate) mod parasolid_chain_section_header {
     /// Offset of `magic` (`bytes[16]`). Spec §1.
     pub(crate) const MAGIC: usize = 4;
@@ -202,10 +166,6 @@ pub(crate) mod parasolid_chain_section_header {
 /// Byte offsets for the `parasolid_chain_frame_header` record.
 ///
 /// Spec §1. Record length 8 B.
-///
-/// ```text
-/// The zlib member immediately follows this fixed header and occupies the declared member size.
-/// ```
 pub(crate) mod parasolid_chain_frame_header {
     /// Record length in bytes. Spec §1.
     pub(crate) const LEN: usize = 8;
@@ -218,10 +178,6 @@ pub(crate) mod parasolid_chain_frame_header {
 /// Byte offsets for the `world_point` record.
 ///
 /// Spec §4. Record length 38 B.
-///
-/// ```text
-/// Offsets are body-relative, i.e. after the two-byte `00 1d` tag. Attrs `0` and `1` are sentinels, not world points. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7fff`, moving each later field by two.
-/// ```
 pub(crate) mod world_point {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 38;
@@ -234,10 +190,6 @@ pub(crate) mod world_point {
 /// Byte offsets for the `face_bare` record.
 ///
 /// Spec §4. Record length 37 B.
-///
-/// ```text
-/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
-/// ```
 pub(crate) mod face_bare {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 37;
@@ -256,10 +208,6 @@ pub(crate) mod face_bare {
 /// Byte offsets for the `face_tripled` record.
 ///
 /// Spec §4. Record length 48 B.
-///
-/// ```text
-/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
-/// ```
 pub(crate) mod face_tripled {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 48;
@@ -278,10 +226,6 @@ pub(crate) mod face_tripled {
 /// Byte offsets for the `edge_bare` record.
 ///
 /// Spec §4. Record length 30 B.
-///
-/// ```text
-/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
-/// ```
 pub(crate) mod edge_bare {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 30;
@@ -296,10 +240,6 @@ pub(crate) mod edge_bare {
 /// Byte offsets for the `edge_tripled` record.
 ///
 /// Spec §4. Record length 38 B.
-///
-/// ```text
-/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
-/// ```
 pub(crate) mod edge_tripled {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 38;
@@ -314,10 +254,6 @@ pub(crate) mod edge_tripled {
 /// Byte offsets for the `vertex_bare` record.
 ///
 /// Spec §4. Record length 26 B.
-///
-/// ```text
-/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
-/// ```
 pub(crate) mod vertex_bare {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 26;
@@ -334,10 +270,6 @@ pub(crate) mod vertex_bare {
 /// Byte offsets for the `vertex_tripled` record.
 ///
 /// Spec §4. Record length 32 B.
-///
-/// ```text
-/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
-/// ```
 pub(crate) mod vertex_tripled {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 32;
@@ -354,10 +286,6 @@ pub(crate) mod vertex_tripled {
 /// Byte offsets for the `world_point_tripled` record.
 ///
 /// Spec §4. Record length 42 B.
-///
-/// ```text
-/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
-/// ```
 pub(crate) mod world_point_tripled {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 42;
@@ -370,10 +298,6 @@ pub(crate) mod world_point_tripled {
 /// Byte offsets for the `loop_bare` record.
 ///
 /// Spec §4. Record length 14 B.
-///
-/// ```text
-/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
-/// ```
 pub(crate) mod loop_bare {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 14;
@@ -384,10 +308,6 @@ pub(crate) mod loop_bare {
 /// Byte offsets for the `loop_tripled` record.
 ///
 /// Spec §4. Record length 18 B.
-///
-/// ```text
-/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
-/// ```
 pub(crate) mod loop_tripled {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 18;
@@ -398,10 +318,6 @@ pub(crate) mod loop_tripled {
 /// Byte offsets for the `fin_bare` record.
 ///
 /// Spec §4. Record length 21 B.
-///
-/// ```text
-/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
-/// ```
 pub(crate) mod fin_bare {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 21;
@@ -414,10 +330,6 @@ pub(crate) mod fin_bare {
 /// Byte offsets for the `fin_tripled` record.
 ///
 /// Spec §4. Record length 30 B.
-///
-/// ```text
-/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
-/// ```
 pub(crate) mod fin_tripled {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 30;
@@ -430,10 +342,6 @@ pub(crate) mod fin_tripled {
 /// Byte offsets for the `entity_common_header` record.
 ///
 /// Spec §5. Record length 12 B.
-///
-/// ```text
-/// Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. `disc` points to the ATTRIB_DEF node. Bare ATTRIBUTE slots follow at +12 and total `5 + flo`.
-/// ```
 pub(crate) mod entity_common_header {
     /// Record length in bytes. Spec §5.
     pub(crate) const LEN: usize = 12;
@@ -450,10 +358,6 @@ pub(crate) mod entity_common_header {
 /// Byte offsets for the `attribute_instance_00_51` record.
 ///
 /// Spec §5. Record length 14 B.
-///
-/// ```text
-/// Body-relative prefix. `definition_node_id` selects the same-stream ATTRIB_DEF; ATTRIBUTE slots begin at body +14. Bare framing uses `5 + flo` u16 slots; prefixed framing uses terminated `[01][hi][lo]` triples. The +0..+6 region is the common-header `flags` and `attr` of the same record. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7fff`, moving each later field by two.
-/// ```
 pub(crate) mod attribute_instance_00_51 {
     /// Offset of `zero_selector` (`u16`, big-endian). Spec §5.
     pub(crate) const ZERO_SELECTOR: usize = 6;
@@ -466,10 +370,6 @@ pub(crate) mod attribute_instance_00_51 {
 /// Byte offsets for the `compact_analytic_header` record.
 ///
 /// Spec §7.1. Record length 17 B.
-///
-/// ```text
-/// Body-relative, after the two-byte `00 TT` tag and the optional `ff`. The partition form uses five u16 references and places the marker at +16; the deltas form uses five [hi][lo][01] reference triples and places it at +21. Values follow the marker in either form; `n` is the per-tag f64 count. All scalar payload values are finite, and no coordinate-magnitude cutoff is part of the format. A carrier is accepted only for a unique framing.
-/// ```
 pub(crate) mod compact_analytic_header {
     /// Offset of `refs` (`u16[5]`, big-endian). Spec §7.1.
     pub(crate) const REFS: usize = 6;
@@ -478,10 +378,6 @@ pub(crate) mod compact_analytic_header {
 /// Byte offsets for the `bspline_surface_descriptor` record.
 ///
 /// Spec §7.2. Record length 42 B.
-///
-/// ```text
-/// Body-relative after the two-byte tag and optional marker. Offsets are relative to the descriptor attribute at +0; the terminal array references occupy +32..+41. A referenced knot array may have trailing physical entries beyond its distinct-knot count when every matching trailing multiplicity is zero; those f64 slots are ignored.
-/// ```
 pub(crate) mod bspline_surface_descriptor {
     /// Record length in bytes. Spec §7.2.
     pub(crate) const LEN: usize = 42;
@@ -524,10 +420,6 @@ pub(crate) mod bspline_surface_descriptor {
 /// Byte offsets for the `bspline_curve_descriptor` record.
 ///
 /// Spec §7.2. Record length 25 B.
-///
-/// ```text
-/// Body-relative after the `00 88` tag and optional `0xff` marker.
-/// ```
 pub(crate) mod bspline_curve_descriptor {
     /// Offset of `attr` (`u16`, big-endian). Spec §7.2.
     pub(crate) const ATTR: usize = 0;
@@ -554,10 +446,6 @@ pub(crate) mod bspline_curve_descriptor {
 /// Byte offsets for the `bspline_array_header` record.
 ///
 /// Spec §7.2. Record length 6 B.
-///
-/// ```text
-/// Shared header of `00 2d` (poles, f64 elements), `00 7f` (knot multiplicities, u16 elements), and `00 80` (unique knot values, f64 elements). Offsets are relative to the byte after the tag and the marker. Element data follows at +6. A surface knot array may include trailing physical entries beyond the descriptor count when every matching trailing multiplicity is zero; the extra f64 slots are ignored.
-/// ```
 pub(crate) mod bspline_array_header {
     /// Record length in bytes. Spec §7.2.
     pub(crate) const LEN: usize = 6;
@@ -570,10 +458,6 @@ pub(crate) mod bspline_array_header {
 /// Byte offsets for the `bspline_compact_array_header` record.
 ///
 /// Spec §7.2. Record length 4 B.
-///
-/// ```text
-/// Complete compact-array header including its leading zero byte. Element data follows at +4. The referencing descriptor role selects f64 control/knot values or u16 multiplicities. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7fff`, moving each later field by two.
-/// ```
 pub(crate) mod bspline_compact_array_header {
     /// Offset of `count` (`u8`). Spec §7.2.
     pub(crate) const COUNT: usize = 1;
@@ -584,10 +468,6 @@ pub(crate) mod bspline_compact_array_header {
 /// Byte offsets for the `chart_00_28` record.
 ///
 /// Spec §7.3. Record length 52 B.
-///
-/// ```text
-/// Relative to the byte after the chart's `attr` cell, which follows `count u32 BE` at body +4. `count` point entries follow at +52; an entry is either 88 bytes (point xyz, then a finite nonzero tangent at entry +56) or a bare 24-byte point. The chart stores no stride discriminator; chart, terminator, and optional support-UV witnesses must select exactly one entry width.
-/// ```
 pub(crate) mod chart_00_28 {
     /// Record length in bytes. Spec §7.3.
     pub(crate) const LEN: usize = 52;
@@ -608,10 +488,6 @@ pub(crate) mod chart_00_28 {
 /// Byte offsets for the `support_uv_00_cc` record.
 ///
 /// Spec §7.3. Record length 7 B.
-///
-/// ```text
-/// Body-relative fixed prefix; f64 BE values follow at +7, `width` per chart point. The offsets are the narrow form: `attr` is an XT positive integer that takes four bytes past `0x7fff`, moving `width` and the values by two.
-/// ```
 pub(crate) mod support_uv_00_cc {
     /// Offset of `count` (`u32`, big-endian). Spec §7.3.
     pub(crate) const COUNT: usize = 0;
@@ -622,10 +498,6 @@ pub(crate) mod support_uv_00_cc {
 /// Byte offsets for the `rolling_ball_blend_00_38` record.
 ///
 /// Spec §7.4. Record length 56 B.
-///
-/// ```text
-/// Body-relative, after the two-byte tag and the optional `ff`. `abs(offset0) == abs(offset1) > 0`; their common magnitude is the constant rolling-ball radius. Each `side` value is exactly `+1` or `-1`. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7fff`, moving each later field by two.
-/// ```
 pub(crate) mod rolling_ball_blend_00_38 {
     /// Offset of `attr` (`u16`, big-endian). Spec §7.4.
     pub(crate) const ATTR: usize = 0;
@@ -652,10 +524,6 @@ pub(crate) mod rolling_ball_blend_00_38 {
 /// Byte offsets for the `blend_bound_00_3b` record.
 ///
 /// Spec §7.4. Record length 21 B.
-///
-/// ```text
-/// Body-relative, after the two-byte tag and the optional `ff`. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7fff`, moving each later field by two.
-/// ```
 pub(crate) mod blend_bound_00_3b {
     /// Offset of `attr` (`u16`, big-endian). Spec §7.4.
     pub(crate) const ATTR: usize = 0;
@@ -670,10 +538,6 @@ pub(crate) mod blend_bound_00_3b {
 /// Byte offsets for the `offset_surface_00_3c` record.
 ///
 /// Spec §7.5. Record length 37 B.
-///
-/// ```text
-/// All-short Partition body after the tag and optional ff; complete record is 39 or 40 bytes including scale. XT variable-width identities and pointers move later fields. The short deltas form triples each common reference and support. With the two-byte tag, the compact record is 31 bytes, and the deltas form expands each reference, including `support`, to `[hi][lo][01]`. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7fff`, moving each later field by two.
-/// ```
 pub(crate) mod offset_surface_00_3c {
     /// Offset of `attr` (`u16`, big-endian). Spec §7.5.
     pub(crate) const ATTR: usize = 0;
@@ -696,10 +560,6 @@ pub(crate) mod offset_surface_00_3c {
 /// Byte offsets for the `current_extended_zero_tail_92_profile_curve` record.
 ///
 /// Spec §2. Record length 92 B.
-///
-/// ```text
-/// Endpoint values are zero-based positions in the feature-owned coordinate-bearing geometry roster; the following bytes may be relation payload.
-/// ```
 pub(crate) mod current_extended_zero_tail_92_profile_curve {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 92;
@@ -759,10 +619,6 @@ pub(crate) mod current_extended_zero_tail_92_profile_curve {
 /// Byte offsets for the `extended_wide_104_profile_curve` record.
 ///
 /// Spec §2. Record length 104 B.
-///
-/// ```text
-/// The endpoint fields are zero-based ordinals in the feature-owned coordinate-bearing geometry roster.
-/// ```
 pub(crate) mod extended_wide_104_profile_curve {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 104;
@@ -791,10 +647,6 @@ pub(crate) mod extended_wide_104_profile_curve {
 /// Byte offsets for the `legacy_wide_112_profile_roster_curve` record.
 ///
 /// Spec §2. Record length 112 B.
-///
-/// ```text
-/// The endpoint fields are zero-based ordinals in the complete feature-owned coordinate-bearing geometry roster; this state-zero trailer is distinct from the object-index wide curve trailer.
-/// ```
 pub(crate) mod legacy_wide_112_profile_roster_curve {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 112;
@@ -815,10 +667,6 @@ pub(crate) mod legacy_wide_112_profile_roster_curve {
 /// Byte offsets for the `legacy_wide_104_profile_roster_curve` record.
 ///
 /// Spec §2. Record length 104 B.
-///
-/// ```text
-/// The endpoint fields are zero-based ordinals in the complete feature-owned coordinate-bearing geometry roster.
-/// ```
 pub(crate) mod legacy_wide_104_profile_roster_curve {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 104;
@@ -837,10 +685,6 @@ pub(crate) mod legacy_wide_104_profile_roster_curve {
 /// Byte offsets for the `extended_geometry_104_indexed_arc` record.
 ///
 /// Spec §2. Record length 104 B.
-///
-/// ```text
-/// Distinct endpoint indices define a minor arc; equal endpoint indices use the extended full-circle layout.
-/// ```
 pub(crate) mod extended_geometry_104_indexed_arc {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 104;
@@ -867,10 +711,6 @@ pub(crate) mod extended_geometry_104_indexed_arc {
 /// Byte offsets for the `extended_geometry_104_indexed_circle` record.
 ///
 /// Spec §2. Record length 104 B.
-///
-/// ```text
-/// Equal radial indices use the explicit center index in the complete coordinate-bearing geometry roster.
-/// ```
 pub(crate) mod extended_geometry_104_indexed_circle {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 104;
@@ -895,10 +735,6 @@ pub(crate) mod extended_geometry_104_indexed_circle {
 /// Byte offsets for the `current_profile_104_indexed_circle` record.
 ///
 /// Spec §2. Record length 104 B.
-///
-/// ```text
-/// The repeated radial index uses the unique direct-object or one-based point-roster resolution rule.
-/// ```
 pub(crate) mod current_profile_104_indexed_circle {
     /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
     pub(crate) const PROFILE_LOCUS: usize = 23;
@@ -946,10 +782,6 @@ pub(crate) mod current_profile_104_indexed_circle {
 /// Byte offsets for the `current_profile_circle_dimension` record.
 ///
 /// Spec §2. Record length 145 B.
-///
-/// ```text
-/// The repeated one-based point-roster index selects the radial point; the first point is the center.
-/// ```
 pub(crate) mod current_profile_circle_dimension {
     /// Stated value of `native_kind` (`u32`). Spec §2.
     pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0001;
@@ -1019,10 +851,6 @@ pub(crate) mod current_profile_circle_dimension {
 /// Byte offsets for the `extended_profile_104_indexed_arc` record.
 ///
 /// Spec §2. Record length 104 B.
-///
-/// ```text
-/// Distinct endpoint indices define a minor arc; one less than the smaller endpoint index selects the center under the profile-locus fallback rules.
-/// ```
 pub(crate) mod extended_profile_104_indexed_arc {
     /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
     pub(crate) const NATIVE_KIND: usize = 17;
@@ -1045,10 +873,6 @@ pub(crate) mod extended_profile_104_indexed_arc {
 /// Byte offsets for the `extended_profile_terminal_102_indexed_arc` record.
 ///
 /// Spec §2. Record length 102 B.
-///
-/// ```text
-/// The terminal record uses the same center resolution as the 104-byte compact indexed profile arc and has no following sketch marker.
-/// ```
 pub(crate) mod extended_profile_terminal_102_indexed_arc {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 102;
@@ -1061,10 +885,6 @@ pub(crate) mod extended_profile_terminal_102_indexed_arc {
 /// Byte offsets for the `compact_indexed_curve_continuation120` record.
 ///
 /// Spec §2. Record length 122 B.
-///
-/// ```text
-/// A valid class declaration may begin at the record boundary +122.
-/// ```
 pub(crate) mod compact_indexed_curve_continuation120 {
     /// Record length in bytes. Spec §2.
     #[cfg(test)]
@@ -1110,10 +930,6 @@ pub(crate) mod compact_indexed_curve_continuation120 {
 /// Byte offsets for the `compact_legacy_140_relation_display_curve` record.
 ///
 /// Spec §2. Record length 140 B.
-///
-/// ```text
-/// The endpoint ordinals use the complete feature-local marker roster; relation endpoints make this a display carrier.
-/// ```
 pub(crate) mod compact_legacy_140_relation_display_curve {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 140;
@@ -1185,10 +1001,6 @@ pub(crate) mod compact_legacy_140_relation_display_curve {
 /// Byte offsets for the `current_terminal_relation_carrier` record.
 ///
 /// Spec §2. Record length 136 B.
-///
-/// ```text
-/// The class declaration begins at the record boundary +136 and is owned by the matching feature relation.
-/// ```
 pub(crate) mod current_terminal_relation_carrier {
     /// Record length in bytes. Spec §2.
     #[cfg(test)]
@@ -1237,10 +1049,6 @@ pub(crate) mod current_terminal_relation_carrier {
 /// Byte offsets for the `extended_selector44_indexed_line_continuation` record.
 ///
 /// Spec §2. Record length 84 B.
-///
-/// ```text
-/// The endpoint fields are zero-based indices in the feature-owned coordinate-bearing point roster.
-/// ```
 pub(crate) mod extended_selector44_indexed_line_continuation {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 84;
@@ -1263,10 +1071,6 @@ pub(crate) mod extended_selector44_indexed_line_continuation {
 /// Byte offsets for the `extended_selector44_indexed_line_control_terminal` record.
 ///
 /// Spec §2. Record length 170 B.
-///
-/// ```text
-/// The endpoint fields are zero-based indices in the feature-owned coordinate-bearing point roster.
-/// ```
 pub(crate) mod extended_selector44_indexed_line_control_terminal {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 170;
@@ -1287,10 +1091,6 @@ pub(crate) mod extended_selector44_indexed_line_control_terminal {
 /// Byte offsets for the `legacy_140_single_incidence_profile_point` record.
 ///
 /// Spec §2. Record length 140 B.
-///
-/// ```text
-/// The record emits a point. The fixed layout includes the single-incidence and shared-f32 variants with their complete identity trailers.
-/// ```
 pub(crate) mod legacy_140_single_incidence_profile_point {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 140;
@@ -1318,10 +1118,6 @@ pub(crate) mod legacy_140_single_incidence_profile_point {
 /// Byte offsets for the `legacy_144_single_incidence_profile_point` record.
 ///
 /// Spec §2. Record length 144 B.
-///
-/// ```text
-/// The record emits a point. Its terminal identity and next-marker boundary are four bytes beyond the 140-byte shared-f32 form.
-/// ```
 pub(crate) mod legacy_144_single_incidence_profile_point {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 144;
@@ -1375,10 +1171,6 @@ pub(crate) mod legacy_144_single_incidence_profile_point {
 /// Byte offsets for the `extended_geometry_locus_96_construction_line` record.
 ///
 /// Spec §2. Record length 96 B.
-///
-/// ```text
-/// The endpoint fields are direct feature-local object identifiers.
-/// ```
 pub(crate) mod extended_geometry_locus_96_construction_line {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 96;
@@ -1405,10 +1197,6 @@ pub(crate) mod extended_geometry_locus_96_construction_line {
 /// Byte offsets for the `compact_legacy_96_profile_roster_curve` record.
 ///
 /// Spec §2. Record length 96 B.
-///
-/// ```text
-/// The endpoint fields are zero-based ordinals in the complete feature-local coordinate-bearing geometry-marker roster.
-/// ```
 pub(crate) mod compact_legacy_96_profile_roster_curve {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 96;
@@ -1481,10 +1269,6 @@ pub(crate) mod compact_legacy_96_profile_roster_curve {
 /// Byte offsets for the `compact_legacy_84_construction_line` record.
 ///
 /// Spec §2. Record length 84 B.
-///
-/// ```text
-/// The endpoint fields are direct feature-local point-object identifiers.
-/// ```
 pub(crate) mod compact_legacy_84_construction_line {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 84;
@@ -1537,10 +1321,6 @@ pub(crate) mod compact_legacy_84_construction_line {
 /// Byte offsets for the `compact_legacy_84_coordinate_roster_curve` record.
 ///
 /// Spec §2. Record length 84 B.
-///
-/// ```text
-/// The endpoint fields are zero-based ordinals in the complete feature-local coordinate-bearing marker roster.
-/// ```
 pub(crate) mod compact_legacy_84_coordinate_roster_curve {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 84;
@@ -1585,10 +1365,6 @@ pub(crate) mod compact_legacy_84_coordinate_roster_curve {
 /// Byte offsets for the `compact_legacy_68_profile_variant_curve` record.
 ///
 /// Spec §2. Record length 68 B.
-///
-/// ```text
-/// The role-1 profile-body variant uses u16 24 at +33 and carries two feature-local trailer object values.
-/// ```
 pub(crate) mod compact_legacy_68_profile_variant_curve {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 68;
@@ -1609,10 +1385,6 @@ pub(crate) mod compact_legacy_68_profile_variant_curve {
 /// Byte offsets for the `compact_legacy_90_geometry_line` record.
 ///
 /// Spec §2. Record length 90 B.
-///
-/// ```text
-/// Endpoint values are zero-based indices in the feature-owned sketch-marker roster. The terminal variant extends the fixed body to marker +138 and has the terminal suffix described by the spec.
-/// ```
 pub(crate) mod compact_legacy_90_geometry_line {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 90;
@@ -1645,10 +1417,6 @@ pub(crate) mod compact_legacy_90_geometry_line {
 /// Byte offsets for the `compact_legacy_142_profile_curve` record.
 ///
 /// Spec §2. Record length 142 B.
-///
-/// ```text
-/// The auxiliary pair is the arc-center candidate. Equal positive endpoint radii select a minor arc; otherwise the two endpoint pairs define a line. A four-byte separator may follow the 142-byte body before the next sketch marker.
-/// ```
 pub(crate) mod compact_legacy_142_profile_curve {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 142;
@@ -1697,10 +1465,6 @@ pub(crate) mod compact_legacy_142_profile_curve {
 /// Byte offsets for the `compact_legacy_code_two_profile_point` record.
 ///
 /// Spec §2. Record length 132 B.
-///
-/// ```text
-/// The record emits a point and contributes its coordinate to the raw coordinate roster.
-/// ```
 pub(crate) mod compact_legacy_code_two_profile_point {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 132;
@@ -1741,10 +1505,6 @@ pub(crate) mod compact_legacy_code_two_profile_point {
 /// Byte offsets for the `compact_legacy_terminal_diameter_circle` record.
 ///
 /// Spec §2. Record length 121 B.
-///
-/// ```text
-/// The radial ordinal is zero-based in the feature-owned raw coordinate roster, including coordinate-bearing geometry handles that do not emit sketch entities.
-/// ```
 pub(crate) mod compact_legacy_terminal_diameter_circle {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 121;
@@ -1779,10 +1539,6 @@ pub(crate) mod compact_legacy_terminal_diameter_circle {
 /// Byte offsets for the `current_geometry_locus_arc_handle_point` record.
 ///
 /// Spec §2. Record length 167 B.
-///
-/// ```text
-/// The record includes the following marker's object index at +163; the following marker begins at +167.
-/// ```
 pub(crate) mod current_geometry_locus_arc_handle_point {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 167;
@@ -1848,10 +1604,6 @@ pub(crate) mod current_geometry_locus_arc_handle_point {
 /// Byte offsets for the `current_geometry_locus_arc_handle_point_terminal` record.
 ///
 /// Spec §2. Record length 171 B.
-///
-/// ```text
-/// The record includes a four-byte zero separator at +163, the following marker's object index at +167, and the following marker begins at +171.
-/// ```
 pub(crate) mod current_geometry_locus_arc_handle_point_terminal {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 171;
@@ -1862,10 +1614,6 @@ pub(crate) mod current_geometry_locus_arc_handle_point_terminal {
 /// Byte offsets for the `reference_point_short_solved_cache` record.
 ///
 /// Spec §2. Record length 277 B.
-///
-/// ```text
-/// Offsets begin at the byte after the UTF-16LE feature name. Unlisted bytes belong to the native construction state.
-/// ```
 pub(crate) mod reference_point_short_solved_cache {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 277;
@@ -1886,10 +1634,6 @@ pub(crate) mod reference_point_short_solved_cache {
 /// Byte offsets for the `reference_point_long_solved_cache` record.
 ///
 /// Spec §2. Record length 293 B.
-///
-/// ```text
-/// Offsets begin at the byte after the UTF-16LE feature name. Unlisted bytes belong to the native construction state.
-/// ```
 pub(crate) mod reference_point_long_solved_cache {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 293;
@@ -2082,10 +1826,6 @@ pub(crate) mod coordinate_system_extended_component_point {
 /// Byte offsets for the `coordinate_system_component_path_prefix` record.
 ///
 /// Spec §2. Record length 110 B.
-///
-/// ```text
-/// The counted compact component path starts immediately after this prefix. Its byte length depends on its typed entries and separators.
-/// ```
 pub(crate) mod coordinate_system_component_path_prefix {
     /// Offset of `sentinel` (`bytes[7]`). Spec §2.
     pub(crate) const SENTINEL: usize = 73;
@@ -2098,10 +1838,6 @@ pub(crate) mod coordinate_system_component_path_prefix {
 /// Byte offsets for the `coordinate_system_component_path_suffix` record.
 ///
 /// Spec §2. Record length 86 B.
-///
-/// ```text
-/// Path-end-relative. An optional eight-byte terminal null slot precedes this suffix and is not part of its size.
-/// ```
 pub(crate) mod coordinate_system_component_path_suffix {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 86;
@@ -2128,10 +1864,6 @@ pub(crate) mod coordinate_system_component_path_suffix {
 /// Byte offsets for the `coordinate_system_ordinal_axis_tail` record.
 ///
 /// Spec §2. Record length 35 B.
-///
-/// ```text
-/// Origin-end-relative. One or two nonzero u16 tokens follow this fixed core and terminate the feature object.
-/// ```
 pub(crate) mod coordinate_system_ordinal_axis_tail {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 35;
@@ -2186,10 +1918,6 @@ pub(crate) mod coordinate_system_two_point_tail {
 /// Byte offsets for the `coordinate_system_endpoint_path_prefix` record.
 ///
 /// Spec §2. Record length 110 B.
-///
-/// ```text
-/// The counted compact component path starts immediately after this fixed prefix.
-/// ```
 pub(crate) mod coordinate_system_endpoint_path_prefix {
     /// Offset of `zero_header` (`bytes[28]`). Spec §2.
     pub(crate) const ZERO_HEADER: usize = 17;
@@ -2212,10 +1940,6 @@ pub(crate) mod coordinate_system_endpoint_path_prefix {
 /// Byte offsets for the `coordinate_system_endpoint_path_suffix` record.
 ///
 /// Spec §2. Record length 142 B.
-///
-/// ```text
-/// Path-end-relative after the required eight-byte null slot.
-/// ```
 pub(crate) mod coordinate_system_endpoint_path_suffix {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 142;
@@ -2278,10 +2002,6 @@ pub(crate) mod coordinate_system_xy_tail {
 /// Byte offsets for the `constructed_reference_plane_fixed_frame` record.
 ///
 /// Spec §2. Record length 97 B.
-///
-/// ```text
-/// Offsets begin immediately after the data-class name. The pairwise-orthogonal form uses both basis triples; the `moFixedRefPlnData_c` repeated-normal form uses one in-plane triple and duplicates the normal in the other. A valid 121-byte matrix frame at the same offset owns this 97-byte prefix.
-/// ```
 pub(crate) mod constructed_reference_plane_fixed_frame {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 97;
@@ -2300,10 +2020,6 @@ pub(crate) mod constructed_reference_plane_fixed_frame {
 /// Byte offsets for the `constructed_reference_plane_matrix_frame` record.
 ///
 /// Spec §2. Record length 121 B.
-///
-/// ```text
-/// Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneData_c` class name.
-/// ```
 pub(crate) mod constructed_reference_plane_matrix_frame {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 121;
@@ -2320,10 +2036,6 @@ pub(crate) mod constructed_reference_plane_matrix_frame {
 /// Byte offsets for the `component_face_nested_reference_prefix` record.
 ///
 /// Spec §2. Record length 102 B.
-///
-/// ```text
-/// Offsets begin at the `moCompFace_c` body. The nested class declaration is variable within the fixed region; the component-path entries follow the marker tail.
-/// ```
 pub(crate) mod component_face_nested_reference_prefix {
     /// Offset of `component_marker` (`bytes[16]`). Spec §2.
     pub(crate) const COMPONENT_MARKER: usize = 84;
@@ -2332,10 +2044,6 @@ pub(crate) mod component_face_nested_reference_prefix {
 /// Byte offsets for the `component_face_compact_reference_prefix` record.
 ///
 /// Spec §2. Record length 82 B.
-///
-/// ```text
-/// Offsets begin at the `moCompFace_c` body. The component-path entries follow the marker tail.
-/// ```
 pub(crate) mod component_face_compact_reference_prefix {
     /// Offset of `component_marker` (`bytes[16]`). Spec §2.
     pub(crate) const COMPONENT_MARKER: usize = 64;
@@ -2344,10 +2052,6 @@ pub(crate) mod component_face_compact_reference_prefix {
 /// Byte offsets for the `component_face_flagged_operation_prefix` record.
 ///
 /// Spec §2. Record length 86 B.
-///
-/// ```text
-/// Offsets begin at the `moCompFace_c` body. The component-path entries follow the marker tail.
-/// ```
 pub(crate) mod component_face_flagged_operation_prefix {
     /// Offset of `component_marker` (`bytes[16]`). Spec §2.
     pub(crate) const COMPONENT_MARKER: usize = 68;
@@ -2356,10 +2060,6 @@ pub(crate) mod component_face_flagged_operation_prefix {
 /// Byte offsets for the `temporary_axis_reference_nine_scalar` record.
 ///
 /// Spec §2. Record length 311 B.
-///
-/// ```text
-/// Offsets begin at the class declaration. The complete nine-scalar body ends before its exact tagged or declared boundary.
-/// ```
 pub(crate) mod temporary_axis_reference_nine_scalar {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 311;
@@ -2427,10 +2127,6 @@ pub(crate) mod temporary_axis_declared_boundary_prefix {
 /// Byte offsets for the `cosmetic_thread_component_edge_wrapper_prefix` record.
 ///
 /// Spec §2. Record length 17 B.
-///
-/// ```text
-/// Offsets begin at the component-edge body. The compact edge-selection vector or the immediate edge-reference child follows this fixed wrapper prefix.
-/// ```
 pub(crate) mod cosmetic_thread_component_edge_wrapper_prefix {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 17;
@@ -2449,10 +2145,6 @@ pub(crate) mod cosmetic_thread_component_edge_wrapper_prefix {
 /// Byte offsets for the `cosmetic_thread_repeated_edge_ref_prefix` record.
 ///
 /// Spec §2. Record length 8 B.
-///
-/// ```text
-/// Offsets begin at the body opened by the repeated edge-reference class token.
-/// ```
 pub(crate) mod cosmetic_thread_repeated_edge_ref_prefix {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 8;
@@ -2477,10 +2169,6 @@ pub(crate) mod display_lists_scene_source_binding {
 /// Byte offsets for the `display_lists_inline_visual_properties_prefix` record.
 ///
 /// Spec §8. Record length 22 B.
-///
-/// ```text
-/// The variable-length UTF-16LE material name begins at the end of this prefix. The class tag's value is the stream's own.
-/// ```
 pub(crate) mod display_lists_inline_visual_properties_prefix {
     /// Offset of `packed_color` (`u32`, little-endian). Spec §8.
     pub(crate) const PACKED_COLOR: usize = 2;
@@ -2489,10 +2177,6 @@ pub(crate) mod display_lists_inline_visual_properties_prefix {
 /// Byte offsets for the `visual_states_feature_appearance_prefix` record.
 ///
 /// Spec §8. Record length 36 B.
-///
-/// ```text
-/// The prefix ends after the packed colour. The remaining visual-property payload is outside this fixed layout.
-/// ```
 pub(crate) mod visual_states_feature_appearance_prefix {
     /// Record length in bytes. Spec §8.
     pub(crate) const LEN: usize = 36;
@@ -2530,10 +2214,6 @@ pub(crate) mod visual_states_feature_appearance_prefix {
 /// Byte offsets for the `transformed_reference_plane_metadata` record.
 ///
 /// Spec §8. Record length 25 B.
-///
-/// ```text
-/// Body-relative fixed prologue; ten f64 values follow only when extent_present is one.
-/// ```
 pub(crate) mod transformed_reference_plane_metadata {
     /// Record length in bytes. Spec §8.
     pub(crate) const LEN: usize = 25;
@@ -2544,10 +2224,6 @@ pub(crate) mod transformed_reference_plane_metadata {
 /// Byte offsets for the `transformed_reference_enclosure_extent` record.
 ///
 /// Spec §8. Record length 80 B.
-///
-/// ```text
-/// Relative to the optional extent at class body +25. All fields are stored lengths in metres.
-/// ```
 pub(crate) mod transformed_reference_enclosure_extent {
     /// Record length in bytes. Spec §8.
     pub(crate) const LEN: usize = 80;
@@ -2556,10 +2232,6 @@ pub(crate) mod transformed_reference_enclosure_extent {
 /// Byte offsets for the `display_lists_compact_face_header` record.
 ///
 /// Spec §8. Record length 8 B.
-///
-/// ```text
-/// Offsets begin after the `uoTempFaceTessData_c` class token. The first descriptor starts at the end of this compact header.
-/// ```
 pub(crate) mod display_lists_compact_face_header {
     /// Record length in bytes. Spec §8.
     pub(crate) const LEN: usize = 8;
@@ -2572,10 +2244,6 @@ pub(crate) mod display_lists_compact_face_header {
 /// Byte offsets for the `display_lists_extended_face_header` record.
 ///
 /// Spec §8. Record length 40 B.
-///
-/// ```text
-/// Offsets begin after the `uoTempFaceTessData_c` class token. The first descriptor starts at the end of this extended header.
-/// ```
 pub(crate) mod display_lists_extended_face_header {
     /// Record length in bytes. Spec §8.
     pub(crate) const LEN: usize = 40;
@@ -2594,10 +2262,6 @@ pub(crate) mod display_lists_extended_face_header {
 /// Byte offsets for the `draft_plane_reference_prefix` record.
 ///
 /// Spec §2. Record length 112 B.
-///
-/// ```text
-/// The variable component-path entries follow this prefix. Offsets begin at the lane-scoped plane-reference token.
-/// ```
 pub(crate) mod draft_plane_reference_prefix {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 112;
@@ -2630,10 +2294,6 @@ pub(crate) mod draft_plane_reference_prefix {
 /// Byte offsets for the `draft_compact_selection_prefix` record.
 ///
 /// Spec §2. Record length 30 B.
-///
-/// ```text
-/// Variable mixed component paths follow this prefix. Offsets begin at the bounded cell field.
-/// ```
 pub(crate) mod draft_compact_selection_prefix {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 30;
@@ -2674,10 +2334,6 @@ pub(crate) mod draft_extended_direction_frame {
 /// Byte offsets for the `current_indexed_spatial_xyz_point_prefix` record.
 ///
 /// Spec §2. Record length 96 B.
-///
-/// ```text
-/// The fixed prefix ends at the relation terminator. An ordinary geometry point uses tail words `8`, `1`; a relation point uses `1`, `0`. The following native tail is bounded by a sketch marker at +158 or +162 after a four-byte separator, or by the terminal reference-table prefix.
-/// ```
 pub(crate) mod current_indexed_spatial_xyz_point_prefix {
     /// Record length in bytes. Spec §2.
     #[cfg(test)]
@@ -2713,10 +2369,6 @@ pub(crate) mod current_indexed_spatial_xyz_point_prefix {
 /// Byte offsets for the `current_indexed_spatial_xyz_terminal_reference_prefix_short` record.
 ///
 /// Spec §2. Record length 330 B.
-///
-/// ```text
-/// The terminal prefix starts after the relation terminator. Its ten-byte alignment suffix places the table header at marker +232; the variable reference-table body follows the fixed control sequence.
-/// ```
 pub(crate) mod current_indexed_spatial_xyz_terminal_reference_prefix_short {
     /// Offset of `terminal_tag` (`bytes[2]`). Spec §2.
     pub(crate) const TERMINAL_TAG: usize = 220;
@@ -2743,10 +2395,6 @@ pub(crate) mod current_indexed_spatial_xyz_terminal_reference_prefix_short {
 /// Byte offsets for the `current_indexed_spatial_xyz_terminal_reference_prefix_long` record.
 ///
 /// Spec §2. Record length 334 B.
-///
-/// ```text
-/// The terminal prefix starts after the relation terminator. Its fourteen-byte alignment suffix places the table header at marker +236; the variable reference-table body follows the fixed control sequence.
-/// ```
 pub(crate) mod current_indexed_spatial_xyz_terminal_reference_prefix_long {
     /// Offset of `terminal_tag` (`bytes[2]`). Spec §2.
     pub(crate) const TERMINAL_TAG: usize = 220;
@@ -2773,10 +2421,6 @@ pub(crate) mod current_indexed_spatial_xyz_terminal_reference_prefix_long {
 /// Byte offsets for the `compact_current_spatial_marker_point` record.
 ///
 /// Spec §2. Record length 82 B.
-///
-/// ```text
-/// The compact point prefix ends after the third coordinate. The compact form is complete only at a next sketch marker at +82, at a next marker after a four-byte separator at +86, or at the feature-input lane end.
-/// ```
 pub(crate) mod compact_current_spatial_marker_point {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 82;
@@ -2811,10 +2455,6 @@ pub(crate) mod compact_current_spatial_marker_point {
 /// Byte offsets for the `wide_spatial_marker_coordinate_prefix` record.
 ///
 /// Spec §2. Record length 90 B.
-///
-/// ```text
-/// The fixed coordinate prefix is shared by point and relation-handle markers. The record trailer follows the third coordinate.
-/// ```
 pub(crate) mod wide_spatial_marker_coordinate_prefix {
     /// Record length in bytes. Spec §2.
     #[cfg(test)]
@@ -2828,10 +2468,6 @@ pub(crate) mod wide_spatial_marker_coordinate_prefix {
 /// Byte offsets for the `swift_gtol_display_head` record.
 ///
 /// Spec §2.1. Record length 10 B.
-///
-/// ```text
-/// Opening bytes of each SWIFT geometric-tolerance display after the first, which declares moDisplayGtol_c.
-/// ```
 pub(crate) mod swift_gtol_display_head {
     /// Stated value of `display_tag` (`u16`). Spec §2.1.
     pub(crate) const DISPLAY_TAG_VALUE: u16 = 0x8008;
@@ -2848,10 +2484,6 @@ pub(crate) mod swift_gtol_display_head {
 /// Byte offsets for the `swift_feature_reference` record.
 ///
 /// Spec §2.1. Record length 10 B.
-///
-/// ```text
-/// A tagged moSwiftFR_c object; the declared form writes the class declaration in place of the tag.
-/// ```
 pub(crate) mod swift_feature_reference {
     /// Record length in bytes. Spec §2.1.
     pub(crate) const LEN: usize = 10;
@@ -2864,10 +2496,6 @@ pub(crate) mod swift_feature_reference {
 /// Byte offsets for the `identity_reference_header` record.
 ///
 /// Spec §2.3. Record length 38 B.
-///
-/// ```text
-/// Header of a face or edge identity reference; the hop entries follow at +38.
-/// ```
 pub(crate) mod identity_reference_header {
     /// Record length in bytes. Spec §2.3.
     pub(crate) const LEN: usize = 38;
@@ -2897,10 +2525,6 @@ pub(crate) mod identity_reference_header {
 /// Byte offsets for the `named_object_header` record.
 ///
 /// Spec §2.3. Record length 16 B.
-///
-/// ```text
-/// Offsets from the end of the name object's string. A Unicode CString follows at +16.
-/// ```
 pub(crate) mod named_object_header {
     /// Offset of `object_id` (`u32`, little-endian). Spec §2.3.
     pub(crate) const OBJECT_ID: usize = 8;
@@ -2909,10 +2533,6 @@ pub(crate) mod named_object_header {
 /// Byte offsets for the `attribute_definition_short_refs` record.
 ///
 /// Spec §5. Record length 38 B.
-///
-/// ```text
-/// Body-relative after the type tag and optional first-of-type ff. Short pointer indexes occupy two bytes. Field types follow the fixed prefix; their count is field_count.
-/// ```
 pub(crate) mod attribute_definition_short_refs {
     /// Record length in bytes. Spec §5.
     pub(crate) const LEN: usize = 38;
@@ -2935,10 +2555,6 @@ pub(crate) mod attribute_definition_short_refs {
 /// Byte offsets for the `attribute_short_references` record.
 ///
 /// Spec §5. Record length 22 B.
-///
-/// ```text
-/// Body-relative prefix after the tag and optional unchanged-schema marker. Schema-ordered value references follow this prefix.
-/// ```
 pub(crate) mod attribute_short_references {
     /// Record length in bytes. Spec §5.
     pub(crate) const LEN: usize = 22;
@@ -2955,10 +2571,6 @@ pub(crate) mod attribute_short_references {
 /// Byte offsets for the `display_lists_extended_metadata` record.
 ///
 /// Spec §8. Record length 128 B.
-///
-/// ```text
-/// Offsets begin at the exact sixth-descriptor payload end M. The complete interval ends before the next table header.
-/// ```
 pub(crate) mod display_lists_extended_metadata {
     /// Record length in bytes. Spec §8.
     pub(crate) const LEN: usize = 128;
@@ -2981,10 +2593,6 @@ pub(crate) mod display_lists_extended_metadata {
 /// Byte offsets for the `parasolid_b_curve_short` record.
 ///
 /// Spec §2. Record length 21 B.
-///
-/// ```text
-/// Offsets begin after the type and optional first-of-type schema marker. This layout uses short XMT/pointer fields; extended indices shift subsequent fields.
-/// ```
 pub(crate) mod parasolid_b_curve_short {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 21;
@@ -2999,10 +2607,6 @@ pub(crate) mod parasolid_b_curve_short {
 /// Byte offsets for the `parasolid_nurbs_curve_short` record.
 ///
 /// Spec §2. Record length 25 B.
-///
-/// ```text
-/// Offsets begin after the type and optional first-of-type schema marker. This layout uses short XMT/pointer fields; extended indices shift subsequent fields.
-/// ```
 pub(crate) mod parasolid_nurbs_curve_short {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 25;
@@ -3021,10 +2625,6 @@ pub(crate) mod parasolid_edited_type_header {
 /// Byte offsets for the `parasolid_construction_prefix` record.
 ///
 /// Spec §2. Record length 8 B.
-///
-/// ```text
-/// Relative to the end of the schema token. Zero user-field width and a first BODY define this supported construction-stream prefix.
-/// ```
 pub(crate) mod parasolid_construction_prefix {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 8;
@@ -3037,10 +2637,6 @@ pub(crate) mod parasolid_construction_prefix {
 /// Byte offsets for the `visual_component_body_prefix` record.
 ///
 /// Spec §8. Record length 17 B.
-///
-/// ```text
-/// Relative to a moCompSolidBody_c body. The identity scalar resolves only through a current BODY native attribute owner.
-/// ```
 pub(crate) mod visual_component_body_prefix {
     /// Record length in bytes. Spec §8.
     pub(crate) const LEN: usize = 17;
@@ -3059,10 +2655,6 @@ pub(crate) mod visual_component_body_prefix {
 /// Byte offsets for the `named_padding_header` record.
 ///
 /// Spec §1.4. Record length 40 B.
-///
-/// ```text
-/// Marker-relative central-like padding prefix. The name follows at +40; the complete physical cell includes its opaque prefix and residual.
-/// ```
 pub(crate) mod named_padding_header {
     /// Record length in bytes. Spec §1.4.
     pub(crate) const LEN: usize = 40;
@@ -3081,10 +2673,6 @@ pub(crate) mod named_padding_header {
 /// Byte offsets for the `footer_padding_body` record.
 ///
 /// Spec §1.4. Record length 18 B.
-///
-/// ```text
-/// Body-relative ordinary footer fields. Complete cell stride and body displacement come from the five_l scaling and exact footer tiling.
-/// ```
 pub(crate) mod footer_padding_body {
     /// Record length in bytes. Spec §1.4.
     pub(crate) const LEN: usize = 18;
@@ -3105,10 +2693,6 @@ pub(crate) mod footer_padding_body {
 /// Byte offsets for the `zip_eocd_header` record.
 ///
 /// Spec §1.4. Record length 22 B.
-///
-/// ```text
-/// Native ZIP EOCD header, including substituted signature. Its count and both directory locators distinguish the real root from ordinary footer bodies.
-/// ```
 pub(crate) mod zip_eocd_header {
     /// Record length in bytes. Spec §1.4.
     pub(crate) const LEN: usize = 22;
@@ -3131,10 +2715,6 @@ pub(crate) mod zip_eocd_header {
 /// Byte offsets for the `integer_values_header` record.
 ///
 /// Spec §5. Record length 6 B.
-///
-/// ```text
-/// Body-relative prefix after the type tag and optional unchanged-schema marker. Exactly count u32 values follow the prefix.
-/// ```
 pub(crate) mod integer_values_header {
     /// Record length in bytes. Spec §5.
     pub(crate) const LEN: usize = 6;
@@ -3279,10 +2859,6 @@ pub(crate) mod oleps_dictionary_entry_prefix {
 /// Byte offsets for the `parasolid_terminal` record.
 ///
 /// Spec §3.1.1. Record length 4 B.
-///
-/// ```text
-/// Valid only at the effective-schema node cursor boundary.
-/// ```
 pub(crate) mod parasolid_terminal {
     /// Record length in bytes. Spec §3.1.1.
     pub(crate) const LEN: usize = 4;
@@ -3299,10 +2875,6 @@ pub(crate) mod parasolid_terminal {
 /// Byte offsets for the `weldment_xt_entry_prefix` record.
 ///
 /// Spec §3.1.1. Record length 8 B.
-///
-/// ```text
-/// Direct ThirdPty/WELDMENT_STORAGE carrier prefix; XT begins at +8.
-/// ```
 pub(crate) mod weldment_xt_entry_prefix {
     /// Record length in bytes. Spec §3.1.1.
     pub(crate) const LEN: usize = 8;
@@ -3339,10 +2911,6 @@ pub(crate) mod draft_declared_neutral_frame {
 /// Byte offsets for the `configuration_manager_scalar_prefix` record.
 ///
 /// Spec §8. Record length 125 B.
-///
-/// ```text
-/// Read prefix only; it does not delimit the configuration graph.
-/// ```
 pub(crate) mod configuration_manager_scalar_prefix {
     /// Record length in bytes. Spec §8.
     pub(crate) const LEN: usize = 125;
@@ -3357,10 +2925,6 @@ pub(crate) mod configuration_manager_scalar_prefix {
 /// Byte offsets for the `spun_surface_profile` record.
 ///
 /// Spec §7.1. Record length 112 B.
-///
-/// ```text
-/// The fixed payload prefix starts after the profile pointer.
-/// ```
 pub(crate) mod spun_surface_profile {
     /// Offset of `axis` (`f64[3]`, big-endian). Spec §7.1.
     pub(crate) const AXIS: usize = 24;

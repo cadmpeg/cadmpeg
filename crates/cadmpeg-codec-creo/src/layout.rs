@@ -7,10 +7,6 @@
 /// Byte offsets for the `unix_compress_header` record.
 ///
 /// Spec §1. Record length 3 B.
-///
-/// ```text
-/// The low five flag bits give the maximum code width from 9 through 16; bit 7 enables block mode and code 256 clears the dictionary. Codes are packed least significant bit first in code-width-sized byte blocks.
-/// ```
 pub(crate) mod unix_compress_header {
     /// Record length in bytes. Spec §1.
     pub(crate) const LEN: usize = 3;
@@ -25,10 +21,6 @@ pub(crate) mod unix_compress_header {
 /// Byte offsets for the `cmnm_model_name_record` record.
 ///
 /// Spec §1. Record length 11 B.
-///
-/// ```text
-/// Fixed prefix only; `hhh` bytes of ASCII common name follow at +11, then trailing ASCII space padding. A unique valid record supplies the common name; the binary `model_name` field supplies the model name.
-/// ```
 pub(crate) mod cmnm_model_name_record {
     /// Record length in bytes. Spec §1.
     pub(crate) const LEN: usize = 11;
@@ -41,10 +33,6 @@ pub(crate) mod cmnm_model_name_record {
 /// Byte offsets for the `type24_first_coordinate_bounded_round` record.
 ///
 /// Spec §3.3. Record length 50 B.
-///
-/// ```text
-/// The two diameter endpoints and five extent scalars use the tabulated-cylinder first-coordinate lane, including its positive eight-byte `2d` form. Terminal `18` at offset 49 is the zero-valued sixth extent coordinate.
-/// ```
 pub(crate) mod type24_first_coordinate_bounded_round {
     /// Record length in bytes. Spec §3.3.
     pub(crate) const LEN: usize = 50;
@@ -63,10 +51,6 @@ pub(crate) mod type24_first_coordinate_bounded_round {
 /// Byte offsets for the `type24_segmented_first_coordinate_bounded_round` record.
 ///
 /// Spec §3.3. Record length 56 B.
-///
-/// ```text
-/// Both diameter endpoints and all six extent coordinates use the tabulated-cylinder first-coordinate lane. Every byte range in this record is stated outright, so the table tiles it with no gap.
-/// ```
 pub(crate) mod type24_segmented_first_coordinate_bounded_round {
     /// Record length in bytes. Spec §3.3.
     pub(crate) const LEN: usize = 56;
@@ -121,10 +105,6 @@ pub(crate) mod model_double_xar_control {
 /// Byte offsets for the `section_full_width_scalar` record.
 ///
 /// Spec §5. Record length 9 B.
-///
-/// ```text
-/// The complete owning scalar field supplies the boundary. Only supported coordinate roles interpret the payload as big-endian binary64; other roles retain opaque bytes.
-/// ```
 pub(crate) mod section_full_width_scalar {
     /// Record length in bytes. Spec §5.
     pub(crate) const LEN: usize = 9;
@@ -137,10 +117,6 @@ pub(crate) mod section_full_width_scalar {
 /// Byte offsets for the `type24_cap_envelope_control_prefix` record.
 ///
 /// Spec §3.2. Record length 22 B.
-///
-/// ```text
-/// Physical scalar images remain opaque; no numeric role or carrier chart follows from this prefix.
-/// ```
 pub(crate) mod type24_cap_envelope_control_prefix {
     /// Record length in bytes. Spec §3.2.
     pub(crate) const LEN: usize = 22;

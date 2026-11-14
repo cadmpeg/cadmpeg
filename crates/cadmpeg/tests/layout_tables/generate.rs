@@ -524,12 +524,6 @@ fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<Stri
                     .join(", ")
             )?;
         }
-        if !record.note.trim().is_empty() {
-            writeln!(modules, "///")?;
-            writeln!(modules, "/// ```text")?;
-            writeln!(modules, "/// {}", fence_text(&record.note))?;
-            writeln!(modules, "/// ```")?;
-        }
         writeln!(modules, "pub(crate) mod {} {{", record.name)?;
         if let Some(size) = record.size.filter(|_| reads.contains(&record.name, "LEN")) {
             writeln!(
@@ -684,6 +678,7 @@ kind = "byte"
 section = "1"
 anchor = "header"
 size = 2
+note = "Detailed record prose belongs to the canonical layout table."
 [[record.field]]
 name = "magic"
 type = "u8"
@@ -728,6 +723,8 @@ anchor = "tag"
         let rendered =
             emit_layout_rs(&file, temporary.path()).map_err(|errors| errors.join("\n"))?;
         assert!(rendered.contains("pub(crate) const MAGIC_VALUE: u8 = 7;"));
+        assert!(rendered.contains("Spec §1. Record length 2 B."));
+        assert!(!rendered.contains("Detailed record prose"));
         assert!(rendered.contains("pub(crate) const USED_TAG: u8 = 1;"));
         assert!(rendered.contains("#[cfg(test)]\n    pub(crate) const LEN: usize = 2;"));
         assert!(!rendered.contains("const MAGIC:"));

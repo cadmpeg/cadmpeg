@@ -57,10 +57,6 @@ pub(crate) mod token {
 /// Byte offsets for the `assembly_placement_prefix` record.
 ///
 /// Spec §2.3. Record length 6 B.
-///
-/// ```text
-/// Twelve variable-width matrix atoms follow this fixed prefix.
-/// ```
 pub(crate) mod assembly_placement_prefix {
     /// Stated value of `magic` (`bytes[6]`). Spec §2.3.
     pub(crate) const MAGIC_VALUE: [u8; 6] = [0xff, 0x00, 0x45, 0x01, 0x04, 0x01];
@@ -69,10 +65,6 @@ pub(crate) mod assembly_placement_prefix {
 /// Byte offsets for the `splmsstr_header` record.
 ///
 /// Spec §2. Record length 31 B.
-///
-/// ```text
-/// Fixed prefix through the `HEADER` marker. The spec's byte map labels 0x1f as the start of the directory entries; the §2 prose and the parser both place `entry_count:u32 LE` there with the entries at 0x23. Recorded in the pull request.
-/// ```
 pub(crate) mod splmsstr_header {
     /// Stated value of `magic` (`bytes[8]`). Spec §2.
     pub(crate) const MAGIC_VALUE: [u8; 8] = *b"SPLMSSTR";
@@ -89,10 +81,6 @@ pub(crate) mod splmsstr_header {
 /// Byte offsets for the `directory_entry` record.
 ///
 /// Spec §2. Record length 4 B.
-///
-/// ```text
-/// Only the leading count is at a fixed offset; `path[name_len]` and the 16-byte payload follow it. The path begins `/Root` and has length 6 through 128.
-/// ```
 pub(crate) mod directory_entry {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 4;
@@ -101,10 +89,6 @@ pub(crate) mod directory_entry {
 /// Byte offsets for the `directory_file_payload` record.
 ///
 /// Spec §2. Record length 16 B.
-///
-/// ```text
-/// The 16-byte payload of a directory entry when it names a file. Other payloads remain exact opaque bytes.
-/// ```
 pub(crate) mod directory_file_payload {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 16;
@@ -115,10 +99,6 @@ pub(crate) mod directory_file_payload {
 /// Byte offsets for the `legacy_ugii_payload_prefix` record.
 ///
 /// Spec §2.4. Record length 9 B.
-///
-/// ```text
-/// The CFB directory path identifies the NX wrapper; the CFB signature alone is not sufficient.
-/// ```
 pub(crate) mod legacy_ugii_payload_prefix {
     /// Record length in bytes. Spec §2.4.
     pub(crate) const LEN: usize = 9;
@@ -129,10 +109,6 @@ pub(crate) mod legacy_ugii_payload_prefix {
 /// Byte offsets for the `ug_part_segment_index_row` record.
 ///
 /// Spec §2. Record length 12 B.
-///
-/// ```text
-/// Row ordinal 1 has `type_code = 1`, `subtype_code = 1`, and a `value` equal to the payload-relative byte offset immediately after the index.
-/// ```
 pub(crate) mod ug_part_segment_index_row {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 12;
@@ -223,10 +199,6 @@ pub(crate) mod segment_stream_wrapper_c0_57 {
 /// Byte offsets for the `fastload_structure_envelope` record.
 ///
 /// Spec §2.3. Record length 12 B.
-///
-/// ```text
-/// `payload_len + 12` equals the bounded directory-entry size. The payload begins `OM 01 01`.
-/// ```
 pub(crate) mod fastload_structure_envelope {
     /// Record length in bytes. Spec §2.3.
     pub(crate) const LEN: usize = 12;
@@ -237,10 +209,6 @@ pub(crate) mod fastload_structure_envelope {
 /// Byte offsets for the `jt_document_header` record.
 ///
 /// Spec §2.3. Record length 105 B.
-///
-/// ```text
-/// Byte order is zero and the reserved word is zero. Field offsets are derived by laying the spec's ordered field list out from the header start; the total 105 is the derived sum.
-/// ```
 pub(crate) mod jt_document_header {
     /// Record length in bytes. Spec §2.3.
     pub(crate) const LEN: usize = 105;
@@ -265,10 +233,6 @@ pub(crate) mod jt_toc_entry {
 /// Byte offsets for the `jt_tristrip_shape_node_family_data` record.
 ///
 /// Spec §2.3. Record length 100 B.
-///
-/// ```text
-/// Offsets are derived by laying the spec's ordered field list out from the block start; the stated 100-byte total for vertex version 1 confirms the arithmetic. Vertex version 2 appends `version_2_vertex_bindings:u64 LE` and occupies 108 bytes.
-/// ```
 pub(crate) mod jt_tristrip_shape_node_family_data {
     /// Record length in bytes. Spec §2.3.
     pub(crate) const LEN: usize = 100;
@@ -307,10 +271,6 @@ pub(crate) mod jt_tristrip_shape_node_family_data {
 /// Byte offsets for the `extrefstream_handle_set_record` record.
 ///
 /// Spec §9.1. Record length 25 B.
-///
-/// ```text
-/// Fixed prefix only. `count - 1` occurrences of `e0 + handle:u32 BE` follow at +25, then a closing byte equal to `count`. Note the mixed lane: `n` is big-endian while the four ID slots are little-endian.
-/// ```
 pub(crate) mod extrefstream_handle_set_record {
     /// Record length in bytes. Spec §9.1.
     pub(crate) const LEN: usize = 25;
@@ -329,10 +289,6 @@ pub(crate) mod extrefstream_handle_set_record {
 /// Byte offsets for the `analytic_common_header` record.
 ///
 /// Spec §5.1. Record length 19 B.
-///
-/// ```text
-/// Record-relative, after shifts. Each extended reference in the five-reference common header shifts the analytic payload and record end by two bytes, and the shifts accumulate.
-/// ```
 pub(crate) mod analytic_common_header {
     /// Offset of `attributes` (`xmt_ref`). Spec §5.1.
     pub(crate) const ATTRIBUTES: usize = 8;
@@ -341,10 +297,6 @@ pub(crate) mod analytic_common_header {
 /// Byte offsets for the `face_node` record.
 ///
 /// Spec §5.1. Record length 39 B.
-///
-/// ```text
-/// Record-relative, after shifts. Unannotated fields are two-byte XMT references. FACE `tolerance` decodes as the sentinel `-3.14158e13` when unset. Any fixed record may place an envelope escape byte `ff` between its type and XMT fields, shifting every logical payload offset by one.
-/// ```
 pub(crate) mod face_node {
     /// Record length in bytes. Spec §5.1.
     pub(crate) const LEN: usize = 39;
@@ -365,10 +317,6 @@ pub(crate) mod edge_node {
 /// Byte offsets for the `fin_node` record.
 ///
 /// Spec §5.1. Record length 23 B.
-///
-/// ```text
-/// FIN has no `node_id`, so its field block starts at +4 rather than +8.
-/// ```
 pub(crate) mod fin_node {
     /// Record length in bytes. Spec §5.1.
     pub(crate) const LEN: usize = 23;
@@ -419,10 +367,6 @@ pub(crate) mod point_node {
 /// Byte offsets for the `line_payload` record.
 ///
 /// Spec §6.1. Record length 67 B.
-///
-/// ```text
-/// Payload offsets are relative to the record's type tag, after the common header (§5.1). Each point or vector is three f64 BE. The 67-byte total is the §4.1 fixed record length for type 30.
-/// ```
 pub(crate) mod line_payload {
     /// Record length in bytes. Spec §6.1.
     pub(crate) const LEN: usize = 67;
@@ -471,10 +415,6 @@ pub(crate) mod cone_payload {
 /// Byte offsets for the `sphere_payload` record.
 ///
 /// Spec §6.1. Record length 99 B.
-///
-/// ```text
-/// Note the slot order: the radius sits between the centre and the axis.
-/// ```
 pub(crate) mod sphere_payload {
     /// Record length in bytes. Spec §6.1.
     pub(crate) const LEN: usize = 99;
@@ -491,10 +431,6 @@ pub(crate) mod torus_payload {
 /// Byte offsets for the `offset_surf_payload` record.
 ///
 /// Spec §6.1. Record length 31 B.
-///
-/// ```text
-/// The compact partition record ends after `offset_distance`, closing the §4.1 length of 31. The status-framed deltas form continues with one finite `state_scalar:f64 BE` outside this extent.
-/// ```
 pub(crate) mod offset_surf_payload {
     /// Record length in bytes. Spec §6.1.
     pub(crate) const LEN: usize = 31;
@@ -503,10 +439,6 @@ pub(crate) mod offset_surf_payload {
 /// Byte offsets for the `trimmed_curve_payload` record.
 ///
 /// Spec §6.4. Record length 85 B.
-///
-/// ```text
-/// A large-index basis-curve reference shifts every later field by two bytes.
-/// ```
 pub(crate) mod trimmed_curve_payload {
     /// Record length in bytes. Spec §6.4.
     pub(crate) const LEN: usize = 85;
@@ -523,10 +455,6 @@ pub(crate) mod sp_curve_payload {
 /// Byte offsets for the `intersection_type_38` record.
 ///
 /// Spec §6.3. Record length 31 B.
-///
-/// ```text
-/// §4.1's fixed-record table has no row for type 38. The record is 31 bytes with the appended `intersection_data` reference and 29 bytes without it.
-/// ```
 pub(crate) mod intersection_type_38 {
     /// Record length in bytes. Spec §6.3.
     pub(crate) const LEN: usize = 31;
@@ -535,10 +463,6 @@ pub(crate) mod intersection_type_38 {
 /// Byte offsets for the `chart_s_preamble` record.
 ///
 /// Spec §6.3. Record length 52 B.
-///
-/// ```text
-/// Offsets are relative to `pre`, the end of the `count` and `xmt` fields. The Hvec block always starts at `pre+52`. Field offsets are derived by laying the spec's ordered field list out from `pre`; the stated `pre+52` block start confirms the arithmetic.
-/// ```
 pub(crate) mod chart_s_preamble {
     /// Record length in bytes. Spec §6.3.
     pub(crate) const LEN: usize = 52;
@@ -547,10 +471,6 @@ pub(crate) mod chart_s_preamble {
 /// Byte offsets for the `nurbs_surface_descriptor_prefix` record.
 ///
 /// Spec §6.2. Record length 34 B.
-///
-/// ```text
-/// Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends after the vertex dimension; the later reference layout is variable-width.
-/// ```
 pub(crate) mod nurbs_surface_descriptor_prefix {
     /// Offset of `u_periodic` (`u8`). Spec §6.2.
     pub(crate) const U_PERIODIC: usize = 4;
@@ -581,10 +501,6 @@ pub(crate) mod nurbs_surface_descriptor_prefix {
 /// Byte offsets for the `nurbs_curve_descriptor_prefix` record.
 ///
 /// Spec §6.2. Record length 21 B.
-///
-/// ```text
-/// Offsets are relative to the type tag after the optional envelope and large-index shift. The reference lane begins at +21 or +23 depending on the selected descriptor framing.
-/// ```
 pub(crate) mod nurbs_curve_descriptor_prefix {
     /// Record length in bytes. Spec §6.2.
     pub(crate) const LEN: usize = 21;
@@ -605,10 +521,6 @@ pub(crate) mod nurbs_curve_descriptor_prefix {
 /// Byte offsets for the `fset_parameter_prefix` record.
 ///
 /// Spec §7.1. Record length 21 B.
-///
-/// ```text
-/// The counted, empty, or two-group construction field follows this fixed parameter prefix.
-/// ```
 pub(crate) mod fset_parameter_prefix {
     /// Record length in bytes. Spec §7.1.
     pub(crate) const LEN: usize = 21;
@@ -630,10 +542,6 @@ pub(crate) mod fset_parameter_prefix {
 /// Byte offsets for the `named_construction_target_prefix` record.
 ///
 /// Spec §7.1. Record length 5 B.
-///
-/// ```text
-/// A canonical variable-width feature-object reference follows this fixed prefix.
-/// ```
 pub(crate) mod named_construction_target_prefix {
     /// Stated value of `magic` (`bytes[5]`). Spec §7.1.
     pub(crate) const MAGIC_VALUE: [u8; 5] = [0xe0, 0x3c, 0x01, 0x16, 0xa1];
@@ -642,10 +550,6 @@ pub(crate) mod named_construction_target_prefix {
 /// Byte offsets for the `named_construction_name_prefix` record.
 ///
 /// Spec §7.1. Record length 5 B.
-///
-/// ```text
-/// Offsets are relative to the first byte after the variable-width reference. The name length, printable bytes, and terminator follow.
-/// ```
 pub(crate) mod named_construction_name_prefix {
     /// Stated value of `magic` (`bytes[5]`). Spec §7.1.
     pub(crate) const MAGIC_VALUE: [u8; 5] = [0xa7, 0x01, 0x66, 0x32, 0x03];
@@ -654,10 +558,6 @@ pub(crate) mod named_construction_name_prefix {
 /// Byte offsets for the `rmfastload_prefix` record.
 ///
 /// Spec §7.1. Record length 35 B.
-///
-/// ```text
-/// Entry-relative. The platform bytes begin after the length word. Their length and the following filename length determine the nine-word header start.
-/// ```
 pub(crate) mod rmfastload_prefix {
     /// Stated value of `signature` (`bytes[8]`). Spec §7.1.
     pub(crate) const SIGNATURE_VALUE: [u8; 8] = [0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00];
@@ -674,10 +574,6 @@ pub(crate) mod rmfastload_prefix {
 /// Byte offsets for the `rmfastload_header` record.
 ///
 /// Spec §7.1. Record length 36 B.
-///
-/// ```text
-/// Offsets are relative to the first byte after both length-prefixed strings.
-/// ```
 pub(crate) mod rmfastload_header {
     /// Record length in bytes. Spec §7.1.
     pub(crate) const LEN: usize = 36;

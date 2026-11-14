@@ -14,10 +14,6 @@
 /// Spec §1. Record length 47 B.
 ///
 /// Dialects: `acis:asm-binaryfile-8`.
-///
-/// ```text
-/// Fixed prefix only. The string region and the six trailing tagged metadata fields begin at byte 47 and are a sequence, not a fixed-offset structure.
-/// ```
 pub(crate) mod asmheader_binaryfile8 {
     /// Record length in bytes. Spec §1.
     pub(crate) const LEN: usize = 47;
@@ -34,10 +30,6 @@ pub(crate) mod asmheader_binaryfile8 {
 /// Spec §1. Record length 31 B.
 ///
 /// Dialects: `acis:asm-binaryfile-4`.
-///
-/// ```text
-/// Fixed prefix only; the string region begins at byte 31.
-/// ```
 pub(crate) mod asmheader_binaryfile4 {
     /// Record length in bytes. Spec §1.
     pub(crate) const LEN: usize = 31;
@@ -56,10 +48,6 @@ pub(crate) mod asmheader_binaryfile4 {
 /// Spec §1. Record length 31 B.
 ///
 /// Dialects: `acis:save-format-217`, `acis:save-format-218`, `acis:save-format-binary-other`.
-///
-/// ```text
-/// Fixed 32-bit ACIS prefix; the tagged string region begins at byte 31.
-/// ```
 pub(crate) mod acisheader_binaryfile4 {
     /// Record length in bytes. Spec §1.
     pub(crate) const LEN: usize = 31;

@@ -7,10 +7,6 @@
 /// Byte offsets for the `pm_dc_751ade_label_owner_body_v25` record.
 ///
 /// Spec §13. Record length 36 B.
-///
-/// ```text
-/// Offsets start after the versioned state content header in segment major version 25.
-/// ```
 pub(crate) mod pm_dc_751ade_label_owner_body_v25 {
     /// Record length in bytes. Spec §13.
     pub(crate) const LEN: usize = 36;
@@ -29,10 +25,6 @@ pub(crate) mod pm_dc_751ade_label_owner_body_v25 {
 /// Byte offsets for the `pm_dc_751ade_label_owner_body_v28` record.
 ///
 /// Spec §13. Record length 44 B.
-///
-/// ```text
-/// Offsets start after the versioned state content header in segment major version 28.
-/// ```
 pub(crate) mod pm_dc_751ade_label_owner_body_v28 {
     /// Record length in bytes. Spec §13.
     pub(crate) const LEN: usize = 44;
@@ -57,10 +49,6 @@ pub(crate) mod pm_dc_751ade_label_owner_body_v28 {
 /// Byte offsets for the `pm_dc_derived_source_field` record.
 ///
 /// Spec §13.4. Record length 4 B.
-///
-/// ```text
-/// Offset starts after the versioned content header.
-/// ```
 pub(crate) mod pm_dc_derived_source_field {
     /// Record length in bytes. Spec §13.4.
     pub(crate) const LEN: usize = 4;
@@ -69,10 +57,6 @@ pub(crate) mod pm_dc_derived_source_field {
 /// Byte offsets for the `pm_dc_derived_component_fields` record.
 ///
 /// Spec §13.4. Record length 32 B.
-///
-/// ```text
-/// Offsets start after the state content header in segment major versions 19, 23, 25, and 31.
-/// ```
 pub(crate) mod pm_dc_derived_component_fields {
     /// Record length in bytes. Spec §13.4.
     pub(crate) const LEN: usize = 32;
@@ -99,10 +83,6 @@ pub(crate) mod pm_dc_derived_component_fields {
 /// Byte offsets for the `pm_dc_derived_source_stamp` record.
 ///
 /// Spec §13.4. Record length 4 B.
-///
-/// ```text
-/// Offset of each stamp starts after the content header, 22 bytes before segment major version 28 and 26 bytes from it.
-/// ```
 pub(crate) mod pm_dc_derived_source_stamp {
     /// Record length in bytes. Spec §13.4.
     pub(crate) const LEN: usize = 4;
@@ -111,10 +91,6 @@ pub(crate) mod pm_dc_derived_source_stamp {
 /// Byte offsets for the `pm_dc_derived_component_suffix` record.
 ///
 /// Spec §13.4. Record length 4 B.
-///
-/// ```text
-/// Offsets start after the component terminal reference in segment major versions 23, 25, and 31.
-/// ```
 pub(crate) mod pm_dc_derived_component_suffix {
     /// Record length in bytes. Spec §13.4.
     pub(crate) const LEN: usize = 4;
@@ -188,10 +164,6 @@ pub(crate) mod kernel_carrier_header {
 /// Byte offsets for the `protein_header` record.
 ///
 /// Spec §7. Record length 4 B.
-///
-/// ```text
-/// Inventor compound-stream envelope around a Protein ZIP. The Protein page format is tabulated in `docs/layouts/protein.toml`.
-/// ```
 pub(crate) mod protein_header {
     /// Record length in bytes. Spec §7.
     pub(crate) const LEN: usize = 4;
@@ -256,10 +228,6 @@ pub(crate) mod kernel_entity_link {
 /// Byte offsets for the `pm_dc_spline_curve_prefix` record.
 ///
 /// Spec §12. Record length 28 B.
-///
-/// ```text
-/// Offsets are relative to each spline curve, after the spline record's variable lists.
-/// ```
 pub(crate) mod pm_dc_spline_curve_prefix {
     /// Stated value of `scalar_width` (`u32`). Spec §12.
     pub(crate) const SCALAR_WIDTH_VALUE: u32 = 0x0000_0008;
@@ -268,10 +236,6 @@ pub(crate) mod pm_dc_spline_curve_prefix {
 /// Byte offsets for the `pm_dc_sheet_metal_style_operand_prefix` record.
 ///
 /// Spec §13.5. Record length 90 B.
-///
-/// ```text
-/// Prefix of the segment-major-29 and segment-major-31 sheet-metal style record; the record continues after this prefix.
-/// ```
 pub(crate) mod pm_dc_sheet_metal_style_operand_prefix {
     /// Offset of `thickness` (`u32`, little-endian). Spec §13.5.
     pub(crate) const THICKNESS: usize = 30;
@@ -280,10 +244,6 @@ pub(crate) mod pm_dc_sheet_metal_style_operand_prefix {
 /// Byte offsets for the `pm_dc_sheet_metal_style_operand_prefix_legacy` record.
 ///
 /// Spec §13.5. Record length 86 B.
-///
-/// ```text
-/// Prefix of the segment-major-20 and segment-major-23 sheet-metal style record; the record continues after this prefix.
-/// ```
 pub(crate) mod pm_dc_sheet_metal_style_operand_prefix_legacy {
     /// Offset of `thickness` (`u32`, little-endian). Spec §13.5.
     pub(crate) const THICKNESS: usize = 26;
@@ -292,10 +252,6 @@ pub(crate) mod pm_dc_sheet_metal_style_operand_prefix_legacy {
 /// Byte offsets for the `pm_dc_sheet_metal_style_operand_prefix_v19` record.
 ///
 /// Spec §13.5. Record length 106 B.
-///
-/// ```text
-/// Prefix of the segment-major-19 sheet-metal style record; the record continues after this prefix.
-/// ```
 pub(crate) mod pm_dc_sheet_metal_style_operand_prefix_v19 {
     /// Offset of `thickness` (`u32`, little-endian). Spec §13.5.
     pub(crate) const THICKNESS: usize = 26;
@@ -304,10 +260,6 @@ pub(crate) mod pm_dc_sheet_metal_style_operand_prefix_v19 {
 /// Byte offsets for the `pm_dc_feature_dimension_tail` record.
 ///
 /// Spec §13. Record length 9 B.
-///
-/// ```text
-/// The tail ends the record after the annotation list data.
-/// ```
 pub(crate) mod pm_dc_feature_dimension_tail {
     /// Record length in bytes. Spec §13.
     pub(crate) const LEN: usize = 9;
@@ -430,10 +382,6 @@ pub(crate) mod drawing_alternate_view_fixed {
 /// Byte offsets for the `pm_dc_mirror_selection_tail` record.
 ///
 /// Spec §13. Record length 8 B.
-///
-/// ```text
-/// The zero-option mirror form. Offsets are relative to the end of the versioned content header and stamps.
-/// ```
 pub(crate) mod pm_dc_mirror_selection_tail {
     /// Record length in bytes. Spec §13.
     pub(crate) const LEN: usize = 8;
@@ -446,10 +394,6 @@ pub(crate) mod pm_dc_mirror_selection_tail {
 /// Byte offsets for the `pm_dc_mirror_options_tail` record.
 ///
 /// Spec §13. Record length 9 B.
-///
-/// ```text
-/// The zero-option mirror form. Offsets are relative to the end of the versioned content header and stamps.
-/// ```
 pub(crate) mod pm_dc_mirror_options_tail {
     /// Record length in bytes. Spec §13.
     pub(crate) const LEN: usize = 9;
@@ -461,10 +405,6 @@ pub(crate) mod pm_dc_mirror_options_tail {
 /// Byte offsets for the `pm_dc_mirror_instance_map_single_tail_v19` record.
 ///
 /// Spec §13. Record length 56 B.
-///
-/// ```text
-/// Offsets start after the segment-major-19 content header.
-/// ```
 pub(crate) mod pm_dc_mirror_instance_map_single_tail_v19 {
     /// Record length in bytes. Spec §13.
     pub(crate) const LEN: usize = 56;
@@ -547,10 +487,6 @@ pub(crate) mod pm_dc_mirror_instance_map_single_tail_v19 {
 /// Byte offsets for the `pm_dc_mirror_plane_reference_tail_v19` record.
 ///
 /// Spec §13. Record length 18 B.
-///
-/// ```text
-/// Offsets start after the segment-major-19 content header.
-/// ```
 pub(crate) mod pm_dc_mirror_plane_reference_tail_v19 {
     /// Record length in bytes. Spec §13.
     pub(crate) const LEN: usize = 18;
@@ -583,10 +519,6 @@ pub(crate) mod pm_dc_mirror_generated_body_feature_v19 {
 /// Byte offsets for the `pm_dc_pattern_selection_control_body` record.
 ///
 /// Spec §13.6. Record length 9 B.
-///
-/// ```text
-/// Offsets are relative to the end of the versioned content header.
-/// ```
 pub(crate) mod pm_dc_pattern_selection_control_body {
     /// Record length in bytes. Spec §13.6.
     pub(crate) const LEN: usize = 9;
@@ -595,10 +527,6 @@ pub(crate) mod pm_dc_pattern_selection_control_body {
 /// Byte offsets for the `pm_dc_pattern_cached_edge_body` record.
 ///
 /// Spec §13.6. Record length 103 B.
-///
-/// ```text
-/// Selection form 1 with curve form 23. Offsets are relative to the end of the content header without stamps.
-/// ```
 pub(crate) mod pm_dc_pattern_cached_edge_body {
     /// Record length in bytes. Spec §13.6.
     pub(crate) const LEN: usize = 103;
@@ -615,10 +543,6 @@ pub(crate) mod pm_dc_pattern_cached_edge_body {
 /// Byte offsets for the `pm_dc_pattern_cached_line_body` record.
 ///
 /// Spec §13.6. Record length 99 B.
-///
-/// ```text
-/// Selection form 1 with curve form 23. Offsets are relative to the end of the content header without stamps.
-/// ```
 pub(crate) mod pm_dc_pattern_cached_line_body {
     /// Record length in bytes. Spec §13.6.
     pub(crate) const LEN: usize = 99;
@@ -627,10 +551,6 @@ pub(crate) mod pm_dc_pattern_cached_line_body {
 /// Byte offsets for the `pm_dc_pattern_suppression_prefix` record.
 ///
 /// Spec §13.6. Record length 8 B.
-///
-/// ```text
-/// Offsets are relative to the end of the versioned content header.
-/// ```
 pub(crate) mod pm_dc_pattern_suppression_prefix {
     /// Record length in bytes. Spec §13.6.
     pub(crate) const LEN: usize = 8;
@@ -651,10 +571,6 @@ pub(crate) mod pm_dc_pattern_suppression_pair {
 /// Byte offsets for the `pm_dc_work_point_fields` record.
 ///
 /// Spec §13. Record length 36 B.
-///
-/// ```text
-/// Offsets start after the segment-major-19 content header.
-/// ```
 pub(crate) mod pm_dc_work_point_fields {
     /// Record length in bytes. Spec §13.
     pub(crate) const LEN: usize = 36;
@@ -663,10 +579,6 @@ pub(crate) mod pm_dc_work_point_fields {
 /// Byte offsets for the `pm_dc_open_cubic_curve_prefix` record.
 ///
 /// Spec §12. Record length 28 B.
-///
-/// ```text
-/// Offsets are relative to each curve array of the endpoint-bound open cubic form. The scalar lanes and fixed tail share the spline curve layout.
-/// ```
 pub(crate) mod pm_dc_open_cubic_curve_prefix {
     /// Stated value of `form` (`u32`). Spec §12.
     pub(crate) const FORM_VALUE: u32 = 0x0000_0000;
@@ -677,10 +589,6 @@ pub(crate) mod pm_dc_open_cubic_curve_prefix {
 /// Byte offsets for the `pm_dc_open_cubic_pole_prefix` record.
 ///
 /// Spec §12. Record length 24 B.
-///
-/// ```text
-/// Offsets are relative to the byte after the counted knot lane of the endpoint-bound open cubic form.
-/// ```
 pub(crate) mod pm_dc_open_cubic_pole_prefix {
     /// Stated value of `pole_value` (`u32`). Spec §12.
     pub(crate) const POLE_VALUE_VALUE: u32 = 0x0000_0008;
@@ -689,10 +597,6 @@ pub(crate) mod pm_dc_open_cubic_pole_prefix {
 /// Byte offsets for the `pm_dc_box_group_body` record.
 ///
 /// Spec §12. Record length 32 B.
-///
-/// ```text
-/// Offsets start after the segment-major-19 content header.
-/// ```
 pub(crate) mod pm_dc_box_group_body {
     /// Record length in bytes. Spec §12.
     pub(crate) const LEN: usize = 32;
@@ -705,10 +609,6 @@ pub(crate) mod pm_dc_box_group_body {
 /// Byte offsets for the `pm_dc_box_frame_fixed` record.
 ///
 /// Spec §12. Record length 44 B.
-///
-/// ```text
-/// Offsets start after the segment-major-19 content header. The explicit placement cells follow this part.
-/// ```
 pub(crate) mod pm_dc_box_frame_fixed {
     /// Record length in bytes. Spec §12.
     pub(crate) const LEN: usize = 44;
@@ -733,10 +633,6 @@ pub(crate) mod pm_dc_box_frame_fixed {
 /// Byte offsets for the `pm_dc_box_frame_tail` record.
 ///
 /// Spec §12. Record length 15 B.
-///
-/// ```text
-/// Offsets start after the explicit placement cells of the box frame.
-/// ```
 pub(crate) mod pm_dc_box_frame_tail {
     /// Record length in bytes. Spec §12.
     pub(crate) const LEN: usize = 15;
@@ -753,10 +649,6 @@ pub(crate) mod pm_dc_box_frame_tail {
 /// Byte offsets for the `pm_dc_frame_row_v25` record.
 ///
 /// Spec §13.11. Record length 82 B.
-///
-/// ```text
-/// A feature-control-frame row in segment major version 25.
-/// ```
 pub(crate) mod pm_dc_frame_row_v25 {
     /// Record length in bytes. Spec §13.11.
     pub(crate) const LEN: usize = 82;
@@ -779,10 +671,6 @@ pub(crate) mod pm_dc_frame_row_v25 {
 /// Byte offsets for the `pm_dc_frame_row_v28` record.
 ///
 /// Spec §13.11. Record length 102 B.
-///
-/// ```text
-/// A feature-control-frame row in segment major version 28.
-/// ```
 pub(crate) mod pm_dc_frame_row_v28 {
     /// Record length in bytes. Spec §13.11.
     pub(crate) const LEN: usize = 102;
@@ -793,10 +681,6 @@ pub(crate) mod pm_dc_frame_row_v28 {
 /// Byte offsets for the `pm_dc_naming_table_header` record.
 ///
 /// Spec §13.11. Record length 18 B.
-///
-/// ```text
-/// The entries follow the header.
-/// ```
 pub(crate) mod pm_dc_naming_table_header {
     /// Record length in bytes. Spec §13.11.
     pub(crate) const LEN: usize = 18;
@@ -807,10 +691,6 @@ pub(crate) mod pm_dc_naming_table_header {
 /// Byte offsets for the `pm_dc_annotation_value_block` record.
 ///
 /// Spec §13.11. Record length 76 B.
-///
-/// ```text
-/// The block between the fit texts and the parameter references of a value record.
-/// ```
 pub(crate) mod pm_dc_annotation_value_block {
     /// Record length in bytes. Spec §13.11.
     pub(crate) const LEN: usize = 76;
@@ -819,10 +699,6 @@ pub(crate) mod pm_dc_annotation_value_block {
 /// Byte offsets for the `pm_dc_hole_note_flags` record.
 ///
 /// Spec §13.11. Record length 16 B.
-///
-/// ```text
-/// The flag words that follow the four hole parameters of a plain hole note.
-/// ```
 pub(crate) mod pm_dc_hole_note_flags {
     /// Stated value of `word_a` (`u32`). Spec §13.11.
     pub(crate) const WORD_A_VALUE: u32 = 0x0000_0001;
@@ -837,10 +713,6 @@ pub(crate) mod pm_dc_hole_note_flags {
 /// Byte offsets for the `pm_dc_generated_name_tail` record.
 ///
 /// Spec §13.11. Record length 16 B.
-///
-/// ```text
-/// The tail of a generated name record of the generated and sweep families.
-/// ```
 pub(crate) mod pm_dc_generated_name_tail {
     /// Offset of `lead` (`u32`, little-endian). Spec §13.11.
     pub(crate) const LEAD: usize = 0;
@@ -859,10 +731,6 @@ pub(crate) mod pm_dc_generated_name_tail {
 /// Byte offsets for the `pm_dc_hole_name_tail` record.
 ///
 /// Spec §13.11. Record length 10 B.
-///
-/// ```text
-/// The tail of a hole name record.
-/// ```
 pub(crate) mod pm_dc_hole_name_tail {
     /// Offset of `lead` (`u32`, little-endian). Spec §13.11.
     pub(crate) const LEAD: usize = 0;
@@ -877,10 +745,6 @@ pub(crate) mod pm_dc_hole_name_tail {
 /// Byte offsets for the `pm_dc_blend_name_tail` record.
 ///
 /// Spec §13.11. Record length 13 B.
-///
-/// ```text
-/// The tail of a blend name record.
-/// ```
 pub(crate) mod pm_dc_blend_name_tail {
     /// Offset of `lead` (`u32`, little-endian). Spec §13.11.
     pub(crate) const LEAD: usize = 0;
