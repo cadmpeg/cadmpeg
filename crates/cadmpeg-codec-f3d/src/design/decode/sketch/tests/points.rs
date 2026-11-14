@@ -104,7 +104,7 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
     assert!(
         decode_sketch_point_record(&tagged_point_payload(10, false, 2, 1, false), 10,).is_none()
     );
-    for (selector, state) in [(0, 0), (0, 1), (1, 0), (2, 1), (4, 0), (4, 1)] {
+    for (selector, state) in [(0, 0), (0, 1), (1, 0), (1, 1), (2, 1), (4, 0), (4, 1)] {
         for padded_paired_reference in [false, true] {
             let decoded = decode_sketch_point_record(
                 &tagged_point_payload(11, false, selector, state, padded_paired_reference),
@@ -130,7 +130,7 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
             );
         }
     }
-    for (selector, state) in [(1, 1), (2, 0), (4, 2), (3, 0), (0, 2)] {
+    for (selector, state) in [(2, 0), (4, 2), (3, 0), (0, 2)] {
         assert!(decode_sketch_point_record(
             &tagged_point_payload(11, false, selector, state, false),
             11,
@@ -675,4 +675,91 @@ fn sketch_geometry_group_does_not_create_legacy_sketch_header() {
             .unwrap()
             .is_empty());
     });
+}
+
+#[test]
+fn unreadable_point_keeps_sibling_points_and_curves() {
+    use crate::design::test_support::primary_record;
+    use crate::records::identity::ReferenceRun;
+
+    for failure in ["members", "owner", "companion", "coordinates"] {
+        let (mut bytes, mut meta) = group_stream(&[41, 42, 60], OWNER);
+        let first = decode_sketch_point_record(
+            &bytes[..usize::try_from(meta.records[1].bulk_offset).unwrap()],
+            11,
+        )
+        .unwrap();
+        let coordinate_offset = usize::try_from(first.coordinate_offset).unwrap();
+        let companion_start = usize::try_from(meta.records[1].bulk_offset).unwrap();
+        let companion_end = usize::try_from(meta.records[2].bulk_offset).unwrap();
+        let mut sibling = bytes[..companion_start].to_vec();
+        sibling[7..11].copy_from_slice(&42u32.to_le_bytes());
+        let reference_start = coordinate_offset - 8 - 11;
+        sibling[reference_start - 8..reference_start].copy_from_slice(&600u64.to_le_bytes());
+        sibling[reference_start + 1..reference_start + 9].copy_from_slice(&44u64.to_le_bytes());
+        let repeated_start = sibling.len() - 22;
+        sibling[repeated_start + 1..repeated_start + 9].copy_from_slice(&44u64.to_le_bytes());
+        let mut sibling_companion = bytes[companion_start..companion_end].to_vec();
+        sibling_companion[7..11].copy_from_slice(&44u32.to_le_bytes());
+        let owner_start = sibling_companion.len() - 11;
+        sibling_companion[owner_start + 1..owner_start + 9].copy_from_slice(&42u64.to_le_bytes());
+        meta.records.push(primary_record(42, bytes.len()));
+        bytes.extend_from_slice(&sibling);
+        meta.records.push(primary_record(44, bytes.len()));
+        bytes.extend_from_slice(&sibling_companion);
+        meta.types[0].entities = ReferenceRun::unlocated(vec![41, 42]);
+        meta.types[1].entities = ReferenceRun::unlocated(vec![43, 44]);
+        match failure {
+            "members" => bytes[coordinate_offset - 1] = 2,
+            "owner" => {
+                bytes[companion_start - 10..companion_start - 2]
+                    .copy_from_slice(&999u64.to_le_bytes());
+            }
+            "companion" => bytes[companion_start + 11] = 2,
+            "coordinates" => {
+                bytes[coordinate_offset..coordinate_offset + 8]
+                    .copy_from_slice(&f64::NAN.to_le_bytes());
+            }
+            _ => unreachable!(),
+        }
+        let (points, curves, losses) = decode_group_stream(&bytes, &meta);
+        assert_eq!(points.len(), 1, "{failure}");
+        assert_eq!(points[0].record_index, 42, "{failure}");
+        assert_eq!(
+            points[0].coordinates(),
+            cadmpeg_ir::math::Point2::new(12.5, -25.0)
+        );
+        assert_eq!(curves.len(), 1, "{failure}");
+        assert_eq!(losses.len(), 1, "{failure}");
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::SketchPointUndecoded.kind()
+        );
+        assert!(losses[0].message.contains("record 41 version 11"));
+    }
+}
+
+#[test]
+fn version_eleven_selector_one_state_one_closes_both_reference_forms() {
+    for inline_typed in [false, true] {
+        let payload = tagged_point_payload(11, inline_typed, 1, 1, false);
+        let point = decode_sketch_point_record(&payload, 11).unwrap();
+        assert_eq!(
+            point.record_form.closure(),
+            Some(SketchPointClosure::Selector1State1)
+        );
+        assert_eq!(point.coordinates, [1.25, -2.5]);
+        assert_eq!(point.record_form.depth(), 2.5);
+        assert_eq!(point.paired_reference, COMPANION);
+        assert_eq!(point.record_form.persistent_id(), Some(500));
+        assert_eq!(point.record_form.flags(), [0; 8]);
+        let version_ten = tagged_point_payload(10, inline_typed, 1, 1, false);
+        assert!(decode_sketch_point_record(&version_ten, 10).is_none());
+        for length in [payload.len() - 1, payload.len() - 11] {
+            assert!(decode_sketch_point_record(&payload[..length], 11).is_none());
+        }
+        let mut extended = payload;
+        extended.push(0);
+        assert!(decode_sketch_point_record(&extended, 11).is_none());
+    }
 }
