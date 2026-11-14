@@ -1037,8 +1037,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::Shell) => {
                     projection_losses.extend(shell_table_member_loss(scope, construction_groups));
-                    project_shell(scope, face_operands, construction_groups)?
-                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                    let projected = project_shell(scope, face_operands, construction_groups)?;
+                    if projected.is_some() && shell_has_independent_walls(scope) {
+                        projection_losses.push(crate::loss::F3dLossCode::FeatureShellIndependentWallsNative.note(format!(
+                            "Shell scope {} retains unequal inside and outside wall offsets in its native construction and source properties; the neutral Shell states both sides with unresolved total thickness (DR-223).",
+                            scope.id
+                        )));
+                    }
+                    projected.map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Thicken) => {
                     project_thicken(scope, face_operands, construction_groups)?
@@ -1565,8 +1571,25 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     &definition,
                     FeatureDefinition::Operation(FeatureOperation::Native { .. })
                 ) || matches!(family, Some(DesignFeatureFamily::Hole))
+                    || shell_has_independent_walls(scope)
                 {
-                    scope_properties(scope, native_scope, placements, &parameters)?
+                    let mut properties = scope_properties(scope, native_scope, placements, &parameters)?;
+                    if shell_has_independent_walls(scope)
+                        && matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Shell { .. }))
+                    {
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("shell:parameters"),
+                            serde_json::to_string(&scope_parameter_expressions(scope, &parameters)?)
+                                .map_err(CodecError::malformed)?,
+                        );
+                        if let crate::records::feature::scope::DesignScopePayload::Shell(Some(operation)) = scope.payload() {
+                            properties.insert(
+                                cadmpeg_core::nonblank_literal!("shell:construction"),
+                                serde_json::to_string(operation).map_err(CodecError::malformed)?,
+                            );
+                        }
+                    }
+                    properties
                 } else {
                     BTreeMap::new()
                 },
@@ -2523,21 +2546,10 @@ fn scope_properties(
     Ok(properties)
 }
 
-/// The native definition for a scope this codec does not type.
-///
-/// It states the scope's own kind name and every parameter expression the
-/// scope carries, so a feature the codec will not type still names what the
-/// source states about it.
-///
-/// # Errors
-///
-/// Names the scope whose parameter set states a blank parameter name.
-fn native_scope_definition(
+fn scope_parameter_expressions(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
-) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-
+) -> Result<std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     let mut properties = std::collections::BTreeMap::new();
     for (_, parameter) in parameters {
         let name = parameter.name().to_owned();
@@ -2558,9 +2570,17 @@ fn native_scope_definition(
         properties.insert(name, expression);
     }
 
+    Ok(properties)
+}
+
+fn native_scope_definition(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     Ok(FeatureDefinition::Operation(FeatureOperation::Native {
         kind: scope.kind_name().to_owned().into(),
-        parameters: properties,
+        parameters: scope_parameter_expressions(scope, parameters)?,
     }))
 }
 
@@ -4362,6 +4382,21 @@ pub(super) fn shell_table_member_loss(
     })
 }
 
+fn shell_has_independent_walls(scope: &DesignParameterScope) -> bool {
+    let crate::records::feature::scope::DesignScopePayload::Shell(Some(operation)) =
+        scope.payload()
+    else {
+        return false;
+    };
+    operation
+        .wall_slots
+        .as_ref()
+        .and_then(|slots| slots.outside.as_ref())
+        .is_some_and(|outside| {
+            outside.thickness.get().to_bits() != operation.thickness.get().to_bits()
+        })
+}
+
 pub(super) fn project_shell(
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
@@ -4377,13 +4412,13 @@ pub(super) fn project_shell(
     let inside = operation.thickness.get();
     let slots = operation.wall_slots.as_ref();
     let (wall, outward, mode) = match slots.and_then(|slots| slots.outside.as_ref()) {
-        None => (inside, Some(operation.outward), None),
+        None => (Some(inside), Some(operation.outward), None),
         Some(outside) if outside.thickness.get().to_bits() == inside.to_bits() => (
-            inside + outside.thickness.get(),
+            Some(inside + outside.thickness.get()),
             None,
             Some(cadmpeg_ir::features::ShellMode::BothSides),
         ),
-        Some(_) => return Ok(None),
+        Some(_) => (None, None, Some(cadmpeg_ir::features::ShellMode::BothSides)),
     };
     let join = slots.map(|slots| {
         if slots.rounded_corners {
@@ -4399,6 +4434,8 @@ pub(super) fn project_shell(
             FaceSelection::Native(group.id.clone())
         } else if bodies.is_some() {
             FaceSelection::Faces(Vec::new())
+        } else if wall.is_none() {
+            direct_face_selection(scope, operands).unwrap_or(FaceSelection::Unresolved)
         } else {
             or_none!(direct_face_selection(scope, operands))
         };
@@ -4406,9 +4443,12 @@ pub(super) fn project_shell(
         FeatureOperation::Shell {
             bodies,
             removed_faces,
-            thickness: Some(or_none!(cadmpeg_ir::scalar::PositiveLength::new(
-                wall * 10.0,
-            ))),
+            thickness: match wall {
+                Some(wall) => Some(or_none!(cadmpeg_ir::scalar::PositiveLength::new(
+                    wall * 10.0
+                ))),
+                None => None,
+            },
             outward,
             mode,
             join,
