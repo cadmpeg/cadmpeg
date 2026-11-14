@@ -315,8 +315,7 @@ fn feature_outputs_name_the_bodies_a_state_deletes_from_its_previous_state() {
             &Default::default(),
             None,
         )
-        .unwrap()
-        .losses;
+        .unwrap();
         check(&feature, case);
     }
     let (mut features, scopes): (Vec<_>, Vec<_>) = expected
@@ -331,8 +330,7 @@ fn feature_outputs_name_the_bodies_a_state_deletes_from_its_previous_state() {
         &Default::default(),
         None,
     )
-    .unwrap()
-    .losses;
+    .unwrap();
     for (feature, case) in features.iter().zip(&expected) {
         check(feature, case);
     }
@@ -350,8 +348,7 @@ fn feature_output_binding_preserves_base_feature_selection() {
         &Default::default(),
         None,
     )
-    .unwrap()
-    .losses;
+    .unwrap();
     assert_eq!(feature.evaluation.outputs().len(), 1);
     assert_eq!(feature.evaluation.outputs()[0], body.id);
     assert!(matches!(feature.evaluation.definition(),
@@ -391,8 +388,7 @@ fn stored_body_scope_uses_unique_complete_history_outputs() {
         &Default::default(),
         None,
     )
-    .unwrap()
-    .losses;
+    .unwrap();
     assert!(matches!(feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved { bodies, native }
@@ -431,8 +427,7 @@ fn stored_body_scope_refuses_missing_bodies_and_ambiguous_states() {
             &Default::default(),
             None,
         )
-        .unwrap()
-        .losses;
+        .unwrap();
         assert!(matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
@@ -471,8 +466,7 @@ fn stored_body_scope_keeps_proven_empty_history_as_no_op() {
         &Default::default(),
         None,
     )
-    .unwrap()
-    .losses;
+    .unwrap();
     assert!(matches!(feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved { bodies, .. }
@@ -531,8 +525,7 @@ fn stored_body_scope_reports_recipe_absence_from_snapshot_kind() {
         &Default::default(),
         None,
     )
-    .unwrap()
-    .losses;
+    .unwrap();
     let losses = super::super::stored_bodies::losses(
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
@@ -579,8 +572,7 @@ fn stored_body_scope_without_any_proof_keeps_its_neutral_snapshot() {
         &Default::default(),
         None,
     )
-    .unwrap()
-    .losses;
+    .unwrap();
     assert!(matches!(feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: cadmpeg_ir::features::BodySelection::Native(native),
@@ -622,8 +614,7 @@ fn stored_body_scope_qualifies_body_slots_by_history_blob() {
                 &Default::default(),
                 None,
             )
-            .unwrap()
-            .losses;
+            .unwrap();
             assert_eq!(feature.evaluation.outputs(), &[expected.id.clone()]);
             assert!(matches!(feature.evaluation.definition(),
                 FeatureDefinition::Operation(FeatureOperation::BaseFeature {
@@ -647,8 +638,7 @@ fn stored_body_scope_refuses_a_body_from_another_history_blob() {
         &Default::default(),
         None,
     )
-    .unwrap()
-    .losses;
+    .unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
@@ -691,8 +681,7 @@ fn stored_body_scope_refuses_a_declared_body_count_mismatch() {
         &Default::default(),
         None,
     )
-    .unwrap()
-    .losses;
+    .unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
@@ -731,8 +720,7 @@ fn stored_body_scope_binds_explicit_body_members_without_history() {
         &Default::default(),
         None,
     )
-    .unwrap()
-    .losses;
+    .unwrap();
     assert_eq!(feature.evaluation.outputs(), &[body.id]);
     assert!(matches!(
         feature.evaluation.definition(),
@@ -797,8 +785,7 @@ fn derived_base_scope_with_proven_bodies_is_a_stored_snapshot() {
             &Default::default(),
             None,
         )
-        .unwrap()
-        .losses;
+        .unwrap();
         assert!(
             matches!(feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
@@ -855,8 +842,7 @@ fn derived_base_scope_without_proven_bodies_stays_native() {
                 &Default::default(),
                 None,
             )
-            .unwrap()
-            .losses;
+            .unwrap();
             assert!(
                 matches!(
                     feature.evaluation.definition(),
@@ -901,8 +887,7 @@ fn derived_base_scope_with_proven_empty_transition_is_a_typed_no_op() {
             &Default::default(),
             None,
         )
-        .unwrap()
-        .losses;
+        .unwrap();
         assert!(
             matches!(feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
@@ -1481,8 +1466,7 @@ fn stored_false_shell_retained_on_bbox_growth() {
         &Default::default(),
         None,
     )
-    .unwrap()
-    .losses;
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Shell { outward, .. }) =
         feature.evaluation.definition()
@@ -1552,8 +1536,7 @@ fn combine_join_to_cut_deleting_vs_non_deleting() {
         &Default::default(),
         None,
     )
-    .unwrap()
-    .losses;
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Combine { op, .. }) =
         feature_non_deleting.evaluation.definition()
@@ -1586,8 +1569,7 @@ fn combine_join_to_cut_deleting_vs_non_deleting() {
         &Default::default(),
         None,
     )
-    .unwrap()
-    .losses;
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Combine { op, .. }) =
         feature_deleting.evaluation.definition()
@@ -1685,8 +1667,7 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
             &Default::default(),
             None,
         )
-        .unwrap()
-        .losses;
+        .unwrap();
         let FeatureDefinition::Operation(FeatureOperation::Combine { op, .. }) =
             feature.evaluation.definition()
         else {
@@ -1863,8 +1844,7 @@ fn stored_body_scope_keeps_equal_state_without_a_stored_body_proof_unbound() {
         &Default::default(),
         None,
     )
-    .unwrap()
-    .losses;
+    .unwrap();
     assert!(feature.evaluation.outputs().is_empty());
     assert!(matches!(
         feature.evaluation.definition(),
@@ -1899,8 +1879,7 @@ fn feature_output_equal_endpoints_preserve_an_existing_output_proof() {
         &Default::default(),
         None,
     )
-    .unwrap()
-    .losses;
+    .unwrap();
     assert_eq!(feature.evaluation.outputs(), &[body.id]);
 }
 

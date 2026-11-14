@@ -309,7 +309,7 @@ fn project_one(
     });
     let mut losses = Vec::new();
     let mut note = |code: F3dLossCode, text: &str| {
-        losses.push(code.note(format!("feature {}: {text}", feature.id)))
+        losses.push(code.note(format!("feature {}: {text}", feature.id)));
     };
     if scope.is_none() || readout.is_none() {
         note(F3dLossCode::FeatureSweepSourceUnavailable, "Sweep source bytes or unique scope are unavailable; independently decoded records are retained");

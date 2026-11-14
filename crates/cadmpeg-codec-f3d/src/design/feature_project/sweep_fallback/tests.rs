@@ -8,8 +8,9 @@ use crate::records::topology::construction::{
 use crate::records::topology::sketch_profile::{
     DesignSketchProfileOperand, DesignSketchProfileOperandDraft,
 };
-use cadmpeg_ir::features::{DistinctMembers, FeatureEvaluation};
+use cadmpeg_ir::features::{DistinctMembers, FeatureContent, FeatureEvaluation};
 use cadmpeg_ir::ids::BodyId;
+use std::collections::BTreeMap;
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 
@@ -102,17 +103,17 @@ fn feature(scope: &DesignParameterScope) -> Feature {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
         source_tag: Some("Sweep".into()),
         source_text: None,
-        source_content: Default::default(),
+        source_content: FeatureContent::default(),
         evaluation: FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Sweep".into(),
-                parameters: Default::default(),
+                parameters: BTreeMap::new(),
             }),
-            Default::default(),
+            DistinctMembers::default(),
         ),
         native_ref: Some(scope.id.clone()),
     }
@@ -345,7 +346,7 @@ fn sheet_mode_requires_known_new_body_operation() {
                         },
                     ),
                     sweep_profile: None,
-                }))
+                }));
             })
             .unwrap();
         let (feature, _) = projected(&bytes, &[scope.clone()], &[], &outputs);
@@ -384,7 +385,7 @@ fn profile_carrier_is_preserved_without_widening_to_whole_sketch() {
             draft.payload = DesignScopePayload::Sweep(Some(DesignSweepScope {
                 construction: None,
                 sweep_profile: Some(carrier),
-            }))
+            }));
         })
         .unwrap();
     let (feature, notes) = projected(

@@ -95,8 +95,7 @@ fn feature_outputs_keep_the_copies_of_a_base_feature_copy() {
             &Default::default(),
             None,
         )
-        .unwrap()
-        .losses;
+        .unwrap();
         let expected = if kind == DesignFeatureKind::BaseFeature {
             copy
         } else {
