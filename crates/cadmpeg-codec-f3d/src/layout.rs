@@ -9757,3 +9757,72 @@ pub(crate) mod sphere_typed_prefix {
     /// Offset of `placement` (`bytes[51]`). Spec §3.1.
     pub(crate) const PLACEMENT: usize = 25;
 }
+
+/// Byte offsets for the `captured_position_prefix` record.
+///
+/// Spec §Captured component positions. Record length 33 B.
+///
+/// ```text
+/// Offsets are relative to the scope primary indexed header.
+/// ```
+pub(crate) mod captured_position_prefix {
+    /// Record length in bytes. Spec §Captured component positions.
+    pub(crate) const LEN: usize = 33;
+    /// Offset of `zero_run` (`bytes[18]`). Spec §Captured component positions.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Stated value of `zero_run` (`bytes[18]`). Spec §Captured component positions.
+    pub(crate) const ZERO_RUN_VALUE: [u8; 18] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00,
+    ];
+}
+
+/// Byte offsets for the `captured_position_row` record.
+///
+/// Spec §Captured component positions. Record length 13 B.
+///
+/// ```text
+/// Offsets are relative to the start of each ordered row.
+/// ```
+pub(crate) mod captured_position_row {
+    /// Record length in bytes. Spec §Captured component positions.
+    pub(crate) const LEN: usize = 13;
+    /// Stated value of `zero` (`u8`). Spec §Captured component positions.
+    pub(crate) const ZERO_VALUE: u8 = 0;
+    /// Stated value of `reference_marker` (`u8`). Spec §Captured component positions.
+    pub(crate) const REFERENCE_MARKER_VALUE: u8 = 1;
+    /// Offset of `target` (`u64`, little-endian). Spec §Captured component positions.
+    pub(crate) const TARGET: usize = 2;
+    /// Stated value of `reference_padding` (`u16`). Spec §Captured component positions.
+    pub(crate) const REFERENCE_PADDING_VALUE: u16 = 0x0000;
+}
+
+/// Byte offsets for the `captured_position_matrix` record.
+///
+/// Spec §Captured component positions. Record length 128 B.
+///
+/// ```text
+/// Offsets are relative to the first coefficient after matrix marker 0.
+/// ```
+pub(crate) mod captured_position_matrix {
+    /// Record length in bytes. Spec §Captured component positions.
+    pub(crate) const LEN: usize = 128;
+}
+
+/// Byte offsets for the `captured_position_suffix` record.
+///
+/// Spec §Captured component positions. Record length 83 B.
+///
+/// ```text
+/// Offsets are relative to the suffix immediately after the ordered rows.
+/// ```
+pub(crate) mod captured_position_suffix {
+    /// Record length in bytes. Spec §Captured component positions.
+    pub(crate) const LEN: usize = 83;
+    /// Stated value of `zero_word` (`u32`). Spec §Captured component positions.
+    pub(crate) const ZERO_WORD_VALUE: u32 = 0x0000_0000;
+    /// Stated value of `identity_length` (`u32`). Spec §Captured component positions.
+    pub(crate) const IDENTITY_LENGTH_VALUE: u32 = 0x0000_0024;
+    /// Stated value of `zero_tail` (`bytes[3]`). Spec §Captured component positions.
+    pub(crate) const ZERO_TAIL_VALUE: [u8; 3] = [0x00, 0x00, 0x00];
+}

@@ -547,6 +547,11 @@ pub(crate) enum F3dLossCode {
     FeatureMoveTransformModeAssumed,
     FeatureMoveTransformPrefixAssumed,
     FeatureMoveTransformIdentityAssumed,
+    PositionEnvelopeUnparsed,
+    PositionSemanticsAssumed,
+    PositionIdentityAssumed,
+    PositionOccurrenceUnresolved,
+    PositionTransformUnprojected,
     FeatureAlignMotionAssumed,
     FeatureAlignIdentityAssumed,
     FeatureAlignMotionUnprojected,
@@ -1091,6 +1096,11 @@ impl F3dLossCode {
         Self::FeatureMoveTransformModeAssumed,
         Self::FeatureMoveTransformPrefixAssumed,
         Self::FeatureMoveTransformIdentityAssumed,
+        Self::PositionEnvelopeUnparsed,
+        Self::PositionSemanticsAssumed,
+        Self::PositionIdentityAssumed,
+        Self::PositionOccurrenceUnresolved,
+        Self::PositionTransformUnprojected,
         Self::FeatureAlignMotionAssumed,
         Self::FeatureAlignIdentityAssumed,
         Self::FeatureAlignMotionUnprojected,
@@ -1606,6 +1616,11 @@ impl F3dLossCode {
                 "feature.move-transform-references-assumed"
             }
             Self::FeatureMoveTransformIdentityAssumed => "feature.move-transform-identity-assumed",
+            Self::PositionEnvelopeUnparsed => "feature.position-envelope-unparsed",
+            Self::PositionSemanticsAssumed => "feature.position-semantics-assumed",
+            Self::PositionIdentityAssumed => "feature.position-identity-assumed",
+            Self::PositionOccurrenceUnresolved => "feature.position-occurrence-unresolved",
+            Self::PositionTransformUnprojected => "feature.position-transform-unprojected",
             Self::FeatureAlignMotionAssumed => "feature.align-motion-assumed",
             Self::FeatureAlignIdentityAssumed => "feature.align-identity-assumed",
             Self::FeatureAlignMotionUnprojected => "feature.align-motion-unprojected",
@@ -2094,6 +2109,11 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformModeAssumed
             | Self::FeatureMoveTransformPrefixAssumed
             | Self::FeatureMoveTransformIdentityAssumed
+            | Self::PositionEnvelopeUnparsed
+            | Self::PositionSemanticsAssumed
+            | Self::PositionIdentityAssumed
+            | Self::PositionOccurrenceUnresolved
+            | Self::PositionTransformUnprojected
             | Self::FeatureAlignMotionAssumed
             | Self::FeatureAlignIdentityAssumed
             | Self::FeatureAlignMotionUnprojected
@@ -2475,6 +2495,11 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformModeAssumed
             | Self::FeatureMoveTransformPrefixAssumed
             | Self::FeatureMoveTransformIdentityAssumed
+            | Self::PositionEnvelopeUnparsed
+            | Self::PositionSemanticsAssumed
+            | Self::PositionIdentityAssumed
+            | Self::PositionOccurrenceUnresolved
+            | Self::PositionTransformUnprojected
             | Self::FeatureAlignMotionAssumed
             | Self::FeatureAlignIdentityAssumed
             | Self::FeatureAlignMotionUnprojected
@@ -2961,6 +2986,11 @@ mod tests {
                 "feature.move-transform-mode-assumed",
                 "feature.move-transform-prefix-assumed",
                 "feature.move-transform-identity-assumed",
+                "feature.position-envelope-unparsed",
+                "feature.position-semantics-assumed",
+                "feature.position-identity-assumed",
+                "feature.position-occurrence-unresolved",
+                "feature.position-transform-unprojected",
                 "feature.align-motion-assumed",
                 "feature.align-identity-assumed",
                 "feature.align-motion-unprojected",

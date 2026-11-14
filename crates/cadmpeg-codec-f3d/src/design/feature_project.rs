@@ -1262,7 +1262,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs, ctx)?
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 None => {
-                    if let Some(primitive) = project_solid_primitive(
+                    if let Some(definition) = super::position::project(scope, &mut projection_losses) {
+                        definition
+                    } else if let Some(primitive) = project_solid_primitive(
                         scope,
                         inputs.placement_constructions,
                         &mut projection_losses,

@@ -51,7 +51,7 @@ pub(crate) fn bind(
                 sphere.transform_offset = Some(frame.offset);
                 if assumed {
                     losses.push(F3dLossCode::SpherePlacementFlagsAssumed.note(format!(
-                        "Sphere {id} uses the stored solved placement despite unresolved placement flags (DR-550)."
+                        "Sphere {id} uses the stored solved placement despite unresolved placement flags (DR-552)."
                     )));
                 }
             }
@@ -59,7 +59,7 @@ pub(crate) fn bind(
                 sphere.transform = SketchPlacementMatrix::IDENTITY;
                 sphere.transform_offset = None;
                 losses.push(F3dLossCode::SpherePlacementFrameAssumed.note(format!(
-                    "Sphere {id} assumes an origin centre because placement {reference} has no unique usable same-stream solved frame (DR-550)."
+                    "Sphere {id} assumes an origin centre because placement {reference} has no unique usable same-stream solved frame (DR-552)."
                 )));
             }
         }

@@ -1308,7 +1308,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding. The public Voron Trident `z_mounts_front.f3d` has nine such scopes. Component context bindings identify their result owners. The source-body and source-frame joins require the derivation references independently of those owner bindings.
 
-### DR-550. Sphere placement flags and unresolved placement references
+### DR-552. Sphere placement flags and unresolved placement references
 
 **Question.** How do the inferred-axis and orientation flags change a sphere centre, and which placement supplies the centre when its reference is unresolved?
 
@@ -2652,6 +2652,18 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The specialized scope payload stays uninterpreted. The result bodies remain available with `feature.stored-bodies-recipe-absent`.
+
+### DR-550. Captured component-position semantics and frame
+
+**Question.** Do Position version-six row matrices represent captured occurrence poses in each occurrence's assembly context? Does marker 1 select identity? How do nested contexts and occurrence identity lists affect the frame?
+
+**Known.** `f3d.md` §3.1 "A Position scope has type GUID" defines the counted rows, matrix omission marker, suffix, and typed locator backlinks. [Capture Position](https://help.autodesk.com/view/fusion360/ENU/?contextId=ASM-CAPTURE-POSITION) captures the positions of moved or rotated components. [Snapshots](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Snapshots.htm) creates snapshots when transforms are pending. [Occurrence.transform2](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_transform2.htm) gives orientation and position in the occurrence's assembly context. The decoder assumes these semantics and centimetre translations for the binary matrices and reports `feature.position-semantics-assumed`. It reports `feature.position-identity-assumed` for omitted matrices. It retains unresolved selectors and transforms and reports `feature.position-occurrence-unresolved`. Final assembly placement remains the stored placement.
+
+**Need.** Controlled saves with one translated occurrence, one rotated occurrence, two independent poses, nested occurrences, a repeated selector, and a return to identity. Compare the row matrices with API snapshots and `transform2` values at each timeline state. Vary an occurrence identity list independently.
+
+**Conflict.** None.
+
+**Note.** Native rows retain the source coefficients and selector references. Neutral rows retain source order, repeated selectors, and unresolved occurrences.
 
 ### DR-490. Operand containers of unqualified Assemble connectors
 
