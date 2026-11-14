@@ -6272,8 +6272,11 @@ fn bind_historical_face_operand_candidates<'a>(
     }
     if let Some(face) = recipe_face {
         // Every recipe node matches one boundary edge of this face and the
-        // face fans around both of its ends.
-        operand.resolved_face_slots = vec![face];
+        // face fans around both of its ends. An earlier selection that no
+        // check withdrew stays: the recipe fills an empty selection only.
+        if operand.resolved_face_slots.is_empty() {
+            operand.resolved_face_slots = vec![face];
+        }
     }
     if feature_family == Some(crate::design::DesignFeatureFamily::Extrude)
         && operand.resolved_face_slots.is_empty()
