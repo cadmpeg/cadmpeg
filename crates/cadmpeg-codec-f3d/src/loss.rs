@@ -210,6 +210,12 @@ pub(crate) enum F3dLossCode {
     /// A Base Feature has no complete unique body binding.
     FeatureStoredBodiesUnbound,
     FeatureDerivedInstanceComponentInsertAssumed,
+    FeatureDerivedInstanceSourcesUnresolved,
+    FeatureDerivedInstanceCarrierPlacementAssumed,
+    FeatureDerivedInstanceScopePlacementAssumed,
+    FeatureDerivedInstanceContextTransformAssumed,
+    FeatureDerivedInstancePlacementUnrepresentable,
+    FeatureDerivedInstanceDefinitionUnresolved,
     /// A paste keeps its bodies; its source pairs or a source node do not resolve.
     FeaturePasteSourcesUnresolved,
     FeatureOccurrenceTransferSourceUnresolved,
@@ -838,6 +844,12 @@ impl F3dLossCode {
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureStoredBodiesUnbound,
         Self::FeatureDerivedInstanceComponentInsertAssumed,
+        Self::FeatureDerivedInstanceSourcesUnresolved,
+        Self::FeatureDerivedInstanceCarrierPlacementAssumed,
+        Self::FeatureDerivedInstanceScopePlacementAssumed,
+        Self::FeatureDerivedInstanceContextTransformAssumed,
+        Self::FeatureDerivedInstancePlacementUnrepresentable,
+        Self::FeatureDerivedInstanceDefinitionUnresolved,
         Self::FeaturePasteSourcesUnresolved,
         Self::FeatureOccurrenceTransferSourceUnresolved,
         Self::FeatureOccurrenceTransferOwnerUnresolved,
@@ -1231,6 +1243,24 @@ impl F3dLossCode {
             Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
             Self::FeatureDerivedInstanceComponentInsertAssumed => {
                 "feature.derived-instance-component-insert-assumed"
+            }
+            Self::FeatureDerivedInstanceSourcesUnresolved => {
+                "feature.derived-instance-sources-unresolved"
+            }
+            Self::FeatureDerivedInstanceCarrierPlacementAssumed => {
+                "feature.derived-instance-carrier-placement-assumed"
+            }
+            Self::FeatureDerivedInstanceScopePlacementAssumed => {
+                "feature.derived-instance-scope-placement-assumed"
+            }
+            Self::FeatureDerivedInstanceContextTransformAssumed => {
+                "feature.derived-instance-context-transform-assumed"
+            }
+            Self::FeatureDerivedInstancePlacementUnrepresentable => {
+                "feature.derived-instance-placement-unrepresentable"
+            }
+            Self::FeatureDerivedInstanceDefinitionUnresolved => {
+                "feature.derived-instance-definition-unresolved"
             }
             Self::FeaturePasteSourcesUnresolved => "feature.paste-sources-unresolved",
             Self::FeatureOccurrenceTransferSourceUnresolved => {
@@ -1723,6 +1753,12 @@ impl F3dLossCode {
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
             | Self::FeatureDerivedInstanceComponentInsertAssumed
+            | Self::FeatureDerivedInstanceSourcesUnresolved
+            | Self::FeatureDerivedInstanceCarrierPlacementAssumed
+            | Self::FeatureDerivedInstanceScopePlacementAssumed
+            | Self::FeatureDerivedInstanceContextTransformAssumed
+            | Self::FeatureDerivedInstancePlacementUnrepresentable
+            | Self::FeatureDerivedInstanceDefinitionUnresolved
             | Self::FeaturePasteSourcesUnresolved
             | Self::FeatureOccurrenceTransferSourceUnresolved
             | Self::FeatureOccurrenceTransferOwnerUnresolved
@@ -2061,6 +2097,12 @@ impl F3dLossCode {
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
             | Self::FeatureDerivedInstanceComponentInsertAssumed
+            | Self::FeatureDerivedInstanceSourcesUnresolved
+            | Self::FeatureDerivedInstanceCarrierPlacementAssumed
+            | Self::FeatureDerivedInstanceScopePlacementAssumed
+            | Self::FeatureDerivedInstanceContextTransformAssumed
+            | Self::FeatureDerivedInstancePlacementUnrepresentable
+            | Self::FeatureDerivedInstanceDefinitionUnresolved
             | Self::FeaturePasteSourcesUnresolved
             | Self::FeatureOccurrenceTransferSourceUnresolved
             | Self::FeatureOccurrenceTransferOwnerUnresolved
@@ -2499,6 +2541,12 @@ mod tests {
                 "feature.stored-bodies-recipe-absent",
                 "feature.stored-bodies-unbound",
                 "feature.derived-instance-component-insert-assumed",
+                "feature.derived-instance-sources-unresolved",
+                "feature.derived-instance-carrier-placement-assumed",
+                "feature.derived-instance-scope-placement-assumed",
+                "feature.derived-instance-context-transform-assumed",
+                "feature.derived-instance-placement-unrepresentable",
+                "feature.derived-instance-definition-unresolved",
                 "feature.paste-sources-unresolved",
                 "feature.occurrence-transfer-source-unresolved",
                 "feature.occurrence-transfer-owner-unresolved",
