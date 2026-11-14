@@ -136,7 +136,7 @@ fn circular_losses(
                 feature.id
             ))),
             ExtentReading::OneUnit => Some(F3dLossCode::FeaturePipePathEndSectionAssumed.note(format!(
-                "feature {}: one Pipe fraction is 1 and the other 0, and the section is assumed to lie at the path end where the unit fraction starts, so the sweep covers its whole path group",
+                "feature {}: one Pipe fraction is 1 and the other 0, and the section is assumed to lie where the unit fraction starts on the path, so the sweep covers its whole path group",
                 feature.id
             ))),
     });
