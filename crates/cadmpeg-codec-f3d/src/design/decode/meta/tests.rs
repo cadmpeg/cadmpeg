@@ -64,7 +64,7 @@ fn flat_pattern_settings_retain_the_complete_type_table_and_related_headers() {
             let _ctx = cadmpeg_test_support::service_decode_context();
             let types = super::decode_types(scan).unwrap();
             assert_eq!(types.len(), expected_types);
-            let timelines = super::decode_feature_timelines(scan).unwrap();
+            let timelines = super::decode_feature_timelines(scan, &mut Vec::new()).unwrap();
             if version == 2 {
                 assert_eq!(timelines.len(), 1);
                 assert_eq!(timelines[0].record_index.get(), 35);
@@ -268,7 +268,8 @@ fn feature_timeline_items_follow_the_counted_vector() {
         0,
         &HashMap::new(),
     )
-    .unwrap();
+    .unwrap()
+    .0;
     assert_eq!(
         admitted
             .frame()
@@ -312,7 +313,7 @@ fn timeline_item_values(bulk: &[u8]) -> Option<Vec<u64>> {
         0,
         &std::collections::HashMap::new(),
     )
-    .map(|timeline| {
+    .map(|(timeline, _)| {
         timeline
             .frame()
             .items()
@@ -335,10 +336,17 @@ fn feature_timeline_trailing_null_items_take_no_position() {
 }
 
 #[test]
-fn feature_timeline_rejects_a_reference_after_a_null_item() {
+fn feature_timeline_reads_references_after_null_items() {
     assert_eq!(
-        timeline_item_values(&timeline_with_items(&[Some(101), None, Some(102)])),
-        None
+        timeline_item_values(&timeline_with_items(&[
+            None,
+            Some(101),
+            None,
+            None,
+            Some(102),
+            None
+        ])),
+        Some(vec![101, 102])
     );
 }
 
@@ -363,9 +371,70 @@ fn feature_timeline_id_escapes_its_stream_scope() {
         0,
         &HashMap::new(),
     )
-    .unwrap();
+    .unwrap()
+    .0;
     let expected_id = crate::ids::native_design_feature_timeline_id(stream, 0);
     assert_eq!(timeline.id(), &expected_id);
+}
+
+#[test]
+fn feature_timeline_null_slot_assumption_is_reported_only_for_a_complete_frame() {
+    let meta = design_metastream_with_records(
+        &[(
+            super::FEATURE_TIMELINE_TYPE_GUID,
+            super::FEATURE_TIMELINE_BASE_TYPE_GUID,
+            3,
+            "Fusion",
+            &[35],
+        )],
+        &[(35, 0)],
+    );
+    let archive = |bulk: &[u8]| {
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+            .unwrap();
+        zip.write_all(bulk).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        zip.finish().unwrap().into_inner()
+    };
+    for (items, expected_losses) in [
+        (vec![Some(101), None, Some(102)], 1),
+        (vec![None, Some(101)], 1),
+        (vec![Some(101), None], 0),
+        (vec![None, None], 0),
+    ] {
+        let bulk = timeline_with_items(&items);
+        let mut losses = Vec::new();
+        let timelines = with_scan(&archive(&bulk), |scan| {
+            super::decode_feature_timelines(scan, &mut losses)
+        })
+        .unwrap();
+        assert_eq!(timelines.len(), 1);
+        assert_eq!(losses.len(), expected_losses);
+        if expected_losses != 0 {
+            assert_eq!(
+                losses[0].code,
+                crate::loss::F3dLossCode::FeatureTimelineNullSlotAssumed
+                    .note("")
+                    .code
+            );
+        }
+        let mut invalid = bulk;
+        invalid.push(1);
+        let mut invalid_losses = Vec::new();
+        assert!(
+            with_scan(&archive(&invalid), |scan| super::decode_feature_timelines(
+                scan,
+                &mut invalid_losses
+            ))
+            .is_err()
+        );
+        assert!(invalid_losses.is_empty());
+    }
 }
 
 #[test]
@@ -407,7 +476,10 @@ fn feature_timelines_decode_one_timeline_record() {
         .unwrap();
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    let admitted = with_scan(&archive, super::decode_feature_timelines).unwrap();
+    let admitted = with_scan(&archive, |scan| {
+        super::decode_feature_timelines(scan, &mut Vec::new())
+    })
+    .unwrap();
     assert_eq!(admitted.len(), 1);
     assert_eq!(admitted[0].record_index.get(), 35);
 }
@@ -854,7 +926,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             &[(35, 0)],
         );
         let decoded = with_scan(&archive(&meta, &bulk), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan)
+            crate::design::decode::meta::decode_feature_timelines(scan, &mut Vec::new())
         })
         .expect("exact feature timeline");
         let [timeline] = decoded.as_slice() else {
@@ -890,7 +962,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             .expect("fixture offset fits address space");
         duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
         let error = with_scan(&archive(&meta, &duplicate), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan)
+            crate::design::decode::meta::decode_feature_timelines(scan, &mut Vec::new())
         })
         .expect_err("duplicate timeline items must be rejected");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
@@ -902,7 +974,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             .expect("inline type GUID");
         mismatched_inline_type[inline_type_at] = b'2';
         let error = with_scan(&archive(&meta, &mismatched_inline_type), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan)
+            crate::design::decode::meta::decode_feature_timelines(scan, &mut Vec::new())
         })
         .expect_err("an inline type GUID must match the target registration");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
@@ -919,7 +991,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         &[(35, 0)],
     );
     let error = with_scan(&archive(&unsupported_meta, &bulk), |scan| {
-        crate::design::decode::meta::decode_feature_timelines(scan)
+        crate::design::decode::meta::decode_feature_timelines(scan, &mut Vec::new())
     })
     .expect_err("an unsupported timeline version must not use a known frame speculatively");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
@@ -942,7 +1014,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             &[(35, 0)],
         );
         let error = with_scan(&archive(&incompatible_meta, &bulk), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan)
+            crate::design::decode::meta::decode_feature_timelines(scan, &mut Vec::new())
         })
         .expect_err("incompatible timeline registration metadata must be rejected");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));

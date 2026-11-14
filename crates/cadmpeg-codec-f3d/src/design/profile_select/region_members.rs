@@ -43,6 +43,7 @@ pub(super) fn resolve(
         sketch,
         entities,
         &rings,
+        &unnamed_curves(curves, sketch, entities),
         resolution.linear_tolerance,
         resolution.profile_work,
         resolution.ctx,
@@ -65,6 +66,31 @@ pub(super) fn resolve(
         }
     }
     Ok(profile)
+}
+
+/// The entities of `sketch` whose curve records carry tail marker `1`. A
+/// counted region member list never names them.
+fn unnamed_curves(
+    curves: &[SketchCurveIdentity],
+    sketch: &Sketch,
+    entities: &[SketchEntity],
+) -> std::collections::HashSet<cadmpeg_ir::sketches::SketchEntityId> {
+    let marked = curves
+        .iter()
+        .filter(|curve| curve.tail_marker == Some(1))
+        .map(|curve| curve.id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch.id)
+        .filter(|entity| {
+            entity
+                .native_ref
+                .as_deref()
+                .is_some_and(|native| marked.contains(native))
+        })
+        .map(|entity| entity.id().clone())
+        .collect()
 }
 
 pub(super) fn resolve_stale(

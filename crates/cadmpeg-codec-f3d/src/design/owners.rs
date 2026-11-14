@@ -112,6 +112,12 @@ fn attach_with_implicit_roots(
                 .insert(definition.id.clone());
         }
     }
+    let unadmitted_outputs = native
+        .design_body_bindings
+        .iter()
+        .filter(|binding| binding.component_owner.is_none())
+        .filter_map(|binding| binding.body.as_ref())
+        .collect::<BTreeSet<_>>();
     let mut bound_by_scope = BTreeMap::new();
     for feature in &mut model.features {
         let owned_bodies = feature.product_definition.as_ref().and_then(|owner| {
@@ -148,6 +154,14 @@ fn attach_with_implicit_roots(
             if let Some(holder) = output_owner {
                 feature.product_definition = Some(holder.clone());
                 moved.push((feature.id.clone(), holder));
+            } else if retained.len() != outputs.len()
+                && outputs.iter().any(|body| unadmitted_outputs.contains(body))
+            {
+                losses.push(F3dLossCode::ScopeOutputOwnerUnresolved.note(format!(
+                    "Feature {} retains all output body links; its product ownership is unresolved because output body membership is unadmitted.",
+                    feature.id
+                )));
+                feature.product_definition = None;
             } else if retained.len() != outputs.len() {
                 losses.push(F3dLossCode::ScopeOutputOwnerMismatch.note(format!(
                     "Feature {} has {} output body link(s) outside its product definition; those links remain native.",
