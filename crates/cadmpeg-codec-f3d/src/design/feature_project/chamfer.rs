@@ -6,7 +6,7 @@ use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
 use crate::records::feature::chamfer_set::{DesignChamferSet, DesignChamferSetSpec};
 use crate::records::feature::scope::DesignParameterScope;
-use crate::records::parameters::DesignParameter;
+use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -16,11 +16,13 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::report::loss::LossNote;
 
+type Specification = (ChamferSpec, Vec<LossNote>);
+
 pub(super) struct Projection<'p, 'data> {
     legacy_compatible: bool,
     scope: &'p DesignParameterScope,
     inputs: &'p ProjectInputs<'data>,
-    specifications: Option<Vec<Option<(ChamferSpec, Vec<LossNote>)>>>,
+    specifications: Option<Vec<Option<Specification>>>,
 }
 
 pub(super) fn prepare<'p, 'data>(
@@ -90,7 +92,7 @@ impl Projection<'_, '_> {
                         && owner.scope_record_index() == scope.record_index
                         && claimed.contains(&owner.record_index())
                 })
-                .map(|owner| owner.parameter_record_index())
+                .map(DesignParameterOwner::parameter_record_index)
                 .collect::<std::collections::HashSet<_>>();
             let extra = parameters
                 .iter()
@@ -319,7 +321,7 @@ fn set_spec(
     scope: &DesignParameterScope,
     spec: DesignChamferSetSpec,
     inputs: &ProjectInputs<'_>,
-) -> Option<(ChamferSpec, Vec<LossNote>)> {
+) -> Option<Specification> {
     let mut losses = Vec::new();
     let distance = |record_index, slot, losses: &mut Vec<LossNote>| {
         let (value, kind) = source_scalar(scope, record_index, slot, inputs, losses)?;
@@ -401,10 +403,10 @@ pub(super) fn unresolved_selection(
     set: Option<&DesignChamferSet>,
     losses: &mut Vec<LossNote>,
 ) -> EdgeSelection {
-    let selection = set
-        .zip(native_stream(&scope.id))
-        .map(|(set, stream)| format!("{stream}:design-record-header#{}", set.byte_offset))
-        .unwrap_or_else(|| scope.id.clone());
+    let selection = match set.zip(native_stream(&scope.id)) {
+        Some((set, stream)) => format!("{stream}:design-record-header#{}", set.byte_offset),
+        None => scope.id.clone(),
+    };
     losses.push(F3dLossCode::ChamferSelectionUnresolved.note(format!(
         "Chamfer {} retains native selection {} because its construction group is missing or ambiguous.",
         scope.id, selection
@@ -436,7 +438,7 @@ pub(super) fn retained_parameters<'a>(
         .filter(|owner| {
             native_stream(owner.id()) == stream && owner.scope_record_index() == scope.record_index
         })
-        .map(|owner| owner.parameter_record_index())
+        .map(DesignParameterOwner::parameter_record_index)
         .collect::<std::collections::HashSet<_>>();
     inputs
         .native

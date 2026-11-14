@@ -6546,7 +6546,6 @@ fn project_fixed_chamfer(
 /// Whether a scope of this family with null current and preceding
 /// history-state identities is suppressed. An active scope of these families
 /// changes ASM topology and carries both identities.
-
 fn stateless_scope_is_suppressed(family: DesignFeatureFamily) -> bool {
     matches!(
         family,
