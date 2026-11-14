@@ -28,6 +28,10 @@ pub(crate) enum BodyOwnershipReferences {
         body: NativeBytes<[u8; LOCAL_REFERENCE_BYTES]>,
         owner: NativeBytes<[u8; LOCAL_REFERENCE_BYTES]>,
     },
+    LocalSingleZero {
+        body: NativeBytes<[u8; LOCAL_REFERENCE_BYTES]>,
+        owner: NativeBytes<[u8; LOCAL_REFERENCE_BYTES]>,
+    },
     Local {
         body: NativeBytes<[u8; LOCAL_REFERENCE_BYTES]>,
         repeated_count: u32,
@@ -51,6 +55,7 @@ pub(crate) struct BodyOwnership {
 enum Form {
     InlineTyped,
     LocalSingle,
+    LocalSingleZero,
     Local,
 }
 
@@ -58,13 +63,13 @@ impl Form {
     fn reference_bytes(self) -> usize {
         match self {
             Self::InlineTyped => TYPED_REFERENCE_BYTES,
-            Self::LocalSingle | Self::Local => LOCAL_REFERENCE_BYTES,
+            Self::LocalSingle | Self::LocalSingleZero | Self::Local => LOCAL_REFERENCE_BYTES,
         }
     }
     fn entry_stride(self) -> usize {
         self.reference_bytes()
             + match self {
-                Self::InlineTyped | Self::LocalSingle => 0,
+                Self::InlineTyped | Self::LocalSingle | Self::LocalSingleZero => 0,
                 Self::Local => COUNT_BYTES,
             }
     }
@@ -73,12 +78,12 @@ impl Form {
             + COUNT_BYTES
                 * match self {
                     Self::InlineTyped | Self::LocalSingle => 1,
-                    Self::Local => 2,
+                    Self::Local | Self::LocalSingleZero => 2,
                 }
     }
     fn body_stride(self) -> usize {
         match self {
-            Self::InlineTyped | Self::LocalSingle => self.reference_bytes(),
+            Self::InlineTyped | Self::LocalSingle | Self::LocalSingleZero => self.reference_bytes(),
             Self::Local => LOCAL_REFERENCE_BYTES + self.entry_stride(),
         }
     }
@@ -95,6 +100,9 @@ impl BodyOwnership {
             }
             BodyOwnershipReferences::LocalSingle { body, owner } => {
                 (Form::LocalSingle, &body[..], &owner[..])
+            }
+            BodyOwnershipReferences::LocalSingleZero { body, owner } => {
+                (Form::LocalSingleZero, &body[..], &owner[..])
             }
             BodyOwnershipReferences::Local {
                 body,
@@ -132,7 +140,7 @@ fn local_reference(bytes: &[u8], at: &mut usize, guid: &str, form: Form) -> Opti
     let (target, actual) = reference.local()?;
     let correct_type = match (form, actual) {
         (Form::InlineTyped, Some(actual)) => actual.eq_ignore_ascii_case(guid),
-        (Form::Local | Form::LocalSingle, None) => true,
+        (Form::Local | Form::LocalSingle | Form::LocalSingleZero, None) => true,
         _ => false,
     };
     (target != 0 && correct_type && *at - before == form.reference_bytes()).then_some(target)
@@ -184,6 +192,23 @@ impl Membership<'_> {
                 owner: NativeBytes::new(
                     self.bytes
                         .get(first_end..first_end + LOCAL_REFERENCE_BYTES)?
+                        .try_into()
+                        .ok()?,
+                ),
+            },
+            Form::LocalSingleZero => BodyOwnershipReferences::LocalSingleZero {
+                body: NativeBytes::new(
+                    self.bytes
+                        .get(start..start + LOCAL_REFERENCE_BYTES)?
+                        .try_into()
+                        .ok()?,
+                ),
+                owner: NativeBytes::new(
+                    self.bytes
+                        .get(
+                            first_end + COUNT_BYTES
+                                ..first_end + COUNT_BYTES + LOCAL_REFERENCE_BYTES,
+                        )?
                         .try_into()
                         .ok()?,
                 ),
@@ -281,6 +306,12 @@ fn membership_form(bytes: &[u8], form: Form) -> Option<Membership<'_>> {
             at += COUNT_BYTES;
         }
     }
+    if matches!(form, Form::LocalSingleZero) {
+        if View::u32_le_at(bytes, at)? != 0 {
+            return None;
+        }
+        at += COUNT_BYTES;
+    }
     let component = local_reference(bytes, &mut at, COMPONENT_GUID, form)?;
     (at == bytes.len()).then_some(Membership {
         bytes,
@@ -295,6 +326,7 @@ pub(crate) fn membership(bytes: &[u8]) -> Option<Membership<'_>> {
     membership_form(bytes, Form::InlineTyped)
         .or_else(|| membership_form(bytes, Form::Local))
         .or_else(|| membership_form(bytes, Form::LocalSingle))
+        .or_else(|| membership_form(bytes, Form::LocalSingleZero))
 }
 
 fn terminal_inline_membership(bytes: &[u8]) -> Option<usize> {
@@ -363,11 +395,17 @@ fn terminal_local_membership(bytes: &[u8]) -> Option<usize> {
     found
 }
 
-fn terminal_single_membership(bytes: &[u8]) -> Option<usize> {
+fn terminal_single_membership(bytes: &[u8], form: Form) -> Option<usize> {
     let owner_at = bytes.len().checked_sub(LOCAL_REFERENCE_BYTES)?;
     let mut at = owner_at;
     local_reference(bytes, &mut at, COMPONENT_GUID, Form::LocalSingle)?;
     let mut first = owner_at;
+    if matches!(form, Form::LocalSingleZero) {
+        first = first.checked_sub(COUNT_BYTES)?;
+        if View::u32_le_at(bytes, first)? != 0 {
+            return None;
+        }
+    }
     while let Some(previous) = first.checked_sub(LOCAL_REFERENCE_BYTES) {
         let mut cursor = previous;
         if local_reference(
@@ -383,18 +421,43 @@ fn terminal_single_membership(bytes: &[u8]) -> Option<usize> {
         first = previous;
     }
     let start = first.checked_sub(COUNT_BYTES)?;
-    membership_form(bytes.get(start..)?, Form::LocalSingle).map(|_| start)
+    membership_form(bytes.get(start..)?, form).map(|_| start)
 }
 
 pub(crate) fn terminal_membership(bytes: &[u8]) -> Option<usize> {
     if let Some(start) = terminal_inline_membership(bytes) {
         return Some(start);
     }
-    let single = terminal_single_membership(bytes);
+    let zero = terminal_single_membership(bytes, Form::LocalSingleZero);
+    let single = zero
+        .filter(|start| View::u32_le_at(bytes, *start).is_some_and(|count| count != 0))
+        .or_else(|| terminal_single_membership(bytes, Form::LocalSingle))
+        .or(zero);
     if single.is_some_and(|start| View::u32_le_at(bytes, start).is_some_and(|count| count != 0)) {
         return single;
     }
     terminal_local_membership(bytes).or(single)
+}
+
+pub(crate) fn terminal_membership_for_bodies(
+    bytes: &[u8],
+    valid_body: impl Fn(u64) -> bool,
+) -> Option<usize> {
+    for start in [
+        terminal_inline_membership(bytes),
+        terminal_single_membership(bytes, Form::LocalSingleZero),
+        terminal_single_membership(bytes, Form::LocalSingle),
+        terminal_local_membership(bytes),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let join = membership(bytes.get(start..)?)?;
+        if join.count != 0 && join.bodies().all(&valid_body) {
+            return Some(start);
+        }
+    }
+    terminal_membership(bytes)
 }
 
 #[cfg(test)]

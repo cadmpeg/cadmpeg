@@ -134,3 +134,37 @@ fn a_local_component_path_carrier_supplies_a_local_occurrence_pose() {
     );
     assert!(twice[0].current_pose.is_none());
 }
+
+#[test]
+fn a_local_component_path_with_typed_references_is_reported_unadmitted() {
+    let magic = Some(crate::metastream::MODERN_SERIALIZER_MAGIC);
+    let identity = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let carrier = local_component_path_carrier(11, 159, 10, identity);
+    assert!(!crate::xref::local_component_path_unadmitted(
+        &carrier, magic
+    ));
+    // The 51-byte local reference stores u32 36 and the ASCII type GUID
+    // between the target and the two flag bytes.
+    let mut typed = vec![1];
+    typed.extend_from_slice(&159_u64.to_le_bytes());
+    typed.extend_from_slice(&36_u32.to_le_bytes());
+    typed.extend_from_slice(b"2ad641b3-9ea3-4e5f-a4da-926c3faeccae");
+    typed.extend_from_slice(&[0, 0]);
+    let untyped = local_reference(159);
+    let mut retyped = carrier.clone();
+    let at = retyped
+        .windows(untyped.len())
+        .position(|window| window == untyped.as_slice())
+        .unwrap();
+    retyped.splice(at..at + untyped.len(), typed);
+    assert!(crate::xref::local_component_path_pose(&retyped, magic).is_none());
+    assert!(crate::xref::component_path_carrier(&retyped, magic).is_none());
+    assert!(crate::xref::local_component_path_unadmitted(
+        &retyped, magic
+    ));
+}

@@ -62,6 +62,7 @@ Records `marked_reference_box_prefix`, `prefixed_marked_reference_box_prefix`, `
 | `component_body_membership_local_reference` | 11 | little | A present untyped same-segment reference with a nonzero u64 target and two zero bytes. |
 | `component_body_membership_local_entry` | 15 | little | An 11-byte untyped Body reference followed by u32 1 in the repeated body list. List order is independent; both lists contain the same unique body identities. |
 | `component_body_membership_single_overhead` | 15 | little | A u32 body count and an eleven-byte untyped owner reference enclose the single body list. |
+| `component_body_membership_single_zero_overhead` | 19 | little | A u32 body count, a zero u32 after the body list, and an eleven-byte untyped owner reference enclose the body list. |
 
 ## `named_parameter_scope_tail`
 
@@ -626,7 +627,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 27 B
 
-Offsets are relative to the primary indexed scope header. The marked prefix starts its wall slots at offset 26. The counted prefix stores zero at offset 26 and starts its wall slots at offset 27.
+Offsets are relative to the primary indexed scope header. The marked prefix starts its wall slots at offset 26. The counted prefix stores its prefix byte at offset 26 and starts its wall slots at offset 27.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs`
@@ -1538,6 +1539,58 @@ Spec §3.1 · layout: byte offsets · size: 21 B
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes and a flag byte at offset 20 |
 | 20 | 1 | `flag` | `u8` | little | spec | a flag byte at offset 20 |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+
+## `mesh_convert_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 33 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/convert.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 25 | 4 | `control` | `u32` | little | spec | the u32 conversion control is at offset 25 |
+| 29 | 4 | `input_count` | `u32` | little | spec | the u32 input count is at offset 29 |
+
+Unstated regions:
+
+- `0..25` (25 B): Flagged mesh scope prefix.
+
+## `mesh_convert_input_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 33 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/convert.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | Its indexed header is followed by eleven zero bytes |
+| 22 | 11 | `group_reference` | `bytes[11]` | little | spec | a marked same-segment reference to a mesh operation group at offset 22 |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+
+## `mesh_convert_output_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 110 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/convert.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its indexed header is followed by ten zero bytes |
+| 21 | 4 | `guid_length` | `u32` | little | spec | The GUID has 36 code units · value `36` |
+| 25 | 72 | `guid_utf16` | `u16[36]` | little | derived | The indexed header, ten zeros and u32 count precede 36 UTF-16LE code units. |
+| 97 | 1 | `control` | `u8` | little | spec | The control byte is at offset 97 |
+| 98 | 1 | `presence` | `u8` | little | spec | byte `01` is at offset 98 · value `1` |
+| 99 | 11 | `body_reference` | `bytes[11]` | little | spec | the body reference starts at offset 99 |
 
 Unstated regions:
 
@@ -11148,6 +11201,49 @@ Parsed by:
 | 4 | 4 | `identity_length` | `u32` | little | spec | The Position suffix spans 83 bytes · value `36` |
 | 8 | 72 | `identity` | `bytes[72]` | little | spec | The Position suffix spans 83 bytes |
 | 80 | 3 | `zero_tail` | `bytes[3]` | little | spec | The Position suffix spans 83 bytes · value `[0, 0, 0]` |
+
+## `local_component_occurrence_attributed_short_ordinal`
+
+Spec §3.1 · layout: byte offsets · size: 5 B
+
+Offsets are relative to the ordinal prefix after the attribute run or object prelude. The carrier GUID follows this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `ordinal_prefix` | `u8` | little | spec | A version-two attributed local occurrence also permits a one-byte zero ordinal prefix · value `0` |
+| 1 | 4 | `occurrence_ordinal` | `u32` | little | spec | A version-two attributed local occurrence also permits a one-byte zero ordinal prefix |
+
+## `local_component_occurrence_attributed_ordinal`
+
+Spec §3.1 · layout: byte offsets · size: 6 B
+
+Offsets are relative to the ordinal prefix after the attribute run.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `ordinal_prefix` | `u16` | little | spec | Two prefix bytes, the u32 one-based occurrence ordinal |
+| 2 | 4 | `occurrence_ordinal` | `u32` | little | spec | Two prefix bytes, the u32 one-based occurrence ordinal |
+
+## `local_component_occurrence_attributed_marked_ordinal`
+
+Spec §3.1 · layout: byte offsets · size: 7 B
+
+Offsets are relative to the ordinal prefix after the attribute run. The carrier GUID follows this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `ordinal_prefix` | `u16` | little | spec | Two prefix bytes, the u32 one-based occurrence ordinal |
+| 2 | 4 | `occurrence_ordinal` | `u32` | little | spec | Two prefix bytes, the u32 one-based occurrence ordinal |
+| 6 | 1 | `guid_marker` | `u8` | little | spec | The two-byte prefix form permits marker `u8 1` after the ordinal · value `1` |
 
 ## Not tabulated
 
