@@ -1674,18 +1674,6 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** Scopes with decoded connector frames project a neutral relation that preserves their facing, angle, and offsets. Adjacent decoded motion supplies the motion when available; the relation is otherwise fixed. `assembly.motion-binding-assumed` records this binding assumption.
 
-### DR-246. Additional version-five Assemble owners and extended spans
-
-**Question.** Which version-five fields encode additional parameter owners and the form with 22 extra bytes?
-
-**Known.** The four-owner version-five grammar has explicit angle, Z, X, and Y references, two zero bytes after the angle reference, and six zero bytes after the owner run. Version-four scopes store connector frames consecutively, then the alignment references and a counted limit-owner run. Their four-owner form follows the version-four grammar in §3.1 of `f3d.md`.
-
-**Need.** Public version-five controlled files with five and six owners, and a controlled pair whose scopes differ by 22 bytes. Vary one joint limit or owner-producing setting at a time. Identify each added reference target, its scalar lane, the run count, and complete paired-header closure.
-
-**Conflict.** None.
-
-**Note.** Extended version-five scopes retain the opaque scope envelope and its uninterpreted-payload loss.
-
 ### DR-248. Closing reference and owner of unadmitted legacy placements
 
 **Question.** How does the closing reference of a legacy placement carrier identify its owner, including a 531-byte carrier whose closing target differs from `4`? Which saved state supplies the owner frame, and how do the instance key and metadata UUIDs bind its six-name envelope?
@@ -2495,3 +2483,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Controlled public assemblies with independently varied source occurrences, containing components, and placement matrices, including a retained relation with an unresolved source document.
 
 **Note.** Each authored insertion scope with a decoded placement can produce one unresolved-prototype occurrence at the document root. The per-scope membership reading is assumed. `assembly.component-insert-container-assumed` records that container-frame reading. A feature with unresolved source membership uses its native selection in a neutral component insertion and reports `feature.component-insert-membership-assumed`. The native scope retains the relation reference, occurrence identity, and decoded placement.
+
+### DR-488. Motion roles of additional Assemble owners
+
+**Question.** How do additional rotation, translation, yaw, and roll owners select enabled motion axes, limits, and rest positions when the joint motion is unresolved or has multiple freedom lanes?
+
+**Known.** The counted owner run in §3.1 of `f3d.md` names additional owners in local order. Parameter source kinds identify rotation and translation minimum, maximum, and rest values, and yaw and roll values. A two-reference run can contain a minimum and a rest value. Angular evaluated values use radians and linear evaluated values use centimetres. A scope can retain these owners when its joint motion remains unresolved.
+
+**Need.** Controlled public saves that vary one enabled axis, one limit, or one rest position at a time and retain all joint and motion lanes. Distinguish the authored owner values from enabled solver limits for combined freedoms.
+
+**Note.** The neutral relation uses the decoded adjacent joint motion with a fixed relation fallback. `assembly.additional-owner-motion-assumed` names the assumption that the added owner-to-motion interpretation remains native. The feature retains each source parameter expression under `parameter:NAME` in its source properties. The native scope retains the counted references, owners, and evaluated values.
