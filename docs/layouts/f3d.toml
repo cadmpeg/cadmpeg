@@ -19,6 +19,7 @@ and selector prefixes, the non-axial assembly-operation operand-path locator run
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
 (§3.1), plus the `Canvas` geometry and scope records, the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix, and the local component-occurrence frames and root-instance prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
 The top-level manifest lineage suffix is tabulated in §1.3.
+Primary indexed-header prefixes use header-relative offsets.
 """
 
 # --- §3.1 Design-segment fixed headers -------------------------------------
@@ -1542,7 +1543,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A `Draft` scope whose prologue names both angle lanes"
 size = 57
-note = "Offsets are relative to the primary indexed scope header."
 
 [[record.field]]
 name = "indexed_header"
@@ -8539,7 +8539,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The standard `Loft` scope has nine zero bytes"
 size = 34
-note = "Offsets are relative to the primary indexed header."
 
 [[record.gap]]
 offset = 0
@@ -8623,7 +8622,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The three-flag standard form stores three flag bytes"
 size = 33
-note = "Offsets are relative to the primary indexed header."
 
 [[record.gap]]
 offset = 0
@@ -8844,7 +8842,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The legacy body carrier with a three-byte flag block is 100 bytes"
 size = 100
-note = "Offsets are relative to the primary indexed header."
 
 [[record.field]]
 name = "common_prefix"
@@ -24654,7 +24651,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The ordinary two-member rigid-group"
 size = 257
-note = "Offsets are relative to the primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -24785,7 +24781,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The typed two-member rigid-group scope is 537 bytes."
 size = 537
-note = "Offsets are relative to the primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -24892,7 +24887,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "A version-3 compact rigid-group locator is 180 bytes with a matrix"
 size = 180
-note = "Offsets are relative to the primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -24973,7 +24967,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The identity form is 181 bytes"
 size = 181
-note = "Offsets are relative to the primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -25038,7 +25031,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The matrix form is 309 bytes"
 size = 309
-note = "Offsets are relative to the primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -28837,7 +28829,6 @@ section = "1.4"
 anchor = "An attributed legacy occurrence placement with a zero control word"
 size = 88
 parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
-note = "Offsets are relative to the primary indexed header."
 
 [[record.field]]
 name = "class_tag_length"
@@ -34141,7 +34132,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The compact spacing direction form is a 195-byte frame."
 size = 195
-note = "Offsets are relative to the primary indexed header."
 
 [[record.field]]
 name = "indexed_header"

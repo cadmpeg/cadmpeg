@@ -20,6 +20,7 @@ and selector prefixes, the non-axial assembly-operation operand-path locator run
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
 (§3.1), plus the `Canvas` geometry and scope records, the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix, and the local component-occurrence frames and root-instance prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
 The top-level manifest lineage suffix is tabulated in §1.3.
+Primary indexed-header prefixes use header-relative offsets.
 
 ## Composite types
 
@@ -526,8 +527,6 @@ Parsed by:
 ## `draft_operation_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 57 B
-
-Offsets are relative to the primary indexed scope header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -2774,8 +2773,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 34 B
 
-Offsets are relative to the primary indexed header.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
@@ -2804,8 +2801,6 @@ Offsets are relative to the first byte of the Loft scope body. A reference follo
 ## `three_flag_standard_loft_operation_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 33 B
-
-Offsets are relative to the primary indexed header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -2870,8 +2865,6 @@ Offsets are relative to the primary indexed header. The same-index paired header
 ## `legacy_loft_body_carrier_three_flag`
 
 Spec §3.1 · layout: byte offsets · size: 100 B
-
-Offsets are relative to the primary indexed header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -7644,8 +7637,6 @@ Unstated regions:
 
 Spec §Assembly operands · layout: byte offsets · size: 257 B
 
-Offsets are relative to the primary indexed header.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
 
@@ -7673,8 +7664,6 @@ Parsed by:
 
 Spec §Assembly operands · layout: byte offsets · size: 537 B
 
-Offsets are relative to the primary indexed header.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
 
@@ -7699,8 +7688,6 @@ Parsed by:
 
 Spec §Assembly operands · layout: byte offsets · size: 180 B
 
-Offsets are relative to the primary indexed header.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
 
@@ -7721,8 +7708,6 @@ Parsed by:
 
 Spec §Assembly operands · layout: byte offsets · size: 181 B
 
-Offsets are relative to the primary indexed header.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
 
@@ -7740,8 +7725,6 @@ Parsed by:
 ## `assembly_typed_rigid_group_matrix_locator`
 
 Spec §Assembly operands · layout: byte offsets · size: 309 B
-
-Offsets are relative to the primary indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
@@ -8817,8 +8800,6 @@ Parsed by:
 ## `legacy_attributed_external_placement_prefix`
 
 Spec §1.4 · layout: byte offsets · size: 88 B
-
-Offsets are relative to the primary indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/xref.rs`
@@ -10183,8 +10164,6 @@ Unstated regions:
 ## `rectangular_pattern_compact_spacing_direction_record`
 
 Spec §Assembly operands · layout: byte offsets · size: 195 B
-
-Offsets are relative to the primary indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`

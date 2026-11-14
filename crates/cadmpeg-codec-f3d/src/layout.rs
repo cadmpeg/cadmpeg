@@ -631,10 +631,6 @@ pub(crate) mod design_parameter_owner_legacy_88 {
 /// Byte offsets for the `draft_operation_prefix` record.
 ///
 /// Spec §3.1. Record length 57 B.
-///
-/// ```text
-/// Offsets are relative to the primary indexed scope header.
-/// ```
 pub(crate) mod draft_operation_prefix {
     /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
     pub(crate) const ZERO_RUN_10: usize = 11;
@@ -2578,10 +2574,6 @@ pub(crate) mod three_flag_compact_loft_operation_prefix {
 /// Byte offsets for the `standard_loft_operation_prefix` record.
 ///
 /// Spec §3.1. Record length 34 B.
-///
-/// ```text
-/// Offsets are relative to the primary indexed header.
-/// ```
 pub(crate) mod standard_loft_operation_prefix {
     /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
     pub(crate) const ZERO_RUN_9: usize = 11;
@@ -2612,10 +2604,6 @@ pub(crate) mod loft_scope_body_head {
 /// Byte offsets for the `three_flag_standard_loft_operation_prefix` record.
 ///
 /// Spec §3.1. Record length 33 B.
-///
-/// ```text
-/// Offsets are relative to the primary indexed header.
-/// ```
 pub(crate) mod three_flag_standard_loft_operation_prefix {
     /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
     pub(crate) const ZERO_RUN_9: usize = 11;
@@ -2706,10 +2694,6 @@ pub(crate) mod legacy_loft_body_carrier_owner_tail {
 /// Byte offsets for the `legacy_loft_body_carrier_three_flag` record.
 ///
 /// Spec §3.1. Record length 100 B.
-///
-/// ```text
-/// Offsets are relative to the primary indexed header.
-/// ```
 pub(crate) mod legacy_loft_body_carrier_three_flag {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 100;
@@ -7504,10 +7488,6 @@ pub(crate) mod assembly_wide_scope {
 /// Byte offsets for the `assembly_rigid_as_built_scope` record.
 ///
 /// Spec §Assembly operands. Record length 257 B.
-///
-/// ```text
-/// Offsets are relative to the primary indexed header.
-/// ```
 pub(crate) mod assembly_rigid_as_built_scope {
     /// Record length in bytes. Spec §Assembly operands.
     #[cfg(test)]
@@ -7551,10 +7531,6 @@ pub(crate) mod assembly_rigid_as_built_scope {
 /// Byte offsets for the `assembly_typed_rigid_group_scope` record.
 ///
 /// Spec §Assembly operands. Record length 537 B.
-///
-/// ```text
-/// Offsets are relative to the primary indexed header.
-/// ```
 pub(crate) mod assembly_typed_rigid_group_scope {
     /// Record length in bytes. Spec §Assembly operands.
     pub(crate) const LEN: usize = 537;
@@ -7573,10 +7549,6 @@ pub(crate) mod assembly_typed_rigid_group_scope {
 /// Byte offsets for the `assembly_compact_rigid_group_locator` record.
 ///
 /// Spec §Assembly operands. Record length 180 B.
-///
-/// ```text
-/// Offsets are relative to the primary indexed header.
-/// ```
 pub(crate) mod assembly_compact_rigid_group_locator {
     /// Record length in bytes. Spec §Assembly operands.
     pub(crate) const LEN: usize = 180;
@@ -7597,10 +7569,6 @@ pub(crate) mod assembly_compact_rigid_group_locator {
 /// Byte offsets for the `assembly_typed_rigid_group_identity_locator` record.
 ///
 /// Spec §Assembly operands. Record length 181 B.
-///
-/// ```text
-/// Offsets are relative to the primary indexed header.
-/// ```
 pub(crate) mod assembly_typed_rigid_group_identity_locator {
     /// Record length in bytes. Spec §Assembly operands.
     pub(crate) const LEN: usize = 181;
@@ -7621,10 +7589,6 @@ pub(crate) mod assembly_typed_rigid_group_identity_locator {
 /// Byte offsets for the `assembly_typed_rigid_group_matrix_locator` record.
 ///
 /// Spec §Assembly operands. Record length 309 B.
-///
-/// ```text
-/// Offsets are relative to the primary indexed header.
-/// ```
 pub(crate) mod assembly_typed_rigid_group_matrix_locator {
     /// Record length in bytes. Spec §Assembly operands.
     pub(crate) const LEN: usize = 309;
@@ -8583,10 +8547,6 @@ pub(crate) mod assembly_null_typed_rigid_group_identity_locator {
 /// Byte offsets for the `legacy_attributed_external_placement_prefix` record.
 ///
 /// Spec §1.4. Record length 88 B.
-///
-/// ```text
-/// Offsets are relative to the primary indexed header.
-/// ```
 pub(crate) mod legacy_attributed_external_placement_prefix {
     /// Record length in bytes. Spec §1.4.
     pub(crate) const LEN: usize = 88;
@@ -9928,10 +9888,6 @@ pub(crate) mod typed_fixed_extrude_scalar_frame {
 /// Byte offsets for the `rectangular_pattern_compact_spacing_direction_record` record.
 ///
 /// Spec §Assembly operands. Record length 195 B.
-///
-/// ```text
-/// Offsets are relative to the primary indexed header.
-/// ```
 pub(crate) mod rectangular_pattern_compact_spacing_direction_record {
     /// Record length in bytes. Spec §Assembly operands.
     pub(crate) const LEN: usize = 195;
