@@ -56,6 +56,7 @@ mod revolve_target;
 pub(crate) mod shell_fallback;
 mod surface_offset;
 mod surface_patch;
+mod surface_untrim;
 pub(crate) mod sweep_fallback;
 pub(crate) mod thicken;
 mod unstitch;
@@ -1495,6 +1496,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 parameters: BTreeMap::new(),
                             })
                         })
+                    } else if scope.kind()
+                        == crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim
+                    {
+                        surface_untrim::project_surface_untrim(
+                            scope,
+                            construction_groups,
+                            face_operands,
+                            body_recipe_operands,
+                            &mut projection_losses,
+                        )
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::UnStitch
                     {

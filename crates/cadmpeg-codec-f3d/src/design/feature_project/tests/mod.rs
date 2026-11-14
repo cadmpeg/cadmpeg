@@ -40,6 +40,7 @@ mod spatial_profiles;
 mod split;
 mod surface;
 mod surface_patch;
+mod surface_untrim;
 mod sweep;
 mod symmetric_extrude;
 mod thread_extent;

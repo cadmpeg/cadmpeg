@@ -572,6 +572,15 @@ pub(crate) enum F3dLossCode {
     FeatureFaceGroupsMethodUnmapped,
     FeatureFaceGroupsBoundaryDistanceAssumed,
     FeatureFaceGroupsSettingUnassigned,
+    SurfaceUntrimFrameAssumed,
+    SurfaceUntrimGroupSelectionAssumed,
+    SurfaceUntrimStoredLoopGroupsAssumed,
+    SurfaceUntrimLoopGroupsAggregatedAssumed,
+    SurfaceUntrimExtensionUnresolved,
+    SurfaceUntrimExtensionUnrepresentable,
+    SurfaceUntrimNegativeExtensionAssumed,
+    SurfaceUntrimPaddingAssumed,
+    SurfaceUntrimTrailingIdentityAssumed,
     UnstitchFrameAssumed,
     UnstitchGroupSelectionAssumed,
     UnstitchPrologueControlsAssumed,
@@ -1210,6 +1219,15 @@ impl F3dLossCode {
         Self::FeatureFaceGroupsMethodUnmapped,
         Self::FeatureFaceGroupsBoundaryDistanceAssumed,
         Self::FeatureFaceGroupsSettingUnassigned,
+        Self::SurfaceUntrimFrameAssumed,
+        Self::SurfaceUntrimGroupSelectionAssumed,
+        Self::SurfaceUntrimStoredLoopGroupsAssumed,
+        Self::SurfaceUntrimLoopGroupsAggregatedAssumed,
+        Self::SurfaceUntrimExtensionUnresolved,
+        Self::SurfaceUntrimExtensionUnrepresentable,
+        Self::SurfaceUntrimNegativeExtensionAssumed,
+        Self::SurfaceUntrimPaddingAssumed,
+        Self::SurfaceUntrimTrailingIdentityAssumed,
         Self::UnstitchFrameAssumed,
         Self::UnstitchGroupSelectionAssumed,
         Self::UnstitchPrologueControlsAssumed,
@@ -1843,6 +1861,27 @@ impl F3dLossCode {
             Self::FeatureFaceGroupsSettingUnassigned => {
                 "feature.mesh-face-groups-setting-unassigned"
             }
+            Self::SurfaceUntrimFrameAssumed => "feature.surface-untrim-frame-assumed",
+            Self::SurfaceUntrimGroupSelectionAssumed => {
+                "feature.surface-untrim-group-selection-assumed"
+            }
+            Self::SurfaceUntrimStoredLoopGroupsAssumed => {
+                "feature.surface-untrim-stored-loop-groups-assumed"
+            }
+            Self::SurfaceUntrimLoopGroupsAggregatedAssumed => {
+                "feature.surface-untrim-loop-groups-aggregated-assumed"
+            }
+            Self::SurfaceUntrimExtensionUnresolved => "feature.surface-untrim-extension-unresolved",
+            Self::SurfaceUntrimExtensionUnrepresentable => {
+                "feature.surface-untrim-extension-unrepresentable"
+            }
+            Self::SurfaceUntrimNegativeExtensionAssumed => {
+                "feature.surface-untrim-negative-extension-assumed"
+            }
+            Self::SurfaceUntrimPaddingAssumed => "feature.surface-untrim-padding-assumed",
+            Self::SurfaceUntrimTrailingIdentityAssumed => {
+                "feature.surface-untrim-trailing-identity-assumed"
+            }
             Self::UnstitchFrameAssumed => "feature.unstitch-frame-assumed",
             Self::UnstitchGroupSelectionAssumed => "feature.unstitch-group-selection-assumed",
             Self::UnstitchPrologueControlsAssumed => "feature.unstitch-prologue-controls-assumed",
@@ -2427,6 +2466,15 @@ impl F3dLossCode {
             | Self::FeatureFaceGroupsMethodUnmapped
             | Self::FeatureFaceGroupsBoundaryDistanceAssumed
             | Self::FeatureFaceGroupsSettingUnassigned
+            | Self::SurfaceUntrimFrameAssumed
+            | Self::SurfaceUntrimGroupSelectionAssumed
+            | Self::SurfaceUntrimStoredLoopGroupsAssumed
+            | Self::SurfaceUntrimLoopGroupsAggregatedAssumed
+            | Self::SurfaceUntrimExtensionUnresolved
+            | Self::SurfaceUntrimExtensionUnrepresentable
+            | Self::SurfaceUntrimNegativeExtensionAssumed
+            | Self::SurfaceUntrimPaddingAssumed
+            | Self::SurfaceUntrimTrailingIdentityAssumed
             | Self::UnstitchFrameAssumed
             | Self::UnstitchGroupSelectionAssumed
             | Self::UnstitchPrologueControlsAssumed
@@ -2890,6 +2938,15 @@ impl F3dLossCode {
             | Self::FeatureFaceGroupsMethodUnmapped
             | Self::FeatureFaceGroupsBoundaryDistanceAssumed
             | Self::FeatureFaceGroupsSettingUnassigned
+            | Self::SurfaceUntrimFrameAssumed
+            | Self::SurfaceUntrimGroupSelectionAssumed
+            | Self::SurfaceUntrimStoredLoopGroupsAssumed
+            | Self::SurfaceUntrimLoopGroupsAggregatedAssumed
+            | Self::SurfaceUntrimExtensionUnresolved
+            | Self::SurfaceUntrimExtensionUnrepresentable
+            | Self::SurfaceUntrimNegativeExtensionAssumed
+            | Self::SurfaceUntrimPaddingAssumed
+            | Self::SurfaceUntrimTrailingIdentityAssumed
             | Self::UnstitchFrameAssumed
             | Self::UnstitchGroupSelectionAssumed
             | Self::UnstitchPrologueControlsAssumed
@@ -3459,6 +3516,15 @@ mod tests {
                 "feature.mesh-face-groups-method-unmapped",
                 "feature.mesh-face-groups-boundary-distance-assumed",
                 "feature.mesh-face-groups-setting-unassigned",
+                "feature.surface-untrim-frame-assumed",
+                "feature.surface-untrim-group-selection-assumed",
+                "feature.surface-untrim-stored-loop-groups-assumed",
+                "feature.surface-untrim-loop-groups-aggregated-assumed",
+                "feature.surface-untrim-extension-unresolved",
+                "feature.surface-untrim-extension-unrepresentable",
+                "feature.surface-untrim-negative-extension-assumed",
+                "feature.surface-untrim-padding-assumed",
+                "feature.surface-untrim-trailing-identity-assumed",
                 "feature.unstitch-frame-assumed",
                 "feature.unstitch-group-selection-assumed",
                 "feature.unstitch-prologue-controls-assumed",
