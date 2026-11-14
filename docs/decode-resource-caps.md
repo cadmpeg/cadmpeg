@@ -440,9 +440,9 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/brep/index.rs`                                | `MAX_BLEND_NESTING`                       | `3`                                                     | 4    | Blends a rolling-ball support may nest within. A deeper support leaves the blend without a cache. |
 | `cadmpeg-codec-sldprt` | `src/history/extrude_direction.rs` | `MAX_WITNESS_WORK` | `2_000_000` | 4 | Cap, mesh and profile-sample tests of the implicit extrusion travel witness. Past it the remaining features get no witness and keep their decoded direction. |
 | `cadmpeg-codec-catia`    | `src/families/standard/topology.rs`                | `MAX_DUPLICATE_FACE_OPERATIONS`           | `65_536`                                                | 4    | Branch operations of the duplicate-face edge search; its depth stops at the budget's recursion guard. Exhaustion also exhausts the enclosing topology `WorkBudget`, so the decode reports the topology search failure. |
-| `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_SAMPLE_PAIRS` | `32` | 2 | Paired samples stored in a typed scalar map. A larger array leaves the record untyped. |
-| `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_B_SAMPLE_PAIRS` | `12` | 1 | The one-byte B-family payload length permits at most twelve source and target pairs after the fixed fields. |
 | `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_A_PAYLOAD_BYTES` | `1024` | 2 | Bytes admitted for an A-family scalar map. A larger payload leaves the record untyped. |
+| `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_B_SAMPLE_PAIRS` | `12` | 1 | The one-byte B-family payload length permits at most twelve source and target pairs after the fixed fields. |
+| `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_SAMPLE_PAIRS` | `32` | 2 | Paired samples stored in a typed scalar map. A larger array leaves the record untyped. |
 | `cadmpeg-codec-catia` | `src/families/freeform/mod.rs` | `MAX_PATCH_RECORD_VISITS_PER_RECORD` | `64` | 4 | Rolling-ball search visits per input record. Excess candidates skip the search and charge a loss. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch.rs` | `MAX_FIT_CANDIDATES_FLOOR` | `512` | 4 | Floor for the owned face fit allowance, which also admits one candidate per eight input records, rounded up. Transfer retains the patches collected before the cap and reports the skipped candidates. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/sheet_group.rs` | `MAX_VERTEX_RETRIES` | `3` | 4 | Recovery passes for pending faces using shared vertex witnesses. Pending faces stay untransferred after the last pass. |
@@ -452,8 +452,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/edge_alignment.rs` | `MAX_ENDPOINT_SEED_GAP_MM` | `0.005` | N | Maximum endpoint distance in mm for a corroborated shared-trim alignment seed. The fitted curve and surface lifts meet the ordinary edge gap. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/transfer.rs` | `MAX_SHARED_EDGE_SEED_GAP_MM` | `0.005` | N | Maximum sampled boundary separation in mm for a retry using the admitted shared edge. Reprojection must meet the surface lift gap. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/transfer.rs` | `MAX_CORROBORATED_VERTEX_GAP_MM` | `0.005` | N | Maximum distance in mm for a vertex repair corroborated by an incident matching edge. Larger discrepancies retain the conflicting vertex. |
-| `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/surface_fit.rs` | `MAX_SPANS` | `48` | 4 | Knot spans per axis of a fitted tensor surface. A larger grid rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/surface_fit.rs` | `MAX_REFINEMENTS` | `9` | 4 | Refinements of a tensor surface grid after the initial fit. A remaining residual rejects the fit. |
+| `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/surface_fit.rs` | `MAX_SPANS` | `48` | 4 | Knot spans per axis of a fitted tensor surface. A larger grid rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/trimmed_face.rs` | `MAX_ALTERNATE_LINES` | `4` | 4 | Ambiguous line stations admitted to the alternate boundary search. Excess skips the search. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/trimmed_face.rs` | `MAX_ROLLING_BOUNDARY_EXCURSION` | `0.001` | N | Maximum normalized transverse excursion for a rolling-ball boundary retry. A larger excursion rejects the retry. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_CHART_ENDPOINT_SLACK` | `0.00001` | N | Absolute parameter slack for clamping a station to the chart boundary. |
@@ -463,6 +463,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_FIT_ERROR_MM` | `0.001` | N | Maximum sampled surface fit residual in mm. Excess rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_NATIVE_FIT_STATIONS` | `64` | 4 | Interior native stations used to fit one rolling-ball patch axis. Excess rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_PCURVE_CANDIDATES` | `256` | 4 | Pcurve candidates admitted to the rolling-ball boundary search. Excess rejects the search. |
+| `cadmpeg-codec-catia` | `src/pmi/geometric_tolerance.rs` | `MAX_INLINE_VALUES` | `79` | 4 | Inline PMI schema/value arrays sized for one geometric tolerance's field roster. An over-cap field count or group in the tolerance's field body, or an over-cap `TolBloc` declaration, withholds the tolerance with `attributes.pmi-tolerance-untransferred`. An over-cap `TolWiDRF` declaration withholds the secondary value with `attributes.pmi-secondary-tolerance-untransferred`. An over-cap field body or declaration in the reference frame or a datum withholds the datum system: the tolerance and its secondary value transfer with `attributes.pmi-datum-system-unresolved`. |
 | `cadmpeg-codec-catia`    | `src/families/zero_entity/topology_transfer.rs`             | `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS`     | `1_000_000`                                             | 4    | Floor of the local comparison budget for source-bound zero-entity vertex contributors. Exhaustion skips topology and reports `topology.zero-entity-candidates-bounded`. |
 | `cadmpeg-codec-catia`    | `src/families/zero_entity/topology_transfer.rs`             | `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS_PER_SUPPORT` | `256`                                                   | 4    | Operations allowed per support occurrence above the `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS` floor; same exhaustion and loss.                                                                                                                                                   |
 | `cadmpeg-codec-catia`    | `src/families/standard/decode.rs`                  | `MAX_BEZIER_SEARCH_NODES`                 | `1 << 16`                                               | 4    | Best-first subdivision nodes for one quintic span. A limit curve whose search reaches it binds no edge and reports `topology.standard-search-bounded`.                                                                                                                       |
@@ -551,16 +552,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 336.
+Production `MAX_*` constants: 337.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
 | 2    | Per-input bound            | 76    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 166   |
+| 4    | Local work cap             | 167   |
 | N    | Not a decode bound         | 52    |
-|      | Total                      | 336   |
+|      | Total                      | 337   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -570,7 +571,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 5,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 24,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 37,
-`cadmpeg-codec-catia` 78, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
+`cadmpeg-codec-catia` 79, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
 ## Routing

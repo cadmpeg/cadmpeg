@@ -834,6 +834,7 @@ fn decode_reconstructs_inline_poles_from_nonphysical_extent_order() {
 mod float_packed_fixtures;
 
 mod nist_ftc_07;
+mod planar_loop_gauge;
 
 mod selected_shell_plane;
 

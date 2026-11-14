@@ -21,6 +21,21 @@ fn nist_ftc_07_transfers_every_solid_face_carrier() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode FTC-07 CATPart");
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let validation = cadmpeg_ir::validate::validate_neutral_with_annotations(
+        decoded.ir(),
+        &decoded.source_fidelity().annotations,
+        decoded.report().losses.clone(),
+    )
+    .expect("validate FTC-07 exactness paths");
+    let invalid_annotation = validation
+        .findings
+        .iter()
+        .find(|finding| finding.check == cadmpeg_ir::report::check::Check::Annotations);
+    assert!(
+        invalid_annotation.is_none(),
+        "invalid exactness annotation: {invalid_annotation:?}",
+    );
     let model = &decoded.ir().model;
     assert_eq!(
         model
@@ -531,5 +546,235 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
             (actual - expected).abs() < 1.0e-5,
             "sheet area {actual} vs STEP {expected}"
         );
+    }
+}
+
+#[test]
+fn nist_ftc_07_plane_semicircle_follows_the_edge_interval() {
+    const TOLERANCE_MM: f64 = 2e-3;
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
+    let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode FTC-07 CATPart");
+    let model = &decoded.ir().model;
+    let edge = model
+        .edges
+        .iter()
+        .find(|e| e.id.as_str() == "catia:standard:edge#28")
+        .expect("edge");
+    let curve = model
+        .curves
+        .iter()
+        .find(|c| Some(&c.id) == edge.curve())
+        .expect("edge curve");
+    let surface = model
+        .surfaces
+        .iter()
+        .find(|s| s.id.as_str() == "catia:standard:surf#4")
+        .expect("plane");
+    let pcurve = model
+        .pcurves
+        .iter()
+        .find(|p| p.id.as_str() == "catia:standard:pcurve#4:0:0")
+        .expect("pcurve");
+    let [a, b] = edge.param_range().expect("edge interval").get();
+    let [u, v] = pcurve.parameter_range().expect("pcurve interval").get();
+    let admission = cadmpeg_ir::eval::admission::EvaluationAdmission::Standard;
+    let expected = cadmpeg_ir::eval::decode::curve_point(admission, &curve.geometry, a.midpoint(b))
+        .expect("edge midpoint")
+        .get();
+    let uv = cadmpeg_ir::eval::decode::pcurve_uv(admission, &pcurve.geometry, u.midpoint(v))
+        .expect("pcurve midpoint");
+    let actual = cadmpeg_ir::eval::decode::surface_point(admission, &surface.geometry, uv.u, uv.v)
+        .expect("surface midpoint")
+        .get();
+    assert!(actual.distance(expected) < TOLERANCE_MM);
+}
+
+#[test]
+fn nist_ftc_07_solid_measures_the_step_validation_properties() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::topology::BodyKind;
+    use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
+
+    const MM_PER_INCH: f64 = 25.4;
+    // AP242 geometric validation properties of the STEP twin, in inches.
+    const STEP_AREA_IN2: f64 = 606.626_874;
+    const STEP_VOLUME_IN3: f64 = 105.342_09;
+    const STEP_CENTROID_IN: [f64; 3] = [0.030_217_731_6, -2.541_586_150_6, 0.001_383_17];
+    const AREA_RELATIVE_TOLERANCE: f64 = 1e-6;
+    const VOLUME_RELATIVE_TOLERANCE: f64 = 1e-5;
+    const CENTROID_TOLERANCE_MM: f64 = 1e-3;
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
+    let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode FTC-07 CATPart");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).expect("measure context");
+    let report = Measurer::new(
+        MeasureInput {
+            ir: decoded.ir(),
+            fidelity: None,
+            geometry_transferred: decoded.report().geometry_transferred(),
+        },
+        MeasureOptions::default(),
+    )
+    .measure(&ctx, &Selection::default())
+    .expect("measure FTC-07");
+    let solids: Vec<_> = report
+        .bodies()
+        .iter()
+        .filter(|body| matches!(body.kind(), BodyKind::Solid))
+        .collect();
+    let [solid] = solids.as_slice() else {
+        panic!("one solid body");
+    };
+    assert!(solid.shells().iter().all(|shell| *shell.closed()));
+    let area = solid
+        .area()
+        .as_ref()
+        .and_then(cadmpeg_measure::value::Quantity::measured)
+        .expect("closed solid has a measured area")
+        .value()
+        .value
+        .get();
+    let volume = solid
+        .volume()
+        .as_ref()
+        .and_then(cadmpeg_measure::value::Quantity::measured)
+        .expect("closed solid has a measured volume")
+        .value()
+        .value
+        .get();
+    let centroid = solid
+        .centroid()
+        .as_ref()
+        .and_then(cadmpeg_measure::value::Quantity::measured)
+        .expect("closed solid has a measured centroid")
+        .value()
+        .value
+        .get();
+    let expected_area = STEP_AREA_IN2 * MM_PER_INCH * MM_PER_INCH;
+    let expected_volume = STEP_VOLUME_IN3 * MM_PER_INCH * MM_PER_INCH * MM_PER_INCH;
+    assert!(
+        (area - expected_area).abs() <= AREA_RELATIVE_TOLERANCE * expected_area,
+        "area {area} mm2 vs STEP {expected_area} mm2"
+    );
+    assert!(
+        (volume - expected_volume).abs() <= VOLUME_RELATIVE_TOLERANCE * expected_volume,
+        "volume {volume} mm3 vs STEP {expected_volume} mm3"
+    );
+    let expected_centroid = Point3::new(
+        STEP_CENTROID_IN[0] * MM_PER_INCH,
+        STEP_CENTROID_IN[1] * MM_PER_INCH,
+        STEP_CENTROID_IN[2] * MM_PER_INCH,
+    );
+    assert!(
+        centroid.distance(expected_centroid) <= CENTROID_TOLERANCE_MM,
+        "centroid {centroid:?} vs STEP {expected_centroid:?}"
+    );
+}
+
+#[test]
+fn nist_ftc_07_transfers_the_semantic_step_geometric_tolerances() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind as Kind, PmiDefinition};
+
+    const MM_PER_INCH: f64 = 25.4;
+    const MAGNITUDE_TOLERANCE_MM: f64 = 1e-9;
+    // STEP twin geometric tolerances (inch magnitudes, datum labels in
+    // precedence order). The general-note profile `.06 | A | B | C` of the
+    // whole part has no semantic CATIA tolerance record and is not listed.
+    const STEP: [(Kind, f64, &[&str]); 26] = [
+        (Kind::Flatness, 0.01, &[]),
+        (Kind::Parallelism, 0.03, &["A"]),
+        (Kind::Perpendicularity, 0.015, &["A"]),
+        (Kind::Position, 0.015, &["A"]),
+        (Kind::Position, 0.02, &["A", "B"]),
+        (Kind::Position, 0.02, &["E", "B", "C"]),
+        (Kind::Position, 0.023, &["A", "B", "C"]),
+        (Kind::Position, 0.023, &["D", "B", "C"]),
+        (Kind::Position, 0.04, &["A", "B", "C"]),
+        (Kind::Position, 0.04, &["A", "B", "C"]),
+        (Kind::Position, 0.045, &["A", "B", "C"]),
+        (Kind::Position, 0.045, &["A", "B", "C"]),
+        (Kind::Position, 0.05, &["A", "B", "C"]),
+        (Kind::Position, 0.06, &["A", "B", "C"]),
+        (Kind::Position, 0.06, &["E", "B", "C"]),
+        (Kind::SurfaceProfile, 0.005, &["A", "B", "C"]),
+        (Kind::SurfaceProfile, 0.006, &["A", "B", "C"]),
+        (Kind::SurfaceProfile, 0.01, &["A"]),
+        (Kind::SurfaceProfile, 0.015, &[]),
+        (Kind::SurfaceProfile, 0.015, &["A"]),
+        (Kind::SurfaceProfile, 0.015, &["A"]),
+        (Kind::SurfaceProfile, 0.03, &["A", "B", "C"]),
+        (Kind::SurfaceProfile, 0.04, &["A", "B", "C"]),
+        (Kind::SurfaceProfile, 0.06, &["A", "B", "C"]),
+        (Kind::SurfaceProfile, 0.07, &["A", "B", "C"]),
+        (Kind::SurfaceProfile, 0.07, &["A", "B", "C"]),
+    ];
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
+    let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode FTC-07 CATPart");
+    let pmi = &decoded.ir().model.pmi;
+    let labels = |system: &cadmpeg_ir::ids::PmiId| -> Vec<String> {
+        let annotation = pmi
+            .iter()
+            .find(|annotation| &annotation.id == system)
+            .expect("datum system");
+        let PmiDefinition::DatumSystem { references } = &annotation.definition else {
+            panic!("datum system definition");
+        };
+        let mut ordered: Vec<_> = references.as_slice().iter().collect();
+        ordered.sort_by_key(|reference| reference.precedence.get());
+        ordered
+            .into_iter()
+            .map(|reference| {
+                let datum = pmi
+                    .iter()
+                    .find(|annotation| annotation.id == reference.datum)
+                    .expect("datum");
+                let PmiDefinition::Datum { identification } = &datum.definition else {
+                    panic!("datum definition");
+                };
+                identification.as_str().to_owned()
+            })
+            .collect()
+    };
+    let mut decoded_tolerances = Vec::new();
+    for annotation in pmi {
+        if let PmiDefinition::GeometricTolerance {
+            tolerance,
+            magnitude,
+            datum_system,
+            ..
+        } = &annotation.definition
+        {
+            decoded_tolerances.push((
+                tolerance.clone(),
+                magnitude.get().value.get(),
+                datum_system.as_ref().map(&labels).unwrap_or_default(),
+            ));
+        }
+    }
+    assert_eq!(decoded_tolerances.len(), STEP.len());
+    for (kind, inches, datums) in STEP {
+        let position = decoded_tolerances
+            .iter()
+            .position(|(tolerance, value, labels)| {
+                *tolerance == kind
+                    && (value - inches * MM_PER_INCH).abs() < MAGNITUDE_TOLERANCE_MM
+                    && labels.iter().map(String::as_str).eq(datums.iter().copied())
+            })
+            .unwrap_or_else(|| panic!("no decoded {kind:?} {inches} in {datums:?}"));
+        decoded_tolerances.swap_remove(position);
     }
 }

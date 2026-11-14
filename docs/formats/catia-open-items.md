@@ -164,11 +164,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which native incidences assign annotation-set ownership, capture membership, active TPS-view state, and annotation geometry targets?
 
-**Known.** Cameras, TPS views, annotation sets, and captures have separate relations. An annotation set owns annotation, capture, and TPS-view collections. A capture owns a set reference and visually manages annotations and TPS views. Its current state governs future TPS membership; its active-view and viewpoint states govern display behavior. These states do not define a parametric model variant. Native `CATCameraFeat` catalogs and ordered camera programs retain camera data. View and capture field-class names can pair with tolerance, circle, and model-schema values; the class name alone does not identify an instance or membership relation. Range-only `DiameterThread` and `FeatureRSUR` dimensions are separate from the two-selector constraint-range production. Their retained values do not identify an annotation set, capture, view, or geometric target.
+**Known.** Cameras, TPS views, annotation sets, and captures have separate relations. An annotation set owns annotation, capture, and TPS-view collections. A capture owns a set reference and visually manages annotations and TPS views. Its current state governs future TPS membership; its active-view and viewpoint states govern display behavior. These states do not define a parametric model variant. Native `CATCameraFeat` catalogs and ordered camera programs retain camera data. View and capture field-class names can pair with tolerance, circle, and model-schema values; the class name alone does not identify an instance or membership relation. Range-only `DiameterThread` and `FeatureRSUR` dimensions are separate from the two-selector constraint-range production. Their retained values do not identify an annotation set, capture, view, or geometric target. `catia.md` §7.3.1 transfers the characteristic, magnitude, datum frame, and secondary activation of a tolerance record, and each `CATMmrTTRS` root as a source shape aspect. In FTC-07 the parallelism `0.762` record selects a chain that reaches `ShortBrpLocation` label `2(E,227)`. The surface-profile `0.762` record selects an aggregate with 32 members; one member reaches label `2(E,220)`, and recursive traversal reaches 33 locations. That record also has `Seg3TolNumValue` and `Seg3TolTabValue` fields with a stored `0.03` mm value and an activation role separate from the `TolWiDRF` declaration.
 
-**Need.** We must identify complete native set-owner, ordered collection, capture-membership, active-view, and geometry-target incidences. Validate each relation independently against producer collections and properties. A named camera, shared structural ancestry, numeric equality, or a display state cannot supply a missing relation. Document design configurations require their own model-variant production.
-
-**Conflict.** FTC-07 has two native scalar candidates with value `0.762`, the same decoded framing, and the same design-object owner. Its STEP twin assigns `0.762 mm` to a parallelism tolerance and to a surface-profile tolerance with different targets. Contextual entity references select the two scalars and distinct geometry-reference chains. The first chain reaches `ShortBrpLocation` label `2(E,227)`. The second selects an aggregate with 32 members; one member reaches label `2(E,220)`, and recursive traversal reaches 33 locations. The second record also selects a `0.127` scalar and fields named `Seg3TolNumValue` and `Seg3TolTabValue`. This supports a composite-profile candidate. The subtype, datum references, and topology targets remain unresolved.
+**Need.** We must identify complete native set-owner, ordered collection, capture-membership, active-view, and geometry-target incidences. Validate each relation independently against producer collections and properties. A named camera, shared structural ancestry, numeric equality, or a display state cannot supply a missing relation. Document design configurations require their own model-variant production. Each `CATMmrTTRS` root needs the face or edge relation that it selects, and the `Seg3` segment needs its tolerance role. A `TolWiDRF` key that zero or several distinct field members carry, or a key in a field with a member that fails to resolve, needs its owner relation: the secondary value transfers with `attributes.pmi-field-key-unresolved`, and the key stays native.
 
 ### DI-29. Sheet topology roots
 
@@ -189,6 +187,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** Resolve complete selector and value-program framing across definition, value, and suffix fields. Preserve each decoded scalar and its source owner when changing a lookup. Establish contextual entity-reference encoding independently of schema indexing.
 
 **Conflict.** The current lookup selects the catalog entry at the stored fixed-width ordinal. The one-based interpretation selects the preceding entry and gives scalar-compatible roles for these controls. A partial change also alters the number of selectors in a definition and changes downstream value-chain admission.
+
+### DI-31. Non-semantic feature control frame content
+
+**Question.** Which fields of a `CATTPSNonSemanticGDT` annotation and its drafting object graph give the tolerance characteristic, the magnitude with its unit, and the datum references?
+
+**Known.** In FTC-07 the general-note frame `profile .06 | A | B | C` has one `CATTPSNonSemanticGDT` entity and no `CATTPSToleranceWithDRF`, `CATTPSToleranceWithoutDRF`, or `TolBloc` production; the 20 typed tolerances and their 6 secondary values account for every other STEP tolerance. No source field stores the magnitude as binary64 `1.524` or `0.06`, or as binary32 `0.06`; the binary32 `1.524` occurrences lie outside every entity record. The drafting catalog stores the frame as consecutive entries `DftGDT`, `ToleranceType`, `BoxNumber`, `UpperText`, `StringList`, and four RTF cells whose text is `.06`, `A`, `B`, and `C`. No decoded field references the four cell entries. The `StringList` object record has an empty payload, and the records for entities 95–97 have no decoded head. The only unit text is the general note `UNITS: INCHES`.
+
+**Need.** A typed characteristic, a numeric magnitude with a typed unit, and an owner relation from the annotation to its cells transfer the frame as a semantic tolerance. Without them the frame stays native, and the part transfers 26 of the 27 STEP tolerances.
 
 ## 3. Standard nested `V5_CFV2`
 
@@ -298,7 +304,7 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Conflict.** A unique class-`19` record with tag 125 and a pcurve with `op1=125` occupy the same source extent, but their U intervals differ and the pcurve is not constant in V. Distinct tags 113 and 126 lift to the same five-site geometric locus through different cylinder charts. Same-source containment, numeric uniqueness, and geometric coincidence do not identify the owning factory or object.
 
-**Note.** In FTC-07, class-`5f` and class-`62` owner references bind two class-`20` jets to consecutive spherical edge uses. Each jet interval equals its class-`25` source interval. Scaling the jet coordinates by the sphere radius makes both lifts follow their edge curves. The class-`06` compressed station controls need an independent decoding. The solid area and volume remain unavailable because other face curves and orientation relations also fail measurement.
+**Note.** In FTC-07, class-`5f` and class-`62` owner references bind two class-`20` jets to consecutive spherical edge uses. Each jet interval equals its class-`25` source interval. The class-`06` compressed station controls need an independent decoding.
 
 ### SN-15. Additional standard-circle branch relations
 
@@ -379,6 +385,42 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 **Known.** The class-`62` complement relation determines the endpoint pairing in four isolated faces. The curved face has forward sense in CATIA STEP; two selector-`d8` planar faces have reversed sense. Both planar face boundaries and areas agree with native pcurve lifts independently of their sense. The last singleton class-`61` record before the boundary owner has occurrence bit one on the curved face and bit zero on both selector-`d8` planar faces; the independent tilted planar face has bit one.
 
 **Need.** Prove the last singleton class-`61` to selected-face identity beyond an isolated one-face source and establish its chart-parity rule for additional surface carriers. A third tilted planar face uses carrier and pcurve productions outside the currently decoded variants.
+
+### SN-41. Trimmed-face box extent
+
+**Question.** Which construction produces the stored trimmed-face AABB of a curved face, and what bounds its distance from the exact face extent?
+
+**Known.** `catia.md` §5.8 "The same arc test applies" selects an arc by the smaller excess over the face boxes when neither arc fits the `2e-3` mm allowance. Across 8,601 measured standard faces in 79 files, the box exceeds the exact face extent by at most binary32 rounding on all but 13 faces, and lies inside it on 1,854 faces by more than `2e-3` mm. The following readings are falsified:
+
+- The box is the exact trimmed extent: 1,273 of 4,027 cylinder faces fall short by more than `2e-3` mm.
+- The box covers only the boundary vertices: half-cylinder faces whose four vertices lie in one axial plane reach `11.1091` mm from that plane at radius `11.1125` mm.
+- The box is a control-net or conservative bound: it never exceeds the exact extent.
+- The shortfall is binary32 rounding: `3.4e-3` mm is several hundred ulps at the coordinate scale.
+- The shortfall follows a fixed angular step: in one part, radius `2.197` mm falls short by `7.3e-3` mm and radius `11.1125` mm by `3.4e-3` mm.
+- The shortfall is bounded by `0.01` mm: 41 files peak at `0.0034`–`0.0100` mm, but 13 files reach `0.020`–`0.26` mm.
+- The bound scales with part size: in the first group the peak stays at or below `0.0100` mm for part sizes from `4.8` to `780` mm.
+- The saving release selects the bound: files saved by the same release fall in both groups.
+
+The two groups match a tessellation chord tolerance that differs between files. The trim mesh stores handles without coordinates, so a mesh-vertex box has no direct check.
+
+**Need.** A stored or derived per-file tolerance replaces the excess-ratio rule with a containment test, and removes the loss that the ratio rule records.
+
+### SN-42. Boundary gauge without planar evidence
+
+**Question.** Which source relation fixes the absolute gauge of a boundary parity component that contains no evaluable plane-face boundary?
+
+**Known.** `catia.md` §5.4.2 "The face orientation fixes the absolute gauge" anchors a component from the boundaries of its plane faces. Across 79 files, 976 of 1,281 components take an anchor, none receives conflicting votes, and 479 reverse their solved gauge. The following readings are falsified:
+
+- One reversal for all boundaries of a face: incidence-cycle reconstruction starts each cycle at its lowest edge in stored direction, and tying the cycles of one face makes the parity system inconsistent.
+- The stored cycle direction is absolute: in FTC-07 it disagrees with the STEP loop direction on faces of every carrier kind.
+- The solved gauge of the first boundary is absolute: 479 of 976 anchored components reverse it.
+- Every unanchored component lacks a plane face: 39 of the 305 unanchored components contain one.
+- The vertex-polygon outer/inner classification anchors plane faces with unevaluable loops: it adds 2 of the 39.
+- A curved-face winding anchor reaches the remainder: 273 of the 305 contain no boundary whose every edge has a carrier and an interval.
+
+A component without an anchor keeps the gauge of the parity solve's first boundary.
+
+**Need.** Components bounded only by curved faces, or by plane faces with unresolved edge intervals, have no absolute loop direction; region and volume measurement on spheres and tori depend on it. Resolving their edge carriers and intervals is a precondition for any geometric anchor.
 
 ## 4. Object stream
 

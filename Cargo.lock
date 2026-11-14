@@ -248,6 +248,7 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-test-support",
  "memchr",
  "serde",

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Distinct circular arcs selected by source face bounds.
+//! Distinct circular and elliptic arcs selected by source face bounds.
 
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeLength};
 use cadmpeg_ir::units::UnitVector3;
 
-use super::bounded_circle_branch;
+use super::{bounded_circle_branch, bounded_ellipse_branch, BranchEvidence};
 use crate::families::standard::records::StandardFaceBounds;
 
 fn bounds(center: [f64; 3], half_extents: [f64; 3]) -> StandardFaceBounds {
@@ -85,4 +85,81 @@ fn large_source_coordinates_keep_sub_ulp_arc_choices_ambiguous() {
         ],
     )
     .is_none());
+}
+
+fn ellipse_geometry(axis: [f64; 3]) -> cadmpeg_ir::geometry::analytic::EllipseCurve {
+    cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(axis[0], axis[1], axis[2]),
+        Vector3::new(1.0, 0.0, 0.0),
+        2.0,
+        1.0,
+    )
+    .expect("ellipse")
+}
+
+#[test]
+fn source_box_selects_the_ellipse_half_and_its_direction() {
+    let endpoints = [Point3::new(2.0, 0.0, 0.0), Point3::new(-2.0, 0.0, 0.0)];
+    let upper_half = [Some(bounds([0.0, 0.5, 0.0], [2.0, 0.5, 0.1])), None];
+    let (reversed, range, evidence) =
+        bounded_ellipse_branch(&ellipse_geometry([0.0, 0.0, 1.0]), endpoints, &upper_half)
+            .expect("one bounded half");
+    assert!(!reversed);
+    assert_eq!(evidence, BranchEvidence::Contained);
+    assert!((range[1] - range[0] - std::f64::consts::PI).abs() < 1e-12);
+
+    let (reversed, _, _) =
+        bounded_ellipse_branch(&ellipse_geometry([0.0, 0.0, -1.0]), endpoints, &upper_half)
+            .expect("one bounded half");
+    assert!(reversed);
+}
+
+#[test]
+fn an_undershooting_box_selects_the_arc_with_the_smaller_excess() {
+    let endpoints = [Point3::new(2.0, 0.0, 0.0), Point3::new(-2.0, 0.0, 0.0)];
+    let geometry = ellipse_geometry([0.0, 0.0, 1.0]);
+    let short_of_the_apex = [Some(bounds([0.0, 0.497, 0.0], [2.0, 0.497, 0.1])), None];
+    let (reversed, _, evidence) = bounded_ellipse_branch(&geometry, endpoints, &short_of_the_apex)
+        .expect("least-excess half");
+    assert!(!reversed);
+    let BranchEvidence::LeastExcess(excess) = evidence else {
+        panic!("neither half is contained");
+    };
+    assert!(excess > 0.0 && excess < 0.006);
+
+    let straddling = [Some(bounds([0.0, 0.0, 0.0], [2.0, 0.9, 0.1])), None];
+    assert!(bounded_ellipse_branch(&geometry, endpoints, &straddling).is_none());
+}
+
+#[test]
+fn ellipse_endpoint_admission_uses_model_space_distance_at_every_scale() {
+    for scale in [1.0, 1000.0] {
+        let ellipse = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0 * scale,
+            scale,
+        )
+        .expect("ellipse");
+        let face_bounds = [
+            Some(bounds(
+                [0.0, 0.5 * scale, 0.0],
+                [2.0 * scale + 1.0, 0.5 * scale, 1.0],
+            )),
+            None,
+        ];
+        for (gap, accepted) in [(0.001, true), (0.1, false)] {
+            let endpoints = [
+                Point3::new(2.0 * scale + gap, 0.0, 0.0),
+                Point3::new(-2.0 * scale, 0.0, 0.0),
+            ];
+            assert_eq!(
+                bounded_ellipse_branch(&ellipse, endpoints, &face_bounds).is_some(),
+                accepted,
+                "scale {scale}, endpoint gap {gap} mm",
+            );
+        }
+    }
 }

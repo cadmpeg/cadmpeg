@@ -969,29 +969,39 @@ fn cached_standard_line_pair_preference_matches_the_geometry_rule() {
     );
 }
 
-#[test]
-fn standard_plane_normals_require_signed_face_frame_vectors() {
-    let plane = |target| {
-        StandardSurfaceRecord::Analytic(SurfacePrefix {
-            pos: 0,
+/// Plane records laid end to end, each with its face-sense byte, and their
+/// surface prefixes.
+fn plane_records(rows: &[(u32, bool)]) -> (Vec<u8>, Vec<StandardSurfaceRecord>) {
+    use crate::layout::analytic_surface_plane as layout;
+    let mut brep = vec![0; rows.len() * layout::LEN];
+    let mut records = Vec::new();
+    for (index, &(target, forward)) in rows.iter().enumerate() {
+        let start = index * layout::LEN;
+        brep[start + layout::SIGN] = if forward { 0x01 } else { 0xff };
+        records.push(StandardSurfaceRecord::Analytic(SurfacePrefix {
+            pos: start + layout::MARKER,
             target,
             kind: AnalyticSurfaceKind::Plane,
-        })
-    };
-    let records = vec![plane(10), plane(20), plane(30)];
+        }));
+    }
+    (brep, records)
+}
 
-    assert!(standard_plane_normals_from_face_frames(&records, &[None, None, None]).is_empty());
+#[test]
+fn standard_plane_normals_require_signed_face_frame_vectors() {
+    let up = || Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]));
+    let down = || {
+        Some(crate::test_support::test_b5::finite_vector([
+            0.0, 0.0, -1.0,
+        ]))
+    };
+    let (brep, records) = plane_records(&[(10, true), (20, true), (30, true)]);
+
+    assert!(
+        standard_plane_normals_from_face_frames(&brep, &records, &[None, None, None]).is_empty()
+    );
     assert_eq!(
-        standard_plane_normals_from_face_frames(
-            &records,
-            &[
-                Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])),
-                None,
-                Some(crate::test_support::test_b5::finite_vector([
-                    0.0, 0.0, -1.0
-                ]))
-            ]
-        ),
+        standard_plane_normals_from_face_frames(&brep, &records, &[up(), None, down()]),
         HashMap::from([
             (
                 10,
@@ -1004,17 +1014,38 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
         ]),
     );
 
-    let conflicting = vec![plane(10), plane(10)];
-    assert!(standard_plane_normals_from_face_frames(
-        &conflicting,
-        &[
-            Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])),
-            Some(crate::test_support::test_b5::finite_vector([
-                0.0, 0.0, -1.0,
-            ])),
-        ],
-    )
-    .is_empty());
+    let (brep, conflicting) = plane_records(&[(10, true), (10, true)]);
+    assert!(
+        standard_plane_normals_from_face_frames(&brep, &conflicting, &[up(), down()]).is_empty()
+    );
+}
+
+#[test]
+fn reversed_face_sense_turns_the_face_frame_into_the_opposite_carrier_normal() {
+    let up = || Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]));
+    let down = || {
+        Some(crate::test_support::test_b5::finite_vector([
+            0.0, 0.0, -1.0,
+        ]))
+    };
+    let (brep, records) = plane_records(&[(10, false)]);
+    assert_eq!(
+        standard_plane_normals_from_face_frames(&brep, &records, &[up()]),
+        HashMap::from([(
+            10,
+            crate::test_support::test_b5::finite_vector([0.0, 0.0, -1.0])
+        )]),
+    );
+
+    // Two faces on one plane carrier facing opposite ways share its normal.
+    let (brep, records) = plane_records(&[(10, true), (10, false)]);
+    assert_eq!(
+        standard_plane_normals_from_face_frames(&brep, &records, &[up(), down()]),
+        HashMap::from([(
+            10,
+            crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])
+        )]),
+    );
 }
 
 #[test]
@@ -1694,15 +1725,11 @@ fn evidence_store_outputs_one_unknown_surface_geometry() {
 
 #[test]
 fn plane_normal_comes_from_its_face_frame() {
-    let records = [StandardSurfaceRecord::Analytic(SurfacePrefix {
-        pos: 0,
-        target: 10,
-        kind: AnalyticSurfaceKind::Plane,
-    })];
+    let (brep, records) = plane_records(&[(10, true)]);
     let frames = [Some(crate::test_support::test_b5::finite_vector([
         0.0, 0.0, 1.0,
     ]))];
-    let normals = standard_plane_normals_from_face_frames(&records, &frames);
+    let normals = standard_plane_normals_from_face_frames(&brep, &records, &frames);
     assert_eq!(normals.len(), 1);
 }
 

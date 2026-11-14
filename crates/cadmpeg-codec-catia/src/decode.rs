@@ -282,6 +282,110 @@ fn finish_decode(
         &modeling_graph_scope,
         &transferred_constraint_range_records,
     )?;
+    let mut pmi_annotations =
+        cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut annotations));
+    let tolerance_transfer = pmi::geometric_tolerance::transfer(
+        ctx,
+        cadmpeg_core::decode::View::over_retained(&scan.data),
+        &mut ir,
+        &mut pmi_annotations,
+        &native,
+        &modeling_graph_scope,
+    )?;
+    annotations = pmi_annotations.build();
+    let transferred_pmi_annotations = transferred_pmi_dimension_count
+        .checked_add(tolerance_transfer.annotations)
+        .ok_or_else(|| CodecError::malformed("CATIA PMI annotation count overflow"))?;
+    if transferred_pmi_annotations != 0 {
+        report.coverage.record(
+            crate::coverage::TRANSFERRED_PMI_ANNOTATION_COUNT,
+            transferred_pmi_annotations,
+        );
+    }
+    if tolerance_transfer.main_tolerances != 0 {
+        report.coverage.record(
+            crate::coverage::TRANSFERRED_PMI_MAIN_TOLERANCE_COUNT,
+            tolerance_transfer.main_tolerances,
+        );
+    }
+    if tolerance_transfer.secondary_tolerances != 0 {
+        report.coverage.record(
+            crate::coverage::TRANSFERRED_PMI_SECONDARY_TOLERANCE_COUNT,
+            tolerance_transfer.secondary_tolerances,
+        );
+    }
+    if tolerance_transfer.unresolved_identity_collisions != 0 {
+        report
+            .losses
+            .push(CatiaLossCode::SourceAnnotationCollision.note(format!(
+                "Retained {} PMI candidates with conflicting neutral identities",
+                tolerance_transfer.unresolved_identity_collisions
+            )));
+    }
+    if tolerance_transfer.unresolved_candidates != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiToleranceUntransferred.note(format!(
+                "Retained {} untransferred source geometric tolerances",
+                tolerance_transfer.unresolved_candidates
+            )),
+        );
+    }
+    if tolerance_transfer.unresolved_secondaries != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiSecondaryToleranceUntransferred.note(format!(
+                "Retained {} untransferred secondary geometric tolerance values",
+                tolerance_transfer.unresolved_secondaries
+            )),
+        );
+    }
+    if tolerance_transfer.unresolved_target_bindings != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiTargetRosterUnresolved.note(format!(
+                "Retained {} unresolved PMI target-roster members in source records",
+                tolerance_transfer.unresolved_target_bindings
+            )),
+        );
+    }
+    if tolerance_transfer.unresolved_bindings != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiTopologyTargetUnresolved.note(format!(
+                "Retained {} source ShapeAspect identities without neutral face or edge bindings",
+                tolerance_transfer.unresolved_bindings
+            )),
+        );
+    }
+    if tolerance_transfer.unresolved_datum_systems != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiDatumSystemUnresolved.note(format!(
+                "Retained {} unresolved PMI datum systems in source records",
+                tolerance_transfer.unresolved_datum_systems
+            )),
+        );
+    }
+    if tolerance_transfer.unresolved_semantics != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiSemanticsUnresolved.note(format!(
+                "Retained unassigned fields for {} source geometric tolerances",
+                tolerance_transfer.unresolved_semantics
+            )),
+        );
+    }
+    if tolerance_transfer.unresolved_field_keys != 0 {
+        report
+            .losses
+            .push(CatiaLossCode::AttributesPmiFieldKeyUnresolved.note(format!(
+                "Retained unbound source field keys for {} geometric tolerances",
+                tolerance_transfer.unresolved_field_keys
+            )));
+    }
+    if tolerance_transfer.unresolved_composite_links != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiCompositeLinkUntransferred.note(format!(
+                "Retained {} composite tolerance relationships without neutral links",
+                tolerance_transfer.unresolved_composite_links
+            )),
+        );
+    }
     let formula_transfer = formula::transfer_parameters(
         ctx,
         &mut ir,

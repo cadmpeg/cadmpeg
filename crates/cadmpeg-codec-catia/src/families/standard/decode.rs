@@ -15,6 +15,7 @@ type NativeEndpointEvidenceOutput = Result<Option<Vec<Option<[usize; 2]>>>, &'st
 
 mod counted_owner;
 mod edge_geometry;
+mod loop_gauge;
 mod surface_membership;
 use edge_geometry::{
     attach_standard_circles, attach_standard_lines, build_standard_edge_curve,
@@ -429,7 +430,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(curve, Some(parameter_range))
             .map_err(cadmpeg_core::CodecError::malformed)?;
         annotations.derived(&ir.model.curves[curve_index].id, "geometry")?;
-        annotations.derived(&edge.id, "param_range")?;
+        annotations.derived(&edge.id, "carrier.param_range")?;
         seam_count += 1;
     }
     Ok((surface_bindings.len(), seam_count))
@@ -2108,7 +2109,7 @@ fn try_decode_standard_population(
         curved_surfaces.push(surface);
     }
     let refined_analytic_surfaces = refine_consolidated_analytic_surfaces(&scan.data, &consolidated_records, &mut curved_surfaces);
-    let plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
+    let plane_normals = standard_plane_normals_from_face_frames(brep, &records, &face_frame_vectors);
     let plane_rows = crate::families::standard::records::plane_params(brep, &records, &plane_normals);
     let mut planes = HashMap::new();
     for plane in plane_rows {
@@ -2729,6 +2730,19 @@ fn try_decode_standard_population(
     };
     consolidated_curve_bindings.standard_edges += weighted.edges;
     consolidated_curve_bindings.standard_face_pcurves += weighted.pcurves;
+    let source_jet_pcurves = match crate::families::freeform::owner_pcurves::attach(
+        &mut ir,
+        &mut annotations,
+        &scan.data,
+        &consolidated_records,
+        refusal,
+        &mut admission,
+    ) {
+        Ok(source_jet_pcurves) => source_jet_pcurves,
+        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+        Err(_) => return None,
+    };
+    consolidated_curve_bindings.standard_face_pcurves += source_jet_pcurves.pcurves;
     consolidated_curve_bindings.widened_vertices = weighted.widened_vertices;
     consolidated_curve_bindings.max_vertex_widening = weighted.max_vertex_widening;
     if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
@@ -2763,6 +2777,24 @@ topology_failure.map(StandardTopologyFailure::message));
         report.losses.push((CatiaLossCode::GeometryPcurveRechartNonFinite).note(format!(
             "{} pcurve rechart attempts produced non-finite coordinates; native records remain retained",
             consolidated_curve_bindings.rechart_numeric_failures,
+        )));
+    }
+    if source_jet_pcurves.unresolved_source_uses != 0 {
+        report.losses.push(CatiaLossCode::GeometryPcurveSourceUseUntransferred.note(format!(
+            "{} source-owned spherical pcurve use(s) lacked a complete A20/A25 boundary binding",
+            source_jet_pcurves.unresolved_source_uses,
+        )));
+    }
+    if source_jet_pcurves.unresolved_existing_uses != 0 {
+        report.losses.push(CatiaLossCode::GeometryPcurveSourceUseUntransferred.note(format!(
+            "{} source-owned spherical pcurve use(s) retained their existing coedge bindings",
+            source_jet_pcurves.unresolved_existing_uses,
+        )));
+    }
+    if source_jet_pcurves.unresolved_identity_collisions != 0 {
+        report.losses.push(CatiaLossCode::SourceAnnotationCollision.note(format!(
+            "{} source-owned spherical pcurve identity collision(s) were withheld",
+            source_jet_pcurves.unresolved_identity_collisions,
         )));
     }
     if consolidated_curve_bindings.widened_vertices != 0 {
@@ -3883,7 +3915,7 @@ fn attach_standard_faces(
         Exactness::Inferred,
     )?;
     annotations.derived(&shell_id, "region")?;
-    annotations.derived(&shell_id, "faces")?;
+    annotations.derived(&shell_id, "members")?;
     admission.charge()?;
     ir.model.shells.push(
         Shell::with_faces(shell_id, region_id, face_ids)
@@ -3985,7 +4017,7 @@ fn partition_standard_face_components(
             body: body_id.clone(),
             shells: region_shells,
         });
-        for field in ["region", "faces"] {
+        for field in ["region", "members"] {
             annotations.derived(&shell_id, field)?;
         }
         admission.charge()?;
@@ -6340,12 +6372,12 @@ fn emit_standard_topology(
             Exactness::ByteExact,
         )?;
         if curve.is_some() {
-            annotations.derived(&id, "curve")?;
+            annotations.derived(&id, "carrier.curve")?;
         }
         annotations.derived(&id, "start")?;
         annotations.derived(&id, "end")?;
         if param_range.is_some() {
-            annotations.derived(&id, "param_range")?;
+            annotations.derived(&id, "carrier.param_range")?;
         }
         admission.charge()?;
         ir.model.edges.push(Edge {
@@ -6385,7 +6417,7 @@ fn emit_standard_topology(
             Some(ordered_range([start, end])),
         )
         .map_err(CodecError::malformed)?;
-        annotations.derived(&edge.id, "param_range")?;
+        annotations.derived(&edge.id, "carrier.param_range")?;
         if start > end {
             std::mem::swap(&mut edge.start, &mut edge.end);
             edge_reversed[row] = true;
@@ -6395,6 +6427,14 @@ fn emit_standard_topology(
         ir.model.edges.len(),
         Vec::new(),
         "catia_standard_edge_coedge_rows",
+    )?;
+    let gauge = loop_gauge::planar_loop_gauge(
+        ctx,
+        ir,
+        topology,
+        &edge_reversed,
+        &curve_indices,
+        surface_indices,
     )?;
     for (face_index, face_topology) in topology.faces().iter().enumerate() {
         let face_loops = standard_face_loops(
@@ -6412,8 +6452,10 @@ fn emit_standard_topology(
                 format_args!("{face_index}:{loop_index}"),
                 LoopId::mint,
             )?;
+            let edge_uses =
+                loop_gauge::gauged_coedges(boundary.coedges(), gauge[face_index][loop_index]);
             let mut vertices = Vec::new();
-            for edge_use in boundary.coedges() {
+            for edge_use in &edge_uses {
                 let point = point_assignment[edge_use.end_vertex];
                 let vertex = standard_id("v", format_args!("{point}"), VertexId::mint)?;
                 vertices.push(vertex);
@@ -6439,7 +6481,7 @@ fn emit_standard_topology(
             let ring = cadmpeg_ir::topology::LoopRing::new(coedges, vertex_uses)
                 .map_err(CodecError::malformed)?;
             let coedge_ids = ring.coedges();
-            for (coedge_index, edge_use) in boundary.coedges().iter().enumerate() {
+            for (coedge_index, edge_use) in edge_uses.iter().enumerate() {
                 let support = &supports[edge_use.edge_row];
                 let logical_vertices = edge_vertices[edge_use.edge_row];
                 let start = ir.model.points[point_assignment[logical_vertices[0]]]
@@ -6462,7 +6504,10 @@ fn emit_standard_topology(
                         ) if matches!(
                             support.geometry,
                             crate::families::standard::records::StandardCurveGeometry::Circle { .. }
-                        ) && edge_geometry::arc_bounds::bounded_circle_branch(
+                        ) && (matches!(
+                            ir.model.surfaces[surface_indices[&bindings[face_index].0]].geometry,
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+                        ) || edge_geometry::arc_bounds::bounded_circle_branch(
                             circle.center().get(),
                             circle.radius().get(),
                             *circle.frame().axis(),
@@ -6471,7 +6516,7 @@ fn emit_standard_topology(
                         )
                         .is_some_and(|(axis, _, bounded_range)| {
                             axis == *circle.frame().axis() && bounded_range == range.get()
-                        }) =>
+                        })) =>
                         {
                             let [lower, upper] = range.get();
                             cadmpeg_ir::eval::finite_or_refusal(
@@ -6585,10 +6630,12 @@ refusal)?
                 Exactness::ByteExact,
             )?;
             annotations.derived(&loop_id, "face")?;
-            annotations.derived(&loop_id, "coedges")?;
-            annotations.derived(&loop_id, "vertex_uses")?;
+            annotations.derived(&loop_id, "boundary.coedges")?;
+            if !ring.vertex_uses().is_empty() {
+                annotations.derived(&loop_id, "boundary.vertex_uses")?;
+            }
             if face_loops.role(&loop_id) != LoopBoundaryRole::Unspecified {
-                annotations.derived(&loop_id, "boundary_role")?;
+                annotations.derived(&ir.model.faces[face_index].id, "loops")?;
             }
             admission.charge()?;
             ir.model.loops.push(Loop {
@@ -7447,10 +7494,11 @@ fn same_cone_generator_pair(
     line_distance.is_finite() && line_distance <= EPS_SAME_CONE_GENERATOR
 }
 
-/// Collect plane normals only from trim-packet frame vectors, which carry the
-/// stored normal's signed sense. A target with conflicting frame vectors stays
-/// unresolved.
+/// Collect plane normals from trim-packet frame vectors. A frame vector is the
+/// oriented face normal, so the carrier normal is that vector multiplied by the
+/// face-sense byte. A target with conflicting carrier normals stays unresolved.
 fn standard_plane_normals_from_face_frames(
+    brep: &[u8],
     records: &[StandardSurfaceRecord],
     face_frame_vectors: &[Option<FiniteVector<3>>],
 ) -> HashMap<u32, FiniteVector<3>> {
@@ -7462,8 +7510,19 @@ fn standard_plane_normals_from_face_frames(
         if prefix.kind != AnalyticSurfaceKind::Plane {
             continue;
         }
-        let Some(normal) = face_frame_vectors.get(face).copied().flatten() else {
+        let Some(face_normal) = face_frame_vectors.get(face).copied().flatten() else {
             continue;
+        };
+        let Some(forward) = crate::families::standard::records::face_sense(brep, prefix) else {
+            continue;
+        };
+        let normal = if forward {
+            face_normal
+        } else {
+            let Some(reversed) = FiniteVector::new(face_normal.get().map(|lane| -lane)) else {
+                continue;
+            };
+            reversed
         };
         if let Some(stored) = candidates.get_mut(&prefix.target) {
             if stored.is_some_and(|stored| stored != normal) {

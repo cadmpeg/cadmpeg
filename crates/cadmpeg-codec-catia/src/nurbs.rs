@@ -70,6 +70,22 @@ impl LaneRefusals {
         self.notes.len()
     }
 
+    pub(crate) fn push_pcurve_circle_plane_mismatch(&mut self, source_offset: usize) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryPcurveCirclePlaneMismatch.note(format!(
+                "Withheld a derived spherical pcurve at source offset {source_offset}: its midpoint leaves the edge circle plane"
+            )),
+        );
+    }
+
+    pub(crate) fn push_arc_branch_least_box_excess(&mut self, source_offset: usize, excess: f64) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryArcBranchLeastBoxExcess.note(format!(
+                "Selected the arc of the edge curve at source offset {source_offset} that exceeds its face boxes by {excess:e} mm beyond the coordinate allowance; the complementary arc exceeds them by more than a hundred times as much"
+            )),
+        );
+    }
+
     /// Retain the identity that prevented a carrier population from merging.
     pub(crate) fn push_annotation_collision(
         &mut self,
