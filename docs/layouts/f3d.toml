@@ -36955,6 +36955,153 @@ source = "spec"
 anchor = "Flag `1` stores source identity"
 
 [[record]]
+name = "sphere_compact_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The reference-placed `SpherePrimitive` forms store three prefix references"
+size = 63
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs"
+
+[[record.gap]]
+offset = 0
+size = 25
+note = "Indexed header and inherited prefix."
+
+[[record.field]]
+name = "operation"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "The compact prefix has operation offset 25"
+
+[[record.field]]
+name = "marker"
+offset = 29
+type = "u8"
+source = "spec"
+anchor = "marker offset 29"
+value = 1
+
+[[record.field]]
+name = "placement"
+offset = 30
+type = "bytes[11]"
+source = "spec"
+anchor = "references at offsets 30, 41, and 52"
+
+[[record.field]]
+name = "diameter_owner"
+offset = 41
+type = "bytes[11]"
+source = "spec"
+anchor = "references at offsets 30, 41, and 52"
+
+[[record.field]]
+name = "result"
+offset = 52
+type = "bytes[11]"
+source = "spec"
+anchor = "references at offsets 30, 41, and 52"
+
+[[record]]
+name = "sphere_shifted_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The reference-placed `SpherePrimitive` forms store three prefix references"
+size = 59
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs"
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "Indexed header and inherited prefix."
+
+[[record.field]]
+name = "operation"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "The shifted prefix has operation offset 21"
+
+[[record.field]]
+name = "marker"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "marker offset 25"
+value = 1
+
+[[record.field]]
+name = "placement"
+offset = 26
+type = "bytes[11]"
+source = "spec"
+anchor = "references at offsets 26, 37, and 48"
+
+[[record.field]]
+name = "diameter_owner"
+offset = 37
+type = "bytes[11]"
+source = "spec"
+anchor = "references at offsets 26, 37, and 48"
+
+[[record.field]]
+name = "result"
+offset = 48
+type = "bytes[11]"
+source = "spec"
+anchor = "references at offsets 26, 37, and 48"
+
+[[record]]
+name = "sphere_typed_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The reference-placed `SpherePrimitive` forms store three prefix references"
+size = 178
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs"
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "Indexed header and inherited prefix."
+
+[[record.field]]
+name = "operation"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The typed prefix has operation offset 20"
+
+[[record.field]]
+name = "marker"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "marker offset 24"
+value = 1
+
+[[record.field]]
+name = "placement"
+offset = 25
+type = "bytes[51]"
+source = "spec"
+anchor = "references at offsets 25, 76, and 127"
+
+[[record.field]]
+name = "diameter_owner"
+offset = 76
+type = "bytes[51]"
+source = "spec"
+anchor = "references at offsets 25, 76, and 127"
+
+[[record.field]]
+name = "result"
+offset = 127
+type = "bytes[51]"
+source = "spec"
+anchor = "references at offsets 25, 76, and 127"
+
+[[record]]
 name = "captured_position_prefix"
 note = "Offsets are relative to the scope primary indexed header."
 kind = "byte"

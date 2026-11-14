@@ -10971,6 +10971,63 @@ Parsed by:
 | 2 | 4 | `ordinal` | `u32` | little | spec | after the positive ordinal and before the two UUIDs |
 | 6 | 1 | `source_identity_flag` | `u8` | little | spec | Flag `1` stores source identity |
 
+## `sphere_compact_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 63 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 25 | 4 | `operation` | `u32` | little | spec | The compact prefix has operation offset 25 |
+| 29 | 1 | `marker` | `u8` | little | spec | marker offset 29 · value `1` |
+| 30 | 11 | `placement` | `bytes[11]` | little | spec | references at offsets 30, 41, and 52 |
+| 41 | 11 | `diameter_owner` | `bytes[11]` | little | spec | references at offsets 30, 41, and 52 |
+| 52 | 11 | `result` | `bytes[11]` | little | spec | references at offsets 30, 41, and 52 |
+
+Unstated regions:
+
+- `0..25` (25 B): Indexed header and inherited prefix.
+
+## `sphere_shifted_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 59 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 4 | `operation` | `u32` | little | spec | The shifted prefix has operation offset 21 |
+| 25 | 1 | `marker` | `u8` | little | spec | marker offset 25 · value `1` |
+| 26 | 11 | `placement` | `bytes[11]` | little | spec | references at offsets 26, 37, and 48 |
+| 37 | 11 | `diameter_owner` | `bytes[11]` | little | spec | references at offsets 26, 37, and 48 |
+| 48 | 11 | `result` | `bytes[11]` | little | spec | references at offsets 26, 37, and 48 |
+
+Unstated regions:
+
+- `0..21` (21 B): Indexed header and inherited prefix.
+
+## `sphere_typed_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 178 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `operation` | `u32` | little | spec | The typed prefix has operation offset 20 |
+| 24 | 1 | `marker` | `u8` | little | spec | marker offset 24 · value `1` |
+| 25 | 51 | `placement` | `bytes[51]` | little | spec | references at offsets 25, 76, and 127 |
+| 76 | 51 | `diameter_owner` | `bytes[51]` | little | spec | references at offsets 25, 76, and 127 |
+| 127 | 51 | `result` | `bytes[51]` | little | spec | references at offsets 25, 76, and 127 |
+
+Unstated regions:
+
+- `0..20` (20 B): Indexed header and inherited prefix.
+
 ## `captured_position_prefix`
 
 Spec §Captured component positions · layout: byte offsets · size: 33 B

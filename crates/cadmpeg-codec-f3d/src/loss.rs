@@ -55,6 +55,11 @@ pub(crate) enum F3dLossCode {
     WorkPlaneInferredAxisAssumed,
     /// A cylinder primitive has no unique checked solved placement.
     CylinderPlacementUnbound,
+    SpherePlacementFlagsAssumed,
+    SpherePlacementFrameAssumed,
+    SphereDiameterOwnerAssumed,
+    SphereDiameterSourceAssumed,
+
     /// A construction tracking path has no matching indexed type registration.
     ConstructionTrackingPathUntyped,
     ConstructionClosingFlagAssumed,
@@ -824,6 +829,10 @@ impl F3dLossCode {
         Self::WorkPlaneFrameUnbound,
         Self::WorkPlaneInferredAxisAssumed,
         Self::CylinderPlacementUnbound,
+        Self::SpherePlacementFlagsAssumed,
+        Self::SpherePlacementFrameAssumed,
+        Self::SphereDiameterOwnerAssumed,
+        Self::SphereDiameterSourceAssumed,
         Self::ConstructionTrackingPathUntyped,
         Self::ConstructionClosingFlagAssumed,
         Self::ChamferEdgeRoleAssumed,
@@ -1266,6 +1275,11 @@ impl F3dLossCode {
             Self::WorkPlaneFrameUnbound => "work-plane.frame-unbound",
             Self::WorkPlaneInferredAxisAssumed => "work-plane.inferred-axis-assumed",
             Self::CylinderPlacementUnbound => "feature.cylinder-placement-unbound",
+            Self::SpherePlacementFlagsAssumed => "feature.sphere-placement-flags-assumed",
+            Self::SpherePlacementFrameAssumed => "feature.sphere-placement-frame-assumed",
+            Self::SphereDiameterOwnerAssumed => "feature.sphere-diameter-owner-assumed",
+            Self::SphereDiameterSourceAssumed => "feature.sphere-diameter-source-assumed",
+
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConstructionClosingFlagAssumed => "feature.construction-closing-flag-assumed",
             Self::ChamferEdgeRoleAssumed => "feature.chamfer-edge-role-assumed",
@@ -1886,6 +1900,10 @@ impl F3dLossCode {
             | Self::WorkPlaneFrameUnbound
             | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
+            | Self::SpherePlacementFlagsAssumed
+            | Self::SpherePlacementFrameAssumed
+            | Self::SphereDiameterOwnerAssumed
+            | Self::SphereDiameterSourceAssumed
             | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
             | Self::ConstructionClosingFlagAssumed
@@ -2419,6 +2437,10 @@ impl F3dLossCode {
             | Self::WorkPlaneFrameUnbound
             | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
+            | Self::SpherePlacementFlagsAssumed
+            | Self::SpherePlacementFrameAssumed
+            | Self::SphereDiameterOwnerAssumed
+            | Self::SphereDiameterSourceAssumed
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
             | Self::HoleReferenceDimensionsNative
@@ -2779,6 +2801,10 @@ mod tests {
                 "work-plane.frame-unbound",
                 "work-plane.inferred-axis-assumed",
                 "feature.cylinder-placement-unbound",
+                "feature.sphere-placement-flags-assumed",
+                "feature.sphere-placement-frame-assumed",
+                "feature.sphere-diameter-owner-assumed",
+                "feature.sphere-diameter-source-assumed",
                 "feature.tracking-path-untyped",
                 "feature.construction-closing-flag-assumed",
                 "feature.chamfer-edge-role-assumed",
