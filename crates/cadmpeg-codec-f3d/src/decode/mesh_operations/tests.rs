@@ -505,18 +505,42 @@ fn section_scope_names_an_actual_sketch_feature_of_its_sketch_scope() {
         DesignFeatureKind::try_from("Sketch".to_owned()).unwrap(),
         5,
     );
-    for kind in [Some("Sketch"), Some("NativePlaceholder"), None] {
+    for kind in [
+        Some("Sketch"),
+        Some("SpatialSketch"),
+        Some("NativePlaceholder"),
+        None,
+    ] {
         let mut features = vec![feature(
             "synthetic:model:feature#section",
             "MeshSection",
             Some(scope_id.clone()),
         )];
         if let Some(kind) = kind {
-            features.push(feature(
+            let mut receiver = feature(
                 "synthetic:model:feature#sketch",
-                kind,
+                if kind == "SpatialSketch" {
+                    "Sketch"
+                } else {
+                    kind
+                },
                 Some(sketch_id.clone()),
-            ));
+            );
+            if kind == "SpatialSketch" {
+                receiver
+                    .evaluation
+                    .set_definition(FeatureDefinition::Operation(
+                        FeatureOperation::SpatialSketch {
+                            sketch: Some(
+                                cadmpeg_ir::sketches::SpatialSketchId::mint(
+                                    "synthetic:model:spatial-sketch#section",
+                                )
+                                .unwrap(),
+                            ),
+                        },
+                    ));
+            }
+            features.push(receiver);
         }
         let codes = bind(&fixture, &mut features, &[section.clone(), sketch.clone()]);
         let FeatureDefinition::Operation(FeatureOperation::MeshSection {
@@ -531,7 +555,8 @@ fn section_scope_names_an_actual_sketch_feature_of_its_sketch_scope() {
         assert!(plane.is_none());
         assert_eq!(
             bound.as_ref().map(FeatureId::as_str),
-            (kind == Some("Sketch")).then_some("synthetic:model:feature#sketch")
+            matches!(kind, Some("Sketch" | "SpatialSketch"))
+                .then_some("synthetic:model:feature#sketch")
         );
         assert_eq!(
             codes,

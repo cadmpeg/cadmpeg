@@ -372,7 +372,9 @@ fn section_binding(
             candidate.native_ref.as_deref() == Some(scope.id.as_str())
                 && matches!(
                     candidate.evaluation.definition(),
-                    FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+                    FeatureDefinition::Operation(
+                        FeatureOperation::Sketch { .. } | FeatureOperation::SpatialSketch { .. }
+                    )
                 )
         });
         candidates.next().filter(|_| candidates.next().is_none())
@@ -557,7 +559,7 @@ pub(super) fn bind_features(
                                     "Mesh section {source} names sketch feature {sketch}; its section curves remain in the native sketch records."
                                 ),
                                 None => format!(
-                                    "Mesh section {source} retains sketch scope record {sketch_scope} in its source properties; no feature projects that scope."
+                                    "Mesh section {source} retains sketch scope record {sketch_scope} in its source properties; no neutral sketch feature projects that scope."
                                 ),
                             }),
                         );
