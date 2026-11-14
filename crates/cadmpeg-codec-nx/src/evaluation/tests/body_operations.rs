@@ -729,11 +729,11 @@ fn complete_single_body_dress_up_families_preserve_identity() {
             faces: first.clone(),
             distance: Some(Length::new(0.1).unwrap()),
         }),
-        FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces: first.clone(),
-            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(0.3).unwrap()),
-            side: Some(ThickenSide::Forward),
-        }),
+        FeatureDefinition::Operation(FeatureOperation::thicken(
+            first.clone(),
+            Some(cadmpeg_ir::scalar::PositiveLength::new(0.3).unwrap()),
+            Some(ThickenSide::Forward),
+        )),
         FeatureDefinition::Operation(FeatureOperation::Draft {
             faces: first.clone(),
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {

@@ -15,6 +15,7 @@ mod emboss;
 mod extrude_operands;
 mod path_pattern;
 mod sheet_metal_settings;
+mod sketch_scope;
 mod xref;
 
 use xref::validate_xref_placement_sources;
@@ -2149,7 +2150,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let entities_by_suffix = &ctx.entities_by_suffix;
-    let placements_by_scope = &ctx.placements_by_scope;
     let mut scope_indices = HashSet::new();
     let mut stream_types_by_stream = std::collections::HashMap::new();
     for scope in &native.design_parameter_scopes {
@@ -3032,7 +3032,24 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
         };
         let component_insert_link = match scope.component_insert_construction() {
-            None => true,
+            None => scope.component_insert_placement().is_none_or(|placement| {
+                scope.reference_members().len() == 1
+                    && match (
+                        scope.canonical_name_frame_length(),
+                        placement.matrix.as_ref(),
+                    ) {
+                        (Some(272 | 276), None) => true,
+                        (Some(frame @ (400 | 404)), Some(matrix)) => scope
+                            .byte_offset()
+                            .checked_add(
+                            u64_from_index(
+                                crate::layout::component_insert_matrix_scope_400_prefix::TRANSFORM,
+                            ) + frame
+                                - 400,
+                        ) == Some(matrix.offset),
+                        _ => false,
+                    }
+            }),
             Some(construction) => {
                 let relation =
                     records_by_index.get(&(native_stream, construction.relation_record_index));
@@ -4398,8 +4415,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && joint_origin_link
             && work_point_link
             && work_plane_link
-            && (scope.sketch_entity().is_none()
-                || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
+            && sketch_scope::placement_link(ctx, scope)
             && unique_index;
         if !valid {
             push_constant_finding(
@@ -5299,9 +5315,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         DesignOperandRole::BODIES_B | DesignOperandRole::ROLE_0X43
                     ) && group.extrude_role().is_none()
                 }
-                Some(_) => false,
-                None if scope.kind()
-                    == crate::records::feature::scope::DesignFeatureKind::Emboss =>
+                Some(design::DesignFeatureFamily::Emboss) =>
                 {
                     scope.emboss_operand_construction().is_some_and(|construction| {
                         (group.record_index == construction.profile_group.value
@@ -5310,6 +5324,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 && group.role() == DesignOperandRole::ROLE_0X10)
                     }) && group.extrude_role().is_none()
                 }
+                Some(_) => false,
                 None if matches!(
                     scope.kind(),
                     crate::records::feature::scope::DesignFeatureKind::RemoveBody
@@ -7763,8 +7778,7 @@ fn validate_face_operands<'a>(
                                             && identity.class_tag == operand.class_tag
                                     })
                             }
-                            None if scope.kind()
-                                == crate::records::feature::scope::DesignFeatureKind::Emboss =>
+                            Some(design::DesignFeatureFamily::Emboss) =>
                             {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X10

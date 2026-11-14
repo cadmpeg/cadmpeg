@@ -68,7 +68,7 @@ pub(super) fn exact_combine_operation(
                 {
                     if scope.combine_named_tail().is_some() {
                         losses.push(F3dLossCode::FeatureCombineNamedTailPrologueAssumed.note(format!(
-                            "{}: its expanded named tail is read with the complete operand-list prologue despite the overlapping standard prefix (DR-473)",
+                            "{}: its expanded named tail is read with the complete operand-list prologue despite the overlapping standard prefix (DR-506)",
                             scope.id
                         )));
                     } else {
@@ -102,7 +102,7 @@ pub(super) fn exact_combine_operation(
                     DesignCombineDestination::NewComponent { .. }
                 ) {
                     losses.push(F3dLossCode::FeatureCombineComponentDestinationAssumed.note(format!(
-                        "{}: the Boolean result requests a new component; its browser node and named-tail references do not determine destination placement, which assumes the input component frame (DR-474)",
+                        "{}: the Boolean result requests a new component; its browser node and named-tail references do not determine destination placement, which assumes the input component frame (DR-507)",
                         scope.id
                     )));
                 }

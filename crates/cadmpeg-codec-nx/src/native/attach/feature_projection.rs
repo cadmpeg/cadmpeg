@@ -427,11 +427,7 @@ pub(super) fn thicken_feature_definition(
             .map(|sense| thicken_side(distance, sense)),
     };
     Some((
-        FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces,
-            thickness: Some(thickness),
-            side,
-        }),
+        FeatureDefinition::Operation(FeatureOperation::thicken(faces, Some(thickness), side)),
         supports,
     ))
 }
@@ -1368,11 +1364,11 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
             faces: FaceSelection::Unresolved,
             distance: None,
         }),
-        "THICKEN_SHEET" => FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces: FaceSelection::Unresolved,
-            thickness: None,
-            side: None,
-        }),
+        "THICKEN_SHEET" => FeatureDefinition::Operation(FeatureOperation::thicken(
+            FaceSelection::Unresolved,
+            None,
+            None,
+        )),
         "Pattern Feature"
         | "Pattern Geometry"
         | "Geometry Instance"

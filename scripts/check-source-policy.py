@@ -25,6 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TEST_LINE_LIMIT = 2000
 PRODUCTION_LINE_LIMIT = 10000
+GENERATED_LAYOUT_LINE_LIMIT = 20000
 
 
 # Parsing results belong to one checker invocation. A new invocation reads the
@@ -742,27 +743,6 @@ PLATFORM_LIBM_CALL = re.compile(
 )
 
 
-@cached_analysis
-def generated_layout_formats() -> dict[str, str]:
-    """Registered layout outputs, keyed by path, from the layout generator."""
-    generator = ROOT / "crates/cadmpeg/tests/layout_tables/generate.rs"
-    try:
-        source = generator.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return {}
-    code = mask_rust_non_code(source)
-    registry = re.search(
-        r"^pub\(crate\)\s+const\s+GENERATED_LAYOUT_RS\s*:[^=;]*=\s*&\[(.*?)\];",
-        code, re.MULTILINE | re.DOTALL,
-    )
-    if registry is None:
-        return {}
-    entries = source[registry.start(1):registry.end(1)]
-    return {entry[2]: entry[1] for entry in
-            re.finditer(r'\("(\w+)",\s*"([^"]+/layout\.rs)"\)', entries)
-            if code[registry.start(1) + entry.start()] == "("}
-
-
 def scan_patterns(path: Path, source: str) -> list[Finding]:
     """Inspect each source pattern once and report its location."""
     code, size = production_source(source)
@@ -813,15 +793,21 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
                     report("foreign_native_namespace", code.count("\n", 0, access.start()) + 1,
                            "Codec crates read only their own native namespace; the convert gate assumes it (ExportPlan::carried_errors).")
 
-    if size > PRODUCTION_LINE_LIMIT:
-        layout = generated_layout_formats().get(relative_path(path))
-        generated = layout is not None and source.startswith(
-            "// SPDX-License-Identifier: Apache-2.0\n"
-            f"//! Byte-offset and value constants generated from `docs/layouts/{layout}.toml`.\n"
-        )
-        if not generated:
-            report("production_size", 1,
-                   f"Production file has {size} lines excluding cfg(test) items; limit is {PRODUCTION_LINE_LIMIT}.")
+    layout_source = re.match(
+        r"// SPDX-License-Identifier: Apache-2\.0\n"
+        r"//! Byte-offset and value constants generated from `(docs/layouts/[A-Za-z0-9_-]+\.toml)`\.\n",
+        source,
+    )
+    generated_layout = (
+        path.name == "layout.rs"
+        and layout_source is not None
+        and (ROOT / layout_source[1]).is_file()
+        and re.search(r"\b(?:fn|impl|struct|enum|trait|static|use|include|macro_rules)\b", code) is None
+    )
+    line_limit = GENERATED_LAYOUT_LINE_LIMIT if generated_layout else PRODUCTION_LINE_LIMIT
+    if size > line_limit:
+        report("production_size", 1,
+               f"Production file has {size} lines excluding cfg(test) items; limit is {line_limit}.")
 
     markers = endian_markers(source)
     lines = code.splitlines()

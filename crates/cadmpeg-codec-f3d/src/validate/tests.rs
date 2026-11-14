@@ -148,7 +148,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
     if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(slot) =
         scope.payload_mut()
     {
-        *slot = Some(DesignComponentInsertConstruction {
+        slot.construction = Some(DesignComponentInsertConstruction {
             relation_record_index: 167,
             carrier_record_index: 166,
             occurrence_identity: Some(17),
@@ -194,7 +194,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
     if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(slot) =
         f3d_native_mut(&mut envelope_only).design_parameter_scopes[0].payload_mut()
     {
-        *slot = None;
+        slot.construction = None;
     }
     let findings = crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native(ctx, &envelope_only).unwrap()

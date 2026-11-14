@@ -437,6 +437,7 @@ pub(super) fn collect_feature_coverage(
                 faces,
                 thickness,
                 side,
+                ..
             }) => {
                 thicken_feature_count += 1;
                 let unresolved_faces = face_selection_has_unresolved_operands(faces);

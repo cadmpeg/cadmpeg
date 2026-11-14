@@ -574,6 +574,37 @@ class CheckoutLocationTests(unittest.TestCase):
 
 
 class PlacementRules(TempSourceCase):
+    def generated_layout(self, *, lines: int = 9, declaration: str = "pub(crate) const LEN: usize = 11;") -> str:
+        self.write("docs/layouts/demo.toml", 'schema = 1\nformat = "demo"\n')
+        return _pad_lines([
+            "// SPDX-License-Identifier: Apache-2.0",
+            "//! Byte-offset and value constants generated from `docs/layouts/demo.toml`.",
+            declaration,
+        ], lines)
+
+    def test_generated_layout_constants_have_a_bounded_larger_limit(self) -> None:
+        self.write("crates/demo/src/layout.rs", self.generated_layout())
+        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4), patch.object(policy, "GENERATED_LAYOUT_LINE_LIMIT", 10):
+            self.assertEqual(self.findings("production_size"), [])
+            self.write("crates/demo/src/layout.rs", self.generated_layout(lines=11))
+            self.assertEqual([finding.path for finding in self.findings("production_size")], ["crates/demo/src/layout.rs"])
+
+    def test_authored_layouts_keep_the_ordinary_limit(self) -> None:
+        self.write("crates/demo/src/layout.rs", self.generated_layout(declaration="fn authored() {}"))
+        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4):
+            self.assertEqual([finding.path for finding in self.findings("production_size")], ["crates/demo/src/layout.rs"])
+
+    def test_layout_provenance_and_file_name_are_required(self) -> None:
+        source = self.generated_layout()
+        self.write("crates/demo/src/other.rs", source)
+        self.write("crates/demo/src/layout.rs", source.replace("demo.toml", "missing.toml"))
+        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4):
+            self.assertEqual({finding.path for finding in self.findings("production_size")}, {"crates/demo/src/other.rs", "crates/demo/src/layout.rs"})
+
+    def test_generated_layouts_keep_other_policy_checks(self) -> None:
+        self.write("crates/demo/src/layout.rs", self.generated_layout(declaration="#[allow(dead_code)]\npub(crate) const LEN: usize = 11;"))
+        self.assertEqual([finding.path for finding in self.findings("lint_suppression")], ["crates/demo/src/layout.rs"])
+
     def test_production_cfg_is_not_test_placement_or_excluded_from_size(self) -> None:
         self.write("crates/demo/src/lib.rs", '\n'.join([
             '#[cfg(not(test))]', '#[path = "prod.rs"]', 'mod prod;',
@@ -684,68 +715,6 @@ class PlacementRules(TempSourceCase):
         self.write("crates/demo/src/lib.rs", "")
         self.write("crates/demo/tests/smoke.rs", _pad_lines(["fn smoke() {}"], 2001))
         self.assertEqual([f.path for f in self.findings("test_size")], ["crates/demo/tests/smoke.rs"])
-
-
-class GeneratedLayoutSizeRules(TempSourceCase):
-    HEADER = ("// SPDX-License-Identifier: Apache-2.0\n"
-              "//! Byte-offset and value constants generated from `docs/layouts/demo.toml`.\n")
-
-    def register_layout(self) -> None:
-        self.write("crates/cadmpeg/tests/layout_tables/generate.rs", '\n'.join([
-            'pub(crate) const GENERATED_LAYOUT_RS: &[(&str, &str)] = &[',
-            '    ("demo", "crates/demo/src/layout.rs"),',
-            '];', '',
-        ]))
-
-    def test_registered_layout_retains_other_policy_checks(self) -> None:
-        self.register_layout()
-        self.write("crates/demo/src/lib.rs", "mod layout;\n")
-        self.write("crates/demo/src/layout.rs", _pad_lines(
-            self.HEADER.splitlines() + ["const VALUE: u32 = u32::from_le_bytes([0; 4]);"], 6))
-        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4):
-            findings = policy.check_source()
-        self.assertEqual([f.rule for f in findings], ["unapproved_endian_read"])
-
-    def test_generated_header_without_registration_keeps_size_limit(self) -> None:
-        self.write("crates/demo/src/layout.rs", _pad_lines(self.HEADER.splitlines(), 6))
-        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4):
-            findings = self.findings("production_size")
-        self.assertEqual([f.path for f in findings], ["crates/demo/src/layout.rs"])
-
-    def test_registered_path_requires_matching_generated_header(self) -> None:
-        self.register_layout()
-        for header in ["", self.HEADER.replace("demo.toml", "another.toml")]:
-            with self.subTest(header=header):
-                self.write("crates/demo/src/layout.rs", _pad_lines(header.splitlines(), 6))
-                with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4):
-                    findings = self.findings("production_size")
-                self.assertEqual([f.path for f in findings], ["crates/demo/src/layout.rs"])
-
-    def test_tuple_outside_registry_keeps_size_limit(self) -> None:
-        self.write("crates/cadmpeg/tests/layout_tables/generate.rs",
-                   'const OTHER: &[(&str, &str)] = &[("demo", "crates/demo/src/layout.rs")];\n')
-        self.write("crates/demo/src/layout.rs", _pad_lines(self.HEADER.splitlines(), 6))
-        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4):
-            findings = self.findings("production_size")
-        self.assertEqual([f.path for f in findings], ["crates/demo/src/layout.rs"])
-
-    def test_non_code_registry_entries_keep_size_limit(self) -> None:
-        declaration = '\n'.join([
-            'pub(crate) const GENERATED_LAYOUT_RS: &[(&str, &str)] = &[',
-            '    ("demo", "crates/demo/src/layout.rs"),',
-            '];', '',
-        ])
-        for source in [
-            'const EXAMPLE: &str = r#"\n' + declaration + '"#;\n',
-            '/*\n' + declaration + '*/\n',
-            declaration.replace('    ("demo",', '    // ("demo",'),
-        ]:
-            with self.subTest(source=source):
-                self.write("crates/cadmpeg/tests/layout_tables/generate.rs", source)
-                self.write("crates/demo/src/layout.rs", _pad_lines(self.HEADER.splitlines(), 6))
-                with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4):
-                    findings = self.findings("production_size")
-                self.assertEqual([f.path for f in findings], ["crates/demo/src/layout.rs"])
 
 
 class ModuleVisibility(TempSourceCase):

@@ -9,8 +9,8 @@ use super::assembly::DesignAssemblyAlignment;
 use crate::records::identity::serialize_absent_u64_offset;
 
 use super::assembly_features::{
-    DesignComponentInsertConstruction, DesignCopyPasteComponentOperation,
-    DesignDerivedInstanceConstruction,
+    DesignComponentInsertConstruction, DesignComponentInsertPlacement, DesignComponentInsertScope,
+    DesignCopyPasteComponentOperation, DesignDerivedInstanceConstruction,
 };
 use super::base_feature::DesignBaseFeatureConstruction;
 use super::body_ops::{
@@ -128,6 +128,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_component_insert_construction,
     DesignComponentInsertConstruction,
     "component_insert_construction"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_component_insert_placement,
+    DesignComponentInsertPlacement,
+    "component_insert_placement"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_copy_paste_bodies_operation,
@@ -505,6 +510,12 @@ impl ScopePayloadCompleteness for super::fillet_set::DesignFilletScope {
     }
 }
 
+impl ScopePayloadCompleteness for DesignComponentInsertScope {
+    fn is_uninterpreted(&self) -> bool {
+        self.construction.is_none() && self.unresolved_placement.is_none()
+    }
+}
+
 impl ScopePayloadCompleteness for DesignSurfacePatchScope {
     fn is_uninterpreted(&self) -> bool {
         matches!(
@@ -730,7 +741,7 @@ design_feature_kinds! {
         EdgeFlange => "EdgeFlange": Option<DesignEdgeFlangeOperation>,
         Hem => "Hem": Option<DesignHemOperation>,
         BaseFlange => "BaseFlange": Option<DesignBaseFlangeScope>,
-        ComponentInsert => "Component Insert": Option<DesignComponentInsertConstruction>,
+        ComponentInsert => "Component Insert": DesignComponentInsertScope,
         CopyPaste => "CopyPaste": Option<DesignCopyPasteComponentOperation>,
         JointOrigin => "JointOrigin": Option<DesignJointOriginTransform>,
         WorkPlane => "WorkPlane": Option<DesignWorkPlaneTransform>,
@@ -1224,6 +1235,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_component_insert_construction"
     )]
     component_insert_construction: Option<DesignComponentInsertConstruction>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_component_insert_placement"
+    )]
+    component_insert_placement: Option<DesignComponentInsertPlacement>,
     /// Exact local-occurrence construction carried by a `DerivedInstance` scope.
     #[serde(
         default,
@@ -1896,6 +1913,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.component_insert_construction.is_some() {
             present.push("component_insert_construction");
         }
+        if wire.component_insert_placement.is_some() {
+            present.push("component_insert_placement");
+        }
         if wire.derived_instance_construction.is_some() {
             present.push("derived_instance_construction");
         }
@@ -2118,7 +2138,17 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignScopePayload::BaseFlange(wire.base_flange.take())
             }
             DesignFeatureKind::ComponentInsert => {
-                DesignScopePayload::ComponentInsert(wire.component_insert_construction.take())
+                if wire.component_insert_construction.is_some()
+                    && wire.component_insert_placement.is_some()
+                {
+                    return Err(DesignParameterScopePayloadError(
+                        "component insert has both a complete construction and an unresolved placement".into(),
+                    ));
+                }
+                DesignScopePayload::ComponentInsert(DesignComponentInsertScope {
+                    construction: wire.component_insert_construction.take(),
+                    unresolved_placement: wire.component_insert_placement.take(),
+                })
             }
             DesignFeatureKind::CopyPaste => {
                 DesignScopePayload::CopyPaste(wire.copy_paste_component_operation.take())
@@ -2246,6 +2276,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.rectangular_pattern_construction.is_some()
             || wire.assembly_alignment.is_some()
             || wire.component_insert_construction.is_some()
+            || wire.component_insert_placement.is_some()
             || wire.derived_instance_construction.is_some()
             || wire.copy_paste_component_operation.is_some()
             || wire.copy_paste_bodies_operation.is_some()
@@ -2406,6 +2437,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             rectangular_pattern_construction: None,
             assembly_alignment: None,
             component_insert_construction: None,
+            component_insert_placement: None,
             derived_instance_construction: None,
             copy_paste_component_operation: None,
             copy_paste_bodies_operation: None,
@@ -2529,7 +2561,8 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.assembly_alignment = value;
             }
             DesignScopePayload::ComponentInsert(value) => {
-                wire.component_insert_construction = value;
+                wire.component_insert_construction = value.construction;
+                wire.component_insert_placement = value.unresolved_placement;
             }
             DesignScopePayload::DerivedInstance(value) => {
                 wire.derived_instance_construction = value;
@@ -3250,7 +3283,14 @@ impl DesignParameterScope {
         &self,
     ) -> Option<&DesignComponentInsertConstruction> {
         match &self.payload {
-            DesignScopePayload::ComponentInsert(value) => value.as_ref(),
+            DesignScopePayload::ComponentInsert(value) => value.construction.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn component_insert_placement(&self) -> Option<&DesignComponentInsertPlacement> {
+        match &self.payload {
+            DesignScopePayload::ComponentInsert(value) => value.unresolved_placement.as_ref(),
             _ => None,
         }
     }
