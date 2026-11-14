@@ -39,6 +39,7 @@ macro_rules! selection_field_deserializer {
 mod body_selection;
 mod decode_clone;
 mod membership;
+mod operation;
 mod selection_overlap;
 
 pub mod edge_treatments;
@@ -3835,6 +3836,12 @@ pub enum FeatureOperation {
         /// Whether tool bodies remain present after the Boolean result is created.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         keep_tools: bool,
+        #[doc = "Component creation requested for the Boolean result."]
+        #[serde(
+            default,
+            skip_serializing_if = "COMBINE_DESTINATION_IS_TARGET_COMPONENT"
+        )]
+        destination: CombineDestination,
     },
     /// Creates solid bodies from selected cells enclosed by boundary bodies.
     BoundaryFill {
@@ -4229,6 +4236,8 @@ pub enum UnresolvedFamily {
     Extrude,
     /// The `revolve` operation family.
     Revolve,
+    #[doc = "The `combine` operation family."]
+    Combine,
     /// The `fillet` operation family.
     Fillet,
     /// The `extract_face` operation family.
@@ -4257,116 +4266,20 @@ pub enum UnresolvedFamily {
     MoveObject,
 }
 
-impl FeatureOperation {
-    #[doc = "Construct a Thicken with unspecified result and tangent-chain settings."]
-    pub fn thicken(
-        faces: FaceSelection,
-        thickness: Option<PositiveLength>,
-        side: Option<ThickenSide>,
-    ) -> Self {
-        Self::Thicken {
-            faces,
-            thickness,
-            side,
-            result: None,
-            tangent_chain: None,
-        }
-    }
-
-    #[doc = "Construct a component-transfer operation from its readable operands."]
-    pub fn component_transfer(
-        mode: ComponentTransferMode,
-        occurrence: Option<OccurrenceId>,
-        component: Option<ProductDefinitionId>,
-        source_owner: Option<ProductDefinitionId>,
-        target_owner: Option<ProductDefinitionId>,
-        source_transform: Option<Transform>,
-        target_transform: Option<Transform>,
-    ) -> Self {
-        Self::ComponentTransfer {
-            mode,
-            occurrence,
-            component,
-            source_owner,
-            target_owner,
-            source_transform,
-            target_transform,
-        }
-    }
-
-    /// Family name of an operation whose replay produces body geometry, and `None` for
-    /// definitions that do not.
-    ///
-    /// A feature of one of these families carries current result bodies in its
-    /// [`FeatureEvaluation::outputs`] list or intermediate result identities in a
-    /// [`FeatureResultTopology`]. The returned name is the stable lowercase label for the
-    /// family, suitable for grouping such features in a report.
-    pub fn body_output_family(&self) -> Option<&'static str> {
-        match self {
-            Self::BaseFeature { .. } => Some("base feature"),
-            Self::Unresolved { family } => match family {
-                UnresolvedFamily::Brep => Some("brep"),
-                UnresolvedFamily::ThroughCurveMesh => Some("through curve mesh"),
-                UnresolvedFamily::ExtractFace => Some("extract face"),
-                UnresolvedFamily::CopyFace => Some("copy face"),
-                UnresolvedFamily::LinkedFace => Some("linked face"),
-                UnresolvedFamily::FillHole => Some("fill hole"),
-                UnresolvedFamily::MoveFace => Some("move face"),
-                UnresolvedFamily::MirrorFace => Some("mirror face"),
-                UnresolvedFamily::SubdivisionBody => Some("subdivision body"),
-                UnresolvedFamily::TopologyOptimization => Some("topology optimization"),
-                UnresolvedFamily::MoveObject => Some("move object"),
-                UnresolvedFamily::Cylinder => Some("cylinder"),
-                UnresolvedFamily::Cone => Some("cone"),
-                UnresolvedFamily::Sphere => Some("sphere"),
-                UnresolvedFamily::Thread => Some("thread"),
-                UnresolvedFamily::DetailedThread => Some("detailed thread"),
-                UnresolvedFamily::Extrude => Some("extrude"),
-                UnresolvedFamily::Revolve => Some("revolve"),
-                UnresolvedFamily::Fillet => Some("fillet"),
-                UnresolvedFamily::DeleteFace => Some("delete face"),
-                UnresolvedFamily::DatumPlane
-                | UnresolvedFamily::DatumAxis
-                | UnresolvedFamily::DatumPoint
-                | UnresolvedFamily::DatumCoordinateSystem
-                | UnresolvedFamily::BridgeCurve
-                | UnresolvedFamily::Loft
-                | UnresolvedFamily::FreeformSurface
-                | UnresolvedFamily::BoundarySurface
-                | UnresolvedFamily::Draft => None,
-            },
-            Self::SheetMetalAttachedPlate { .. } => Some("sheet metal attached plate"),
-            Self::SheetMetalBend { .. } => Some("sheet metal bend"),
-            Self::Block { .. } => Some("block"),
-            Self::Sphere { .. } => Some("sphere"),
-            Self::ExtractBody { .. } => Some("extract body"),
-            Self::Loft { .. } => Some("loft"),
-            Self::TrimSurface { .. } => Some("trim surface"),
-            Self::ExtendSurface { .. } => Some("extend surface"),
-            Self::RuledSurface { .. } => Some("ruled surface"),
-            Self::Hole { .. } => Some("hole"),
-            Self::Rib { .. } => Some("rib"),
-            Self::Chamfer { .. } => Some("chamfer"),
-            Self::Fillet { .. } => Some("fillet"),
-            Self::FullRoundFillet { .. } => Some("fillet"),
-            Self::FaceBlend { .. } => Some("face blend"),
-            Self::Shell { .. } => Some("shell"),
-            Self::SewBodies { .. } => Some("sew bodies"),
-            Self::TrimBodies { .. } | Self::TrimBodiesAtPlane { .. } => Some("trim bodies"),
-            Self::Extrude { .. } => Some("extrude"),
-            Self::Revolve { .. } => Some("revolve"),
-            Self::Sweep { .. } => Some("sweep"),
-            Self::OffsetSurface { .. } => Some("offset surface"),
-            Self::Thicken { .. } => Some("thicken"),
-            Self::Draft { .. } => Some("draft"),
-            Self::Pattern { .. } => Some("pattern"),
-            Self::Combine { .. } => Some("body combine"),
-            Self::ReplaceFace { .. } => Some("replace face"),
-            Self::DeleteFace { .. } => Some("delete face"),
-            _ => None,
-        }
-    }
+#[doc = "Component creation mode of a Boolean combination."]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum CombineDestination {
+    #[doc = "Keep the result in the target body's component."]
+    #[default]
+    TargetComponent,
+    #[doc = "Create a component that contains the combined result."]
+    NewComponent,
 }
+
+const COMBINE_DESTINATION_IS_TARGET_COMPONENT: fn(&CombineDestination) -> bool =
+    |destination| matches!(destination, CombineDestination::TargetComponent);
 
 impl FeatureDefinition {
     /// The operation this definition performs, its post-processing layer aside.

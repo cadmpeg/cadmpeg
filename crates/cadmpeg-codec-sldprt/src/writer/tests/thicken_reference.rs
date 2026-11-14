@@ -931,6 +931,7 @@ fn semantic_writer_round_trips_typed_combine() {
             operands,
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
+            ..
         }) if matches!(
             (operands.target(), operands.tools()),
             (BodySelection::Native(target), BodySelection::Native(tools))
@@ -976,6 +977,7 @@ fn semantic_writer_round_trips_typed_combine() {
             operands,
             op: cadmpeg_ir::features::BooleanKind::Intersect,
             keep_tools: false,
+            ..
         }) if matches!(
             (operands.target(), operands.tools()),
             (BodySelection::Native(target), BodySelection::Native(tools))
