@@ -812,6 +812,22 @@ pub(crate) fn classify_origin_entity(
     OriginClassification::Unknown
 }
 
+/// Return whether the Design type table lists `identity` under the
+/// construction-plane type and under no other type.
+pub(crate) fn is_construction_plane_entity(
+    types: &[SegmentType],
+    stream: &str,
+    identity: u64,
+) -> bool {
+    let Some(entry) = stream
+        .strip_prefix("f3d:")
+        .and_then(crate::ids::decode_identity_key_component)
+    else {
+        return false;
+    };
+    stream_origin_roles(types, &entry).get(&identity) == Some(&OriginRole::Plane)
+}
+
 /// Role of each listed entity. Registrations that disagree on the origin role
 /// are a conflict, so row order cannot select a role.
 fn stream_origin_roles(types: &[SegmentType], bulk_entry_name: &str) -> HashMap<u64, OriginRole> {
