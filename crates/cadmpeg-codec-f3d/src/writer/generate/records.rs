@@ -148,6 +148,7 @@ pub(super) fn encode_design_bulkstream(
                 face_operands: &native.design_face_operands,
                 body_recipe_operands: &native.design_body_recipe_operands,
                 placements: &native.design_sketch_placements,
+                placement_constructions: &native.design_placement_constructions,
                 body_bindings: &native.design_body_bindings,
                 component_naming_spaces: &native.design_component_naming_spaces,
                 histories: &native.asm_histories,

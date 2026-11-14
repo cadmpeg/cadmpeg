@@ -60,6 +60,7 @@ pub(crate) enum DesignFeatureFamily {
     SurfaceTrim,
     BoundaryFill,
     Hole,
+    Emboss,
     Split,
     Scale,
     Thread,
@@ -100,6 +101,7 @@ pub(crate) fn design_feature_family(
         Kind::SurfaceTrim => Some(DesignFeatureFamily::SurfaceTrim),
         Kind::BoundaryFill => Some(DesignFeatureFamily::BoundaryFill),
         Kind::Hole => Some(DesignFeatureFamily::Hole),
+        Kind::Emboss => Some(DesignFeatureFamily::Emboss),
         Kind::Split => Some(DesignFeatureFamily::Split),
         Kind::Scale => Some(DesignFeatureFamily::Scale),
         Kind::Thread => Some(DesignFeatureFamily::Thread),
@@ -109,7 +111,6 @@ pub(crate) fn design_feature_family(
         | Kind::TorusPrimitive
         | Kind::BoxPrimitive
         | Kind::CylinderPrimitive
-        | Kind::Emboss
         | Kind::Align
         | Kind::Native(_)
         | Kind::Canvas

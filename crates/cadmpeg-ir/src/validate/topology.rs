@@ -3088,10 +3088,12 @@ fn check_feature_references(
             }
             FeatureOperation::SewBodies { bodies, .. } => body_selections.push(bodies),
             FeatureOperation::BaseFeature { bodies } => body_selections.push(bodies),
-            FeatureOperation::MeshImport { tessellations } => {
-                if let crate::features::mesh::MeshSelection::Tessellations(tessellations) =
-                    tessellations
-                {
+            FeatureOperation::MeshImport {
+                tessellations: source,
+            }
+            | FeatureOperation::MeshSection { source, .. }
+            | FeatureOperation::MeshModify { source, .. } => {
+                if let crate::features::mesh::MeshSelection::Tessellations(tessellations) = source {
                     for tessellation in tessellations {
                         if ids
                             .tessellations(tessellation.as_str(), crate::index::StandardIndex)
@@ -3100,7 +3102,7 @@ fn check_feature_references(
                             ref_error(
                                 findings,
                                 feature.id.as_str(),
-                                "mesh import tessellation",
+                                "mesh source tessellation",
                                 tessellation.as_str(),
                             );
                         }
@@ -3396,8 +3398,11 @@ fn check_feature_references(
                 body_selections.push(source);
                 face_selections.extend(plane_reference);
             }
-            FeatureOperation::Thicken { faces, .. } => {
+            FeatureOperation::Thicken { faces, result, .. } => {
                 face_selections.push(faces);
+                if let Some(crate::features::SolidFeatureResult::Boolean { targets, .. }) = result {
+                    body_selections.push(targets);
+                }
             }
             FeatureOperation::OffsetSurface { faces, .. } => {
                 face_selections.push(faces);
@@ -3700,8 +3705,8 @@ fn check_feature_references(
             FeatureOperation::Helix { .. } => {}
             FeatureOperation::HelixNativeAxis { .. } => {}
             FeatureOperation::Coil { result, .. } => {
-                use crate::features::CoilResult;
-                if let CoilResult::Boolean { targets, .. } = result {
+                use crate::features::SolidFeatureResult;
+                if let SolidFeatureResult::Boolean { targets, .. } = result {
                     body_selections.push(targets);
                 }
             }

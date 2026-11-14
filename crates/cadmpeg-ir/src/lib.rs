@@ -99,11 +99,11 @@ pub use document::{
 pub use draft::ModelDraft;
 pub use features::{
     BodyMember, BodyMembers, BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction,
-    CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement,
-    ConfigurationEvaluation, ConfigurationId, CurveProjectionDirection,
-    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, FaceMotion, Feature,
-    FeatureDefinition, FeatureId, FeatureOperation, LoftGuidance, ParameterId, ParameterPmi,
-    ParameterValue, PmiDimensionSubtype, ScaleCenter, ScaleFactors,
+    CoilExtent, CoilPlacement, CoilSection, CoilSectionPlacement, ConfigurationEvaluation,
+    ConfigurationId, CurveProjectionDirection, CurveProjectionDirectionState, DesignConfiguration,
+    DesignParameter, FaceMotion, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    LoftGuidance, ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype, ScaleCenter,
+    ScaleFactors, SolidFeatureResult,
 };
 pub use ids::{is_valid_identity, IdentityError};
 pub use native::{

@@ -5,6 +5,8 @@ use super::exact_component_insert_construction;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::lp_utf16;
 
+mod partial_placement;
+
 fn tested_component_insert_construction(
     bytes: &[u8],
     records: &crate::design::decode::sketch::IndexedRecordOffsets,

@@ -54,6 +54,7 @@ mod reverse_normal;
 mod revolve_target;
 mod surface_offset;
 mod surface_patch;
+pub(crate) mod thicken;
 mod unstitch;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
@@ -115,6 +116,8 @@ pub(crate) struct ProjectInputs<'a> {
     pub(crate) face_operands: &'a [DesignFaceOperand],
     pub(crate) body_recipe_operands: &'a [DesignBodyRecipeOperand],
     pub(crate) placements: &'a [DesignSketchPlacement],
+    pub(crate) placement_constructions:
+        &'a [crate::records::placement_construction::DesignPlacementConstruction],
     pub(crate) body_bindings: &'a [DesignBodyBinding],
     pub(crate) component_naming_spaces: &'a [crate::records::recipes::DesignComponentNamingSpace],
     pub(crate) histories: &'a [crate::history_records::AsmHistory],
@@ -952,6 +955,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     &mut projection_losses,
                 )?
                 .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                Some(DesignFeatureFamily::Emboss) => project_emboss(
+                    scope,
+                    &parameters,
+                    owners,
+                    construction_groups,
+                    face_operands,
+                    &mut projection_losses,
+                )?,
                 Some(DesignFeatureFamily::Split) => project_split(
                     scope,
                     scopes,
@@ -1047,7 +1058,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     projected.map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Thicken) => {
-                    project_thicken(scope, face_operands, construction_groups)?
+                    thicken::project_thicken(scope, face_operands, construction_groups, &mut projection_losses)
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Coil) => project_coil(
@@ -1255,7 +1266,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 None => {
                     if let Some(definition) = super::position::project(scope, &mut projection_losses) {
                         definition
-                    } else if let Some(primitive) = project_solid_primitive(scope) {
+                    } else if let Some(primitive) = project_solid_primitive(
+                        scope,
+                        inputs.placement_constructions,
+                        &mut projection_losses,
+                    ) {
                         primitive
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Align {
                         project_align(scope, construction_groups, &mut projection_losses)
@@ -1573,6 +1588,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     &definition,
                     FeatureDefinition::Operation(FeatureOperation::Native { .. })
                 ) || matches!(family, Some(DesignFeatureFamily::Hole))
+                    || matches!(family, Some(DesignFeatureFamily::Emboss))
                     || shell_has_independent_walls(scope)
                 {
                     let mut properties = scope_properties(scope, native_scope, placements, &parameters)?;
@@ -2015,6 +2031,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
 
 fn project_solid_primitive(
     scope: &DesignParameterScope,
+    placements: &[crate::records::placement_construction::DesignPlacementConstruction],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, PrimitiveSolid, PrimitiveSolidKind,
@@ -2040,24 +2058,81 @@ fn project_solid_primitive(
                 ..
             },
         )) => {
-            // The typed-reference form stores the complete local frame; the
-            // named form places the box by its two planar offsets.
-            let placement = match transform {
+            let (placement, support_assumption) = match transform {
                 Some(frame) => {
                     let rows = frame.rows();
                     let row = |index: usize| {
                         let [x, y, z, translation] = rows[index];
-                        [x, y, z, translation * 10.0]
+                        [
+                            x,
+                            y,
+                            z,
+                            (translation + x * offset_x.get() + y * offset_y.get()) * 10.0,
+                        ]
                     };
-                    cadmpeg_ir::transform::Transform::affine([row(0), row(1), row(2)])?
+                    let local = cadmpeg_ir::transform::Transform::affine([row(0), row(1), row(2)])?;
+                    let support = (|| {
+                        let stream = native_stream(&scope.id)?;
+                        let target = *scope
+                            .reference_members()
+                            .values()
+                            .nth(scope.reference_members().len().checked_sub(7)?)?;
+                        let mut candidates = placements.iter().filter(|placement| {
+                            native_stream(&placement.id) == Some(stream)
+                                && placement.record_index == u64::from(target)
+                        });
+                        let placement = candidates.next()?;
+                        if candidates.next().is_some() {
+                            return None;
+                        }
+                        let checked =
+                            crate::design::decode::placement_construction::checked_solved_frame(
+                                placement,
+                            );
+                        let flags_assumed = checked.is_none()
+                            || placement.fields.inferred_x_axis.value != 0
+                            || placement.fields.inferred_z_axis.value != 0;
+                        let frame = checked
+                            .map(|frame| frame.value)
+                            .or_else(|| placement.fields.matrix.as_ref().map(|matrix| matrix.value))
+                            .or_else(|| {
+                                placement
+                                    .fields
+                                    .identity
+                                    .as_ref()
+                                    .filter(|identity| identity.value)
+                                    .map(|_| crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY)
+                            })?;
+                        let rows = frame.rows();
+                        let [x, y, z, _] = rows;
+                        let support = cadmpeg_ir::transform::Transform::affine(
+                            [x, y, z].map(|[x, y, z, translation]| [x, y, z, translation * 10.0]),
+                        )?;
+                        cadmpeg_ir::features::FeatureRigidPlacement::new(support)?;
+                        Some((support.compose(local).ok()?, flags_assumed))
+                    })();
+                    match support {
+                        Some((frame, false)) => (frame, None),
+                        Some((frame, true)) => (frame, Some((
+                            crate::loss::F3dLossCode::FeatureBoxSupportFlagsAssumed,
+                            "uses its stored support frame despite unresolved placement flags",
+                        ))),
+                        None => (local, Some((
+                            crate::loss::F3dLossCode::FeatureBoxSupportFrameAssumed,
+                            "applies an identity support frame because its placement construction has no unique usable frame",
+                        ))),
+                    }
                 }
-                None => cadmpeg_ir::transform::Transform::affine([
-                    [1.0, 0.0, 0.0, offset_x.get() * 10.0],
-                    [0.0, 1.0, 0.0, offset_y.get() * 10.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                ])?,
+                None => (
+                    cadmpeg_ir::transform::Transform::affine([
+                        [1.0, 0.0, 0.0, offset_x.get() * 10.0],
+                        [0.0, 1.0, 0.0, offset_y.get() * 10.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                    ])?,
+                    None,
+                ),
             };
-            FeatureDefinition::Operation(FeatureOperation::Block {
+            let definition = FeatureDefinition::Operation(FeatureOperation::Block {
                 dimensions: Some([
                     cadmpeg_ir::scalar::PositiveLength::new(length.get() * 10.0)?,
                     cadmpeg_ir::scalar::PositiveLength::new(width.get() * 10.0)?,
@@ -2065,7 +2140,17 @@ fn project_solid_primitive(
                 ]),
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::new(placement)?),
                 op: operation(*result),
-            })
+            });
+            if let Some((code, assumption)) = support_assumption {
+                losses.push(code.note(format!("Box scope {} {assumption} (DR-123)", scope.id)));
+            }
+            if transform.is_some() && (offset_x.get() != 0.0 || offset_y.get() != 0.0) {
+                losses.push(crate::loss::F3dLossCode::FeatureBoxOffsetFrameAssumed.note(format!(
+                    "Box scope {} applies its planar offsets along the stored frame's local axes (DR-123)",
+                    scope.id
+                )));
+            }
+            definition
         }
         crate::records::feature::scope::DesignScopePayload::CylinderPrimitive(Some(
             crate::records::feature::primitives::DesignCylinderPrimitive {
@@ -2478,7 +2563,11 @@ fn scope_properties(
             properties.insert(cadmpeg_core::nonblank_literal!("profile"), id.into_string());
         }
     }
-    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Hole {
+    if matches!(
+        scope.kind(),
+        crate::records::feature::scope::DesignFeatureKind::Hole
+            | crate::records::feature::scope::DesignFeatureKind::Emboss
+    ) {
         for (_, parameter) in parameters {
             let key =
                 cadmpeg_core::text::NonBlankString::new(format!("parameter:{}", parameter.name()))
@@ -2494,6 +2583,95 @@ fn scope_properties(
             };
             properties.insert(key, parameter.expression().to_owned());
         }
+    }
+    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Emboss {
+        if let Some(construction) = scope.emboss_construction() {
+            use crate::records::feature::emboss::DesignEmbossControlWords;
+            let controls: &[u32] = match &construction.control_words {
+                DesignEmbossControlWords::One(words) => words,
+                DesignEmbossControlWords::Two(words) => words,
+            };
+            for (ordinal, word) in controls.iter().enumerate() {
+                properties.insert(
+                    cadmpeg_core::text::NonBlankString::new(format!("emboss:control:{ordinal}"))
+                        .ok_or_else(|| CodecError::malformed("Emboss control key is blank"))?,
+                    word.to_string(),
+                );
+            }
+            for (ordinal, pair) in construction
+                .native_pair
+                .iter()
+                .chain(construction.additional_native_pairs.iter().flatten())
+                .enumerate()
+            {
+                for (lane, word) in pair.iter().enumerate() {
+                    properties.insert(
+                        cadmpeg_core::text::NonBlankString::new(format!(
+                            "emboss:native_pair:{ordinal}:{lane}"
+                        ))
+                        .ok_or_else(|| CodecError::malformed("Emboss pair key is blank"))?,
+                        word.to_string(),
+                    );
+                }
+            }
+            for (reference, role) in [
+                (construction.profile_group, "profile"),
+                (construction.face_group, "face"),
+                (construction.auxiliary_group, "auxiliary"),
+            ] {
+                properties.insert(
+                    cadmpeg_core::text::NonBlankString::new(format!("emboss:group:{role}"))
+                        .ok_or_else(|| CodecError::malformed("Emboss group key is blank"))?,
+                    reference.value.to_string(),
+                );
+            }
+            for (reference, role) in construction.scalar_owners() {
+                properties.insert(
+                    cadmpeg_core::text::NonBlankString::new(format!("emboss:owner:{role}"))
+                        .ok_or_else(|| CodecError::malformed("Emboss owner key is blank"))?,
+                    reference.value.to_string(),
+                );
+            }
+        }
+        for (role, unit, value) in [
+            (
+                "Depth",
+                "mm",
+                emboss_parameter(scope, parameters, "Depth")
+                    .and_then(emboss_length)
+                    .map(cadmpeg_ir::scalar::Length::get),
+            ),
+            (
+                "Horizontal Distance",
+                "mm",
+                emboss_parameter(scope, parameters, "Horizontal Distance")
+                    .and_then(emboss_length)
+                    .map(cadmpeg_ir::scalar::Length::get),
+            ),
+            (
+                "Vertical Distance",
+                "mm",
+                emboss_parameter(scope, parameters, "Vertical Distance")
+                    .and_then(emboss_length)
+                    .map(cadmpeg_ir::scalar::Length::get),
+            ),
+            (
+                "Rotation Angle",
+                "rad",
+                emboss_parameter(scope, parameters, "Rotation Angle")
+                    .map(|parameter| parameter.evaluated_value().get()),
+            ),
+        ] {
+            if let Some(value) = value {
+                properties.insert(
+                    cadmpeg_core::text::NonBlankString::new(format!("emboss:scalar:{role}:{unit}"))
+                        .ok_or_else(|| CodecError::malformed("Emboss scalar key is blank"))?,
+                    value.to_string(),
+                );
+            }
+        }
+    }
+    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Hole {
         if let Some(extent) = scope.hole_extent() {
             if let Some(hole_type) = &extent.hole_type {
                 properties.insert(
@@ -4246,109 +4424,6 @@ pub(super) fn project_offset_faces(
     )))
 }
 
-pub(super) fn project_thicken(
-    scope: &DesignParameterScope,
-    operands: &[DesignFaceOperand],
-    groups: &[DesignConstructionOperandGroup],
-) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ThickenSide};
-
-    let crate::records::feature::scope::DesignScopePayload::Thicken(Some(
-        crate::records::feature::direct_face::DesignThickenOperation {
-            signed_thickness,
-            symmetric,
-            ..
-        },
-    )) = &scope.payload()
-    else {
-        return Ok(None);
-    };
-    let faces = if let Some(mut faces) = direct_face_selection(scope, operands) {
-        list_thicken_whole_bodies(&mut faces, scope, groups);
-        faces
-    } else {
-        let mut candidates = groups.iter().filter(|group| {
-            native_stream(&group.id) == native_stream(&scope.id)
-                && group.scope_record_index == scope.record_index
-                && matches!(
-                    group.role(),
-                    DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X12
-                )
-                && !group.members().is_empty()
-        });
-        let group = or_none!(candidates.next());
-        if candidates.next().is_some() {
-            return Ok(None);
-        }
-        FaceSelection::Native(group.id.clone())
-    };
-    Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::Thicken {
-            faces,
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(
-                signed_thickness.get().abs() * if *symmetric { 20.0 } else { 10.0 },
-            ),
-            side: Some(if *symmetric {
-                ThickenSide::Both
-            } else if signed_thickness.get() > 0.0 {
-                ThickenSide::Forward
-            } else {
-                ThickenSide::Reverse
-            }),
-        },
-    )))
-}
-
-pub(crate) fn list_thicken_whole_bodies(
-    selection: &mut cadmpeg_ir::features::FaceSelection,
-    scope: &DesignParameterScope,
-    groups: &[DesignConstructionOperandGroup],
-) {
-    use cadmpeg_ir::features::FaceSelection;
-
-    let (state, faces, mut unresolved, native) = match &*selection {
-        FaceSelection::Historical {
-            state,
-            faces,
-            native,
-        } => (state, faces.as_slice(), Vec::new(), native),
-        FaceSelection::HistoricalPartial {
-            state,
-            faces,
-            unresolved,
-            native,
-        } => (
-            state,
-            faces.as_slice(),
-            unresolved.as_slice().to_vec(),
-            native,
-        ),
-        _ => return,
-    };
-    let listed = unresolved.len();
-    for group in groups.iter().filter(|group| {
-        native_stream(&group.id) == native_stream(&scope.id)
-            && group.scope_record_index == scope.record_index
-            && group.role() == DesignOperandRole::ROLE_0X5
-            && !group.members().is_empty()
-    }) {
-        if !unresolved.contains(&group.id) {
-            unresolved.push(group.id.clone());
-        }
-    }
-    if unresolved.len() == listed {
-        return;
-    }
-    let partial = FaceSelection::historical_partial(
-        state.clone(),
-        faces.to_vec(),
-        unresolved,
-        native.to_string(),
-    )
-    .unwrap_or_else(|_| FaceSelection::Native(scope.id.clone()));
-    *selection = partial;
-}
-
 pub(super) fn shell_table_member_loss(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
@@ -5527,14 +5602,14 @@ fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::
     })
 }
 
-pub(crate) fn direct_face_selection(
+pub(crate) fn direct_face_selection<'a>(
     scope: &DesignParameterScope,
-    operands: &[DesignFaceOperand],
+    operands: impl IntoIterator<Item = &'a DesignFaceOperand>,
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     use cadmpeg_ir::features::FaceSelection;
 
     let mut matching = Vec::new();
-    for operand in operands.iter().filter(|operand| {
+    for operand in operands.into_iter().filter(|operand| {
         native_stream(&operand.id) == native_stream(&scope.id)
             && operand.scope_record_index == scope.record_index
     }) {
@@ -6485,7 +6560,9 @@ pub(super) fn project_fixed_revolve_with_entities(
         axis_operand.resolved_axis.map(|axis| RevolutionAxis {
             origin: axis.origin,
             direction: cadmpeg_ir::features::FeatureDirection3::from(axis.direction),
-            reference: None,
+            reference: Some(cadmpeg_ir::features::PathRef::Native(
+                axis_operand.id.clone(),
+            )),
         })
     } else if first.is_none() {
         let resolved = resolve_sketch_axis_selection(
@@ -6655,33 +6732,101 @@ pub(crate) fn orient_revolve_axes(
             ) {
                 return;
             }
-            let oriented = match construction.profile() {
-                Some(PlanarProfileRef::Sketch(sketch)) => sketches
+            let oriented = construction.profile().and_then(|profile| {
+                let (PlanarProfileRef::Sketch(sketch_id)
+                | PlanarProfileRef::SketchProfiles {
+                    sketch: sketch_id, ..
+                }
+                | PlanarProfileRef::SketchRegions {
+                    sketch: sketch_id, ..
+                }
+                | PlanarProfileRef::SketchEntities {
+                    sketch: sketch_id, ..
+                }) = profile
+                else {
+                    return None;
+                };
+                sketches
                     .iter()
-                    .find(|candidate| &candidate.id == sketch)
+                    .find(|sketch| &sketch.id == sketch_id)
                     .and_then(|sketch| {
                         oriented_revolve_axis(
                             &axis,
                             sketch,
+                            profile,
                             sketch_entities,
                             reversed,
                             (linear_tolerance, angular_tolerance),
                         )
-                    }),
-                _ => None,
-            };
+                    })
+            });
             construction.set_axis(oriented);
         });
     }
 }
 
-/// The axis directed so that a right-handed turn carries the profile of
-/// `sketch` toward the sketch normal, or toward its reverse when `reversed`, or
+fn selected_revolve_profile_entities<'a>(
+    profile: &'a cadmpeg_ir::features::PlanarProfileRef,
+    sketch: &'a cadmpeg_ir::sketches::Sketch,
+) -> Option<Vec<&'a cadmpeg_ir::sketches::SketchEntityId>> {
+    use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileRegion};
+    let mut entities = Vec::new();
+    let mut add_loop = |index: u32| {
+        let loop_ = sketch.profiles.get(usize::try_from(index).ok()?)?;
+        entities.extend(loop_.iter().map(|use_| &use_.entity));
+        Some(())
+    };
+    match profile {
+        PlanarProfileRef::Sketch(_) => {
+            entities.extend(sketch.profiles.iter().flatten().map(|use_| &use_.entity));
+        }
+        PlanarProfileRef::SketchProfiles { profiles, .. } => {
+            for index in profiles {
+                add_loop(*index)?;
+            }
+        }
+        PlanarProfileRef::SketchRegions { regions, .. } => {
+            for region in regions.iter() {
+                if let SketchProfileRegion::Loops { loops } = region {
+                    add_loop(loops.outer())?;
+                    for index in loops.holes() {
+                        add_loop(*index)?;
+                    }
+                }
+            }
+            for region in regions.iter() {
+                if let SketchProfileRegion::Trimmed {
+                    outer_boundary,
+                    hole_boundaries,
+                } = region
+                {
+                    entities.extend(
+                        outer_boundary
+                            .iter()
+                            .chain(hole_boundaries.iter().flatten())
+                            .map(|use_| &use_.entity),
+                    );
+                }
+            }
+        }
+        PlanarProfileRef::SketchEntities {
+            entities: selected, ..
+        } => {
+            entities.extend(selected.iter());
+        }
+        _ => return None,
+    }
+    Some(entities)
+}
+
+/// The axis directed so that a right-handed turn carries the selected profile
+/// toward the sketch normal, or toward its reverse when `reversed`, or
 /// `None` when the axis is not parallel to the sketch plane or the profile does
 /// not lie on one side of the axis.
 fn oriented_revolve_axis(
     axis: &cadmpeg_ir::features::RevolutionAxis,
     sketch: &cadmpeg_ir::sketches::Sketch,
+    profile: &cadmpeg_ir::features::PlanarProfileRef,
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     reversed: bool,
     (linear_tolerance, angular_tolerance): (f64, f64),
@@ -6697,10 +6842,10 @@ fn oriented_revolve_axis(
     // In-plane and perpendicular to the axis: its sign names the profile side.
     let across = normal.cross(direction);
     let mut positive_side = None;
-    for entity_use in sketch.profiles.iter().flatten() {
+    for entity_id in selected_revolve_profile_entities(profile, sketch)? {
         let entity = sketch_entities
             .iter()
-            .find(|entity| entity.id() == &entity_use.entity)?;
+            .find(|entity| entity.id() == entity_id)?;
         for point in revolve_profile_sample_points(&entity.geometry) {
             let offset = origin
                 .get()
@@ -6857,7 +7002,7 @@ pub(crate) fn bind_revolve_face_axes(
                         })
                         .then_some(first)
                 });
-            construction.set_axis(match (entity_axis, recipe_axis) {
+            let axis = match (entity_axis, recipe_axis) {
                 (Some(entity), Some(recipe))
                     if crate::history::same_axis_line(
                         (entity.origin.get(), entity.direction.get()),
@@ -6868,7 +7013,11 @@ pub(crate) fn bind_revolve_face_axes(
                 }
                 (Some(axis), None) | (None, Some(axis)) => Some(axis),
                 _ => None,
-            });
+            };
+            construction.set_axis(axis.map(|mut axis| {
+                axis.reference = Some(cadmpeg_ir::features::PathRef::Native(group.id.clone()));
+                axis
+            }));
         });
     }
 }
@@ -6957,7 +7106,7 @@ fn design_geometry_axis_selection(
     Some(cadmpeg_ir::features::RevolutionAxis {
         origin: cadmpeg_ir::features::FinitePoint3::ZERO,
         direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
-        reference: None,
+        reference: Some(cadmpeg_ir::features::PathRef::Native(selection.id.clone())),
     })
 }
 
@@ -7026,7 +7175,7 @@ fn resolve_sketch_axis_selection(
         direction: cadmpeg_ir::features::FeatureDirection3::from(
             cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(direction)?,
         ),
-        reference: None,
+        reference: Some(cadmpeg_ir::features::PathRef::Native(selection.id.clone())),
     })
 }
 
@@ -7549,6 +7698,29 @@ fn project_rectangular_pattern_scalars(
     }))
 }
 
+/// Tap type of a simple Hole.
+const HOLE_TAP_SIMPLE: u32 = 0;
+/// Tap type of a clearance Hole.
+const HOLE_TAP_CLEARANCE: u32 = 1;
+/// Tap type of a tapped Hole.
+const HOLE_TAP_TAPPED: u32 = 2;
+
+/// The loss a Hole with tap type `tap_type` reports.
+pub(super) fn hole_tap_type_loss(
+    scope_id: &str,
+    tap_type: u32,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    match tap_type {
+        HOLE_TAP_SIMPLE | HOLE_TAP_CLEARANCE => None,
+        HOLE_TAP_TAPPED => Some(crate::loss::F3dLossCode::HoleTappedDiameterStored.note(format!(
+            "Tapped Hole {scope_id} keeps its stored HoleDiameter; Fusion models the bore diameter that its thread size gives."
+        ))),
+        other => Some(crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed.note(format!(
+            "Hole {scope_id} assumes its scalar geometry is independent of tap type {other} (DR-106)."
+        ))),
+    }
+}
+
 pub(super) fn project_fixed_sweep(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
@@ -7869,7 +8041,7 @@ fn hole_extent_loss(scope: &DesignParameterScope) -> cadmpeg_ir::report::loss::L
 /// The face that ends an Extents To Hole. Its sole
 /// role-`0x0000000500000000` group has one member. When that member is the
 /// one direct `face` recipe operand of the scope at its record and resolves
-/// one face of the preceding state, that face ends the hole (DR-243).
+/// one face of the preceding state, that face ends the hole.
 /// Otherwise the group stays the native selection.
 fn hole_extent_face(
     scope: &DesignParameterScope,
@@ -8038,6 +8210,191 @@ fn hole_placements(
         .collect()
 }
 
+fn emboss_parameter<'b>(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &'b DesignParameter)],
+    source_kind: &str,
+) -> Option<&'b DesignParameter> {
+    if let Some(reference) = scope.emboss_construction().and_then(|construction| {
+        construction
+            .scalar_owners()
+            .into_iter()
+            .find_map(|(reference, role)| (role == source_kind).then_some(reference.value))
+    }) {
+        let mut named = parameters.iter().filter(|(_, parameter)| {
+            parameter.source_kind_str() == source_kind
+                && parameter.owner_record_index() == Some(reference)
+        });
+        if let Some((_, parameter)) = named.next() {
+            if named.all(|(_, next)| next == parameter) {
+                return Some(parameter);
+            }
+        }
+    }
+    let mut matching = parameters
+        .iter()
+        .filter(|(_, parameter)| parameter.source_kind_str() == source_kind)
+        .map(|(_, parameter)| *parameter);
+    let parameter = matching.next()?;
+    matching.all(|next| next == parameter).then_some(parameter)
+}
+
+fn emboss_group<'a>(
+    scope: &DesignParameterScope,
+    groups: &'a [DesignConstructionOperandGroup],
+    record_index: u32,
+) -> Option<&'a DesignConstructionOperandGroup> {
+    let mut matching = groups.iter().filter(|group| {
+        native_stream(&group.id) == native_stream(&scope.id)
+            && group.scope_record_index == scope.record_index
+            && group.record_index == record_index
+    });
+    let group = matching.next()?;
+    matching.next().is_none().then_some(group)
+}
+
+fn emboss_scalar_owner_is_proven(
+    scope: &DesignParameterScope,
+    parameter: &DesignParameter,
+    owners: &[DesignParameterOwner],
+) -> bool {
+    let Some(reference) = scope.emboss_construction().and_then(|construction| {
+        construction
+            .scalar_owners()
+            .into_iter()
+            .find_map(|(reference, role)| {
+                (role == parameter.source_kind_str()).then_some(reference.value)
+            })
+    }) else {
+        return false;
+    };
+    let mut matching = owners.iter().filter(|owner| {
+        native_stream(owner.id()) == native_stream(&scope.id)
+            && owner.scope_record_index() == scope.record_index
+            && owner.record_index() == reference
+    });
+    let Some(owner) = matching.next() else {
+        return false;
+    };
+    matching.next().is_none()
+        && parameter.owner_record_index() == Some(reference)
+        && parameter.record_index == owner.parameter_record_index()
+        && native_stream(&parameter.id) == native_stream(&scope.id)
+        && parameter.kind() == DesignParameterKind::Feature
+        && parameter.evaluated_value() == owner.evaluated_value()
+}
+
+fn emboss_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::scalar::Length> {
+    cadmpeg_ir::scalar::Length::new(parameter.evaluated_value().get() * DESIGN_LENGTH_TO_MILLIMETRE)
+}
+
+fn project_emboss(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+    owners: &[DesignParameterOwner],
+    groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
+    use cadmpeg_ir::features::{
+        FaceSelection, FeatureDefinition, FeatureOperation, PlanarProfileRef, WrapMode,
+    };
+
+    let source_scope = scope.id.as_str();
+    let construction = scope.emboss_construction();
+    let profile_source = construction
+        .and_then(|value| emboss_group(scope, groups, value.profile_group.value))
+        .map_or_else(|| source_scope.to_owned(), |group| group.id.clone());
+    let profile = PlanarProfileRef::Native(profile_source);
+    let target = if let Some(group) =
+        construction.and_then(|value| emboss_group(scope, groups, value.face_group.value))
+    {
+        resolved_face_group(group, face_operands)?
+            .unwrap_or_else(|| FaceSelection::Native(group.id.clone()))
+    } else {
+        FaceSelection::Native(source_scope.to_owned())
+    };
+    for role in [
+        "Depth",
+        "Horizontal Distance",
+        "Vertical Distance",
+        "Rotation Angle",
+    ] {
+        if let Some(parameter) = emboss_parameter(scope, parameters, role) {
+            let unit_matches = parameter.unit().is_some_and(|unit| {
+                if role == "Rotation Angle" {
+                    design_angle_unit(unit.value.as_str())
+                } else {
+                    design_length_unit(unit.value.as_str())
+                }
+            });
+            if !unit_matches {
+                losses.push(crate::loss::F3dLossCode::EmbossScalarUnitAssumed.note(format!(
+                    "Emboss scope {} interprets {} in its role's native units despite a missing or conflicting display-unit token (DR-121).",
+                    scope.id, role
+                )));
+            }
+            if !emboss_scalar_owner_is_proven(scope, parameter, owners) {
+                losses.push(crate::loss::F3dLossCode::EmbossScalarOwnerAssumed.note(format!(
+                    "Emboss scope {} retains its {} parameter independently of an unresolved or inconsistent scalar-owner association (DR-121).",
+                    scope.id, role
+                )));
+            }
+        }
+    }
+    losses.push(crate::loss::F3dLossCode::EmbossProfileSelectionNative.note(format!(
+        "Emboss scope {} retains its native sketch-profile reference because the selected contour mapping is unresolved.",
+        scope.id
+    )));
+    if matches!(target, FaceSelection::Native(_)) {
+        losses.push(crate::loss::F3dLossCode::EmbossTargetSelectionNative.note(format!(
+            "Emboss scope {} retains its target-face reference because the selected target mapping is unresolved.",
+            scope.id
+        )));
+    }
+    let depth = emboss_parameter(scope, parameters, "Depth").and_then(emboss_length);
+    let mode = depth
+        .and_then(|signed| {
+            cadmpeg_ir::scalar::PositiveLength::new(signed.get().abs()).map(|magnitude| {
+                if signed.get() > 0.0 {
+                    WrapMode::Emboss { depth: magnitude }
+                } else {
+                    WrapMode::Deboss { depth: magnitude }
+                }
+            })
+        })
+        .unwrap_or(WrapMode::Unresolved { depth });
+    if matches!(mode, WrapMode::Emboss { .. } | WrapMode::Deboss { .. }) {
+        losses.push(crate::loss::F3dLossCode::EmbossDepthSignAssumed.note(format!(
+            "Emboss scope {} interprets the signed Depth parameter as the native tool depth: positive adds material and negative removes material (DR-121).",
+            scope.id
+        )));
+    } else {
+        losses.push(
+            crate::loss::F3dLossCode::EmbossDepthUnresolved.note(format!(
+            "Emboss scope {} has no unique nonzero valid Depth value, so its effect remains unresolved.",
+            scope.id
+        )),
+        );
+    }
+    if parameters.iter().any(|(_, parameter)| {
+        matches!(
+            parameter.source_kind_str(),
+            "Horizontal Distance" | "Vertical Distance" | "Rotation Angle"
+        )
+    }) {
+        losses.push(crate::loss::F3dLossCode::EmbossPlacementNative.note(format!(
+            "Emboss scope {} retains horizontal, vertical, and rotation values and expressions as native placement properties.",
+            scope.id
+        )));
+    }
+    Ok(FeatureDefinition::Operation(FeatureOperation::Wrap {
+        profile,
+        face: target,
+        mode,
+    }))
+}
+
 fn project_hole(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
@@ -8057,16 +8414,6 @@ fn project_hole(
         losses.push(hole_extent_loss(scope));
         LinearTermination::Unresolved {}
     });
-    if let LinearTermination::ToFace {
-        face: FaceSelection::Historical { native, .. },
-        ..
-    } = &extent
-    {
-        losses.push(crate::loss::F3dLossCode::HoleExtentFaceAssumed.note(format!(
-            "Hole scope {} ends at the face that the member of its Extents To group {native} resolves.",
-            scope.id
-        )));
-    }
     let parameter = |source_kind: &str| {
         let mut matches = parameters
             .iter()
@@ -8218,10 +8565,12 @@ fn project_hole(
         )));
     }
     if let Some(extent) = scope.hole_extent() {
-        if let Some(word) = extent.leading_word.as_ref().filter(|word| word.value != 0) {
-            losses.push(crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed.note(format!(
-                "Hole {} assumes its scalar geometry is independent of extent leading word {} (DR-106).", scope.id, word.value
-            )));
+        if let Some(loss) = extent
+            .leading_word
+            .as_ref()
+            .and_then(|word| hole_tap_type_loss(&scope.id, word.value))
+        {
+            losses.push(loss);
         }
         if extent.standard.is_some() {
             losses.push(crate::loss::F3dLossCode::HoleStandardSizingAssumed.note(format!(
@@ -9065,8 +9414,8 @@ fn project_coil(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
-        BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection,
-        CoilSectionPlacement, FeatureDefinition, FeatureOperation,
+        BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilSection,
+        CoilSectionPlacement, FeatureDefinition, FeatureOperation, SolidFeatureResult,
     };
 
     let parsed = (|| {
@@ -9202,8 +9551,8 @@ fn project_coil(
         return Ok(None);
     };
     let result = match (operation, first_body_group) {
-        (DesignExtrudeOperation::NewBody, None) => CoilResult::NewBody {},
-        (operation, Some(group)) => CoilResult::Boolean {
+        (DesignExtrudeOperation::NewBody, None) => SolidFeatureResult::NewBody {},
+        (operation, Some(group)) => SolidFeatureResult::Boolean {
             operation: match operation {
                 DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanKind::Join,
                 DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanKind::Cut,
