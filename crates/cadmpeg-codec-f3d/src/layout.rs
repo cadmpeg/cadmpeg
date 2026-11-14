@@ -1188,6 +1188,24 @@ pub(crate) mod paramesh_operation_member_prefix {
     pub(crate) const BODY_REFERENCE: usize = 21;
 }
 
+/// Byte offsets for the `mesh_operation_scope_prefix` record.
+///
+/// Spec §3.1. Record length 21 B.
+pub(crate) mod mesh_operation_scope_prefix {
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 20;
+}
+
+/// Byte offsets for the `mesh_operation_group_prefix` record.
+///
+/// Spec §3.1. Record length 25 B.
+pub(crate) mod mesh_operation_group_prefix {
+    /// Offset of `member_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MEMBER_COUNT: usize = 21;
+}
+
 /// Byte offsets for the `paramesh_guid_join_prefix` record.
 ///
 /// Spec §3.1. Record length 83 B.
@@ -6243,7 +6261,7 @@ pub(crate) mod local_component_occurrence_leading_flag_prefix {
 /// Spec §3.1. Record length 180 B.
 ///
 /// ```text
-/// Offsets are relative to the end of the 51-byte prefix or of the first matrix. A matrix frame repeats the matrix after the body; the 20-byte identity tail closes the frame.
+/// Offsets are relative to the end of the 51-byte prefix or of the first matrix. The local-placement flag selects the optional matrix after the body; the 20-byte identity tail closes the frame.
 /// ```
 pub(crate) mod local_component_occurrence_leading_flag_body {
     /// Record length in bytes. Spec §3.1.

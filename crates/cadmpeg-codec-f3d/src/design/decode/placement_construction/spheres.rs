@@ -51,7 +51,7 @@ pub(crate) fn bind(
                 sphere.transform_offset = Some(frame.offset);
                 if assumed {
                     losses.push(F3dLossCode::SpherePlacementFlagsAssumed.note(format!(
-                        "Sphere {id} uses the stored solved placement despite unresolved placement flags (DR-504)."
+                        "Sphere {id} uses the stored solved placement despite unresolved placement flags (DR-506)."
                     )));
                 }
             }
@@ -59,18 +59,18 @@ pub(crate) fn bind(
                 sphere.transform = SketchPlacementMatrix::IDENTITY;
                 sphere.transform_offset = None;
                 losses.push(F3dLossCode::SpherePlacementFrameAssumed.note(format!(
-                    "Sphere {id} assumes an origin centre because placement {reference} has no unique usable same-stream solved frame (DR-504)."
+                    "Sphere {id} assumes an origin centre because placement {reference} has no unique usable same-stream solved frame (DR-506)."
                 )));
             }
         }
         if sphere.diameter_owner_assumed {
             losses.push(F3dLossCode::SphereDiameterOwnerAssumed.note(format!(
-                "Sphere {id} reads its referenced positive scalar as the diameter despite unresolved owner binding (DR-505)."
+                "Sphere {id} reads its referenced positive scalar as the diameter despite unresolved owner binding (DR-507)."
             )));
         }
         if sphere.diameter_source_assumed {
             losses.push(F3dLossCode::SphereDiameterSourceAssumed.note(format!(
-                "Sphere {id} uses its evaluated diameter because its parameter source has no unique same-stream definition (DR-505)."
+                "Sphere {id} uses its evaluated diameter because its parameter source has no unique same-stream definition (DR-507)."
             )));
         }
     }
