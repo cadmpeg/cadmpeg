@@ -34,6 +34,8 @@ macro_rules! geometric {
     };
 }
 
+pub(super) mod member_loop_union;
+
 /// Radians between the departure tangents of two arrangement edges at one
 /// node that leave in the same direction.
 const ARRANGEMENT_TANGENT_TOLERANCE: f64 = 1.0e-9;
@@ -748,7 +750,9 @@ pub(super) fn arrangement_regions_matching_member_rings(
     let mut outers = Vec::new();
     let mut holes = Vec::new();
     let mut coincident = false;
+    let mut identity_unique = true;
     for members in rings {
+        let mut identity_matches = 0usize;
         let mut found = None;
         for (index, hole, ring, curves) in &candidates {
             if *curves != members.len() {
@@ -763,7 +767,9 @@ pub(super) fn arrangement_regions_matching_member_rings(
                 work.arrangement_skipped.set(true);
                 return Ok(None);
             }
-            coincident |= ring.shared_fragments() != 0 && ring.has_curves(members);
+            let has_curves = ring.has_curves(members);
+            identity_matches += usize::from(has_curves);
+            coincident |= ring.shared_fragments() != 0 && has_curves;
             if !ring.matches_members(members) {
                 continue;
             }
@@ -772,6 +778,7 @@ pub(super) fn arrangement_regions_matching_member_rings(
             }
             found = Some((*index, *hole));
         }
+        identity_unique &= identity_matches == 1;
         let (face, hole) = geometric!(found);
         match hole {
             None if !outers.contains(&face) => outers.push(face),
@@ -806,6 +813,7 @@ pub(super) fn arrangement_regions_matching_member_rings(
         ));
     }
     Ok(Some(MemberRingRegions {
+        identity_unique,
         regions,
         coincident,
         island_absence,
@@ -814,10 +822,9 @@ pub(super) fn arrangement_regions_matching_member_rings(
 
 /// The regions that counted member rings select.
 pub(super) struct MemberRingRegions {
+    pub(super) identity_unique: bool,
     pub(super) regions: Vec<cadmpeg_ir::features::SketchProfileRegion>,
-    /// Whether a ring with an edge of coincident curves has the curves of a
-    /// member list, so that the member flags of that edge decided the
-    /// selection.
+    /// Keep coincident-edge matches for the selection loss policy.
     pub(super) coincident: bool,
     /// Whether a curve outside the arrangement can lie inside a selected
     /// face, so that its region assumes that the curve makes no island in it.

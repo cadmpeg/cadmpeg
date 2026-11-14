@@ -565,8 +565,8 @@ fn append_component(
     macro_rules! id {
         ($kind:ty, $label:literal, $offset:expr) => {
             <$kind>::mint(format!(
-                concat!("catia:owned-patch:", $label, "#{}:{}:{}"),
-                source, first, $offset
+                concat!("catia:owned-patch:", $label, "#{}:{}:{}:{}"),
+                source, body, first, $offset
             ))
             .map_err(CodecError::malformed)?
         };
