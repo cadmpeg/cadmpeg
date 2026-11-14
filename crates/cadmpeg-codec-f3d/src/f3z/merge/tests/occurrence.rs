@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod partial_operands;
+
 use crate::records::sketch_placement::DesignSketchPlacement;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::DistinctMembers;
@@ -339,6 +341,59 @@ fn occurrence_merge_rewrites_only_member_native_record_text() {
             scope.rewrite(profile).unwrap(),
             ProfileRef::Planar(PlanarProfileRef::Native(expected.into()))
         );
+    }
+}
+
+#[test]
+fn occurrence_merge_scopes_unmaterialized_partial_pattern_references() {
+    use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::features::patterns::{
+        curve_driven::CurveDrivenPatternParameters, PatternKind, PatternSeed, PatternTransform,
+    };
+    use cadmpeg_ir::features::PathRef;
+
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let source = "f3d:Design1/BulkStream.dat:design-record#91";
+    let mut row = feature("f3d:model:feature#pattern", 0);
+    row.name = Some(source.into());
+    row.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
+            seeds: vec![PatternSeed::Native(source.into())],
+            pattern: PatternKind::new(PatternTransform::CurveDrivenPartial {
+                parameters: CurveDrivenPatternParameters {
+                    path: Some(PathRef::Native(source.into())),
+                    ..Default::default()
+                },
+            })
+            .unwrap(),
+        }),
+    );
+    let mut model = Model::default();
+    model.features.push(row.clone());
+    for occurrence in ["left", "right"] {
+        let targets = super::super::native_record_targets(&Native::default(), occurrence);
+        let mut scoped_model = model.clone();
+        super::super::rescope_partial_pattern_sources(&mut scoped_model, occurrence);
+        let native_text = TextReplacements::build(targets.iter()).unwrap();
+        let rewritten = OccurrenceScope {
+            ctx: &ctx,
+            occurrence,
+            native_text: &native_text,
+        }
+        .rewrite(scoped_model.features.remove(0))
+        .unwrap();
+        assert_eq!(rewritten.name.as_deref(), Some(source));
+        let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+            rewritten.evaluation.definition()
+        else {
+            panic!("pattern")
+        };
+        let PatternTransform::CurveDrivenPartial { parameters } = pattern.definition() else {
+            panic!("partial")
+        };
+        let expected = format!("f3d:xref/{occurrence}/Design1/BulkStream.dat:design-record#91");
+        assert_eq!(parameters.path, Some(PathRef::Native(expected.clone())));
+        assert_eq!(seeds, &[PatternSeed::Native(expected)]);
     }
 }
 
@@ -1764,11 +1819,11 @@ fn standalone_joint_with_an_unknown_merged_child_key_keeps_its_decoded_operand()
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,
-        crate::loss::F3dLossCode::AssemblyOperandDescentUnresolved.kind()
+        crate::loss::F3dLossCode::AssemblyJointSourceBindingAssumed.kind()
     );
     assert!(matches!(
         model.features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. })
     ));
 }
 
@@ -1899,4 +1954,45 @@ fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
             );
         }
     }
+}
+
+#[test]
+fn standalone_external_joint_binds_without_changing_source_operands() {
+    use cadmpeg_ir::products::{ExternalDocument, JointOperand};
+    let (mut model, _) = standalone_joint_model(Vec::new());
+    for (ordinal, connector) in model.assembly_joints[0].connectors_mut().enumerate() {
+        connector.operand = JointOperand::external(
+            ExternalDocument::document_id("11111111-2222-3333-4444-555555555555"),
+            format!("source-occurrence-{ordinal}"),
+            vec!["nested-source-occurrence".into()],
+        );
+    }
+    let decoded = model.assembly_joints.clone();
+    let complete = std::collections::BTreeSet::from(["f3d:scope#standalone".to_owned()]);
+    let children = std::collections::BTreeMap::new();
+    let mut losses = Vec::new();
+    super::super::rebind_joints(
+        &mut super::super::JointRows {
+            occurrences: &model.occurrences,
+            joints: &mut model.assembly_joints,
+            features: &mut model.features,
+        },
+        &children,
+        &children,
+        &complete,
+        super::super::JointRebind::CompleteScopes,
+        &mut losses,
+    );
+    assert_eq!(model.assembly_joints, decoded);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::AssemblyJointSourceBindingAssumed.kind()
+    );
+    assert_eq!(
+        model.features[0].evaluation.definition(),
+        &FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
+            joint: decoded[0].id.clone(),
+        })
+    );
 }

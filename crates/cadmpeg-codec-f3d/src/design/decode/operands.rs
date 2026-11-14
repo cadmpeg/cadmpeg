@@ -745,7 +745,18 @@ pub(crate) fn has_edge_recipe_operands(
                 | DesignFeatureFamily::SurfaceOffset
                 | DesignFeatureFamily::SurfaceRuled
         )
-    ) || matches!(kind, Kind::EdgeFlange | Kind::Hem | Kind::WorkPoint)
+    ) || matches!(
+        kind,
+        Kind::EdgeFlange | Kind::Hem | Kind::WorkPoint | Kind::SurfaceUntrim
+    )
+}
+
+pub(crate) fn is_surface_untrim_face_group(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+) -> bool {
+    scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim
+        && group.role() == DesignOperandRole::ROLE_0X9
 }
 
 /// Indexed-record distance from an edge-recipe primary record to its terminal
@@ -936,6 +947,9 @@ pub(crate) fn decode_face_operands(
             == Some(DesignFeatureFamily::Mirror)
             && group.role() == DesignOperandRole::ROLE_0X5;
         let is_pattern_face_seed = crate::design::is_pattern_face_seed_group(&scope.kind(), group);
+        let is_bend_stationary = scope.kind()
+            == crate::records::feature::scope::DesignFeatureKind::Bend
+            && group.role() == DesignOperandRole::ROLE_0X10;
         let is_split_face_operand = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::SplitFace
             && group.role() == DesignOperandRole::ROLE_0X10;
@@ -944,6 +958,7 @@ pub(crate) fn decode_face_operands(
             crate::records::feature::scope::DesignFeatureKind::MoveFace
                 | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                 | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
+                | crate::records::feature::scope::DesignFeatureKind::UnStitch
         );
         let is_emboss_face = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::Emboss
@@ -988,7 +1003,9 @@ pub(crate) fn decode_face_operands(
             && !is_mirror_plane
             && !is_pattern_face_seed
             && !is_split_face_operand
+            && !is_bend_stationary
             && !is_delete_face_operand
+            && !is_surface_untrim_face_group(scope, group)
             && !is_emboss_face
             && !is_thread_face
             && !is_hole_face
@@ -1894,6 +1911,7 @@ pub(crate) fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Shell)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Thicken)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Move)
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Align
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfacePatch)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfaceRuled)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::BoundaryFill)
@@ -1904,6 +1922,7 @@ pub(crate) fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfaceTrim)
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::PathPattern
+            || scope.mesh_face_groups().is_some()
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Scale)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::CircularPattern)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::RectangularPattern)
@@ -1915,6 +1934,8 @@ pub(crate) fn decode_construction_operand_groups(
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Modify
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::UnStitch
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal
             || (scope.kind() == crate::records::feature::scope::DesignFeatureKind::Emboss
                 && scope.emboss_operand_construction().is_some())
@@ -1923,6 +1944,7 @@ pub(crate) fn decode_construction_operand_groups(
             || matches!(
                 scope.kind(),
                 crate::records::feature::scope::DesignFeatureKind::BaseFlange
+                    | crate::records::feature::scope::DesignFeatureKind::Bend
                     | crate::records::feature::scope::DesignFeatureKind::EdgeFlange
                     | crate::records::feature::scope::DesignFeatureKind::Hem
             )
@@ -6721,6 +6743,8 @@ fn edge_recipe_topology_triplet(
 /// present within the enclosing boundary, the first following valid indexed
 /// header terminates the envelope; its record index has no fixed delta from
 /// `N`. Select an expected continuation before applying that fallback.
+/// Without an enclosing boundary and a following header, the stream end
+/// terminates the envelope and the returned record index is `0`.
 fn face_recipe_next_boundary(
     bytes: &[u8],
     position: usize,
@@ -6742,10 +6766,12 @@ fn face_recipe_next_boundary(
         })
         .filter(|(_, offset)| within_limit(*offset))
         .min_by_key(|(_, offset)| *offset)
-        .or_else(|| {
-            let offset = next_indexed_record_offset(bytes, position)?;
-            let record_index = indexed_record_header_at(bytes, offset)?.record_index;
-            within_limit(offset).then_some((record_index, offset))
+        .or_else(|| match next_indexed_record_offset(bytes, position) {
+            Some(offset) => {
+                let record_index = indexed_record_header_at(bytes, offset)?.record_index;
+                within_limit(offset).then_some((record_index, offset))
+            }
+            None => limit.is_none().then_some((0, bytes.len())),
         })
         .map(|(record_index, offset)| (offset, record_index))
 }
@@ -6784,6 +6810,9 @@ pub(super) fn parse_face_operand(
         *slot = offset;
         position = offset.checked_add(11)?;
     }
+    if parse_sketch_profile_region_selection(bytes, header.record_index, offsets[0]).is_some() {
+        return None;
+    }
     let stream = native_stream(&scope.id)?;
     let recipe_start = u64::try_from(offsets[3]).ok()?;
     let first_recipe = recipes
@@ -6807,6 +6836,9 @@ pub(super) fn parse_face_operand(
     offsets[4] = immediate_next;
     let mut indexed = [("", 0u32); 5];
     for (offset, slot) in offsets.iter().zip(&mut indexed) {
+        if *offset == bytes.len() {
+            continue;
+        }
         let (class_tag, after_tag) =
             lp_ascii_filtered_view(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
         *slot = (class_tag, View::u32_le_at(bytes, after_tag)?);

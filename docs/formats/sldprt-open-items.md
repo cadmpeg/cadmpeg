@@ -814,7 +814,9 @@ resolve a seed feature?
 
 **Known.** `sldprt.md` §2.1 maps the `<GTOL-name>` tokens to characteristics. One FTC-08 display stores two `<IGTOL-FLAT>` rows with `.03` and `.015` and the free-state modifier on the first. Its face reference selects the face that the two `GdtFlatness` annotations `Flatness1` and `Flatness2` target, with magnitudes `.762` and `.381` mm.
 
-**Need.** Establish whether `IGTOL-` names the same characteristic as `GTOL-` with a display variant, so that such a display depicts its annotations.
+**Need.** Establish the prefix's general role and the remaining `IGTOL-` characteristic meanings.
+
+**Note.** The decoder associates an `IGTOL-FLAT` display with its flatness annotations when the owner or face references select the complete set of at least two rows and all positive row magnitudes agree through one common unit factor. It reports `pmi.swift-internal-flatness-symbol-assumed` for that reading. Other internal symbols remain unresolved.
 
 
 ### DI-64. End of the last SWIFT geometric-tolerance display
@@ -838,6 +840,18 @@ resolve a seed feature?
 **Conflict.** The first-point centre and indexed radial-witness reading has contrary carrier cases under the decoded sketch placements. The compact extended-prefix and legacy equal-endpoint readings also have contrary carrier cases.
 
 **Note.** Retain these records under their current projection until the mapping resolves.
+
+### DI-68. Extrusion end-spec ownership and depth attribution
+
+**Question.** Which serialized children define the active termination kind, depth, direction, and second side of each withheld extrusion extent?
+
+**Known.** The unresolved-termination census contains 100 features in 33 parts. The primary cause counts assign each feature to one cause. Display-length parsing accounts for 64 features in 15 parts and two independent design groups. Its 66 direction-depth pairs contain 62 equal pairs and four unequal pairs in three features. Finite-cap checks give 25 agreements, two contrary cases, and 36 unavailable results in one group; the second group gives one agreement, zero contrary cases, and zero unavailable results. Face-reference forms account for 16 features in five parts and two groups. Vertex-reference forms account for five features in four parts and three groups. Traversal-tail forms account for four features in four parts and three groups. Unbound depth scalars account for four features in four parts and one group. Unsupported second-side codes account for three features in three parts and two groups. Unavailable end-spec headers account for two features in two parts and two groups. An additional first-direction code and surface-extrusion ownership each account for one feature in one part and one group. Configuration consensus disagreements account for zero features. The start type of the `moFromEndSpec_c` object reads as type 0 in 164 objects, type 5 in 14 objects in six parts of two independent design groups, and type 1 in two objects in two parts of two groups. Each type 5 and type 1 start stays unresolved. Eleven type 5 extrusions have a sketch frame that is not a fallback frame, ten in the first group and one in the second. Their owned cap faces place the near cap at the scalar distance from the sketch plane on the normal side in six extrusions and on the opposite side in five, and place the far cap beyond the near cap in seven and between the near cap and the sketch plane in four.
+
+**Need.** Bind each active end-spec, depth scalar, travel direction, and second-side reference to its extrusion. Bind the side of the sketch plane on which a type 5 start lies and the meaning of a type 1 start to the extrusion. Check every proposed admission against the decoded B-rep cap distances in at least two independent design groups, including both caps for a two-sided or symmetric extent. Available truth and export geometry supply supplementary checks.
+
+**Conflict.** A decoded termination kind can coexist with an unresolved length. A retained display length and a named scalar can coexist with an incomplete depth binding. The scalar can equal the separation of surviving caps while their distances from the bound profile plane differ from the scalar. The side of the sketch plane on which a type 5 start lies differs between extrusions of the first design group with the same implicit travel direction.
+
+**Note.** Each census cause retains its unresolved extent and decode loss until its ownership and geometry checks succeed.
 
 ## 6. Container record semantics
 
@@ -1089,3 +1103,13 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Conflict.** The Right matrix normal is +X. The retained Front component fallback normal is -Y.
 
 **Note.** Right component mappings retain their current interpretation and losses. The scoped and lane Front fallbacks retain their frames. Section 3.3 defines local Top component profile placement.
+
+### DI-69. Extrusion Boolean carriers
+
+**Question.** Which complete feature-input carriers select the Boolean operation of the remaining extrusion forms?
+
+**Known.** The withheld set has 45 features in 19 parts and 9 independent design groups. Sheet extrusions account for 24 features in 13 parts and 6 groups. Extended-reference continuations account for 12 features in 2 parts and 2 groups. Terminated headers account for 3 features in 3 parts and 2 groups. Compact join class bindings account for 6 features in 3 parts and 2 groups. The 62 saved configuration states have unresolved operations.
+
+**Need.** Establish the class-scoped operation carrier and the configuration-local state against producing-face orientation and body ownership.
+
+**Note.** Withheld operations retain their existing losses.

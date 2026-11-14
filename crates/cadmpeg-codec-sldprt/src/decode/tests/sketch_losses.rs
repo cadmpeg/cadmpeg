@@ -109,6 +109,8 @@ fn typed_native_operands_are_reported_as_design_losses() {
                 .unwrap(),
                 op: cadmpeg_ir::features::BooleanKind::Join,
                 keep_tools: false,
+
+                destination: cadmpeg_ir::features::CombineDestination::default(),
             }),
         ),
         native_ref: None,

@@ -602,9 +602,9 @@ pub(super) fn decode(
                         )
                     }),
                 targets: targets(
-                    refs.iter()
-                        .copied()
-                        .filter(|id| base_aspects.contains(id))
+                    tolerance_target(record)
+                        .filter(|id| shape_aspects.contains(id))
+                        .into_iter()
                         .map(Ok),
                 )?,
                 visible: None,
@@ -615,7 +615,7 @@ pub(super) fn decode(
                     defined_area_unit,
                     defined_area_second_unit,
                     datum_system,
-                    modifiers: tolerance_modifiers(record, ctx)?,
+                    modifiers: tolerance_modifiers(record, exchange, ctx)?,
                     constraints,
                 },
             },
@@ -928,10 +928,14 @@ fn resolve_geometric_item_usages(
     }
 
     let mut relationship_aspects = BTreeMap::<u64, BTreeSet<u64>>::new();
+    let mut composite_parents = BTreeMap::<u64, BTreeSet<u64>>::new();
     for record in exchange.records().values() {
         let Some((relating, related)) = relationship_endpoints(record, ctx)? else {
             continue;
         };
+        if !shape_aspects.contains(&relating) || !shape_aspects.contains(&related) {
+            continue;
+        }
         relationship_aspects
             .entry(relating)
             .or_default()
@@ -940,6 +944,25 @@ fn resolve_geometric_item_usages(
             .entry(related)
             .or_default()
             .insert(relating);
+        if exchange.records().get(&relating).is_some_and(|record| {
+            record.partials.iter().any(|partial| {
+                matches!(
+                    partial.name.as_str(),
+                    "COMPOSITE_SHAPE_ASPECT"
+                        | "CONTINUOUS_SHAPE_ASPECT"
+                        | "ALL_AROUND_SHAPE_ASPECT"
+                        | "BETWEEN_SHAPE_ASPECT"
+                        | "COMPOSITE_GROUP_SHAPE_ASPECT"
+                        | "COMPOSITE_UNIT_SHAPE_ASPECT"
+                        | "COMMON_DATUM"
+                )
+            })
+        }) {
+            composite_parents
+                .entry(related)
+                .or_default()
+                .insert(relating);
+        }
     }
 
     for (&id, record) in exchange.records() {
@@ -968,6 +991,14 @@ fn resolve_geometric_item_usages(
                 }
             }
         }
+        collect_composite_annotations(
+            definition,
+            &composite_parents,
+            &aspect_annotations,
+            &mut BTreeSet::new(),
+            &mut annotation_indices,
+            ctx,
+        )?;
         if annotation_indices.is_empty() {
             continue;
         }
@@ -982,6 +1013,25 @@ fn resolve_geometric_item_usages(
             }
         }
         typed.insert(id);
+    }
+    Ok(())
+}
+
+fn collect_composite_annotations(
+    aspect: u64,
+    parents: &BTreeMap<u64, BTreeSet<u64>>,
+    annotations: &BTreeMap<u64, BTreeSet<AnnotationIndex>>,
+    visited: &mut BTreeSet<u64>,
+    output: &mut BTreeSet<AnnotationIndex>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    if !visited.insert(aspect) {
+        return Ok(());
+    }
+    let _depth = ctx.enter_nested("step_pmi_composite_aspect_walk")?;
+    output.extend(annotations.get(&aspect).into_iter().flatten().copied());
+    for parent in parents.get(&aspect).into_iter().flatten() {
+        collect_composite_annotations(*parent, parents, annotations, visited, output, ctx)?;
     }
     Ok(())
 }
@@ -1795,6 +1845,7 @@ fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
 
 fn tolerance_modifiers(
     record: &RawRecord,
+    exchange: &Exchange,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<String>, CodecError> {
     let mut modifiers = Vec::new();
@@ -1807,7 +1858,21 @@ fn tolerance_modifiers(
             modifier_values(value, &mut modifiers, ctx)?;
         }
     }
+    if tolerance_target(record)
+        .and_then(|target| exchange.records().get(&target))
+        .is_some_and(|target| target.partial("ALL_AROUND_SHAPE_ASPECT").is_some())
+        && !modifiers.iter().any(|modifier| modifier == "all_around")
+    {
+        modifiers.push("all_around".into());
+    }
     Ok(modifiers)
+}
+
+fn tolerance_target(record: &RawRecord) -> Option<u64> {
+    match named_parameter(record, "GEOMETRIC_TOLERANCE", 3).or_else(|| record.parameter(3))? {
+        Value::Reference(id) => Some(*id),
+        _ => None,
+    }
 }
 
 fn modifier_values(

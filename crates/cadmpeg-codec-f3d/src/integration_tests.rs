@@ -12,6 +12,7 @@ mod design_containment;
 mod design_parameters;
 mod emboss_operands;
 mod external_placement;
+mod f30_placements;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;
@@ -19,6 +20,7 @@ mod measured_geometry;
 mod optional_payloads;
 mod pcurve_uv_offset;
 mod placement_history;
+mod position;
 mod procedural_support;
 mod product_owners;
 mod profile_region_selection;
@@ -710,3 +712,5 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
 mod dimension_annotations;
 
 mod stale_region_certificate;
+
+mod move_face;

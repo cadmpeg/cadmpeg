@@ -500,7 +500,7 @@ fn axis_angle_is_resolved(axis_angle: &cadmpeg_ir::features::AxisAngle) -> bool 
 fn face_motion_is_resolved(motion: &cadmpeg_ir::features::FaceMotion) -> bool {
     use cadmpeg_ir::features::FaceMotion;
     match motion {
-        FaceMotion::Offset { .. } => true,
+        FaceMotion::Offset { .. } | FaceMotion::Transform { .. } => true,
         FaceMotion::Translate { direction, .. } => direction.unit().is_some(),
         FaceMotion::Rotate { axis_dir, .. } => axis_dir.unit().is_some(),
     }
@@ -587,6 +587,11 @@ fn loft_path_is_resolved(path: &cadmpeg_ir::features::PathRef) -> bool {
     }
 }
 
+fn feature_is_incomplete(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.source_tag.as_deref() == Some(mesh_operations::combine::SOURCE_KIND)
+        || feature_definition_is_incomplete(feature.evaluation.definition())
+}
+
 fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind};
 
@@ -597,8 +602,20 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(
             FeatureOperation::ReferenceImage { .. } | FeatureOperation::DatumPrincipalPlane { .. },
         ) => false,
-        FeatureDefinition::Operation(FeatureOperation::MeshImport { tessellations }) => {
-            tessellations.is_empty()
+        FeatureDefinition::Operation(FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. }) => true,
+        FeatureDefinition::Operation(
+            FeatureOperation::MeshImport {
+                tessellations: source,
+            }
+            | FeatureOperation::MeshSection { source, .. }
+            | FeatureOperation::MeshModify { source, .. },
+        ) => !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_)),
+        FeatureDefinition::Operation(FeatureOperation::MeshConvert(conversion)) => {
+            conversion.method.is_none()
+                || conversion.sources.is_empty()
+                || conversion.sources.iter().any(|source| {
+                    !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
+                })
         }
         FeatureDefinition::Operation(FeatureOperation::Decal { faces, .. }) => {
             !face_selection_is_resolved(faces)
@@ -626,6 +643,21 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || pitch.is_none()
                 || modeled.is_none()
                 || extent.is_none()
+        }
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalUnfold { construction }) => {
+            construction.stationary.as_ref().is_none_or(|face| !face_selection_is_resolved(face))
+                || construction.all_bends.is_none()
+                || (construction.all_bends != Some(true) && construction.bends.as_ref().is_none_or(|face| !face_selection_is_resolved(face)))
+                || construction.neutral_factor.is_none()
+        }
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalRefold { construction }) => construction.unfold.is_none(),
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalBendLines { construction }) => {
+            construction.bends.is_empty()
+                || construction.bends.iter().any(|bend| {
+                    bend.angle.is_none() || bend.line.as_ref().is_none_or(|line| !loft_path_is_resolved(line))
+                })
+                || construction.stationary.as_ref().is_none_or(|face| !face_selection_is_resolved(face))
+                || construction.inside_radius.is_none()
         }
         FeatureDefinition::Operation(FeatureOperation::Unresolved { .. }) => true,
         FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
@@ -791,12 +823,12 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             construction,
             result,
         }) => {
-            use cadmpeg_ir::features::{CoilPlacement, CoilResult};
+            use cadmpeg_ir::features::{CoilPlacement, SolidFeatureResult};
 
             matches!(construction.placement, CoilPlacement::Native { .. })
                 || match result {
-                    CoilResult::NewBody {} => false,
-                    CoilResult::Boolean { targets, .. } => !body_selection_is_resolved(targets),
+                    SolidFeatureResult::NewBody {} => false,
+                    SolidFeatureResult::Boolean { targets, .. } => !body_selection_is_resolved(targets),
                 }
         }
         // The draft angle remains available when face recipes fail, but replay
@@ -852,6 +884,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !body_selection_is_resolved(source)
         }
         FeatureDefinition::Operation(FeatureOperation::InsertComponent { .. }) => false,
+        FeatureDefinition::Operation(FeatureOperation::InsertComponents { components }) => !components.is_resolved(),
+        FeatureDefinition::Operation(FeatureOperation::CapturedComponentPositions { positions }) => {
+            positions.iter().any(|position| position.occurrence.is_none()
+                || matches!(position.transform, cadmpeg_ir::features::CapturedPositionTransform::Native { .. }))
+        }
         FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::Shell {
             bodies,
@@ -872,14 +909,23 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || thickness.is_none()
                 || (outward.is_none() && *mode != Some(cadmpeg_ir::features::ShellMode::BothSides))
         }
+        FeatureDefinition::Operation(FeatureOperation::UntrimSurface { faces, loops, extension }) => {
+            !face_selection_is_resolved(faces)
+                || extension.is_none()
+                || match loops {
+                    cadmpeg_ir::features::surfaces::UntrimLoops::Unresolved {} => true,
+                    cadmpeg_ir::features::surfaces::UntrimLoops::Selected { edges } => !edge_selection_is_resolved(edges),
+                    _ => false,
+                }
+        }
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
             thickness,
-            side,
-        }) => {
+            side, result, .. }) => {
             !face_selection_is_resolved(faces)
                 || thickness.is_none()
                 || side.is_none()
+                || matches!(result, Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }) if !body_selection_is_resolved(targets))
         }
         FeatureDefinition::Operation(FeatureOperation::KnitSurface {
             faces,
@@ -942,7 +988,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     .iter()
                     .any(|group| !edge_selection_is_resolved(&group.edges))
         }
-        FeatureDefinition::Operation(FeatureOperation::DeleteFace { faces, .. }) => {
+        FeatureDefinition::Operation(
+            FeatureOperation::DeleteFace { faces, .. } | FeatureOperation::UnstitchFaces { faces },
+        ) => {
             !face_selection_is_resolved(faces)
         }
         FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) => {
@@ -1097,10 +1145,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                         )
                 })
         }
-        FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) => {
+        FeatureDefinition::Operation(FeatureOperation::Combine { operands, destination, .. }) => {
             let target = operands.target();
             let tools = operands.tools();
             !body_selection_is_resolved(target) || !body_selection_is_resolved(tools)
+                || matches!(destination, cadmpeg_ir::features::CombineDestination::NewComponent)
         }
         // A typed family is not replayable until this match states and checks
         // its complete construction invariants.
@@ -1111,7 +1160,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
 fn incomplete_feature_families(ir: &CadIr) -> std::collections::BTreeMap<&str, usize> {
     let mut families = std::collections::BTreeMap::new();
     for feature in &ir.model.features {
-        if !feature_definition_is_incomplete(feature.evaluation.definition()) {
+        if !feature_is_incomplete(feature) {
             continue;
         }
         let family = feature.source_tag.as_deref().unwrap_or_else(|| {
@@ -1619,9 +1668,7 @@ fn design_projection_gaps(
         | BodySelection::Local { .. } => 0,
     };
     for feature in &ir.model.features {
-        gaps.incomplete_features += usize::from(feature_definition_is_incomplete(
-            feature.evaluation.definition(),
-        ));
+        gaps.incomplete_features += usize::from(feature_is_incomplete(feature));
         gaps.native_reference_images += usize::from(matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1650,9 +1697,17 @@ fn design_projection_gaps(
                     native_body_selection_count(target) + native_body_selection_count(tools);
             }
             FeatureDefinition::Operation(FeatureOperation::Coil {
-                result: cadmpeg_ir::features::CoilResult::Boolean { targets, .. },
+                result: cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. },
                 ..
             }) => gaps.body_selections += native_body_selection_count(targets),
+            FeatureDefinition::Operation(FeatureOperation::Thicken { faces, result, .. }) => {
+                face_selection(faces);
+                if let Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }) =
+                    result
+                {
+                    gaps.body_selections += native_body_selection_count(targets);
+                }
+            }
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile,
                 start,
@@ -1837,8 +1892,17 @@ fn design_projection_gaps(
             }
             FeatureDefinition::Operation(
                 FeatureOperation::DeleteFace { faces, .. }
+                | FeatureOperation::UnstitchFaces { faces }
                 | FeatureOperation::OffsetSurface { faces, .. },
             ) => face_selection(faces),
+            FeatureDefinition::Operation(FeatureOperation::UntrimSurface {
+                faces, loops, ..
+            }) => {
+                face_selection(faces);
+                if let cadmpeg_ir::features::surfaces::UntrimLoops::Selected { edges } = loops {
+                    edge_selection(edges);
+                }
+            }
             FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) => {
                 let targets = operands.targets();
                 let replacements = operands.replacements();
@@ -1867,7 +1931,9 @@ fn design_projection_gaps(
                         PatternSeed::Bodies(bodies) => {
                             gaps.body_selections += native_body_selection_count(bodies);
                         }
-                        PatternSeed::Feature(_) | PatternSeed::Occurrences(..) => {}
+                        PatternSeed::Native(_)
+                        | PatternSeed::Feature(_)
+                        | PatternSeed::Occurrences(..) => {}
                     }
                 }
                 match pattern.definition() {
@@ -1875,6 +1941,14 @@ fn design_projection_gaps(
                     PatternTransform::CurveDriven {
                         path: Some(path), ..
                     } => gaps.path_selections += usize::from(!loft_path_is_resolved(path)),
+                    PatternTransform::CurveDrivenPartial { parameters } => {
+                        gaps.path_selections += usize::from(
+                            parameters
+                                .path
+                                .as_ref()
+                                .is_none_or(|path| !loft_path_is_resolved(path)),
+                        );
+                    }
                     _ => {}
                 }
             }
@@ -2441,7 +2515,7 @@ fn report_design_projection_gaps(
         }
         let (code, reason) = if scope.emboss_construction().is_some() {
             (F3dLossCode::EmbossControlsNative,
-             "control words, native pairs, scalar-owner links, selection links, contour membership, and placement have no neutral Wrap mapping")
+             "control words, native pairs, selection links, contour membership, and placement retain their native interpretation; scalar-owner links also expose independent Wrap parameters")
         } else {
             (
                 F3dLossCode::EmbossPrefixUnparsed,
@@ -2472,7 +2546,11 @@ fn report_design_projection_gaps(
     )?;
     let mut uninterpreted_scopes = 0;
     for scope in &native.design_parameter_scopes {
-        if scope.occurrence_transfer.is_none() && scope.payload().is_uninterpreted() {
+        if scope.occurrence_transfer.is_none()
+            && scope.occurrence_transfer_intent.is_none()
+            && scope.captured_positions.is_none()
+            && scope.payload().is_uninterpreted()
+        {
             uninterpreted_scopes += 1;
         }
     }
@@ -2940,6 +3018,8 @@ struct F3dDecodeSession<'a> {
     report_scope: crate::report::ReportScope,
     unknowns: Vec<UnknownRecord>,
     admitted_entities: u64,
+    component_definitions_by_record:
+        std::collections::BTreeMap<(String, u64), cadmpeg_ir::ids::ProductDefinitionId>,
 }
 
 impl<'a> F3dDecodeSession<'a> {
@@ -3016,6 +3096,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report_scope,
                 unknowns,
                 admitted_entities,
+                component_definitions_by_record: std::collections::BTreeMap::new(),
             },
             SessionPath::Geometry(Box::new(GeometrySessionPath {
                 index: GeometryIndex {
@@ -3061,6 +3142,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report_scope,
                 unknowns,
                 admitted_entities,
+                component_definitions_by_record: std::collections::BTreeMap::new(),
             },
             SessionPath::Bodyless {
                 mesh_projection,
@@ -3084,6 +3166,9 @@ impl<'a> F3dDecodeSession<'a> {
         self.report
             .losses
             .extend(prereqs.design_parameter_scope_losses.iter().cloned());
+        self.report
+            .losses
+            .extend(prereqs.design_feature_timeline_losses.iter().cloned());
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
         report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
         report_parameter_null_owners(&mut self.report, &prereqs.design_parameter_null_owners);
@@ -3235,6 +3320,8 @@ impl<'a> F3dDecodeSession<'a> {
             products: design_intent::DesignProducts {
                 occurrences: &model.occurrences,
                 assembly_joints: &model.assembly_joints,
+                definitions: &model.product_definitions,
+                component_definitions_by_record: &self.component_definitions_by_record,
             },
             geometry: design_intent::DesignGeometry {
                 primary_brep: match path {
@@ -3411,6 +3498,7 @@ impl<'a> F3dDecodeSession<'a> {
             &local_sources,
             &prereqs.design_types,
         )?;
+        self.component_definitions_by_record = local.component_definitions_by_record.clone();
         if let Some(table) = prereqs.xref_table() {
             let external =
                 crate::xref::project_occurrences(table, &local_sources, &local.occurrences)?;
@@ -4397,63 +4485,6 @@ fn mesh_texture_assignments(
         });
     }
     Ok(assignments)
-}
-
-/// Replace the native definition of each mesh-import scope with its exact
-/// tessellation identities.
-fn mesh_feature_tessellations<'a>(
-    projection: &'a MeshProjection,
-    stream: &str,
-    record_index: u32,
-) -> Option<&'a [String]> {
-    let key = stream.to_string();
-    projection
-        .tessellations_by_scope
-        .get(&(key, record_index))
-        .map(Vec::as_slice)
-}
-
-fn bind_mesh_feature_definitions(
-    features: &mut [cadmpeg_ir::features::Feature],
-    scopes: &[crate::records::feature::scope::DesignParameterScope],
-    projection: &MeshProjection,
-) -> Result<(), cadmpeg_core::CodecError> {
-    for feature in features {
-        if feature.source_tag.as_deref() != Some("Base Mesh Feature") {
-            continue;
-        }
-        let Some(native_ref) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        let Some(scope) = scopes.iter().find(|scope| scope.id == native_ref) else {
-            continue;
-        };
-        let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-        let Some(tessellations) =
-            mesh_feature_tessellations(projection, stream, scope.record_index)
-        else {
-            continue;
-        };
-        if tessellations.is_empty() {
-            continue;
-        }
-        let mut copies = Vec::new();
-        for tessellation in tessellations {
-            let copy = tessellation.to_owned();
-            copies.push(copy);
-        }
-        feature
-            .evaluation
-            .set_definition(cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::MeshImport {
-                    tessellations: copies
-                        .try_into()
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
-                },
-            ));
-    }
-
-    Ok(())
 }
 
 /// Project channels with a settled element layout and count unresolved channels
@@ -6114,6 +6145,8 @@ pub(crate) fn apply_body_presentation_names(
 
 pub(crate) mod design_intent;
 mod geometry_admission;
+mod mesh_import;
+mod mesh_operations;
 mod prereqs;
 
 #[cfg(test)]

@@ -18,6 +18,7 @@ mod blend_spine;
 mod body_candidates;
 mod body_index;
 mod cache;
+pub(crate) mod combine_history_tools;
 mod combine_selection;
 pub(crate) mod compact_lineage;
 mod delete_face;
@@ -1036,6 +1037,11 @@ fn circle_arc_extremes(
     out
 }
 
+pub(crate) struct BoundFeatureOutputs {
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) sweep_kinds: crate::design::feature_project::sweep_fallback::OutputFacts,
+}
+
 pub(crate) fn bind_feature_outputs(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
@@ -1043,10 +1049,11 @@ pub(crate) fn bind_feature_outputs(
     active_bodies: &[cadmpeg_ir::topology::Body],
     scope_histories: &HashMap<String, String>,
     primary_brep: Option<&str>,
-) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
+) -> Result<BoundFeatureOutputs, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
+    let mut sweep_kinds = crate::design::feature_project::sweep_fallback::OutputFacts::default();
     let mut inferred_histories = Vec::new();
     let mut datum_plane_frames = HashMap::<
         cadmpeg_ir::features::FeatureId,
@@ -1555,6 +1562,21 @@ pub(crate) fn bind_feature_outputs(
         let history_source = bound_history.and_then(|h| historical_brep_source(&histories[h].id));
         let cur_key = bound_history.map(|h| (h, state_id));
         let prev_key = bound_history.map(|h| (h, previous_state_id));
+        if bound_history.is_some_and(|h| {
+            histories[h].states().iter().any(|state| {
+                state.state_id == state_id
+                    && state.transition.as_ref().is_some_and(|transition| {
+                        transition.previous_state_id == Some(previous_state_id)
+                            && transition.geometry_unchanged
+                    })
+            })
+        }) {
+            feature.source_properties.insert(
+                cadmpeg_core::nonblank_literal!("transition_geometry"),
+                "unchanged".into(),
+            );
+        }
+
         let prev_feat_solid = bound_history.and_then(|h| prev_feature_solid.get(&h).copied());
         let feature_scope = feature
             .native_ref
@@ -1821,6 +1843,7 @@ pub(crate) fn bind_feature_outputs(
                 .or_insert(formatted);
         }
         if deleted_set.is_empty() && !combine_states_applied_operation(feature, scopes) {
+            let mut assumed_cut = false;
             feature.evaluation.edit(|def, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::Combine {
                     op,
@@ -1834,9 +1857,15 @@ pub(crate) fn bind_feature_outputs(
                 {
                     if *op == cadmpeg_ir::features::BooleanKind::Join && *keep_tools {
                         *op = cadmpeg_ir::features::BooleanKind::Cut;
+                        assumed_cut = true;
                     }
                 }
             });
+            if assumed_cut {
+                losses.push(crate::loss::F3dLossCode::FeatureCombineKeptToolsCutAssumed.note(
+                    format!("feature {} assumes Cut for a stored Join with kept tools and no deleted bodies", feature.id),
+                ));
+            }
         }
         if let Some(solid_outputs) = cur_key.and_then(|k| state_solid_outputs.get(&k)) {
             let mut filtered: Vec<i64> = if let (Some(before), Some(after)) =
@@ -1931,10 +1960,12 @@ pub(crate) fn bind_feature_outputs(
                 saved_edges.join(","),
             );
         }
+        let complete_sweep_output = resolved.len() == outputs.len() && saved_edges.is_empty();
         feature.evaluation.set_outputs(
             cadmpeg_ir::features::DistinctMembers::try_from(resolved)
                 .map_err(cadmpeg_core::CodecError::from)?,
         );
+        sweep_kinds.record(feature, active_bodies, complete_sweep_output);
         if let Some(scope) = feature
             .native_ref
             .as_deref()
@@ -1960,7 +1991,10 @@ pub(crate) fn bind_feature_outputs(
             .and_then(|id| base_scopes.get(id).copied());
         stored_bodies::finalize_body_sets(feature, base_scope);
     }
-    Ok(losses)
+    Ok(BoundFeatureOutputs {
+        losses,
+        sweep_kinds,
+    })
 }
 
 fn combine_states_applied_operation(
@@ -2439,7 +2473,10 @@ pub(crate) fn bind_feature_body_selections(
                 break 'feature_edit;
             }
             if let FeatureDefinition::Operation(FeatureOperation::Coil {
-                result: cadmpeg_ir::features::CoilResult::Boolean { targets, .. },
+                result: cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. },
+                ..
+            } | FeatureOperation::Thicken {
+                result: Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }),
                 ..
             }) = definition
             {
@@ -3454,7 +3491,28 @@ pub(crate) fn bind_feature_face_selections(
                         operands,
                         &transition.topology.faces.updated,
                     );
-                    crate::design::feature_project::list_thicken_whole_bodies(faces, scope, groups);
+                    crate::design::feature_project::thicken::list_thicken_whole_bodies(
+                        faces, scope, groups,
+                    );
+                    selection::bind_body_recipe_face_selection(
+                        faces,
+                        feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                }
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::UntrimSurface { faces, .. },
+                ) => {
+                    selection::bind_face_selection(
+                        faces,
+                        scope,
+                        groups,
+                        operands,
+                        &transition.topology.faces.updated,
+                    );
                     selection::bind_body_recipe_face_selection(
                         faces,
                         feature_id,
@@ -8418,6 +8476,7 @@ fn bind_historical_edge_operand<'a>(
             operand.recipe_structure.as_ref(),
             &operand.recipe_references,
             &operand.preceding_boundary_edge_slots,
+            &operand.transition_deleted_edge_slots,
             topology,
             topology_queries,
         ) {
@@ -8444,8 +8503,9 @@ pub(crate) fn inferred_edge_selection_note(
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct SideOneEdge {
     pub(crate) slot: i64,
-    /// Whether the edge bounds none of the recipe's candidate faces, so the
-    /// named faces alone select it.
+    /// Whether no proven rule selects the edge: it bounds none of the
+    /// recipe's candidate faces and the operation's transition does not
+    /// prove it, so the named faces alone select it.
     pub(crate) inferred: bool,
 }
 

@@ -1211,6 +1211,56 @@ id_type!(
     UnknownId, compose, into_string
 );
 
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(transparent)]
+#[doc = "Checked native provenance identity that rewrites independently of neutral arena references."]
+pub struct NativeId(Identity);
+
+impl NativeId {
+    #[doc = "Admit a native identity with the document identity grammar."]
+    pub fn mint(value: impl Into<String>) -> Result<Self, IdentityError> {
+        Identity::new(value).map(Self)
+    }
+
+    #[doc = "Borrow the retained native identity."]
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl crate::schema::rewrite::typed::RewriteIdentities for NativeId {
+    fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: &mut serde_json::Value,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        <Identity as crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(
+            ctx, value, map,
+        )
+    }
+
+    fn visit_identity_references(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        Ok(())
+    }
+
+    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map)
+            .map(Self)
+    }
+}
+
 impl std::borrow::Borrow<str> for UnknownId {
     fn borrow(&self) -> &str {
         self.as_str()

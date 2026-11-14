@@ -6332,7 +6332,7 @@ pub fn model_surface_point(
 }
 
 /// Evaluate a surface carrier against the caller's index of its model.
-pub(super) fn model_surface_point_in_index(
+pub fn model_surface_point_in_index(
     admission: admission::EvaluationAdmission<'_, '_>,
     index: &crate::index::ModelIndex<'_>,
     geometry: &SurfaceGeometry,

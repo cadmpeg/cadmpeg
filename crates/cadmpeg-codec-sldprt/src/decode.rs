@@ -312,7 +312,9 @@ fn incomplete_pattern<C: cadmpeg_ir::features::patterns::CompositeStages>(
         PatternTransform::Linear { direction, .. }
         | PatternTransform::LinearOffsets { direction, .. } => direction.is_none(),
         PatternTransform::Circular { .. } | PatternTransform::Mirror { .. } => false,
-        PatternTransform::MirrorReference { .. } => true,
+        PatternTransform::MirrorReference { .. } | PatternTransform::CurveDrivenPartial { .. } => {
+            true
+        }
         PatternTransform::CircularAngles { .. } => false,
         PatternTransform::CurveDriven { path, .. } => path.as_ref().is_none_or(incomplete_path),
         PatternTransform::Scale { center, .. } => matches!(center, PatternScaleCenter::Native(_)),
@@ -1290,6 +1292,32 @@ pub(crate) fn append_design_losses(
             "{unresolved_extrude_directions} extrusion definition(s) retain native travel sense because finite start and opposite end caps contradict the implicit direction."
         )));
     }
+    let unresolved_extrude_starts = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.evaluation.definition())
+        .chain(ir.model.configurations.iter().flat_map(|configuration| {
+            configuration
+                .feature_states
+                .values()
+                .map(|state| &state.definition)
+        }))
+        .filter(|definition| {
+            matches!(
+                definition.operation(),
+                FeatureOperation::Extrude {
+                    start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
+                    ..
+                }
+            )
+        })
+        .count();
+    if unresolved_extrude_starts > 0 {
+        report.losses.push(SldprtLossCode::FeatureExtrudeStartUnresolved.note(format!(
+            "{unresolved_extrude_starts} extrusion definition(s) retain a native start condition that is neither the profile plane nor an offset plane with an owned scalar."
+        )));
+    }
     let incomplete_typed_features = evaluated_feature_states
         .iter()
         .filter(|state| {
@@ -1306,12 +1334,64 @@ pub(crate) fn append_design_losses(
                 | FeatureOperation::Helix { .. } => false,
                 FeatureOperation::BaseFeature { bodies } => incomplete_body_selection(bodies),
                 FeatureOperation::InsertBodies { bodies } => !bodies.is_resolved(),
-                FeatureOperation::MeshImport { .. } => false,
+                FeatureOperation::MeshGenerateFaceGroups { .. }
+                | FeatureOperation::MeshCombineFaceGroups { .. } => true,
+                FeatureOperation::MeshImport { .. }
+                | FeatureOperation::MeshSection { .. }
+                | FeatureOperation::MeshModify { .. }
+                | FeatureOperation::MeshConvert(_) => false,
                 FeatureOperation::InsertComponent { occurrence } => !ir
                     .model
                     .occurrences
                     .iter()
                     .any(|candidate| candidate.id == *occurrence),
+                FeatureOperation::InsertComponents { components } => {
+                    !components.is_resolved()
+                        || components.occurrences().iter().any(|occurrence| {
+                            !ir.model
+                                .occurrences
+                                .iter()
+                                .any(|candidate| candidate.id == *occurrence)
+                        })
+                }
+                FeatureOperation::CapturedComponentPositions { positions } => {
+                    positions.iter().any(|position| {
+                        position.occurrence.as_ref().is_none_or(|occurrence| {
+                            !ir.model
+                                .occurrences
+                                .iter()
+                                .any(|candidate| candidate.id == *occurrence)
+                        }) || matches!(
+                            position.transform,
+                            cadmpeg_ir::features::CapturedPositionTransform::Native { .. }
+                        )
+                    })
+                }
+                FeatureOperation::ComponentTransfer {
+                    occurrence,
+                    component,
+                    source_owner,
+                    target_owner,
+                    target_transform,
+                    ..
+                } => {
+                    occurrence.as_ref().is_none_or(|occurrence| {
+                        !ir.model
+                            .occurrences
+                            .iter()
+                            .any(|candidate| candidate.id == *occurrence)
+                    }) || [component, source_owner, target_owner]
+                        .into_iter()
+                        .any(|definition| {
+                            definition.as_ref().is_none_or(|definition| {
+                                !ir.model
+                                    .product_definitions
+                                    .iter()
+                                    .any(|candidate| candidate.id == *definition)
+                            })
+                        })
+                        || target_transform.is_none()
+                }
                 FeatureOperation::AssemblyJoint { joint } => !ir
                     .model
                     .assembly_joints
@@ -1361,8 +1441,8 @@ pub(crate) fn append_design_losses(
                         construction.placement,
                         cadmpeg_ir::features::CoilPlacement::Native { .. }
                     ) || match result {
-                        cadmpeg_ir::features::CoilResult::NewBody {} => false,
-                        cadmpeg_ir::features::CoilResult::Boolean { targets, .. } => {
+                        cadmpeg_ir::features::SolidFeatureResult::NewBody {} => false,
+                        cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. } => {
                             incomplete_body_selection(targets)
                         }
                     }
@@ -1558,6 +1638,25 @@ pub(crate) fn append_design_losses(
                 FeatureOperation::SheetMetalBend { attachment, .. } => {
                     incomplete_edge_selection(attachment)
                 }
+                FeatureOperation::SheetMetalUnfold { construction } => {
+                    construction.stationary.as_ref().is_none_or(incomplete_face_selection)
+                        || construction.all_bends.is_none()
+                        || (construction.all_bends != Some(true)
+                            && construction.bends.as_ref().is_none_or(incomplete_face_selection))
+                        || construction.neutral_factor.is_none()
+                }
+                FeatureOperation::SheetMetalRefold { construction } => {
+                    construction.unfold.is_none()
+                }
+                FeatureOperation::SheetMetalBendLines { construction } => {
+                    construction.bends.is_empty()
+                        || construction.bends.iter().any(|bend| {
+                            bend.angle.is_none()
+                                || bend.line.as_ref().is_none_or(incomplete_path)
+                        })
+                        || construction.stationary.as_ref().is_none_or(incomplete_face_selection)
+                        || construction.inside_radius.is_none()
+                }
                 FeatureOperation::SheetMetalCorner { .. } => false,
                 FeatureOperation::SheetMetalEdgeFlange { edges, .. } => {
                     incomplete_edge_selection(edges)
@@ -1652,8 +1751,8 @@ pub(crate) fn append_design_losses(
                 FeatureOperation::Thicken {
                     faces,
                     thickness,
-                    side,
-                } => incomplete_face_selection(faces) || thickness.is_none() || side.is_none(),
+                    side, result, .. } => incomplete_face_selection(faces) || thickness.is_none() || side.is_none()
+                    || matches!(result, Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }) if incomplete_body_selection(targets)),
                 FeatureOperation::OffsetSurface { faces, distance } => {
                     incomplete_face_selection(faces) || distance.is_none()
                 }
@@ -1666,6 +1765,21 @@ pub(crate) fn append_design_losses(
                     incomplete_face_selection(faces)
                         || merge_entities.is_none()
                         || create_solid.is_none()
+                }
+                FeatureOperation::UntrimSurface {
+                    faces,
+                    loops,
+                    extension,
+                } => {
+                    incomplete_face_selection(faces)
+                        || extension.is_none()
+                        || match loops {
+                            cadmpeg_ir::features::surfaces::UntrimLoops::Unresolved {} => true,
+                            cadmpeg_ir::features::surfaces::UntrimLoops::Selected { edges } => {
+                                incomplete_edge_selection(edges)
+                            }
+                            _ => false,
+                        }
                 }
                 FeatureOperation::ExtendSurface {
                     faces,
@@ -1741,10 +1855,19 @@ pub(crate) fn append_design_losses(
                             cadmpeg_ir::features::DraftAnchor::NeutralPlane { .. }
                         ) && outward.is_none())
                 }
-                FeatureOperation::Combine { operands, .. } => {
+                FeatureOperation::Combine {
+                    operands,
+                    destination,
+                    ..
+                } => {
                     let target = operands.target();
                     let tools = operands.tools();
-                    incomplete_body_selection(target) || incomplete_body_selection(tools)
+                    incomplete_body_selection(target)
+                        || incomplete_body_selection(tools)
+                        || matches!(
+                            destination,
+                            cadmpeg_ir::features::CombineDestination::NewComponent
+                        )
                 }
                 FeatureOperation::BoundaryFill { tools, cells } => {
                     incomplete_body_selection(tools) || cells.iter().any(incomplete_body_selection)
@@ -1784,7 +1907,8 @@ pub(crate) fn append_design_losses(
                 FeatureOperation::DeleteBody { bodies, mode } => {
                     incomplete_body_selection(bodies) || *mode == BodyRetentionMode::Unresolved
                 }
-                FeatureOperation::DeleteFace { faces, .. } => incomplete_face_selection(faces),
+                FeatureOperation::DeleteFace { faces, .. }
+                | FeatureOperation::UnstitchFaces { faces } => incomplete_face_selection(faces),
                 FeatureOperation::ReplaceFace { operands } => {
                     let targets = operands.targets();
                     let replacements = operands.replacements();
@@ -1848,6 +1972,7 @@ pub(crate) fn append_design_losses(
                     seeds.is_empty()
                         || seeds.iter().any(|seed| match seed {
                             cadmpeg_ir::features::patterns::PatternSeed::Feature(_) => false,
+                            cadmpeg_ir::features::patterns::PatternSeed::Native(_) => true,
                             cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) => {
                                 incomplete_face_selection(faces)
                             }

@@ -1,0 +1,304 @@
+use super::{FeatureId, NativeSelections, SelectionMembers, SelectionReference};
+use crate::scalar::{Fraction, Length, NonNegativeLength, PositiveLength, PositiveReal};
+use crate::tessellation::TessellationId;
+#[cfg(feature = "schema")]
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+#[doc = "Resolved tessellations or retained mesh source selections."]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(untagged, deny_unknown_fields)]
+pub enum MeshSelection {
+    #[doc = "Nonempty distinct local tessellation identities in source order."]
+    Tessellations(SelectionMembers<TessellationId>),
+    #[doc = "Native source with optional member selectors whose geometry remains unresolved."]
+    Native {
+        #[doc = "Native expression identifying the source selection."]
+        native: SelectionReference,
+        #[doc = "Ordered member selectors relative to the native source."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_members"
+        )]
+        members: Option<NativeSelections>,
+    },
+    #[doc = "Unavailable source identified by the feature that retains its construction."]
+    Unresolved {
+        #[doc = "Originating feature whose mesh source remains unavailable."]
+        feature: FeatureId,
+    },
+}
+
+#[doc = "Construction used to convert mesh faces to a boundary representation."]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MeshConversionMethod {
+    #[doc = "Creates a boundary face for each source mesh face."]
+    Faceted,
+    #[doc = "Combines face groups into faces of inferred prismatic features."]
+    Prismatic,
+}
+
+#[doc = "Ordered inputs and construction method of a mesh-to-body conversion."]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct MeshConversion {
+    #[doc = "Input meshes in construction order."]
+    pub sources: Vec<MeshSelection>,
+    #[doc = "Conversion method, when resolved."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_conversion_method"
+    )]
+    pub method: Option<MeshConversionMethod>,
+}
+
+impl MeshConversion {
+    #[doc = "Build a conversion from ordered sources and an optional method."]
+    pub fn new(sources: Vec<MeshSelection>, method: Option<MeshConversionMethod>) -> Self {
+        Self { sources, method }
+    }
+}
+
+#[doc = "Distribution of the faces that a mesh operation produces."]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MeshFaceDistribution {
+    #[doc = "Face size follows the local shape."]
+    Adaptive,
+    #[doc = "Faces have one target size."]
+    Uniform,
+}
+
+#[doc = "Quantity that bounds a mesh reduction."]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MeshReduceTarget {
+    #[doc = "Largest distance between the result and the source in canonical millimeters."]
+    MaximumDeviation {
+        #[doc = "Nonnegative distance bound."]
+        value: NonNegativeLength,
+    },
+    #[doc = "Share of the source faces that the result keeps."]
+    FaceProportion {
+        #[doc = "Inclusive fraction from zero to one."]
+        value: Fraction,
+    },
+    #[doc = "Number of faces in the result."]
+    FaceCount {
+        #[doc = "Positive face count."]
+        value: std::num::NonZeroU32,
+    },
+}
+
+#[doc = "Reconstruction quality of a mesh rebuild."]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MeshRebuildMode {
+    #[doc = "Fast reconstruction."]
+    Fast,
+    #[doc = "Accurate reconstruction."]
+    Accurate,
+}
+
+#[doc = "Repair applied to a mesh."]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MeshRepair {
+    #[doc = "Fills the open boundaries."]
+    CloseHoles {},
+    #[doc = "Joins coincident boundaries and removes defective faces."]
+    StitchAndRemove {},
+    #[doc = "Reconstructs the mesh from its volume."]
+    Rebuild {
+        #[doc = "Reconstruction quality, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_mode"
+        )]
+        mode: Option<MeshRebuildMode>,
+        #[doc = "Sampling density of the reconstruction, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_density"
+        )]
+        density: Option<PositiveReal>,
+        #[doc = "Signed surface offset in canonical millimeters, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_offset"
+        )]
+        offset: Option<Length>,
+    },
+}
+
+#[doc = "Change that a mesh operation applies to its source."]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MeshModification {
+    #[doc = "Lowers the face count."]
+    Reduce {
+        #[doc = "Face distribution of the result, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distribution"
+        )]
+        distribution: Option<MeshFaceDistribution>,
+        #[doc = "Active bound of the reduction, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_target"
+        )]
+        target: Option<MeshReduceTarget>,
+    },
+    #[doc = "Repairs defects."]
+    Repair {
+        #[doc = "Repair method, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_method"
+        )]
+        method: Option<MeshRepair>,
+    },
+    #[doc = "Replaces the faces with faces of a target edge length."]
+    Remesh {
+        #[doc = "Face distribution of the result, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distribution"
+        )]
+        distribution: Option<MeshFaceDistribution>,
+        #[doc = "Target edge length in canonical millimeters, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_edge_length"
+        )]
+        edge_length: Option<PositiveLength>,
+        #[doc = "Weight that keeps sharp source shape under an adaptive distribution."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_shape_preservation"
+        )]
+        shape_preservation: Option<Fraction>,
+    },
+    #[doc = "Smooths the surface."]
+    Smooth {
+        #[doc = "Smoothing strength, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_smoothness"
+        )]
+        smoothness: Option<Fraction>,
+    },
+}
+cadmpeg_core::named_optional_field!(deserialize_members, NativeSelections, "members");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[doc = "Algorithm used to generate mesh face groups."]
+pub enum MeshFaceGroupMethod {
+    #[doc = "Partition by adjacent-face angle and minimum area."]
+    Fast,
+    #[doc = "Fit primitive boundaries using a tolerance."]
+    Accurate,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = "Independent generation controls; absent fields remain unknown."]
+pub struct MeshFaceGroupGenerationSettings {
+    #[doc = "Generation algorithm when decoded."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_face_group_method"
+    )]
+    pub method: Option<MeshFaceGroupMethod>,
+    #[doc = "Threshold between adjacent face normals, in radians."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_angle_threshold"
+    )]
+    pub angle_threshold: Option<crate::scalar::Angle>,
+    #[doc = "Absolute distance tolerance for group boundaries, in millimetres."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_boundary_tolerance"
+    )]
+    pub boundary_tolerance: Option<crate::scalar::NonNegativeLength>,
+    #[doc = "Minimum group area as a fraction of the overall mesh area."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_minimum_area_fraction"
+    )]
+    pub minimum_area_fraction: Option<crate::scalar::Fraction>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_face_group_method, MeshFaceGroupMethod, "method");
+cadmpeg_core::named_optional_field!(
+    deserialize_angle_threshold,
+    crate::scalar::Angle,
+    "angle_threshold"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_boundary_tolerance,
+    crate::scalar::NonNegativeLength,
+    "boundary_tolerance"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_minimum_area_fraction,
+    crate::scalar::Fraction,
+    "minimum_area_fraction"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_conversion_method,
+    MeshConversionMethod,
+    "method"
+);
+cadmpeg_core::named_optional_field!(deserialize_mode, MeshRebuildMode, "mode");
+cadmpeg_core::named_optional_field!(deserialize_density, PositiveReal, "density");
+cadmpeg_core::named_optional_field!(deserialize_offset, Length, "offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_distribution,
+    MeshFaceDistribution,
+    "distribution"
+);
+cadmpeg_core::named_optional_field!(deserialize_target, MeshReduceTarget, "target");
+cadmpeg_core::named_optional_field!(deserialize_method, MeshRepair, "method");
+cadmpeg_core::named_optional_field!(deserialize_edge_length, PositiveLength, "edge_length");
+cadmpeg_core::named_optional_field!(
+    deserialize_shape_preservation,
+    Fraction,
+    "shape_preservation"
+);
+cadmpeg_core::named_optional_field!(deserialize_smoothness, Fraction, "smoothness");
+
+mod decode_clone;
+
+#[cfg(test)]
+mod tests;

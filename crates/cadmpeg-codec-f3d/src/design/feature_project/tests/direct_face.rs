@@ -23,9 +23,12 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
         }
         DesignScopePayloadMut::Thicken(slot) => {
             *slot = Some(DesignThickenOperation {
-                signed_thickness: cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
+                signed_thickness: cadmpeg_ir::scalar::FiniteReal::new(0.5),
                 thickness_record_index: 300,
-                thickness_offset: 0,
+                thickness_offset: Some(0),
+                symmetric: false,
+                tangent_chain: true,
+                ..Default::default()
             });
         }
         DesignScopePayloadMut::Shell(slot) => {
@@ -96,12 +99,300 @@ fn offset_faces_projects_native_group() {
 fn thicken_projects_native_group() {
     let scope = scope(DesignFeatureKind::Thicken);
     let group = group(DesignOperandRole::ROLE_0X5);
-    let FeatureOperation::Thicken { faces, .. } = projected_operation(
-        super::super::project_thicken(&scope, &[], std::slice::from_ref(&group)),
-    ) else {
+    let FeatureOperation::Thicken { faces, .. } =
+        projected_operation(Ok(super::super::thicken::project_thicken(
+            &scope,
+            &[],
+            std::slice::from_ref(&group),
+            &mut Vec::new(),
+        )))
+    else {
         panic!("expected a thicken");
     };
     assert_eq!(faces, FaceSelection::Native(group.id.clone()));
+}
+
+#[test]
+fn thicken_retains_direct_scope_faces_with_declared_input_groups() {
+    for missing_group in [false, true] {
+        let mut scope = thicken_after_state(5);
+        if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+            operation.group_record_indices = if missing_group {
+                vec![100, 110]
+            } else {
+                vec![100]
+            };
+        }
+        let mut operand = resolved_member_operand();
+        operand.group = None;
+        let mut losses = Vec::new();
+        let FeatureOperation::Thicken { faces, .. } =
+            projected_operation(Ok(super::super::thicken::project_thicken(
+                &scope,
+                &[operand],
+                &[group(DesignOperandRole::ROLE_0X12)],
+                &mut losses,
+            )))
+        else {
+            panic!("Thicken");
+        };
+        let expected = crate::ids::history_input_face_id(
+            &crate::ids::feature_input_prefix(&crate::ids::neutral_feature_id(&scope), 5),
+            27,
+        );
+        match faces {
+            FaceSelection::Historical { faces, .. } => {
+                assert!(!missing_group);
+                assert_eq!(faces.as_slice(), [expected]);
+            }
+            FaceSelection::HistoricalPartial {
+                faces, unresolved, ..
+            } => {
+                assert!(missing_group);
+                assert_eq!(faces.as_slice(), [expected]);
+                assert_eq!(unresolved.as_slice(), [scope.id]);
+            }
+            _ => panic!("direct historical face is retained"),
+        }
+        assert_eq!(losses.len(), usize::from(missing_group));
+        if missing_group {
+            assert_eq!(
+                losses[0].code.local_code(),
+                "feature.thicken-face-selection-assumed"
+            );
+        }
+    }
+}
+
+#[test]
+fn thicken_boolean_results_survive_missing_scalar_and_target_definitions() {
+    use crate::records::feature::direct_face::{
+        DesignThickenBoolean, DesignThickenBooleanOperation,
+    };
+    use cadmpeg_ir::features::{BooleanKind, SolidFeatureResult, ThickenSide};
+
+    for (stored, expected) in [
+        (DesignThickenBooleanOperation::Join, BooleanKind::Join),
+        (DesignThickenBooleanOperation::Cut, BooleanKind::Cut),
+        (
+            DesignThickenBooleanOperation::Intersect,
+            BooleanKind::Intersect,
+        ),
+    ] {
+        for has_target in [false, true] {
+            let mut scope = scope(DesignFeatureKind::Thicken);
+            if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+                operation.group_record_indices = vec![100];
+                operation.signed_thickness = None;
+                operation.thickness_offset = None;
+                operation.symmetric = true;
+                operation.boolean = Some(DesignThickenBoolean {
+                    operation: stored,
+                    operation_offset: 21,
+                    target_group_record_index: 110,
+                });
+            }
+            let mut groups = vec![group(DesignOperandRole::ROLE_0X12)];
+            let mut target = group(DesignOperandRole::BODIES_A);
+            target.id = "f3d:test:group#110".into();
+            target.record_index = 110;
+            if has_target {
+                groups.push(target.clone());
+            }
+            let mut losses = Vec::new();
+            let FeatureOperation::Thicken {
+                faces,
+                thickness,
+                side,
+                result,
+                tangent_chain,
+            } = projected_operation(Ok(super::super::thicken::project_thicken(
+                &scope,
+                &[],
+                &groups,
+                &mut losses,
+            )))
+            else {
+                panic!("Thicken");
+            };
+            assert_eq!(faces, FaceSelection::Native(groups[0].id.clone()));
+            assert_eq!(thickness, None);
+            assert_eq!(side, Some(ThickenSide::Both));
+            assert_eq!(tangent_chain, Some(true));
+            assert_eq!(
+                result,
+                Some(SolidFeatureResult::Boolean {
+                    operation: expected,
+                    targets: BodySelection::Native(if has_target { target.id } else { scope.id }),
+                })
+            );
+            assert_eq!(losses.len(), usize::from(!has_target));
+            if !has_target {
+                assert_eq!(
+                    losses[0].code.local_code(),
+                    "feature.thicken-target-selection-assumed"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn thicken_unknown_frame_and_missing_input_groups_still_project() {
+    let mut scope = scope(DesignFeatureKind::Thicken);
+    if let DesignScopePayloadMut::Thicken(slot) = scope.payload_mut() {
+        *slot = None;
+    }
+    let mut losses = Vec::new();
+    let FeatureOperation::Thicken {
+        faces,
+        thickness,
+        side,
+        result,
+        tangent_chain,
+    } = projected_operation(Ok(super::super::thicken::project_thicken(
+        &scope,
+        &[],
+        &[],
+        &mut losses,
+    )))
+    else {
+        panic!("Thicken");
+    };
+    assert_eq!(faces, FaceSelection::Native(scope.id.clone()));
+    assert_eq!(
+        (thickness, side, result, tangent_chain),
+        (None, None, None, None)
+    );
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.local_code())
+            .collect::<Vec<_>>(),
+        [
+            "feature.thicken-face-selection-assumed",
+            "feature.thicken-frame-assumed",
+        ]
+    );
+
+    let mut scope = thicken_after_state(5);
+    if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+        operation.group_record_indices = vec![100, 110];
+    }
+    let FeatureOperation::Thicken { faces, .. } =
+        projected_operation(Ok(super::super::thicken::project_thicken(
+            &scope,
+            &[resolved_member_operand()],
+            &[group(DesignOperandRole::ROLE_0X12)],
+            &mut Vec::new(),
+        )))
+    else {
+        panic!("Thicken");
+    };
+    let FaceSelection::HistoricalPartial {
+        faces, unresolved, ..
+    } = faces
+    else {
+        panic!("partial faces");
+    };
+    assert_eq!(faces.as_slice().len(), 1);
+    assert_eq!(unresolved.as_slice(), [scope.id]);
+}
+
+#[test]
+fn thicken_zero_and_overflow_keep_result_and_chain_settings() {
+    for value in [0.0, 1.5e307] {
+        let mut scope = scope(DesignFeatureKind::Thicken);
+        if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+            operation.signed_thickness = cadmpeg_ir::scalar::FiniteReal::new(value);
+            operation.symmetric = true;
+        }
+        let mut losses = Vec::new();
+        let FeatureOperation::Thicken {
+            thickness,
+            result,
+            tangent_chain,
+            ..
+        } = projected_operation(Ok(super::super::thicken::project_thicken(
+            &scope,
+            &[],
+            &[group(DesignOperandRole::ROLE_0X5)],
+            &mut losses,
+        )))
+        else {
+            panic!("Thicken");
+        };
+        assert_eq!(thickness, None);
+        assert_eq!(
+            result,
+            Some(cadmpeg_ir::features::SolidFeatureResult::NewBody {})
+        );
+        assert_eq!(tangent_chain, Some(true));
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "feature.thicken-thickness-unrepresentable"
+        );
+    }
+}
+
+#[test]
+fn a_symmetric_thicken_adds_the_stored_thickness_on_each_side() {
+    let group = group(DesignOperandRole::ROLE_0X5);
+    let project = |symmetric: bool, signed_thickness: f64| {
+        let mut scope = scope(DesignFeatureKind::Thicken);
+        if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+            operation.symmetric = symmetric;
+            operation.signed_thickness = cadmpeg_ir::scalar::FiniteReal::new(signed_thickness);
+        }
+        let FeatureOperation::Thicken {
+            thickness, side, ..
+        } = projected_operation(Ok(super::super::thicken::project_thicken(
+            &scope,
+            &[],
+            std::slice::from_ref(&group),
+            &mut Vec::new(),
+        )))
+        else {
+            panic!("expected a thicken");
+        };
+        (thickness.map(cadmpeg_ir::scalar::PositiveLength::get), side)
+    };
+    assert_eq!(
+        project(true, 0.5),
+        (Some(10.0), Some(cadmpeg_ir::features::ThickenSide::Both))
+    );
+    assert_eq!(
+        project(true, -0.5),
+        (Some(10.0), Some(cadmpeg_ir::features::ThickenSide::Both))
+    );
+    assert_eq!(
+        project(false, 0.5),
+        (Some(5.0), Some(cadmpeg_ir::features::ThickenSide::Forward))
+    );
+    assert_eq!(
+        project(false, -0.5),
+        (Some(5.0), Some(cadmpeg_ir::features::ThickenSide::Reverse))
+    );
+
+    let mut scope = scope(DesignFeatureKind::Thicken);
+    if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+        operation.symmetric = true;
+        operation.signed_thickness = cadmpeg_ir::scalar::FiniteReal::new(1.5e307);
+    }
+    let FeatureOperation::Thicken {
+        faces, thickness, ..
+    } = projected_operation(Ok(super::super::thicken::project_thicken(
+        &scope,
+        &[],
+        std::slice::from_ref(&group),
+        &mut Vec::new(),
+    )))
+    else {
+        panic!("expected a thicken");
+    };
+    assert_eq!(faces, FaceSelection::Native(group.id.clone()));
+    assert!(thickness.is_none());
 }
 
 fn thicken_after_state(previous_state: i64) -> DesignParameterScope {
@@ -123,13 +414,18 @@ fn thicken_lists_a_whole_body_group_beside_resolved_faces_as_unresolved() {
     whole_body.id = "f3d:test:group#110".into();
     whole_body.record_index = 110;
     let groups = [faces_group, whole_body.clone()];
-    let FeatureOperation::Thicken { faces, .. } = projected_operation(
-        super::super::project_thicken(&scope, &[resolved_member_operand()], &groups),
-    ) else {
+    let FeatureOperation::Thicken { faces, .. } =
+        projected_operation(Ok(super::super::thicken::project_thicken(
+            &scope,
+            &[resolved_member_operand()],
+            &groups,
+            &mut Vec::new(),
+        )))
+    else {
         panic!("expected a thicken");
     };
     let mut rebound = faces.clone();
-    super::super::list_thicken_whole_bodies(&mut rebound, &scope, &groups);
+    super::super::thicken::list_thicken_whole_bodies(&mut rebound, &scope, &groups);
     assert_eq!(rebound, faces);
     let FaceSelection::HistoricalPartial {
         faces,
@@ -149,11 +445,12 @@ fn thicken_lists_a_whole_body_group_beside_resolved_faces_as_unresolved() {
 fn thicken_keeps_resolved_faces_without_a_whole_body_group() {
     let scope = thicken_after_state(5);
     let FeatureOperation::Thicken { faces, .. } =
-        projected_operation(super::super::project_thicken(
+        projected_operation(Ok(super::super::thicken::project_thicken(
             &scope,
             &[resolved_member_operand()],
             &[group(DesignOperandRole::ROLE_0X12)],
-        ))
+            &mut Vec::new(),
+        )))
     else {
         panic!("expected a thicken");
     };
@@ -267,13 +564,29 @@ fn wall_slots_project_thickness_direction_mode_and_corners() {
 }
 
 #[test]
-fn walls_of_different_thickness_have_no_neutral_shell() {
+fn unequal_walls_project_both_sides_with_unresolved_thickness() {
     let group = group(DesignOperandRole::ROLE_0X10);
     let scope = wall_slot_scope(0.3, Some(0.1), false);
-    assert_eq!(
-        super::super::project_shell(&scope, &[], std::slice::from_ref(&group)).unwrap(),
-        None
-    );
+    let FeatureOperation::Shell {
+        thickness,
+        outward,
+        mode,
+        removed_faces,
+        join,
+        ..
+    } = projected_operation(super::super::project_shell(
+        &scope,
+        &[],
+        std::slice::from_ref(&group),
+    ))
+    else {
+        panic!("expected a Shell");
+    };
+    assert_eq!(thickness, None);
+    assert_eq!(outward, None);
+    assert_eq!(mode, Some(cadmpeg_ir::features::ShellMode::BothSides));
+    assert_eq!(removed_faces, FaceSelection::Native(group.id));
+    assert_eq!(join, Some(cadmpeg_ir::features::ShellJoin::Intersection));
 }
 
 #[test]
@@ -371,6 +684,10 @@ fn move_face_scope(transform: [[f64; 4]; 4]) -> DesignParameterScope {
         form_offset: 443,
         transform_reference_offset: None,
         prefix: None,
+        face_group: Some(crate::records::identity::Located {
+            value: 100,
+            offset: 0,
+        }),
     });
     scope
         .try_edit(|draft| {
@@ -402,6 +719,7 @@ fn move_face_projects_a_translation_of_its_group() {
     } = projected_operation(super::super::project_move_face(
         &scope,
         std::slice::from_ref(&group),
+        &mut Vec::new(),
     ))
     else {
         panic!("expected a face translation");
@@ -429,23 +747,24 @@ fn move_face_projects_a_transform_stored_as_the_first_reference() {
         .unwrap();
     let mut faces = group(DesignOperandRole::ROLE_0X10);
     assert!(
-        super::super::project_move_face(&scope, std::slice::from_ref(&faces))
+        super::super::project_move_face(&scope, std::slice::from_ref(&faces), &mut Vec::new(),)
             .unwrap()
-            .is_none(),
-        "the group is reference one, so ordinal zero is not its place"
+            .is_some(),
+        "the decoded motion survives an unresolved group ordinal"
     );
     faces.scope_reference_ordinal = 1;
     assert!(matches!(
         projected_operation(super::super::project_move_face(
             &scope,
             std::slice::from_ref(&faces),
+            &mut Vec::new(),
         )),
         FeatureOperation::MoveFace { .. }
     ));
 }
 
 #[test]
-fn move_face_stays_native_without_a_translation_or_its_exact_group() {
+fn move_face_keeps_motion_without_a_resolved_group() {
     let translation = [
         [1., 0., 0., 0.25],
         [0., 1., 0., 0.],
@@ -454,24 +773,24 @@ fn move_face_stays_native_without_a_translation_or_its_exact_group() {
     ];
     let faces = group(DesignOperandRole::ROLE_0X10);
     let refused = |transform, groups: &[DesignConstructionOperandGroup]| {
-        super::super::project_move_face(&move_face_scope(transform), groups)
+        super::super::project_move_face(&move_face_scope(transform), groups, &mut Vec::new())
             .unwrap()
             .is_none()
     };
     assert!(!refused(translation, std::slice::from_ref(&faces)));
-    assert!(refused(translation, &[]));
-    assert!(refused(translation, &[group(DesignOperandRole::BODIES_A)]));
-    assert!(refused(translation, &[faces.clone(), faces.clone()]));
+    assert!(!refused(translation, &[]));
+    assert!(!refused(translation, &[group(DesignOperandRole::BODIES_A)]));
+    assert!(!refused(translation, &[faces.clone(), faces.clone()]));
     let mut other_member = faces.clone();
     other_member.record_index = 101;
-    assert!(refused(translation, &[other_member]));
+    assert!(!refused(translation, &[other_member]));
     let identity = [
         [1., 0., 0., 0.],
         [0., 1., 0., 0.],
         [0., 0., 1., 0.],
         [0., 0., 0., 1.],
     ];
-    assert!(refused(identity, std::slice::from_ref(&faces)));
+    assert!(!refused(identity, std::slice::from_ref(&faces)));
 }
 
 #[test]
@@ -509,6 +828,7 @@ fn move_face_projects_a_rotation_about_the_axis_point_nearest_the_origin() {
         } = projected_operation(super::super::project_move_face(
             &move_face_scope(transform),
             std::slice::from_ref(&faces),
+            &mut Vec::new(),
         ))
         else {
             panic!("expected a face rotation");
@@ -535,7 +855,7 @@ fn move_face_projects_a_rotation_about_the_axis_point_nearest_the_origin() {
 }
 
 #[test]
-fn move_face_stays_native_for_a_screw_motion() {
+fn move_face_preserves_a_screw_motion() {
     let screw = [
         [0., 1., 0., 0.25],
         [-1., 0., 0., 0.],
@@ -545,9 +865,10 @@ fn move_face_stays_native_for_a_screw_motion() {
     assert!(super::super::project_move_face(
         &move_face_scope(screw),
         std::slice::from_ref(&group(DesignOperandRole::ROLE_0X10)),
+        &mut Vec::new(),
     )
     .unwrap()
-    .is_none());
+    .is_some());
 }
 
 #[test]
@@ -570,6 +891,7 @@ fn move_face_stays_native_for_a_reflection() {
         assert!(super::super::project_move_face(
             &move_face_scope(transform),
             std::slice::from_ref(&faces),
+            &mut Vec::new(),
         )
         .unwrap()
         .is_none());
@@ -598,6 +920,7 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
         form_offset: 443,
         transform_reference_offset: None,
         prefix: None,
+        ..DesignMoveOperation::default()
     });
     let group = group(DesignOperandRole::BODIES_A);
     let Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {

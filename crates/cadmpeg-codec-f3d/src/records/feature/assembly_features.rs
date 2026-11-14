@@ -1,14 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Component insert, derived instance, occurrence and copy-paste component features.
 
+use crate::layout::local_component_occurrence_leading_flag_body as leading_body;
+use crate::layout::local_component_occurrence_leading_flag_prefix as leading_prefix;
 use crate::records::identity::{Located, IDENTITY_MATRIX};
-use crate::records::mesh::{DesignOccurrenceKey, DesignRelaxedGuidText};
+use crate::records::mesh::{DesignGuidText, DesignOccurrenceKey, DesignRelaxedGuidText};
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
 pub(crate) const OCCURRENCE_PLACEMENT_TYPE_GUID: &str = "CE2913AA-CFE0-4F04-9102-24424ED3BCFA";
+pub(crate) const DERIVED_INSTANCE_RELATION_TYPE_GUID: &str = "2D6E13A1-BBEF-4FB3-9277-00D99F634136";
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct DesignComponentInsertScope {
+    pub(crate) construction: Option<DesignComponentInsertConstruction>,
+    pub(crate) unresolved_placement: Option<DesignComponentInsertPlacement>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignComponentInsertPlacement {
+    pub(crate) occurrence_identity: u64,
+    pub(crate) matrix: Option<Located<SketchPlacementMatrix>>,
+}
+
+impl DesignComponentInsertPlacement {
+    pub(crate) fn transform(&self) -> &SketchPlacementMatrix {
+        self.matrix
+            .as_ref()
+            .map_or(&SketchPlacementMatrix::IDENTITY, |matrix| &matrix.value)
+    }
+}
 
 cadmpeg_core::named_optional_field!(
     deserialize_carrier_transform_offset,
@@ -262,19 +286,142 @@ impl From<DesignComponentInsertConstruction> for DesignComponentInsertConstructi
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignDerivedInstanceConstruction {
     /// Scope prologue record referenced by the fixed field at scope offset 22.
-    pub(crate) reference_record_index: u32,
-    /// Scope-owned class-310 relation record.
-    pub(crate) relation_record_index: u32,
-    /// Class-380 component-occurrence carrier named by the relation.
-    pub(crate) carrier_record_index: u32,
-    /// Component definition GUID carried by the joined occurrence.
+    pub(crate) reference: DesignDerivedInstanceReference,
+    pub(crate) placements: Vec<DesignDerivedInstanceSourcePlacement>,
+    pub(crate) auxiliary_pairs: Vec<DesignDerivedInstanceAuxiliaryPair>,
+    pub(crate) repeated_references: Vec<DesignDerivedInstanceReference>,
+    pub(crate) primary_reference: DesignDerivedInstanceReference,
+    pub(crate) context_placement: DesignDerivedInstancePlacement,
+    pub(crate) trailer_guid: DesignRelaxedGuidText,
+    pub(crate) sources: Vec<DesignDerivedInstanceSource>,
+}
+
+impl DesignDerivedInstanceConstruction {
+    pub(crate) fn placement_for(&self, target: u64) -> Option<DesignDerivedInstancePlacement> {
+        let mut placements = self
+            .placements
+            .iter()
+            .filter(|entry| {
+                entry.reference.target == target
+                    && entry
+                        .reference
+                        .matches_type(DERIVED_INSTANCE_RELATION_TYPE_GUID)
+            })
+            .map(|entry| entry.placement);
+        let first = placements.next()?;
+        placements
+            .all(|placement| placement.value() == first.value())
+            .then_some(first)
+    }
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_derived_source_relation,
+    DesignDerivedInstanceRelation,
+    "relation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_derived_relation_carrier,
+    DesignDerivedInstanceCarrier,
+    "carrier"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_derived_reference_type_guid,
+    DesignGuidText,
+    "type_guid"
+);
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignDerivedInstanceSource {
+    pub(crate) reference: DesignDerivedInstanceReference,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_derived_source_relation",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) relation: Option<DesignDerivedInstanceRelation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignDerivedInstanceSourcePlacement {
+    pub(crate) reference: DesignDerivedInstanceReference,
+    pub(crate) placement: DesignDerivedInstancePlacement,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignDerivedInstanceAuxiliaryPair {
+    pub(crate) auxiliary: DesignDerivedInstanceReference,
+    pub(crate) relation: DesignDerivedInstanceReference,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignDerivedInstanceRelation {
+    pub(crate) carrier_reference: DesignDerivedInstanceReference,
+    pub(crate) middle_reference: DesignDerivedInstanceReference,
+    pub(crate) scope_reference: DesignDerivedInstanceReference,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_derived_relation_carrier",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) carrier: Option<DesignDerivedInstanceCarrier>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignDerivedInstanceCarrier {
+    pub(crate) component_record_index: u64,
     pub(crate) component_guid: DesignRelaxedGuidText,
-    /// Placed occurrence GUID carried by the joined occurrence.
     pub(crate) occurrence_guid: DesignOccurrenceKey,
-    /// Row-major local-to-model placement in centimetres.
     pub(crate) transform: SketchPlacementMatrix,
-    /// Byte offset of the first scope-local transform scalar.
-    pub(crate) transform_offset: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum DesignDerivedInstancePlacement {
+    Identity {
+        flag_offset: u64,
+    },
+    Matrix {
+        value: [[cadmpeg_ir::scalar::FiniteReal; 4]; 4],
+        offset: u64,
+    },
+}
+
+impl DesignDerivedInstancePlacement {
+    pub(crate) fn value(&self) -> [[f64; 4]; 4] {
+        match self {
+            Self::Identity { .. } => SketchPlacementMatrix::IDENTITY.into(),
+            Self::Matrix { value, .. } => {
+                value.map(|row| row.map(cadmpeg_ir::scalar::FiniteReal::get))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignDerivedInstanceReference {
+    pub(crate) target: u64,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_derived_reference_type_guid",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) type_guid: Option<DesignGuidText>,
+}
+
+impl DesignDerivedInstanceReference {
+    pub(crate) fn plain(target: u64) -> Self {
+        Self {
+            target,
+            type_guid: None,
+        }
+    }
+
+    pub(crate) fn matches_type(&self, expected: &str) -> bool {
+        self.type_guid
+            .as_ref()
+            .is_none_or(|guid| guid.as_str().eq_ignore_ascii_case(expected))
+    }
 }
 
 /// Owner-entity offset in the identity-placement frame.
@@ -334,19 +481,38 @@ pub(crate) enum DesignComponentOccurrenceFrame {
     /// The attributed frame, with a counted attribute run and an occurrence
     /// key that can be a decimal key.
     Attributed(Box<DesignAttributedOccurrenceFrame>),
-    /// The 251-byte identity frame or the 507-byte matrix frame whose
-    /// identity flag and matrix precede the GUIDs.
+    /// A frame with a source placement before the GUIDs and a local placement
+    /// after the repeated component reference.
     LeadingFlag(DesignLeadingFlagOccurrenceFrame),
 }
 
-/// The members of a leading-flag occurrence frame that the fixed frames do
-/// not have.
+/// Source frame and references of a leading-flag occurrence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignLeadingFlagOccurrenceFrame {
     /// The little-endian u16 before the occurrence ordinal.
     pub(crate) ordinal_prefix: u16,
     /// Marked same-segment record reference after the occurrence GUID.
     pub(crate) record_reference: u64,
+    /// Source placement when it differs from the closing local placement.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_source_placement"
+    )]
+    pub(crate) source_placement: Option<DesignOccurrenceSourcePlacement>,
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_source_placement,
+    DesignOccurrenceSourcePlacement,
+    "source_placement"
+);
+
+/// The saved source frame before the occurrence metadata.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignOccurrenceSourcePlacement {
+    /// An absent matrix is the source identity flag.
+    pub(crate) transform: Option<SketchPlacementMatrix>,
 }
 
 /// The members of an attributed occurrence frame that the fixed frames do not
@@ -355,11 +521,18 @@ pub(crate) struct DesignLeadingFlagOccurrenceFrame {
 pub(crate) struct DesignAttributedOccurrenceFrame {
     /// The counted attribute run, in record order.
     pub(crate) attributes: Vec<DesignOccurrenceAttribute>,
-    /// The little-endian u16 before the occurrence ordinal.
+    /// Ordered property names in the optional object prelude.
+    pub(crate) property_names: Vec<String>,
+    /// Persistent object key in that prelude.
+    pub(crate) persistent_key: Option<String>,
+    /// Optional marker one between the ordinal and carrier GUID.
+    pub(crate) guid_marker: Option<u8>,
+    /// The ordinal prefix, widened to u16 for a one-byte prefix.
     pub(crate) ordinal_prefix: u16,
     pub(crate) path_discriminator: u32,
-    /// Marked record reference after the occurrence key.
+    /// Cross-segment identity target after the occurrence key; zero for null.
     pub(crate) key_record_index: u64,
+    /// Segment ID of the identity target; zero with a null target.
     pub(crate) key_segment_index: u32,
     /// Local reference to the source design record, when the frame stores one.
     pub(crate) source_record_index: Option<u64>,
@@ -390,6 +563,8 @@ pub(crate) enum DesignOccurrenceAttributeValue {
     Bool(bool),
     /// `IntrinsicMetaTypeHString`: an LP-UTF16 string.
     Text(String),
+    /// `IntrinsicMetaTypeIString`: an LP-UTF16 string.
+    InternedText(String),
 }
 
 #[cfg(test)]
@@ -575,6 +750,12 @@ impl DesignComponentOccurrence {
         if placed != frame.transform_offset.is_some() {
             return Err("transform_offset must be present exactly for a placed occurrence".into());
         }
+        if frame.guid_marker.is_some_and(|marker| marker != 1) {
+            return Err("an occurrence GUID marker is one".into());
+        }
+        if frame.property_names.is_empty() != frame.persistent_key.is_none() {
+            return Err("an occurrence property prelude has names and a persistent key".into());
+        }
         let offsets = [
             Some(draft.byte_offset),
             Some(frame.component_guid_offset),
@@ -603,14 +784,14 @@ impl DesignComponentOccurrence {
     ) -> Result<Self, String> {
         draft
             .byte_offset
-            .checked_add(Self::leading_flag_owner_offset(&draft.placement))
+            .checked_add(Self::leading_flag_owner_offset(&draft.placement, &frame))
             .ok_or("component occurrence offsets overflow byte_offset")?;
         let mut record = Self::try_new(draft)?;
         record.frame = DesignComponentOccurrenceFrame::LeadingFlag(frame);
         Ok(record)
     }
 
-    /// Bytes of the matrix that a leading-flag frame stores before its body.
+    /// Width of an explicit placement matrix.
     fn leading_flag_matrix_bytes(placement: &DesignComponentOccurrencePlacement) -> u64 {
         match placement {
             DesignComponentOccurrencePlacement::Explicit { .. } => MATRIX_BYTES,
@@ -620,16 +801,30 @@ impl DesignComponentOccurrence {
     }
 
     /// Offset of the leading-flag body after the prefix and the first matrix.
-    fn leading_flag_body_offset(placement: &DesignComponentOccurrencePlacement) -> u64 {
-        cadmpeg_core::decode::u64_from_index(
-            crate::layout::local_component_occurrence_leading_flag_prefix::LEN,
-        ) + Self::leading_flag_matrix_bytes(placement)
+    fn leading_flag_body_offset(
+        placement: &DesignComponentOccurrencePlacement,
+        frame: &DesignLeadingFlagOccurrenceFrame,
+    ) -> u64 {
+        cadmpeg_core::decode::u64_from_index(leading_prefix::LEN)
+            + frame.source_placement.as_ref().map_or_else(
+                || Self::leading_flag_matrix_bytes(placement),
+                |source| {
+                    if source.transform.is_some() {
+                        MATRIX_BYTES
+                    } else {
+                        0
+                    }
+                },
+            )
     }
 
-    fn leading_flag_owner_offset(placement: &DesignComponentOccurrencePlacement) -> u64 {
-        Self::leading_flag_body_offset(placement)
+    fn leading_flag_owner_offset(
+        placement: &DesignComponentOccurrencePlacement,
+        frame: &DesignLeadingFlagOccurrenceFrame,
+    ) -> u64 {
+        Self::leading_flag_body_offset(placement, frame)
             + cadmpeg_core::decode::u64_from_index(
-                crate::layout::local_component_occurrence_leading_flag_body::LEN
+                leading_body::LEN
                     + crate::layout::local_component_occurrence_identity_tail::OWNER_ENTITY,
             )
             + Self::leading_flag_matrix_bytes(placement)
@@ -644,6 +839,11 @@ impl DesignComponentOccurrence {
         }
     }
 
+    /// Whether the carrier stores an object property prelude.
+    pub(crate) fn has_object_prelude(&self) -> bool {
+        matches!(&self.frame, DesignComponentOccurrenceFrame::Attributed(frame) if !frame.property_names.is_empty())
+    }
+
     /// Attributed-frame members on the wire, for an attributed frame.
     fn attributed_wire(&self) -> Option<DesignAttributedOccurrenceWire> {
         match &self.frame {
@@ -654,6 +854,9 @@ impl DesignComponentOccurrence {
             DesignComponentOccurrenceFrame::Attributed(frame) => {
                 Some(DesignAttributedOccurrenceWire {
                     attributes: frame.attributes.clone(),
+                    property_names: frame.property_names.clone(),
+                    persistent_key: frame.persistent_key.clone(),
+                    guid_marker: frame.guid_marker,
                     ordinal_prefix: frame.ordinal_prefix,
                     path_discriminator: frame.path_discriminator,
                     key_record_index: frame.key_record_index,
@@ -701,13 +904,10 @@ impl DesignComponentOccurrence {
                     )
             }
             DesignComponentOccurrenceFrame::Attributed(frame) => frame.component_guid_offset,
-            DesignComponentOccurrenceFrame::LeadingFlag(_) => {
+            DesignComponentOccurrenceFrame::LeadingFlag(frame) => {
                 self.byte_offset
-                    + Self::leading_flag_body_offset(&self.placement)
-                    + cadmpeg_core::decode::u64_from_index(
-                        crate::layout::local_component_occurrence_leading_flag_body::CARRIER_GUID
-                            + 4,
-                    )
+                    + Self::leading_flag_body_offset(&self.placement, frame)
+                    + cadmpeg_core::decode::u64_from_index(leading_body::CARRIER_GUID + 4)
             }
         }
     }
@@ -726,11 +926,11 @@ impl DesignComponentOccurrence {
                     )
             }
             DesignComponentOccurrenceFrame::Attributed(frame) => frame.occurrence_guid_offset,
-            DesignComponentOccurrenceFrame::LeadingFlag(_) => {
+            DesignComponentOccurrenceFrame::LeadingFlag(frame) => {
                 self.byte_offset
-                    + Self::leading_flag_body_offset(&self.placement)
+                    + Self::leading_flag_body_offset(&self.placement, frame)
                     + cadmpeg_core::decode::u64_from_index(
-                        crate::layout::local_component_occurrence_leading_flag_body::OCCURRENCE_GUID
+                        leading_body::OCCURRENCE_GUID
                             + 4,
                     )
             }
@@ -758,8 +958,8 @@ impl DesignComponentOccurrence {
                 self.byte_offset + Self::typed_owner_offset(&self.placement, *separated)
             }
             DesignComponentOccurrenceFrame::Attributed(frame) => frame.owner_entity_offset,
-            DesignComponentOccurrenceFrame::LeadingFlag(_) => {
-                self.byte_offset + Self::leading_flag_owner_offset(&self.placement)
+            DesignComponentOccurrenceFrame::LeadingFlag(frame) => {
+                self.byte_offset + Self::leading_flag_owner_offset(&self.placement, frame)
             }
         }
     }
@@ -802,11 +1002,14 @@ impl DesignComponentOccurrence {
                                 crate::layout::local_component_occurrence_typed_compact_prefix::LEN
                             })
                     }
-                    DesignComponentOccurrenceFrame::LeadingFlag(_) => {
+                    DesignComponentOccurrenceFrame::LeadingFlag(frame) => {
                         self.byte_offset
-                            + cadmpeg_core::decode::u64_from_index(
-                                crate::layout::local_component_occurrence_leading_flag_prefix::LEN,
-                            )
+                            + if frame.source_placement.is_some() {
+                                Self::leading_flag_body_offset(&self.placement, frame)
+                                    + cadmpeg_core::decode::u64_from_index(leading_body::LEN)
+                            } else {
+                                cadmpeg_core::decode::u64_from_index(leading_prefix::LEN)
+                            }
                     }
                 },
             }),
@@ -894,15 +1097,32 @@ struct DesignComponentOccurrenceWire {
     operation_pose: Option<crate::records::xref::XrefOperationPose>,
 }
 
+cadmpeg_core::named_optional_field!(deserialize_persistent_key, String, "persistent_key");
+cadmpeg_core::named_optional_field!(deserialize_guid_marker, u8, "guid_marker");
+
 /// Members of an attributed occurrence frame on the wire.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct DesignAttributedOccurrenceWire {
     /// The counted attribute run, in record order.
     attributes: Vec<DesignOccurrenceAttribute>,
-    /// The little-endian u16 before the occurrence ordinal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    property_names: Vec<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_persistent_key"
+    )]
+    persistent_key: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_guid_marker"
+    )]
+    guid_marker: Option<u8>,
+    /// The ordinal prefix, widened to u16 for a one-byte prefix.
     ordinal_prefix: u16,
     path_discriminator: u32,
-    /// Marked record reference after the occurrence key.
+    /// Cross-segment identity target after the occurrence key; zero for null.
     key_record_index: u64,
     key_segment_index: u32,
     /// Local reference to the source design record, when the frame stores one.
@@ -1091,6 +1311,9 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
                 draft,
                 DesignAttributedOccurrenceFrame {
                     attributes: attributed.attributes,
+                    property_names: attributed.property_names,
+                    persistent_key: attributed.persistent_key,
+                    guid_marker: attributed.guid_marker,
                     ordinal_prefix: attributed.ordinal_prefix,
                     path_discriminator: attributed.path_discriminator,
                     key_record_index: attributed.key_record_index,

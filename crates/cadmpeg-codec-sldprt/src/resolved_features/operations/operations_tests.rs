@@ -1144,3 +1144,5 @@ fn inline_trailer_replaces_the_classless_extrusion_default_join() {
 }
 
 mod sweep_consensus;
+
+mod inline_continuations;

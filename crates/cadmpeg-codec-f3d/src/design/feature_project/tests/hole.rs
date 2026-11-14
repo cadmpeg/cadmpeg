@@ -885,7 +885,7 @@ fn an_extents_to_hole_ends_at_the_one_face_its_member_resolves() {
 }
 
 #[test]
-fn a_resolved_extents_to_face_reports_its_assumption() {
+fn a_resolved_extents_to_face_adds_no_loss() {
     use crate::records::topology::extrude_selection::DesignOperandRole;
     let scope = extents_to_scope();
     let parameters = hole_parameters()[1..].to_vec();
@@ -896,7 +896,7 @@ fn a_resolved_extents_to_face_reports_its_assumption() {
         .collect();
     let groups = [extent_group(DesignOperandRole::ROLE_0X5, &[7])];
     let mut losses = Vec::new();
-    project_hole(
+    let definition = project_hole(
         &scope,
         &indexed,
         &groups,
@@ -905,9 +905,27 @@ fn a_resolved_extents_to_face_reports_its_assumption() {
     )
     .unwrap()
     .expect("hole");
-    assert!(losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::HoleExtentFaceAssumed.kind()));
+    let FeatureDefinition::Operation(FeatureOperation::Hole { extent, .. }) = definition else {
+        panic!("expected a hole");
+    };
+    assert!(matches!(
+        extent,
+        Some(cadmpeg_ir::features::LinearTermination::ToFace {
+            face: FaceSelection::Historical { .. },
+            offset: None,
+        })
+    ));
+    let mut native_losses = Vec::new();
+    project_hole(
+        &scope,
+        &indexed,
+        &groups,
+        &[extent_member(Vec::new())],
+        &mut native_losses,
+    )
+    .unwrap()
+    .expect("hole");
+    assert_eq!(losses, native_losses);
 }
 
 #[test]
@@ -1418,11 +1436,122 @@ fn extra_parameters_and_native_sizing_keep_the_admitted_hole_dimensions() {
     assert_eq!(bottom, Some(cadmpeg_ir::features::holes::HoleBottom::Flat));
     for code in [
         crate::loss::F3dLossCode::HoleParametersIndependentAssumed,
-        crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed,
+        crate::loss::F3dLossCode::HoleTappedDiameterStored,
         crate::loss::F3dLossCode::HoleStandardSizingAssumed,
     ] {
         assert!(losses.iter().any(|loss| loss.code == code.kind()));
     }
+}
+
+fn project_sized_hole(
+    tap_type: u32,
+    names: Option<(&str, &str, &str)>,
+) -> (
+    cadmpeg_ir::features::holes::HoleShape,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let mut scope = hole_scope();
+    if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
+        let extent = slot.extent.as_mut().unwrap();
+        extent.leading_word = Some(crate::records::identity::Located {
+            value: tap_type,
+            offset: 5,
+        });
+        extent.standard =
+            names.map(
+                |(standard, fit, size)| crate::records::feature::hole::DesignHoleStandard {
+                    offset: 10,
+                    standard: standard.into(),
+                    fit: fit.into(),
+                    size: size.into(),
+                    fastener: "Flat Head Machine Screw".into(),
+                },
+            );
+    }
+    let parameters = hole_parameters();
+    let indexed: Vec<_> = parameters
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (u32::try_from(i).unwrap(), p))
+        .collect();
+    let mut losses = Vec::new();
+    let Some(FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. })) =
+        project_hole(&scope, &indexed, &[], &[], &mut losses).unwrap()
+    else {
+        panic!("Hole")
+    };
+    (shape, losses)
+}
+
+fn has_loss(losses: &[cadmpeg_ir::report::loss::LossNote], code: crate::loss::F3dLossCode) -> bool {
+    losses.iter().any(|loss| loss.code == code.kind())
+}
+
+fn hole_specification(
+    shape: &cadmpeg_ir::features::holes::HoleShape,
+) -> Option<&cadmpeg_ir::features::holes::HoleSpecification> {
+    match shape.construction() {
+        cadmpeg_ir::features::holes::HoleConstruction::Form { specification, .. } => {
+            specification.as_deref()
+        }
+        cadmpeg_ir::features::holes::HoleConstruction::NativeThread { .. } => None,
+    }
+}
+
+#[test]
+fn a_clearance_hole_maps_its_sizing_names_to_a_clearance_specification() {
+    use crate::loss::F3dLossCode::{HoleClearanceFieldsAssumed, HoleStandardSizingAssumed};
+    use cadmpeg_ir::features::holes::{HoleSpecification, HoleThreadDepth, ThreadHand};
+    let (shape, losses) = project_sized_hole(1, Some(("Ansi Metric M Profile", "Normal", "M3")));
+    assert_eq!(
+        hole_specification(&shape),
+        Some(&HoleSpecification::Clearance {
+            standard: cadmpeg_core::text::NonBlankString::new("Ansi Metric M Profile").unwrap(),
+            designation: Some("M3".into()),
+            fit: Some("Normal".into()),
+            modeled: true,
+            cosmetic: false,
+            hand: ThreadHand::Right,
+            depth: HoleThreadDepth::HoleDepth,
+            clearance: None,
+        })
+    );
+    assert_eq!(shape.diameter().unwrap().get(), 4.0);
+    assert!(has_loss(&losses, HoleClearanceFieldsAssumed));
+    assert!(!has_loss(&losses, HoleStandardSizingAssumed));
+}
+
+#[test]
+fn a_clearance_hole_with_blank_fit_and_size_names_keeps_the_standard() {
+    use cadmpeg_ir::features::holes::HoleSpecification;
+    let (shape, _) = project_sized_hole(1, Some(("Ansi Metric M Profile", " ", "")));
+    assert!(matches!(
+        hole_specification(&shape),
+        Some(HoleSpecification::Clearance {
+            designation: None,
+            fit: None,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn sizing_names_outside_a_clearance_hole_keep_the_sizing_loss() {
+    use crate::loss::F3dLossCode::{
+        HoleClearanceFieldsAssumed, HoleStandardSizingAssumed, HoleTappedDiameterStored,
+    };
+    let names = Some(("Ansi Metric M Profile", "Normal", "M3"));
+    for (tap_type, names) in [(0, names), (2, names), (1, Some((" ", "Normal", "M3")))] {
+        let (shape, losses) = project_sized_hole(tap_type, names);
+        assert_eq!(hole_specification(&shape), None);
+        assert!(has_loss(&losses, HoleStandardSizingAssumed));
+        assert!(!has_loss(&losses, HoleClearanceFieldsAssumed));
+        assert_eq!(has_loss(&losses, HoleTappedDiameterStored), tap_type == 2);
+    }
+    let (shape, losses) = project_sized_hole(1, None);
+    assert_eq!(hole_specification(&shape), None);
+    assert!(!has_loss(&losses, HoleStandardSizingAssumed));
+    assert!(!has_loss(&losses, HoleClearanceFieldsAssumed));
 }
 
 #[test]
@@ -1569,4 +1698,52 @@ fn an_encoded_simple_form_retains_unmatched_counterbore_parameters() {
             .any(|loss| loss.code
                 == crate::loss::F3dLossCode::HoleParametersIndependentAssumed.kind())
     );
+}
+
+#[test]
+fn the_tap_type_selects_the_hole_diameter_loss() {
+    use super::super::hole_tap_type_loss;
+    assert!(hole_tap_type_loss("hole", 0).is_none());
+    assert!(hole_tap_type_loss("hole", 1).is_none());
+    assert_eq!(
+        hole_tap_type_loss("hole", 2).unwrap().code,
+        crate::loss::F3dLossCode::HoleTappedDiameterStored.kind()
+    );
+    assert_eq!(
+        hole_tap_type_loss("hole", 3).unwrap().code,
+        crate::loss::F3dLossCode::HoleTaperTappedBoreCylindrical.kind()
+    );
+    for other in [4, 1_867_538_229] {
+        assert_eq!(
+            hole_tap_type_loss("hole", other).unwrap().code,
+            crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed.kind()
+        );
+    }
+}
+
+#[test]
+fn a_clearance_tap_type_reports_no_word_loss() {
+    let mut scope = hole_scope();
+    if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
+        slot.extent.as_mut().unwrap().leading_word = Some(crate::records::identity::Located {
+            value: 1,
+            offset: 5,
+        });
+    }
+    let parameters = hole_parameters().to_vec();
+    let indexed: Vec<_> = parameters
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (u32::try_from(i).unwrap(), p))
+        .collect();
+    let mut losses = Vec::new();
+    assert!(project_hole(&scope, &indexed, &[], &[], &mut losses)
+        .unwrap()
+        .is_some());
+    for code in [
+        crate::loss::F3dLossCode::HoleTappedDiameterStored,
+        crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed,
+    ] {
+        assert!(!losses.iter().any(|loss| loss.code == code.kind()));
+    }
 }

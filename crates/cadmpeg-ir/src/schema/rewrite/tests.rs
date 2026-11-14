@@ -8,6 +8,57 @@ use serde::ser::SerializeSeq;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 
+#[test]
+fn thicken_boolean_targets_are_identity_references() {
+    use crate::features::{
+        BodySelection, BooleanKind, FaceSelection, FeatureOperation, SolidFeatureResult,
+    };
+    let operation = FeatureOperation::Thicken {
+        faces: FaceSelection::Native("test:model:faces#source".into()),
+        thickness: None,
+        side: None,
+        result: Some(SolidFeatureResult::Boolean {
+            operation: BooleanKind::Cut,
+            targets: BodySelection::Bodies(
+                crate::features::DistinctMembers::try_from(vec![crate::ids::BodyId::mint(
+                    "test:model:body#target",
+                )
+                .unwrap()])
+                .unwrap(),
+            ),
+        }),
+        tangent_chain: Some(true),
+    };
+    let rewritten = identities(
+        &cadmpeg_test_support::service_decode_context(),
+        operation,
+        |source| Ok(source.replace("test:model:", "test:occurrence:")),
+    )
+    .unwrap();
+    let FeatureOperation::Thicken {
+        faces,
+        result:
+            Some(SolidFeatureResult::Boolean {
+                targets: BodySelection::Bodies(targets),
+                ..
+            }),
+        tangent_chain,
+        ..
+    } = rewritten
+    else {
+        panic!("Thicken");
+    };
+    assert_eq!(
+        targets.as_slice()[0].as_str(),
+        "test:occurrence:body#target"
+    );
+    assert_eq!(
+        faces,
+        FaceSelection::Native("test:model:faces#source".into())
+    );
+    assert_eq!(tangent_chain, Some(true));
+}
+
 #[derive(Clone, Serialize)]
 struct Text(String);
 

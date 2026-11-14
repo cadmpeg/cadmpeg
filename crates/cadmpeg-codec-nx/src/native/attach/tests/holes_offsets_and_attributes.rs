@@ -920,8 +920,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
             FeatureDefinition::Operation(FeatureOperation::Thicken {
                 faces: FaceSelection::Native(_),
                 thickness: Some(actual_thickness),
-                side: None,
-            }) if actual_thickness.get() == 12.5
+                side: None, .. }) if actual_thickness.get() == 12.5
         ));
 
         let mut sheet_output = ir.clone();
@@ -1045,8 +1044,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
             FeatureDefinition::Operation(FeatureOperation::Thicken {
                 faces: FaceSelection::Resolved { faces, .. },
                 thickness: Some(actual_thickness),
-                side: Some(ThickenSide::Both),
-            }) if (faces.len() == 1) && actual_thickness.get() == 12.5
+                side: Some(ThickenSide::Both), .. }) if (faces.len() == 1) && actual_thickness.get() == 12.5
         ));
 
         let mut mismatched_support = ir.clone();

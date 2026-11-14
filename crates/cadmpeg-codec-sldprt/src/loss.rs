@@ -90,6 +90,8 @@ pub(crate) enum SldprtLossCode {
     PmiSwiftSphericalDiameterTargetUnresolved,
     /// A SWIFT geometric-tolerance display has no established semantic annotation.
     PmiSwiftPresentationUnresolved,
+    /// Internal flatness rows use an inferred characteristic convention.
+    PmiSwiftInternalFlatnessSymbolAssumed,
     /// A SWIFT presentation archive declares displays that its framing discards.
     PmiSwiftPresentationUnframed,
     /// A SWIFT display selects faces through a one- or two-string in-place document.
@@ -131,6 +133,8 @@ pub(crate) enum SldprtLossCode {
     FeatureProfileCurvesUnavailable,
     /// Extrusion travel sense remains in its native feature-input lane.
     FeatureExtrudeDirectionUnresolved,
+    /// Extrusion start condition is not the sketch plane and has no supported reading.
+    FeatureExtrudeStartUnresolved,
     /// Thin extrusion retains an ambiguous inline Boolean operation.
     FeatureThinOperationAmbiguous,
     /// Native edge selection has a refused terminal feature owner.
@@ -340,6 +344,7 @@ impl SldprtLossCode {
         Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed,
         Self::PmiSwiftSphericalDiameterTargetUnresolved,
         Self::PmiSwiftPresentationUnresolved,
+        Self::PmiSwiftInternalFlatnessSymbolAssumed,
         Self::PmiSwiftPresentationUnframed,
         Self::PmiSwiftFaceDocumentLayoutAssumed,
         Self::PmiSwiftFaceDocumentTailAssumed,
@@ -360,6 +365,7 @@ impl SldprtLossCode {
         Self::FeatureTypedOperandIncomplete,
         Self::FeatureProfileCurvesUnavailable,
         Self::FeatureExtrudeDirectionUnresolved,
+        Self::FeatureExtrudeStartUnresolved,
         Self::FeatureThinOperationAmbiguous,
         Self::FeatureEdgeTerminalUnresolved,
         Self::FeatureBodyPathAmbiguous,
@@ -463,6 +469,9 @@ impl SldprtLossCode {
                 "pmi.swift-spherical-diameter-target-unresolved"
             }
             Self::PmiSwiftPresentationUnresolved => "pmi.swift-presentation-unresolved",
+            Self::PmiSwiftInternalFlatnessSymbolAssumed => {
+                "pmi.swift-internal-flatness-symbol-assumed"
+            }
             Self::PmiSwiftPresentationUnframed => "pmi.swift-presentation-unframed",
             Self::PmiSwiftFaceDocumentLayoutAssumed => "pmi.swift-face-document-layout-assumed",
             Self::PmiSwiftFaceDocumentTailAssumed => "pmi.swift-face-document-tail-assumed",
@@ -483,6 +492,7 @@ impl SldprtLossCode {
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
             Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
+            Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureEdgeTerminalUnresolved => "feature.edge-terminal-unresolved",
             Self::FeatureBodyPathAmbiguous => "feature.body-path-ambiguous",
@@ -623,6 +633,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed
             | Self::PmiSwiftSphericalDiameterTargetUnresolved
             | Self::PmiSwiftPresentationUnresolved
+            | Self::PmiSwiftInternalFlatnessSymbolAssumed
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed
@@ -643,6 +654,7 @@ impl SldprtLossCode {
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
+            | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -805,6 +817,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed
             | Self::PmiSwiftSphericalDiameterTargetUnresolved
             | Self::PmiSwiftPresentationUnresolved
+            | Self::PmiSwiftInternalFlatnessSymbolAssumed
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed => LossTaxonomy::DecodeDiagnostic,
@@ -841,6 +854,7 @@ impl SldprtLossCode {
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
+            | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -1042,6 +1056,7 @@ mod tests {
                 "pmi.swift-spherical-diameter-count-text-equal-radius-assumed",
                 "pmi.swift-spherical-diameter-target-unresolved",
                 "pmi.swift-presentation-unresolved",
+                "pmi.swift-internal-flatness-symbol-assumed",
                 "pmi.swift-presentation-unframed",
                 "pmi.swift-face-document-layout-assumed",
                 "pmi.swift-face-document-tail-assumed",
@@ -1062,6 +1077,7 @@ mod tests {
                 "feature.typed-operand-incomplete",
                 "feature.profile-curves-unavailable",
                 "feature.extrude-direction-unresolved",
+                "feature.extrude-start-unresolved",
                 "feature.thin-operation-ambiguous",
                 "feature.edge-terminal-unresolved",
                 "feature.body-path-ambiguous",

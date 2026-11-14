@@ -265,6 +265,89 @@ fn depicted(annotation: &PmiAnnotation) -> (Option<&str>, Vec<&str>) {
 }
 
 #[test]
+fn internal_flatness_rows_link_only_with_one_magnitude_scale() {
+    for (rows, expected) in [
+        (&[("<IGTOL-FLAT>", ".015", &[][..])][..], false),
+        (
+            &[
+                ("<IGTOL-FLAT>", ".005", &[][..]),
+                ("<IGTOL-FLAT>", ".015", &[][..]),
+            ][..],
+            true,
+        ),
+        (
+            &[
+                ("<IGTOL-FLAT>", "NaN", &[][..]),
+                ("<IGTOL-FLAT>", ".005", &[][..]),
+            ][..],
+            false,
+        ),
+        (
+            &[
+                ("<IGTOL-FLAT>", ".015", &[][..]),
+                ("<GTOL-FLAT>", ".005", &[][..]),
+            ][..],
+            false,
+        ),
+        (
+            &[
+                ("<IGTOL-FLAT>", ".015", &[][..]),
+                ("<IGTOL-FLAT>", ".005", &[][..]),
+            ][..],
+            true,
+        ),
+        (
+            &[
+                ("<IGTOL-FLAT>", ".015", &[][..]),
+                ("<IGTOL-FLAT>", ".010", &[][..]),
+            ][..],
+            false,
+        ),
+        (
+            &[
+                ("<IGTOL-FLAT>", "0", &[][..]),
+                ("<IGTOL-FLAT>", ".005", &[][..]),
+            ][..],
+            false,
+        ),
+        (
+            &[
+                ("<IGTOL-PARA>", ".015", &[][..]),
+                ("<IGTOL-PARA>", ".005", &[][..]),
+            ][..],
+            false,
+        ),
+    ] {
+        let image = Image {
+            count: None,
+            gtols: vec![Gtol {
+                name: "Internal frame",
+                paths: vec![path(&[(
+                    FeatureReference::Declared,
+                    if rows.len() == 1 { 200 } else { 100 },
+                    7,
+                )])],
+                rows,
+                note: "",
+            }],
+            datum_tags: true,
+            mirrors: MIRRORS,
+        };
+        let (presentations, unresolved) = presentations(&image);
+        let (_, semantics) = depicted(only(&presentations));
+        assert_eq!(unresolved, usize::from(!expected), "{rows:?}");
+        assert_eq!(
+            semantics,
+            if expected {
+                vec!["sldprt:model:pmi#A1", "sldprt:model:pmi#A2"]
+            } else {
+                Vec::new()
+            }
+        );
+    }
+}
+
+#[test]
 fn a_display_depicts_the_tolerances_of_features_selected_by_attribute_or_name() {
     let image = Image {
         count: None,

@@ -15,9 +15,9 @@
 use cadmpeg_test_support::wire;
 
 use super::super::{
-    bind_mesh_feature_definitions, face_selection_is_resolved, feature_definition_is_incomplete,
-    incomplete_feature_families, mesh_attribute_channels, mesh_texture_asset,
-    mesh_texture_assignments, report_design_projection_gaps, MeshProjection,
+    face_selection_is_resolved, feature_definition_is_incomplete, incomplete_feature_families,
+    mesh_attribute_channels, mesh_texture_asset, mesh_texture_assignments,
+    report_design_projection_gaps, MeshProjection,
 };
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
@@ -359,18 +359,45 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         count: 2,
         tessellations_by_scope: std::collections::HashMap::from([(
             ("f3d:Design/BulkStream.dat".into(), 10),
-            vec!["tessellation:z-body".into(), "tessellation:a-body".into()],
+            vec![
+                "test:model:tessellation#z-body".into(),
+                "test:model:tessellation#a-body".into(),
+            ],
         )]),
     };
 
-    bind_mesh_feature_definitions(&mut features, &[scope], &projection).unwrap();
+    let archive = crate::test_support::zip_test::synthetic_f3d(false);
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        with_test_ctx(|ctx| {
+            super::super::mesh_import::bind_features(
+                ctx,
+                scan,
+                &mut features,
+                &[scope],
+                &projection,
+                &mut Vec::new(),
+            )
+            .unwrap();
+        });
+    });
 
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::MeshImport {
-            tessellations: vec!["tessellation:z-body".into(), "tessellation:a-body".into(),]
+            tessellations: cadmpeg_ir::features::mesh::MeshSelection::Tessellations(
+                vec![
+                    cadmpeg_ir::tessellation::TessellationId::mint(
+                        "test:model:tessellation#z-body"
+                    )
+                    .unwrap(),
+                    cadmpeg_ir::tessellation::TessellationId::mint(
+                        "test:model:tessellation#a-body"
+                    )
+                    .unwrap(),
+                ]
                 .try_into()
-                .unwrap(),
+                .unwrap()
+            ),
         })
     );
     assert!(!feature_definition_is_incomplete(
@@ -1077,8 +1104,8 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
 #[test]
 fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
     use cadmpeg_ir::features::{
-        BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection,
-        CoilSectionPlacement, FeatureDefinition, FeatureOperation,
+        BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilSection,
+        CoilSectionPlacement, FeatureDefinition, FeatureOperation, SolidFeatureResult,
     };
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -1114,7 +1141,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
 
     assert!(!feature_definition_is_incomplete(&definition(
         construction.clone(),
-        CoilResult::NewBody {},
+        SolidFeatureResult::NewBody {},
     )));
 
     let mut native_placement = construction.clone();
@@ -1126,12 +1153,12 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
     };
     assert!(feature_definition_is_incomplete(&definition(
         native_placement,
-        CoilResult::NewBody {},
+        SolidFeatureResult::NewBody {},
     )));
 
     let native_target = definition(
         construction.clone(),
-        CoilResult::Boolean {
+        SolidFeatureResult::Boolean {
             operation: cadmpeg_ir::features::BooleanKind::Join,
             targets: BodySelection::Native("native:target".into()),
         },
@@ -1161,7 +1188,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
 
     assert!(!feature_definition_is_incomplete(&definition(
         construction,
-        CoilResult::Boolean {
+        SolidFeatureResult::Boolean {
             operation: cadmpeg_ir::features::BooleanKind::Cut,
             targets: BodySelection::Bodies(
                 cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
@@ -1677,6 +1704,7 @@ fn move_transform_refusal_reports_exact_loss_for_transform_or_selection() {
                 form_offset: 443,
                 transform_reference_offset: None,
                 prefix: None,
+                ..DesignMoveOperation::default()
             });
         }
         let mut report = cadmpeg_ir::codec::DecodeBody {
@@ -1935,4 +1963,17 @@ fn refused_assemble_payloads_report_the_retained_scope_loss() {
         .collect::<Vec<_>>();
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].message, "2 native feature scope(s) retain their source envelope without interpreted specialized operation data.");
+}
+#[test]
+fn native_mesh_face_group_sources_remain_incomplete() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    for definition in [
+        serde_json::json!({"definition":"mesh_generate_face_groups", "source":{"native":"mesh"}, "settings":{"method":"fast", "angle_threshold":0.73,"minimum_area_fraction":0.17}}),
+        serde_json::json!({"definition":"mesh_combine_face_groups", "source":{"native":"mesh", "members":["first", "second"]}}),
+    ] {
+        let operation: FeatureOperation = serde_json::from_value(definition).unwrap();
+        assert!(feature_definition_is_incomplete(
+            &FeatureDefinition::Operation(operation)
+        ));
+    }
 }

@@ -27,7 +27,7 @@ fn insert_scope() -> DesignParameterScope {
         9,
     );
     if let DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() {
-        *slot = Some(DesignComponentInsertConstruction {
+        slot.construction = Some(DesignComponentInsertConstruction {
             relation_record_index: 8,
             carrier_record_index: 7,
             occurrence_identity: Some(17),

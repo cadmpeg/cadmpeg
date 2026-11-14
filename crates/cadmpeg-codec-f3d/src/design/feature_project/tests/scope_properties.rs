@@ -19,6 +19,238 @@ fn scope_properties_record_reference_members() {
 }
 
 #[test]
+fn extended_assembly_origins_keep_source_parameters_in_their_document() {
+    use crate::design::decode::parameters::parse_design_parameter_record;
+    use crate::design::feature_project::{
+        project_parameter_design_with_edge_identities, ProjectInputs,
+    };
+    use crate::design::test_support::{parameter_record, synthetic_feature_timelines};
+    use crate::records::feature::assembly::{
+        DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
+    };
+    use crate::records::feature::scope::{DesignJointOriginTransform, DesignScopePayloadMut};
+    use crate::records::identity::Located;
+    use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
+
+    for (extended, stream, offset, translation, retained) in [
+        (true, "f3d:Design/BulkStream.dat", 128, 1.0, true),
+        (false, "f3d:Design/BulkStream.dat", 128, 1.0, false),
+        (true, "f3d:other/BulkStream.dat", 128, 1.0, false),
+        (true, "f3d:Design/BulkStream.dat", 129, 1.0, false),
+        (true, "f3d:Design/BulkStream.dat", 128, 4.0, false),
+    ] {
+        let matrix = [
+            [1.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 2.0],
+            [0.0, 0.0, 1.0, 3.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+        .try_into()
+        .unwrap();
+        let mut origin = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:parameter-scope#10",
+            DesignFeatureKind::JointOrigin,
+            10,
+        );
+        if let DesignScopePayloadMut::JointOrigin(slot) = origin.payload_mut() {
+            *slot = Some(DesignJointOriginTransform {
+                joint_origin_transform: matrix,
+                joint_origin_transform_offset: 128,
+                reference: None,
+            });
+        }
+        let mut other_origin = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:parameter-scope#11",
+            DesignFeatureKind::JointOrigin,
+            11,
+        );
+        other_origin.feature_ordinal = std::num::NonZeroU32::new(2).unwrap();
+        other_origin.with_joint_origin_transform(matrix);
+        let mut assembly_matrix = matrix.rows();
+        assembly_matrix[0][3] = translation;
+        let mut assembly = DesignParameterScope::empty(
+            &format!("{stream}:parameter-scope#30"),
+            DesignFeatureKind::Assemble,
+            30,
+        );
+        let mut alignment = DesignAssemblyAlignment::try_new(
+            0.0,
+            [0.0; 3],
+            Vec::new(),
+            Some(DesignAssemblyAlignmentForm::Frames {
+                frames: [
+                    DesignAssemblyOperandFrame {
+                        reference_record_index: 10,
+                        reference_offset: 16,
+                        transform: assembly_matrix.try_into().unwrap(),
+                        transform_offset: offset,
+                    },
+                    DesignAssemblyOperandFrame {
+                        reference_record_index: 20,
+                        reference_offset: 64,
+                        transform: matrix,
+                        transform_offset: 256,
+                    },
+                ],
+            }),
+        )
+        .unwrap();
+        if extended {
+            alignment.additional_tail_reference = Some(Located {
+                value: 63,
+                offset: 300,
+            });
+        }
+        if let DesignScopePayloadMut::Assemble(slot) = assembly.payload_mut() {
+            *slot = Some(alignment);
+        }
+        let mut parameter = parse_design_parameter_record(&parameter_record(
+            Some(95),
+            "2.5 mm",
+            "FeatureInput",
+            Some("mm"),
+            "d8",
+            0.25,
+        ))
+        .unwrap();
+        parameter.id = "f3d:Design/BulkStream.dat:design-parameter#94".to_owned();
+        parameter.record_index = 94;
+        let owner = DesignParameterOwner::try_from(DesignParameterOwnerWire {
+            id: "f3d:Design/BulkStream.dat:design-parameter-owner#95".to_owned(),
+            byte_offset: 0,
+            frame_length: 103,
+            class_tag: "292".to_owned().try_into().unwrap(),
+            record_index: 95,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 0.25,
+            evaluated_value_offset: 40,
+            parameter_record_index: 94,
+            owned_ordinal: 0,
+            variant: None,
+            companion_record_index: 96,
+        })
+        .unwrap();
+        let origin_id = origin.id.clone();
+        let other_id = other_origin.id.clone();
+        let scopes = [origin, assembly, other_origin];
+        let timelines = synthetic_feature_timelines(&scopes);
+        let result = crate::test_support::with_decode_context(|ctx| {
+            project_parameter_design_with_edge_identities(
+                ctx,
+                &ProjectInputs {
+                    scopes: &scopes,
+                    timelines: &timelines,
+                    native: &[parameter],
+                    owners: &[owner],
+                    ..Default::default()
+                },
+            )
+        });
+        if stream != "f3d:Design/BulkStream.dat" {
+            assert!(matches!(
+                result,
+                Err(cadmpeg_core::CodecError::NotImplemented(_))
+            ));
+            continue;
+        }
+        let result = result.unwrap();
+        let feature = result
+            .features
+            .iter()
+            .find(|feature| feature.native_ref.as_deref() == Some(origin_id.as_str()))
+            .unwrap();
+        assert!(
+            matches!(feature.evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::DatumCoordinateSystem { frame }
+        ) if frame.origin() == cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0))
+        );
+        assert_eq!(
+            feature
+                .source_properties
+                .get("parameter:d8")
+                .map(String::as_str),
+            if retained { Some("2.5 mm") } else { None }
+        );
+        assert_eq!(
+            feature
+                .source_properties
+                .get("reference:0")
+                .map(String::as_str),
+            if retained { Some("10") } else { None }
+        );
+        let other = result
+            .features
+            .iter()
+            .find(|feature| feature.native_ref.as_deref() == Some(other_id.as_str()))
+            .unwrap();
+        assert!(other.source_properties.is_empty());
+    }
+}
+
+#[test]
+fn counted_assembly_owners_keep_source_parameter_expressions() {
+    use crate::design::decode::parameters::parse_design_parameter_record;
+    use crate::design::test_support::parameter_record;
+    use crate::records::feature::assembly::{DesignAssemblyAlignment, DesignAssemblyOwnerRun};
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    use crate::records::identity::Located;
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+        DesignFeatureKind::Assemble,
+        10,
+    );
+    let parameter = parse_design_parameter_record(&parameter_record(
+        Some(94),
+        "-7.5 mm",
+        "SlideMinimum",
+        Some("mm"),
+        "d8",
+        -0.75,
+    ))
+    .unwrap();
+    let mut alignment = DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), None).unwrap();
+    alignment.additional_owner_run = Some(DesignAssemblyOwnerRun {
+        count: Located {
+            value: 1,
+            offset: 273,
+        },
+        references: vec![Located {
+            value: 95,
+            offset: 277,
+        }],
+    });
+    if let DesignScopePayloadMut::Assemble(slot) = scope.payload_mut() {
+        *slot = Some(alignment);
+    }
+    let properties =
+        scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &[(4, &parameter)]).unwrap();
+    assert_eq!(
+        properties.get("parameter:d8").map(String::as_str),
+        Some("-7.5 mm")
+    );
+    if let DesignScopePayloadMut::Assemble(slot) = scope.payload_mut() {
+        slot.as_mut().unwrap().additional_owner_run = None;
+    }
+    let properties =
+        scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &[(4, &parameter)]).unwrap();
+    assert!(!properties.contains_key("parameter:d8"));
+    if let DesignScopePayloadMut::Assemble(slot) = scope.payload_mut() {
+        slot.as_mut().unwrap().additional_tail_reference = Some(Located {
+            value: 63,
+            offset: 290,
+        });
+    }
+    let properties =
+        scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &[(4, &parameter)]).unwrap();
+    assert_eq!(
+        properties.get("parameter:d8").map(String::as_str),
+        Some("-7.5 mm")
+    );
+}
+
+#[test]
 fn hole_properties_retain_expressions_controls_cache_and_sizing_names() {
     use crate::design::decode::parameters::parse_design_parameter_record;
     use crate::design::test_support::parameter_record;

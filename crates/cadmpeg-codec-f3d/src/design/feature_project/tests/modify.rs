@@ -61,6 +61,7 @@ fn modify_scope(transform: [[f64; 4]; 4], listed: Vec<u32>) -> DesignParameterSc
             form_offset: 43,
             transform_reference_offset: Some(321),
             prefix: None,
+            ..DesignMoveOperation::default()
         },
         body_group_record_indices: listed,
         body_count_offset: 332,

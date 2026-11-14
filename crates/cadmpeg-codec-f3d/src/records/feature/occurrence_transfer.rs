@@ -13,6 +13,101 @@ pub(crate) const CONTEXT_TYPE: &str = "C3423E04-7E85-4B44-8E31-A5FA9C100052";
 pub(crate) const OWNER_TYPE: &str = "3A6D1E62-99F8-4E32-BAAA-DBA0A2CFB27C";
 pub(crate) const COMPONENT_TYPE: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignOccurrenceTransferMode {
+    Copy,
+    Reparent,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignOccurrenceTransferIntent {
+    pub(crate) mode: DesignOccurrenceTransferMode,
+    pub(crate) relation_record_index: Option<u32>,
+    pub(crate) occurrence_record_index: Option<u32>,
+    pub(crate) component_record_index: Option<u64>,
+    pub(crate) source_owner_component_record_index: Option<u32>,
+    pub(crate) target_owner_component_record_index: Option<u32>,
+    pub(crate) source_transform: Option<SketchPlacementMatrix>,
+    pub(crate) target_transform: Option<SketchPlacementMatrix>,
+}
+
+impl DesignOccurrenceTransferIntent {
+    pub(crate) fn valid_for_scope(&self, scope: &DesignParameterScope) -> bool {
+        let family_matches = match self.mode {
+            DesignOccurrenceTransferMode::Copy => scope.kind_name() == "CopyPaste",
+            DesignOccurrenceTransferMode::Reparent => scope.kind_name() == "CutPaste",
+        };
+        let relation_matches = self
+            .relation_record_index
+            .is_none_or(|index| scope.reference_members().values().copied().eq([index]));
+        let mode_fields_match = match self.mode {
+            DesignOccurrenceTransferMode::Copy => {
+                self.source_owner_component_record_index.is_none()
+            }
+            DesignOccurrenceTransferMode::Reparent => self.source_transform.is_none(),
+        };
+        let indices_nonzero = [
+            self.relation_record_index,
+            self.occurrence_record_index,
+            self.source_owner_component_record_index,
+            self.target_owner_component_record_index,
+        ]
+        .into_iter()
+        .flatten()
+        .all(|index| index != 0)
+            && self
+                .component_record_index
+                .is_none_or(|index| index != 0 && u32::try_from(index).is_ok());
+        family_matches
+            && indices_nonzero
+            && relation_matches
+            && mode_fields_match
+            && self
+                .occurrence_record_index
+                .is_none_or(|_| self.relation_record_index.is_some())
+            && self
+                .component_record_index
+                .is_none_or(|_| self.occurrence_record_index.is_some())
+            && self
+                .target_owner_component_record_index
+                .is_none_or(|_| self.relation_record_index.is_some())
+            && self
+                .source_owner_component_record_index
+                .is_none_or(|_| self.mode == DesignOccurrenceTransferMode::Reparent)
+    }
+
+    pub(crate) fn links_valid(
+        &self,
+        scope: &DesignParameterScope,
+        before_scope: impl Fn(u32) -> bool,
+        before: impl Fn(u32, u32) -> bool,
+        has_type: impl Fn(u32, &str) -> bool,
+    ) -> bool {
+        self.valid_for_scope(scope)
+            && self.relation_record_index.is_none_or(&before_scope)
+            && self.occurrence_record_index.is_none_or(|index| {
+                before_scope(index) && has_type(index, OCCURRENCE_PLACEMENT_TYPE_GUID)
+            })
+            && self.component_record_index.is_none_or(|index| {
+                u32::try_from(index)
+                    .ok()
+                    .is_some_and(|index| before_scope(index) && has_type(index, COMPONENT_TYPE))
+            })
+            && self
+                .source_owner_component_record_index
+                .is_none_or(|index| before_scope(index) && has_type(index, COMPONENT_TYPE))
+            && self
+                .target_owner_component_record_index
+                .is_none_or(|index| before_scope(index) && has_type(index, COMPONENT_TYPE))
+            && self
+                .occurrence_record_index
+                .zip(self.relation_record_index)
+                .is_none_or(|(occurrence, relation)| before(occurrence, relation))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignOccurrenceTransfer {
@@ -207,6 +302,8 @@ impl DesignOccurrenceTransfer {
 }
 
 rewrite_native_record!(DesignPasteOwner, []; {collection, context, component});
+rewrite_native_scalar!(DesignOccurrenceTransferMode);
+rewrite_native_record!(DesignOccurrenceTransferIntent, []; {mode, relation_record_index, occurrence_record_index, component_record_index, source_owner_component_record_index, target_owner_component_record_index, source_transform, target_transform});
 rewrite_native_record!(DesignOccurrenceTransfer, []; {relation_record_index, occurrence_record_index, component_record_index, target_owner, target_transform, target_transform_offset, source});
 rewrite_native_enum!(DesignOccurrenceTransferSource, []; {Cut {removal_record_index, source_relation_record_index, source_owner, occurrence_key}, Copy {source_transform, source_transform_offset}});
 

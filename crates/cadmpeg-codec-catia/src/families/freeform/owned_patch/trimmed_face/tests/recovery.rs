@@ -157,3 +157,108 @@ fn rolling_recovery_retains_the_active_spline_pcurve_interval() {
     let (ir, _) = transfer(patch);
     assert_eq!(ir.model.faces.len(), 1);
 }
+
+#[test]
+fn spline_trims_share_the_lifted_edges_clamped_chart() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+
+    let surface = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1000.0, 0.0)],
+                vec![
+                    Point3::new(1000.0, 0.0, 0.0),
+                    Point3::new(1000.0, 1000.0, 0.0),
+                ],
+            ],
+            None,
+        ),
+        false,
+    )
+    .expect("planar tensor");
+    let definition = cylinder_section();
+    for (axis, native_bound) in [(0, None), (1, None), (1, Some(0.01))] {
+        let mut face = sheet(&definition, -5.0e-6);
+        face.carrier = Carrier::CachedTensor(&surface);
+        for trim in &mut face.outer.trims {
+            trim.mapped_range = Some([0.0, 1.0]);
+            trim.inferred_accuracy = native_bound.map(|bound_mm| InferredEdgeAccuracy {
+                source: 1,
+                bound_mm,
+            });
+            let points = [0.0, 1.0].map(|t| {
+                let mut uv = trim.uv(t).expect("trim endpoint");
+                if trim.edge != 10 {
+                    uv[1] = uv[1].max(0.0);
+                }
+                if axis == 0 {
+                    uv.swap(0, 1);
+                }
+                Point2::new(uv[0], uv[1])
+            });
+            trim.pcurve = PcurveGeometry::Nurbs {
+                nurbs: PcurveNurbs::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    points.to_vec(),
+                    None,
+                    false,
+                )
+                .expect("spline trim"),
+            };
+        }
+        let original_pcurve = face.outer.trims[0].pcurve.clone();
+        let patch = fit_ring(
+            &CadIr::empty(),
+            &face.carrier,
+            face.face_pos,
+            face.member,
+            face.outer.trims,
+            &RingFit {
+                vertices: None,
+                shared_surface: None,
+                transverse_recovery: TransverseRecovery::None,
+            },
+            false,
+        )
+        .expect("clamped spline ring");
+        if native_bound.is_some() {
+            assert_eq!(
+                patch
+                    .sides
+                    .iter()
+                    .find(|side| side.edge == 10)
+                    .expect("bottom edge")
+                    .pcurve,
+                original_pcurve
+            );
+        }
+        for side in &patch.sides {
+            for step in 0..=32 {
+                let t = f64::from(step) / 32.0;
+                let uv = eval::decode::pcurve_uv(EvaluationAdmission::Standard, &side.pcurve, t)
+                    .expect("pcurve point")
+                    .get();
+                if native_bound.is_none() {
+                    assert!(uv.u >= 0.0 && uv.u <= 1.0 && uv.v >= 0.0 && uv.v <= 1.0);
+                }
+                let point = eval::decode::surface_point_solved(
+                    EvaluationAdmission::Standard,
+                    &patch.surface,
+                    uv.u,
+                    uv.v,
+                )
+                .expect("lifted point")
+                .get();
+                assert!(
+                    point.distance(curve_point(&side.curve, t).expect("edge point"))
+                        <= GAP_MM + native_bound.unwrap_or(0.0)
+                );
+            }
+        }
+        transfer(patch);
+    }
+}

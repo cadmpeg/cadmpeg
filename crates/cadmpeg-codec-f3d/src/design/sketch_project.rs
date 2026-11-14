@@ -446,11 +446,8 @@ pub(crate) fn project_sketch_design(
             continue;
         };
         let geometry = match source {
-            SketchCurveGeometry::Line {
-                start, end, normal, ..
-            } if planar_point(start.as_raw())
-                && planar_point(end.as_raw())
-                && normal.as_raw().z != 0.0 =>
+            SketchCurveGeometry::Line { start, end, .. }
+                if planar_point(start.as_raw()) && planar_point(end.as_raw()) =>
             {
                 let start = start.as_raw();
                 let end = end.as_raw();

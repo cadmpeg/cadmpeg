@@ -97,6 +97,76 @@ fn fixture(revolution: bool, parallel: bool, distance: f64) -> (CadIr, SurfaceId
 }
 
 #[test]
+fn indexed_surface_points_preserve_cacheless_construction_geometry() {
+    for revolution in [false, true] {
+        let (ir, _, _) = fixture(revolution, false, 2.0);
+        let geometry = &ir.model.surfaces[0].geometry;
+        let index = ModelIndex::build(&ir);
+        for (u, v) in [(0.0, 0.25), (0.25, 0.75), (0.9, 1.0)] {
+            let point = crate::eval::model_surface_point_in_index(
+                EvaluationAdmission::Standard,
+                &index,
+                geometry,
+                u,
+                v,
+            )
+            .unwrap()
+            .get();
+            let expected = if revolution {
+                Point3::new(5.0 * u.cos(), 5.0 * u.sin(), 2.0 * v)
+            } else {
+                Point3::new(4.0 * u, 0.0, v)
+            };
+            assert!(point.distance(expected) < 1.0e-12);
+        }
+    }
+}
+
+#[test]
+fn indexed_surface_points_reject_missing_constructions() {
+    let (mut ir, _, _) = fixture(false, false, 2.0);
+    ir.model.procedural_surfaces.remove(0);
+    let index = ModelIndex::build(&ir);
+    assert_eq!(
+        crate::eval::model_surface_point_in_index(
+            EvaluationAdmission::Standard,
+            &index,
+            &ir.model.surfaces[0].geometry,
+            0.25,
+            3.0,
+        ),
+        Err(EvaluationFailure::NoValue)
+    );
+}
+
+#[test]
+fn indexed_surface_points_keep_the_first_construction_with_an_identity() {
+    let (mut ir, _, _) = fixture(false, false, 2.0);
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ir.model.procedural_surfaces[0].id.clone(),
+        ProceduralSurfaceDefinition::LinearSweep(
+            LinearSweepSurfaceConstruction::try_new(
+                ir.model.curves[0].id.clone(),
+                Vector3::new(0.0, 0.0, 7.0),
+            )
+            .unwrap(),
+        ),
+        None,
+    ));
+    let index = ModelIndex::build(&ir);
+    let point = crate::eval::model_surface_point_in_index(
+        EvaluationAdmission::Standard,
+        &index,
+        &ir.model.surfaces[0].geometry,
+        0.25,
+        3.0,
+    )
+    .unwrap()
+    .get();
+    assert!(point.distance(Point3::new(1.0, 0.0, 3.0)) < 1.0e-12);
+}
+
+#[test]
 fn cacheless_sweep_offsets_read_the_support_normal_with_both_polarities() {
     for distance in [-2.0, 2.0] {
         for revolution in [false, true] {

@@ -39,6 +39,7 @@ macro_rules! selection_field_deserializer {
 mod body_selection;
 mod decode_clone;
 mod membership;
+mod operation;
 mod selection_overlap;
 
 pub mod edge_treatments;
@@ -47,8 +48,19 @@ use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpe
 pub mod holes;
 use holes::{HoleBottom, HolePlacement, HoleProfileFilter, HoleShape};
 
+#[doc = "Mesh source selections."]
+pub mod mesh;
+
+#[doc = "Sheet-metal construction inputs and controls."]
+pub mod sheet_metal;
+use sheet_metal::SheetMetalBendLinesConstruction;
+
 pub mod patterns;
 use patterns::{PatternKind, PatternSeed};
+
+#[doc = "Surface operation settings and constructors."]
+pub mod surfaces;
+use surfaces::UntrimLoops;
 
 macro_rules! checked_feature_geometry {
     ($(#[$meta:meta])* $name:ident, $raw:ident, $value:ident, $valid:expr, $error:literal $(, $getter:ident)*) => {
@@ -119,8 +131,7 @@ impl FinitePoint3 {
         z: 0.0,
     });
 
-    /// The point with three finite coordinates. Every coordinate is finite,
-    /// so the point is admitted without a check.
+    /// The point with three finite coordinates. Every coordinate is finite, so the point is admitted without a check.
     #[must_use]
     pub const fn from_coordinates(x: FiniteReal, y: FiniteReal, z: FiniteReal) -> Self {
         Self(Point3 {
@@ -130,8 +141,7 @@ impl FinitePoint3 {
         })
     }
 
-    /// Reflect through the model origin. Negation keeps every coordinate
-    /// finite, so the result stays admitted.
+    /// Reflect through the model origin. Negation keeps every coordinate finite, so the result stays admitted.
     #[must_use]
     pub fn negated(self) -> Self {
         Self(Point3::new(-self.0.x, -self.0.y, -self.0.z))
@@ -186,8 +196,7 @@ impl FiniteVector3 {
         z: 0.0,
     });
 
-    /// The vector with three finite components. Every component is finite,
-    /// so the vector is admitted without a check.
+    /// The vector with three finite components. Every component is finite, so the vector is admitted without a check.
     #[must_use]
     pub const fn from_components(x: FiniteReal, y: FiniteReal, z: FiniteReal) -> Self {
         Self(Vector3 {
@@ -237,8 +246,7 @@ checked_feature_geometry!(
 );
 
 impl From<UnitVector3> for FiniteVector3 {
-    /// Carry an admitted unit direction as a finite displacement. Its
-    /// components are finite, so no admission can refuse it.
+    /// Carry an admitted unit direction as a finite displacement. Its components are finite, so no admission can refuse it.
     fn from(value: UnitVector3) -> Self {
         Self(*value.as_raw())
     }
@@ -887,8 +895,7 @@ impl FeatureCircularArc {
         ))
     }
 
-    /// Build an arc from checked parts. The argument types state the whole
-    /// arc contract, so nothing is checked again.
+    /// Build an arc from checked parts. The argument types state the whole arc contract, so nothing is checked again.
     #[must_use]
     pub const fn from_parts(
         center: FinitePoint3,
@@ -2450,35 +2457,11 @@ impl Default for LoftGuidance {
     }
 }
 
-fn known_body_count(selection: &BodySelection) -> Option<usize> {
-    match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-            Some(bodies.len())
-        }
-        BodySelection::Local { bodies, .. } => Some(bodies.len()),
-        BodySelection::ResolvedSet { members } => Some(members.count()),
-        BodySelection::Historical { bodies, .. } => Some(bodies.len()),
-        BodySelection::HistoricalSet { members, .. } => Some(members.count()),
-        BodySelection::Generated { bodies, .. } => Some(bodies.len()),
-        BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => None,
-    }
-}
-
 /// A body selection with at least two members when membership is resolved.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct SewBodySelection(BodySelection);
-
-impl TryFrom<BodySelection> for SewBodySelection {
-    type Error = &'static str;
-    fn try_from(bodies: BodySelection) -> Result<Self, Self::Error> {
-        if known_body_count(&bodies).is_some_and(|count| count < 2) {
-            return Err("bodies must select at least two bodies for sewing");
-        }
-        Ok(Self(bodies))
-    }
-}
 
 impl std::ops::Deref for SewBodySelection {
     type Target = BodySelection;
@@ -2601,7 +2584,7 @@ selection_operands!(
     BodySelection,
     target,
     tools,
-    |first| known_body_count(first).is_none_or(|count| count == 1),
+    |first| body_selection::known_body_count(first).is_none_or(|count| count == 1),
     body_selections_overlap,
     try_edit
 );
@@ -2714,8 +2697,68 @@ impl<'de> Deserialize<'de> for TreeChildren {
     }
 }
 
-/// A feature operation: neutral construction semantics with an explicit native
-/// escape hatch, and no post-processing layer of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[doc = "Operation mode for a local component occurrence transfer."]
+pub enum ComponentTransferMode {
+    #[doc = "A new local component occurrence is created from an existing occurrence."]
+    Copy,
+    #[doc = "An existing local component occurrence changes its containing definition."]
+    Reparent,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_captured_occurrence, OccurrenceId, "occurrence");
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[doc = "A canonical affine pose or the ordinal of its retained native matrix."]
+pub enum CapturedPositionTransform {
+    #[doc = "Finite affine pose with translation in canonical millimetres."]
+    Affine {
+        #[doc = "Captured pose in the occurrence assembly context."]
+        transform: Transform,
+    },
+    #[doc = "Matrix retained in the named native scope's ordered captured rows."]
+    Native {
+        #[doc = "Native scope retaining the source coefficients."]
+        scope: crate::ids::NativeId,
+        #[doc = "Zero-based ordinal of the source matrix row."]
+        row: usize,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = "One retained occurrence selector and its captured pose."]
+pub struct CapturedComponentPosition {
+    #[doc = "Native selector retained independently of occurrence resolution."]
+    pub selector: crate::ids::NativeId,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_captured_occurrence"
+    )]
+    #[doc = "Expanded occurrence when the complete selector resolves uniquely."]
+    pub occurrence: Option<OccurrenceId>,
+    #[doc = "Captured pose in the occurrence assembly context."]
+    pub transform: CapturedPositionTransform,
+}
+
+impl CapturedComponentPosition {
+    #[doc = "Construct an unresolved captured pose while preserving its native selector."]
+    pub fn new(selector: crate::ids::NativeId, transform: Transform) -> Self {
+        Self {
+            selector,
+            occurrence: None,
+            transform: CapturedPositionTransform::Affine { transform },
+        }
+    }
+}
+
+/// A feature operation: neutral construction semantics with an explicit native escape hatch, and no post-processing layer of its own.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "definition", rename_all = "snake_case", deny_unknown_fields)]
@@ -2735,10 +2778,53 @@ pub enum FeatureOperation {
     },
     /// Mesh geometry imported into the parametric timeline.
     MeshImport {
-        /// Tessellation identities supplied by the mesh-body records.
+        #[doc = "Resolved tessellations or a retained mesh source."]
         #[serde(deserialize_with = "deserialize_local_tessellations")]
-        tessellations: SelectionMembers<String>,
+        tessellations: mesh::MeshSelection,
     },
+    #[doc = "Generate a mesh face-group partition from independently retained controls."]
+    MeshGenerateFaceGroups {
+        #[doc = "Mesh and optional group selection in its source history state."]
+        #[serde(deserialize_with = "deserialize_mesh_source")]
+        source: mesh::MeshSelection,
+        #[doc = "Decoded controls, including stored inactive values."]
+        #[serde(default)]
+        settings: mesh::MeshFaceGroupGenerationSettings,
+    },
+    #[doc = "Combine selected groups of a mesh face-group partition."]
+    MeshCombineFaceGroups {
+        #[doc = "Mesh and ordered groups in their source history state."]
+        #[serde(deserialize_with = "deserialize_mesh_source")]
+        source: mesh::MeshSelection,
+    },
+    #[doc = "Planar section of a mesh whose curves belong to a sketch."]
+    MeshSection {
+        #[doc = "Sectioned mesh."]
+        source: mesh::MeshSelection,
+        #[doc = "Model-space section plane, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_section_plane"
+        )]
+        plane: Option<FeatureSupportPlaneFrame>,
+        #[doc = "Sketch feature that receives the section curves, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_section_sketch"
+        )]
+        sketch: Option<FeatureId>,
+    },
+    #[doc = "Change applied to mesh geometry."]
+    MeshModify {
+        #[doc = "Mesh that the operation changes."]
+        source: mesh::MeshSelection,
+        #[doc = "Applied change."]
+        modification: mesh::MeshModification,
+    },
+    #[doc = "Conversion of meshes to solid or surface bodies."]
+    MeshConvert(mesh::MeshConversion),
     /// Independent bodies introduced by a copy-and-paste operation. The copies
     /// are the feature's outputs, so the selection carries only its native
     /// expression.
@@ -2750,6 +2836,63 @@ pub enum FeatureOperation {
     InsertComponent {
         /// Placed occurrence created by this history operation.
         occurrence: OccurrenceId,
+    },
+    #[doc = "Component occurrences introduced by one construction feature."]
+    InsertComponents {
+        #[doc = "Resolved membership and its retained native selection."]
+        components: InsertedComponents,
+    },
+    #[doc = "Component occurrence copied or transferred between local owners."]
+    ComponentTransfer {
+        #[doc = "Whether the feature copies an occurrence or changes its owner."]
+        mode: ComponentTransferMode,
+        #[doc = "Transferred occurrence when its persistent identity resolves."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_occurrence"
+        )]
+        occurrence: Option<OccurrenceId>,
+        #[doc = "Reusable component definition when its identity resolves."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_component"
+        )]
+        component: Option<ProductDefinitionId>,
+        #[doc = "Source containing definition when it resolves."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_source_owner"
+        )]
+        source_owner: Option<ProductDefinitionId>,
+        #[doc = "Destination containing definition when it resolves."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_target_owner"
+        )]
+        target_owner: Option<ProductDefinitionId>,
+        #[doc = "Source local placement when the operation stores one."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_source_transform"
+        )]
+        source_transform: Option<Transform>,
+        #[doc = "Destination local placement when the operation stores one."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transfer_target_transform"
+        )]
+        target_transform: Option<Transform>,
+    },
+    #[doc = "Independent captured occurrence poses in source order, including repeated selectors."]
+    CapturedComponentPositions {
+        #[doc = "Exactly the captured rows, with an empty capture represented by an empty sequence."]
+        positions: Vec<CapturedComponentPosition>,
     },
     /// Assembly constraint introduced into the product structure.
     AssemblyJoint {
@@ -3070,7 +3213,7 @@ pub enum FeatureOperation {
         /// Complete geometric and parametric construction definition.
         construction: CoilConstruction,
         /// Result-body semantics.
-        result: CoilResult,
+        result: SolidFeatureResult,
     },
     /// Solid sphere primitive.
     Sphere {
@@ -3325,6 +3468,21 @@ pub enum FeatureOperation {
         /// Transition form and evaluated radius.
         transition: SheetMetalTransition,
     },
+    #[doc = "Flattens selected bends of an existing sheet."]
+    SheetMetalUnfold {
+        #[doc = "Independently decoded unfolding inputs."]
+        construction: sheet_metal::SheetMetalUnfoldConstruction,
+    },
+    #[doc = "Restores the bends flattened by a preceding Unfold."]
+    SheetMetalRefold {
+        #[doc = "Associated unfolding operation."]
+        construction: sheet_metal::SheetMetalRefoldConstruction,
+    },
+    #[doc = "Bends an existing sheet along selected sketch lines."]
+    SheetMetalBendLines {
+        #[doc = "Independently decoded bend inputs."]
+        construction: SheetMetalBendLinesConstruction,
+    },
     /// Corner evaluation on a bend with an explicit geometric effect.
     SheetMetalCorner {
         /// Bend on which the corner is evaluated.
@@ -3534,6 +3692,20 @@ pub enum FeatureOperation {
             deserialize_with = "deserialize_side"
         )]
         side: Option<ThickenSide>,
+        #[doc = "Result-body creation or Boolean combination, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thicken_result"
+        )]
+        result: Option<SolidFeatureResult>,
+        #[doc = "Whether the face selection extends along tangent faces, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_tangent_chain"
+        )]
+        tangent_chain: Option<bool>,
     },
     /// Surface copied at a signed normal offset from selected support faces.
     OffsetSurface {
@@ -3568,6 +3740,11 @@ pub enum FeatureOperation {
         /// Maximum accepted boundary gap, when resolved.
         #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         gap_tolerance: Option<PositiveLength>,
+    },
+    /// Separates selected faces from their bodies into individual surface bodies.
+    UnstitchFaces {
+        /// Faces separated by the operation.
+        faces: FaceSelection,
     },
     /// Surface patch spanning a selected edge boundary.
     FilledSurface {
@@ -3618,6 +3795,16 @@ pub enum FeatureOperation {
         distance: Option<PositiveLength>,
         /// Geometric continuation law.
         method: SurfaceExtension,
+    },
+    #[doc = "Removes trim loops from selected surface faces."]
+    UntrimSurface {
+        #[doc = "Surface faces whose trim loops are removed."]
+        faces: FaceSelection,
+        #[doc = "Trim loops removed from the selected faces."]
+        loops: UntrimLoops,
+        #[doc = "Signed exterior-boundary extension in canonical millimeters."]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        extension: Option<Length>,
     },
     /// Ruled surface grown from selected boundary edges.
     RuledSurface {
@@ -3684,6 +3871,12 @@ pub enum FeatureOperation {
         /// Whether tool bodies remain present after the Boolean result is created.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         keep_tools: bool,
+        #[doc = "Component creation requested for the Boolean result."]
+        #[serde(
+            default,
+            skip_serializing_if = "COMBINE_DESTINATION_IS_TARGET_COMPONENT"
+        )]
+        destination: CombineDestination,
     },
     /// Creates solid bodies from selected cells enclosed by boundary bodies.
     BoundaryFill {
@@ -4078,6 +4271,8 @@ pub enum UnresolvedFamily {
     Extrude,
     /// The `revolve` operation family.
     Revolve,
+    #[doc = "The `combine` operation family."]
+    Combine,
     /// The `fillet` operation family.
     Fillet,
     /// The `extract_face` operation family.
@@ -4106,80 +4301,20 @@ pub enum UnresolvedFamily {
     MoveObject,
 }
 
-impl FeatureOperation {
-    /// Family name of an operation whose replay produces body geometry, and `None` for
-    /// definitions that do not.
-    ///
-    /// A feature of one of these families carries current result bodies in its
-    /// [`FeatureEvaluation::outputs`] list or intermediate result identities in a
-    /// [`FeatureResultTopology`]. The returned name is the stable lowercase label for the
-    /// family, suitable for grouping such features in a report.
-    pub fn body_output_family(&self) -> Option<&'static str> {
-        match self {
-            Self::BaseFeature { .. } => Some("base feature"),
-            Self::Unresolved { family } => match family {
-                UnresolvedFamily::Brep => Some("brep"),
-                UnresolvedFamily::ThroughCurveMesh => Some("through curve mesh"),
-                UnresolvedFamily::ExtractFace => Some("extract face"),
-                UnresolvedFamily::CopyFace => Some("copy face"),
-                UnresolvedFamily::LinkedFace => Some("linked face"),
-                UnresolvedFamily::FillHole => Some("fill hole"),
-                UnresolvedFamily::MoveFace => Some("move face"),
-                UnresolvedFamily::MirrorFace => Some("mirror face"),
-                UnresolvedFamily::SubdivisionBody => Some("subdivision body"),
-                UnresolvedFamily::TopologyOptimization => Some("topology optimization"),
-                UnresolvedFamily::MoveObject => Some("move object"),
-                UnresolvedFamily::Cylinder => Some("cylinder"),
-                UnresolvedFamily::Cone => Some("cone"),
-                UnresolvedFamily::Sphere => Some("sphere"),
-                UnresolvedFamily::Thread => Some("thread"),
-                UnresolvedFamily::DetailedThread => Some("detailed thread"),
-                UnresolvedFamily::Extrude => Some("extrude"),
-                UnresolvedFamily::Revolve => Some("revolve"),
-                UnresolvedFamily::Fillet => Some("fillet"),
-                UnresolvedFamily::DeleteFace => Some("delete face"),
-                UnresolvedFamily::DatumPlane
-                | UnresolvedFamily::DatumAxis
-                | UnresolvedFamily::DatumPoint
-                | UnresolvedFamily::DatumCoordinateSystem
-                | UnresolvedFamily::BridgeCurve
-                | UnresolvedFamily::Loft
-                | UnresolvedFamily::FreeformSurface
-                | UnresolvedFamily::BoundarySurface
-                | UnresolvedFamily::Draft => None,
-            },
-            Self::SheetMetalAttachedPlate { .. } => Some("sheet metal attached plate"),
-            Self::SheetMetalBend { .. } => Some("sheet metal bend"),
-            Self::Block { .. } => Some("block"),
-            Self::Sphere { .. } => Some("sphere"),
-            Self::ExtractBody { .. } => Some("extract body"),
-            Self::Loft { .. } => Some("loft"),
-            Self::TrimSurface { .. } => Some("trim surface"),
-            Self::ExtendSurface { .. } => Some("extend surface"),
-            Self::RuledSurface { .. } => Some("ruled surface"),
-            Self::Hole { .. } => Some("hole"),
-            Self::Rib { .. } => Some("rib"),
-            Self::Chamfer { .. } => Some("chamfer"),
-            Self::Fillet { .. } => Some("fillet"),
-            Self::FullRoundFillet { .. } => Some("fillet"),
-            Self::FaceBlend { .. } => Some("face blend"),
-            Self::Shell { .. } => Some("shell"),
-            Self::SewBodies { .. } => Some("sew bodies"),
-            Self::TrimBodies { .. } | Self::TrimBodiesAtPlane { .. } => Some("trim bodies"),
-            Self::Extrude { .. } => Some("extrude"),
-            Self::Revolve { .. } => Some("revolve"),
-            Self::Sweep { .. } => Some("sweep"),
-            Self::OffsetSurface { .. } => Some("offset surface"),
-            Self::Thicken { .. } => Some("thicken"),
-            Self::Draft { .. } => Some("draft"),
-            Self::Pattern { .. } => Some("pattern"),
-            Self::Combine { .. } => Some("body combine"),
-            Self::ReplaceFace { .. } => Some("replace face"),
-            Self::DeleteFace { .. } => Some("delete face"),
-            _ => None,
-        }
-    }
+#[doc = "Component creation mode of a Boolean combination."]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum CombineDestination {
+    #[doc = "Keep the result in the target body's component."]
+    #[default]
+    TargetComponent,
+    #[doc = "Create a component that contains the combined result."]
+    NewComponent,
 }
+
+const COMBINE_DESTINATION_IS_TARGET_COMPONENT: fn(&CombineDestination) -> bool =
+    |destination| matches!(destination, CombineDestination::TargetComponent);
 
 impl FeatureDefinition {
     /// The operation this definition performs, its post-processing layer aside.
@@ -5585,6 +5720,16 @@ pub enum BodyRetentionMode {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum WrapMode {
+    #[doc = "Material effect with an independently retained signed depth."]
+    Unresolved {
+        #[doc = "Signed depth in millimetres when available."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_wrap_depth"
+        )]
+        depth: Option<Length>,
+    },
     /// Add material above the target face.
     Emboss {
         /// Positive normal offset above the target face.
@@ -6242,6 +6387,7 @@ selection_field_deserializer!(deserialize_selection_selections, "selections");
 selection_field_deserializer!(deserialize_selection_curves, "curves");
 selection_field_deserializer!(deserialize_profile_parameter_range, "parameter_range");
 selection_field_deserializer!(deserialize_local_tessellations, "tessellations");
+selection_field_deserializer!(deserialize_mesh_source, "source");
 selection_field_deserializer!(deserialize_local_segments, "segments");
 selection_field_deserializer!(deserialize_local_axis_native_ref, "axis_native_ref");
 selection_field_deserializer!(deserialize_local_groups, "groups");
@@ -6972,6 +7118,118 @@ pub enum InsertedBodies {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[doc = "Invalid membership or native reference of a component insertion."]
+pub enum InsertedComponentsError {
+    #[doc = "A resolved or partial insertion has no known occurrence."]
+    #[error("resolved or partial component insertion must select an occurrence")]
+    Empty,
+    #[doc = "The known membership repeats an occurrence."]
+    #[error("component insertion repeats an occurrence")]
+    RepeatedOccurrence,
+    #[doc = "The retained native selection is blank."]
+    #[error("component insertion native reference must not be blank")]
+    BlankNative,
+    #[doc = "The allocator refused selection storage."]
+    #[error("component insertion allocation failed")]
+    Allocation,
+}
+
+impl From<BodySelectionError> for InsertedComponentsError {
+    fn from(error: BodySelectionError) -> Self {
+        match error {
+            BodySelectionError::Empty => Self::Empty,
+            BodySelectionError::RepeatedBody | BodySelectionError::RepeatedNativeMember => {
+                Self::RepeatedOccurrence
+            }
+            BodySelectionError::BlankNativeMember => Self::BlankNative,
+            BodySelectionError::Allocation => Self::Allocation,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[doc = "Occurrence membership of an insertion with its complete native selection."]
+pub enum InsertedComponents {
+    #[doc = "Insertion membership remains in its native selection."]
+    Native {
+        #[doc = "Format-native selection expression."]
+        native: SelectionReference,
+    },
+    #[doc = "Every inserted occurrence resolves to the neutral model."]
+    Resolved {
+        #[doc = "Nonempty distinct occurrences in source order."]
+        occurrences: SelectionMembers<OccurrenceId>,
+        #[doc = "Format-native selection expression."]
+        native: SelectionReference,
+    },
+    #[doc = "Known inserted occurrences accompany unresolved native membership."]
+    Partial {
+        #[doc = "Nonempty distinct known occurrences in source order."]
+        occurrences: SelectionMembers<OccurrenceId>,
+        #[doc = "Format-native expression retaining the complete selection."]
+        native: SelectionReference,
+    },
+}
+
+impl InsertedComponents {
+    #[doc = "Retain unresolved membership through a nonblank native selection."]
+    pub fn native(native: String) -> Result<Self, InsertedComponentsError> {
+        Ok(Self::Native {
+            native: SelectionReference::new(native)?,
+        })
+    }
+
+    #[doc = "Admit complete nonempty distinct membership and its native selection."]
+    pub fn resolved(
+        occurrences: Vec<OccurrenceId>,
+        native: String,
+    ) -> Result<Self, InsertedComponentsError> {
+        Ok(Self::Resolved {
+            occurrences: SelectionMembers::try_from(occurrences)?,
+            native: SelectionReference::new(native)?,
+        })
+    }
+
+    #[doc = "Admit nonempty distinct known membership and the complete native selection."]
+    pub fn partial(
+        occurrences: Vec<OccurrenceId>,
+        native: String,
+    ) -> Result<Self, InsertedComponentsError> {
+        Ok(Self::Partial {
+            occurrences: SelectionMembers::try_from(occurrences)?,
+            native: SelectionReference::new(native)?,
+        })
+    }
+
+    #[must_use]
+    #[doc = "Whether every inserted occurrence is resolved."]
+    pub const fn is_resolved(&self) -> bool {
+        matches!(self, Self::Resolved { .. })
+    }
+
+    #[must_use]
+    #[doc = "Known occurrence identities in source order."]
+    pub fn occurrences(&self) -> &[OccurrenceId] {
+        match self {
+            Self::Native { .. } => &[],
+            Self::Resolved { occurrences, .. } | Self::Partial { occurrences, .. } => occurrences,
+        }
+    }
+
+    #[must_use]
+    #[doc = "The retained format-native expression for the complete insertion."]
+    pub fn native_reference(&self) -> &SelectionReference {
+        match self {
+            Self::Native { native }
+            | Self::Resolved { native, .. }
+            | Self::Partial { native, .. } => native,
+        }
+    }
+}
+
 impl InsertedBodies {
     /// Whether the copied bodies are resolved to the neutral model.
     #[must_use]
@@ -7209,6 +7467,11 @@ pub enum FaceMotion {
         axis_dir: FeatureDirection3,
         /// Signed rotation angle.
         angle: Angle,
+    },
+    #[doc = "Complete model-space affine motion in canonical millimetres."]
+    Transform {
+        #[doc = "Row-major transform applied to the selected faces."]
+        transform: Transform,
     },
 }
 
@@ -7892,15 +8155,15 @@ pub enum CoilSectionPlacement {
     Outside,
 }
 
-/// Result semantics of a solid Coil primitive.
+#[doc = "Result semantics of a solid-producing feature."]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum CoilResult {
+pub enum SolidFeatureResult {
     /// Create an independent body.
     NewBody {},
-    /// Combine the swept volume with selected existing bodies.
+    #[doc = "Combine the produced volume with selected existing bodies."]
     Boolean {
         /// Join, cut, or intersection operation.
         operation: BooleanKind,
@@ -9424,6 +9687,8 @@ mod tests;
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_plane, FeatureId, "plane");
+cadmpeg_core::named_optional_field!(deserialize_section_sketch, FeatureId, "sketch");
+cadmpeg_core::named_optional_field!(deserialize_section_plane, FeatureSupportPlaneFrame, "plane");
 cadmpeg_core::named_optional_field!(deserialize_pull, DraftPull, "pull");
 cadmpeg_core::named_optional_field!(deserialize_frame, FeatureSupportPlaneFrame, "frame");
 cadmpeg_core::named_optional_field!(
@@ -9450,6 +9715,32 @@ cadmpeg_core::named_optional_field!(
     "regeneration_parent"
 );
 cadmpeg_core::named_optional_field!(deserialize_source_tag, String, "source_tag");
+cadmpeg_core::named_optional_field!(deserialize_transfer_occurrence, OccurrenceId, "occurrence");
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_component,
+    ProductDefinitionId,
+    "component"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_source_owner,
+    ProductDefinitionId,
+    "source_owner"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_target_owner,
+    ProductDefinitionId,
+    "target_owner"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_source_transform,
+    Transform,
+    "source_transform"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_transfer_target_transform,
+    Transform,
+    "target_transform"
+);
 cadmpeg_core::named_optional_field!(deserialize_source_text, String, "source_text");
 cadmpeg_core::named_optional_field!(deserialize_active_child, FeatureId, "active_child");
 cadmpeg_core::named_optional_field!(deserialize_diameter, PositiveLength, "diameter");
@@ -9607,6 +9898,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_rib_construction_side, RibSide, "side");
 cadmpeg_core::named_optional_field!(deserialize_offset, Length, "offset");
+cadmpeg_core::named_optional_field!(deserialize_wrap_depth, Length, "depth");
 cadmpeg_core::named_optional_field!(deserialize_draft, SlopeAngle, "draft");
 cadmpeg_core::named_optional_field!(deserialize_wall_thickness, PositiveLength, "wall_thickness");
 cadmpeg_core::named_optional_field!(deserialize_tolerance, PositiveReal, "tolerance");
@@ -9646,3 +9938,5 @@ cadmpeg_core::named_optional_field!(
 );
 
 cadmpeg_core::named_optional_field!(deserialize_plane_target_source, PlaneTargetSource, "source");
+cadmpeg_core::named_optional_field!(deserialize_thicken_result, SolidFeatureResult, "result");
+cadmpeg_core::named_optional_field!(deserialize_tangent_chain, bool, "tangent_chain");

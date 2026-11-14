@@ -466,6 +466,7 @@ pub(crate) fn bind_mirror_constructions(
                 plane_scope_record_index,
                 plane_selection_record_index,
                 plane: None,
+                construction_plane_scope: None,
                 assumed_plane_scope: None,
             });
             if let scope::DesignScopePayloadMut::Mirror(slot) = scopes[index].payload_mut() {

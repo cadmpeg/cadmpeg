@@ -74,6 +74,7 @@ fn feature_family_tokens_select_canonical_families() {
     );
     assert_eq!(family("SpirePrimitive"), Some(DesignFeatureFamily::Coil));
     assert_eq!(family("Hem"), Some(DesignFeatureFamily::SheetMetalHem));
+    assert_eq!(family("Bend"), Some(DesignFeatureFamily::SheetMetalBend));
     assert!(crate::design::decode::operands::has_edge_recipe_operands(
         &DesignFeatureKind::Hem
     ));
@@ -100,6 +101,7 @@ fn feature_family_tokens_select_canonical_families() {
         Some(DesignFeatureFamily::SurfaceTrim)
     );
     assert_eq!(family("Hole"), Some(DesignFeatureFamily::Hole));
+    assert_eq!(family("Emboss"), Some(DesignFeatureFamily::Emboss));
     assert_eq!(family("Split"), Some(DesignFeatureFamily::Split));
     assert_eq!(family("Loft"), Some(DesignFeatureFamily::Loft));
     assert_eq!(family("Sweep"), Some(DesignFeatureFamily::Sweep));

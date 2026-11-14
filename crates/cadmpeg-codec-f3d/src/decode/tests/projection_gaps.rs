@@ -6,6 +6,19 @@ use super::super::{
     unresolved_dimension_companion_count, DesignProjectionGaps, DimensionCompanionSources,
 };
 use crate::native::F3dNative;
+
+#[test]
+fn surface_untrim_gaps_count_both_face_and_manual_loop_selections() {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.features.push(serde_json::from_value(serde_json::json!({
+        "id": "synthetic:test:feature#untrim", "ordinal": 0, "suppressed": false,
+        "definition": {"definition": "untrim_surface", "faces": {"kind": "native", "value": "native:faces"}, "loops": {"kind": "selected", "edges": {"kind": "native", "value": "native:loops"}}, "extension": 3.0}
+    })).unwrap());
+    let gaps = design_projection_gaps(&ir, &F3dNative::default());
+    assert_eq!(gaps.face_selections, 1);
+    assert_eq!(gaps.native_edge_selections, 1);
+    assert_eq!(gaps.incomplete_features, 1);
+}
 use crate::records::{
     bodies::DesignBodyBinding,
     dimensions::{DesignDimensionLocusPair, DesignDimensionRecipeRecord},
@@ -341,6 +354,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         secondary_id: 2,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     });
     native.lost_edge_references.push(
         LostEdgeReference::new(
@@ -1141,4 +1155,34 @@ fn pattern_seed_plane_and_path_selections_count_as_retained_selections() {
     assert_eq!(gaps.face_selections, 3);
     assert_eq!(gaps.body_selections, 1);
     assert_eq!(gaps.path_selections, 1);
+}
+
+#[test]
+fn unstitch_faces_reports_native_and_absent_selections_as_incomplete() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+
+    for (faces, expected) in [
+        (FaceSelection::Native("native:face-group".into()), 1),
+        (FaceSelection::Unresolved, 1),
+        (
+            FaceSelection::Faces(vec![
+                cadmpeg_ir::ids::FaceId::mint("test:model:face#1").unwrap()
+            ]),
+            0,
+        ),
+    ] {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        ir.model.features.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "test:model:feature#unstitch",
+                "ordinal": 0,
+                "suppressed": null,
+                "definition": FeatureDefinition::Operation(FeatureOperation::UnstitchFaces { faces })
+            }))
+            .unwrap(),
+        );
+        let gaps = design_projection_gaps(&ir, &F3dNative::default());
+        assert_eq!(gaps.incomplete_features, expected);
+        assert_eq!(gaps.face_selections, expected);
+    }
 }

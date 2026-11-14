@@ -6,6 +6,30 @@ use cadmpeg_ir::pmi::{
 use cadmpeg_ir::CadIr;
 
 #[test]
+fn ftc_08_internal_flatness_display_depicts_both_semantic_frames() {
+    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code.local_code() == "pmi.swift-internal-flatness-symbol-assumed" }));
+    let ir = result.ir();
+    let frames = ["Flatness1", "Flatness2"].map(|name| {
+        ir.model
+            .pmi
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some(name))
+            .expect("native flatness annotation")
+            .id
+            .clone()
+    });
+    assert!(ir.model.pmi.iter().any(|annotation| {
+        matches!(&annotation.definition, PmiDefinition::Presentation { semantics, .. }
+            if semantics.len() == frames.len() && frames.iter().all(|id| semantics.contains(id)))
+    }));
+}
+
+#[test]
 fn ftc_08_row_54_emits_the_size_and_opposed_face_pair() {
     let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
     let ir = result.ir();

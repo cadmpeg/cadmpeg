@@ -645,3 +645,84 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
     assert_eq!(out.coedges[0].pcurves.len(), 1);
     assert_eq!(out.coedges[0].pcurves[0].parameter_range, None);
 }
+
+#[test]
+fn history_reaches_cacheless_helix_constructions_from_face_and_wire_edges() {
+    let mut edge = ref_record(3, "edge", &[-1, -1, -1, 5, 0, 6, 0, -1, 4]);
+    std::sync::Arc::make_mut(&mut edge.tokens)[4] = Token::Double(0.0);
+    std::sync::Arc::make_mut(&mut edge.tokens)[6] = Token::Double(std::f64::consts::TAU);
+    let curve = Record {
+        index: 4,
+        name: "intcurve-curve".into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::False,
+            Token::SubtypeOpen,
+            Token::Ident("helix_int_cur".into()),
+            Token::Double(0.0),
+            Token::Double(std::f64::consts::TAU),
+            Token::Position([0.0, 0.0, 0.0]),
+            Token::Position([1.0, 0.0, 0.0]),
+            Token::Position([0.0, 1.0, 0.0]),
+            Token::Position([0.0, 0.0, 2.0]),
+            Token::Double(0.0),
+            Token::Vector3([0.0, 0.0, 1.0]),
+            Token::SubtypeClose,
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    };
+    let records = [
+        ref_record(0, "face", &[-1, -1, -1, -1, 1]),
+        ref_record(1, "loop", &[-1, -1, -1, -1, 2]),
+        ref_record(2, "coedge", &[-1, -1, -1, 2, 2, 2, 3]),
+        edge,
+        curve,
+    ];
+    let by_index = index_records(&records);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .unwrap();
+    let table = nurbs::toks::SubtypeTable::from_records(&records);
+    for wire in [false, true] {
+        let inputs = TopologyContext {
+            ctx: &ctx,
+            by_index: &by_index,
+            token_table: &table,
+            purpose: DecodePurpose::History,
+            format: crate::asm_format!("f3d"),
+        };
+        let mut out = AsmBrep::default();
+        let mut carriers = Carriers::default();
+        let mut reach = Reachable {
+            faces: HashSet::from([0]),
+            ..Default::default()
+        };
+        if wire {
+            super::keep_wire_edge(inputs, &mut out, 3, &mut carriers, &mut reach).unwrap();
+        } else {
+            walk_reachable_topology(inputs, &mut out, &mut carriers, &mut reach).unwrap();
+        }
+        assert!(reach.curves.contains(&4));
+        assert!(matches!(
+            carriers.curve_geo.get(&4),
+            Some(cadmpeg_ir::geometry::CurveGeometry::Procedural { cache: None, .. })
+        ));
+        let Some(crate::brep::ProceduralCurveSource::Cacheless(definition)) =
+            carriers.procedural_curve_defs.get(&4)
+        else {
+            panic!("helix construction");
+        };
+        assert!(matches!(
+            definition.as_ref(),
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(_)
+        ));
+    }
+}
