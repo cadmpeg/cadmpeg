@@ -582,6 +582,9 @@ pub(crate) enum F3dLossCode {
     FeatureCombineMiddleListOmittedAssumed,
     FeatureCombineComponentDestinationAssumed,
     FeatureCombineNamedTailPrologueAssumed,
+    /// A tool of an operand-list Combine names a body that another component
+    /// builds, and the generating feature is not proven.
+    FeatureCombineToolBodyUnbound,
     /// A Combine frame that matches the fixed fields of the operand-list
     /// prologue is read in the standard prologue.
     FeatureCombinePrologueAssumed,
@@ -1218,6 +1221,7 @@ impl F3dLossCode {
         Self::FeatureCombineMiddleListOmittedAssumed,
         Self::FeatureCombineComponentDestinationAssumed,
         Self::FeatureCombineNamedTailPrologueAssumed,
+        Self::FeatureCombineToolBodyUnbound,
         Self::FeatureCombinePrologueAssumed,
         Self::FeatureCombineKeptToolsCutAssumed,
         Self::FeatureCombineOperandListRefused,
@@ -1857,6 +1861,7 @@ impl F3dLossCode {
             Self::FeatureCombineNamedTailPrologueAssumed => {
                 "feature.combine-named-tail-prologue-assumed"
             }
+            Self::FeatureCombineToolBodyUnbound => "feature.combine-tool-body-unbound",
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
             Self::FeatureCombineKeptToolsCutAssumed => "feature.combine-kept-tools-cut-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
@@ -2435,6 +2440,7 @@ impl F3dLossCode {
             | Self::FeatureCombineMiddleListOmittedAssumed
             | Self::FeatureCombineComponentDestinationAssumed
             | Self::FeatureCombineNamedTailPrologueAssumed
+            | Self::FeatureCombineToolBodyUnbound
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
@@ -2898,6 +2904,7 @@ impl F3dLossCode {
             | Self::FeatureCombineMiddleListOmittedAssumed
             | Self::FeatureCombineComponentDestinationAssumed
             | Self::FeatureCombineNamedTailPrologueAssumed
+            | Self::FeatureCombineToolBodyUnbound
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
@@ -3467,6 +3474,7 @@ mod tests {
                 "feature.combine-middle-list-omitted-assumed",
                 "feature.combine-component-destination-assumed",
                 "feature.combine-named-tail-prologue-assumed",
+                "feature.combine-tool-body-unbound",
                 "feature.combine-prologue-assumed",
                 "feature.combine-kept-tools-cut-assumed",
                 "feature.combine-operand-list-refused",
