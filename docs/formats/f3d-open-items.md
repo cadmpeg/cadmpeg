@@ -1010,6 +1010,14 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** A producer-generated radial TSM must retain a deleted domain slot at `p` and map a live element with raw slot `q > p`. The raw-slot prediction is `q`; the compact-index prediction after one deletion is `q-1`. Saving must preserve the deleted slot to separate these predictions. A controlled radial export with a nondefault sweep must establish the sweep-to-angle rule.
 
+### SM-02. Unfold controls, rule factor and Refold association
+
+**Question.** Which authored controls establish the Unfold selection slots, all-bends flag, settings-reference layout, rule neutral-axis factor and Refold source association?
+
+**Known.** The Unfold prefix contains a control byte and four ordered references. Both construction groups use role `0x10`. The projection reads the first group as bend faces, the fourth as the stationary face, and control zero/one as selected/all bends. `feature.unfold-selection-slots-assumed` and `feature.unfold-all-bends-flag-assumed` identify these readings. A settings primary can contain present input references before the rule. A unique registered rule target inside the bounded settings frame, whose closing local owner reference names this Unfold, supplies the rule link with `feature.unfold-settings-rule-reference-assumed` when the mask-and-slots form is unresolved. The unique material-trailer scalar of the owning settings rule supplies the neutral-axis factor with `feature.unfold-material-scalar-factor-assumed`. The unique preceding typed Unfold in the same ordered GroupMode supplies the Refold source with `feature.refold-group-source-assumed`. A resolved source must be emitted earlier in the same stream. Missing or ambiguous source links, rule factors, prefixes, selections and control values retain neutral partial constructions with their specific unresolved or native-selection losses.
+
+**Need.** Controlled edits of each selection, the all-bends setting, settings input presence and the rule factor, plus a group containing several Unfold operations, must establish these associations.
+
 ### SM-01. Bend line association and stationary role
 
 **Question.** How does a Bend scope associate each angular owner with a selected sketch line and its stationary region?

@@ -736,6 +736,8 @@ impl Serialize for DesignFeatureKind {
 
 design_feature_kinds! {
     data {
+        Unfold => "Unfold": Option<super::sheet_metal::fold::DesignUnfoldOperation>,
+        Refold => "Refold": Option<super::sheet_metal::fold::DesignRefoldOperation>,
         Sketch => "Sketch": Option<DesignSketchEntityBinding>,
         Assemble => "Assemble": Option<DesignAssemblyAlignment>,
         AsBuilt => "As-built": Option<DesignAssemblyAlignment>,
@@ -1116,6 +1118,18 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_path_pattern_settings"
     )]
     path_pattern_settings: Option<crate::records::feature::patterns::DesignPathPatternSettings>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_unfold_operation"
+    )]
+    unfold_operation: Option<super::sheet_metal::fold::DesignUnfoldOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_refold_operation"
+    )]
+    refold_operation: Option<super::sheet_metal::fold::DesignRefoldOperation>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1867,6 +1881,12 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             wire.path_feature = None;
         }
         let mut present = Vec::new();
+        if wire.unfold_operation.is_some() {
+            present.push("unfold_operation");
+        }
+        if wire.refold_operation.is_some() {
+            present.push("refold_operation");
+        }
         if wire.extrude.is_some() {
             present.push("extrude");
         }
@@ -2268,6 +2288,8 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::RemoveBody => DesignScopePayload::RemoveBody,
             DesignFeatureKind::Face => DesignScopePayload::Face,
             DesignFeatureKind::Bend => DesignScopePayload::Bend,
+            DesignFeatureKind::Unfold => DesignScopePayload::Unfold(wire.unfold_operation.take()),
+            DesignFeatureKind::Refold => DesignScopePayload::Refold(wire.refold_operation.take()),
             DesignFeatureKind::SpherePrimitive => {
                 DesignScopePayload::SpherePrimitive(match wire.solid_primitive.take() {
                     None => None,
@@ -2329,6 +2351,8 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.scale_operation.is_some()
             || wire.reverse_normal_operation.is_some()
             || wire.path_pattern_settings.is_some()
+            || wire.unfold_operation.is_some()
+            || wire.refold_operation.is_some()
             || wire.mesh_face_groups.is_some()
             || wire.surface_stitch_operation.is_some()
             || wire.surface_extend_operation.is_some()
@@ -2413,6 +2437,17 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 .map_err(DesignParameterScopePayloadError)?,
             paired_byte_offset: wire.paired_byte_offset,
         })?;
+        if admitted
+            .unfold_operation()
+            .is_some_and(|operation| !operation.valid_for_scope(&admitted))
+            || admitted
+                .refold_operation()
+                .is_some_and(|operation| !operation.valid_for_scope(&admitted))
+        {
+            return Err(DesignParameterScopePayloadError(
+                "fold operation disagrees with scope".into(),
+            ));
+        }
         if captured_positions
             .as_ref()
             .is_some_and(|positions| !positions.valid_for_scope(&admitted))
@@ -2501,6 +2536,8 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             scale_operation: None,
             reverse_normal_operation: None,
             path_pattern_settings: None,
+            unfold_operation: None,
+            refold_operation: None,
             mesh_face_groups: None,
             surface_stitch_operation: None,
             surface_extend_operation: None,
@@ -2629,6 +2666,8 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             }
             DesignScopePayload::EdgeFlange(value) => wire.edge_flange_operation = value,
             DesignScopePayload::Hem(value) => wire.hem_operation = value,
+            DesignScopePayload::Unfold(value) => wire.unfold_operation = value,
+            DesignScopePayload::Refold(value) => wire.refold_operation = value,
             DesignScopePayload::Fillet(value) => {
                 wire.fixed_fillet_parameters = value.fixed;
                 wire.fillet_sets = value.sets;
@@ -3113,6 +3152,24 @@ impl DesignParameterScope {
         match &self.payload {
             DesignScopePayload::SpirePrimitive(value)
             | DesignScopePayload::CoilPrimitive(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn unfold_operation(
+        &self,
+    ) -> Option<&super::sheet_metal::fold::DesignUnfoldOperation> {
+        match &self.payload {
+            DesignScopePayload::Unfold(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn refold_operation(
+        &self,
+    ) -> Option<&super::sheet_metal::fold::DesignRefoldOperation> {
+        match &self.payload {
+            DesignScopePayload::Refold(value) => value.as_ref(),
             _ => None,
         }
     }
@@ -3817,3 +3874,14 @@ mod tests;
 mod serialize;
 
 mod identity_rewrite;
+
+cadmpeg_core::named_optional_field!(
+    deserialize_unfold_operation,
+    super::sheet_metal::fold::DesignUnfoldOperation,
+    "unfold_operation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_refold_operation,
+    super::sheet_metal::fold::DesignRefoldOperation,
+    "refold_operation"
+);

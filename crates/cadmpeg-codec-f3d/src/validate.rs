@@ -2231,6 +2231,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
             _ => true,
         };
+        let fold_links = scope
+            .unfold_operation()
+            .is_none_or(|operation| operation.valid_for_scope(scope))
+            && scope
+                .refold_operation()
+                .is_none_or(|operation| operation.valid_for_scope(scope));
         let base_flange_link = match scope.base_flange_operation() {
             None => true,
             Some(operation) => {
@@ -4381,6 +4387,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && move_link
             && offset_faces_link
             && base_flange_link
+            && fold_links
             && edge_flange_link
             && hem_link
             && copy_paste_link
@@ -5309,6 +5316,15 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             | DesignOperandRole::ROLE_0X21
                             | DesignOperandRole::ROLE_0X43
                     ) && group.extrude_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::SheetMetalUnfold) => {
+                    matches!(group.role(), DesignOperandRole::BODIES_A | DesignOperandRole::ROLE_0X10) && group.extrude_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::SheetMetalRefold) => {
+                    group.role() == DesignOperandRole::BODIES_B && group.extrude_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::SheetMetalBend) => {
+                    matches!(group.role(), DesignOperandRole::ROLE_0X10 | DesignOperandRole::ROLE_0X21) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::SheetMetalHem) => {
                     matches!(

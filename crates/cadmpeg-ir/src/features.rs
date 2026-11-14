@@ -3468,6 +3468,16 @@ pub enum FeatureOperation {
         /// Transition form and evaluated radius.
         transition: SheetMetalTransition,
     },
+    #[doc = "Flattens selected bends of an existing sheet."]
+    SheetMetalUnfold {
+        #[doc = "Independently decoded unfolding inputs."]
+        construction: sheet_metal::SheetMetalUnfoldConstruction,
+    },
+    #[doc = "Restores the bends flattened by a preceding Unfold."]
+    SheetMetalRefold {
+        #[doc = "Associated unfolding operation."]
+        construction: sheet_metal::SheetMetalRefoldConstruction,
+    },
     #[doc = "Bends an existing sheet along selected sketch lines."]
     SheetMetalBendLines {
         #[doc = "Independently decoded bend inputs."]

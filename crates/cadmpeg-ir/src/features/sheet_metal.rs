@@ -53,5 +53,64 @@ cadmpeg_core::named_optional_field!(deserialize_inside_radius, PositiveLength, "
 cadmpeg_core::named_optional_field!(deserialize_line, PathRef, "line");
 cadmpeg_core::named_optional_field!(deserialize_angle, Angle, "angle");
 
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = "Inputs for flattening selected bends of an existing sheet."]
+pub struct SheetMetalUnfoldConstruction {
+    #[doc = "Face kept stationary while unfolding."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_stationary"
+    )]
+    pub stationary: Option<FaceSelection>,
+    #[doc = "Selected bend faces."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_bends"
+    )]
+    pub bends: Option<FaceSelection>,
+    #[doc = "Whether all bends are unfolded."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_all_bends"
+    )]
+    pub all_bends: Option<bool>,
+    #[doc = "Neutral-axis offset divided by sheet thickness."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_neutral_factor"
+    )]
+    pub neutral_factor: Option<crate::scalar::FiniteReal>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_bends, FaceSelection, "bends");
+cadmpeg_core::named_optional_field!(deserialize_all_bends, bool, "all_bends");
+cadmpeg_core::named_optional_field!(
+    deserialize_neutral_factor,
+    crate::scalar::FiniteReal,
+    "neutral_factor"
+);
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = "Inputs for restoring the bends flattened by an Unfold."]
+pub struct SheetMetalRefoldConstruction {
+    #[doc = "Preceding Unfold whose bends are restored."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_unfold"
+    )]
+    pub unfold: Option<super::FeatureId>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_unfold, super::FeatureId, "unfold");
+
 #[cfg(test)]
 mod tests;

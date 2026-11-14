@@ -37765,3 +37765,88 @@ type = "u8"
 value = 1
 source = "spec"
 anchor = "The two-byte prefix form permits marker `u8 1` after the ordinal"
+
+[[record]]
+name = "sheet_metal_fold_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Their fold-scope prefix contains the indexed header"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fold.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Their fold-scope prefix contains the indexed header"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "Their fold-scope prefix contains the indexed header"
+
+[[record.field]]
+name = "extension"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "Their fold-scope prefix contains the indexed header"
+
+[[record]]
+name = "sheet_metal_unfold_refold_group"
+kind = "byte"
+section = "3.1"
+anchor = "The `UnfoldRefoldGroupMode` carrier has type GUID"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fold.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The `UnfoldRefoldGroupMode` carrier has type GUID"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The `UnfoldRefoldGroupMode` carrier has type GUID"
+
+[[record.field]]
+name = "name"
+offset = 21
+type = "bytes[46]"
+source = "spec"
+anchor = "The `UnfoldRefoldGroupMode` carrier has type GUID"
+
+[[record.field]]
+name = "mode"
+offset = 67
+type = "u32"
+source = "spec"
+anchor = "The `UnfoldRefoldGroupMode` carrier has type GUID"
+
+[[record.field]]
+name = "marker"
+offset = 71
+type = "u8"
+source = "spec"
+anchor = "The `UnfoldRefoldGroupMode` carrier has type GUID"
+
+[[record.field]]
+name = "member_count"
+offset = 72
+type = "u32"
+source = "spec"
+anchor = "The `UnfoldRefoldGroupMode` carrier has type GUID"
+
+[[record.field]]
+name = "first_member"
+offset = 76
+type = "u8"
+note = "Presence byte of the first local reference. A complete local reference occupies 11 or 51 bytes."
+source = "spec"
+anchor = "The `UnfoldRefoldGroupMode` carrier has type GUID"
