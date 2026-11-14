@@ -10,6 +10,11 @@ use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_transform, SketchPlacementMatrix, "transform");
 cadmpeg_core::named_optional_field!(deserialize_transform_offset, u64, "transform_offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_placement_record_index,
+    u32,
+    "placement_record_index"
+);
 /// Exact construction data of a solid primitive scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "primitive")]
@@ -177,7 +182,11 @@ impl TryFrom<DesignCylinderPrimitiveWire> for DesignCylinderPrimitive {
 /// Exact `Sphere` primitive construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSpherePrimitive {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_placement_record_index"
+    )]
     pub(crate) placement_record_index: Option<u32>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) diameter_owner_assumed: bool,
@@ -186,7 +195,11 @@ pub(crate) struct DesignSpherePrimitive {
     /// Row-major local-to-model placement frame.
     pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the placement matrix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform_offset"
+    )]
     pub(crate) transform_offset: Option<u64>,
     /// Sphere diameter in source centimetres.
     pub(crate) diameter: PositiveReal,
@@ -280,6 +293,44 @@ mod tests {
         assert!(serde_json::from_value::<DesignSpherePrimitive>(wire.clone()).is_ok());
         wire["diameter"] = serde_json::json!(0.0);
         assert!(serde_json::from_value::<DesignSpherePrimitive>(wire).is_err());
+    }
+
+    #[test]
+    fn native_sphere_optional_locations_use_absence_and_named_values() {
+        let wire = serde_json::json!({
+            "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
+            "diameter": 2.0, "diameter_record_index": 3, "diameter_offset": 4,
+            "operation": "join", "operation_offset": 5
+        });
+        let sphere = serde_json::from_value::<DesignSpherePrimitive>(wire.clone()).unwrap();
+        assert_eq!(sphere.placement_record_index, None);
+        assert_eq!(sphere.transform_offset, None);
+        let encoded = serde_json::to_value(sphere).unwrap();
+        assert!(encoded.get("placement_record_index").is_none());
+        assert!(encoded.get("transform_offset").is_none());
+        for (key, value) in [
+            ("placement_record_index", 32u64),
+            ("transform_offset", 64u64),
+        ] {
+            let mut stated = wire.clone();
+            stated[key] = serde_json::json!(value);
+            let sphere = serde_json::from_value::<DesignSpherePrimitive>(stated.clone()).unwrap();
+            assert_eq!(serde_json::to_value(sphere).unwrap()[key], value);
+            for invalid in [
+                serde_json::Value::Null,
+                serde_json::json!(-1),
+                serde_json::json!("invalid"),
+            ] {
+                stated[key] = invalid;
+                let error =
+                    serde_json::from_value::<DesignSpherePrimitive>(stated.clone()).unwrap_err();
+                assert!(error.to_string().contains(key));
+            }
+        }
+        let mut overflow = wire;
+        overflow["placement_record_index"] = serde_json::json!(4_294_967_296u64);
+        let error = serde_json::from_value::<DesignSpherePrimitive>(overflow).unwrap_err();
+        assert!(error.to_string().contains("placement_record_index"));
     }
 
     #[test]
