@@ -114,21 +114,3 @@ that identify the side of the travel.
 **Conflict.** Both paths can identify the same constraint; their precedence is not established.
 
 **Note.** The neutral projection reports a conflict and retains both native records.
-
-## BREP-01. Confirming a spherical face region
-
-**Question.** What independent witness can confirm the region of a single spherical face when
-both closed-shell volume readings are positive?
-
-**Known.** The authored binary cylinder and sphere union has a forward spherical face use under
-forward compound, solid, and shell uses. The decoder transfers a forward face sense. The
-`face_sense` volume agrees with the authoring geometry: π(2788/3 + 10√15) mm³. The complement
-reading is also positive: it describes the cylinder with a spherical indentation. A binary
-fixture with the face-use orientation reversed transfers a reversed face sense. The shared-sphere
-witness requires multiple linked spherical faces, and the shell-sign witness admits both volumes.
-
-**Need.** An independent witness that distinguishes the regions under the measurement contract,
-or a settled change to that contract for explicitly stored face orientations.
-
-**Conflict.** The stored orientation selects the authored union, while the measurement contract
-requires an independent confirmation before it reports the volume as measured.

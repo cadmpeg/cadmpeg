@@ -345,6 +345,16 @@ is `whole_surface`, or when a witness confirms its declared reading.
 Witnesses run over each shell that holds an unconfirmed face, so a face row
 reads the whole shell.
 
+- Owned pole (`owned_pole`). A resolved degenerate edge of a spherical face
+  places a source-owned point at a carrier pole. Exactly two opposite uses
+  of one edge in this face form a seam and can reach the pole. Every
+  non-seam edge outside that pole must have a line, circle, ellipse or
+  degenerate carrier whose analytic box clears the pole beyond the face
+  allowance, edge tolerance and box numeric error. Region membership
+  at the pole confirms the declared reading or reports an orientation
+  conflict. Synthesized singular crossings remain unconfirmed. The
+  orientation pass computes the edge boxes needed by this witness under
+  its existing work allowance.
 - Tangent edge. A non-seam edge used by exactly two coedges with opposite
   senses, one in the unconfirmed face and one in an established face, is a
   witness edge when the two oriented normals are parallel within
@@ -805,7 +815,7 @@ checks ([admissibility-routes.md](admissibility-routes.md)).
 | --- | --- | --- | --- |
 | `ring_order` | the loop | the face | The ring's coedges, listed, do not run end to start by oriented vertex identity: they form one closed traversal in another order (`reversed` or `other`), several closed traversals, or none. |
 | `pcurve_order` | the coedge | the face | The coedge's pcurve uses form their chain from its end to its start: the face caveat `boundary.pcurve-order`. |
-| `orientation` | the face | none | The face's sense disagrees with its loop winding, or its loops disagree with each other: a face of `inconsistent_faces` or `mixed_faces`. |
+| `orientation` | the face | the owned pole edge, when applicable | The face's sense disagrees with its loop winding, its loops disagree with each other, or its declared spherical region excludes a source-owned pole. |
 | `orientation` | the body | the faces or the shell the conflict names | Every shell of the body is closed, and the volume is unavailable with `volume.orientation-conflict` or `volume.closure-flux`. |
 | `measurement_incomplete` | none | none | Severity `info`. The findings allowance ran out before the pass checked every face, edge and closed body. The message states the number of faces and bodies not checked. |
 
@@ -816,7 +826,7 @@ volume and closure fluxes; its flux quadrature targets only those
 components. On a plane `d·N` is `h |N|` with `h = (o − P_ref)·n̂`
 constant, so the volume flux is `h A / 3` and the closure flux `n̂ A` for
 the face area `A`, with the area's numeric error scaled into each. The
-pass computes no carrier parameter, box, extent or edge box.
+pass computes edge boxes when an owned-pole witness needs boundary clearance.
 
 The pass has its own allowance,
 `max(FINDINGS_PASS_WORK_FLOOR, k × (faces + edges of the document))` units,

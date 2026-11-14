@@ -934,6 +934,35 @@ An edge's class-`25` sampled relation also carries separate active ranges
 for its two curve representations. A line incidence can supply a spline
 station through an exact sample pair or a sampled identity relation.
 
+An extended spline-span tag is `04 <span:u8>`. The span byte is
+`44 + i`, where `i` is the zero-based index in the complete distinct-knot
+array. The station is `knots[i] + t` and `t` lies in
+`[0, knots[i+1] - knots[i]]`. This tag uses the complete knot array's
+index independently of the compact arc-number base.
+
+For compact arc tags, the first active span follows the leading
+extrapolation sites when their stored count equals the number of negative
+knots preceding a zero knot. The compact span index includes that leading
+count. The scalar remains local to the selected span.
+
+The following incidence tails preserve separate parameter gauges for each
+referenced curve. Lane indices are zero-based.
+
+| References | Tail | Assigned lanes |
+| --- | --- | --- |
+| 2 | `80 t:f64le 04 span:u8` | Lane 1 uses the extended spline-span tag. |
+| 3 | `81 t:f64le 04 span:u8` | Lane 1 uses the extended spline-span tag. |
+| 3 | `80 a:f64le b:f64le compact:u8` | When only the final tag position holds a compact code, lane 1 uses absolute `a`; lane 2 uses compact-tagged `b`. |
+| 3 | `10 a:f64le compact:u8 b:f64le` | Lane 1 uses compact-tagged `a`; lane 2 uses absolute `b`. |
+| 3 | `80 a:f64le compact:u8 b:f64le` | When only the first scalar's tag position holds a compact code, lane 1 uses compact-tagged `a`; lane 2 uses absolute `b`. |
+| 3 | `80 a:f64le 04 span:u8 b:f64le` | Lane 1 uses extended-tagged `a`; lane 2 uses absolute `b`. |
+| 3 | `00 a:f64le 04 first:u8 b:f64le c:f64le 04 last:u8` | Lanes 0 and 2 use the extended tags; lane 1 uses absolute `b`. |
+
+Each addressed spline station lies in its selected knot span. An incidence
+that names one curve twice supplies no unique lane for that curve.
+A parameter-map companion spline uses its own knot array and extrapolation
+count before its station is mapped through the affine or sampled relation.
+
 The sheet class-`21` pcurve stores a compact operand, a chart prefix,
 degree and distinct-knot count as inline compact integers, `0c`,
 the increasing f64 knots, and the UV pole pairs. Prefix
@@ -1051,10 +1080,15 @@ Allocation zero starts at the frame after the roster. The compact header integer
 
 The class-`5b` interval prefix is `81 03 05 01` at payload `+0`, followed by three finite closed binary32 intervals at `+4`, `+12`, and `+20`. Each interval stores its lower and upper values as two `f32le`; equality is admitted. The remaining payload is a separate retained suffix.
 
-A sheet group uses a `b2 13 5b` frame with header token `05` and payload
-`<80+n> <shell-ref>{n} <4*n+1> 01 <bounds:f32le[6]> 08 d6 28`.
-The first shell reference is `03`; the remaining allocation indices increase
-strictly. Each index names a class-`61` roster in the contiguous allocation
+A sheet group uses a B-family class-`5b` frame with flag `13`, a positive
+allocation width, and payload
+`<80+n> <shell-ref>{n} <4*n+1> 01 <bounds:f32le[6]> <tail>`.
+The bounds are three finite ordered intervals. The tail is `03` or
+`08 <word:u16le>`. The forward-only partition form uses header token `05`
+and tail `08 d6 28`.
+In the forward-only partition form, the first shell reference is `03`;
+the remaining allocation indices increase strictly. Each index names a
+class-`61` roster in the contiguous allocation
 run starting after the group frame. The rosters partition the run in index
 order. The face references of each roster start at allocation zero after that
 roster and select the one-slot class-`5f` frames in its partition.
@@ -1071,17 +1105,28 @@ backward references count backward from its start. A reference must select
 an allocation start.
 
 A backward sheet group has payload
-`81 <shell-distance> 05 01 <bounds:f32le[6]> 08 64 28`.
-The width-coded shell distance equals the group's allocation width.
+`81 <shell-distance> 05 01 <bounds:f32le[6]> <tail>`.
+The width-coded or compact backward shell distance selects a preceding
+roster by its allocation end. Intervening allocations can separate that
+roster from the group. The group allocation width and the shell distance
+occupy separate fields.
 The referenced A-family class-`61` roster has count `18 <n:u16le>`,
-followed by `n` nonzero backward distances and the packed sheet orientation
-lane. The distances name distinct class-`5f` faces in roster order.
+followed by `n` allocation references and the packed sheet orientation
+lane. The references name distinct class-`5f` faces in roster order.
+The member lane can mix new owned faces with reused preceding faces.
 In this group, a backward distance counts from the end of its frame's
 allocation and selects the end of a preceding frame's allocation.
 An owned-child or tagged forward reference counts from the end of its
 frame's allocation and selects the last slot of the target frame.
-The contiguous allocation run admits `b5` B-family frames with a four-byte
-header token `0c <width:u24le>`.
+An adjacent class-`61` sheet roster can mix these forward references with
+backward references. Its count has the same compact and A-family forms.
+Its packed control is `3`, and its references select distinct class-`5f`
+frames in occurrence order through the allocation-end address rules above.
+The contiguous allocation run admits `a8` A-family and `b5` B-family frames
+with a four-byte header token `0c <width:u24le>`.
+Its address scope includes the contiguous allocations before a class-`65`
+body owner. A body owner retains that allocation scope. An unframed gap
+ends the contiguous frame sequence of a run.
 
 The counted class-`62` sheet loop tail begins with
 `<80+n> <sense> <packed:ceil(3*n/8) bytes>` for `n` edges.

@@ -166,6 +166,7 @@ pub(crate) fn decode_sketch_placements(
         record_offsets.insert(scope, IndexedRecordOffsets::build(bytes));
     }
     let mut visibilities = HashMap::new();
+    let mut display_names = HashMap::new();
     for entry in scan
         .entries
         .iter()
@@ -179,7 +180,7 @@ pub(crate) fn decode_sketch_placements(
         let Some((key, _)) = record_offsets.get_key_value(&scope) else {
             continue;
         };
-        for (entity_suffix, visibility) in
+        for (entity_suffix, visibility, display_name) in
             decode_sketch_visibilities_in_stream(bytes, &metadata, losses)?
         {
             if visibilities.contains_key(&(key.as_str(), entity_suffix)) {
@@ -190,6 +191,9 @@ pub(crate) fn decode_sketch_placements(
             }
 
             visibilities.insert((key.as_str(), entity_suffix), visibility);
+            if let Some(name) = display_name {
+                display_names.insert((key.as_str(), entity_suffix), name);
+            }
         }
     }
     for scope in scopes
@@ -324,6 +328,9 @@ pub(crate) fn decode_sketch_placements(
         placement.visibility = visibilities
             .get(&(stream, placement.entity_id.suffix()))
             .copied();
+        placement.display_name = display_names
+            .get(&(stream, placement.entity_id.suffix()))
+            .cloned();
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
@@ -341,7 +348,7 @@ fn decode_sketch_visibilities_in_stream(
     bytes: &[u8],
     metadata: &crate::metastream::MetaStream,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
+) -> Result<Vec<(u64, DesignSketchVisibility, Option<String>)>, CodecError> {
     let mut out = Vec::new();
     for frame in super::meta::typed_primary_frames(
         bytes,
@@ -432,12 +439,17 @@ fn decode_sketch_visibilities_in_stream(
             )));
         };
 
-        out.push((entity_suffix, visibility));
+        let display_name = decode_sketch_member_display_name(&bytes[..frame.end], member_at);
+
+        out.push((entity_suffix, visibility, display_name));
     }
     if out.is_empty() {
         return Ok(out);
     }
-    let visibilities = out.iter().copied().collect::<HashMap<_, _>>();
+    let visibilities = out
+        .iter()
+        .map(|&(suffix, vis, _)| (suffix, vis))
+        .collect::<HashMap<_, _>>();
     let mut collections = std::collections::BTreeMap::new();
     for frame in super::meta::typed_primary_frames(
         bytes,
@@ -534,7 +546,7 @@ fn decode_sketch_visibilities_in_stream(
             }
         }
     }
-    for (entity, visibility) in &mut out {
+    for (entity, visibility, _) in &mut out {
         let direct = visibility.ordinal_collection.map(std::num::NonZeroU64::get);
         let root = direct.and_then(|id| {
             if collections.contains_key(&id) {
@@ -722,6 +734,21 @@ fn decode_sketch_visibility_member(
     Some(visibility)
 }
 
+pub(super) fn decode_sketch_member_display_name(bytes: &[u8], member_at: usize) -> Option<String> {
+    let mut collection_at = member_at + visibility_member::TAIL_MARKER;
+    let reference = take_reference(bytes, &mut collection_at)?;
+    match reference {
+        Reference::Null => {}
+        Reference::Local {
+            target,
+            inline_type_guid: None,
+        } if target != 0 => {}
+        _ => return None,
+    }
+    let (name, _) = lp_utf16_bounded(bytes, collection_at, 1..=256)?;
+    (!name.trim().is_empty() && !name.chars().any(char::is_control)).then_some(name)
+}
+
 /// Byte length of a member-run head carrying an explicit 4×4 transform.
 const MEMBER_RUN_HEAD_FRAME: usize = 162;
 
@@ -859,6 +886,7 @@ fn parse_member_run_head_placement(
         id: String::new(),
         scope_record_index: None,
         entity_id: entity_id.clone(),
+        display_name: None,
         visibility: None,
         frame,
         class_tag,
@@ -980,6 +1008,7 @@ fn parse_sketch_placement_candidates(
             id: String::new(),
             scope_record_index: Some(scope_record_index),
             entity_id: entity_id.clone(),
+            display_name: None,
             visibility: None,
             frame,
             class_tag,
@@ -2142,65 +2171,63 @@ fn decode_sketch_points_from_stream(
         {
             continue;
         }
-        let payload = &bytes[frame.start..frame.end];
-        let record_index = u32::try_from(frame.entity_id)
-            .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
-        let decoded = if derived {
-            decode_derived_sketch_point_record(bytes, meta, frame)
-        } else {
-            decode_sketch_point_record(payload, frame.design_type.version)
-        }
-        .ok_or_else(|| {
-            crate::design::text::malformed_design(format_args!(
-                "F3D sketch point {record_index} has an invalid version-{} member sequence",
-                frame.design_type.version
-            ))
-        })?;
-        let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
-        let backlink = decoded
-            .owner_reference
-            .map(|target| SketchBacklink::resolve(&groups, record_index, target));
-        if backlink.is_none_or(|backlink| backlink.geometry_group.is_none())
-            && !point_target_has_guid(
-                &types_by_entity,
-                decoded.trailing_reference(),
-                SKETCH_CONTAINER_TYPE_GUID,
-            )
-        {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch point {record_index} has an invalid trailing container reference"
-            )));
-        }
-        if backlink.is_some_and(|backlink| backlink.unlisted) {
-            unlisted.push(record_index);
-        }
-        let (record_form, companion) = frames_by_entity
-            .get(&decoded.paired_reference)
-            .filter(|companion_frame| {
-                let design_type = companion_frame.design_type;
-                design_type
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
-                    && design_type.version == SKETCH_POINT_COMPANION_TYPE.1
-                    && design_type.module == SKETCH_POINT_COMPANION_TYPE.2
-            })
-            .and_then(|companion_frame| {
-                decode_sketch_point_companion(
-                    &bytes[companion_frame.start..companion_frame.end],
-                    record_index,
-                    decoded.record_form.clone(),
-                    &types_by_entity,
-                )
-            })
+        let result: Result<_, CodecError> = (|| {
+            let payload = &bytes[frame.start..frame.end];
+            let record_index = u32::try_from(frame.entity_id).map_err(|_| {
+                CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into())
+            })?;
+            let decoded = if derived {
+                decode_derived_sketch_point_record(bytes, meta, frame)
+            } else {
+                decode_sketch_point_record(payload, frame.design_type.version)
+            }
             .ok_or_else(|| {
                 crate::design::text::malformed_design(format_args!(
-                    "F3D sketch point {record_index} has no valid inverse companion"
+                    "F3D sketch point {record_index} has an invalid version-{} member sequence",
+                    frame.design_type.version
                 ))
             })?;
+            let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
+            let backlink = decoded
+                .owner_reference
+                .map(|target| SketchBacklink::resolve(&groups, record_index, target));
+            if backlink.is_none_or(|backlink| backlink.geometry_group.is_none())
+                && !point_target_has_guid(
+                    &types_by_entity,
+                    decoded.trailing_reference(),
+                    SKETCH_CONTAINER_TYPE_GUID,
+                )
+            {
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D sketch point {record_index} has an invalid trailing container reference"
+                )));
+            }
+            let (record_form, companion) = frames_by_entity
+                .get(&decoded.paired_reference)
+                .filter(|companion_frame| {
+                    let design_type = companion_frame.design_type;
+                    design_type
+                        .type_guid
+                        .as_str()
+                        .eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
+                        && design_type.version == SKETCH_POINT_COMPANION_TYPE.1
+                        && design_type.module == SKETCH_POINT_COMPANION_TYPE.2
+                })
+                .and_then(|companion_frame| {
+                    decode_sketch_point_companion(
+                        &bytes[companion_frame.start..companion_frame.end],
+                        record_index,
+                        decoded.record_form.clone(),
+                        &types_by_entity,
+                    )
+                })
+                .ok_or_else(|| {
+                    crate::design::text::malformed_design(format_args!(
+                        "F3D sketch point {record_index} has no valid inverse companion"
+                    ))
+                })?;
 
-        out.push(
-            SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+            let point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
                 id: design_record_id(stream, ":sketch-point#", u64_from_index(frame.start)),
                 record_index,
                 owner_reference: backlink.map(|backlink| backlink.owner),
@@ -2213,8 +2240,21 @@ fn decode_sketch_points_from_stream(
                 paired_reference: decoded.paired_reference,
                 coordinates: Point2::new(u, v),
             })
-            .map_err(CodecError::Malformed)?,
-        );
+            .map_err(CodecError::Malformed)?;
+            Ok((point, backlink.is_some_and(|backlink| backlink.unlisted)))
+        })();
+        match result {
+            Ok((point, is_unlisted)) => {
+                if is_unlisted {
+                    unlisted.push(point.record_index);
+                }
+                out.push(point);
+            }
+            Err(error) => losses.push(F3dLossCode::SketchPointUndecoded.note(format!(
+                "Sketch point record {} version {} in {stream} was dropped: {error}",
+                frame.entity_id, frame.design_type.version
+            ))),
+        }
     }
     push_unlisted_group_member_loss(losses, stream, "point", &unlisted);
     Ok(out)
@@ -2225,8 +2265,8 @@ fn decode_sketch_points_from_stream(
 /// closure, trailing reference, and paired reverse curve-incidence record,
 /// converted centimetre→millimetre. Class version 0 supplies `(u,v)` and no
 /// persistent identity; later forms supply `(u,v,w)` and `pt_tag`. A known
-/// point record with a malformed or non-finite member sequence makes the
-/// stream malformed.
+/// point record with a malformed or non-finite member sequence adds a bounded
+/// `sketch.point-undecoded` loss; the remaining points continue decoding.
 pub(crate) fn decode_sketch_points(
     scan: &ContainerScan,
     losses: &mut Vec<LossNote>,
@@ -3910,6 +3950,10 @@ fn decode_sketch_curve_identities_from_stream(
                 )
             });
 
+        let tail_marker = geometry
+            .as_ref()
+            .filter(|geometry| !matches!(geometry, SketchCurveGeometry::Nurbs { .. }))
+            .and_then(|_| planar_tail_marker(payload, geometry_offset));
         let backlink = trailing_sketch_owner_reference(payload)
             .map(|target| SketchBacklink::resolve(&groups, record_index, target));
         if backlink.is_some_and(|backlink| backlink.unlisted) {
@@ -3934,6 +3978,7 @@ fn decode_sketch_curve_identities_from_stream(
             secondary_id,
             geometry,
             planar_z_noise,
+            tail_marker,
         });
     }
     push_unlisted_group_member_loss(losses, stream, "curve", &unlisted);
@@ -4382,6 +4427,40 @@ fn decode_sketch_curve_identity_variant(
         View::u64_le_at(payload, 70 + shift)?,
         View::u64_le_at(payload, 125 + shift)?,
     ))
+}
+
+/// Bytes of the planar analytic payload that precede the reference run.
+const PLANAR_ANALYTIC_PAYLOAD_LEN: usize = 96;
+/// Bytes of the planar tail that the reference run, pad, and marker occupy.
+const PLANAR_TAIL_WINDOW_LEN: usize = 80;
+
+/// The fourth opaque byte of the planar analytic tail that follows the
+/// payload at `geometry_offset`: `N` (1 to 3) marked references, `P` zero pad
+/// bytes, then three opaque bytes and the marker. `None` for a tail of another shape.
+fn planar_tail_marker(payload: &[u8], geometry_offset: usize) -> Option<u8> {
+    let start = geometry_offset.checked_add(PLANAR_ANALYTIC_PAYLOAD_LEN)?;
+    let end = start
+        .checked_add(PLANAR_TAIL_WINDOW_LEN)?
+        .min(payload.len());
+    let tail = payload.get(start..end)?;
+    let mut references = 0usize;
+    let mut cursor = 0usize;
+    while tail.get(cursor) == Some(&1) && tail.get(cursor + 5..cursor + 11) == Some(&[0; 6][..]) {
+        references += 1;
+        cursor += 11;
+    }
+    if !(1..=3).contains(&references) {
+        return None;
+    }
+    let pad = if references == 1 { 5 } else { 3 };
+    if tail
+        .get(cursor..cursor + pad)?
+        .iter()
+        .any(|&byte| byte != 0)
+    {
+        return None;
+    }
+    tail.get(cursor + pad + 3).copied()
 }
 
 struct DecodedSketchCurveGeometry {

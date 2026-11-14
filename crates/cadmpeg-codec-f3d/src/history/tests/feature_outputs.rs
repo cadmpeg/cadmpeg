@@ -171,7 +171,8 @@ fn split_outputs_bind_across_complete_transition_chains() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(complete.evaluation.outputs(), &[body.id.clone()]);
     assert!(!losses
         .iter()
@@ -186,7 +187,8 @@ fn split_outputs_bind_across_complete_transition_chains() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(feature.evaluation.outputs().is_empty());
     assert!(losses
         .iter()
@@ -199,7 +201,8 @@ fn split_outputs_bind_across_complete_transition_chains() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(feature.evaluation.outputs().is_empty());
     assert!(losses
         .iter()
@@ -427,7 +430,9 @@ fn stored_body_scope_refuses_missing_bodies_and_ambiguous_states() {
         .unwrap();
         assert!(matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Native { .. })
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+        }) if Some(native.as_str()) == feature.native_ref.as_deref()
         ));
         let losses = super::super::stored_bodies::losses(&[feature], &[scope]);
         assert_eq!(losses.len(), 1);
@@ -555,7 +560,7 @@ fn stored_body_scope_reports_recipe_absence_from_snapshot_kind() {
 }
 
 #[test]
-fn stored_body_scope_without_any_proof_keeps_native_definition() {
+fn stored_body_scope_without_any_proof_keeps_its_neutral_snapshot() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut feature, scope, _, _) = output_binding_inputs();
     feature.evaluation.set_outputs(Default::default());
@@ -569,8 +574,9 @@ fn stored_body_scope_without_any_proof_keeps_native_definition() {
     )
     .unwrap();
     assert!(matches!(feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
-        if kind.as_str() == "Base Feature"));
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+        }) if native == "native:scope"));
 }
 
 fn history_in_source(source: &str, bodies: &[i64]) -> crate::history_records::AsmHistory {
@@ -635,7 +641,9 @@ fn stored_body_scope_refuses_a_body_from_another_history_blob() {
     .unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+        }) if Some(native.as_str()) == feature.native_ref.as_deref()
     ));
     let losses = super::super::stored_bodies::losses(&[feature], &[scope]);
     assert_eq!(losses.len(), 1);
@@ -676,7 +684,9 @@ fn stored_body_scope_refuses_a_declared_body_count_mismatch() {
     .unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+        }) if Some(native.as_str()) == feature.native_ref.as_deref()
     ));
     let losses = super::super::stored_bodies::losses(&[feature], &[scope]);
     assert_eq!(losses.len(), 1);
@@ -1123,7 +1133,8 @@ fn historical_partial_and_native_edge_selections_test() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
 
     // Verify midpoints emitted for the proven edge
     assert_eq!(
@@ -1149,7 +1160,8 @@ fn historical_partial_and_native_edge_selections_test() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
 
     assert_eq!(
         feature_native
@@ -1254,7 +1266,8 @@ fn historical_body_bounds_unresolved_test() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
 
     assert!(losses
         .iter()
@@ -1302,7 +1315,8 @@ fn body_measurement_covers_only_the_states_feature_outputs_read() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
 
     let mut measured = losses
         .iter()
@@ -1489,6 +1503,8 @@ fn combine_join_to_cut_deleting_vs_non_deleting() {
                 .unwrap(),
                 op: BooleanKind::Join,
                 keep_tools: true,
+
+                destination: cadmpeg_ir::features::CombineDestination::default(),
             }),
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
@@ -1578,7 +1594,7 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
         FeatureEvaluation, FeatureId, FeatureOperation,
     };
 
-    let resolved = |form: Option<DesignCombineForm>, bodies_before: &[i64]| {
+    let resolved = |form: Option<DesignCombineForm>, bodies_before: &[i64], initial_op, keep| {
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#1",
             DesignFeatureKind::Combine,
@@ -1592,7 +1608,7 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
             })
             .unwrap();
         if let DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
-            *slot = form.map(|form| DesignCombineOperation {
+            slot.operation = form.map(|form| DesignCombineOperation {
                 form,
                 operation: BooleanKind::Join,
                 operation_offset: 0,
@@ -1608,6 +1624,8 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
                     },
                     additional: Vec::new(),
                 },
+
+                destination: Default::default(),
             });
         }
         let mut feature = Feature {
@@ -1627,8 +1645,10 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
                         BodySelection::Unresolved,
                     )
                     .unwrap(),
-                    op: BooleanKind::Join,
-                    keep_tools: true,
+                    op: initial_op,
+                    keep_tools: keep,
+
+                    destination: cadmpeg_ir::features::CombineDestination::default(),
                 }),
                 DistinctMembers::try_from(vec![]).unwrap(),
             ),
@@ -1645,7 +1665,7 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
                 state(0, 0, None, solid_boxes_topology(bodies_before)),
             ],
         );
-        super::super::bind_feature_outputs(
+        let losses = super::super::bind_feature_outputs(
             std::slice::from_mut(&mut feature),
             std::slice::from_ref(&scope),
             &mut [history],
@@ -1653,13 +1673,20 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
             &Default::default(),
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         let FeatureDefinition::Operation(FeatureOperation::Combine { op, .. }) =
             feature.evaluation.definition()
         else {
             panic!("expected Combine");
         };
-        *op
+        let assumptions = losses
+            .iter()
+            .filter(|loss| {
+                loss.code == crate::loss::F3dLossCode::FeatureCombineKeptToolsCutAssumed.kind()
+            })
+            .count();
+        (*op, assumptions)
     };
 
     for (form, expected) in [
@@ -1669,8 +1696,27 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
         (Some(DesignCombineForm::ExtendedReference), BooleanKind::Cut),
         (Some(DesignCombineForm::OperandLists), BooleanKind::Join),
     ] {
-        assert_eq!(resolved(form, &[1]), expected, "{form:?}");
-        assert_eq!(resolved(form, &[1, 2]), BooleanKind::Join, "{form:?}");
+        let assumptions = usize::from(expected == BooleanKind::Cut);
+        assert_eq!(
+            resolved(form, &[1], BooleanKind::Join, true),
+            (expected, assumptions),
+            "{form:?}"
+        );
+        assert_eq!(
+            resolved(form, &[1, 2], BooleanKind::Join, true),
+            (BooleanKind::Join, 0),
+            "{form:?}"
+        );
+        assert_eq!(
+            resolved(form, &[1], BooleanKind::Cut, true),
+            (BooleanKind::Cut, 0),
+            "{form:?}"
+        );
+        assert_eq!(
+            resolved(form, &[1], BooleanKind::Join, false),
+            (BooleanKind::Join, 0),
+            "{form:?}"
+        );
     }
 }
 
@@ -1699,7 +1745,8 @@ fn feature_outputs_include_bodies_changed_before_the_terminal_scope_state() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(feature.evaluation.outputs().as_slice(), [body.id]);
     assert!(!losses.iter().any(|loss| {
         loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()
@@ -1729,7 +1776,8 @@ fn feature_output_interval_refusal_has_a_loss() {
             &Default::default(),
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert!(feature.evaluation.outputs().is_empty());
         assert!(losses.iter().any(|loss| {
             loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()
@@ -1776,7 +1824,8 @@ fn feature_outputs_follow_bound_history_when_numeric_states_repeat() {
                 &bindings,
                 None,
             )
-            .unwrap();
+            .unwrap()
+            .losses;
             assert_eq!(feature.evaluation.outputs(), &[expected.id.clone()]);
             assert!(!losses.iter().any(|loss| {
                 loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()
@@ -1798,7 +1847,8 @@ fn feature_output_body_namespace_refusal_has_a_loss() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(feature.evaluation.outputs().is_empty());
     assert!(losses
         .iter()
@@ -1806,7 +1856,7 @@ fn feature_output_body_namespace_refusal_has_a_loss() {
 }
 
 #[test]
-fn stored_body_scope_keeps_equal_state_without_a_stored_body_proof_native() {
+fn stored_body_scope_keeps_equal_state_without_a_stored_body_proof_unbound() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut feature, _, _, _) = native_base_feature();
     let scope = scope_between(0, 0);
@@ -1830,7 +1880,9 @@ fn stored_body_scope_keeps_equal_state_without_a_stored_body_proof_native() {
     assert!(feature.evaluation.outputs().is_empty());
     assert!(matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+        }) if Some(native.as_str()) == feature.native_ref.as_deref()
     ));
 }
 
@@ -1867,3 +1919,5 @@ mod edge_midpoints;
 mod saved_edges;
 mod split_plane;
 mod stored_results;
+
+mod transition_geometry;

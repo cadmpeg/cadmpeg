@@ -416,7 +416,8 @@ fn split_plane_only_emitted_for_split_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_unresolved
             .source_properties
@@ -437,7 +438,8 @@ fn split_plane_only_emitted_for_split_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_split
             .source_properties
@@ -491,7 +493,8 @@ fn split_plane_only_emitted_for_split_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         features[1]
             .source_properties
@@ -705,7 +708,8 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_split
             .source_properties
@@ -748,7 +752,8 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_split2
             .source_properties
@@ -1069,7 +1074,8 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
             &Default::default(),
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert_eq!(
             feature_split
                 .source_properties
@@ -1109,7 +1115,8 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
                 &Default::default(),
                 None,
             )
-            .unwrap();
+            .unwrap()
+            .losses;
             assert!(
                 prev_losses.iter().all(|loss| {
                     loss.code != crate::loss::F3dLossCode::HistoricalBodyCenterPartial.kind()
@@ -1168,7 +1175,8 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feat_coplanar
             .source_properties
@@ -1216,6 +1224,8 @@ fn combine_join_test_feature(scope_id: &str, target: Option<i64>, tool: Option<i
                 operands: CombineOperands::new(target_sel, tool_sel).unwrap(),
                 op: BooleanKind::Join,
                 keep_tools: false,
+
+                destination: cadmpeg_ir::features::CombineDestination::default(),
             }),
             DistinctMembers::try_from(vec![]).unwrap(),
         ),

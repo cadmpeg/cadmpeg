@@ -90,6 +90,8 @@ pub(crate) enum SldprtLossCode {
     PmiSwiftSphericalDiameterTargetUnresolved,
     /// A SWIFT geometric-tolerance display has no established semantic annotation.
     PmiSwiftPresentationUnresolved,
+    /// Internal flatness rows use an inferred characteristic convention.
+    PmiSwiftInternalFlatnessSymbolAssumed,
     /// A SWIFT presentation archive declares displays that its framing discards.
     PmiSwiftPresentationUnframed,
     /// A SWIFT display selects faces through a one- or two-string in-place document.
@@ -127,6 +129,12 @@ pub(crate) enum SldprtLossCode {
     FeatureInputArchiveWalkStopped,
     /// Typed feature retains native or unresolved required operation operands.
     FeatureTypedOperandIncomplete,
+    /// Extrusion profile curve data remains unresolved.
+    FeatureProfileCurvesUnavailable,
+    /// Extrusion travel sense remains in its native feature-input lane.
+    FeatureExtrudeDirectionUnresolved,
+    /// Extrusion start condition is not the sketch plane and has no supported reading.
+    FeatureExtrudeStartUnresolved,
     /// Thin extrusion retains an ambiguous inline Boolean operation.
     FeatureThinOperationAmbiguous,
     /// Native edge selection has a refused terminal feature owner.
@@ -172,6 +180,8 @@ pub(crate) enum SldprtLossCode {
     /// The stream's INTERSECTION declaration states no node layout that
     /// frames, so its intersection curves are not read.
     GeometryIntersectionLayoutUnknown,
+    /// A neutral carrier uses an approximate intersection or fitted cache.
+    GeometryCarrierApproximated,
     /// Current face records carry conflicting or incoherent color bindings.
     AppearanceFaceColorUnresolved,
     /// Appearance assignments have no unambiguous `DisplayLists` target.
@@ -221,6 +231,8 @@ pub(crate) enum SldprtLossCode {
     TopologyPcurveCarrierOffSurface,
     /// Parasolid B-rep geometry was not transferred (no resolved stream).
     GeometryParasolidNotTransferred,
+    /// Mesh bodies whose facet geometry remains unresolved.
+    GeometryMeshBodyNotTransferred,
     /// Imported-feature body streams that do not decode.
     GeometryImportedBodiesNotTransferred,
     /// B-rep topology graph was not built for this file.
@@ -332,6 +344,7 @@ impl SldprtLossCode {
         Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed,
         Self::PmiSwiftSphericalDiameterTargetUnresolved,
         Self::PmiSwiftPresentationUnresolved,
+        Self::PmiSwiftInternalFlatnessSymbolAssumed,
         Self::PmiSwiftPresentationUnframed,
         Self::PmiSwiftFaceDocumentLayoutAssumed,
         Self::PmiSwiftFaceDocumentTailAssumed,
@@ -350,6 +363,9 @@ impl SldprtLossCode {
         Self::FeatureInputSolidBodyRetained,
         Self::FeatureInputArchiveWalkStopped,
         Self::FeatureTypedOperandIncomplete,
+        Self::FeatureProfileCurvesUnavailable,
+        Self::FeatureExtrudeDirectionUnresolved,
+        Self::FeatureExtrudeStartUnresolved,
         Self::FeatureThinOperationAmbiguous,
         Self::FeatureEdgeTerminalUnresolved,
         Self::FeatureBodyPathAmbiguous,
@@ -370,6 +386,7 @@ impl SldprtLossCode {
         Self::GeometryConeHalfAngleSignUnresolved,
         Self::GeometryConeHalfAngleIdentityRefused,
         Self::GeometryIntersectionLayoutUnknown,
+        Self::GeometryCarrierApproximated,
         Self::AppearanceFaceColorUnresolved,
         Self::AppearanceAssignmentUnresolved,
         Self::NativeAppearanceScopeUnresolved,
@@ -391,6 +408,7 @@ impl SldprtLossCode {
         Self::TopologyVertexRecordUnresolved,
         Self::TopologyPcurveCarrierOffSurface,
         Self::GeometryParasolidNotTransferred,
+        Self::GeometryMeshBodyNotTransferred,
         Self::GeometryImportedBodiesNotTransferred,
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
@@ -451,6 +469,9 @@ impl SldprtLossCode {
                 "pmi.swift-spherical-diameter-target-unresolved"
             }
             Self::PmiSwiftPresentationUnresolved => "pmi.swift-presentation-unresolved",
+            Self::PmiSwiftInternalFlatnessSymbolAssumed => {
+                "pmi.swift-internal-flatness-symbol-assumed"
+            }
             Self::PmiSwiftPresentationUnframed => "pmi.swift-presentation-unframed",
             Self::PmiSwiftFaceDocumentLayoutAssumed => "pmi.swift-face-document-layout-assumed",
             Self::PmiSwiftFaceDocumentTailAssumed => "pmi.swift-face-document-tail-assumed",
@@ -469,6 +490,9 @@ impl SldprtLossCode {
             Self::FeatureInputSolidBodyRetained => "feature.input-solid-body-retained",
             Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
+            Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
+            Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
+            Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureEdgeTerminalUnresolved => "feature.edge-terminal-unresolved",
             Self::FeatureBodyPathAmbiguous => "feature.body-path-ambiguous",
@@ -491,6 +515,7 @@ impl SldprtLossCode {
                 "geometry.cone-half-angle-identity-refused"
             }
             Self::GeometryIntersectionLayoutUnknown => "geometry.intersection-layout-unknown",
+            Self::GeometryCarrierApproximated => "geometry.carrier-approximated",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
             Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
             Self::NativeAppearanceScopeUnresolved => "appearance.native-scope-unresolved",
@@ -512,6 +537,7 @@ impl SldprtLossCode {
             Self::TopologyVertexRecordUnresolved => "topology.vertex-record-unresolved",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
             Self::GeometryParasolidNotTransferred => "geometry.parasolid-not-transferred",
+            Self::GeometryMeshBodyNotTransferred => "geometry.mesh-body-not-transferred",
             Self::GeometryImportedBodiesNotTransferred => {
                 "geometry.imported-bodies-not-transferred"
             }
@@ -583,9 +609,9 @@ impl SldprtLossCode {
             Self::GeometryParasolidNotTransferred
             | Self::TopologyGraphNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
-            Self::ContainerNoParasolidStream | Self::GeometryImportedBodiesNotTransferred => {
-                Severity::Error
-            }
+            Self::ContainerNoParasolidStream
+            | Self::GeometryMeshBodyNotTransferred
+            | Self::GeometryImportedBodiesNotTransferred => Severity::Error,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -607,6 +633,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed
             | Self::PmiSwiftSphericalDiameterTargetUnresolved
             | Self::PmiSwiftPresentationUnresolved
+            | Self::PmiSwiftInternalFlatnessSymbolAssumed
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed
@@ -625,6 +652,9 @@ impl SldprtLossCode {
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureProfileCurvesUnavailable
+            | Self::FeatureExtrudeDirectionUnresolved
+            | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -645,6 +675,7 @@ impl SldprtLossCode {
             | Self::GeometryConeHalfAngleSignUnresolved
             | Self::GeometryConeHalfAngleIdentityRefused
             | Self::GeometryIntersectionLayoutUnknown
+            | Self::GeometryCarrierApproximated
             | Self::AppearanceFaceColorUnresolved
             | Self::AppearanceAssignmentUnresolved
             | Self::NativeAppearanceScopeUnresolved
@@ -749,6 +780,7 @@ impl SldprtLossCode {
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
+            Self::GeometryCarrierApproximated => LossTaxonomy::ProceduralReduced,
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
@@ -765,6 +797,7 @@ impl SldprtLossCode {
             | Self::GeometryConeHalfAngleIdentityRefused
             | Self::GeometryIntersectionLayoutUnknown
             | Self::GeometryParasolidNotTransferred
+            | Self::GeometryMeshBodyNotTransferred
             | Self::ContainerAuxiliaryParasolidRefused
             | Self::GeometryImportedBodiesNotTransferred
             | Self::ContainerParasolidProbeCapped => LossTaxonomy::GeometryNotTransferred,
@@ -784,6 +817,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed
             | Self::PmiSwiftSphericalDiameterTargetUnresolved
             | Self::PmiSwiftPresentationUnresolved
+            | Self::PmiSwiftInternalFlatnessSymbolAssumed
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed => LossTaxonomy::DecodeDiagnostic,
@@ -818,6 +852,9 @@ impl SldprtLossCode {
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureProfileCurvesUnavailable
+            | Self::FeatureExtrudeDirectionUnresolved
+            | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -1019,6 +1056,7 @@ mod tests {
                 "pmi.swift-spherical-diameter-count-text-equal-radius-assumed",
                 "pmi.swift-spherical-diameter-target-unresolved",
                 "pmi.swift-presentation-unresolved",
+                "pmi.swift-internal-flatness-symbol-assumed",
                 "pmi.swift-presentation-unframed",
                 "pmi.swift-face-document-layout-assumed",
                 "pmi.swift-face-document-tail-assumed",
@@ -1037,6 +1075,9 @@ mod tests {
                 "feature.input-solid-body-retained",
                 "feature.input-archive-walk-stopped",
                 "feature.typed-operand-incomplete",
+                "feature.profile-curves-unavailable",
+                "feature.extrude-direction-unresolved",
+                "feature.extrude-start-unresolved",
                 "feature.thin-operation-ambiguous",
                 "feature.edge-terminal-unresolved",
                 "feature.body-path-ambiguous",
@@ -1057,6 +1098,7 @@ mod tests {
                 "geometry.cone-half-angle-sign-unresolved",
                 "geometry.cone-half-angle-identity-refused",
                 "geometry.intersection-layout-unknown",
+                "geometry.carrier-approximated",
                 "appearance.face-color-unresolved",
                 "appearance.assignment-unresolved",
                 "appearance.native-scope-unresolved",
@@ -1078,6 +1120,7 @@ mod tests {
                 "topology.vertex-record-unresolved",
                 "topology.pcurve-carrier-off-surface",
                 "geometry.parasolid-not-transferred",
+                "geometry.mesh-body-not-transferred",
                 "geometry.imported-bodies-not-transferred",
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",

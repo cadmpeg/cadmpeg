@@ -121,8 +121,8 @@ fn dependency_reconciliation_preserves_typed_history_edges() {
 fn generated_face_dependencies_follow_the_producer_feature() {
     let producer =
         IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar");
-    let definition = IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
-        faces: FaceSelection::generated(
+    let definition = IrFeatureDefinition::Operation(IrFeatureOperation::thicken(
+        FaceSelection::generated(
             vec![
                 GeneratedFaceRef::new(producer.clone(), "surface#98".to_string())
                     .expect("valid test fixture"),
@@ -130,9 +130,9 @@ fn generated_face_dependencies_follow_the_producer_feature() {
             "creo:allfeatur:thicken#9".to_string(),
         )
         .expect("valid test fixture"),
-        thickness: None,
-        side: None,
-    });
+        None,
+        None,
+    ));
     assert_eq!(
         feature_generated_dependencies(&definition)
             .expect("generated dependencies")
@@ -145,16 +145,16 @@ fn generated_face_dependencies_follow_the_producer_feature() {
 
 fn one_generated_face_dependency() -> IrFeatureDefinition {
     let producer = IrFeatureId::mint("creo:model:feature#97").expect("identity grammar");
-    IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
-        faces: FaceSelection::generated(
+    IrFeatureDefinition::Operation(IrFeatureOperation::thicken(
+        FaceSelection::generated(
             vec![GeneratedFaceRef::new(producer, "surface#98".to_string())
                 .expect("valid test fixture")],
             "creo:allfeatur:thicken#9".to_string(),
         )
         .expect("valid test fixture"),
-        thickness: None,
-        side: None,
-    })
+        None,
+        None,
+    ))
 }
 
 fn reconciliation_ir_with_generated_dependency() -> CadIr {

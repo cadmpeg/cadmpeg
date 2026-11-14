@@ -477,6 +477,39 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
 }
 
 #[test]
+fn stateless_combine_is_suppressed_and_sketch_is_not() {
+    use crate::design::feature_project::{
+        project_parameter_design_with_edge_identities, ProjectInputs,
+    };
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+
+    for (kind, suppressed) in [
+        (DesignFeatureKind::Combine, true),
+        (DesignFeatureKind::Sketch, false),
+    ] {
+        let scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            kind,
+            10,
+        );
+        let scopes = [scope];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
+        let projected = crate::test_support::with_decode_context(|ctx| {
+            project_parameter_design_with_edge_identities(
+                ctx,
+                &ProjectInputs {
+                    scopes: &scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        });
+        assert_eq!(projected.features[0].suppressed, Some(suppressed));
+    }
+}
+
+#[test]
 fn unresolved_owned_parameters_receive_unique_dependency_ordered_slots() {
     let records = [
         (Some(40), 2, "InputA", "1"),

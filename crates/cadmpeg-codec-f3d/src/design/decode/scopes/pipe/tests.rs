@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::records::feature::scope::DesignScopePayload;
-use crate::test_support::pipe::{Config, Fixture, Layout};
+use crate::test_support::pipe::{Config, Fixture, Layout, SectionFrame};
 
 #[test]
 fn pipe_source_binds_group_with_three_byte_flag_block() {
@@ -549,4 +549,181 @@ fn pipe_prefixes_keep_independent_hollow_and_opaque_fields() {
     unobserved[25..29].copy_from_slice(&4u32.to_le_bytes());
     unobserved[29..31].copy_from_slice(&[1, 1]);
     assert!(super::exact_pipe_prefix(&unobserved, 0).is_none());
+}
+
+fn decoded_section(
+    config: Config,
+) -> Option<crate::records::feature::path_features::DesignPipeSection> {
+    let native = Fixture::new(config)
+        .decode(&cadmpeg_test_support::service_decode_context())
+        .unwrap();
+    let DesignScopePayload::Pipe(Some(pipe)) = native.design_parameter_scopes[0].payload() else {
+        panic!("complete Pipe source")
+    };
+    pipe.section
+}
+
+#[test]
+fn pipe_source_reads_the_section_shape_after_the_prefix() {
+    use crate::records::feature::path_features::DesignPipeSectionShape;
+    for legacy in [false, true] {
+        for operation in [4, 1] {
+            for (stored, shape) in [
+                (0, DesignPipeSectionShape::Circular),
+                (1, DesignPipeSectionShape::Square),
+                (2, DesignPipeSectionShape::Triangular),
+            ] {
+                let section = decoded_section(Config {
+                    legacy,
+                    operation,
+                    section: Some(SectionFrame::of(stored)),
+                    ..Default::default()
+                })
+                .expect("section frame");
+                assert_eq!(section.shape_value, stored);
+                assert_eq!(section.shape(), Some(shape));
+                assert_eq!(section.shape_offset, if legacy { 32 + 67 } else { 28 + 67 });
+            }
+        }
+    }
+    assert_eq!(decoded_section(Config::default()), None);
+    let unnamed = decoded_section(Config {
+        section: Some(SectionFrame::of(3)),
+        ..Default::default()
+    })
+    .expect("section frame");
+    assert_eq!((unnamed.shape_value, unnamed.shape()), (3, None));
+}
+
+#[test]
+fn pipe_source_leaves_an_inexact_section_frame_unread() {
+    let frames = [
+        SectionFrame {
+            separator: 1,
+            ..SectionFrame::of(0)
+        },
+        SectionFrame {
+            path: 410,
+            ..SectionFrame::of(0)
+        },
+        SectionFrame {
+            references: [103, 100, 310, 106, 109],
+            ..SectionFrame::of(0)
+        },
+        SectionFrame {
+            references: [103, 100, 100, 106, 109],
+            ..SectionFrame::of(0)
+        },
+    ];
+    for frame in frames {
+        assert_eq!(
+            decoded_section(Config {
+                section: Some(frame),
+                ..Default::default()
+            }),
+            None
+        );
+    }
+}
+
+#[test]
+fn pipe_source_leaves_the_section_frame_of_a_point_selection_unread() {
+    for point_version in [2, 3] {
+        assert_eq!(
+            decoded_section(Config {
+                point_version: Some(point_version),
+                section: Some(SectionFrame::of(1)),
+                ..Default::default()
+            }),
+            None
+        );
+    }
+}
+
+#[test]
+fn pipe_source_needs_the_whole_section_frame_before_the_table() {
+    let fixture = Fixture::new(Config {
+        section: Some(SectionFrame::of(1)),
+        ..Default::default()
+    });
+    let native = fixture
+        .decode(&cadmpeg_test_support::service_decode_context())
+        .unwrap();
+    let DesignScopePayload::Pipe(Some(pipe)) = native.design_parameter_scopes[0].payload() else {
+        panic!("complete Pipe source")
+    };
+    let table = usize::try_from(pipe.section.expect("section frame").shape_offset).unwrap() + 4;
+    let read = |table: usize| {
+        super::section_frame_shape(
+            &fixture.bulk,
+            table,
+            pipe.opaque_post_operation_offset,
+            pipe.record_indexes,
+            200,
+            310,
+        )
+    };
+    assert_eq!(read(table), pipe.section);
+    assert_eq!(read(table - 1), None);
+}
+#[test]
+fn pipe_prefix_retains_operation_when_hollow_is_invalid() {
+    let mut compact = [0_u8; 28];
+    compact[21] = 2;
+    compact[22..26].copy_from_slice(&2_u32.to_le_bytes());
+    compact[26..28].copy_from_slice(&[7, 9]);
+    let prefix = super::pipe_prefix(&compact, 0).unwrap();
+    assert_eq!(
+        prefix.operation,
+        Some(crate::records::feature::extrude::DesignExtrudeOperation::Cut)
+    );
+    assert_eq!(prefix.operation_value, Some(2));
+    assert_eq!(prefix.operation_offset, 22);
+    assert_eq!(prefix.is_hollow_value, Some(2));
+    assert_eq!(prefix.is_hollow_offset, 21);
+    assert_eq!(
+        prefix
+            .opaque_post_operation
+            .map(cadmpeg_ir::native::bytes::NativeBytes::into_inner),
+        Some([7, 9])
+    );
+    assert!(super::exact_pipe_prefix(&compact, 0).is_none());
+}
+
+#[test]
+fn pipe_prefix_retains_hollow_when_operation_is_unknown() {
+    let mut legacy = [0_u8; 32];
+    legacy[20] = 1;
+    legacy[25] = 1;
+    legacy[26..30].copy_from_slice(&99_u32.to_le_bytes());
+    legacy[30..32].copy_from_slice(&[1, 255]);
+    let prefix = super::pipe_prefix(&legacy, 0).unwrap();
+    assert_eq!(prefix.operation, None);
+    assert_eq!(prefix.operation_value, Some(99));
+    assert_eq!(prefix.operation_offset, 26);
+    assert_eq!(prefix.is_hollow_value, Some(1));
+    assert_eq!(prefix.is_hollow_offset, 25);
+    assert_eq!(
+        prefix
+            .opaque_post_operation
+            .map(cadmpeg_ir::native::bytes::NativeBytes::into_inner),
+        Some([1, 255])
+    );
+    assert!(super::exact_pipe_prefix(&legacy, 0).is_none());
+}
+
+#[test]
+fn pipe_prefix_retains_bounded_fields_when_suffix_is_truncated() {
+    let mut compact = [0_u8; 26];
+    compact[21] = 0;
+    compact[22..26].copy_from_slice(&4_u32.to_le_bytes());
+    let prefix = super::pipe_prefix(&compact, 0).unwrap();
+    assert_eq!(
+        prefix.operation,
+        Some(crate::records::feature::extrude::DesignExtrudeOperation::NewBody)
+    );
+    assert_eq!(prefix.operation_value, Some(4));
+    assert_eq!(prefix.is_hollow_value, Some(0));
+    assert_eq!(prefix.opaque_post_operation, None);
+    assert!(super::exact_pipe_prefix(&compact, 0).is_none());
 }

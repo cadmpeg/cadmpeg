@@ -274,6 +274,90 @@ fn move_face_group_requires_the_selected_face_role() {
 }
 
 #[test]
+fn align_group_requires_the_body_or_geometry_role() {
+    use crate::records::{
+        feature::scope::{DesignFeatureKind, DesignParameterScope},
+        identity::ReferenceRun,
+        topology::{
+            construction::DesignConstructionOperandRole, extrude_selection::DesignOperandRole,
+        },
+    };
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::CadIr::empty();
+        let mut native = native(true, false);
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            DesignFeatureKind::Align,
+            10,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.reference_members = ReferenceRun::unlocated(vec![100, 101, 300]);
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        native.design_parameter_scopes = vec![scope];
+        for (role, findings_expected) in [
+            (DesignOperandRole::BODIES_A, 0),
+            (DesignOperandRole::ROLE_0X5, 0),
+            (DesignOperandRole::ROLE_0X10, 1),
+        ] {
+            native.design_construction_operand_groups[0].operand_role =
+                DesignConstructionOperandRole::Other(role);
+            let ctx = super::super::Ctx::new(&ir, &native, decode);
+            let mut findings = Vec::new();
+            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            assert_eq!(findings.len(), findings_expected, "{role:?} {findings:?}");
+        }
+    });
+}
+
+#[test]
+fn mesh_face_group_scope_keeps_native_body_group_guards() {
+    use crate::records::{
+        feature::scope::DesignScopePayload,
+        topology::{
+            construction::DesignConstructionOperandRole, extrude_selection::DesignOperandRole,
+        },
+    };
+    for combine in [false, true] {
+        for mutation in 0..5 {
+            crate::test_support::with_decode_context(|decode| {
+                let ir = cadmpeg_ir::CadIr::empty();
+                let mut native = native(true, false);
+                native.design_parameter_scopes[0]
+                    .try_edit(|draft| {
+                        let data = (mutation != 1).then(Default::default);
+                        draft.payload = if combine {
+                            DesignScopePayload::CombineFaceGroups(data)
+                        } else {
+                            DesignScopePayload::GenerateFaceGroups(data)
+                        };
+                    })
+                    .unwrap();
+                let group = &mut native.design_construction_operand_groups[0];
+                match mutation {
+                    2 => {
+                        group.operand_role =
+                            DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
+                    }
+                    3 => group.frame.member_count_offset += 1,
+                    4 => group.scope_reference_ordinal = 1,
+                    _ => {}
+                }
+                let ctx = super::super::Ctx::new(&ir, &native, decode);
+                let mut findings = Vec::new();
+                super::super::validate_construction_operand_groups(&ctx, &mut findings);
+                assert_eq!(findings.is_empty(), mutation == 0, "{findings:?}");
+            });
+        }
+    }
+}
+
+#[test]
 fn thread_face_group_does_not_require_a_specialized_thread_payload() {
     use crate::records::{
         feature::scope::{DesignFeatureKind, DesignParameterScope},
@@ -697,4 +781,55 @@ fn a_path_pattern_group_role_matches_its_scope_reference_ordinal() {
         assert_eq!(findings(path_table(), 3, DesignOperandRole::ROLE_0X5), 0);
         assert_eq!(findings(path_table(), 3, DesignOperandRole::BODIES_B), 1);
     });
+}
+
+#[test]
+fn sheet_metal_fold_and_line_bend_groups_validate_their_source_roles() {
+    use crate::records::{
+        feature::scope::{DesignFeatureKind, DesignParameterScope},
+        topology::{
+            construction::DesignConstructionOperandRole, extrude_selection::DesignOperandRole,
+        },
+    };
+    for (kind, role, valid) in [
+        (DesignFeatureKind::Bend, DesignOperandRole::ROLE_0X21, true),
+        (DesignFeatureKind::Bend, DesignOperandRole::ROLE_0X10, true),
+        (DesignFeatureKind::Bend, DesignOperandRole::BODIES_A, false),
+        (
+            DesignFeatureKind::Unfold,
+            DesignOperandRole::ROLE_0X10,
+            true,
+        ),
+        (DesignFeatureKind::Unfold, DesignOperandRole::BODIES_A, true),
+        (
+            DesignFeatureKind::Unfold,
+            DesignOperandRole::BODIES_B,
+            false,
+        ),
+        (DesignFeatureKind::Refold, DesignOperandRole::BODIES_B, true),
+        (
+            DesignFeatureKind::Refold,
+            DesignOperandRole::ROLE_0X10,
+            false,
+        ),
+    ] {
+        crate::test_support::with_decode_context(|decode| {
+            let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+            let mut native = native(true, false);
+            let mut scope = DesignParameterScope::empty(
+                "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+                kind,
+                10,
+            );
+            crate::design::test_support::name_scope_references(&mut scope, [100, 101]);
+            native.design_parameter_scopes[0] = scope;
+            native.design_construction_operand_groups[0].scope_reference_ordinal = 1;
+            native.design_construction_operand_groups[0].operand_role =
+                DesignConstructionOperandRole::Other(role);
+            let ctx = super::super::Ctx::new(&ir, &native, decode);
+            let mut findings = Vec::new();
+            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            assert_eq!(findings.is_empty(), valid, "{findings:?}");
+        });
+    }
 }

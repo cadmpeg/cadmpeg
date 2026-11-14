@@ -95,6 +95,14 @@ declares millimetres. Supply geometry in millimetres before export. The context
 uses the IR linear tolerance as its uncertainty value; plane and solid angles
 use radians and steradians.
 
+An open edge whose endpoint separation is at most the context uncertainty is
+written as two edges at its parameter midpoint. Both edges share one new
+vertex. The original endpoint vertices and curve carrier remain in use.
+Reversed coedges traverse the two segments in reverse order. This rule applies
+to each supported curve kind. An edge with equal start and end vertex
+identities keeps one edge. Export fails if a required midpoint cannot be
+resolved.
+
 [`StepWriteOptions`] controls `FILE_NAME` metadata; the target [`StepSchema`] is
 selected by `Encoder::plan`, not stored in the options. An empty timestamp produces `1970-01-01T00:00:00`, which keeps
 default output deterministic. The first body name, when present, supplies the

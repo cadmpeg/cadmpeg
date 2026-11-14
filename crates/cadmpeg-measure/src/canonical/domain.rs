@@ -3,8 +3,8 @@
 //! and solved caches with an admitted fit tolerance.
 
 use cadmpeg_ir::geometry::{
-    CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, Surface,
-    SurfaceGeometry,
+    CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 
 use super::placement::Placement;
@@ -68,6 +68,43 @@ impl<'ir> Carrier<'ir> {
             carrier.implicit_outer = *implicit_outer;
             return Ok(carrier);
         }
+        if let Some(ProceduralSurfaceDefinition::DegenerateTorus { select_outer }) = definition {
+            if let Some(cache) = cache {
+                let mut carrier = Self::resolve_geometry(surface, cache, body)?;
+                if let Shape::Charted(chart) = &mut carrier.shape {
+                    if let Chart::Torus(torus) = chart.as_mut() {
+                        torus.sheet = Some(*select_outer);
+                        if torus.sheet_domain().is_some() {
+                            return Ok(carrier);
+                        }
+                    }
+                }
+            }
+        }
+        if matches!(definition, Some(ProceduralSurfaceDefinition::Offset(_))) {
+            if let Some(carrier) = Self::resolve_offset(owners, surface, body)? {
+                return Ok(carrier);
+            }
+        }
+        if let Some(ProceduralSurfaceDefinition::LinearSweep(sweep)) = definition {
+            if let Some(curve) = owners.curve(sweep.directrix().as_str()) {
+                if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)) =
+                    &curve.geometry
+                {
+                    if cadmpeg_ir::eval::nurbs_curve_parameter_domain(directrix).is_some() {
+                        let mut carrier = Self::resolve(surface, body)?;
+                        carrier.chain.push("linear_sweep".to_owned());
+                        carrier.shape =
+                            Shape::Charted(Box::new(Chart::Extrusion(ExtrusionChart {
+                                surface: &surface.id,
+                                directrix,
+                                placement: body,
+                            })));
+                        return Ok(carrier);
+                    }
+                }
+            }
+        }
         if let Some(ProceduralSurfaceDefinition::Extrusion(extrusion)) = definition {
             if extrusion.parameter_interval().is_none()
                 && procedural.is_some_and(|item| item.record_bounds().is_none())
@@ -108,5 +145,64 @@ impl<'ir> Carrier<'ir> {
         carrier.leaf = None;
         carrier.fit = fit;
         Ok(carrier)
+    }
+    fn resolve_offset(
+        owners: &Owners<'ir>,
+        surface: &'ir Surface,
+        body: Placement,
+    ) -> Measure<Option<Self>> {
+        let mut support = surface;
+        let mut seen = std::collections::HashSet::new();
+        let mut reach = 0.0_f64;
+        let mut distance = 0.0;
+        loop {
+            if !seen.insert(support.id.as_str()) {
+                return Ok(None);
+            }
+            let SurfaceGeometry::Procedural { construction, .. } = &support.geometry else {
+                break;
+            };
+            let Some(ProceduralSurfaceDefinition::Offset(offset)) = owners
+                .procedural_surface(construction.as_str())
+                .map(ProceduralSurface::definition)
+            else {
+                break;
+            };
+            reach += offset.distance().get().abs() * body.scale;
+            distance = offset.distance().get();
+            if !reach.is_finite() {
+                return Ok(None);
+            }
+            let Some(next) = owners.surface(offset.support().as_str()) else {
+                return Ok(None);
+            };
+            support = next;
+        }
+        let mut carrier = Self::resolve_procedural(owners, support, body, false)?;
+        let Shape::Charted(chart) = &mut carrier.shape else {
+            return Ok(None);
+        };
+        match chart.as_mut() {
+            Chart::Nurbs(nurbs) => {
+                nurbs.evaluation = Some(&surface.id);
+                nurbs.offset_reach = reach;
+                if seen.len() == 2
+                    && matches!(
+                        support.geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+                    )
+                {
+                    nurbs.column_offset = Some(distance);
+                }
+            }
+            Chart::Extrusion(extrusion) => extrusion.surface = &surface.id,
+            _ => return Ok(None),
+        }
+        carrier.surface = surface;
+        carrier.face_surface = surface;
+        carrier.chain.insert(0, "procedural:offset".to_owned());
+        carrier.kind = SurfaceKind::Procedural;
+        carrier.leaf = None;
+        Ok(Some(carrier))
     }
 }

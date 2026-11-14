@@ -594,73 +594,98 @@ enum RecipeReferenceTokenFrame {
 struct ScannedRecipeReferenceOperand<'a> {
     selector: u32,
     token: &'a str,
+    token_integer: u32,
     token_at: usize,
     references_at: usize,
     reference_count: usize,
     next: usize,
 }
 
-fn scan_recipe_reference_operand(
-    prefix: &[u8],
+fn scan_recipe_reference_operand<'a>(
+    prefix: &'a [u8],
     at: usize,
     token_frame: RecipeReferenceTokenFrame,
-) -> Option<ScannedRecipeReferenceOperand<'_>> {
+) -> Option<ScannedRecipeReferenceOperand<'a>> {
     let selector = View::u32_le_at(prefix, at).filter(|value| *value != 0)?;
     let token_encoding_at = at.checked_add(4)?;
-    let length_prefixed = (!matches!(token_frame, RecipeReferenceTokenFrame::Packed))
-        .then(|| {
+    let finish = |token: &'a str, token_at: usize, integer_at: usize| {
+        let token_integer = View::u32_le_at(prefix, integer_at)?;
+        let count_at = integer_at.checked_add(4)?;
+        let references_at = count_at.checked_add(4)?;
+        let reference_count = cadmpeg_core::decode::bounded_len(
+            u64::from(View::u32_le_at(prefix, count_at).filter(|value| *value != 0)?),
+            4,
+            prefix.len().checked_sub(references_at)?,
+        )?;
+        let references_end = references_at.checked_add(reference_count.checked_mul(4)?)?;
+        let next = match token_frame {
+            RecipeReferenceTokenFrame::Packed => references_end,
+            RecipeReferenceTokenFrame::Either | RecipeReferenceTokenFrame::LengthPrefixed => {
+                if View::u32_le_at(prefix, references_end) != Some(0) {
+                    return None;
+                }
+                references_end.checked_add(4)?
+            }
+        };
+        for ordinal in 0..reference_count {
+            let reference_at = references_at.checked_add(ordinal.checked_mul(4)?)?;
+            View::i32_le_at(prefix, reference_at).filter(|value| *value != 0)?;
+        }
+        Some(ScannedRecipeReferenceOperand {
+            selector,
+            token,
+            token_integer,
+            token_at,
+            references_at,
+            reference_count,
+            next,
+        })
+    };
+    if !matches!(token_frame, RecipeReferenceTokenFrame::Packed) {
+        if let Some((token, integer_at)) =
             lp_ascii_filtered_view(prefix, token_encoding_at, 0..=2000, u8::is_ascii_graphic)
-                .and_then(|(token, marker_at)| {
-                    (is_decimal_integer_token(token.as_bytes())
-                        && View::u32_le_at(prefix, marker_at) == Some(0))
-                    .then_some((token, token_encoding_at + 4, marker_at + 4))
-                })
-        })
-        .flatten();
-    let packed = (!matches!(token_frame, RecipeReferenceTokenFrame::LengthPrefixed))
-        .then(|| {
-            (1usize..=8).find_map(|length| {
-                let token =
-                    prefix.get(token_encoding_at..token_encoding_at.checked_add(length)?)?;
-                let zero_at = token_encoding_at.checked_add(length)?;
-                (is_decimal_integer_token(token)
-                    && prefix.get(zero_at..zero_at + 4) == Some(&[0; 4]))
-                .then(|| std::str::from_utf8(token).ok())
-                .flatten()
-                .map(|token| (token, token_encoding_at, zero_at + 4))
-            })
-        })
-        .flatten();
-    let (token, token_at, marker_at) = length_prefixed.or(packed)?;
-    let reference_count =
-        usize::try_from(View::u32_le_at(prefix, marker_at).filter(|value| *value != 0)?).ok()?;
-    let reference_bytes = reference_count.checked_mul(4)?;
-    let references_at = marker_at.checked_add(4)?;
-    if reference_bytes > prefix.len().checked_sub(references_at)? {
+                .filter(|(token, _)| is_decimal_integer_token(token.as_bytes()))
+        {
+            if let Some(operand) = finish(token, token_encoding_at + 4, integer_at) {
+                return Some(operand);
+            }
+        }
+    }
+    if matches!(token_frame, RecipeReferenceTokenFrame::LengthPrefixed) {
         return None;
     }
-    let references_end = references_at.checked_add(reference_bytes)?;
-    let next = match token_frame {
-        RecipeReferenceTokenFrame::Packed => references_end,
-        RecipeReferenceTokenFrame::Either | RecipeReferenceTokenFrame::LengthPrefixed => {
-            if View::u32_le_at(prefix, references_end) != Some(0) {
-                return None;
-            }
-            references_end.checked_add(4)?
+    let mut candidate = None;
+    let mut ambiguous = false;
+    for length in 1usize..=8 {
+        let integer_at = token_encoding_at.checked_add(length)?;
+        let token = prefix.get(token_encoding_at..integer_at)?;
+        if token == b"-" {
+            continue;
         }
-    };
-    for reference_ordinal in 0..reference_count {
-        let design_reference_at = references_at.checked_add(reference_ordinal.checked_mul(4)?)?;
-        View::i32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
+        if !is_decimal_integer_token(token) {
+            break;
+        }
+        let Some(operand) = finish(
+            std::str::from_utf8(token).ok()?,
+            token_encoding_at,
+            integer_at,
+        ) else {
+            continue;
+        };
+        if operand.token_integer == 0 {
+            return Some(operand);
+        }
+        if matches!(token_frame, RecipeReferenceTokenFrame::Packed) {
+            continue;
+        }
+        ambiguous |= candidate.is_some();
+        candidate = Some(operand);
     }
-    Some(ScannedRecipeReferenceOperand {
-        selector,
-        token,
-        token_at,
-        references_at,
-        reference_count,
-        next,
-    })
+    if ambiguous {
+        None
+    } else {
+        candidate
+    }
 }
 
 struct DecodedRecipeReferenceOperand {
@@ -691,6 +716,7 @@ fn decode_recipe_reference_operand(
             selector: i64::from(scanned.selector),
             selector_offset,
             token: token_copy,
+            token_integer: scanned.token_integer,
             token_offset,
             design_reference: i64::from(design_reference),
             design_reference_offset,
@@ -768,6 +794,7 @@ pub(crate) fn bind_recipe_reference_candidates(
     reference.alternate_selector_edges.clear();
     for tag in tags.iter().filter(|tag| {
         tag.token.as_str() == reference.token
+            && tag.token_integer == reference.token_integer
             && tag.design_references.contains(&reference.design_reference)
             && owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
     }) {

@@ -231,11 +231,11 @@ pub(crate) fn operation<'a>(
             motion: FaceMotion::Offset { distance },
         });
     }
-    Ok(FeatureOperation::Thicken {
-        faces: FaceSelection::Native(selections.id()),
-        thickness: Some(thickness),
-        side: None,
-    })
+    Ok(FeatureOperation::thicken(
+        FaceSelection::Native(selections.id()),
+        Some(thickness),
+        None,
+    ))
 }
 
 fn offset_distance<'a>(

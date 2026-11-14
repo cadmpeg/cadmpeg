@@ -2,8 +2,11 @@
 
 use super::*;
 
+mod native_accuracy;
 mod shared_recovery;
-use crate::families::freeform::owned_patch::{line_pcurve, sheet_carrier::Carrier};
+use crate::families::freeform::owned_patch::{
+    line_pcurve, sheet_carrier::Carrier, SheetBoundaryRecovery,
+};
 use cadmpeg_ir::geometry::{analytic::PlaneSurface, nurbs::NurbsCurve, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;
@@ -39,6 +42,8 @@ fn two_face_sheet() -> Vec<Patch> {
             .expect("linear fixture edge"),
             pcurve: line_pcurve([0.0, 1.0], uv).expect("linear fixture pcurve"),
             forward,
+            inferred_accuracy: None,
+            lift_error_mm: 0.0,
         }
     };
     let patch = |face, forward, sides| Patch {
@@ -51,6 +56,7 @@ fn two_face_sheet() -> Vec<Patch> {
         priority: 0,
         sides,
         inner_starts: Vec::new(),
+        recovery: SheetBoundaryRecovery::default(),
     };
     vec![
         patch(
@@ -361,4 +367,61 @@ fn assert_outer_winding(ir: &CadIr, face: &Face) {
         "outer loop on {} must run counterclockwise about its oriented normal",
         face.id
     );
+}
+
+#[test]
+fn planar_transfer_preserves_pcurves_with_native_accuracy() {
+    use crate::families::freeform::owned_patch::InferredEdgeAccuracy;
+
+    let mut patches = two_face_sheet();
+    patches[0].sides[0].inferred_accuracy = Some(InferredEdgeAccuracy {
+        source: 17,
+        bound_mm: 0.02,
+    });
+    patches[0].sides[0].lift_error_mm = 0.02;
+    let mut ir = CadIr::empty();
+    let mut annotations = AnnotationBuilder::new();
+    crate::test_support::with_service_context(|ctx| {
+        append(
+            &mut ir,
+            &mut annotations,
+            patches,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut FamilyEntityAdmission::new(ctx),
+        )
+    })
+    .expect("transfer");
+    assert_eq!(ir.model.pcurves.len(), 8);
+    assert!(ir.model.coedges.iter().all(|side| side.pcurves.len() == 1));
+    assert_eq!(
+        ir.model.edges[0].tolerance.map(PositiveReal::get),
+        Some(0.02 + GAP_MM)
+    );
+}
+
+#[test]
+fn reused_native_faces_keep_distinct_owner_occurrences() {
+    let mut patches = two_face_sheet();
+    let mut reused = two_face_sheet();
+    for patch in &mut reused {
+        patch.body = (0, 11);
+    }
+    patches.extend(reused);
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(|ctx| {
+        append(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            patches,
+            &mut LaneRefusals::new(),
+            &mut FamilyEntityAdmission::new(ctx),
+        )
+    })
+    .expect("transfer shared native faces");
+    ir.finalize();
+    assert_eq!(ir.model.bodies.len(), 2);
+    assert_eq!(ir.model.faces.len(), 4);
+    assert_eq!(ir.model.edges.len(), 14);
+    let validation = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate owner occurrences");
+    assert!(validation.is_ok(), "{:?}", validation.findings);
 }

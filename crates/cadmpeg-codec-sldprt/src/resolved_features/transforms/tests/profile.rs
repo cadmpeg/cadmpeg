@@ -587,12 +587,12 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     assert_eq!(entities.len(), 13);
     assert!(matches!(*entities[0].geometry.definition(),
         SketchGeometryDefinition::Point { position }
-            if position == Point2::new(-2.0, 1.0)
+            if position == Point2::new(1.0, 2.0)
     ));
     assert!(matches!(*entities[1].geometry.definition(),
         SketchGeometryDefinition::Line { start, end }
-            if start == Point2::new(-2.0, 1.0)
-                && end == Point2::new(-6.0, 5.0)
+            if start == Point2::new(1.0, 2.0)
+                && end == Point2::new(5.0, 6.0)
     ));
     assert!(!entities[0].construction);
     assert!(entities[1].construction);
@@ -605,8 +605,8 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
             end_angle,
         } if center == Point2::new(0.0, 0.0)
             && radius.get() == 1.0
-            && start_angle.get() == std::f64::consts::FRAC_PI_2
-            && end_angle.get() == std::f64::consts::PI
+            && start_angle.get() == 0.0
+            && end_angle.get() == std::f64::consts::FRAC_PI_2
     ));
     assert_eq!(sketches[0].profiles.len(), 1);
     assert_eq!(sketches[0].profiles[0].len(), 3);

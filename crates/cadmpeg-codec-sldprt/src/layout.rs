@@ -3373,3 +3373,45 @@ pub(crate) mod spun_surface_profile {
     /// Offset of `end_param` (`f64`, big-endian). Spec §7.1.
     pub(crate) const END_PARAM: usize = 104;
 }
+
+/// Byte offsets for the `compact_principal_plane_component` record.
+///
+/// Spec §2. Record length 138 B.
+pub(crate) mod compact_principal_plane_component {
+    /// Offset of `source` (`u32`, little-endian). Spec §2.
+    pub(crate) const SOURCE: usize = 0;
+    /// Offset of `reserved` (`bytes[2]`). Spec §2.
+    pub(crate) const RESERVED: usize = 8;
+    /// Offset of `selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const SELECTOR: usize = 10;
+    /// Offset of `matrix_present` (`u8`). Spec §2.
+    pub(crate) const MATRIX_PRESENT: usize = 14;
+    /// Offset of `basis` (`f64[9]`, little-endian). Spec §2.
+    pub(crate) const BASIS: usize = 15;
+    /// Offset of `trailer_reserved` (`bytes[3]`). Spec §2.
+    pub(crate) const TRAILER_RESERVED: usize = 119;
+    /// Offset of `trailer_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const TRAILER_KIND: usize = 122;
+    /// Offset of `trailer_sentinel` (`u32`, little-endian). Spec §2.
+    pub(crate) const TRAILER_SENTINEL: usize = 126;
+}
+
+/// Byte offsets for the `extrusion_compact_operation_trailer` record.
+///
+/// Spec §2. Record length 40 B.
+pub(crate) mod extrusion_compact_operation_trailer {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 40;
+    /// Offset of `continuation_word` (`u16`, little-endian). Spec §2.
+    pub(crate) const CONTINUATION_WORD: usize = 16;
+    /// Offset of `marker` (`u16`, little-endian). Spec §2.
+    pub(crate) const MARKER: usize = 18;
+    /// Offset of `reference` (`u16`, little-endian). Spec §2.
+    pub(crate) const REFERENCE: usize = 20;
+    /// Offset of `zero_after_reference` (`bytes[12]`). Spec §2.
+    pub(crate) const ZERO_AFTER_REFERENCE: usize = 22;
+    /// Offset of `final_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const FINAL_TOKEN: usize = 34;
+    /// Offset of `zero_tail` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_TAIL: usize = 36;
+}

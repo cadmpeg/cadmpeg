@@ -6,11 +6,13 @@
     clippy::uninlined_format_args
 )]
 
+mod align;
 pub(super) mod body_selection;
 mod coil;
 mod direct_face;
 mod dispatcher;
 mod draft_pull;
+mod emboss;
 mod extrude;
 mod extrude_fallbacks;
 mod extrude_work_planes;
@@ -38,6 +40,7 @@ mod spatial_profiles;
 mod split;
 mod surface;
 mod surface_patch;
+mod surface_untrim;
 mod sweep;
 mod symmetric_extrude;
 mod thread_extent;

@@ -2,6 +2,60 @@
 
 use super::*;
 
+#[test]
+fn flagged_collection_direct_owner_joins_all_imported_bodies() {
+    for (count, length, offsets) in [(1, 88, vec![66]), (2, 99, vec![66, 77])] {
+        let mut graph =
+            synthetic_mesh_graph_with_collection(false, count, CollectionForm::Flagged(9));
+        graph.bytes[21..25].copy_from_slice(&0u32.to_le_bytes());
+        let features = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_texture_asset,
+        )
+        .unwrap();
+        let [feature] = features.as_slice() else {
+            panic!("one mesh collection");
+        };
+        let wire = serde_json::to_value(feature).unwrap();
+        assert_eq!(wire["collection_record"]["frame_length"], length);
+        assert_eq!(
+            wire["collection_body_reference_offsets"],
+            serde_json::json!(offsets)
+        );
+        assert_eq!(wire["collection_flagged_data"]["word"], 9);
+        assert_eq!(
+            wire["collection_flagged_data"]["entries"],
+            serde_json::json!([])
+        );
+        assert_eq!(wire["collection_owner_reference_offset"], length - 11);
+        assert_eq!(feature.bodies()[0].placement.record().record_index(), 104);
+        if count == 2 {
+            assert_eq!(feature.bodies()[1].placement.record().record_index(), 117);
+        }
+        let decoded: crate::records::mesh::DesignMeshFeature =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(*feature, decoded);
+    }
+}
+
+#[test]
+fn flagged_collection_direct_owner_requires_a_complete_terminal_reference() {
+    let mut graph = synthetic_mesh_graph_with_collection(false, 1, CollectionForm::Flagged(9));
+    graph.bytes[21..25].copy_from_slice(&0u32.to_le_bytes());
+    {
+        let mut frame = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID);
+        frame.end -= 1;
+        assert!(
+            super::super::parse_mesh_collection_record(&graph.bytes, &graph.meta, frame).is_err()
+        );
+    }
+    graph.bytes[77] = 0;
+    let frame = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID);
+    assert!(super::super::parse_mesh_collection_record(&graph.bytes, &graph.meta, frame).is_err());
+}
+
 pub(super) fn operation_body_graph() -> SyntheticMeshGraph {
     let mut graph = synthetic_mesh_graph_with_body_count(false, 2);
     let collection_start = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID).start;

@@ -146,9 +146,9 @@ fn two_blends() -> AsmHistoricalTopology {
     }
     topology
 }
-
 fn transition(inserted: &[i64], deleted_edges: &[i64]) -> AsmHistoricalTransition {
     AsmHistoricalTransition {
+        geometry_unchanged: false,
         previous_state_id: Some(1),
         records: AsmHistoricalEntityDelta::default(),
         topology: AsmHistoricalTopologyDelta {

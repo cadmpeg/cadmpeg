@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::parameters::parse_design_parameter_record;
-use crate::design::feature_project::project_extrude;
+use crate::design::feature_project::extrude::project_extrude;
 use crate::design::test_support::parameter_record;
 use crate::ids::neutral_sketch_id;
 use crate::records::feature::extrude::DesignExtrudeExtent;
@@ -143,6 +143,7 @@ fn dual_lane_symmetric_extrude_doubles_whole_travel() {
                 .expect("valid entity ID"),
 
             visibility: None,
+            display_name: None,
 
             class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
                 .unwrap(),
@@ -166,8 +167,6 @@ fn dual_lane_symmetric_extrude_doubles_whole_travel() {
         )
         .expect("project the extrude feature")
         .expect("typed dual-lane symmetric Extrude");
-        // Each side travels the shared per-side input: the neutral whole
-        // travel is twice the parameter.
         assert!(matches!(
             symmetric,
             FeatureDefinition::Operation(FeatureOperation::Extrude {

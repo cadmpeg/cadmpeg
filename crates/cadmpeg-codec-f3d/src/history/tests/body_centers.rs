@@ -146,7 +146,8 @@ fn an_unbound_feature_reads_the_history_of_the_blob_that_holds_its_outputs() {
         &std::collections::HashMap::new(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     // Each feature's history is inferred from its output blob, so each one
     // reports the inference.
     assert_eq!(
@@ -303,7 +304,8 @@ fn assert_incomplete_center(topology: AsmHistoricalTopology, expected: Option<&s
         &std::collections::HashMap::new(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature
             .source_properties

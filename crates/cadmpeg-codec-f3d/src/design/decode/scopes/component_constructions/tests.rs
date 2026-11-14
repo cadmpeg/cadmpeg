@@ -5,6 +5,8 @@ use super::exact_component_insert_construction;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::lp_utf16;
 
+mod partial_placement;
+
 fn tested_component_insert_construction(
     bytes: &[u8],
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
@@ -1417,6 +1419,18 @@ fn localized_insert_scopes_join_an_attributed_placement_carrier() {
         assert_eq!(construction.neutron_role, role);
         assert_eq!(construction.occurrence_identity, Some(19));
         assert_eq!(construction.carrier_record_index, 10);
+        let key = construction
+            .occurrence_key
+            .as_ref()
+            .expect("source occurrence key");
+        assert_eq!(key.value.as_str(), "66666666-7777-8888-9999-aaaaaaaaaaaa");
+        let key_at = usize::try_from(key.offset).unwrap();
+        assert_eq!(
+            bytes.get(key_at - 4..key_at + 72),
+            crate::bytes::lp_utf16_bytes("66666666-7777-8888-9999-aaaaaaaaaaaa")
+                .ok()
+                .as_deref()
+        );
         assert_eq!(
             construction
                 .placement

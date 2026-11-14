@@ -431,6 +431,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             secondary_id: 0,
             geometry: None,
             planar_z_noise: None,
+            tail_marker: None,
         };
         bind_extrude_selection_geometry(
             std::slice::from_mut(&mut member),

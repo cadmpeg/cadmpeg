@@ -278,6 +278,34 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
         Err(crate::eval::EvaluationFailure::NoValue)
     );
 
+    let extended = crate::eval::rolling_ball_jet_extended_point;
+    let s = -0.001;
+    let (sine, cosine) = (s * std::f64::consts::FRAC_PI_2).sin_cos();
+    let point = extended(&definition, 3.5, s, 0.005).expect("bounded extension");
+    let expected = Point3::new(0.5 + 2.0 * cosine, 2.0 * sine, 0.0);
+    assert!(point.distance(expected) <= TEST_TOLERANCE);
+    assert_eq!(
+        extended(&definition, 3.5, s, 0.001),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    );
+    assert_eq!(
+        extended(&definition, 3.5, 4.0, 100.0),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    );
+
+    for limit in [-0.001, f64::INFINITY, f64::NAN] {
+        assert_eq!(
+            extended(&definition, 3.5, 0.5, limit),
+            Err(crate::eval::EvaluationFailure::NoValue)
+        );
+    }
+    for parameter in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(
+            extended(&definition, 3.5, parameter, 0.005),
+            Err(crate::eval::EvaluationFailure::NoValue)
+        );
+    }
+
     let ProceduralSurfaceDefinition::RollingBallJet(jet) = definition else {
         unreachable!();
     };

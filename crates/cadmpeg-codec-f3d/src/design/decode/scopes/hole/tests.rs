@@ -765,6 +765,9 @@ fn a_standard_hole_reads_its_sizing_names_and_the_direction_after_them() {
     let bytes = extent_payload(&controls, false);
     let extent = super::hole_extent_payload(&bytes, 0, WORDED).unwrap();
     assert_eq!(extent.extent_control, Some(0));
+    let hole_type = extent.hole_type.as_ref().unwrap();
+    assert_eq!(hole_type.value, 2);
+    assert_eq!(usize::try_from(hole_type.offset).unwrap(), bytes.len() - 5);
     let read = extent.direction_control.unwrap();
     assert_eq!(
         (read.value, usize::try_from(read.offset).unwrap()),
@@ -785,6 +788,25 @@ fn a_standard_hole_reads_its_sizing_names_and_the_direction_after_them() {
         usize::try_from(standard.offset).unwrap(),
         bytes.len() - 1 - 4 - names_length
     );
+}
+
+#[test]
+fn hole_type_metadata_roundtrips_and_rejects_an_unknown_type() {
+    use crate::records::feature::hole::DesignHoleExtent;
+    let legacy: DesignHoleExtent =
+        serde_json::from_value(serde_json::json!({"extent_control":0})).unwrap();
+    assert_eq!(legacy.hole_type, None);
+    for value in [0, 1, 2] {
+        let encoded =
+            serde_json::json!({"extent_control":0,"hole_type":{"value":value,"offset":17}});
+        let extent: DesignHoleExtent = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(extent.hole_type.as_ref().unwrap().value, value);
+        assert_eq!(serde_json::to_value(extent).unwrap(), encoded);
+    }
+    assert!(serde_json::from_value::<DesignHoleExtent>(
+        serde_json::json!({"hole_type":{"value":3,"offset":17}})
+    )
+    .is_err());
 }
 
 #[test]
@@ -823,6 +845,7 @@ fn a_block_without_its_one_word_or_with_another_hole_type_reads_no_direction() {
         let extent =
             super::hole_extent_payload(&extent_payload(&controls, false), 0, WORDED).unwrap();
         assert!(extent.direction_control.is_some(), "hole type {hole_type}");
+        assert_eq!(extent.hole_type.unwrap().value, hole_type);
     }
 }
 

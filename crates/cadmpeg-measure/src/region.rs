@@ -280,7 +280,7 @@ pub(crate) fn classify(
         Chart::Cylinder(_) | Chart::Cone(_) => {
             periodic::classify(face, chart, resolved, shapes, v_tolerance)
         }
-        Chart::Nurbs(_) => finite::classify(face, chart, resolved, shapes, context),
+        Chart::Nurbs(_) => finite::classify(face, chart, resolved, shapes, input),
         Chart::Extrusion(extrusion) if extrusion.period().is_some() => {
             periodic::classify(face, chart, resolved, shapes, v_tolerance)
         }

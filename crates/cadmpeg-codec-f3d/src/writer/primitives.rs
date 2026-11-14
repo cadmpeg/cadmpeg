@@ -60,7 +60,7 @@ pub(crate) fn validate_assembly_projection(
         &native.xref_references,
     );
     inserts.bind_external_paths(&native.xref_references, &target.model.occurrences);
-    let projected = crate::design::assembly::project_assembly_joints_with_paths(
+    let mut projected = crate::design::assembly::project_assembly_joints_with_paths(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
         &inserts,
@@ -69,7 +69,13 @@ pub(crate) fn validate_assembly_projection(
             &native.design_component_occurrences,
             &native.xref_references,
             &target.model.occurrences,
+            &native.design_parameter_scopes,
         ),
+    );
+    crate::f3z::merge::rebind_standalone_projected_joints(
+        native,
+        &target.model.occurrences,
+        &mut projected.joints,
     );
     if target.model.assembly_joints != projected.joints {
         return Err(CodecError::NotImplemented(

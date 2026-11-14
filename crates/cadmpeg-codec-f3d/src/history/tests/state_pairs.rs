@@ -405,6 +405,7 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
 
     let mut inconsistent = histories[0].clone();
     inconsistent.states_mut()[0].transition = Some(AsmHistoricalTransition {
+        geometry_unchanged: false,
         record_revisions: Vec::new(),
         rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(4),
@@ -890,6 +891,7 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
             selector: 1,
             selector_offset: 0,
             token: "1".into(),
+            token_integer: 0,
             token_offset: 0,
             design_reference: 1,
             design_reference_offset: 0,
@@ -1507,6 +1509,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         selector: 1,
         selector_offset: 0,
         token: "1".into(),
+        token_integer: 0,
         token_offset: 0,
         design_reference: 1,
         design_reference_offset: 1,

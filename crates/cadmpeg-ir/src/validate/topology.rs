@@ -33,6 +33,9 @@ fn collect_pattern_paths<'a>(
         PatternTransform::CurveDriven {
             path: Some(path), ..
         } => paths.push(path),
+        PatternTransform::CurveDrivenPartial { parameters } => {
+            paths.extend(parameters.path.as_ref());
+        }
         PatternTransform::Composite { stages } => {
             for stage in stages {
                 collect_stage_pattern_paths(&stage.pattern, paths);
@@ -47,11 +50,14 @@ fn collect_stage_pattern_paths<'a>(
     pattern: &'a crate::features::patterns::StagePatternKind,
     paths: &mut Vec<&'a crate::features::PathRef>,
 ) {
-    if let PatternTransform::CurveDriven {
-        path: Some(path), ..
-    } = pattern.definition()
-    {
-        paths.push(path);
+    match pattern.definition() {
+        PatternTransform::CurveDriven {
+            path: Some(path), ..
+        } => paths.push(path),
+        PatternTransform::CurveDrivenPartial { parameters } => {
+            paths.extend(parameters.path.as_ref());
+        }
+        _ => {}
     }
 }
 use super::sketches::locus_entity;
@@ -2907,6 +2913,13 @@ fn check_feature_references(
             .iter()
             .map(|occurrence| occurrence.id.as_str()),
     );
+    let mut product_definition_ids = BorrowedIdentities::new();
+    product_definition_ids.extend_unique(
+        ir.model
+            .product_definitions
+            .iter()
+            .map(|definition| definition.id.as_str()),
+    );
     let mut assembly_joint_ids = BorrowedIdentities::new();
     assembly_joint_ids.extend_unique(
         ir.model
@@ -3081,18 +3094,85 @@ fn check_feature_references(
             }
             FeatureOperation::SewBodies { bodies, .. } => body_selections.push(bodies),
             FeatureOperation::BaseFeature { bodies } => body_selections.push(bodies),
-            FeatureOperation::MeshImport { tessellations } => {
-                for tessellation in tessellations {
-                    if ids
-                        .tessellations(tessellation, crate::index::StandardIndex)
-                        .is_none()
+            FeatureOperation::MeshGenerateFaceGroups {
+                source: tessellations,
+                ..
+            }
+            | FeatureOperation::MeshCombineFaceGroups {
+                source: tessellations,
+            }
+            | FeatureOperation::MeshImport { tessellations }
+            | FeatureOperation::MeshSection {
+                source: tessellations,
+                ..
+            }
+            | FeatureOperation::MeshModify {
+                source: tessellations,
+                ..
+            } => {
+                if matches!(
+                    definition,
+                    FeatureOperation::MeshImport { .. }
+                        | FeatureOperation::MeshGenerateFaceGroups { .. }
+                        | FeatureOperation::MeshCombineFaceGroups { .. }
+                ) {
+                    if let crate::features::mesh::MeshSelection::Unresolved { feature: origin } =
+                        tessellations
                     {
-                        ref_error(
-                            findings,
-                            feature.id.as_str(),
-                            "mesh import tessellation",
-                            tessellation,
-                        );
+                        if !features.contains(origin.as_str()) {
+                            ref_error(
+                                findings,
+                                feature.id.as_str(),
+                                "mesh source feature",
+                                origin.as_str(),
+                            );
+                        }
+                    }
+                }
+                if let crate::features::mesh::MeshSelection::Tessellations(tessellations) =
+                    tessellations
+                {
+                    for tessellation in tessellations {
+                        if ids
+                            .tessellations(tessellation.as_str(), crate::index::StandardIndex)
+                            .is_none()
+                        {
+                            ref_error(
+                                findings,
+                                feature.id.as_str(),
+                                if matches!(
+                                    definition,
+                                    FeatureOperation::MeshGenerateFaceGroups { .. }
+                                        | FeatureOperation::MeshCombineFaceGroups { .. }
+                                ) {
+                                    "mesh face-group tessellation"
+                                } else {
+                                    "mesh source tessellation"
+                                },
+                                tessellation.as_str(),
+                            );
+                        }
+                    }
+                }
+            }
+            FeatureOperation::MeshConvert(conversion) => {
+                for source in &conversion.sources {
+                    if let crate::features::mesh::MeshSelection::Tessellations(tessellations) =
+                        source
+                    {
+                        for tessellation in tessellations {
+                            if ids
+                                .tessellations(tessellation.as_str(), crate::index::StandardIndex)
+                                .is_none()
+                            {
+                                ref_error(
+                                    findings,
+                                    feature.id.as_str(),
+                                    "mesh conversion source tessellation",
+                                    tessellation.as_str(),
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -3105,6 +3185,80 @@ fn check_feature_references(
                         "inserted component occurrence",
                         occurrence.as_str(),
                     );
+                }
+            }
+            FeatureOperation::InsertComponents { components } => {
+                for occurrence in components.occurrences() {
+                    if !occurrence_ids.contains(occurrence.as_str()) {
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "inserted component occurrence",
+                            occurrence.as_str(),
+                        );
+                    }
+                }
+            }
+            FeatureOperation::ComponentTransfer {
+                occurrence,
+                component,
+                source_owner,
+                target_owner,
+                source_transform,
+                target_transform,
+                ..
+            } => {
+                if let Some(occurrence) = occurrence {
+                    if !occurrence_ids.contains(occurrence.as_str()) {
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "transferred component occurrence",
+                            occurrence.as_str(),
+                        );
+                    }
+                }
+                for (role, definition) in [
+                    ("transferred component", component),
+                    ("source component owner", source_owner),
+                    ("target component owner", target_owner),
+                ] {
+                    if let Some(definition) = definition {
+                        if !product_definition_ids.contains(definition.as_str()) {
+                            ref_error(findings, feature.id.as_str(), role, definition.as_str());
+                        }
+                    }
+                }
+                for transform in [source_transform, target_transform].into_iter().flatten() {
+                    if !transform
+                        .rows()
+                        .iter()
+                        .flatten()
+                        .all(|value| value.is_finite())
+                    {
+                        super::record_finding(
+                            findings,
+                            Check::ReferentialIntegrity,
+                            Severity::Error,
+                            Some(feature.id.as_str()),
+                            format_args!("component transfer placement contains non-finite values"),
+                        );
+                        break;
+                    }
+                }
+            }
+            FeatureOperation::CapturedComponentPositions { positions } => {
+                for position in positions {
+                    if let Some(occurrence) = &position.occurrence {
+                        if !occurrence_ids.contains(occurrence.as_str()) {
+                            ref_error(
+                                findings,
+                                feature.id.as_str(),
+                                "captured component occurrence",
+                                occurrence.as_str(),
+                            );
+                        }
+                    }
                 }
             }
             FeatureOperation::AssemblyJoint { joint } => {
@@ -3139,6 +3293,47 @@ fn check_feature_references(
                 }
                 if let ExtrudeStart::FromFace { face, .. } = start {
                     face_selections.push(face);
+                }
+            }
+            FeatureOperation::SheetMetalUnfold { construction } => {
+                face_selections.extend(construction.stationary.iter());
+                face_selections.extend(construction.bends.iter());
+            }
+            FeatureOperation::SheetMetalRefold { construction } => {
+                if let Some(source) = &construction.unfold {
+                    let candidate = feature_records.get(source.as_str());
+                    if !candidate.is_some_and(|candidate| {
+                        matches!(
+                            candidate.evaluation.definition().operation(),
+                            FeatureOperation::SheetMetalUnfold { .. }
+                        )
+                    }) {
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "refold Unfold",
+                            source.as_str(),
+                        );
+                    }
+                    if candidate.is_some_and(|candidate| candidate.ordinal >= feature.ordinal)
+                        || !feature.dependencies.contains(source)
+                    {
+                        geometry_error(
+                            findings,
+                            feature.id.as_str(),
+                            "refold Unfold must precede Refold and occur in its dependencies",
+                        );
+                    }
+                }
+            }
+            FeatureOperation::SheetMetalBendLines { construction } => {
+                if let Some(stationary) = &construction.stationary {
+                    face_selections.push(stationary);
+                }
+                for bend in &construction.bends {
+                    if let Some(line) = &bend.line {
+                        paths.push(line);
+                    }
                 }
             }
             FeatureOperation::SheetMetalEdgeFlange { edges, height, .. } => {
@@ -3311,13 +3506,19 @@ fn check_feature_references(
                 body_selections.push(source);
                 face_selections.extend(plane_reference);
             }
-            FeatureOperation::Thicken { faces, .. } => {
+            FeatureOperation::Thicken { faces, result, .. } => {
                 face_selections.push(faces);
+                if let Some(crate::features::SolidFeatureResult::Boolean { targets, .. }) = result {
+                    body_selections.push(targets);
+                }
             }
             FeatureOperation::OffsetSurface { faces, .. } => {
                 face_selections.push(faces);
             }
             FeatureOperation::KnitSurface { faces, .. } => {
+                face_selections.push(faces);
+            }
+            FeatureOperation::UnstitchFaces { faces } => {
                 face_selections.push(faces);
             }
             FeatureOperation::FilledSurface {
@@ -3341,6 +3542,12 @@ fn check_feature_references(
             }
             FeatureOperation::ExtendSurface { faces, .. } => {
                 face_selections.push(faces);
+            }
+            FeatureOperation::UntrimSurface { faces, loops, .. } => {
+                face_selections.push(faces);
+                if let crate::features::surfaces::UntrimLoops::Selected { edges } = loops {
+                    edge_selections.push(edges);
+                }
             }
             FeatureOperation::RuledSurface {
                 edges,
@@ -3506,6 +3713,11 @@ fn check_feature_references(
                 collect_pattern_paths(pattern, &mut paths);
                 for seed in seeds {
                     match seed {
+                        PatternSeed::Native(native) => {
+                            if !non_blank_native_reference(native) {
+                                ref_error(findings, feature.id.as_str(), "native seed", native);
+                            }
+                        }
                         PatternSeed::Feature(seed) => match features.get(seed.as_str()) {
                             None => ref_error(
                                 findings,
@@ -3612,8 +3824,8 @@ fn check_feature_references(
             FeatureOperation::Helix { .. } => {}
             FeatureOperation::HelixNativeAxis { .. } => {}
             FeatureOperation::Coil { result, .. } => {
-                use crate::features::CoilResult;
-                if let CoilResult::Boolean { targets, .. } = result {
+                use crate::features::SolidFeatureResult;
+                if let SolidFeatureResult::Boolean { targets, .. } = result {
                     body_selections.push(targets);
                 }
             }
@@ -4427,7 +4639,8 @@ fn regeneration_references(
         crate::features::FeatureOperation::Pattern { seeds, .. } => {
             for reference in seeds.iter().filter_map(|seed| match seed {
                 crate::features::patterns::PatternSeed::Feature(feature) => Some(feature),
-                crate::features::patterns::PatternSeed::Faces(_)
+                crate::features::patterns::PatternSeed::Native(_)
+                | crate::features::patterns::PatternSeed::Faces(_)
                 | crate::features::patterns::PatternSeed::Bodies(_)
                 | crate::features::patterns::PatternSeed::Occurrences(_) => None,
             }) {

@@ -8,6 +8,7 @@ use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::topology::Face;
 
+mod pole;
 mod readings;
 
 use crate::boundary::{FaceFrame, LoopKind, ResolvedFace, ResolvedLoop};
@@ -662,11 +663,33 @@ impl<'ir> FaceInput<'_, 'ir> {
             surface_tau,
             trims,
         };
-        let witness = matches!(verdict, Verdict::Confirmed | Verdict::Conflict).then(|| Witness {
-            kind: WitnessKind::EmptyReading,
-            entity: id.to_owned(),
-            agrees: verdict == Verdict::Confirmed,
-        });
+        let mut witness =
+            matches!(verdict, Verdict::Confirmed | Verdict::Conflict).then(|| Witness {
+                kind: WitnessKind::EmptyReading,
+                entity: id.to_owned(),
+                agrees: verdict == Verdict::Confirmed,
+            });
+        let mut verdict = verdict;
+        if let (Verdict::Unconfirmed, Ok(chart), Ok(region), Ok(placement)) =
+            (verdict, &chart, &region, &self.placement)
+        {
+            let frame = FaceFrame {
+                owners,
+                edges: self.edges,
+                face,
+                chart,
+                body: *placement,
+                alpha: alpha.max(tau_b),
+            };
+            if let Ok(Some(found)) = settle(pole::witness(&frame, &coedges, region, eval))? {
+                verdict = if found.agrees {
+                    Verdict::Confirmed
+                } else {
+                    Verdict::Contradicted
+                };
+                witness = Some(found);
+            }
+        }
         result.settle_reading(verdict, witness);
         Ok(result)
     }

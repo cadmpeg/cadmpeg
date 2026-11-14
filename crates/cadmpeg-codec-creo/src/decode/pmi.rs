@@ -31,6 +31,9 @@ struct Tolerance<'a> {
     kind: Option<&'a [u8]>,
     magnitude: Option<f64>,
     secondary: Option<&'a [u8]>,
+    all_around: Option<bool>,
+    text_below: Option<(&'a [u8], usize)>,
+    invalid_decoration: bool,
     datums: [[Option<DatumLabel<'a>>; 3]; 2],
     duplicate: bool,
     offset: usize,
@@ -103,7 +106,11 @@ pub(super) fn transfer(
         };
         if matches!(
             attribute.name,
-            b"PTC_GTOL_TYPE" | b"PTC_GTOL_PRIMARY_TOL" | b"PTC_GTOL_2_TOL_STRING"
+            b"PTC_GTOL_TYPE"
+                | b"PTC_GTOL_PRIMARY_TOL"
+                | b"PTC_GTOL_2_TOL_STRING"
+                | b"PTC_GTOL_ALLAROUND_SYMBOL"
+                | b"PTC_GTOL_TEXT_BELOW"
         ) || datum_field(attribute.name).is_some()
         {
             let tolerance = tolerances.entry((owner, owner_type)).or_default();
@@ -173,6 +180,8 @@ pub(super) fn transfer(
             continue;
         }
         let first_key = format!("{owner_type}:{owner}");
+        let mut semantics = Vec::new();
+        unresolved += usize::from(tolerance.invalid_decoration);
         let target = targets.get(&(owner, owner_type));
         let target_faces = target
             .map(targets::ToleranceTarget::faces)
@@ -217,15 +226,16 @@ pub(super) fn transfer(
             })
             .and_then(PmiMagnitude::new)
         {
-            push_tolerance(
+            let id = push_tolerance(
                 ctx,
                 ir,
                 annotations,
                 (&first_key, tolerance.offset),
-                (kind.clone(), value),
+                (kind.clone(), value, tolerance.all_around == Some(true)),
                 references,
                 target_faces.clone(),
             )?;
+            semantics.push(id);
             emitted += 1;
             inferred_targets += surface_target;
             dimension_targets_used += dimension_target;
@@ -249,21 +259,52 @@ pub(super) fn transfer(
                 })
                 .and_then(PmiMagnitude::new)
             {
-                push_tolerance(
+                let id = push_tolerance(
                     ctx,
                     ir,
                     annotations,
                     (&second_key, tolerance.offset),
-                    (kind, secondary),
+                    (kind, secondary, tolerance.all_around == Some(true)),
                     second_references,
-                    target_faces,
+                    target_faces.clone(),
                 )?;
+                semantics.push(id);
                 emitted += 1;
                 text_magnitudes += 1;
                 inferred_targets += surface_target;
                 dimension_targets_used += dimension_target;
             } else {
                 unresolved += 1;
+            }
+        }
+        if let Some((text, offset)) = tolerance.text_below.filter(|(text, _)| !text.is_empty()) {
+            match std::str::from_utf8(text) {
+                Ok(text) if !semantics.is_empty() => {
+                    let id = PmiId::try_from(format!("creo:annotation:pmi#{first_key}:text-below"))
+                        .map_err(|_| CodecError::malformed("invalid Creo frame-text identity"))?;
+                    ctx.charge_entities(1, "Creo geometric tolerance text")?;
+                    super::native::annotate(
+                        annotations,
+                        &id,
+                        "NeuPrtSld",
+                        cadmpeg_core::decode::u64_from_index(offset),
+                        "geometric tolerance frame text",
+                        Exactness::Derived,
+                    )?;
+                    ir.model.pmi.push(PmiAnnotation {
+                        id,
+                        name: None,
+                        visible: None,
+                        targets: target_faces,
+                        definition: PmiDefinition::Presentation {
+                            text: Some(text.to_owned()),
+                            placement: None,
+                            semantics,
+                        },
+                    });
+                }
+                Ok(_) => {}
+                Err(_) => unresolved += 1,
             }
         }
     }
@@ -332,6 +373,23 @@ fn section<'a>(scan: &'a ContainerScan<'_>, name: &str) -> Option<View<'a>> {
 
 fn add_attribute<'a>(tolerance: &mut Tolerance<'a>, attribute: Attribute<'a>) {
     match (attribute.name, attribute.value) {
+        (b"PTC_GTOL_ALLAROUND_SYMBOL", Value::Logical(Some(value))) => {
+            if let Some(previous) = tolerance.all_around {
+                tolerance.duplicate |= previous != value;
+            } else {
+                tolerance.all_around = Some(value);
+            }
+        }
+        (b"PTC_GTOL_TEXT_BELOW", Value::Text(value)) => {
+            if let Some((previous, _)) = tolerance.text_below {
+                tolerance.duplicate |= previous != value;
+            } else {
+                tolerance.text_below = Some((value, attribute.offset));
+            }
+        }
+        (b"PTC_GTOL_ALLAROUND_SYMBOL" | b"PTC_GTOL_TEXT_BELOW", _) => {
+            tolerance.invalid_decoration = true;
+        }
         (b"PTC_GTOL_TYPE", Value::Text(value)) => {
             if let Some(previous) = tolerance.kind {
                 tolerance.duplicate |= previous != value;
@@ -518,10 +576,10 @@ fn push_tolerance(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     source: (&str, usize),
-    definition: (GeometricToleranceKind, PmiMagnitude),
+    definition: (GeometricToleranceKind, PmiMagnitude, bool),
     datum_system: Option<PmiId>,
     targets: Vec<PmiTarget>,
-) -> Result<(), CodecError> {
+) -> Result<PmiId, CodecError> {
     let (key, offset) = source;
     let id = PmiId::try_from(format!("creo:annotation:pmi#{key}"))
         .map_err(|_| CodecError::malformed("invalid Creo PMI identity"))?;
@@ -535,7 +593,7 @@ fn push_tolerance(
         Exactness::Derived,
     )?;
     ir.model.pmi.push(PmiAnnotation {
-        id,
+        id: id.clone(),
         name: None,
         visible: None,
         targets,
@@ -546,11 +604,15 @@ fn push_tolerance(
             defined_area_unit: None,
             defined_area_second_unit: None,
             datum_system,
-            modifiers: Vec::new(),
+            modifiers: if definition.2 {
+                vec!["all_around".into()]
+            } else {
+                Vec::new()
+            },
             constraints: cadmpeg_ir::pmi::zones::ToleranceConstraints::default(),
         },
     });
-    Ok(())
+    Ok(id)
 }
 
 fn kind(value: &[u8]) -> Option<GeometricToleranceKind> {

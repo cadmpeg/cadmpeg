@@ -6775,6 +6775,11 @@ labels in one common-datum compartment. A circled M or L after a label states
 its maximum- or least-material requirement. `PTC_GTOL_2_TOL_STRING` carries
 the displayed second-segment magnitude and its tolerance-zone symbols.
 
+`PTC_GTOL_ALLAROUND_SYMBOL` is a logical attribute. Integer `0` clears the
+all-around symbol and integer `1` enables it for the owning tolerance frame.
+`PTC_GTOL_TEXT_BELOW` is the formatted text below that frame. Its owner is
+the same `ref_id` and `ref_type` pair as the tolerance attributes.
+
 `Annot_Type` 8 identifies a dimension. Its neutral attributes include
 `PTC_DIM_TYPE`, `PTC_DIM_NOMINAL_VAL`, and `PTC_TOLERANCE_MODE`. `Limits`
 stores absolute bounds in `PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT`.

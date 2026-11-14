@@ -362,6 +362,7 @@ impl AsmHistoricalTransition {
             })
             .collect::<Option<_>>()?;
         Some(Self {
+            geometry_unchanged: false,
             previous_state_id: older.map(|state| state.state_id),
             records,
             record_revisions,

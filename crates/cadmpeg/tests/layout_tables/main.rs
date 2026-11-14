@@ -47,7 +47,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::generate::{emit_layout_rs, render, GENERATED_LAYOUT_RS};
+use crate::generate::{emit_layout_rs, external_layout_files, render, GENERATED_LAYOUT_RS};
 
 /// Every format directory the workspace ships a codec or spec for.
 const EXPECTED_FORMATS: &[&str] = &[
@@ -1473,7 +1473,7 @@ fn generated_layout_code_matches_the_tables() {
             "{}: format must match the mapping key",
             table.display()
         );
-        let rendered = match emit_layout_rs(&file, root.join(relative).parent().unwrap()) {
+        let mut rendered = match emit_layout_rs(&file, root.join(relative).parent().unwrap()) {
             Ok(rendered) => rendered,
             Err(errors) => {
                 emit_errors.extend(errors);
@@ -1490,14 +1490,30 @@ fn generated_layout_code_matches_the_tables() {
                 "asm layout.rs must not emit constants for a discrepant record"
             );
         }
+        let external = match external_layout_files(format, &mut rendered) {
+            Ok(files) => files,
+            Err(error) => {
+                emit_errors.push(error);
+                continue;
+            }
+        };
         let target = root.join(relative);
-        if update {
-            write_if_changed(&target, &rendered).unwrap();
-            continue;
-        }
-        let current = read_text(&target).unwrap_or_default();
-        if current != rendered {
-            stale.push((*relative).to_string());
+        let mut outputs = vec![(target.clone(), rendered)];
+        outputs.extend(
+            external
+                .into_iter()
+                .map(|(path, body)| (target.parent().unwrap().join(path), body)),
+        );
+        for (target, rendered) in outputs {
+            if update {
+                std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+                write_if_changed(&target, &rendered).unwrap();
+                continue;
+            }
+            let current = read_text(&target).unwrap_or_default();
+            if current != rendered {
+                stale.push(target.strip_prefix(&root).unwrap().display().to_string());
+            }
         }
     }
     assert!(

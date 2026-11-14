@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized SLDPRT compound-document images.
 
+mod extrude_direction;
+mod mesh_bodies;
+mod profile_data;
+mod scalar_relation_values;
 mod swift_nominal;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -810,3 +814,5 @@ fn ignored_spun_profile_interval_reaches_the_decode_report() {
                 .contains(&format!("[0, {}]", 4.0 * std::f64::consts::PI))
     }));
 }
+
+mod principal_plane_frames;

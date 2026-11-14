@@ -357,6 +357,83 @@ fn a_rotation_states_no_selection() {
     assert_eq!(select(&[1], &rotation, &[10, 20], &top_moves_up()), None);
 }
 
+fn complete_motion(rows: [[f64; 4]; 3]) -> FaceMotion {
+    FaceMotion::Transform {
+        transform: cadmpeg_ir::transform::Transform::affine(rows).unwrap(),
+    }
+}
+
+#[test]
+fn complete_motion_keeps_translation_selections_with_tiny_linear_components() {
+    let motion = complete_motion([
+        [1., 1.0e-14, 0., 3.],
+        [-1.0e-14, 1., 0., 0.],
+        [0., 0., 1., 0.],
+    ]);
+    let output = with_plane_10(Point3::new(4., 2., 0.), NORMAL_Z);
+    assert_eq!(select(&[1], &motion, &[10, 20], &output), Some(vec![10]));
+}
+
+#[test]
+fn complete_screw_motion_selects_transformed_plane_and_cylinder_rows() {
+    let motion = complete_motion([[0., -1., 0., 2.], [1., 0., 0., -3.], [0., 0., 1., 0.25]]);
+    let mut output = with_plane_10(Point3::new(0., -2., 0.25), NORMAL_Z);
+    output.surface_cylinders[0] = cylinder_at(310, Point3::new(-2., 1., 0.25), NORMAL_Z, 2.);
+    assert_eq!(
+        select(&[1, 2], &motion, &[10, 20, 30], &output),
+        Some(vec![10, 30])
+    );
+    for (origin, axis, radius) in [
+        (Point3::new(-1., 1., 0.25), NORMAL_Z, 2.),
+        (Point3::new(-2., 1., 0.25), Vector3::new(1., 0., 0.), 2.),
+        (Point3::new(-2., 1., 0.25), NORMAL_Z, 3.),
+    ] {
+        output.surface_cylinders[0] = cylinder_at(310, origin, axis, radius);
+        assert_eq!(select(&[1], &motion, &[30], &output), None);
+    }
+}
+
+#[test]
+fn complete_rotation_maps_plane_normals_and_cylinder_axes() {
+    let motion = complete_motion([[1., 0., 0., 0.], [0., 0., -1., 0.], [0., 1., 0., 0.]]);
+    let direction = Vector3::new(0., -1., 0.);
+    let mut output = with_plane_10(Point3::new(1., 0., 2.), direction);
+    output.surface_cylinders[0] = cylinder_at(310, Point3::new(4., 0., 4.), direction, 2.);
+    assert_eq!(
+        select(&[1, 2], &motion, &[10, 30], &output),
+        Some(vec![10, 30])
+    );
+    output.surface_planes[0].normal = NORMAL_Z;
+    assert_eq!(select(&[1], &motion, &[10], &output), None);
+}
+
+#[test]
+fn a_fixed_or_unrepresentable_transformed_row_supplies_no_selection() {
+    let mut fixed = input();
+    fixed.surface_planes[0].origin = Point3::new(0., 0., 0.);
+    let updated = [10].into_iter().collect();
+    for rows in [
+        [[1., 0., 0., 0.], [0., 1., 0., 0.], [0., 0., 1., 0.]],
+        [[0., -1., 0., 0.], [1., 0., 0., 0.], [0., 0., 1., 0.]],
+        [
+            [1., 1.0e-14, 0., 0.],
+            [-1.0e-14, 1., 0., 0.],
+            [0., 0., 1., 0.],
+        ],
+    ] {
+        assert_eq!(
+            moved_face_selection(&[1], &complete_motion(rows), &updated, &fixed, &fixed),
+            None
+        );
+    }
+    let overflow = complete_motion([
+        [f64::MAX, 0., 0., f64::MAX],
+        [0., 1., 0., 0.],
+        [0., 0., 1., 0.],
+    ]);
+    assert_eq!(select(&[1], &overflow, &[10], &input()), None);
+}
+
 #[test]
 fn a_plane_row_that_moves_against_its_normal_follows_an_offset() {
     let output = with_plane_10(Point3::new(1.0, 2.0, -2.0), NORMAL_Z);

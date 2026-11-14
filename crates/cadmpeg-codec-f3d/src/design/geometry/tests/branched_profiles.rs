@@ -849,3 +849,81 @@ fn equal_curvature_ties_order_by_identity_over_angle() {
         vec![0, 2, 4]
     );
 }
+
+#[test]
+fn inward_bridge_preserves_each_closed_loop() {
+    let sketch = SketchId::mint("synthetic:test:id#inward-bridge").unwrap();
+    let entities = vec![
+        line_entity(
+            &sketch,
+            "synthetic:test:id#outer-bottom",
+            (0.0, 0.0),
+            (4.0, 0.0),
+        ),
+        line_entity(
+            &sketch,
+            "synthetic:test:id#outer-right",
+            (4.0, 0.0),
+            (4.0, 4.0),
+        ),
+        line_entity(
+            &sketch,
+            "synthetic:test:id#outer-top",
+            (4.0, 4.0),
+            (0.0, 4.0),
+        ),
+        line_entity(
+            &sketch,
+            "synthetic:test:id#outer-left",
+            (0.0, 4.0),
+            (0.0, 0.0),
+        ),
+        line_entity(&sketch, "synthetic:test:id#bridge", (0.0, 0.0), (1.0, 1.0)),
+        line_entity(
+            &sketch,
+            "synthetic:test:id#inner-bottom",
+            (1.0, 1.0),
+            (2.0, 1.0),
+        ),
+        line_entity(
+            &sketch,
+            "synthetic:test:id#inner-right",
+            (2.0, 1.0),
+            (1.0, 2.0),
+        ),
+        line_entity(
+            &sketch,
+            "synthetic:test:id#inner-left",
+            (1.0, 2.0),
+            (1.0, 1.0),
+        ),
+    ];
+    let profiles = crate::test_support::with_decode_context(|ctx| {
+        closed_sketch_profiles(ctx, &sketch, &entities, 1.0e-6)
+    })
+    .unwrap();
+    assert_eq!(profiles.len(), 2);
+    let ids = |profile: &[cadmpeg_ir::sketches::SketchEntityUse]| {
+        profile
+            .iter()
+            .map(|use_| use_.entity.as_str().rsplit('#').next().unwrap().to_owned())
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    assert_eq!(
+        ids(&profiles[0]),
+        ["inner-bottom", "inner-right", "inner-left"]
+            .map(str::to_owned)
+            .into()
+    );
+    assert_eq!(
+        ids(&profiles[1]),
+        ["outer-bottom", "outer-right", "outer-top", "outer-left"]
+            .map(str::to_owned)
+            .into()
+    );
+    assert_eq!(profiles.unprofiled.len(), 1);
+    assert_eq!(
+        profiles.unprofiled[0].0.as_str(),
+        "synthetic:test:id#bridge"
+    );
+}

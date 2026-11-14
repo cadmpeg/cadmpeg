@@ -720,7 +720,7 @@ fn rectangular_pattern_payload_projects_both_axes_and_feature_seed() {
     }
 }
 
-fn seed_face_operand(
+pub(super) fn seed_face_operand(
     kind: crate::records::recipes::ConstructionRecipeKind,
 ) -> crate::records::topology::face::DesignFaceOperand {
     use crate::records::topology::{

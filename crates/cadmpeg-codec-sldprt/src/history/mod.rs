@@ -5,6 +5,7 @@ pub(crate) mod bind;
 pub(crate) mod classify;
 pub(crate) mod configuration;
 mod encode;
+pub(crate) mod extrude_direction;
 pub(crate) mod hash;
 pub(crate) mod literals;
 pub(crate) mod parameters;
