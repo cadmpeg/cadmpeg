@@ -597,7 +597,7 @@ pub(crate) fn decode_parameter_scopes(
             {
                 let construction =
                     exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
-                let sets = chamfer_set_list(bytes, &records, &scope, parameters, parameter_owners);
+                let sets = chamfer_set_list(bytes, &records, &scope);
                 if let scope::DesignScopePayloadMut::Chamfer(slot) = scope.payload_mut() {
                     *slot = crate::records::feature::chamfer_set::DesignChamferScope::admit(
                         construction,

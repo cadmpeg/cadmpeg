@@ -765,7 +765,7 @@ pub(crate) mod copy_paste_bodies_scope_prefix {
 /// Spec §3.1. Record length 21 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header. Prologue byte 0 ends the prologue at offset 21; prologue byte 1 is followed by u32 0 and ends it at offset 25.
+/// Offsets are relative to the primary indexed header. Prologue byte 0 ends the prologue at offset 21; prologue byte 1 is followed by u32 0 and ends it at offset 25. Each referenced set stores its own specification-kind word.
 /// ```
 pub(crate) mod chamfer_scope_prologue {
     /// Record length in bytes. Spec §3.1.
