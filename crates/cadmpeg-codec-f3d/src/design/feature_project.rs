@@ -992,6 +992,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     construction_groups,
                     entity_selection_operands,
                     face_operands,
+                    body_recipe_operands,
                 )?
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Native {
@@ -9008,6 +9009,7 @@ pub(super) fn project_split(
     construction_groups: &[DesignConstructionOperandGroup],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     face_operands: &[DesignFaceOperand],
+    body_recipe_operands: &[DesignBodyRecipeOperand],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, SplitBodyTool,
@@ -9111,7 +9113,10 @@ pub(super) fn project_split(
                 Some([plane]) => SplitBodyTool::Plane {
                     plane: crate::ids::neutral_feature_id(plane),
                 },
-                _ => SplitBodyTool::Faces(FaceSelection::Native(tool_group.id.clone())),
+                _ => SplitBodyTool::Faces(
+                    resolved_body_recipe_selection(scope, tool_group, body_recipe_operands)
+                        .unwrap_or_else(|| FaceSelection::Native(tool_group.id.clone())),
+                ),
             }
         }
         _ => return Ok(None),
