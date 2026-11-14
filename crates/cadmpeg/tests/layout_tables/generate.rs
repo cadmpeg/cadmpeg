@@ -498,7 +498,6 @@ fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<Stri
             "/// Byte offsets for the `{}` record.",
             record.name
         )?;
-        writeln!(modules, "///")?;
         match record.size {
             Some(size) => {
                 writeln!(

@@ -17,7 +17,6 @@ pub(crate) mod token {
 }
 
 /// Byte offsets for the `file_header` record.
-///
 /// Spec §2. Record length 32 B.
 ///
 /// ```text
@@ -33,7 +32,6 @@ pub(crate) mod file_header {
 }
 
 /// Byte offsets for the `uuid_wire_form` record.
-///
 /// Spec §3.3. Record length 16 B.
 ///
 /// ```text
@@ -51,7 +49,6 @@ pub(crate) mod uuid_wire_form {
 }
 
 /// Byte offsets for the `long_chunk_header_narrow` record.
-///
 /// Spec §4. Record length 8 B.
 ///
 /// Dialects: `rhino:archive-1`, `rhino:archive-2`, `rhino:archive-3`, `rhino:archive-4`, `rhino:archive-5`, `rhino:unknown`.
@@ -66,7 +63,6 @@ pub(crate) mod long_chunk_header_narrow {
 }
 
 /// Byte offsets for the `long_chunk_header_wide` record.
-///
 /// Spec §4. Record length 12 B.
 ///
 /// Dialects: `rhino:archive-50`, `rhino:archive-60`, `rhino:archive-70`, `rhino:archive-80`, `rhino:archive-90`, `rhino:unknown`.
@@ -84,7 +80,6 @@ pub(crate) mod long_chunk_header_wide {
 }
 
 /// Byte offsets for the `endoffile_record_wide` record.
-///
 /// Spec §5. Record length 20 B.
 ///
 /// Dialects: `rhino:archive-50`, `rhino:archive-60`, `rhino:archive-70`, `rhino:archive-80`, `rhino:archive-90`, `rhino:unknown`.
@@ -99,7 +94,6 @@ pub(crate) mod endoffile_record_wide {
 }
 
 /// Byte offsets for the `class_uuid_chunk_body` record.
-///
 /// Spec §7. Record length 20 B.
 ///
 /// ```text
@@ -113,7 +107,6 @@ pub(crate) mod class_uuid_chunk_body {
 }
 
 /// Byte offsets for the `compressed_buffer_prologue` record.
-///
 /// Spec §10. Record length 9 B.
 ///
 /// ```text
@@ -129,7 +122,6 @@ pub(crate) mod compressed_buffer_prologue {
 }
 
 /// Byte offsets for the `anonymous_version_prefix` record.
-///
 /// Spec §5. Record length 8 B.
 ///
 /// ```text

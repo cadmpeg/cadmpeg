@@ -10,7 +10,6 @@
 // - `edge` (size_mismatch): The stated offsets end the continuity text at +99 but the heading declares 98 B. Removing the one-byte gap at +88 (placing the sense byte at +88 and the text at +89) closes the record at 98 exactly, which suggests both trailing offsets are one too high. The spec does not state which.
 
 /// Byte offsets for the `asmheader_binaryfile8` record.
-///
 /// Spec §1. Record length 47 B.
 ///
 /// Dialects: `acis:asm-binaryfile-8`.
@@ -30,7 +29,6 @@ pub(crate) mod asmheader_binaryfile8 {
 }
 
 /// Byte offsets for the `asmheader_binaryfile4` record.
-///
 /// Spec §1. Record length 31 B.
 ///
 /// Dialects: `acis:asm-binaryfile-4`.
@@ -52,7 +50,6 @@ pub(crate) mod asmheader_binaryfile4 {
 }
 
 /// Byte offsets for the `acisheader_binaryfile4` record.
-///
 /// Spec §1. Record length 31 B.
 ///
 /// Dialects: `acis:save-format-217`, `acis:save-format-218`, `acis:save-format-binary-other`.

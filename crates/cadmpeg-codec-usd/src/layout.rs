@@ -5,7 +5,6 @@
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
 /// Byte offsets for the `usdc_bootstrap` record.
-///
 /// Spec §9.1. Record length 88 B.
 pub(crate) mod usdc_bootstrap {
     /// Record length in bytes. Spec §9.1.
@@ -25,7 +24,6 @@ pub(crate) mod usdc_bootstrap {
 }
 
 /// Byte offsets for the `usdc_section` record.
-///
 /// Spec §9.2. Record length 32 B.
 pub(crate) mod usdc_section {
     /// Record length in bytes. Spec §9.2.
@@ -39,7 +37,6 @@ pub(crate) mod usdc_section {
 }
 
 /// Byte offsets for the `usdc_path_item` record.
-///
 /// Spec §9.5. Record length 12 B.
 pub(crate) mod usdc_path_item {
     /// Record length in bytes. Spec §9.5.

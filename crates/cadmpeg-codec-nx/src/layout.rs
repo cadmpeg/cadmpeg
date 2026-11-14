@@ -55,7 +55,6 @@ pub(crate) mod token {
 }
 
 /// Byte offsets for the `assembly_placement_prefix` record.
-///
 /// Spec §2.3. Record length 6 B.
 ///
 /// ```text
@@ -67,7 +66,6 @@ pub(crate) mod assembly_placement_prefix {
 }
 
 /// Byte offsets for the `splmsstr_header` record.
-///
 /// Spec §2. Record length 31 B.
 ///
 /// ```text
@@ -87,7 +85,6 @@ pub(crate) mod splmsstr_header {
 }
 
 /// Byte offsets for the `directory_entry` record.
-///
 /// Spec §2. Record length 4 B.
 ///
 /// ```text
@@ -99,7 +96,6 @@ pub(crate) mod directory_entry {
 }
 
 /// Byte offsets for the `directory_file_payload` record.
-///
 /// Spec §2. Record length 16 B.
 ///
 /// ```text
@@ -113,7 +109,6 @@ pub(crate) mod directory_file_payload {
 }
 
 /// Byte offsets for the `legacy_ugii_payload_prefix` record.
-///
 /// Spec §2.4. Record length 9 B.
 ///
 /// ```text
@@ -127,7 +122,6 @@ pub(crate) mod legacy_ugii_payload_prefix {
 }
 
 /// Byte offsets for the `ug_part_segment_index_row` record.
-///
 /// Spec §2. Record length 12 B.
 ///
 /// ```text
@@ -145,7 +139,6 @@ pub(crate) mod ug_part_segment_index_row {
 }
 
 /// Byte offsets for the `segment_stream_wrapper` record.
-///
 /// Spec §2. Record length 8 B.
 pub(crate) mod segment_stream_wrapper {
     /// Record length in bytes. Spec §2.
@@ -157,7 +150,6 @@ pub(crate) mod segment_stream_wrapper {
 }
 
 /// Byte offsets for the `segment_stream_wrapper_a0` record.
-///
 /// Spec §2. Record length 16 B.
 pub(crate) mod segment_stream_wrapper_a0 {
     /// Record length in bytes. Spec §2.
@@ -171,7 +163,6 @@ pub(crate) mod segment_stream_wrapper_a0 {
 }
 
 /// Byte offsets for the `segment_stream_wrapper_c0_33` record.
-///
 /// Spec §2. Record length 33 B.
 pub(crate) mod segment_stream_wrapper_c0_33 {
     /// Record length in bytes. Spec §2.
@@ -191,7 +182,6 @@ pub(crate) mod segment_stream_wrapper_c0_33 {
 }
 
 /// Byte offsets for the `segment_stream_wrapper_c0_45` record.
-///
 /// Spec §2. Record length 45 B.
 pub(crate) mod segment_stream_wrapper_c0_45 {
     /// Record length in bytes. Spec §2.
@@ -205,7 +195,6 @@ pub(crate) mod segment_stream_wrapper_c0_45 {
 }
 
 /// Byte offsets for the `segment_stream_wrapper_c0_57` record.
-///
 /// Spec §2. Record length 57 B.
 pub(crate) mod segment_stream_wrapper_c0_57 {
     /// Record length in bytes. Spec §2.
@@ -221,7 +210,6 @@ pub(crate) mod segment_stream_wrapper_c0_57 {
 }
 
 /// Byte offsets for the `fastload_structure_envelope` record.
-///
 /// Spec §2.3. Record length 12 B.
 ///
 /// ```text
@@ -235,7 +223,6 @@ pub(crate) mod fastload_structure_envelope {
 }
 
 /// Byte offsets for the `jt_document_header` record.
-///
 /// Spec §2.3. Record length 105 B.
 ///
 /// ```text
@@ -255,7 +242,6 @@ pub(crate) mod jt_document_header {
 }
 
 /// Byte offsets for the `jt_toc_entry` record.
-///
 /// Spec §2.3. Record length 28 B.
 pub(crate) mod jt_toc_entry {
     /// Record length in bytes. Spec §2.3.
@@ -263,7 +249,6 @@ pub(crate) mod jt_toc_entry {
 }
 
 /// Byte offsets for the `jt_tristrip_shape_node_family_data` record.
-///
 /// Spec §2.3. Record length 100 B.
 ///
 /// ```text
@@ -305,7 +290,6 @@ pub(crate) mod jt_tristrip_shape_node_family_data {
 }
 
 /// Byte offsets for the `extrefstream_handle_set_record` record.
-///
 /// Spec §9.1. Record length 25 B.
 ///
 /// ```text
@@ -327,7 +311,6 @@ pub(crate) mod extrefstream_handle_set_record {
 }
 
 /// Byte offsets for the `analytic_common_header` record.
-///
 /// Spec §5.1. Record length 19 B.
 ///
 /// ```text
@@ -339,7 +322,6 @@ pub(crate) mod analytic_common_header {
 }
 
 /// Byte offsets for the `face_node` record.
-///
 /// Spec §5.1. Record length 39 B.
 ///
 /// ```text
@@ -353,7 +335,6 @@ pub(crate) mod face_node {
 }
 
 /// Byte offsets for the `edge_node` record.
-///
 /// Spec §5.1. Record length 32 B.
 pub(crate) mod edge_node {
     /// Record length in bytes. Spec §5.1.
@@ -363,7 +344,6 @@ pub(crate) mod edge_node {
 }
 
 /// Byte offsets for the `fin_node` record.
-///
 /// Spec §5.1. Record length 23 B.
 ///
 /// ```text
@@ -377,7 +357,6 @@ pub(crate) mod fin_node {
 }
 
 /// Byte offsets for the `vertex_node` record.
-///
 /// Spec §5.1. Record length 28 B.
 pub(crate) mod vertex_node {
     /// Record length in bytes. Spec §5.1.
@@ -387,7 +366,6 @@ pub(crate) mod vertex_node {
 }
 
 /// Byte offsets for the `loop_node` record.
-///
 /// Spec §5.1. Record length 16 B.
 pub(crate) mod loop_node {
     /// Record length in bytes. Spec §5.1.
@@ -397,7 +375,6 @@ pub(crate) mod loop_node {
 }
 
 /// Byte offsets for the `shell_node` record.
-///
 /// Spec §5.1. Record length 24 B.
 pub(crate) mod shell_node {
     /// Record length in bytes. Spec §5.1.
@@ -407,7 +384,6 @@ pub(crate) mod shell_node {
 }
 
 /// Byte offsets for the `point_node` record.
-///
 /// Spec §5.1. Record length 40 B.
 pub(crate) mod point_node {
     /// Record length in bytes. Spec §5.1.
@@ -417,7 +393,6 @@ pub(crate) mod point_node {
 }
 
 /// Byte offsets for the `line_payload` record.
-///
 /// Spec §6.1. Record length 67 B.
 ///
 /// ```text
@@ -429,7 +404,6 @@ pub(crate) mod line_payload {
 }
 
 /// Byte offsets for the `circle_payload` record.
-///
 /// Spec §6.1. Record length 99 B.
 pub(crate) mod circle_payload {
     /// Record length in bytes. Spec §6.1.
@@ -437,7 +411,6 @@ pub(crate) mod circle_payload {
 }
 
 /// Byte offsets for the `ellipse_payload` record.
-///
 /// Spec §6.1. Record length 107 B.
 pub(crate) mod ellipse_payload {
     /// Record length in bytes. Spec §6.1.
@@ -445,7 +418,6 @@ pub(crate) mod ellipse_payload {
 }
 
 /// Byte offsets for the `plane_payload` record.
-///
 /// Spec §6.1. Record length 91 B.
 pub(crate) mod plane_payload {
     /// Record length in bytes. Spec §6.1.
@@ -453,7 +425,6 @@ pub(crate) mod plane_payload {
 }
 
 /// Byte offsets for the `cylinder_payload` record.
-///
 /// Spec §6.1. Record length 99 B.
 pub(crate) mod cylinder_payload {
     /// Record length in bytes. Spec §6.1.
@@ -461,7 +432,6 @@ pub(crate) mod cylinder_payload {
 }
 
 /// Byte offsets for the `cone_payload` record.
-///
 /// Spec §6.1. Record length 115 B.
 pub(crate) mod cone_payload {
     /// Record length in bytes. Spec §6.1.
@@ -469,7 +439,6 @@ pub(crate) mod cone_payload {
 }
 
 /// Byte offsets for the `sphere_payload` record.
-///
 /// Spec §6.1. Record length 99 B.
 ///
 /// ```text
@@ -481,7 +450,6 @@ pub(crate) mod sphere_payload {
 }
 
 /// Byte offsets for the `torus_payload` record.
-///
 /// Spec §6.1. Record length 107 B.
 pub(crate) mod torus_payload {
     /// Record length in bytes. Spec §6.1.
@@ -489,7 +457,6 @@ pub(crate) mod torus_payload {
 }
 
 /// Byte offsets for the `offset_surf_payload` record.
-///
 /// Spec §6.1. Record length 31 B.
 ///
 /// ```text
@@ -501,7 +468,6 @@ pub(crate) mod offset_surf_payload {
 }
 
 /// Byte offsets for the `trimmed_curve_payload` record.
-///
 /// Spec §6.4. Record length 85 B.
 ///
 /// ```text
@@ -513,7 +479,6 @@ pub(crate) mod trimmed_curve_payload {
 }
 
 /// Byte offsets for the `sp_curve_payload` record.
-///
 /// Spec §6.4. Record length 33 B.
 pub(crate) mod sp_curve_payload {
     /// Record length in bytes. Spec §6.4.
@@ -521,7 +486,6 @@ pub(crate) mod sp_curve_payload {
 }
 
 /// Byte offsets for the `intersection_type_38` record.
-///
 /// Spec §6.3. Record length 31 B.
 ///
 /// ```text
@@ -533,7 +497,6 @@ pub(crate) mod intersection_type_38 {
 }
 
 /// Byte offsets for the `chart_s_preamble` record.
-///
 /// Spec §6.3. Record length 52 B.
 ///
 /// ```text
@@ -545,7 +508,6 @@ pub(crate) mod chart_s_preamble {
 }
 
 /// Byte offsets for the `nurbs_surface_descriptor_prefix` record.
-///
 /// Spec §6.2. Record length 34 B.
 ///
 /// ```text
@@ -579,7 +541,6 @@ pub(crate) mod nurbs_surface_descriptor_prefix {
 }
 
 /// Byte offsets for the `nurbs_curve_descriptor_prefix` record.
-///
 /// Spec §6.2. Record length 21 B.
 ///
 /// ```text
@@ -603,7 +564,6 @@ pub(crate) mod nurbs_curve_descriptor_prefix {
 }
 
 /// Byte offsets for the `fset_parameter_prefix` record.
-///
 /// Spec §7.1. Record length 21 B.
 ///
 /// ```text
@@ -628,7 +588,6 @@ pub(crate) mod fset_parameter_prefix {
 }
 
 /// Byte offsets for the `named_construction_target_prefix` record.
-///
 /// Spec §7.1. Record length 5 B.
 ///
 /// ```text
@@ -640,7 +599,6 @@ pub(crate) mod named_construction_target_prefix {
 }
 
 /// Byte offsets for the `named_construction_name_prefix` record.
-///
 /// Spec §7.1. Record length 5 B.
 ///
 /// ```text
@@ -652,7 +610,6 @@ pub(crate) mod named_construction_name_prefix {
 }
 
 /// Byte offsets for the `rmfastload_prefix` record.
-///
 /// Spec §7.1. Record length 35 B.
 ///
 /// ```text
@@ -672,7 +629,6 @@ pub(crate) mod rmfastload_prefix {
 }
 
 /// Byte offsets for the `rmfastload_header` record.
-///
 /// Spec §7.1. Record length 36 B.
 ///
 /// ```text

@@ -5,7 +5,6 @@
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
 /// Byte offsets for the `pm_dc_751ade_label_owner_body_v25` record.
-///
 /// Spec §13. Record length 36 B.
 ///
 /// ```text
@@ -27,7 +26,6 @@ pub(crate) mod pm_dc_751ade_label_owner_body_v25 {
 }
 
 /// Byte offsets for the `pm_dc_751ade_label_owner_body_v28` record.
-///
 /// Spec §13. Record length 44 B.
 ///
 /// ```text
@@ -55,7 +53,6 @@ pub(crate) mod pm_dc_751ade_label_owner_body_v28 {
 }
 
 /// Byte offsets for the `pm_dc_derived_source_field` record.
-///
 /// Spec §13.4. Record length 4 B.
 ///
 /// ```text
@@ -67,7 +64,6 @@ pub(crate) mod pm_dc_derived_source_field {
 }
 
 /// Byte offsets for the `pm_dc_derived_component_fields` record.
-///
 /// Spec §13.4. Record length 32 B.
 ///
 /// ```text
@@ -97,7 +93,6 @@ pub(crate) mod pm_dc_derived_component_fields {
 }
 
 /// Byte offsets for the `pm_dc_derived_source_stamp` record.
-///
 /// Spec §13.4. Record length 4 B.
 ///
 /// ```text
@@ -109,7 +104,6 @@ pub(crate) mod pm_dc_derived_source_stamp {
 }
 
 /// Byte offsets for the `pm_dc_derived_component_suffix` record.
-///
 /// Spec §13.4. Record length 4 B.
 ///
 /// ```text
@@ -123,7 +117,6 @@ pub(crate) mod pm_dc_derived_component_suffix {
 }
 
 /// Byte offsets for the `pm_dc_content_header` record.
-///
 /// Spec §12. Record length 22 B.
 pub(crate) mod pm_dc_content_header {
     /// Record length in bytes. Spec §12.
@@ -134,7 +127,6 @@ pub(crate) mod pm_dc_content_header {
 }
 
 /// Byte offsets for the `pm_dc_content_header_v28` record.
-///
 /// Spec §12. Record length 26 B.
 pub(crate) mod pm_dc_content_header_v28 {
     /// Record length in bytes. Spec §12.
@@ -142,7 +134,6 @@ pub(crate) mod pm_dc_content_header_v28 {
 }
 
 /// Byte offsets for the `bulk_envelope` record.
-///
 /// Spec §4. Record length 18 B.
 pub(crate) mod bulk_envelope {
     /// Record length in bytes. Spec §4.
@@ -154,7 +145,6 @@ pub(crate) mod bulk_envelope {
 }
 
 /// Byte offsets for the `meta_body_prefix` record.
-///
 /// Spec §3. Record length 14 B.
 pub(crate) mod meta_body_prefix {
     /// Record length in bytes. Spec §3.
@@ -162,7 +152,6 @@ pub(crate) mod meta_body_prefix {
 }
 
 /// Byte offsets for the `meta_type_descriptor` record.
-///
 /// Spec §3. Record length 28 B.
 pub(crate) mod meta_type_descriptor {
     /// Record length in bytes. Spec §3.
@@ -170,7 +159,6 @@ pub(crate) mod meta_type_descriptor {
 }
 
 /// Byte offsets for the `kernel_carrier_header` record.
-///
 /// Spec §5. Record length 14 B.
 pub(crate) mod kernel_carrier_header {
     /// Record length in bytes. Spec §5.
@@ -186,7 +174,6 @@ pub(crate) mod kernel_carrier_header {
 }
 
 /// Byte offsets for the `protein_header` record.
-///
 /// Spec §7. Record length 4 B.
 ///
 /// ```text
@@ -198,7 +185,6 @@ pub(crate) mod protein_header {
 }
 
 /// Byte offsets for the `meta_segment_pair` record.
-///
 /// Spec §13.4. Record length 32 B.
 pub(crate) mod meta_segment_pair {
     /// Record length in bytes. Spec §13.4.
@@ -209,7 +195,6 @@ pub(crate) mod meta_segment_pair {
 }
 
 /// Byte offsets for the `meta_external_revision` record.
-///
 /// Spec §13.4. Record length 20 B.
 pub(crate) mod meta_external_revision {
     /// Record length in bytes. Spec §13.4.
@@ -222,7 +207,6 @@ pub(crate) mod meta_external_revision {
 }
 
 /// Byte offsets for the `meta_external_reference` record.
-///
 /// Spec §13.4. Record length 8 B.
 pub(crate) mod meta_external_reference {
     /// Record length in bytes. Spec §13.4.
@@ -236,7 +220,6 @@ pub(crate) mod meta_external_reference {
 }
 
 /// Byte offsets for the `kernel_entity_link` record.
-///
 /// Spec §13. Record length 23 B.
 pub(crate) mod kernel_entity_link {
     /// Offset of `header_id` (`u16`, little-endian). Spec §13.
@@ -254,7 +237,6 @@ pub(crate) mod kernel_entity_link {
 }
 
 /// Byte offsets for the `pm_dc_spline_curve_prefix` record.
-///
 /// Spec §12. Record length 28 B.
 ///
 /// ```text
@@ -266,7 +248,6 @@ pub(crate) mod pm_dc_spline_curve_prefix {
 }
 
 /// Byte offsets for the `pm_dc_sheet_metal_style_operand_prefix` record.
-///
 /// Spec §13.5. Record length 90 B.
 ///
 /// ```text
@@ -278,7 +259,6 @@ pub(crate) mod pm_dc_sheet_metal_style_operand_prefix {
 }
 
 /// Byte offsets for the `pm_dc_sheet_metal_style_operand_prefix_legacy` record.
-///
 /// Spec §13.5. Record length 86 B.
 ///
 /// ```text
@@ -290,7 +270,6 @@ pub(crate) mod pm_dc_sheet_metal_style_operand_prefix_legacy {
 }
 
 /// Byte offsets for the `pm_dc_sheet_metal_style_operand_prefix_v19` record.
-///
 /// Spec §13.5. Record length 106 B.
 ///
 /// ```text
@@ -302,7 +281,6 @@ pub(crate) mod pm_dc_sheet_metal_style_operand_prefix_v19 {
 }
 
 /// Byte offsets for the `pm_dc_feature_dimension_tail` record.
-///
 /// Spec §13. Record length 9 B.
 ///
 /// ```text
@@ -314,7 +292,6 @@ pub(crate) mod pm_dc_feature_dimension_tail {
 }
 
 /// Byte offsets for the `meta_reference_header` record.
-///
 /// Spec §3. Record length 3 B.
 pub(crate) mod meta_reference_header {
     /// Record length in bytes. Spec §3.
@@ -322,7 +299,6 @@ pub(crate) mod meta_reference_header {
 }
 
 /// Byte offsets for the `drawing_sheet_prefix` record.
-///
 /// Spec §15. Record length 30 B.
 pub(crate) mod drawing_sheet_prefix {
     /// Offset of `identifier` (`bytes[16]`). Spec §15.
@@ -330,7 +306,6 @@ pub(crate) mod drawing_sheet_prefix {
 }
 
 /// Byte offsets for the `drawing_view_prefix` record.
-///
 /// Spec §15. Record length 30 B.
 pub(crate) mod drawing_view_prefix {
     /// Record length in bytes. Spec §15.
@@ -338,7 +313,6 @@ pub(crate) mod drawing_view_prefix {
 }
 
 /// Byte offsets for the `drawing_sheet_controls` record.
-///
 /// Spec §15. Record length 24 B.
 pub(crate) mod drawing_sheet_controls {
     /// Record length in bytes. Spec §15.
@@ -346,7 +320,6 @@ pub(crate) mod drawing_sheet_controls {
 }
 
 /// Byte offsets for the `drawing_model_reference_prefix` record.
-///
 /// Spec §15. Record length 49 B.
 pub(crate) mod drawing_model_reference_prefix {
     /// Record length in bytes. Spec §15.
@@ -354,7 +327,6 @@ pub(crate) mod drawing_model_reference_prefix {
 }
 
 /// Byte offsets for the `drawing_cached_view_prefix` record.
-///
 /// Spec §15. Record length 32 B.
 pub(crate) mod drawing_cached_view_prefix {
     /// Offset of `view_reference` (`u32`, little-endian). Spec §15.
@@ -362,7 +334,6 @@ pub(crate) mod drawing_cached_view_prefix {
 }
 
 /// Byte offsets for the `drawing_sheet_property_list` record.
-///
 /// Spec §15. Record length 16 B.
 pub(crate) mod drawing_sheet_property_list {
     /// Stated value of `marker` (`u16`). Spec §15.
@@ -372,7 +343,6 @@ pub(crate) mod drawing_sheet_property_list {
 }
 
 /// Byte offsets for the `drawing_view_operand_list` record.
-///
 /// Spec §15. Record length 16 B.
 pub(crate) mod drawing_view_operand_list {
     /// Stated value of `count` (`u32`). Spec §15.
@@ -380,7 +350,6 @@ pub(crate) mod drawing_view_operand_list {
 }
 
 /// Byte offsets for the `meta_reference_identifier` record.
-///
 /// Spec §3. Record length 16 B.
 pub(crate) mod meta_reference_identifier {
     /// Record length in bytes. Spec §3.
@@ -388,7 +357,6 @@ pub(crate) mod meta_reference_identifier {
 }
 
 /// Byte offsets for the `meta_reference_pair` record.
-///
 /// Spec §3. Record length 8 B.
 pub(crate) mod meta_reference_pair {
     /// Record length in bytes. Spec §3.
@@ -396,7 +364,6 @@ pub(crate) mod meta_reference_pair {
 }
 
 /// Byte offsets for the `drawing_sheet_tail_prefix` record.
-///
 /// Spec §15. Record length 14 B.
 pub(crate) mod drawing_sheet_tail_prefix {
     /// Record length in bytes. Spec §15.
@@ -404,7 +371,6 @@ pub(crate) mod drawing_sheet_tail_prefix {
 }
 
 /// Byte offsets for the `drawing_sheet_terminal` record.
-///
 /// Spec §15. Record length 8 B.
 pub(crate) mod drawing_sheet_terminal {
     /// Record length in bytes. Spec §15.
@@ -412,7 +378,6 @@ pub(crate) mod drawing_sheet_terminal {
 }
 
 /// Byte offsets for the `drawing_main_view_fixed` record.
-///
 /// Spec §15. Record length 136 B.
 pub(crate) mod drawing_main_view_fixed {
     /// Record length in bytes. Spec §15.
@@ -420,7 +385,6 @@ pub(crate) mod drawing_main_view_fixed {
 }
 
 /// Byte offsets for the `drawing_alternate_view_fixed` record.
-///
 /// Spec §15. Record length 140 B.
 pub(crate) mod drawing_alternate_view_fixed {
     /// Record length in bytes. Spec §15.
@@ -428,7 +392,6 @@ pub(crate) mod drawing_alternate_view_fixed {
 }
 
 /// Byte offsets for the `pm_dc_mirror_selection_tail` record.
-///
 /// Spec §13. Record length 8 B.
 ///
 /// ```text
@@ -444,7 +407,6 @@ pub(crate) mod pm_dc_mirror_selection_tail {
 }
 
 /// Byte offsets for the `pm_dc_mirror_options_tail` record.
-///
 /// Spec §13. Record length 9 B.
 ///
 /// ```text
@@ -459,7 +421,6 @@ pub(crate) mod pm_dc_mirror_options_tail {
 }
 
 /// Byte offsets for the `pm_dc_mirror_instance_map_single_tail_v19` record.
-///
 /// Spec §13. Record length 56 B.
 ///
 /// ```text
@@ -545,7 +506,6 @@ pub(crate) mod pm_dc_mirror_instance_map_single_tail_v19 {
 }
 
 /// Byte offsets for the `pm_dc_mirror_plane_reference_tail_v19` record.
-///
 /// Spec §13. Record length 18 B.
 ///
 /// ```text
@@ -563,7 +523,6 @@ pub(crate) mod pm_dc_mirror_plane_reference_tail_v19 {
 }
 
 /// Byte offsets for the `pm_dc_mirror_generated_body_feature_v19` record.
-///
 /// Spec §13. Record length 66 B.
 pub(crate) mod pm_dc_mirror_generated_body_feature_v19 {
     /// Record length in bytes. Spec §13.
@@ -581,7 +540,6 @@ pub(crate) mod pm_dc_mirror_generated_body_feature_v19 {
 }
 
 /// Byte offsets for the `pm_dc_pattern_selection_control_body` record.
-///
 /// Spec §13.6. Record length 9 B.
 ///
 /// ```text
@@ -593,7 +551,6 @@ pub(crate) mod pm_dc_pattern_selection_control_body {
 }
 
 /// Byte offsets for the `pm_dc_pattern_cached_edge_body` record.
-///
 /// Spec §13.6. Record length 103 B.
 ///
 /// ```text
@@ -613,7 +570,6 @@ pub(crate) mod pm_dc_pattern_cached_edge_body {
 }
 
 /// Byte offsets for the `pm_dc_pattern_cached_line_body` record.
-///
 /// Spec §13.6. Record length 99 B.
 ///
 /// ```text
@@ -625,7 +581,6 @@ pub(crate) mod pm_dc_pattern_cached_line_body {
 }
 
 /// Byte offsets for the `pm_dc_pattern_suppression_prefix` record.
-///
 /// Spec §13.6. Record length 8 B.
 ///
 /// ```text
@@ -641,7 +596,6 @@ pub(crate) mod pm_dc_pattern_suppression_prefix {
 }
 
 /// Byte offsets for the `pm_dc_pattern_suppression_pair` record.
-///
 /// Spec §13.6. Record length 8 B.
 pub(crate) mod pm_dc_pattern_suppression_pair {
     /// Record length in bytes. Spec §13.6.
@@ -649,7 +603,6 @@ pub(crate) mod pm_dc_pattern_suppression_pair {
 }
 
 /// Byte offsets for the `pm_dc_work_point_fields` record.
-///
 /// Spec §13. Record length 36 B.
 ///
 /// ```text
@@ -661,7 +614,6 @@ pub(crate) mod pm_dc_work_point_fields {
 }
 
 /// Byte offsets for the `pm_dc_open_cubic_curve_prefix` record.
-///
 /// Spec §12. Record length 28 B.
 ///
 /// ```text
@@ -675,7 +627,6 @@ pub(crate) mod pm_dc_open_cubic_curve_prefix {
 }
 
 /// Byte offsets for the `pm_dc_open_cubic_pole_prefix` record.
-///
 /// Spec §12. Record length 24 B.
 ///
 /// ```text
@@ -687,7 +638,6 @@ pub(crate) mod pm_dc_open_cubic_pole_prefix {
 }
 
 /// Byte offsets for the `pm_dc_box_group_body` record.
-///
 /// Spec §12. Record length 32 B.
 ///
 /// ```text
@@ -703,7 +653,6 @@ pub(crate) mod pm_dc_box_group_body {
 }
 
 /// Byte offsets for the `pm_dc_box_frame_fixed` record.
-///
 /// Spec §12. Record length 44 B.
 ///
 /// ```text
@@ -731,7 +680,6 @@ pub(crate) mod pm_dc_box_frame_fixed {
 }
 
 /// Byte offsets for the `pm_dc_box_frame_tail` record.
-///
 /// Spec §12. Record length 15 B.
 ///
 /// ```text
@@ -751,7 +699,6 @@ pub(crate) mod pm_dc_box_frame_tail {
 }
 
 /// Byte offsets for the `pm_dc_frame_row_v25` record.
-///
 /// Spec §13.11. Record length 82 B.
 ///
 /// ```text
@@ -777,7 +724,6 @@ pub(crate) mod pm_dc_frame_row_v25 {
 }
 
 /// Byte offsets for the `pm_dc_frame_row_v28` record.
-///
 /// Spec §13.11. Record length 102 B.
 ///
 /// ```text
@@ -791,7 +737,6 @@ pub(crate) mod pm_dc_frame_row_v28 {
 }
 
 /// Byte offsets for the `pm_dc_naming_table_header` record.
-///
 /// Spec §13.11. Record length 18 B.
 ///
 /// ```text
@@ -805,7 +750,6 @@ pub(crate) mod pm_dc_naming_table_header {
 }
 
 /// Byte offsets for the `pm_dc_annotation_value_block` record.
-///
 /// Spec §13.11. Record length 76 B.
 ///
 /// ```text
@@ -817,7 +761,6 @@ pub(crate) mod pm_dc_annotation_value_block {
 }
 
 /// Byte offsets for the `pm_dc_hole_note_flags` record.
-///
 /// Spec §13.11. Record length 16 B.
 ///
 /// ```text
@@ -835,7 +778,6 @@ pub(crate) mod pm_dc_hole_note_flags {
 }
 
 /// Byte offsets for the `pm_dc_generated_name_tail` record.
-///
 /// Spec §13.11. Record length 16 B.
 ///
 /// ```text
@@ -857,7 +799,6 @@ pub(crate) mod pm_dc_generated_name_tail {
 }
 
 /// Byte offsets for the `pm_dc_hole_name_tail` record.
-///
 /// Spec §13.11. Record length 10 B.
 ///
 /// ```text
@@ -875,7 +816,6 @@ pub(crate) mod pm_dc_hole_name_tail {
 }
 
 /// Byte offsets for the `pm_dc_blend_name_tail` record.
-///
 /// Spec §13.11. Record length 13 B.
 ///
 /// ```text

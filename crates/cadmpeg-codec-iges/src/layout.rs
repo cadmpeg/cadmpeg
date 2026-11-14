@@ -5,7 +5,6 @@
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
 /// Byte offsets for the `binary_flag` record.
-///
 /// Spec §Physical representation. Record length 80 B.
 ///
 /// ```text

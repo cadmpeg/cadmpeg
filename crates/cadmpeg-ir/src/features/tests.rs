@@ -1965,11 +1965,12 @@ fn partial_wrap_mode_retains_optional_signed_depth_in_json() {
     use crate::features::WrapMode;
     use crate::scalar::Length;
     for (encoded, expected) in [
-        (r#"{"unresolved":{"depth":null}}"#, None),
+        (r#"{"unresolved":{}}"#, None),
         (r#"{"unresolved":{"depth":-2.0}}"#, Length::new(-2.0)),
     ] {
         let mode: WrapMode = serde_json::from_str(encoded).unwrap();
         assert_eq!(mode, WrapMode::Unresolved { depth: expected });
         assert_eq!(serde_json::to_string(&mode).unwrap(), encoded);
     }
+    assert!(serde_json::from_str::<WrapMode>(r#"{"unresolved":{"depth":null}}"#).is_err());
 }

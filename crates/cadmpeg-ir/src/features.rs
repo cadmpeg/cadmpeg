@@ -5680,6 +5680,11 @@ pub enum WrapMode {
     #[doc = "Material effect with an independently retained signed depth."]
     Unresolved {
         #[doc = "Signed depth in millimetres when available."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_wrap_depth"
+        )]
         depth: Option<Length>,
     },
     /// Add material above the target face.
@@ -9842,6 +9847,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_rib_construction_side, RibSide, "side");
 cadmpeg_core::named_optional_field!(deserialize_offset, Length, "offset");
+cadmpeg_core::named_optional_field!(deserialize_wrap_depth, Length, "depth");
 cadmpeg_core::named_optional_field!(deserialize_draft, SlopeAngle, "draft");
 cadmpeg_core::named_optional_field!(deserialize_wall_thickness, PositiveLength, "wall_thickness");
 cadmpeg_core::named_optional_field!(deserialize_tolerance, PositiveReal, "tolerance");
