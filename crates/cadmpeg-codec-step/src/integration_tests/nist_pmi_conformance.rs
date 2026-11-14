@@ -301,7 +301,7 @@ fn nist_ctc_01_semantic_pmi_matches_the_nist_definition() {
         // Row 3: ⌓ | 1.25 | A | B | C, applied between A and B.
         Tolerance::new(SurfaceProfile, 1.25, &["A", "B", "C"]),
         // Row 4: ⌓ | 0.5 | A, applied all around.
-        Tolerance::new(SurfaceProfile, 0.5, &["A"]),
+        Tolerance::new(SurfaceProfile, 0.5, &["A"]).modified(&["all_around"]),
         // Row 10: ⌖ | 0.75 | A | B | C, two examples.
         Tolerance::new(Position, 0.75, &["A", "B", "C"]),
         Tolerance::new(Position, 0.75, &["A", "B", "C"]),
@@ -311,6 +311,23 @@ fn nist_ctc_01_semantic_pmi_matches_the_nist_definition() {
         Tolerance::new(Perpendicularity, 1.5, &["A"]),
     ];
     let unmatched = assert_each_present(&expected_tolerances, &tolerances(ir), Tolerance::agrees);
+    let all_around = ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| {
+            matches!(&annotation.definition, PmiDefinition::GeometricTolerance { modifiers, .. }
+            if modifiers.iter().any(|modifier| modifier == "all_around"))
+        })
+        .expect("CTC-01 all-around profile");
+    assert_eq!(
+        all_around
+            .targets
+            .iter()
+            .filter(|target| matches!(target, cadmpeg_ir::pmi::PmiTarget::Face { .. }))
+            .count(),
+        6
+    );
     assert!(
         unmatched.is_empty(),
         "tolerances outside the NIST definition: {unmatched:#?}"
@@ -731,6 +748,46 @@ fn nist_ftc_10_fit_and_zero_material_tolerances_match_the_nist_definition() {
         }
     }
     assert_eq!(fits, 3);
+    for (name, kind, value) in [
+        (
+            "Position surfacic profile.2",
+            GeometricToleranceKind::SurfaceProfile,
+            1.5,
+        ),
+        (
+            "Perpendicularity.3",
+            GeometricToleranceKind::Perpendicularity,
+            0.25,
+        ),
+    ] {
+        let annotation = result
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some(name))
+            .expect("FTC-10 all-around tolerance");
+        let PmiDefinition::GeometricTolerance {
+            tolerance,
+            magnitude,
+            modifiers,
+            ..
+        } = &annotation.definition
+        else {
+            panic!("geometric tolerance")
+        };
+        assert_eq!(*tolerance, kind);
+        assert!((magnitude.get().value.get() - value).abs() < NIST_VALUE_TOLERANCE);
+        assert!(modifiers.iter().any(|modifier| modifier == "all_around"));
+        assert_eq!(
+            annotation
+                .targets
+                .iter()
+                .filter(|target| matches!(target, cadmpeg_ir::pmi::PmiTarget::Face { .. }))
+                .count(),
+            6
+        );
+    }
     assert_each_present(&[
         Tolerance::new(Cylindricity, 0.1, &[]),
         Tolerance::new(Symmetry, 0.5, &["A", "J"]),
