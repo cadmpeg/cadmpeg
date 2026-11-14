@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod partial_operands;
+
 use crate::records::sketch_placement::DesignSketchPlacement;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::DistinctMembers;
