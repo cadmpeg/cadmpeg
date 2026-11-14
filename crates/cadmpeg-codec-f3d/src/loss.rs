@@ -360,6 +360,8 @@ pub(crate) enum F3dLossCode {
     /// A tapped Hole keeps its stored diameter instead of the bore of its thread size.
     HoleTappedDiameterStored,
     HoleStandardSizingAssumed,
+    /// A clearance Hole's specification takes fixed values for the fields it does not store.
+    HoleClearanceFieldsAssumed,
     HoleCarrierAxisAssumed,
     /// Align operand roles and motion have no neutral binding.
     AlignOperandsUnresolved,
@@ -1098,6 +1100,7 @@ impl F3dLossCode {
         Self::HoleExtentLeadingWordAssumed,
         Self::HoleTappedDiameterStored,
         Self::HoleStandardSizingAssumed,
+        Self::HoleClearanceFieldsAssumed,
         Self::HoleCarrierAxisAssumed,
         Self::AlignOperandsUnresolved,
         Self::AlignEnvelopeUnparsed,
@@ -1708,6 +1711,7 @@ impl F3dLossCode {
             Self::HoleExtentLeadingWordAssumed => "feature.hole-extent-leading-word-assumed",
             Self::HoleTappedDiameterStored => "feature.hole-tapped-diameter-stored",
             Self::HoleStandardSizingAssumed => "feature.hole-standard-sizing-assumed",
+            Self::HoleClearanceFieldsAssumed => "feature.hole-clearance-fields-assumed",
             Self::HoleCarrierAxisAssumed => "feature.hole-carrier-axis-assumed",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::MoveUnprojected => "feature.move-unprojected",
@@ -2343,6 +2347,7 @@ impl F3dLossCode {
             | Self::HoleExtentLeadingWordAssumed
             | Self::HoleTappedDiameterStored
             | Self::HoleStandardSizingAssumed
+            | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
@@ -2820,6 +2825,7 @@ impl F3dLossCode {
             | Self::HoleExtentLeadingWordAssumed
             | Self::HoleTappedDiameterStored
             | Self::HoleStandardSizingAssumed
+            | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
@@ -3395,6 +3401,7 @@ mod tests {
                 "feature.hole-extent-leading-word-assumed",
                 "feature.hole-tapped-diameter-stored",
                 "feature.hole-standard-sizing-assumed",
+                "feature.hole-clearance-fields-assumed",
                 "feature.hole-carrier-axis-assumed",
                 "feature.align-operands-unresolved",
                 "feature.align-envelope-unparsed",
