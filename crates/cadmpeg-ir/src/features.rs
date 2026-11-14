@@ -3649,6 +3649,11 @@ pub enum FeatureOperation {
         #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         gap_tolerance: Option<PositiveLength>,
     },
+    /// Separates selected faces from their bodies into individual surface bodies.
+    UnstitchFaces {
+        /// Faces separated by the operation.
+        faces: FaceSelection,
+    },
     /// Surface patch spanning a selected edge boundary.
     FilledSurface {
         /// Closed boundary of the generated patch.
