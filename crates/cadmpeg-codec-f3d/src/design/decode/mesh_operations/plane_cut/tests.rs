@@ -183,7 +183,7 @@ fn admission_checks_guid_base_module_version_identity_bounds_and_uniqueness() {
                 meta.types[0].type_guid = "00000000-0000-0000-0000-000000000000"
                     .to_owned()
                     .try_into()
-                    .unwrap()
+                    .unwrap();
             }
             4 => {
                 meta.types[0].base_type_guid = BaseTypeGuid::Guid {

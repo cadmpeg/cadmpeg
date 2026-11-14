@@ -12,16 +12,16 @@ fn reference(target: u32) -> [u8; 11] {
     bytes
 }
 
-fn record(index: u32, tag: &[u8; 3], len: usize) -> Vec<u8> {
+fn record(index: u32, tag: [u8; 3], len: usize) -> Vec<u8> {
     let mut bytes = vec![0; len];
     bytes[..4].copy_from_slice(&3u32.to_le_bytes());
-    bytes[4..7].copy_from_slice(tag);
+    bytes[4..7].copy_from_slice(&tag);
     bytes[7..11].copy_from_slice(&index.to_le_bytes());
     bytes
 }
 
 fn scope() -> Vec<u8> {
-    let mut bytes = record(7, b"256", 21);
+    let mut bytes = record(7, *b"256", 21);
     bytes.extend_from_slice(&0u32.to_le_bytes());
     bytes.extend_from_slice(&16u32.to_le_bytes());
     for value in [
@@ -43,13 +43,13 @@ fn scope() -> Vec<u8> {
 }
 
 fn fixture(scope: Vec<u8>, second_member: u32) -> (Vec<u8>, Vec<u8>) {
-    let mut group = record(8, b"257", 25);
+    let mut group = record(8, *b"257", 25);
     group[21..25].copy_from_slice(&2u32.to_le_bytes());
     group.extend_from_slice(&reference(11));
     group.extend_from_slice(&reference(second_member));
-    let mut first = record(11, b"258", 21);
+    let mut first = record(11, *b"258", 21);
     first.extend_from_slice(&reference(31));
-    let mut second = record(12, b"258", 21);
+    let mut second = record(12, *b"258", 21);
     second.extend_from_slice(&reference(32));
     let mut stream = Vec::new();
     let mut index = Vec::new();
@@ -58,8 +58,8 @@ fn fixture(scope: Vec<u8>, second_member: u32) -> (Vec<u8>, Vec<u8>) {
         (8, group),
         (11, first),
         (12, second),
-        (31, record(31, b"259", 11)),
-        (32, record(32, b"259", 11)),
+        (31, record(31, *b"259", 11)),
+        (32, record(32, *b"259", 11)),
     ] {
         index.push((id, u64::try_from(stream.len()).unwrap()));
         stream.extend_from_slice(&bytes);

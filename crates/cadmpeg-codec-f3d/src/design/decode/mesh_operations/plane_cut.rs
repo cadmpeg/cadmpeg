@@ -115,7 +115,7 @@ pub(crate) fn read_scope(frame: View<'_>) -> MeshPlaneCutScope<'_> {
                         .0
                         .u32_le()
                         .ok_or(MeshOperationFraming("plane cut prefix word"))?,
-                )
+                );
             }
             _ => return Err(MeshOperationFraming("plane cut flag")),
         }

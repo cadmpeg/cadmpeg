@@ -381,7 +381,7 @@ pub(in crate::decode) fn bind_features(
                         admitted = true;
                     }
                     Err(error) => {
-                        notes.property("mesh-plane-cut:scope-framing", error.to_string().as_str())
+                        notes.property("mesh-plane-cut:scope-framing", error.to_string().as_str());
                     }
                 }
             }
