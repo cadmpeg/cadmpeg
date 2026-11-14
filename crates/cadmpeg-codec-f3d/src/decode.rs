@@ -2461,7 +2461,7 @@ fn report_design_projection_gaps(
         }
         let (code, reason) = if scope.emboss_construction().is_some() {
             (F3dLossCode::EmbossControlsNative,
-             "control words, native pairs, scalar-owner links, selection links, contour membership, and placement have no neutral Wrap mapping")
+             "control words, native pairs, selection links, contour membership, and placement retain their native interpretation; scalar-owner links also expose independent Wrap parameters")
         } else {
             (
                 F3dLossCode::EmbossPrefixUnparsed,
