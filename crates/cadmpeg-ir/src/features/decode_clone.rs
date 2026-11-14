@@ -269,7 +269,7 @@ rewrite_enum!(FeatureOperation, []; {
     SheetMetalBendLines { construction },
     SheetMetalUnfold { construction },
     SheetMetalRefold { construction },
-    SheetMetalEdgeFlange { edges, height, angle, height_datum, bend_position, width, bend_radius },
+    SheetMetalEdgeFlange(field0),
     SheetMetalHem { edges, bend_position, form, direction, bend_radius },
     Fillet { groups },
     FullRoundFillet { groups },
@@ -502,6 +502,7 @@ rewrite_enum!(SheetMetalFlangeHeightTarget, []; {
 rewrite_record!(SheetMetalFlangeTwoSidedWidth, []; { first, second });
 
 rewrite_enum!(SheetMetalFlangeWidth, []; {
+    TwoOffsetsPerEdge { offsets },
     FullEdge,
     Symmetric { width },
     TwoSides { first, second },
@@ -623,3 +624,6 @@ rewrite_record!(super::sheet_metal::SheetMetalLineBend, []; { line, angle });
 
 rewrite_record!(super::sheet_metal::SheetMetalUnfoldConstruction, []; {stationary, bends, all_bends, neutral_factor});
 rewrite_record!(super::sheet_metal::SheetMetalRefoldConstruction, []; {unfold});
+
+rewrite_record!(super::sheet_metal::SheetMetalEdgeFlangeConstruction, []; {edges, height, angle, height_datum, bend_position, width, bend_radius});
+rewrite_record!(super::sheet_metal::SheetMetalFlangeOffset, []; {first, second, first_reference, second_reference});

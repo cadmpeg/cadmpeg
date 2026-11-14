@@ -1658,8 +1658,10 @@ pub(crate) fn append_design_losses(
                         || construction.inside_radius.is_none()
                 }
                 FeatureOperation::SheetMetalCorner { .. } => false,
-                FeatureOperation::SheetMetalEdgeFlange { edges, .. } => {
-                    incomplete_edge_selection(edges)
+                FeatureOperation::SheetMetalEdgeFlange(construction) => {
+                    !construction.has_all_inputs()
+                        || construction.edges.as_ref().is_none_or(incomplete_edge_selection)
+                        || matches!(construction.width, Some(cadmpeg_ir::features::SheetMetalFlangeWidth::TwoOffsetsPerEdge { .. }))
                 }
                 FeatureOperation::SheetMetalHem { .. } => true,
                 FeatureOperation::Fillet { groups } => {

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_ir::features::sheet_metal::SheetMetalEdgeFlangeConstruction;
+
 use crate::records::topology::{
     construction::DesignConstructionOperandGroup,
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
@@ -203,15 +205,17 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     .unwrap()
     .is_none());
 
-    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
-        height,
-        angle,
-        height_datum,
-        bend_position,
-        width,
-        bend_radius,
-        ..
-    }) = definition
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(
+        SheetMetalEdgeFlangeConstruction {
+            height: Some(height),
+            angle: Some(angle),
+            height_datum: Some(height_datum),
+            bend_position: Some(bend_position),
+            width: Some(width),
+            bend_radius: Some(bend_radius),
+            ..
+        },
+    )) = definition
     else {
         panic!("expected a sheet-metal edge flange");
     };
@@ -294,8 +298,11 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     })
     .unwrap()
     .expect("typed signed-offset EdgeFlange definition");
-    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
-        offset_definition
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(
+        SheetMetalEdgeFlangeConstruction {
+            width: Some(width), ..
+        },
+    )) = offset_definition
     else {
         panic!("expected a sheet-metal edge flange");
     };
@@ -359,8 +366,11 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     })
     .unwrap()
     .expect("typed multi-edge EdgeFlange definition");
-    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { edges, .. }) =
-        multi_definition
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(
+        SheetMetalEdgeFlangeConstruction {
+            edges: Some(edges), ..
+        },
+    )) = multi_definition
     else {
         panic!("expected a sheet-metal edge flange");
     };
@@ -435,8 +445,11 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     })
     .unwrap()
     .expect("equal per-edge symmetric widths project to one neutral width");
-    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
-        per_edge_definition
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(
+        SheetMetalEdgeFlangeConstruction {
+            width: Some(width), ..
+        },
+    )) = per_edge_definition
     else {
         panic!("expected a sheet-metal edge flange");
     };
@@ -520,8 +533,11 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     })
     .unwrap()
     .expect("independent two-sided per-edge widths project to a typed neutral law");
-    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
-        two_sided_definition
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(
+        SheetMetalEdgeFlangeConstruction {
+            width: Some(width), ..
+        },
+    )) = two_sided_definition
     else {
         panic!("expected a sheet-metal edge flange");
     };
@@ -820,8 +836,12 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     })
     .unwrap()
     .expect("typed to-object EdgeFlange definition");
-    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { height, .. }) =
-        definition
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(
+        SheetMetalEdgeFlangeConstruction {
+            height: Some(height),
+            ..
+        },
+    )) = definition
     else {
         panic!("expected a sheet-metal edge flange");
     };
@@ -848,13 +868,15 @@ fn edge_flange_unresolved_to_object_keeps_native_target() {
     .expect("unresolved to-object EdgeFlange");
     assert!(matches!(
         definition,
-        FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
-            height: SheetMetalFlangeHeight::ToObject {
-                target: SheetMetalFlangeHeightTarget::Native(_),
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(
+            SheetMetalEdgeFlangeConstruction {
+                height: Some(SheetMetalFlangeHeight::ToObject {
+                    target: SheetMetalFlangeHeightTarget::Native(_),
+                    ..
+                }),
                 ..
-            },
-            ..
-        })
+            }
+        ))
     ));
 }
 
@@ -871,9 +893,13 @@ fn edge_flange_two_sided_projects() {
     })
     .unwrap()
     .expect("two-sided EdgeFlange definition");
-    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
-        height, width, ..
-    }) = definition
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(
+        SheetMetalEdgeFlangeConstruction {
+            height: Some(height),
+            width: Some(width),
+            ..
+        },
+    )) = definition
     else {
         panic!("expected a sheet-metal edge flange");
     };

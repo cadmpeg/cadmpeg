@@ -5273,15 +5273,17 @@ fn project_edge_flange(
     };
 
     Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::SheetMetalEdgeFlange {
-            edges,
-            height,
-            angle,
-            height_datum,
-            bend_position,
-            width,
-            bend_radius,
-        },
+        FeatureOperation::SheetMetalEdgeFlange(
+            cadmpeg_ir::features::sheet_metal::SheetMetalEdgeFlangeConstruction::complete(
+                edges,
+                height,
+                angle,
+                height_datum,
+                bend_position,
+                width,
+                bend_radius.into(),
+            ),
+        ),
     )))
 }
 

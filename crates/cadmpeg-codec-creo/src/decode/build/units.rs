@@ -478,15 +478,16 @@ fn scale_feature_operation(
             scale_optional_positive_length(&mut construction.inside_radius, scale)?;
         }
         FeatureOperation::SheetMetalCorner { .. } => {}
-        FeatureOperation::SheetMetalEdgeFlange {
-            height,
-            width,
-            bend_radius,
-            ..
-        } => {
-            scale_sheet_metal_flange_height(height, scale)?;
-            scale_sheet_metal_flange_width(width, scale)?;
-            scale_positive_length(bend_radius, scale)?;
+        FeatureOperation::SheetMetalEdgeFlange(construction) => {
+            if let Some(height) = &mut construction.height {
+                scale_sheet_metal_flange_height(height, scale)?;
+            }
+            if let Some(width) = &mut construction.width {
+                scale_sheet_metal_flange_width(width, scale)?;
+            }
+            if let Some(radius) = &mut construction.bend_radius {
+                scale_nonnegative_length(radius, scale)?;
+            }
         }
         FeatureOperation::SheetMetalHem {
             form, bend_radius, ..
@@ -795,6 +796,12 @@ fn scale_sheet_metal_flange_width(
             for width in widths.as_mut_slice() {
                 scale_positive_length(&mut width.first, scale)?;
                 scale_positive_length(&mut width.second, scale)?;
+            }
+        }
+        SheetMetalFlangeWidth::TwoOffsetsPerEdge { offsets } => {
+            for row in offsets {
+                scale_optional_length(&mut row.first, scale)?;
+                scale_optional_length(&mut row.second, scale)?;
             }
         }
         SheetMetalFlangeWidth::FullEdge => {}

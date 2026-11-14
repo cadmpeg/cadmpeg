@@ -3491,22 +3491,7 @@ pub enum FeatureOperation {
         effect: SheetMetalCornerEffect,
     },
     /// Sheet-metal wall grown from selected edges of an existing sheet body.
-    SheetMetalEdgeFlange {
-        /// Edges the flange is grown from.
-        edges: EdgeSelection,
-        /// Height of the flange wall.
-        height: SheetMetalFlangeHeight,
-        /// Angle between the flange wall and its source face.
-        angle: Angle,
-        /// Face pair the height is measured from.
-        height_datum: SheetMetalHeightDatum,
-        /// Placement of the bend region against the selected edge.
-        bend_position: SheetMetalBendPosition,
-        /// Extent of the flange along the selected edge.
-        width: SheetMetalFlangeWidth,
-        /// Inside radius of the bend joining the flange to its source face.
-        bend_radius: PositiveLength,
-    },
+    SheetMetalEdgeFlange(sheet_metal::SheetMetalEdgeFlangeConstruction),
     /// Sheet-metal hem grown from one or more selected edges.
     SheetMetalHem {
         /// Edges the hem is grown from.
@@ -6291,6 +6276,11 @@ pub enum SheetMetalFlangeHeight {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum SheetMetalFlangeWidth {
+    #[doc = "Independent signed offsets and boundary programs in selected-edge order."]
+    TwoOffsetsPerEdge {
+        #[doc = "One independently decoded offset pair for each selected source edge."]
+        offsets: NonEmptyMembers<sheet_metal::SheetMetalFlangeOffset>,
+    },
     /// The flange spans the complete selected edge.
     FullEdge,
     /// The flange is centred on the edge with one width.
