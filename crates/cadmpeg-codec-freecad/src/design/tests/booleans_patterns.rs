@@ -102,6 +102,7 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
 
             op,
             keep_tools,
+            ..
         },
     ) = feature("Fuse").evaluation.definition()
     else {
@@ -159,6 +160,7 @@ pub(crate) fn transfers_partdesign_boolean_base_and_group_rules() {
 
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
+            ..
         }) if matches!((operands.target(), operands.tools(),), (cadmpeg_ir::features::BodySelection::Native(target), cadmpeg_ir::features::BodySelection::Native(tools),) if target.ends_with(":Group:link:2")
             && tools.ends_with(":Group:links:0..2"))));
     assert!(matches!(
@@ -167,6 +169,7 @@ pub(crate) fn transfers_partdesign_boolean_base_and_group_rules() {
 
             op: cadmpeg_ir::features::BooleanKind::Cut,
             keep_tools: false,
+            ..
         }) if matches!((operands.target(), operands.tools(),), (cadmpeg_ir::features::BodySelection::Native(target), cadmpeg_ir::features::BodySelection::Native(tools),) if target.ends_with(":BaseFeature") && tools.ends_with(":Group"))));
     assert!(non_placement_losses(result.report()).is_empty());
 }

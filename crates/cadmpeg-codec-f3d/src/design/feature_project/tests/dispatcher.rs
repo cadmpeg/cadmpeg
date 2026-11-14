@@ -105,7 +105,7 @@ fn dispatcher_projects_datum_feature_scopes() {
 }
 
 #[test]
-fn revolve_and_thread_scopes_without_a_construction_keep_their_family() {
+fn operation_scopes_without_construction_keep_their_family() {
     use cadmpeg_ir::features::UnresolvedFamily;
 
     let revolve = DesignParameterScope::empty(
@@ -118,21 +118,26 @@ fn revolve_and_thread_scopes_without_a_construction_keep_their_family() {
         crate::records::feature::scope::DesignFeatureKind::Thread,
         2,
     );
-    let scopes = vec![revolve, thread];
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = &scopes;
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    scopes,
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let combine = DesignParameterScope::empty(
+        "f3d:native/BulkStream.dat:parameter-scope#3",
+        crate::records::feature::scope::DesignFeatureKind::Combine,
+        3,
+    );
+    let scopes = vec![revolve, thread, combine];
+    let projected = crate::test_support::with_decode_context(|ctx| {
+        let scopes = &scopes;
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    let features = &projected.features;
 
     let definition = |kind: &str| {
         features
@@ -152,6 +157,16 @@ fn revolve_and_thread_scopes_without_a_construction_keep_their_family() {
             family: UnresolvedFamily::Thread,
         }))
     );
+    assert_eq!(
+        definition("Combine"),
+        Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+            family: UnresolvedFamily::Combine,
+        }))
+    );
+    assert!(projected
+        .projection_losses
+        .iter()
+        .any(|loss| { loss.code.local_code() == "feature.combine-definition-unresolved" }));
 }
 
 #[test]

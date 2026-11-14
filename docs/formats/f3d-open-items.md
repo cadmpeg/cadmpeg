@@ -988,7 +988,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** A producer-generated radial TSM must retain a deleted domain slot at `p` and map a live element with raw slot `q > p`. The raw-slot prediction is `q`; the compact-index prediction after one deletion is `q-1`. Saving must preserve the deleted slot to separate these predictions. A controlled radial export with a nondefault sweep must establish the sweep-to-angle rule.
 
-### DR-622. Bend line association and stationary role
+### DR-625. Bend line association and stationary role
 
 **Question.** How does a Bend scope associate each angular owner with a selected sketch line and its stationary region?
 
@@ -1536,27 +1536,47 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 ### DR-271. List that a two-list Combine prologue omits
 
-**Question.** Which of the three lists between the tool list and the target list does an operand-list `Combine` prologue omit when it stores only two?
+**Question.** Which of the three lists between the tool list and the target list does an operand-list `Combine` prologue omit when it stores two?
 
-**Known.** `f3d.md` §3.1 gives the operand-list prologue: after the tool list, an empty list, a list that is empty or names the new component's browser node, the consumed-body list, and the target list. A prologue with a companion `RemoveBody` can store two empty lists between the tool list and the target list. A `Combine` with a companion consumes no tool in its own scope. The decoder reads every tool of such a `Combine` as removed. It compares the browser nodes that the tool selections name with the browser nodes that the body selections in the companion reference tables name. When the two sets differ, or a companion has no single reference table after the GUID or a selection without one browser node, it reports `feature.combine-tool-consumption-assumed`, whose note lists the tool selections that no companion selection confirms and the companion selections that name no tool. With the new-component Boolean zero, the reading of every stored field is the same for each omitted list; with the Boolean one, only the omitted browser-node list is consistent. The decoder reads a two-list prologue with a companion and two empty lists, and reports `feature.combine-new-component-native` when the Boolean is one.
+**Known.** `f3d.md` §3.1 gives the three middle lists: an empty list, a component-node list, and a consumed-body list. The two-list form can carry two empty lists with a companion, or an empty list followed by consumed-body references without a companion. A companion `RemoveBody` scope removes tools through its browser-node selections. The decoder compares those selections with the tool nodes and reports `feature.combine-tool-consumption-assumed` for an incomplete match. The new-component Boolean is independent of the number of middle lists.
 
-**Need.** A two-list prologue with a nonempty list between the tool list and the target list, or the Fusion version that adds the third list.
+**Need.** Controlled saves that vary component creation and tool retention in the two-list form, or the Fusion version that adds the third list.
 
 **Conflict.** None.
 
-**Note.** None.
+**Note.** A two-list form without a companion reads the middle lists as the component-node and consumed-body lists and reports `feature.combine-middle-list-omitted-assumed`. A nonempty first list is read as the requested component's browser node. DR-561 tracks the destination of a new-component request.
 
 ### DR-272. Prologue of a Combine frame whose byte 20 is one
 
 **Question.** Which prologue does a `Combine` frame store when byte 20 is one and its fixed fields match both the standard and the operand-list prologue?
 
-**Known.** `f3d.md` §3.1 gives the standard and operand-list prologues. A standard join and an operand-list prologue with an empty property block both store `01 00 00 00 00` at offsets 20 through 24, and such an operand-list prologue without a companion also stores zero at offsets 26 through 32, as the standard prologue does. When the standard prologue reads such a frame, the decoder reads it in that prologue and reports `feature.combine-prologue-assumed`, whose note says whether the lists name the scope's operation-identity records. Otherwise the decoder reads the frame in the operand-list prologue when its lists name those records, its counted GUID and three zero bytes end at its reference table, its other fields hold, and its new-component Boolean is zero. A frame that neither prologue reads stays native: it reports `feature.combine-new-component-native` when its new-component Boolean is one, and `feature.combine-operand-list-refused` when its lists name its operands and its other fields contradict the operand-list prologue or cannot be checked.
+**Known.** `f3d.md` §3.1 gives the standard and operand-list prologues. A standard join and an operand-list prologue with an empty property block both store `01 00 00 00 00` at offsets 20 through 24. An operand-list prologue without a companion can also store zero at offsets 26 through 32. A complete list reading independently checks the ordered operation identities, the counted GUID and exact reference-table boundary. The legacy reading takes the standard prefix when both readings hold and reports `feature.combine-prologue-assumed`. DR-560 covers the expanded named tail's separate reading. A new-component request retains its Boolean and unresolved placement. A frame whose lists match its operands but contradict other required list fields reports `feature.combine-operand-list-refused` when no prologue reads it.
 
 **Need.** A frame of this kind with its operation and keep-tools state shown by result volumes.
 
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-561. Destination of a Combine new-component result
+
+**Question.** How does a Combine's new-component request identify the product definition and placement that contain its result?
+
+**Known.** The operand-list prologue stores a new-component Boolean. The three-middle-list form names one browser node when that Boolean is one. A two-middle-list request can omit that node. The named tail can carry a distinct middle reference; it is separate from that browser node and remains located in the native scope. The Boolean operation and ordered target and tool selections remain readable.
+
+**Need.** A complete identity join from the result browser node and named-tail references to the component and placement, including a request whose middle lists omit the node.
+
+**Note.** The neutral Combine retains the new-component request, and the native operation retains its browser-node reference when present. The decoder reports `feature.combine-component-destination-assumed` for the unresolved destination placement and assumes the input component frame.
+
+### DR-560. Prologue of a Combine with an expanded named tail
+
+**Question.** Does an expanded named tail select the complete operand-list prologue whenever its fixed prefix also matches the standard prologue?
+
+**Known.** The expanded tail retains references outside the operand table. The complete operand-list reading supplies independent operation, keep-tools and new-component fields. The standard prefix can match only the initial bytes and give different control values. A component-Join control has zero-based operation zero, keep-tools one and new-component one.
+
+**Need.** Independent saves with expanded named tails across Boolean operations and tool-retention modes, including a frame whose complete operand lists contradict the standard-prefix reading.
+
+**Note.** The decoder uses the complete operand-list reading for the expanded named tail and reports `feature.combine-named-tail-prologue-assumed`. The synthetic control test preserves the independent destination node and tail reference while requiring the Join, keep-tools and component-request values.
 
 ### DR-202. Fields of the older Shell frames
 
@@ -2018,6 +2038,42 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder leaves unresolved construction settings unset and reports `feature.mesh-shell-controls-unresolved`.
 
+### DR-622. Mesh conversion controls
+
+**Question.** Which conversion control selects the organic method, and which construction settings do the wrapper control fields select?
+
+**Known.** Conversion control `1` selects the prismatic method and `3` selects the faceted method. An output wrapper stores a control byte before its body reference. The decoder retains the raw values in source properties and projects an ordered mesh-to-body conversion with its readable method.
+
+**Need.** Controlled saves with faceted, prismatic, and organic conversion methods and construction settings changed independently.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-conversion-method-assumed` for the control-to-method reading and `feature.mesh-conversion-method-unresolved` for an unruled control. A truncated scope reports `feature.mesh-conversion-scope-unparsed` or `feature.mesh-conversion-tail-partial` and retains readable controls and inputs.
+
+### DR-623. Mesh conversion output envelope
+
+**Question.** Which format discriminator selects the optional four-byte control before the output count?
+
+**Known.** The two output-list forms contain two or six control bytes after the fixed u32. The output list is followed by eight zero bytes and the counted scope GUID. The decoder reads the unique envelope with this following prefix and retains the optional word in source properties.
+
+**Need.** Controlled saves across the producing application versions and operation settings that select each envelope.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-conversion-envelope-assumed` for this envelope reading.
+
+### DR-624. Mesh conversion geometry identities
+
+**Question.** Which historical tessellation and neutral result body does each conversion wrapper identify?
+
+**Known.** Each input wrapper names one mesh operation group. Each output wrapper stores a body GUID and body-record reference. The decoder retains their order and references. Each input uses its declared scope as its native selection source. Source properties retain its wrapper context and readable group-member and body references, including references with unavailable definitions. A partial output wrapper retains its readable GUID and control.
+
+**Need.** A controlled conversion with known input tessellations and output body identities, joined through the wrapper records and historical geometry states.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-conversion-source-unresolved` and `feature.mesh-conversion-output-unresolved`. DR-504 tracks input member-tail selections.
+
 ### DR-373. Mesh body and collection-owner payload fields
 
 **Question.** What do the compact matrix flags, the further mesh-body reference slot, and the remaining mesh-body, mesh-wrapper, and collection-owner payload fields mean?
@@ -2140,13 +2196,37 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** What does an ordered reference of a compact, marked, or counted `Shell` scope name when it is neither the face group, the wall scalar, nor a member of the face group?
 
-**Known.** `f3d.md` §3.1 "A u32 one, a marked reference to the face group" states that in the compact, marked, and counted prefixes the remaining ordered references are the members of the face group. The decoder projects such a `Shell` from its wall slot and face group and reports `feature.shell-table-members-assumed` with the remaining references and the group members.
+**Known.** `f3d.md` §3.1 "A u32 group count, that many marked group references" states that in the compact, marked, and counted prefixes the remaining ordered references are the members of the face group. The decoder projects such a `Shell` from its wall slot and face group and reports `feature.shell-table-members-assumed` with the remaining references and the group members.
 
 **Need.** A `Shell` scope whose remaining ordered references differ from its face-group members, with the result body that shows whether those references change the walls.
 
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-626. Counted Shell prefix byte and partial envelopes
+
+**Question.** Which option does the counted Shell prefix byte select, and which fields preserve the wall-slot direction when that byte is nonzero or the envelope tail is incomplete?
+
+**Known.** The counted prefix has a byte between its fixed marked prefix and its aligned optional wall references. The references can join finite positive wall scalars independently of the prefix byte. The scalar owner and its source location remain available. The zero-byte form has inside-first slots.
+
+**Need.** Controlled saves varying that byte and the inside and outside walls separately, with complete prefix, auxiliary-reference, group and GUID runs.
+
+**Conflict.** None.
+
+**Note.** Partial Shell projection reports `feature.shell-counted-control-assumed` for reading the byte as a separate prefix field, `feature.shell-slot-direction-assumed` for the nonzero form's inside-first reading and `feature.shell-envelope-assumed` when a unique partial prefix supplies wall data. Unresolved values and selections remain in `shell:source` with their references and byte locations.
+
+### DR-627. Simultaneous Shell face and body groups
+
+**Question.** How do the removed-face group and the target-body group jointly select a Shell operation when its prefix names both groups?
+
+**Known.** A cornered prefix can name both a removed-face group with role `0x0000001000000000` and a body group with role `0x0000000400000000`. Each group retains its own members. The wall scalar and both cornered prefix Booleans remain independently readable.
+
+**Need.** Controlled saves changing the face selection and body selection separately, with the corresponding input and output bodies.
+
+**Conflict.** None.
+
+**Note.** Partial Shell projection retains both selections and reports `feature.shell-group-roles-assumed`. The wall-selection solver uses the admitted complete construction; partial wall assumptions remain separate from its geometry proof.
 
 ### DR-311. Extension method of a SurfaceExtend scope
 

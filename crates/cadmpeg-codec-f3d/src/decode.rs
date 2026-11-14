@@ -605,6 +605,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             | FeatureOperation::MeshSection { source, .. }
             | FeatureOperation::MeshModify { source, .. },
         ) => !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_)),
+        FeatureDefinition::Operation(FeatureOperation::MeshConvert(conversion)) => {
+            conversion.method.is_none()
+                || conversion.sources.is_empty()
+                || conversion.sources.iter().any(|source| {
+                    !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
+                })
+        }
         FeatureDefinition::Operation(FeatureOperation::Decal { faces, .. }) => {
             !face_selection_is_resolved(faces)
         }
@@ -1117,10 +1124,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                         )
                 })
         }
-        FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) => {
+        FeatureDefinition::Operation(FeatureOperation::Combine { operands, destination, .. }) => {
             let target = operands.target();
             let tools = operands.tools();
             !body_selection_is_resolved(target) || !body_selection_is_resolved(tools)
+                || matches!(destination, cadmpeg_ir::features::CombineDestination::NewComponent)
         }
         // A typed family is not replayable until this match states and checks
         // its complete construction invariants.
