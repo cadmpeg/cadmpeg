@@ -2448,35 +2448,11 @@ impl Default for LoftGuidance {
     }
 }
 
-fn known_body_count(selection: &BodySelection) -> Option<usize> {
-    match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-            Some(bodies.len())
-        }
-        BodySelection::Local { bodies, .. } => Some(bodies.len()),
-        BodySelection::ResolvedSet { members } => Some(members.count()),
-        BodySelection::Historical { bodies, .. } => Some(bodies.len()),
-        BodySelection::HistoricalSet { members, .. } => Some(members.count()),
-        BodySelection::Generated { bodies, .. } => Some(bodies.len()),
-        BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => None,
-    }
-}
-
 /// A body selection with at least two members when membership is resolved.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct SewBodySelection(BodySelection);
-
-impl TryFrom<BodySelection> for SewBodySelection {
-    type Error = &'static str;
-    fn try_from(bodies: BodySelection) -> Result<Self, Self::Error> {
-        if known_body_count(&bodies).is_some_and(|count| count < 2) {
-            return Err("bodies must select at least two bodies for sewing");
-        }
-        Ok(Self(bodies))
-    }
-}
 
 impl std::ops::Deref for SewBodySelection {
     type Target = BodySelection;
@@ -2599,7 +2575,7 @@ selection_operands!(
     BodySelection,
     target,
     tools,
-    |first| known_body_count(first).is_none_or(|count| count == 1),
+    |first| body_selection::known_body_count(first).is_none_or(|count| count == 1),
     body_selections_overlap,
     try_edit
 );
