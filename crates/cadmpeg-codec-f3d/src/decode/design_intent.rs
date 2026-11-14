@@ -800,7 +800,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         geometry.primary_brep,
     )?);
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
-    losses.extend(crate::history::pipe_section::bind_circular_pipe_sections(
+    losses.extend(crate::history::pipe_section::projection::project(
+        scan,
+        &prereqs.design_types,
+        &design.design_record_headers,
         &mut model.features,
         &crate::history::pipe_section::PipeSectionInputs {
             scopes: &design.design_parameter_scopes,
@@ -812,7 +815,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             surfaces: geometry.surfaces,
             linear_tolerance: geometry.tolerances.linear.get(),
         },
-    ));
+    )?);
     losses.extend(crate::history::bind_feature_body_selections(
         &mut model.features,
         &crate::history::FeatureBodySelectionInputs {
@@ -1208,16 +1211,18 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         products.occurrences,
         &design.design_parameter_scopes,
     );
-    losses.extend(
-        crate::design::components::project_derived_instance_features(
-            &mut model.features,
-            &design.design_parameter_scopes,
-        )?,
-    );
     losses.extend(crate::design::components::paths::bind_feature_paths(
         &mut model.features,
         &occurrence_paths,
     ));
+    losses.extend(
+        crate::design::components::project_derived_instance_features(
+            &mut model.features,
+            &design.design_parameter_scopes,
+            &occurrence_paths,
+            products.occurrences,
+        )?,
+    );
     losses.extend(
         crate::design::components::project_copy_paste_transfer_features(
             &mut model.features,

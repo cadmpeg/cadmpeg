@@ -5738,6 +5738,84 @@ Unstated regions:
 - `79..83` (4 B): Offsets 79 through 82 are zero.
 - `216..293` (77 B): The transform record's tail precedes the same-index paired header at offset 293.
 
+## `move_transform_v3_frame_256`
+
+Spec §3.1 · layout: byte offsets · size: 256 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | 256 bytes for form word `5` |
+| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `0`, `1`, or `5` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..256` (80 B): The transform record's tail precedes the same-index paired header at offset 256.
+
+## `move_transform_v3_frame_276`
+
+Spec §3.1 · layout: byte offsets · size: 276 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | 276 bytes for form word `1` |
+| 43 | 4 | `form` | `u32` | little | spec | 276 bytes for form word `1` · value `1` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..276` (100 B): The transform record's tail precedes the same-index paired header at offset 276.
+
+## `move_transform_v3_frame_286`
+
+Spec §3.1 · layout: byte offsets · size: 286 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | 286 bytes for form word `0` |
+| 43 | 4 | `form` | `u32` | little | spec | 286 bytes for form word `0` · value `0` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..286` (110 B): The transform record's tail precedes the same-index paired header at offset 286.
+
+## `move_transform_v3_frame_296`
+
+Spec §3.1 · layout: byte offsets · size: 296 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | 296 bytes for form word `2` |
+| 31 | 11 | `first_reference` | `bytes[11]` | little | spec | marked references start at offsets 31, 42, and 53 |
+| 42 | 11 | `second_reference` | `bytes[11]` | little | spec | marked references start at offsets 31, 42, and 53 |
+| 53 | 11 | `third_reference` | `bytes[11]` | little | spec | marked references start at offsets 31, 42, and 53 |
+| 64 | 4 | `zero_word` | `u32` | little | spec | offset 64 stores u32 zero |
+| 68 | 11 | `fourth_reference` | `bytes[11]` | little | spec | a marked reference starts at offset 68 |
+| 83 | 4 | `form` | `u32` | little | spec | offset 83 stores the u32 form word · value `2` |
+| 87 | 1 | `reserved_zero` | `u8` | little | spec | offset 87 is zero |
+| 88 | 128 | `transform` | `f64[16]` | little | spec | the sixteen row-major f64 values begin at offset 88 |
+
+Unstated regions:
+
+- `11..31` (20 B): Offsets 11 through 30 are zero.
+- `79..83` (4 B): Offsets 79 through 82 are zero.
+- `216..296` (80 B): The transform record's tail precedes the same-index paired header at offset 296.
+
 ## `modify_marker_zero_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 47 B
@@ -6119,7 +6197,7 @@ Spec §3.1 · layout: byte offsets · size: 443 B
 Offsets are relative to the primary indexed header. The paired class-261 header begins at offset 443; the frame carries one fixed prologue reference, one ordered relation reference, and a row-major rigid transform.
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -6144,7 +6222,7 @@ Spec §3.1 · layout: byte offsets · size: 57 B
 Offsets are relative to the class-310 relation's primary indexed header. The first member names the class-380 occurrence carrier and the third member names the DerivedInstance scope.
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -10183,6 +10261,177 @@ Unstated regions:
 - `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
 - `11..130` (119 B): The specification states no field in this range.
 
+## `derived_instance_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 36 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | an eleven-byte indexed header |
+| 21 | 1 | `reference_marker` | `u8` | little | spec | a marked prologue reference at offset 21 · value `1` |
+| 22 | 8 | `reference_target` | `u64` | little | spec | a little-endian u64 target |
+| 32 | 4 | `source_count` | `u32` | little | spec | at offset 32 with plain references |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten zero bytes follow the indexed header.
+- `30..32` (2 B): Six zero bytes follow the prologue record index.
+
+## `derived_instance_source_entry_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `relation_reference` | `bytes[11]` | little | spec | Each source entry stores one local relation reference |
+| 11 | 1 | `placement_flag` | `u8` | little | spec | one matrix flag, and its optional matrix |
+
+## `derived_instance_reference_pair`
+
+Spec §3.1 · layout: byte offsets · size: 22 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | in two consecutive marked fields |
+| 11 | 11 | `relation_reference` | `bytes[11]` | little | spec | in two consecutive marked fields |
+
+## `derived_instance_count_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 4 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `count` | `u32` | little | spec | A second u32 count and a run of marked relation references follow |
+
+## `derived_instance_suffix_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 17 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 4 | 11 | `primary_relation_reference` | `bytes[11]` | little | spec | one marked primary relation reference, byte `1`, and a second transform slot |
+| 15 | 1 | `context_marker` | `u8` | little | spec | one marked primary relation reference, byte `1`, and a second transform slot · value `1` |
+| 16 | 1 | `placement_flag` | `u8` | little | spec | The second transform uses the same matrix-flag grammar |
+
+Unstated regions:
+
+- `0..4` (4 B): Four zero bytes precede the primary relation reference.
+
+## `derived_instance_guid_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 79 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 76 | `guid` | `bytes[76]` | little | spec | A 36-code-unit LP-UTF16 GUID and three zero bytes close this prefix |
+
+Unstated regions:
+
+- `76..79` (3 B): Three zero bytes precede the ordered-reference table.
+
+## `derived_instance_matrix`
+
+Spec §3.1 · layout: byte offsets · size: 128 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 128 | `matrix` | `f64[16]` | little | spec | The matrices use row-major order and centimetre translations |
+
+## `derived_instance_relation_58`
+
+Spec §3.1 · layout: byte offsets · size: 58 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | have an eleven-byte indexed header and ten zero bytes |
+| 21 | 11 | `carrier_reference` | `bytes[11]` | little | spec | The marked carrier reference starts at offset 21 |
+| 32 | 3 | `separator` | `bytes[3]` | little | spec | bytes `01 00 00` follow the carrier reference |
+| 35 | 11 | `middle_reference` | `bytes[11]` | little | spec | the middle reference starts at offset 35 |
+| 47 | 11 | `scope_reference` | `bytes[11]` | little | spec | the scope reference starts at offset 47 |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten zero bytes follow the indexed header.
+- `46..47` (1 B): One zero byte precedes the scope reference.
+
+## `derived_instance_reference`
+
+Spec §3.1 · layout: byte offsets · size: 11 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | Each plain local reference consists of byte `1` · value `1` |
+| 1 | 8 | `target` | `u64` | little | spec | a little-endian u64 target |
+| 9 | 2 | `flags` | `bytes[2]` | little | spec | two zero segment flags |
+
+## `derived_instance_typed_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 76 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | an eleven-byte indexed header |
+| 21 | 1 | `reference_marker` | `u8` | little | spec | a marked prologue reference at offset 21 · value `1` |
+| 22 | 8 | `reference_target` | `u64` | little | spec | a little-endian u64 target |
+| 30 | 4 | `type_guid_length` | `u32` | little | spec | an LP-ASCII type GUID of 36 bytes between the target and the flags · value `36` |
+| 34 | 36 | `type_guid` | `bytes[36]` | little | spec | The typed prologue reference carries type GUID |
+| 72 | 4 | `source_count` | `u32` | little | spec | offset 72 with typed references |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten zero bytes follow the indexed header.
+- `70..72` (2 B): Two zero segment flags close the local reference.
+
+## `derived_instance_relation_typed_177`
+
+Spec §3.1 · layout: byte offsets · size: 177 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/derived_instance.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | have an eleven-byte indexed header and ten zero bytes |
+| 21 | 51 | `carrier_reference` | `bytes[51]` | little | spec | Its carrier reference starts at offset 21 |
+| 74 | 51 | `middle_reference` | `bytes[51]` | little | spec | the middle reference starts at offset 74 |
+| 126 | 51 | `scope_reference` | `bytes[51]` | little | spec | the scope reference starts at offset 126 |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten zero bytes follow the indexed header.
+- `72..74` (2 B): Two zero bytes occupy offsets 72 and 73.
+- `125..126` (1 B): One zero byte precedes the scope reference.
+
 ## `scale_matrix_marker_zero_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 40 B
@@ -10405,6 +10654,53 @@ Parsed by:
 Unstated regions:
 
 - `48..125` (77 B): The common native tail precedes the same-index paired header.
+
+## `unstitch_prologue_compact`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/feature_project/unstitch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact UnStitch prologue |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | ten zero bytes at offsets 11 through 20 |
+| 21 | 1 | `selection_flag` | `u8` | little | spec | a selection flag byte at offset 21 |
+| 22 | 4 | `identity_count` | `u32` | little | spec | the u32 identity count `N` at offset 22 |
+
+## `unstitch_prologue_marked`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/feature_project/unstitch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The marked UnStitch prologue |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 4 | `marker` | `u32` | little | spec | u32 `1` at offset 20 · value `1` |
+| 24 | 1 | `zero_flag` | `u8` | little | spec | a zero byte at offset 24 · value `0` |
+| 25 | 1 | `selection_flag` | `u8` | little | spec | the selection flag byte at offset 25 |
+| 26 | 4 | `identity_count` | `u32` | little | spec | `N` at offset 26 |
+
+## `unstitch_prologue_extended`
+
+Spec §3.1 · layout: byte offsets · size: 34 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/feature_project/unstitch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The extended UnStitch prologue |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 4 | `marker` | `u32` | little | spec | u32 `1` at offset 20 · value `1` |
+| 24 | 1 | `zero_flag` | `u8` | little | spec | a zero byte at offset 24 · value `0` |
+| 25 | 1 | `selection_flag` | `u8` | little | spec | the selection flag byte at offset 25 |
+| 26 | 4 | `zero_word` | `u32` | little | spec | a zero u32 at offset 26 · value `0` |
+| 30 | 4 | `identity_count` | `u32` | little | spec | stores `N` at offset 30 |
 
 ## `surface_delete_face_wide_prologue`
 
