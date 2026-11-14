@@ -174,6 +174,7 @@ rewrite_enum!(FaceMotion, []; {
     Offset { distance },
     Translate { direction, distance },
     Rotate { axis_origin, axis_dir, angle },
+    Transform { transform },
 });
 
 rewrite_enum!(FaceSelection, []; {
@@ -199,6 +200,8 @@ rewrite_enum!(FeatureOperation, []; {
     MeshImport { tessellations },
     MeshGenerateFaceGroups { source, settings },
     MeshCombineFaceGroups { source },
+    MeshSection { source, plane, sketch },
+    MeshModify { source, modification },
     InsertBodies { bodies },
     InsertComponent { occurrence },
     InsertComponents { components },

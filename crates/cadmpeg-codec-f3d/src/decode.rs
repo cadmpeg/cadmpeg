@@ -500,7 +500,7 @@ fn axis_angle_is_resolved(axis_angle: &cadmpeg_ir::features::AxisAngle) -> bool 
 fn face_motion_is_resolved(motion: &cadmpeg_ir::features::FaceMotion) -> bool {
     use cadmpeg_ir::features::FaceMotion;
     match motion {
-        FaceMotion::Offset { .. } => true,
+        FaceMotion::Offset { .. } | FaceMotion::Transform { .. } => true,
         FaceMotion::Translate { direction, .. } => direction.unit().is_some(),
         FaceMotion::Rotate { axis_dir, .. } => axis_dir.unit().is_some(),
     }
@@ -598,9 +598,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             FeatureOperation::ReferenceImage { .. } | FeatureOperation::DatumPrincipalPlane { .. },
         ) => false,
         FeatureDefinition::Operation(FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. }) => true,
-        FeatureDefinition::Operation(FeatureOperation::MeshImport { tessellations }) => {
-            !matches!(tessellations, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
-        }
+        FeatureDefinition::Operation(
+            FeatureOperation::MeshImport {
+                tessellations: source,
+            }
+            | FeatureOperation::MeshSection { source, .. }
+            | FeatureOperation::MeshModify { source, .. },
+        ) => !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_)),
         FeatureDefinition::Operation(FeatureOperation::Decal { faces, .. }) => {
             !face_selection_is_resolved(faces)
         }
@@ -6081,6 +6085,7 @@ pub(crate) fn apply_body_presentation_names(
 pub(crate) mod design_intent;
 mod geometry_admission;
 mod mesh_import;
+mod mesh_operations;
 mod prereqs;
 
 #[cfg(test)]

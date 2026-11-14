@@ -3095,17 +3095,32 @@ fn check_feature_references(
             | FeatureOperation::MeshCombineFaceGroups {
                 source: tessellations,
             }
-            | FeatureOperation::MeshImport { tessellations } => {
-                if let crate::features::mesh::MeshSelection::Unresolved { feature: origin } =
-                    tessellations
-                {
-                    if !features.contains(origin.as_str()) {
-                        ref_error(
-                            findings,
-                            feature.id.as_str(),
-                            "mesh source feature",
-                            origin.as_str(),
-                        );
+            | FeatureOperation::MeshImport { tessellations }
+            | FeatureOperation::MeshSection {
+                source: tessellations,
+                ..
+            }
+            | FeatureOperation::MeshModify {
+                source: tessellations,
+                ..
+            } => {
+                if matches!(
+                    definition,
+                    FeatureOperation::MeshImport { .. }
+                        | FeatureOperation::MeshGenerateFaceGroups { .. }
+                        | FeatureOperation::MeshCombineFaceGroups { .. }
+                ) {
+                    if let crate::features::mesh::MeshSelection::Unresolved { feature: origin } =
+                        tessellations
+                    {
+                        if !features.contains(origin.as_str()) {
+                            ref_error(
+                                findings,
+                                feature.id.as_str(),
+                                "mesh source feature",
+                                origin.as_str(),
+                            );
+                        }
                     }
                 }
                 if let crate::features::mesh::MeshSelection::Tessellations(tessellations) =
@@ -3119,10 +3134,14 @@ fn check_feature_references(
                             ref_error(
                                 findings,
                                 feature.id.as_str(),
-                                if matches!(definition, FeatureOperation::MeshImport { .. }) {
-                                    "mesh import tessellation"
-                                } else {
+                                if matches!(
+                                    definition,
+                                    FeatureOperation::MeshGenerateFaceGroups { .. }
+                                        | FeatureOperation::MeshCombineFaceGroups { .. }
+                                ) {
                                     "mesh face-group tessellation"
+                                } else {
+                                    "mesh source tessellation"
                                 },
                                 tessellation.as_str(),
                             );

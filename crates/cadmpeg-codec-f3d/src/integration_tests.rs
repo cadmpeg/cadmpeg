@@ -12,6 +12,7 @@ mod design_containment;
 mod design_parameters;
 mod emboss_operands;
 mod external_placement;
+mod f30_placements;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;
@@ -710,3 +711,5 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
 mod dimension_annotations;
 
 mod stale_region_certificate;
+
+mod move_face;

@@ -890,6 +890,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     let mut native_angular_limits = 0_usize;
     let mut assumed_active = 0_usize;
     let mut assumed_connector_operands = 0_usize;
+    let mut assumed_additional_owner_motion = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -897,6 +898,13 @@ pub(crate) fn project_assembly_joints_with_paths(
         let motion = scope_joint_motion(scope, stream, motions);
         match project_assembly_joint(scope, stream, &occurrences, scopes, inserts, motion, paths) {
             Ok(Some((mut joint, undecoded))) => {
+                if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble
+                    && scope.assembly_alignment().is_some_and(|alignment| {
+                        alignment.additional_owner_run.as_ref().is_some_and(|run| run.count.value != 0)
+                    })
+                {
+                    assumed_additional_owner_motion += 1;
+                }
                 if has_unqualified_assembly_connectors(scope) {
                     assumed_connector_operands += 1;
                 }
@@ -968,6 +976,11 @@ pub(crate) fn project_assembly_joints_with_paths(
         }
     }
     let mut losses = Vec::new();
+    if assumed_additional_owner_motion != 0 {
+        losses.push(F3dLossCode::AssemblyAdditionalOwnerMotionAssumed.note(format!(
+            "{assumed_additional_owner_motion} Design assembly relation(s) assume no extra neutral motion constraints from their counted owner runs; the decoded joint motion supplies the relation with a fixed fallback. Additional owner roles and values remain native, and source parameter expressions remain feature source properties."
+        )));
+    }
     if assumed_connector_operands != 0 {
         losses.push(F3dLossCode::AssemblyConnectorOperandsAssumed.note(format!(
             "{assumed_connector_operands} Design assembly joint(s) use native scope identities and connector element paths with missing document containers; the operand context is assumed."

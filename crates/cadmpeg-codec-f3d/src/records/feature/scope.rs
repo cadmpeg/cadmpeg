@@ -2706,7 +2706,17 @@ impl DesignParameterScope {
         if !(draft.byte_offset < draft.reference_count_offset
             && draft.reference_count_offset < draft.kind_offset)
             || (draft.reference_members.is_empty()
-                && empty_table_at != Some(draft.reference_count_offset))
+                && empty_table_at != Some(draft.reference_count_offset)
+                && !(kind == "MoveFace"
+                    && [
+                        crate::layout::move_face_marker_zero_prologue::REFERENCE_COUNT,
+                        crate::layout::move_face_marker_one_prologue::REFERENCE_COUNT,
+                    ]
+                    .into_iter()
+                    .any(|offset| {
+                        draft.byte_offset.checked_add(u64_from_index(offset))
+                            == Some(draft.reference_count_offset)
+                    })))
         {
             return Err(fail("reference_count_offset/reference_members"));
         }

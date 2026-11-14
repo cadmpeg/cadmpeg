@@ -1306,9 +1306,11 @@ pub(crate) fn append_design_losses(
                 | FeatureOperation::Helix { .. } => false,
                 FeatureOperation::BaseFeature { bodies } => incomplete_body_selection(bodies),
                 FeatureOperation::InsertBodies { bodies } => !bodies.is_resolved(),
-                FeatureOperation::MeshImport { .. } => false,
                 FeatureOperation::MeshGenerateFaceGroups { .. }
                 | FeatureOperation::MeshCombineFaceGroups { .. } => true,
+                FeatureOperation::MeshImport { .. }
+                | FeatureOperation::MeshSection { .. }
+                | FeatureOperation::MeshModify { .. } => false,
                 FeatureOperation::InsertComponent { occurrence } => !ir
                     .model
                     .occurrences
