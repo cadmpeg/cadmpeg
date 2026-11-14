@@ -10687,6 +10687,94 @@ Parsed by:
 | 11 | 6 | `zeros` | `bytes[6]` | little | spec | reference, six zero bytes, an identity byte · value `[0, 0, 0, 0, 0, 0]` |
 | 17 | 1 | `identity` | `u8` | little | spec | reference, six zero bytes, an identity byte |
 
+## `marked_reference_box_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 339 B
+
+Scope-relative prefix through the ordered reference count.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/solid_primitive.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Bytes 11 through 20 are zero, byte 21 is `0x01` |
+| 21 | 1 | `form_marker` | `u8` | little | spec | Bytes 11 through 20 are zero, byte 21 is `0x01` |
+| 22 | 4 | `operation` | `u32` | little | spec | the result-operation u32 is at offset 22 with the four values of the named form |
+| 26 | 1 | `nested_marker` | `u8` | little | spec | and byte 26 is `0x01` |
+| 27 | 77 | `references` | `bytes[77]` | little | spec | Seven eleven-byte marked references start at offset 27 |
+| 104 | 1 | `zero_before_matrix` | `u8` | little | spec | Byte 104 is zero |
+| 105 | 128 | `matrix` | `f64[16]` | little | spec | The row-major rigid right-handed 4x4 f64 matrix at offset 105 |
+| 256 | 4 | `guid_code_unit_count` | `u32` | little | spec | A 36-code-unit LP-UTF16 null GUID begins at offset 256 |
+| 260 | 72 | `guid` | `bytes[72]` | little | spec | A 36-code-unit LP-UTF16 null GUID begins at offset 256 |
+| 332 | 3 | `zero_run_3` | `bytes[3]` | little | spec | followed by three zero bytes at offset 332 |
+| 335 | 4 | `reference_count` | `u32` | little | spec | the reference count at offset 335 |
+
+Unstated regions:
+
+- `233..256` (23 B): Bytes between the matrix and null GUID.
+
+## `prefixed_marked_reference_box_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 343 B
+
+Scope-relative prefix through the ordered reference count.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/solid_primitive.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 4 | `one_prefix` | `u32` | little | spec | u32 `1` at offset 20 |
+| 24 | 1 | `zero_flag` | `u8` | little | spec | zero at offset 24 |
+| 25 | 1 | `form_marker` | `u8` | little | spec | `0x01` at offset 25 |
+| 26 | 4 | `operation` | `u32` | little | spec | Their result-operation u32 is at offset 26 |
+| 30 | 1 | `nested_marker` | `u8` | little | spec | followed by `0x01` at offset 30 |
+| 31 | 77 | `references` | `bytes[77]` | little | spec | seven eleven-byte marked references at offset 31 |
+| 108 | 1 | `zero_before_matrix` | `u8` | little | spec | Byte 108 is zero |
+| 109 | 128 | `matrix` | `f64[16]` | little | spec | the box-local rigid matrix starts at offset 109 |
+| 260 | 4 | `guid_code_unit_count` | `u32` | little | spec | null GUID at offset 260 |
+| 264 | 72 | `guid` | `bytes[72]` | little | spec | null GUID at offset 260 |
+| 336 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes at offset 336 |
+| 339 | 4 | `reference_count` | `u32` | little | spec | the reference count at offset 339 |
+
+Unstated regions:
+
+- `237..260` (23 B): Bytes between the matrix and null GUID.
+
+## `extended_prefixed_marked_reference_box_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 347 B
+
+Scope-relative prefix through the ordered reference count.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/solid_primitive.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 4 | `one_prefix` | `u32` | little | spec | u32 `1` at offset 20 |
+| 24 | 1 | `zero_flag` | `u8` | little | spec | zero at offset 24 |
+| 25 | 1 | `form_marker` | `u8` | little | spec | `0x01` at offset 25 |
+| 26 | 4 | `operation` | `u32` | little | spec | Their result-operation u32 is at offset 26 |
+| 30 | 1 | `nested_marker` | `u8` | little | spec | followed by `0x01` at offset 30 |
+| 31 | 77 | `references` | `bytes[77]` | little | spec | seven eleven-byte marked references at offset 31 |
+| 108 | 1 | `zero_before_matrix` | `u8` | little | spec | Byte 108 is zero |
+| 109 | 128 | `matrix` | `f64[16]` | little | spec | the box-local rigid matrix starts at offset 109 |
+| 264 | 4 | `guid_code_unit_count` | `u32` | little | spec | GUID at offset 264 |
+| 268 | 72 | `guid` | `bytes[72]` | little | spec | GUID at offset 264 |
+| 340 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes at offset 340 |
+| 343 | 4 | `reference_count` | `u32` | little | spec | the reference count at offset 343 |
+
+Unstated regions:
+
+- `237..264` (27 B): Bytes between the matrix and null GUID.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

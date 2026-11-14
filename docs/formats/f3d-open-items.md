@@ -1264,17 +1264,17 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding. The public Voron Trident `z_mounts_front.f3d` has nine such scopes. Component context bindings identify their result owners. The source-body and source-frame joins require the derivation references independently of those owner bindings.
 
-### DR-123. Typed-reference BoxPrimitive offsets and other forms
+### DR-123. BoxPrimitive support frame and planar offset composition
 
-**Question.** How does a nonzero `OffsetDistanceX` or `OffsetDistanceY` owner combine with the stored frame in a `BoxPrimitive` scope with eight typed reference members, and which other frame lengths does the form have?
+**Question.** How does a nonzero `OffsetDistanceX` or `OffsetDistanceY` owner combine with the stored frame in the typed-reference and marked-reference `BoxPrimitive` forms, and how do inferred-axis and flip fields change the support placement?
 
-**Known.** The 1295-byte form stores the result operation, a rigid local frame, and the five box parameter owners; the frame is the box placement when both offset owners are zero. The support-face selection and placement construction references are table members, and the form stores one further typed reference at offset 517 that is not a table member.
+**Known.** Both forms store the result operation, a rigid box-local frame, five parameter owners, and a reference to the support placement construction. The support placement composes on the left of the box-local frame. The 1295-byte form stores one further typed reference at offset 517 outside its table.
 
-**Need.** A scope in this form with a nonzero offset owner and a changed placement, and a scope in any other frame length.
+**Need.** A scope in each form with a nonzero offset owner and a changed placement. Controlled support placements with inferred-axis or flip fields set.
 
 **Conflict.** None.
 
-**Note.** A scope outside the 1295-byte form, or with a nonzero offset owner, remains native with `feature.box-primitive-unresolved`.
+**Note.** The decoder applies nonzero planar offsets along the box-local frame's x and y axes and charges `feature.box-offset-frame-assumed`. A stored rigid support frame with unresolved placement flags transfers with `feature.box-support-flags-assumed`. An absent, ambiguous, or unusable support placement uses an identity support frame with `feature.box-support-frame-assumed`. Dimensions and Boolean operation transfer with these assumed placements.
 
 ### DR-147. Region extent of a tracking-path Extrude selection
 
