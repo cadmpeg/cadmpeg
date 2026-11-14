@@ -1709,7 +1709,11 @@ fn the_tap_type_selects_the_hole_diameter_loss() {
         hole_tap_type_loss("hole", 2).unwrap().code,
         crate::loss::F3dLossCode::HoleTappedDiameterStored.kind()
     );
-    for other in [3, 1_867_538_229] {
+    assert_eq!(
+        hole_tap_type_loss("hole", 3).unwrap().code,
+        crate::loss::F3dLossCode::HoleTaperTappedBoreCylindrical.kind()
+    );
+    for other in [4, 1_867_538_229] {
         assert_eq!(
             hole_tap_type_loss("hole", other).unwrap().code,
             crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed.kind()
