@@ -103,6 +103,7 @@ fn operand_list_combine_offsets_hold(
 ) -> bool {
     const EMPTY_PROPERTY_BLOCK_LEN: u64 = 4;
     const COMPANION_REFERENCE_LEN: u64 = 11;
+    const TYPED_COMPANION_REFERENCE_LEN: u64 = 51;
     let operation_at = u64_from_index(combine_lists::OPERATION);
     let keep_tools_after_operation =
         u64_from_index(combine_lists::KEEP_TOOLS - combine_lists::OPERATION);
@@ -116,7 +117,12 @@ fn operand_list_combine_offsets_hold(
         .and_then(|distance| distance.checked_sub(keep_tools_after_operation));
     matches!(property_block, Some(0 | EMPTY_PROPERTY_BLOCK_LEN))
         && companion_bytes.is_some_and(|bytes| {
-            bytes.is_multiple_of(COMPANION_REFERENCE_LEN) && (bytes == 0 || !operation.keep_tools)
+            (bytes == 0 || !operation.keep_tools)
+                && (0..COMPANION_REFERENCE_LEN).any(|typed| {
+                    bytes
+                        .checked_sub(typed * TYPED_COMPANION_REFERENCE_LEN)
+                        .is_some_and(|remaining| remaining.is_multiple_of(COMPANION_REFERENCE_LEN))
+                })
         })
 }
 
@@ -5370,6 +5376,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 {
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
                 }
+                None if scope.mesh_face_groups().is_some() => {
+                    group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
+                }
                 None if scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::Align =>
                 {
@@ -5399,27 +5408,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 }
                 None => false,
             };
-            (design::design_feature_family(&scope.kind()).is_some()
-                || matches!(
-                    scope.kind(),
-                    crate::records::feature::scope::DesignFeatureKind::Emboss
-                        | crate::records::feature::scope::DesignFeatureKind::RemoveBody
-                        | crate::records::feature::scope::DesignFeatureKind::ReverseNormal
-                        | crate::records::feature::scope::DesignFeatureKind::Modify
-                        | crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
-                        | crate::records::feature::scope::DesignFeatureKind::SplitFace
-                        | crate::records::feature::scope::DesignFeatureKind::PathPattern
-                        | crate::records::feature::scope::DesignFeatureKind::MoveFace
-                        | crate::records::feature::scope::DesignFeatureKind::DeleteFace
-                        | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
-                        | crate::records::feature::scope::DesignFeatureKind::UnStitch
-                        | crate::records::feature::scope::DesignFeatureKind::Decal
-                        | crate::records::feature::scope::DesignFeatureKind::Align
-                        | crate::records::feature::scope::DesignFeatureKind::BaseFlange
-                        | crate::records::feature::scope::DesignFeatureKind::EdgeFlange
-                        | crate::records::feature::scope::DesignFeatureKind::Hem
-                ))
-                && role_is_valid
+            role_is_valid
                 && usize::try_from(group.scope_reference_ordinal)
                     .ok()
                     .and_then(|ordinal| scope.reference_members().values().nth(ordinal))

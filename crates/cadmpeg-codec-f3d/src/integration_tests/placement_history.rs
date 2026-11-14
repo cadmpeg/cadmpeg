@@ -207,7 +207,7 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
 }
 
 #[test]
-fn only_absent_membership_uses_the_component_cluster() {
+fn unadmitted_membership_keeps_the_body_in_an_uninstanced_definition() {
     for owners in [&[][..], &[200, 300][..], &[999][..]] {
         let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(owners);
         let bytes = f3d_with_breps_and_design(
@@ -228,8 +228,20 @@ fn only_absent_membership_uses_the_component_cluster() {
                 .iter()
                 .flat_map(|definition| &definition.bodies)
                 .count(),
-            usize::from(owners.is_empty())
+            1
         );
+        let model = &result.ir().model;
+        let definition = model
+            .product_definitions
+            .iter()
+            .find(|definition| !definition.bodies.is_empty())
+            .unwrap();
+        assert!(model.occurrences.iter().all(|occurrence| {
+            occurrence.prototype
+                != cadmpeg_ir::products::PrototypeReference::Local {
+                    definition: definition.id.clone(),
+                }
+        }));
         assert!(result.report().losses.iter().any(|loss| loss.code
             == if owners.is_empty() {
                 F3dLossCode::ComponentBodyOwnerFallback.kind()
@@ -622,4 +634,56 @@ fn history_only_consumed_member_keeps_the_inserted_design_body() {
         .iter()
         .any(|loss| loss.code == F3dLossCode::ComponentBodyOwnerFallback.kind()));
     super::assert_valid(&result);
+}
+
+#[test]
+fn attributed_version_two_occurrences_keep_definition_ownership_and_nested_world_poses() {
+    let (bulk, meta) =
+        crate::test_support::empty_attribute_occurrences::attributed_local_component_design();
+    let bytes = f3d_with_breps_and_design(
+        &[(
+            "BREP.module.smbh",
+            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        )],
+        &bulk,
+        &meta,
+    );
+    let result = super::decode(bytes);
+    super::assert_valid(&result);
+    let model = &result.ir().model;
+    assert_eq!(model.occurrences.len(), 7);
+    assert_eq!(
+        model
+            .product_definitions
+            .iter()
+            .flat_map(|definition| &definition.bodies)
+            .count(),
+        1
+    );
+    let placements = model
+        .occurrences
+        .iter()
+        .map(|occurrence| occurrence.transform)
+        .collect::<Vec<_>>();
+    assert!(placements.iter().any(|transform| [
+        transform.rows()[0][3],
+        transform.rows()[1][3],
+        transform.rows()[2][3]
+    ] == [30.0, 40.0, 0.0]));
+    assert!(placements.iter().any(|transform| [
+        transform.rows()[0][3],
+        transform.rows()[1][3],
+        transform.rows()[2][3]
+    ] == [10.0, 0.0, 0.0]));
+    for code in [
+        F3dLossCode::LocalOccurrenceUnplaced,
+        F3dLossCode::ComponentBodyOwnerUnresolved,
+        F3dLossCode::LocalOccurrenceEnvelopeNative,
+    ] {
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == code.kind()));
+    }
 }

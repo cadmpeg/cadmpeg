@@ -7169,6 +7169,8 @@ fn boolean_definition(
             operands,
             op,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         },
     )))
 }

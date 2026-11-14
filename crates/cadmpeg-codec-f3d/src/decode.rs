@@ -597,6 +597,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(
             FeatureOperation::ReferenceImage { .. } | FeatureOperation::DatumPrincipalPlane { .. },
         ) => false,
+        FeatureDefinition::Operation(FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. }) => true,
         FeatureDefinition::Operation(
             FeatureOperation::MeshImport {
                 tessellations: source,
@@ -604,6 +605,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             | FeatureOperation::MeshSection { source, .. }
             | FeatureOperation::MeshModify { source, .. },
         ) => !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_)),
+        FeatureDefinition::Operation(FeatureOperation::MeshConvert(conversion)) => {
+            conversion.method.is_none()
+                || conversion.sources.is_empty()
+                || conversion.sources.iter().any(|source| {
+                    !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
+                })
+        }
         FeatureDefinition::Operation(FeatureOperation::Decal { faces, .. }) => {
             !face_selection_is_resolved(faces)
         }
@@ -1108,10 +1116,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                         )
                 })
         }
-        FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) => {
+        FeatureDefinition::Operation(FeatureOperation::Combine { operands, destination, .. }) => {
             let target = operands.target();
             let tools = operands.tools();
             !body_selection_is_resolved(target) || !body_selection_is_resolved(tools)
+                || matches!(destination, cadmpeg_ir::features::CombineDestination::NewComponent)
         }
         // A typed family is not replayable until this match states and checks
         // its complete construction invariants.
@@ -1887,7 +1896,9 @@ fn design_projection_gaps(
                         PatternSeed::Bodies(bodies) => {
                             gaps.body_selections += native_body_selection_count(bodies);
                         }
-                        PatternSeed::Feature(_) | PatternSeed::Occurrences(..) => {}
+                        PatternSeed::Native(_)
+                        | PatternSeed::Feature(_)
+                        | PatternSeed::Occurrences(..) => {}
                     }
                 }
                 match pattern.definition() {
@@ -1895,6 +1906,14 @@ fn design_projection_gaps(
                     PatternTransform::CurveDriven {
                         path: Some(path), ..
                     } => gaps.path_selections += usize::from(!loft_path_is_resolved(path)),
+                    PatternTransform::CurveDrivenPartial { parameters } => {
+                        gaps.path_selections += usize::from(
+                            parameters
+                                .path
+                                .as_ref()
+                                .is_none_or(|path| !loft_path_is_resolved(path)),
+                        );
+                    }
                     _ => {}
                 }
             }

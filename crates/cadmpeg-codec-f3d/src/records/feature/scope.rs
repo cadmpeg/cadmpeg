@@ -20,7 +20,7 @@ use super::coil::{
     DesignCoilExtent, DesignCoilPlacement, DesignCoilScope, DesignCoilSection,
     DesignCoilSectionPlacement, DesignCoilTransform,
 };
-use super::combine::DesignCombineOperation;
+use super::combine::{DesignCombineOperation, DesignCombineScope};
 use super::direct_face::{
     DesignDirectFaceOperation, DesignDraftOperation, DesignModifyOperation, DesignMoveOperation,
     DesignOffsetFacesOperation, DesignShellOperation, DesignThickenOperation,
@@ -53,6 +53,7 @@ use super::thread::DesignThreadConstruction;
 use super::work_geometry::{
     DesignWorkAxisConstruction, DesignWorkPlaneConstruction, DesignWorkPointConstruction,
 };
+use crate::layout::named_parameter_scope_tail as named_scope_tail;
 use crate::records::identity::{deserialize_absent_u64_offset, DesignEntityId, ReferenceRun};
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
@@ -123,6 +124,21 @@ cadmpeg_core::named_optional_field!(
     deserialize_combine_operation,
     DesignCombineOperation,
     "combine_operation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_combine_named_tail,
+    DesignNamedScopeReferences,
+    "combine_named_tail"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_named_scope_middle,
+    crate::records::identity::Located<u32>,
+    "middle"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_named_scope_closing,
+    crate::records::identity::Located<u32>,
+    "closing"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_component_insert_construction,
@@ -426,6 +442,80 @@ impl<T> ScopePayloadCompleteness for Vec<T> {
     }
 }
 
+impl ScopePayloadCompleteness for DesignCombineScope {
+    fn is_uninterpreted(&self) -> bool {
+        self.operation.is_none() && self.named_tail.is_none()
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignNamedScopeReferences {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) associated: Vec<crate::records::identity::Located<u32>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_named_scope_middle",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) middle: Option<crate::records::identity::Located<u32>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_named_scope_closing",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) closing: Option<crate::records::identity::Located<u32>>,
+}
+
+impl DesignNamedScopeReferences {
+    pub(crate) fn extra_bytes(&self) -> Option<usize> {
+        let width = named_scope_tail::MIDDLE_REFERENCE - named_scope_tail::FIRST_REFERENCE;
+        self.associated.len().checked_mul(width)?.checked_add(
+            (width - 1)
+                * (usize::from(self.middle.is_some()) + usize::from(self.closing.is_some())),
+        )
+    }
+
+    fn offsets_valid(&self, label_end: u64, paired_at: u64) -> bool {
+        (|| {
+            if self.associated.is_empty() && self.middle.is_none() && self.closing.is_none() {
+                return None;
+            }
+            let mut cursor = label_end.checked_add(5)?;
+            for reference in &self.associated {
+                if reference.value == 0 || reference.offset != cursor {
+                    return None;
+                }
+                cursor = cursor.checked_add(11)?;
+            }
+            cursor = cursor.checked_add(u64_from_index(
+                named_scope_tail::MIDDLE_REFERENCE - named_scope_tail::ASSOCIATED_COUNT - 5,
+            ))?;
+            for (reference, following) in [
+                (
+                    &self.middle,
+                    u64_from_index(
+                        named_scope_tail::CLOSING_REFERENCE - named_scope_tail::OPAQUE_WORD,
+                    ),
+                ),
+                (&self.closing, 1),
+            ] {
+                if let Some(reference) = reference {
+                    if reference.value == 0 || cursor.checked_add(1)? != reference.offset {
+                        return None;
+                    }
+                    cursor = cursor.checked_add(11)?;
+                } else {
+                    cursor = cursor.checked_add(1)?;
+                }
+                cursor = cursor.checked_add(following)?;
+            }
+            (cursor == paired_at).then_some(())
+        })()
+        .is_some()
+    }
+}
+
 impl ScopePayloadCompleteness for crate::records::feature::hole::DesignHoleScope {
     fn is_uninterpreted(&self) -> bool {
         self.point.is_none() && self.extent.is_none()
@@ -647,7 +737,7 @@ design_feature_kinds! {
         Extrude => "Extrude": Option<DesignExtrudeScope>,
         Fillet => "Fillet": super::fillet_set::DesignFilletScope,
         Chamfer => "Chamfer": super::chamfer_set::DesignChamferScope,
-        Combine => "Combine": Option<DesignCombineOperation>,
+        Combine => "Combine": DesignCombineScope,
         Draft => "Draft": Option<DesignDraftOperation>,
         CPattern => "C-Pattern": Option<DesignCircularPatternConstruction>,
         CircularPattern => "Circular Pattern": Option<DesignCircularPatternConstruction>,
@@ -685,6 +775,8 @@ design_feature_kinds! {
         BaseFeature => "Base Feature": Option<DesignBaseFeatureConstruction>,
         CopyPasteBodies => "CopyPasteBodies": Option<DesignCopyPasteBodiesOperation>,
         ReverseNormal => "Reverse Normal": Option<DesignReverseNormalOperation>,
+        GenerateFaceGroups => "GenerateFaceGroups": Option<super::mesh_face_groups::DesignMeshFaceGroups>,
+        CombineFaceGroups => "CombineFaceGroups": Option<super::mesh_face_groups::DesignMeshFaceGroups>,
     }
     fixed {
         Revolve => "Revolve": Option<DesignRevolveConstruction>,
@@ -1017,6 +1109,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_path_pattern_settings"
     )]
     path_pattern_settings: Option<crate::records::feature::patterns::DesignPathPatternSettings>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_mesh_face_groups"
+    )]
+    mesh_face_groups: Option<super::mesh_face_groups::DesignMeshFaceGroups>,
     /// Exact tolerance and setting-record references carried by a `SurfaceStitch` scope.
     #[serde(
         default,
@@ -1122,6 +1220,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_combine_operation"
     )]
     combine_operation: Option<DesignCombineOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_combine_named_tail"
+    )]
+    combine_named_tail: Option<DesignNamedScopeReferences>,
     /// Exact form and size construction carried by a `Thread` scope.
     #[serde(
         default,
@@ -1715,6 +1819,12 @@ pub(crate) struct DesignJointOriginReference {
     pub(crate) joint_origin_reference_offset: u64,
 }
 
+cadmpeg_core::named_optional_field!(
+    deserialize_mesh_face_groups,
+    super::mesh_face_groups::DesignMeshFaceGroups,
+    "mesh_face_groups"
+);
+
 impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
     type Error = DesignParameterScopePayloadError;
 
@@ -1786,6 +1896,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.reverse_normal_operation.is_some() {
             present.push("reverse_normal_operation");
         }
+        if wire.mesh_face_groups.is_some() {
+            present.push("mesh_face_groups");
+        }
         if wire.path_pattern_settings.is_some() {
             present.push("path_pattern_settings");
         }
@@ -1825,7 +1938,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.chamfer_sets.is_some() {
             present.push("chamfer_sets");
         }
-        if wire.combine_operation.is_some() {
+        if wire.combine_operation.is_some() || wire.combine_named_tail.is_some() {
             present.push("combine_operation");
         }
         if wire.emboss_construction.is_some() {
@@ -1906,9 +2019,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                     sets: wire.chamfer_sets.take(),
                 })
             }
-            DesignFeatureKind::Combine => {
-                DesignScopePayload::Combine(wire.combine_operation.take())
-            }
+            DesignFeatureKind::Combine => DesignScopePayload::Combine(DesignCombineScope {
+                operation: wire.combine_operation.take(),
+                named_tail: wire.combine_named_tail.take(),
+            }),
             DesignFeatureKind::Draft => DesignScopePayload::Draft(wire.draft_operation.take()),
             DesignFeatureKind::ReplaceFace => DesignScopePayload::ReplaceFace,
             DesignFeatureKind::CPattern => {
@@ -2094,6 +2208,12 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::Canvas => DesignScopePayload::Canvas,
             DesignFeatureKind::Decal => DesignScopePayload::Decal,
             DesignFeatureKind::BaseMeshFeature => DesignScopePayload::BaseMeshFeature,
+            DesignFeatureKind::GenerateFaceGroups => {
+                DesignScopePayload::GenerateFaceGroups(wire.mesh_face_groups.take())
+            }
+            DesignFeatureKind::CombineFaceGroups => {
+                DesignScopePayload::CombineFaceGroups(wire.mesh_face_groups.take())
+            }
             DesignFeatureKind::WorkPlane => {
                 DesignScopePayload::WorkPlane(wire.work_plane_frame.take())
             }
@@ -2189,6 +2309,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.scale_operation.is_some()
             || wire.reverse_normal_operation.is_some()
             || wire.path_pattern_settings.is_some()
+            || wire.mesh_face_groups.is_some()
             || wire.surface_stitch_operation.is_some()
             || wire.surface_extend_operation.is_some()
             || wire.surface_offset_operation.is_some()
@@ -2203,6 +2324,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.fixed_chamfer_parameters.is_some()
             || wire.chamfer_sets.is_some()
             || wire.combine_operation.is_some()
+            || wire.combine_named_tail.is_some()
             || wire.emboss_construction.is_some()
             || wire.thread_construction.is_some()
             || wire.draft_operation.is_some()
@@ -2358,6 +2480,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             scale_operation: None,
             reverse_normal_operation: None,
             path_pattern_settings: None,
+            mesh_face_groups: None,
             surface_stitch_operation: None,
             surface_extend_operation: None,
             surface_offset_operation: None,
@@ -2374,6 +2497,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             chamfer_sets: None,
             path_feature: None,
             combine_operation: None,
+            combine_named_tail: None,
             thread_construction: None,
             emboss_construction: None,
             draft_operation: None,
@@ -2469,6 +2593,8 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.reverse_normal_operation = value;
             }
             DesignScopePayload::PathPattern(value) => wire.path_pattern_settings = value,
+            DesignScopePayload::GenerateFaceGroups(value)
+            | DesignScopePayload::CombineFaceGroups(value) => wire.mesh_face_groups = value,
             DesignScopePayload::SurfaceStitch(value) => wire.surface_stitch_operation = Some(value),
             DesignScopePayload::SurfaceExtend(value) => wire.surface_extend_operation = value,
             DesignScopePayload::SurfaceOffset(value) => wire.surface_offset_operation = value,
@@ -2488,7 +2614,10 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.fixed_chamfer_parameters = value.fixed;
                 wire.chamfer_sets = value.sets;
             }
-            DesignScopePayload::Combine(value) => wire.combine_operation = value,
+            DesignScopePayload::Combine(value) => {
+                wire.combine_operation = value.operation;
+                wire.combine_named_tail = value.named_tail;
+            }
             DesignScopePayload::Thread(value) => wire.thread_construction = value,
             DesignScopePayload::Emboss(value) => wire.emboss_construction = value,
             DesignScopePayload::Draft(value) => wire.draft_operation = value,
@@ -2612,14 +2741,36 @@ impl DesignParameterScope {
             .checked_sub(draft.feature_ordinal_offset)
             .and_then(|length| usize::try_from(length).ok())
             .ok_or_else(|| fail("feature_ordinal_offset"))?;
+        let named_tail = match &draft.payload {
+            DesignScopePayload::Combine(value) => value.named_tail.as_ref(),
+            _ => None,
+        };
+        let extra_bytes = named_tail
+            .map_or(Some(0), DesignNamedScopeReferences::extra_bytes)
+            .ok_or_else(|| fail("combine_named_tail"))?;
+        if named_tail.is_some() && draft.label.is_none() {
+            return Err(fail("combine_named_tail/label"));
+        }
         if let Some(label) = &draft.label {
             let units = label.value.encode_utf16().count();
             if units == 0
                 || units > 256
                 || label.value.chars().any(char::is_control)
-                || draft.feature_ordinal_offset.checked_add(12) != Some(label.offset)
-                || 78usize.checked_add(units * 2) != Some(tail)
+                || draft
+                    .feature_ordinal_offset
+                    .checked_add(u64_from_index(named_scope_tail::ASSOCIATED_COUNT))
+                    != Some(label.offset)
+                || named_scope_tail::LEN
+                    .checked_add(units * 2)
+                    .and_then(|base| base.checked_add(extra_bytes))
+                    != Some(tail)
                 || draft.previous_history_state_id_offset.is_some()
+                || named_tail.is_some_and(|references| {
+                    label
+                        .offset
+                        .checked_add(u64_from_index(units * 2))
+                        .is_none_or(|end| !references.offsets_valid(end, draft.paired_byte_offset))
+                })
             {
                 return Err(fail("label"));
             }
@@ -2634,7 +2785,10 @@ impl DesignParameterScope {
                 && tail == crate::layout::typed_reference_parameter_scope_tail::LEN);
         let typed_canvas =
             typed && kind == "Canvas" && tail == crate::layout::canvas_scope_typed_tail::LEN;
-        let tail_valid = if typed_canvas {
+        if typed && named_tail.is_some() {
+            return Err(fail("combine_named_tail/reference_members"));
+        }
+        let tail_valid = if typed_canvas || named_tail.is_some() {
             true
         } else if typed {
             crate::design::decode::scopes::parameter_scope::typed_scope_previous_history_offset(
@@ -3022,6 +3176,16 @@ impl DesignParameterScope {
         }
     }
 
+    pub(crate) fn mesh_face_groups(
+        &self,
+    ) -> Option<&super::mesh_face_groups::DesignMeshFaceGroups> {
+        match &self.payload {
+            DesignScopePayload::GenerateFaceGroups(value)
+            | DesignScopePayload::CombineFaceGroups(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
     pub(crate) fn reverse_normal_operation(&self) -> Option<&DesignReverseNormalOperation> {
         match &self.payload {
             DesignScopePayload::ReverseNormal(value) => value.as_ref(),
@@ -3101,7 +3265,14 @@ impl DesignParameterScope {
 
     pub(crate) fn combine_operation(&self) -> Option<&DesignCombineOperation> {
         match &self.payload {
-            DesignScopePayload::Combine(value) => value.as_ref(),
+            DesignScopePayload::Combine(value) => value.operation.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn combine_named_tail(&self) -> Option<&DesignNamedScopeReferences> {
+        match &self.payload {
+            DesignScopePayload::Combine(value) => value.named_tail.as_ref(),
             _ => None,
         }
     }
@@ -3109,7 +3280,7 @@ impl DesignParameterScope {
     #[cfg(test)]
     pub(crate) fn combine_operation_mut(&mut self) -> Option<&mut DesignCombineOperation> {
         match &mut self.payload {
-            DesignScopePayload::Combine(value) => value.as_mut(),
+            DesignScopePayload::Combine(value) => value.operation.as_mut(),
             _ => None,
         }
     }

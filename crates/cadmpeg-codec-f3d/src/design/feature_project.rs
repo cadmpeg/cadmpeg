@@ -46,14 +46,17 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 pub(crate) mod form_cages;
+mod mesh_face_groups;
 mod mirror;
 mod paste_copy;
 mod path_pattern;
 mod pattern_seeds;
 mod reverse_normal;
 mod revolve_target;
+pub(crate) mod shell_fallback;
 mod surface_offset;
 mod surface_patch;
+pub(crate) mod sweep_fallback;
 pub(crate) mod thicken;
 mod unstitch;
 
@@ -806,9 +809,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::Combine) => project_combine(scope, native_scope)
                     .unwrap_or_else(|| {
-                        FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: scope.kind_name().into(),
-                            parameters: BTreeMap::new(),
+                        projection_losses.push(crate::loss::F3dLossCode::FeatureCombineDefinitionUnresolved.note(
+                            format!("{}: the Combine operation or its operand construction is unresolved; the feature family is retained without a fabricated Boolean operation", scope.id),
+                        ));
+                        FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                            family: UnresolvedFamily::Combine,
                         })
                     }),
                 Some(DesignFeatureFamily::Draft) => {
@@ -1456,13 +1461,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 parameters: BTreeMap::new(),
                             })
                         })
+                    } else if matches!(scope.kind(), crate::records::feature::scope::DesignFeatureKind::GenerateFaceGroups | crate::records::feature::scope::DesignFeatureKind::CombineFaceGroups) {
+                        mesh_face_groups::project(scope, &parameters, design_types, &mut projection_losses)
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::PathPattern
                     {
                         path_pattern::path_pattern_definition(
                             scope,
-                            construction_groups,
+                            inputs,
                             &parameters,
+                            &source_ordinals,
                             &mut projection_losses,
                         )?
                     } else if scope.kind()
@@ -1608,8 +1616,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: if matches!(
                     &definition,
-                    FeatureDefinition::Operation(FeatureOperation::Native { .. })
-                ) || matches!(family, Some(DesignFeatureFamily::Hole))
+                    FeatureDefinition::Operation(FeatureOperation::Native { .. } | FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. })
+                ) || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CurveDrivenPartial { .. }))
+                    || matches!(family, Some(DesignFeatureFamily::Hole))
                     || matches!(family, Some(DesignFeatureFamily::Emboss))
                     || shell_has_independent_walls(scope)
                     || extended_joint_origin
@@ -2539,7 +2548,10 @@ pub(super) fn project_combine(
     scope: &DesignParameterScope,
     native_scope: &str,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use crate::records::feature::combine::DesignCombineDestination;
+    use cadmpeg_ir::features::{
+        BodySelection, CombineDestination, FeatureDefinition, FeatureOperation,
+    };
 
     let operation = scope.combine_operation()?;
     let selection = |record_index| {
@@ -2565,6 +2577,11 @@ pub(super) fn project_combine(
         operands,
         op: operation.operation,
         keep_tools: operation.keep_tools,
+
+        destination: match operation.destination {
+            DesignCombineDestination::TargetComponent => CombineDestination::TargetComponent,
+            DesignCombineDestination::NewComponent { .. } => CombineDestination::NewComponent,
+        },
     }))
 }
 
@@ -2601,6 +2618,17 @@ fn scope_properties(
                 .ok_or_else(|| CodecError::malformed("reference property key is blank"))?,
             format!("{record_index}"),
         );
+        if scope.kind() == crate::records::feature::scope::DesignFeatureKind::PathPattern
+            && scope
+                .unclosed_construction_operand_groups
+                .contains(record_index)
+        {
+            properties.insert(
+                cadmpeg_core::text::NonBlankString::new(format!("unclosed-group:{ordinal}"))
+                    .ok_or_else(|| CodecError::malformed("unclosed group property key is blank"))?,
+                format!("{record_index}"),
+            );
+        }
     }
     if let Some(profile) = scope
         .extrude_profile()
@@ -2617,6 +2645,45 @@ fn scope_properties(
         }) {
             let id = crate::ids::neutral_sketch_id(placement);
             properties.insert(cadmpeg_core::nonblank_literal!("profile"), id.into_string());
+        }
+    }
+    if let Some(construction) = scope.mesh_face_groups() {
+        for (key, field) in [
+            (
+                cadmpeg_core::nonblank_literal!("mesh-face-groups:method-code"),
+                &construction.method_code,
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("mesh-face-groups:source-mesh"),
+                &construction.source_mesh,
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("mesh-face-groups:related-mesh"),
+                &construction.related_mesh,
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("mesh-face-groups:group-count"),
+                &construction.group_count,
+            ),
+        ] {
+            if let Some(field) = field {
+                properties.insert(key, field.value.to_string());
+            }
+        }
+        if let Some(hint) = &construction.group_hint {
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("mesh-face-groups:group-hint"),
+                hint.value.clone(),
+            );
+        }
+        for (ordinal, group) in construction.groups.iter().enumerate() {
+            properties.insert(
+                cadmpeg_core::text::NonBlankString::new(format!(
+                    "mesh-face-groups:group:{ordinal}"
+                ))
+                .ok_or_else(|| CodecError::malformed("blank mesh group property"))?,
+                group.value.clone(),
+            );
         }
     }
     if matches!(
