@@ -1308,6 +1308,30 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding. The public Voron Trident `z_mounts_front.f3d` has nine such scopes. Component context bindings identify their result owners. The source-body and source-frame joins require the derivation references independently of those owner bindings.
 
+### DR-552. Sphere placement flags and unresolved placement references
+
+**Question.** How do the inferred-axis and orientation flags change a sphere centre, and which placement supplies the centre when its reference is unresolved?
+
+**Known.** Reference-placed spheres retain a diameter owner, result operation, and placement reference. Placement constructions carry a solved matrix or an identity marker. Sphere axis rotation preserves its shape.
+
+**Need.** Controlled saves with nonzero placement flags and a changed sphere centre, and a reference-placed sphere with a resolvable external placement.
+
+**Conflict.** None.
+
+**Note.** The decoder uses the stored solved frame with `feature.sphere-placement-flags-assumed` when its flags are unresolved. It assumes an origin centre with `feature.sphere-placement-frame-assumed` when the referenced frame has no unique usable local definition.
+
+### DR-551. Sphere diameter references with incomplete ownership
+
+**Question.** Which diameter applies when the referenced scalar has incomplete scope ownership or parameter-source binding?
+
+**Known.** The sphere prefix identifies a diameter-owner record. Its evaluated scalar supplies the diameter in centimetres, and the owner names its scope and parameter source.
+
+**Need.** Controlled saves that distinguish a stale evaluated diameter from a live value after an ownership or source-reference failure.
+
+**Conflict.** None.
+
+**Note.** The decoder uses a unique positive referenced scalar with `feature.sphere-diameter-owner-assumed` when ownership is unresolved, and retains the evaluated diameter with `feature.sphere-diameter-source-assumed` when its parameter source has no unique local definition.
+
 ### DR-123. BoxPrimitive support frame and planar offset composition
 
 **Question.** How does a nonzero `OffsetDistanceX` or `OffsetDistanceY` owner combine with the stored frame in the typed-reference and marked-reference `BoxPrimitive` forms, and how do inferred-axis and flip fields change the support placement?
