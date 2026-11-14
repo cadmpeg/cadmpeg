@@ -34,12 +34,13 @@ pub(super) fn decode(
     let members: Vec<u32> = scope.reference_members().values().copied().collect();
     let suffix = members.get(members.len().checked_sub(3)?..)?;
     let mut forms = [
-        (compact::OPERATION, compact::PLACEMENT, false),
-        (shifted::OPERATION, shifted::PLACEMENT, false),
-        (typed::OPERATION, typed::PLACEMENT, true),
+        (compact::OPERATION, compact::PLACEMENT, false, false),
+        (shifted::OPERATION, shifted::PLACEMENT, false, false),
+        (typed::OPERATION, typed::PLACEMENT, true, false),
+        (typed::OPERATION - 1, typed::PLACEMENT - 1, true, true),
     ]
     .into_iter()
-    .filter_map(|(operation_at, reference_at, is_typed)| {
+    .filter_map(|(operation_at, reference_at, is_typed, prefix_assumed)| {
         let operation = extrude_operation_at(data, operation_at)?;
         (data.get(operation_at + 4) == Some(&1)).then_some(())?;
         let reference = |ordinal: usize| {
@@ -66,10 +67,16 @@ pub(super) fn decode(
                 operation_at,
                 targets,
                 reference_at + 3 * if is_typed { 51 } else { 11 },
+                prefix_assumed,
             ))
     });
-    let (operation, operation_at, [placement, diameter_record_index, _], frame_at) =
-        forms.next()?;
+    let (
+        operation,
+        operation_at,
+        [placement, diameter_record_index, _],
+        frame_at,
+        prefix_framing_assumed,
+    ) = forms.next()?;
     if forms.next().is_some() {
         return None;
     }
@@ -144,6 +151,7 @@ pub(super) fn decode(
     });
     Some(DesignSpherePrimitive {
         placement_record_index: Some(placement),
+        prefix_framing_assumed,
         diameter_owner_assumed,
         diameter_source_assumed,
         support_transform: None,

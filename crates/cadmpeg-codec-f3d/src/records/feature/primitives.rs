@@ -205,6 +205,8 @@ pub(crate) struct DesignSpherePrimitive {
     )]
     pub(crate) placement_record_index: Option<u32>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) prefix_framing_assumed: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) diameter_owner_assumed: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) diameter_source_assumed: bool,
@@ -370,9 +372,19 @@ mod tests {
         let sphere = serde_json::from_value::<DesignSpherePrimitive>(wire.clone()).unwrap();
         assert_eq!(sphere.support_transform, None);
         assert_eq!(sphere.local_frame_assumption, None);
+        assert!(!sphere.prefix_framing_assumed);
         let encoded = serde_json::to_value(sphere).unwrap();
         assert!(encoded.get("support_transform").is_none());
         assert!(encoded.get("local_frame_assumption").is_none());
+        assert!(encoded.get("prefix_framing_assumed").is_none());
+        let mut assumed_prefix = wire.clone();
+        assumed_prefix["prefix_framing_assumed"] = serde_json::json!(true);
+        let sphere = serde_json::from_value::<DesignSpherePrimitive>(assumed_prefix).unwrap();
+        assert!(sphere.prefix_framing_assumed);
+        assert_eq!(
+            serde_json::to_value(sphere).unwrap()["prefix_framing_assumed"],
+            true
+        );
         for (key, value) in [
             (
                 "support_transform",

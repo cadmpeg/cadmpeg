@@ -175,6 +175,22 @@ fn sphere_local_pose_assumptions_have_distinct_loss_codes() {
 }
 
 #[test]
+fn sphere_short_typed_prefix_has_a_distinct_loss_code() {
+    let mut scope = scope();
+    if let crate::records::feature::scope::DesignScopePayloadMut::SpherePrimitive(Some(sphere)) =
+        scope.payload_mut()
+    {
+        sphere.prefix_framing_assumed = true;
+    }
+    let losses = super::bind(std::slice::from_mut(&mut scope), &[placement()]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SpherePrefixFramingAssumed.kind()
+    );
+}
+
+#[test]
 fn sphere_preserves_local_center_when_support_is_missing() {
     let mut scope = scope();
     if let crate::records::feature::scope::DesignScopePayloadMut::SpherePrimitive(Some(sphere)) =

@@ -67,6 +67,11 @@ pub(crate) fn bind(
                 )));
             }
         }
+        if sphere.prefix_framing_assumed {
+            losses.push(F3dLossCode::SpherePrefixFramingAssumed.note(format!(
+                "Sphere {id} reads the one-byte-short typed prefix through its registered reference roles (DR-552)."
+            )));
+        }
         if let Some(assumption) = sphere.local_frame_assumption {
             let (code, reading) = match assumption {
                 DesignSphereLocalFrameAssumption::Framing => (

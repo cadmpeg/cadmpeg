@@ -10987,22 +10987,22 @@ Unstated regions:
 
 ## `sphere_typed_prefix`
 
-Spec §3.1 · layout: byte offsets · size: 178 B
+Spec §3.1 · layout: byte offsets · size: 179 B
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 20 | 4 | `operation` | `u32` | little | spec | The typed prefix has operation offset 20 |
-| 24 | 1 | `marker` | `u8` | little | spec | marker offset 24 · value `1` |
-| 25 | 51 | `placement` | `bytes[51]` | little | spec | references at offsets 25, 76, and 127 |
-| 76 | 51 | `diameter_owner` | `bytes[51]` | little | spec | references at offsets 25, 76, and 127 |
-| 127 | 51 | `result` | `bytes[51]` | little | spec | references at offsets 25, 76, and 127 |
+| 21 | 4 | `operation` | `u32` | little | spec | The typed prefix has operation offset 21 |
+| 25 | 1 | `marker` | `u8` | little | spec | marker offset 25 · value `1` |
+| 26 | 51 | `placement` | `bytes[51]` | little | spec | references at offsets 26, 77, and 128 |
+| 77 | 51 | `diameter_owner` | `bytes[51]` | little | spec | references at offsets 26, 77, and 128 |
+| 128 | 51 | `result` | `bytes[51]` | little | spec | references at offsets 26, 77, and 128 |
 
 Unstated regions:
 
-- `0..20` (20 B): Indexed header and inherited prefix.
+- `0..21` (21 B): Indexed header and inherited prefix.
 
 ## `captured_position_prefix`
 

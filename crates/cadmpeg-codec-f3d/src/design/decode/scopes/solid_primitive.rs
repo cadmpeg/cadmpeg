@@ -145,6 +145,7 @@ pub(super) fn exact_solid_primitive(
                         bytes,
                         start + crate::layout::sphere_compact_prefix::PLACEMENT,
                     )?),
+                    prefix_framing_assumed: false,
                     diameter_owner_assumed: false,
                     diameter_source_assumed: false,
                     support_transform: None,

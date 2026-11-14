@@ -9750,12 +9750,12 @@ pub(crate) mod sphere_shifted_prefix {
 
 /// Byte offsets for the `sphere_typed_prefix` record.
 ///
-/// Spec §3.1. Record length 178 B.
+/// Spec §3.1. Record length 179 B.
 pub(crate) mod sphere_typed_prefix {
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const OPERATION: usize = 20;
+    pub(crate) const OPERATION: usize = 21;
     /// Offset of `placement` (`bytes[51]`). Spec §3.1.
-    pub(crate) const PLACEMENT: usize = 25;
+    pub(crate) const PLACEMENT: usize = 26;
 }
 
 /// Byte offsets for the `captured_position_prefix` record.

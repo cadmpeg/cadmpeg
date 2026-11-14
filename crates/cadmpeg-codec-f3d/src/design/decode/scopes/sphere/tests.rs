@@ -62,8 +62,28 @@ fn fixture(
 }
 
 #[test]
+fn typed_sphere_operation_follows_the_ten_byte_inherited_prefix() {
+    let (mut bytes, scope, owner) = fixture(21, 26, true);
+    bytes[21..26].copy_from_slice(&[4, 0, 0, 0, 1]);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let sphere = decode(&bytes, &records, &scope, &[owner], &[]).unwrap();
+    assert_eq!(
+        sphere.operation,
+        crate::records::feature::extrude::DesignExtrudeOperation::NewBody
+    );
+    assert_eq!(sphere.operation_offset, 21);
+    assert!(!sphere.prefix_framing_assumed);
+    assert_eq!(sphere.placement_record_index, Some(40));
+}
+
+#[test]
 fn sphere_preserves_marked_and_unmarked_local_frames() {
-    for (operation, references, typed) in [(25, 30, false), (21, 26, false), (20, 25, true)] {
+    for (operation, references, typed) in [
+        (25, 30, false),
+        (21, 26, false),
+        (21, 26, true),
+        (20, 25, true),
+    ] {
         for marked in [false, true] {
             let (mut bytes, scope, owner) = fixture(operation, references, typed);
             let frame = references + 3 * if typed { 51 } else { 11 };
@@ -198,7 +218,12 @@ fn sphere_retains_unmarked_matrix_when_its_first_byte_is_an_identity_marker() {
 
 #[test]
 fn reference_placed_sphere_prefixes_bind_evaluated_diameters() {
-    for (operation, references, typed) in [(25, 30, false), (21, 26, false), (20, 25, true)] {
+    for (operation, references, typed) in [
+        (25, 30, false),
+        (21, 26, false),
+        (21, 26, true),
+        (20, 25, true),
+    ] {
         let (bytes, scope, owner) = fixture(operation, references, typed);
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let sphere = decode(&bytes, &records, &scope, &[owner], &[]).unwrap();
@@ -213,6 +238,7 @@ fn reference_placed_sphere_prefixes_bind_evaluated_diameters() {
             sphere.operation_offset,
             cadmpeg_core::decode::u64_from_index(operation)
         );
+        assert_eq!(sphere.prefix_framing_assumed, typed && operation == 20);
         assert!(!sphere.diameter_owner_assumed);
         assert!(sphere.diameter_source_assumed);
         assert_eq!(sphere.local_frame_assumption, None);
@@ -221,7 +247,12 @@ fn reference_placed_sphere_prefixes_bind_evaluated_diameters() {
 
 #[test]
 fn sphere_prefixes_refuse_truncation_corruption_and_duplicate_owners() {
-    for (operation, references, typed) in [(25, 30, false), (21, 26, false), (20, 25, true)] {
+    for (operation, references, typed) in [
+        (25, 30, false),
+        (21, 26, false),
+        (21, 26, true),
+        (20, 25, true),
+    ] {
         let (bytes, scope, owner) = fixture(operation, references, typed);
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         for end in [0, references, references + 10, 399] {
