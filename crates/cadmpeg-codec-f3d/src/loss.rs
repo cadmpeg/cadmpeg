@@ -629,6 +629,14 @@ pub(crate) enum F3dLossCode {
     ThickenFaceSelectionAssumed,
     /// A `Shell` reference table stores references outside its face-group members.
     FeatureShellTableMembersAssumed,
+    FeatureShellSourceUnavailable,
+    FeatureShellEnvelopeAssumed,
+    FeatureShellCountedControlAssumed,
+    FeatureShellSlotDirectionAssumed,
+    FeatureShellSelectionUnresolved,
+    FeatureShellWallValueUnresolved,
+    FeatureShellGroupRolesAssumed,
+    FeatureShellControlsUninterpreted,
     FeatureShellIndependentWallsNative,
     /// A compact, marked, or counted `Shell` prefix stores an offset-21 Boolean whose Shell option is unresolved.
     FeatureShellPrefixFlagAssumed,
@@ -1205,6 +1213,14 @@ impl F3dLossCode {
         Self::ThickenThicknessUnrepresentable,
         Self::ThickenFaceSelectionAssumed,
         Self::FeatureShellTableMembersAssumed,
+        Self::FeatureShellSourceUnavailable,
+        Self::FeatureShellEnvelopeAssumed,
+        Self::FeatureShellCountedControlAssumed,
+        Self::FeatureShellSlotDirectionAssumed,
+        Self::FeatureShellSelectionUnresolved,
+        Self::FeatureShellWallValueUnresolved,
+        Self::FeatureShellGroupRolesAssumed,
+        Self::FeatureShellControlsUninterpreted,
         Self::FeatureShellIndependentWallsNative,
         Self::FeatureShellPrefixFlagAssumed,
         Self::FeatureFaceOperandUnresolved,
@@ -1819,6 +1835,14 @@ impl F3dLossCode {
             Self::ThickenThicknessUnrepresentable => "feature.thicken-thickness-unrepresentable",
             Self::ThickenFaceSelectionAssumed => "feature.thicken-face-selection-assumed",
             Self::FeatureShellTableMembersAssumed => "feature.shell-table-members-assumed",
+            Self::FeatureShellSourceUnavailable => "feature.shell-source-unavailable",
+            Self::FeatureShellEnvelopeAssumed => "feature.shell-envelope-assumed",
+            Self::FeatureShellCountedControlAssumed => "feature.shell-counted-control-assumed",
+            Self::FeatureShellSlotDirectionAssumed => "feature.shell-slot-direction-assumed",
+            Self::FeatureShellSelectionUnresolved => "feature.shell-selection-unresolved",
+            Self::FeatureShellWallValueUnresolved => "feature.shell-wall-value-unresolved",
+            Self::FeatureShellGroupRolesAssumed => "feature.shell-group-roles-assumed",
+            Self::FeatureShellControlsUninterpreted => "feature.shell-controls-uninterpreted",
             Self::FeatureShellIndependentWallsNative => "feature.shell-independent-walls-native",
             Self::FeatureShellPrefixFlagAssumed => "feature.shell-prefix-flag-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
@@ -2332,6 +2356,14 @@ impl F3dLossCode {
             | Self::ThickenFrameAssumed
             | Self::ThickenFaceSelectionAssumed
             | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellSourceUnavailable
+            | Self::FeatureShellEnvelopeAssumed
+            | Self::FeatureShellCountedControlAssumed
+            | Self::FeatureShellSlotDirectionAssumed
+            | Self::FeatureShellSelectionUnresolved
+            | Self::FeatureShellWallValueUnresolved
+            | Self::FeatureShellGroupRolesAssumed
+            | Self::FeatureShellControlsUninterpreted
             | Self::FeatureShellIndependentWallsNative
             | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
@@ -2757,6 +2789,14 @@ impl F3dLossCode {
             | Self::ThickenFrameAssumed
             | Self::ThickenFaceSelectionAssumed
             | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellSourceUnavailable
+            | Self::FeatureShellEnvelopeAssumed
+            | Self::FeatureShellCountedControlAssumed
+            | Self::FeatureShellSlotDirectionAssumed
+            | Self::FeatureShellSelectionUnresolved
+            | Self::FeatureShellWallValueUnresolved
+            | Self::FeatureShellGroupRolesAssumed
+            | Self::FeatureShellControlsUninterpreted
             | Self::FeatureShellIndependentWallsNative
             | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
@@ -3291,6 +3331,14 @@ mod tests {
                 "feature.thicken-thickness-unrepresentable",
                 "feature.thicken-face-selection-assumed",
                 "feature.shell-table-members-assumed",
+                "feature.shell-source-unavailable",
+                "feature.shell-envelope-assumed",
+                "feature.shell-counted-control-assumed",
+                "feature.shell-slot-direction-assumed",
+                "feature.shell-selection-unresolved",
+                "feature.shell-wall-value-unresolved",
+                "feature.shell-group-roles-assumed",
+                "feature.shell-controls-uninterpreted",
                 "feature.shell-independent-walls-native",
                 "feature.shell-prefix-flag-assumed",
                 "feature.face-operand-unresolved",
