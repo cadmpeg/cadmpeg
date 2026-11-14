@@ -152,7 +152,11 @@ fn operation(
     types: &Types<'_>,
     sources: &ParameterScopeSources<'_>,
 ) -> Option<DesignContourFlangeOperation> {
-    if !typed(types, scope.record_index, CONTOUR_GUID, 4) {
+    if scope.kind() != DesignFeatureKind::ContourFlange
+        || ![3, 4, 6]
+            .into_iter()
+            .any(|version| typed(types, scope.record_index, CONTOUR_GUID, version))
+    {
         return None;
     }
     let mut frame = View::over_retained(bytes).child(

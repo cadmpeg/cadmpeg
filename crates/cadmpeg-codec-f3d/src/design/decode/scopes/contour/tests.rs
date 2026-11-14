@@ -122,7 +122,7 @@ fn contour_prefix_normalizes_variable_padding_and_reference_widths() {
 fn contour_prefix_rejects_wrong_version_and_retains_partial_ambiguous_inputs() {
     let (mut bytes, scope) = fixture(false, 8, true);
     let mut types = types();
-    types.insert(10, (CONTOUR_GUID, 3));
+    types.insert(10, (CONTOUR_GUID, 2));
     assert!(operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -173,4 +173,36 @@ fn missing_direction_definition_retains_independent_prefix_fields() {
     .unwrap();
     assert!(partial.inline_thickness.is_none());
     assert!(partial.travel.is_some());
+}
+
+#[test]
+fn contour_scope_kind_separates_shared_guid_versions_from_planar_faces() {
+    for (version, padding) in [(3, 8), (4, 13), (6, 17)] {
+        let (bytes, scope) = fixture(false, padding, true);
+        let mut types = types();
+        types.insert(10, (CONTOUR_GUID, version));
+        let value = operation(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &types,
+            &ParameterScopeSources::default(),
+        )
+        .unwrap();
+        assert!(value.travel.is_some());
+        assert_eq!(value.inline_thickness.unwrap().value.get(), 0.125);
+        let face = DesignParameterScope::empty(
+            "f3d:test/Design1/BulkStream.dat:scope#0",
+            DesignFeatureKind::Face,
+            10,
+        );
+        assert!(operation(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &face,
+            &types,
+            &ParameterScopeSources::default()
+        )
+        .is_none());
+    }
 }
