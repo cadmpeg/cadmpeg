@@ -382,12 +382,7 @@ fn typed_fillet_full_round_requires_bounded_face_evidence() {
             .unwrap()
         });
         let feature = &projected.features[0];
-        if !full_round {
-            assert!(matches!(
-                feature.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
-            ));
-        } else {
+        if full_round {
             let FeatureDefinition::Operation(FeatureOperation::FullRoundFillet { groups }) =
                 feature.evaluation.definition()
             else {
@@ -407,6 +402,11 @@ fn typed_fillet_full_round_requires_bounded_face_evidence() {
             );
             assert!(projected.projection_losses.iter().any(
                 |note| note.code.local_code() == "feature.fillet-full-round-center-unresolved"
+            ));
+        } else {
+            assert!(matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
             ));
         }
         assert!(feature.source_properties.contains_key("fillet:source"));
