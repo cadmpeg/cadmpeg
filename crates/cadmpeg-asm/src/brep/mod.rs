@@ -519,8 +519,9 @@ pub enum DecodePurpose {
 ///
 /// `stream` names the source ZIP entry for provenance. Ids are minted as
 /// `<format>:brep:entity#<record-index>`, unique across the `RecordTable`.
-/// [`DecodePurpose::History`] retains bounded edge curve caches for historical
-/// measurements and skips free-form surface shapes.
+/// [`DecodePurpose::History`] retains bounded edge curve caches and exact
+/// cacheless helix constructions for historical measurements. Free-form surface
+/// shapes remain unmaterialized.
 pub fn decode_with_purpose(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],

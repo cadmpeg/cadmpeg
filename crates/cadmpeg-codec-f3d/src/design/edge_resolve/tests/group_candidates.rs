@@ -468,6 +468,78 @@ fn fragment_fallback_keeps_partial_edges_and_resolves_only_unresolved_members() 
     assert!(operands.iter().all(|o| o.resolved_edge_slot.is_none()));
 }
 
+#[test]
+fn deleted_recipe_singleton_completes_a_member_with_a_resolved_identity() {
+    for (deleted, candidate, admitted) in [(true, false, true), (false, true, false)] {
+        for multiple in [false, true] {
+            let (mut operands, _, boundaries) = fragment_transition_group();
+            if deleted {
+                operands[2].transition_deleted_edge_slots = vec![105];
+            }
+            if candidate {
+                operands[2].preceding_boundary_edge_slots = vec![105];
+            }
+            let mut selection_group = group(2, 10);
+            selection_group
+                .try_set_members(
+                    [10, 11, 12]
+                        .into_iter()
+                        .map(|value| crate::records::identity::Located {
+                            value,
+                            offset: u64::from(value) * 11,
+                        })
+                        .collect(),
+                )
+                .unwrap();
+            let feature = FeatureId::mint("f3d:model:feature#recipe-priority").unwrap();
+            let edge = |slot| {
+                crate::ids::history_input_edge_id(
+                    &crate::ids::feature_input_prefix(&feature, 7),
+                    slot,
+                )
+            };
+            let state = crate::ids::feature_input_topology_id(&feature, 7);
+            let mut selection = EdgeSelection::historical_partial(
+                state.clone(),
+                vec![edge(104), edge(102)],
+                vec![operands[2].id.clone()],
+                selection_group.id.clone(),
+            )
+            .unwrap();
+            let original = selection.clone();
+            let mut selected_identity = identity(12, &[]);
+            if multiple {
+                selected_identity.resolved_edge_slots = vec![106, 107];
+            } else {
+                selected_identity.resolved_edge_slot = Some(106);
+            }
+            let boundaries = boundaries.iter().map(|b| (b.id.as_str(), b)).collect();
+            let mut notes = Vec::new();
+            crate::design::edge_resolve::fragment_fallback::apply_group(
+                &mut selection,
+                &selection_group,
+                &operands,
+                &[selected_identity],
+                &boundaries,
+                &feature,
+                &mut notes,
+            );
+            let expected = if admitted {
+                EdgeSelection::historical(
+                    state,
+                    vec![edge(104), edge(102), edge(105)],
+                    selection_group.id,
+                )
+                .unwrap()
+            } else {
+                original
+            };
+            assert_eq!(selection, expected);
+            assert!(notes.is_empty());
+        }
+    }
+}
+
 /// A member whose two referenced faces hold the changed edges listed.
 fn two_side_operand(
     record_index: u32,

@@ -239,9 +239,9 @@ pub(crate) fn decode_text(
     )?)
 }
 
-/// Decode only the topology and analytic measurements used to bind ASM
-/// history. Free-form carrier shapes are not materialized because historical
-/// binding consumes their stable record identities, not their control data.
+/// Decode the topology, bounded curve caches, analytic measurements, and exact
+/// cacheless helix constructions used to bind ASM history. Free-form surface
+/// shapes remain unmaterialized.
 pub(crate) fn decode_history_topology(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],

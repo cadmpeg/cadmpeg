@@ -231,6 +231,32 @@ mod tests {
     }
 
     #[test]
+    fn fragment_pair_remains_ambiguous_with_candidate_boundaries_and_deletion() {
+        let structure = serde_json::from_value(serde_json::json!({
+            "root": 2,
+            "sides": [
+                {"field_count": 3, "header_value": 2, "scalars": [1, 0],
+                 "payload_prefix": [0], "payload_entry_count": 0, "entries": []},
+                {"field_count": 3, "header_value": 3, "scalars": [0, 1],
+                 "payload_prefix": [0], "payload_entry_count": 0, "entries": []}
+            ]
+        }))
+        .unwrap();
+        for deleted in [vec![], vec![31], vec![32], vec![31, 32]] {
+            assert!(
+                common_edge(Some(&structure), &[31, 32], &deleted, None, |ordinal| {
+                    Some(if ordinal == 0 {
+                        BTreeMap::from([(31, BTreeSet::from([10])), (32, BTreeSet::from([10]))])
+                    } else {
+                        BTreeMap::from([(31, BTreeSet::from([20])), (32, BTreeSet::from([30]))])
+                    })
+                },)
+                .is_none()
+            );
+        }
+    }
+
+    #[test]
     fn recipe_reference_disjoint_names_require_one_deleted_common_edge() {
         let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
             serde_json::from_value(serde_json::json!({
