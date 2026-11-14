@@ -2219,6 +2219,8 @@ definition reached through a `SHAPE_ASPECT_RELATIONSHIP`, to its identified
 geometric or topology item. A resolved face, edge, vertex, body, point, or curve
 is added as a typed PMI target while the source shape-aspect target remains. An
 unresolved usage remains source-native with its identity and links.
+`DIMENSIONAL_SIZE.applies_to` identifies a product-definitional shape aspect.
+Geometric usages of that aspect identify the sized feature's geometry.
 `GEOMETRIC_TOLERANCE.toleranced_shape_aspect` identifies the tolerance's
 target. An `ALL_AROUND_SHAPE_ASPECT` target specifies all-around scope and
 inherits the four explicit `SHAPE_ASPECT` attributes. This scope is separate
