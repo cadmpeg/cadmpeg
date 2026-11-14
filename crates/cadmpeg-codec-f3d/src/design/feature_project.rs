@@ -54,6 +54,7 @@ mod reverse_normal;
 mod revolve_target;
 mod surface_offset;
 mod surface_patch;
+pub(crate) mod sweep_fallback;
 pub(crate) mod thicken;
 mod unstitch;
 

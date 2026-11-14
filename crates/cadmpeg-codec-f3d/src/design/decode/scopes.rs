@@ -37,7 +37,7 @@ pub(super) mod point_data;
 mod point_direction;
 pub(crate) mod position;
 mod reverse_normal;
-pub(super) mod shared_frames;
+pub(in crate::design) mod shared_frames;
 pub(crate) mod sheet_metal;
 mod solid_primitive;
 mod sphere;
