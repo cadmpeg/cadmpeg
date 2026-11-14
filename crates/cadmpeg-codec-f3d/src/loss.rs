@@ -262,6 +262,18 @@ pub(crate) enum F3dLossCode {
     FeatureMeshOperationFieldsUninterpreted,
     FeatureMeshSectionCurvesUnresolved,
     FeatureMeshConversionScopeUnparsed,
+    FeatureMeshCombineScopeUnparsed,
+    FeatureMeshCombineTailPartial,
+    FeatureMeshCombineSelectorUnruled,
+    FeatureMeshCombineFieldsUninterpreted,
+    FeatureMeshCombineSourceUnresolved,
+    FeatureMeshCombineSelectionUnresolved,
+    FeatureMeshCombineMergeAssumed,
+    FeatureMeshCombineLegacyBooleanAssumed,
+    FeatureMeshCombineKeepToolsAssumedFalse,
+    FeatureMeshCombineDestinationAssumedTargetComponent,
+    FeatureMeshCombineKeepToolsUnresolved,
+    FeatureMeshCombineDestinationUnresolved,
     FeatureMeshConversionTailPartial,
     FeatureMeshConversionMethodUnresolved,
     FeatureMeshConversionMethodAssumed,
@@ -1034,6 +1046,18 @@ impl F3dLossCode {
         Self::FeatureMeshOperationFieldsUninterpreted,
         Self::FeatureMeshSectionCurvesUnresolved,
         Self::FeatureMeshConversionScopeUnparsed,
+        Self::FeatureMeshCombineScopeUnparsed,
+        Self::FeatureMeshCombineTailPartial,
+        Self::FeatureMeshCombineSelectorUnruled,
+        Self::FeatureMeshCombineFieldsUninterpreted,
+        Self::FeatureMeshCombineSourceUnresolved,
+        Self::FeatureMeshCombineSelectionUnresolved,
+        Self::FeatureMeshCombineMergeAssumed,
+        Self::FeatureMeshCombineLegacyBooleanAssumed,
+        Self::FeatureMeshCombineKeepToolsAssumedFalse,
+        Self::FeatureMeshCombineDestinationAssumedTargetComponent,
+        Self::FeatureMeshCombineKeepToolsUnresolved,
+        Self::FeatureMeshCombineDestinationUnresolved,
         Self::FeatureMeshConversionTailPartial,
         Self::FeatureMeshConversionMethodUnresolved,
         Self::FeatureMeshConversionMethodAssumed,
@@ -1701,6 +1725,32 @@ impl F3dLossCode {
             }
             Self::FeatureMeshSectionCurvesUnresolved => "feature.mesh-section-curves-unresolved",
             Self::FeatureMeshConversionScopeUnparsed => "feature.mesh-conversion-scope-unparsed",
+            Self::FeatureMeshCombineScopeUnparsed => "feature.mesh-combine-scope-unparsed",
+            Self::FeatureMeshCombineTailPartial => "feature.mesh-combine-tail-partial",
+            Self::FeatureMeshCombineSelectorUnruled => "feature.mesh-combine-selector-unruled",
+            Self::FeatureMeshCombineFieldsUninterpreted => {
+                "feature.mesh-combine-fields-uninterpreted"
+            }
+            Self::FeatureMeshCombineSourceUnresolved => "feature.mesh-combine-source-unresolved",
+            Self::FeatureMeshCombineSelectionUnresolved => {
+                "feature.mesh-combine-selection-unresolved"
+            }
+            Self::FeatureMeshCombineMergeAssumed => "feature.mesh-combine-merge-assumed",
+            Self::FeatureMeshCombineLegacyBooleanAssumed => {
+                "feature.mesh-combine-legacy-boolean-assumed"
+            }
+            Self::FeatureMeshCombineKeepToolsAssumedFalse => {
+                "feature.mesh-combine-keep-tools-assumed-false"
+            }
+            Self::FeatureMeshCombineDestinationAssumedTargetComponent => {
+                "feature.mesh-combine-destination-assumed-target-component"
+            }
+            Self::FeatureMeshCombineKeepToolsUnresolved => {
+                "feature.mesh-combine-keep-tools-unresolved"
+            }
+            Self::FeatureMeshCombineDestinationUnresolved => {
+                "feature.mesh-combine-destination-unresolved"
+            }
             Self::FeatureMeshConversionTailPartial => "feature.mesh-conversion-tail-partial",
             Self::FeatureMeshConversionMethodUnresolved => {
                 "feature.mesh-conversion-method-unresolved"
@@ -2377,6 +2427,18 @@ impl F3dLossCode {
             | Self::FeatureMeshOperationFieldsUninterpreted
             | Self::FeatureMeshSectionCurvesUnresolved
             | Self::FeatureMeshConversionScopeUnparsed
+            | Self::FeatureMeshCombineScopeUnparsed
+            | Self::FeatureMeshCombineTailPartial
+            | Self::FeatureMeshCombineSelectorUnruled
+            | Self::FeatureMeshCombineFieldsUninterpreted
+            | Self::FeatureMeshCombineSourceUnresolved
+            | Self::FeatureMeshCombineSelectionUnresolved
+            | Self::FeatureMeshCombineMergeAssumed
+            | Self::FeatureMeshCombineLegacyBooleanAssumed
+            | Self::FeatureMeshCombineKeepToolsAssumedFalse
+            | Self::FeatureMeshCombineDestinationAssumedTargetComponent
+            | Self::FeatureMeshCombineKeepToolsUnresolved
+            | Self::FeatureMeshCombineDestinationUnresolved
             | Self::FeatureMeshConversionTailPartial
             | Self::FeatureMeshConversionMethodUnresolved
             | Self::FeatureMeshConversionMethodAssumed
@@ -2855,6 +2917,18 @@ impl F3dLossCode {
             | Self::FeatureMeshOperationFieldsUninterpreted
             | Self::FeatureMeshSectionCurvesUnresolved
             | Self::FeatureMeshConversionScopeUnparsed
+            | Self::FeatureMeshCombineScopeUnparsed
+            | Self::FeatureMeshCombineTailPartial
+            | Self::FeatureMeshCombineSelectorUnruled
+            | Self::FeatureMeshCombineFieldsUninterpreted
+            | Self::FeatureMeshCombineSourceUnresolved
+            | Self::FeatureMeshCombineSelectionUnresolved
+            | Self::FeatureMeshCombineMergeAssumed
+            | Self::FeatureMeshCombineLegacyBooleanAssumed
+            | Self::FeatureMeshCombineKeepToolsAssumedFalse
+            | Self::FeatureMeshCombineDestinationAssumedTargetComponent
+            | Self::FeatureMeshCombineKeepToolsUnresolved
+            | Self::FeatureMeshCombineDestinationUnresolved
             | Self::FeatureMeshConversionTailPartial
             | Self::FeatureMeshConversionMethodUnresolved
             | Self::FeatureMeshConversionMethodAssumed
@@ -3377,6 +3451,18 @@ mod tests {
                 "feature.mesh-operation-fields-uninterpreted",
                 "feature.mesh-section-curves-unresolved",
                 "feature.mesh-conversion-scope-unparsed",
+                "feature.mesh-combine-scope-unparsed",
+                "feature.mesh-combine-tail-partial",
+                "feature.mesh-combine-selector-unruled",
+                "feature.mesh-combine-fields-uninterpreted",
+                "feature.mesh-combine-source-unresolved",
+                "feature.mesh-combine-selection-unresolved",
+                "feature.mesh-combine-merge-assumed",
+                "feature.mesh-combine-legacy-boolean-assumed",
+                "feature.mesh-combine-keep-tools-assumed-false",
+                "feature.mesh-combine-destination-assumed-target-component",
+                "feature.mesh-combine-keep-tools-unresolved",
+                "feature.mesh-combine-destination-unresolved",
                 "feature.mesh-conversion-tail-partial",
                 "feature.mesh-conversion-method-unresolved",
                 "feature.mesh-conversion-method-assumed",

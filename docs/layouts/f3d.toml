@@ -5274,6 +5274,90 @@ source = "spec"
 anchor = "the reference to the `Sketch` scope that receives the section curves at offset 32"
 
 [[record]]
+name = "mesh_combine_v1_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The version-1 scope prefix"
+size = 34
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/combine.rs"
+note = "Flag-01 offsets. The mesh scope flag controls the inserted prefix word."
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "Indexed header and mesh scope prefix."
+
+[[record.field]]
+name = "prefix_word"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "Flag `01` inserts a u32"
+
+[[record.field]]
+name = "operation"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "the operation selector"
+
+[[record.field]]
+name = "control_byte"
+offset = 29
+type = "u8"
+source = "spec"
+anchor = "a control byte"
+
+[[record.field]]
+name = "tool_count"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "the tool-group count"
+
+[[record]]
+name = "mesh_combine_v2_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The version-2 scope prefix"
+size = 34
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/combine.rs"
+note = "Flag-00 offsets. The mesh scope flag controls the inserted prefix word."
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "Indexed header and mesh scope prefix."
+
+[[record.field]]
+name = "operation"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "the operation selector"
+
+[[record.field]]
+name = "control_word"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "an additional control word"
+
+[[record.field]]
+name = "control_byte"
+offset = 29
+type = "u8"
+source = "spec"
+anchor = "a control byte"
+
+[[record.field]]
+name = "tool_count"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "the tool-group count"
+
+[[record]]
 name = "paramesh_guid_join_prefix"
 kind = "byte"
 section = "3.1"
