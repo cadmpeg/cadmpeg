@@ -51,6 +51,7 @@ fn fixture(
             codes: [2, 0],
             matrix_omitted: omitted,
         }),
+        ..DesignMoveOperation::default()
     });
     let mut scope = fixture.scope;
     let DesignScopePayloadMut::Align(slot) = scope.payload_mut() else {

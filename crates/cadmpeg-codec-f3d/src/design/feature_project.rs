@@ -62,9 +62,7 @@ const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
 const EPS_FEATURE_PROJECT_PROJECT_OFFSET_FACES_E9: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1.0e-12;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;
-/// Millimetres of translation along its axis that a `MoveFace` rotation
-/// admits.
-const EPS_MOVE_FACE_SCREW_TRANSLATION: f64 = 1.0e-9;
+const EPS_MOVE_FACE_MOTION_ROUNDING: f64 = 32.0 * f64::EPSILON;
 /// Largest difference, in radians, between a circular pattern's total angle
 /// and a full turn for which the pattern still spans the full turn.
 const EPS_CIRCULAR_PATTERN_FULL_TURN: f64 = 1.0e-12;
@@ -602,9 +600,9 @@ fn ensure_feature_dependencies_precede(
             })
         {
             return Err(crate::design::text::malformed_design(format_args!(
-                    "Design feature dependency does not precede its authored timeline position: {dependency} at ordinal {dependency_ordinal} -> {} at ordinal {}",
-                    feature.id, feature.ordinal,
-                )));
+                "Design feature dependency does not precede its authored timeline position: {dependency} at ordinal {dependency_ordinal} -> {} at ordinal {}",
+                feature.id, feature.ordinal,
+            )));
         }
     }
     Ok(())
@@ -1449,7 +1447,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::MoveFace
                     {
-                        project_move_face(scope, construction_groups)?.unwrap_or_else(|| {
+                        project_move_face(scope, construction_groups, &mut projection_losses)?.unwrap_or_else(|| {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
@@ -9129,11 +9127,10 @@ fn project_split_face(
     )))
 }
 
-/// A `MoveFace` scope projects when its transform is a translation, or a
-/// rotation whose translation is perpendicular to its axis.
 fn project_move_face(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
@@ -9141,40 +9138,78 @@ fn project_move_face(
     if !operation.preserves_orientation() {
         return Ok(None);
     }
-    let group = or_none!(single_operand_group(
-        construction_groups,
-        scope,
-        DesignOperandRole::ROLE_0X10
-    ));
-    let member_count = or_none!(scope.reference_members().len().checked_sub(2));
-    // The transform is the last reference after the group and its members, or
-    // the first reference before them.
+    let motion = or_none!(move_face_motion(operation.transform.as_ref()));
+    losses.push(crate::loss::F3dLossCode::FeatureMoveFaceMatrixAssumed.note(format!(
+        "MoveFace scope {} reads transform record {} as a row-major input-to-output face motion in model coordinates with centimetre translation (DR-401).",
+        scope.id, operation.transform_record_index
+    )));
     let group_ordinal = usize::from(
         scope.reference_members().values().next() == Some(&operation.transform_record_index),
     );
-    if usize::try_from(group.scope_reference_ordinal).ok() != Some(group_ordinal)
-        || group.record_index != *or_none!(scope.reference_members().values().nth(group_ordinal))
-        || !group.members().iter().map(|member| member.value).eq(scope
+    let members_start = group_ordinal + 1;
+    let group = single_operand_group(construction_groups, scope, DesignOperandRole::ROLE_0X10)
+        .filter(|group| {
+            operation
+                .face_group
+                .as_ref()
+                .is_some_and(|marked| marked.value == group.record_index)
+                && usize::try_from(group.scope_reference_ordinal).ok() == Some(group_ordinal)
+                && scope.reference_members().values().nth(group_ordinal)
+                    == Some(&group.record_index)
+                && group.members().iter().map(|member| member.value).eq(scope
+                    .reference_members()
+                    .values()
+                    .skip(members_start)
+                    .take(group.members().len())
+                    .copied())
+                && !group
+                    .members()
+                    .iter()
+                    .any(|member| member.value == operation.transform_record_index)
+                && scope
+                    .reference_members()
+                    .values()
+                    .filter(|index| **index == operation.transform_record_index)
+                    .count()
+                    == 1
+        });
+    let faces = if let Some(group) = group {
+        let members_end = members_start + group.members().len();
+        let unclassified = scope
             .reference_members()
             .values()
-            .skip(group_ordinal + 1)
-            .take(member_count)
-            .copied())
-    {
-        return Ok(None);
-    }
-    let motion = or_none!(move_face_motion(operation.transform.as_ref()));
+            .copied()
+            .enumerate()
+            .filter(|(ordinal, index)| {
+                *ordinal != group_ordinal
+                    && !(members_start..members_end).contains(ordinal)
+                    && *index != operation.transform_record_index
+            })
+            .map(|(_, index)| index)
+            .collect::<Vec<_>>();
+        if !unclassified.is_empty() {
+            losses.push(crate::loss::F3dLossCode::FeatureMoveFaceScopeReferencesAssumed.note(format!(
+                "MoveFace scope {} applies its stored matrix to face group {}; unclassified ordered references {unclassified:?} are assumed to leave that motion unchanged (DR-401).",
+                scope.id, group.record_index
+            )));
+        }
+        FaceSelection::Native(group.id.clone())
+    } else {
+        losses.push(crate::loss::F3dLossCode::FeatureMoveFaceSelectionUnresolved.note(format!(
+            "MoveFace scope {} retains its decoded motion with a scope-native face selection; its ordered references {:?} do not bind one complete face group (DR-402).",
+            scope.id, scope.reference_members()
+        )));
+        losses.push(crate::loss::F3dLossCode::FeatureMoveFaceScopeReferencesAssumed.note(format!(
+            "MoveFace scope {} applies its matrix while the effects of unclassified ordered references {:?} are assumed to be evaluated into that matrix (DR-401).",
+            scope.id, scope.reference_members()
+        )));
+        FaceSelection::Native(scope.id.clone())
+    };
     Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::MoveFace {
-            faces: FaceSelection::Native(group.id.clone()),
-            motion,
-        },
+        FeatureOperation::MoveFace { faces, motion },
     )))
 }
 
-/// The face motion of a rigid `MoveFace` matrix in centimetres. A rotation
-/// whose translation has a component along its axis is a screw motion, which
-/// `FaceMotion` cannot state.
 fn move_face_motion(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::FaceMotion> {
     use cadmpeg_ir::features::{FaceMotion, FeatureDirection3, FinitePoint3};
 
@@ -9183,29 +9218,102 @@ fn move_face_motion(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::F
         transform[1][3] * DESIGN_LENGTH_TO_MILLIMETRE,
         transform[2][3] * DESIGN_LENGTH_TO_MILLIMETRE,
     );
-    let Some(rotation) = matrix_axis_angle(transform) else {
-        let direction = cadmpeg_ir::units::UnitVector3::normalized(translation)?;
-        let distance = cadmpeg_ir::scalar::Length::new(translation.norm())?;
-        return Some(FaceMotion::Translate {
-            direction: FeatureDirection3::from(direction),
-            distance,
-        });
-    };
-    let axis = rotation.direction.get();
-    if translation.dot(axis).abs() > EPS_MOVE_FACE_SCREW_TRANSLATION {
-        return None;
+    if let Some(rotation) = matrix_axis_angle(transform) {
+        let axis = rotation.direction.get();
+        if translation.dot(axis) == 0.0 {
+            let cotangent = (rotation.angle.get() * 0.5).tan().recip();
+            let origin = (translation + axis.cross(translation).scale(cotangent)).scale(0.5);
+            if let Some(axis_origin) =
+                FinitePoint3::new(cadmpeg_ir::math::Point3::new(origin.x, origin.y, origin.z))
+            {
+                if move_face_rotation_preserves_matrix(transform, translation, &rotation, origin) {
+                    return Some(FaceMotion::Rotate {
+                        axis_origin,
+                        axis_dir: rotation.direction,
+                        angle: rotation.angle,
+                    });
+                }
+            }
+        }
+    } else if (0..3).all(|row| {
+        (0..3).all(|column| transform[row][column] == if row == column { 1.0 } else { 0.0 })
+    }) {
+        if let (Some(direction), Some(distance)) = (
+            cadmpeg_ir::units::UnitVector3::normalized(translation),
+            cadmpeg_ir::scalar::Length::new(translation.norm()),
+        ) {
+            let direction = FeatureDirection3::from(direction);
+            let rebuilt = direction.get().scale(distance.get());
+            if [
+                (translation.x, rebuilt.x),
+                (translation.y, rebuilt.y),
+                (translation.z, rebuilt.z),
+            ]
+            .into_iter()
+            .all(|(source, rebuilt)| move_face_component_preserved(source, rebuilt))
+            {
+                return Some(FaceMotion::Translate {
+                    direction,
+                    distance,
+                });
+            }
+        }
     }
-    // For a translation t perpendicular to the unit axis a, the axis point
-    // nearest the origin is (t + cot(angle / 2) a x t) / 2.
-    let cotangent = (rotation.angle.get() * 0.5).tan().recip();
-    let origin = (translation + axis.cross(translation).scale(cotangent)).scale(0.5);
-    Some(FaceMotion::Rotate {
-        axis_origin: FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-            origin.x, origin.y, origin.z,
-        ))?,
-        axis_dir: rotation.direction,
-        angle: rotation.angle,
+    let mut rows = [transform[0], transform[1], transform[2]];
+    for (row, component) in rows
+        .iter_mut()
+        .zip([translation.x, translation.y, translation.z])
+    {
+        row[3] = component;
+    }
+    Some(FaceMotion::Transform {
+        transform: cadmpeg_ir::transform::Transform::affine(rows)?,
     })
+}
+
+fn move_face_rotation_preserves_matrix(
+    transform: &[[f64; 4]; 4],
+    translation: Vector3,
+    rotation: &cadmpeg_ir::features::AxisAngle,
+    origin: Vector3,
+) -> bool {
+    let axis = rotation.direction.get();
+    let coordinates = [axis.x, axis.y, axis.z];
+    let (sine, cosine) = rotation.angle.get().sin_cos();
+    let cross = [
+        [0.0, -axis.z, axis.y],
+        [axis.z, 0.0, -axis.x],
+        [-axis.y, axis.x, 0.0],
+    ];
+    let basis = std::array::from_fn::<_, 3, _>(|row| {
+        std::array::from_fn::<_, 3, _>(|column| {
+            let diagonal = if row == column { cosine } else { 0.0 };
+            diagonal
+                + (1.0 - cosine) * coordinates[row] * coordinates[column]
+                + sine * cross[row][column]
+        })
+    });
+    let point = [origin.x, origin.y, origin.z];
+    let target = [translation.x, translation.y, translation.z];
+    (0..3).all(|row| {
+        (0..3)
+            .all(|column| move_face_component_preserved(transform[row][column], basis[row][column]))
+            && move_face_component_preserved(
+                target[row],
+                point[row]
+                    - (0..3)
+                        .map(|column| basis[row][column] * point[column])
+                        .sum::<f64>(),
+            )
+    })
+}
+
+fn move_face_component_preserved(source: f64, rebuilt: f64) -> bool {
+    if source == 0.0 {
+        rebuilt.abs() <= EPS_MOVE_FACE_MOTION_ROUNDING
+    } else {
+        rebuilt != 0.0 && (source - rebuilt).abs() <= EPS_MOVE_FACE_MOTION_ROUNDING * source.abs()
+    }
 }
 
 fn spatial_sketch_entity_endpoints(

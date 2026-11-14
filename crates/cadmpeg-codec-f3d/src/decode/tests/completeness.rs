@@ -308,6 +308,24 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
             },
         })
     ));
+    let transform = cadmpeg_ir::transform::Transform::affine([
+        [0., -1., 0., 2.5],
+        [1., 0., 0., -5.],
+        [0., 0., 1., 1.25],
+    ])
+    .unwrap();
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::Operation(FeatureOperation::MoveFace {
+            faces: faces.clone(),
+            motion: FaceMotion::Transform { transform },
+        })
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::Operation(FeatureOperation::MoveFace {
+            faces: FaceSelection::Native("native:faces".into()),
+            motion: FaceMotion::Transform { transform },
+        })
+    ));
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::thicken(
             faces.clone(),

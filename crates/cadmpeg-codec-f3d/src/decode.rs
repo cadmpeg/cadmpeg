@@ -500,7 +500,7 @@ fn axis_angle_is_resolved(axis_angle: &cadmpeg_ir::features::AxisAngle) -> bool 
 fn face_motion_is_resolved(motion: &cadmpeg_ir::features::FaceMotion) -> bool {
     use cadmpeg_ir::features::FaceMotion;
     match motion {
-        FaceMotion::Offset { .. } => true,
+        FaceMotion::Offset { .. } | FaceMotion::Transform { .. } => true,
         FaceMotion::Translate { direction, .. } => direction.unit().is_some(),
         FaceMotion::Rotate { axis_dir, .. } => axis_dir.unit().is_some(),
     }

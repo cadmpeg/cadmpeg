@@ -35,6 +35,7 @@ fn fixture(class: &str) -> (DesignParameterScope, DesignRecordHeader) {
         form_offset: 443,
         transform_reference_offset: None,
         prefix: None,
+        ..DesignMoveOperation::default()
     });
     (
         scope,
@@ -101,6 +102,7 @@ fn move_face_scope(kind: DesignFeatureKind, form: DesignMoveForm) -> DesignParam
         form_offset: 443,
         transform_reference_offset: None,
         prefix: None,
+        ..DesignMoveOperation::default()
     });
     scope
 }
@@ -220,4 +222,17 @@ fn move_prefix_validator_rejects_inconsistent_native_claims() {
     let mut wire = serde_json::to_value(scope.move_operation().unwrap()).unwrap();
     wire["prefix"] = serde_json::Value::Null;
     assert!(serde_json::from_value::<DesignMoveOperation>(wire).is_err());
+}
+
+#[test]
+fn move_face_native_links_reject_group_provenance_on_body_moves() {
+    let (mut scope, header) = fixture("452");
+    let DesignScopePayloadMut::Move(Some(operation)) = scope.payload_mut() else {
+        panic!("Move payload");
+    };
+    operation.face_group = Some(crate::records::identity::Located {
+        value: 50,
+        offset: 38,
+    });
+    assert!(!move_operation_links_hold(&scope, Some(&header)));
 }

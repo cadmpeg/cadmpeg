@@ -1704,6 +1704,7 @@ fn move_transform_refusal_reports_exact_loss_for_transform_or_selection() {
                 form_offset: 443,
                 transform_reference_offset: None,
                 prefix: None,
+                ..DesignMoveOperation::default()
             });
         }
         let mut report = cadmpeg_ir::codec::DecodeBody {

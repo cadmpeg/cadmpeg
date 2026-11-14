@@ -711,3 +711,5 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
 mod dimension_annotations;
 
 mod stale_region_certificate;
+
+mod move_face;
