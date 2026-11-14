@@ -56,6 +56,7 @@ mod revolve_target;
 pub(crate) mod shell_fallback;
 mod surface_offset;
 mod surface_patch;
+mod surface_untrim;
 pub(crate) mod sweep_fallback;
 pub(crate) mod thicken;
 mod unstitch;
@@ -85,8 +86,10 @@ macro_rules! or_none {
 }
 
 mod bend_lines;
+mod chamfer;
 mod delete_face;
 mod extrude;
+mod fold;
 
 use extrude::{bind_extrude_work_plane_targets, project_extrude};
 
@@ -745,6 +748,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
             }
             let family = design_feature_family(&scope.kind());
+            let mut retain_chamfer_records = false;
             let mut inserted_bodies: Vec<cadmpeg_ir::ids::BodyId> = Vec::new();
             let definition = match family {
                 Some(DesignFeatureFamily::Sketch) => {
@@ -784,29 +788,19 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     &mut projection_losses,
                 )?,
                 Some(DesignFeatureFamily::Chamfer) => {
-                    let mut chamfer = if parameters.is_empty() {
-                        project_fixed_chamfer(
-                            scope,
-                            construction_groups,
-                            edge_operands,
-                            edge_identity_operands,
-                            edge_treatment_vertex_operands,
-                            histories,
-                            (ctx, &mut projection_losses),
-                        )?
-                    } else {
-                        None
-                    };
-                    if chamfer.is_none() {
-                        chamfer = project_chamfer(
-                            scope,
-                            &parameters,
-                            inputs,
-                            ctx,
-                            &mut projection_losses,
-                        )?;
+                    let projection = chamfer::prepare(scope, inputs);
+                    let mut definition = if projection.legacy_compatible() && parameters.is_empty() {
+                        project_fixed_chamfer(scope, construction_groups, edge_operands,
+                            edge_identity_operands, edge_treatment_vertex_operands, histories,
+                            (ctx, &mut projection_losses))?
+                    } else { None };
+                    if definition.is_none() && projection.legacy_compatible() {
+                        definition = project_chamfer(scope, &parameters, inputs, ctx, &mut projection_losses)?;
                     }
-                    chamfer.map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                    definition.map_or_else(|| {
+                        retain_chamfer_records = true;
+                        projection.project(&parameters, ctx, &mut projection_losses)
+                    }, Ok)?
                 }
                 Some(DesignFeatureFamily::Combine) => project_combine(scope, native_scope)
                     .unwrap_or_else(|| {
@@ -1286,6 +1280,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs, ctx)?
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                Some(DesignFeatureFamily::SheetMetalUnfold) => fold::unfold(scope, inputs, &mut projection_losses)?,
+                Some(DesignFeatureFamily::SheetMetalRefold) => fold::refold(scope, inputs, &scope_ids, &source_ordinals, &mut projection_losses),
                 Some(DesignFeatureFamily::SheetMetalBend) => {
                     bend_lines::project(scope, &parameters, inputs, &mut projection_losses)?
                 }
@@ -1504,6 +1500,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             })
                         })
                     } else if scope.kind()
+                        == crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim
+                    {
+                        surface_untrim::project_surface_untrim(
+                            scope,
+                            construction_groups,
+                            face_operands,
+                            body_recipe_operands,
+                            &mut projection_losses,
+                        )
+                    } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::UnStitch
                     {
                         unstitch::project_unstitch(
@@ -1624,10 +1630,25 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 ) || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CurveDrivenPartial { .. }))
                     || matches!(family, Some(DesignFeatureFamily::Hole))
                     || matches!(family, Some(DesignFeatureFamily::Emboss))
+                    || retain_chamfer_records
                     || shell_has_independent_walls(scope)
                     || extended_joint_origin
                 {
                     let mut properties = scope_properties(scope, native_scope, placements, &parameters)?;
+                    if retain_chamfer_records {
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("chamfer:parameters"),
+                            serde_json::to_string(&chamfer::retained_parameters(scope, inputs))
+                                .map_err(CodecError::malformed)?,
+                        );
+                        if let Some(sets) = scope.chamfer_sets() {
+                            properties.insert(
+                                cadmpeg_core::nonblank_literal!("chamfer:sets"),
+                                serde_json::to_string(sets).map_err(CodecError::malformed)?,
+                            );
+                        }
+                    }
+
                     if shell_has_independent_walls(scope)
                         && matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Shell { .. }))
                     {
@@ -1719,6 +1740,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             Ok::<_, CodecError>(())
         };
         match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalRefold { construction }) => {
+                if let Some(source) = &construction.unfold {
+                    add_dependency(source)?;
+                }
+            }
             FeatureDefinition::Operation(FeatureOperation::Draft { anchor, .. }) => {
                 if let Some(plane) = anchor.pull().and_then(|pull| pull.plane.as_ref()) {
                     add_dependency(plane)?;
@@ -6357,7 +6383,7 @@ fn project_chamfer(
     let group_count = if shared_specification {
         1
     } else {
-        edge_groups.len()
+        edge_groups.len().max(1)
     };
     // The specification is shared with one edge-role group. Any other role
     // keeps that reading and says so.
@@ -6448,6 +6474,12 @@ fn project_chamfer(
         candidates.push(spec);
     }
     let mut groups = Vec::new();
+    if edge_groups.is_empty() {
+        groups.push(ChamferGroup {
+            edges: chamfer::unresolved_selection(scope, None, losses),
+            spec: candidates[0],
+        });
+    }
     for (ordinal, group) in edge_groups.into_iter().enumerate() {
         let spec = *or_none!(candidates.get(if group_count == 1 { 0 } else { ordinal }));
         let group = ChamferGroup {
@@ -6504,12 +6536,9 @@ fn project_fixed_chamfer(
 
     let fixed = or_none!(scope.fixed_chamfer_parameters());
     let stream = or_none!(native_stream(&scope.id));
-    let group = or_none!(unique_feature_match(construction_groups.iter().filter(
-        |group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-        }
-    )));
+    let group = unique_feature_match(construction_groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
+    }));
     let spec = match fixed {
         crate::records::feature::fixed_parameters::DesignFixedChamferParameters::EqualDistance { distance } => {
             ChamferSpec::Distance {
@@ -6526,21 +6555,24 @@ fn project_fixed_chamfer(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Chamfer {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
-                edges: resolved_edge_treatment_group_with_corners(
-                    group,
-                    crate::design::edge_resolve::EdgeTreatmentInputs {
-                        groups: construction_groups,
-                        operands: edge_operands,
-                        identity_operands: edge_identity_operands,
-                        vertex_operands: edge_treatment_vertex_operands,
-                        histories,
-                        previous_state_id: scope.previous_history_state_id(),
-                        feature_id: &crate::ids::neutral_feature_id(scope),
-                        treatment_radius: None,
-                    },
-                    ctx,
-                    losses,
-                )?,
+                edges: match group {
+                    None => chamfer::unresolved_selection(scope, None, losses),
+                    Some(group) => resolved_edge_treatment_group_with_corners(
+                        group,
+                        crate::design::edge_resolve::EdgeTreatmentInputs {
+                            groups: construction_groups,
+                            operands: edge_operands,
+                            identity_operands: edge_identity_operands,
+                            vertex_operands: edge_treatment_vertex_operands,
+                            histories,
+                            previous_state_id: scope.previous_history_state_id(),
+                            feature_id: &crate::ids::neutral_feature_id(scope),
+                            treatment_radius: None,
+                        },
+                        ctx,
+                        losses,
+                    )?,
+                },
                 spec,
             }),
             flip_direction: false,
@@ -8691,6 +8723,7 @@ fn project_hole(
             "Hole {} projects its admitted dimensions independently of unresolved extent, entry-type or parameter associations; its encoded entry type governs the active treatment and all parameter values and expressions are retained (DR-470).", scope.id
         )));
     }
+    let specification = hole_clearance_specification(scope);
     if let Some(extent) = scope.hole_extent() {
         if let Some(loss) = extent
             .leading_word
@@ -8699,7 +8732,11 @@ fn project_hole(
         {
             losses.push(loss);
         }
-        if extent.standard.is_some() {
+        if specification.is_some() {
+            losses.push(crate::loss::F3dLossCode::HoleClearanceFieldsAssumed.note(format!(
+                "Hole {} sets the modeled, cosmetic, hand and depth fields of its clearance specification to modeled, cosmetic off, right hand and hole depth, which its sizing block does not store; its stored diameter gives the bore without comparison to the standard size, and its fastener name remains a source property.", scope.id
+            )));
+        } else if extent.standard.is_some() {
             losses.push(crate::loss::F3dLossCode::HoleStandardSizingAssumed.note(format!(
                 "Hole {} assumes its scalar geometry is independent of its native standard sizing names, which remain source properties (DR-470).", scope.id
             )));
@@ -8741,7 +8778,7 @@ fn project_hole(
         shape: cadmpeg_ir::features::holes::HoleShape::new(
             cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind,
-                specification: None,
+                specification: specification.map(Box::new),
             },
             None,
             diameter,
@@ -8753,6 +8790,28 @@ fn project_hole(
         taper_angle: None,
         allow_multi_profile_faces: None,
     })))
+}
+
+/// The clearance specification of a clearance Hole (tap type `1`) with standard sizing names.
+fn hole_clearance_specification(
+    scope: &DesignParameterScope,
+) -> Option<cadmpeg_ir::features::holes::HoleSpecification> {
+    let extent = scope.hole_extent()?;
+    if extent.leading_word.as_ref()?.value != HOLE_TAP_CLEARANCE {
+        return None;
+    }
+    let names = extent.standard.as_ref()?;
+    let named = |name: &str| (!name.trim().is_empty()).then(|| name.to_owned());
+    Some(cadmpeg_ir::features::holes::HoleSpecification::Clearance {
+        standard: cadmpeg_core::text::NonBlankString::new(names.standard.clone())?,
+        designation: named(&names.size),
+        fit: named(&names.fit),
+        modeled: true,
+        cosmetic: false,
+        hand: cadmpeg_ir::features::holes::ThreadHand::Right,
+        depth: cadmpeg_ir::features::holes::HoleThreadDepth::HoleDepth,
+        clearance: None,
+    })
 }
 
 fn project_replace_face(

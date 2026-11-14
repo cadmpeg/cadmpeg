@@ -644,6 +644,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || modeled.is_none()
                 || extent.is_none()
         }
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalUnfold { construction }) => {
+            construction.stationary.as_ref().is_none_or(|face| !face_selection_is_resolved(face))
+                || construction.all_bends.is_none()
+                || (construction.all_bends != Some(true) && construction.bends.as_ref().is_none_or(|face| !face_selection_is_resolved(face)))
+                || construction.neutral_factor.is_none()
+        }
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalRefold { construction }) => construction.unfold.is_none(),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBendLines { construction }) => {
             construction.bends.is_empty()
                 || construction.bends.iter().any(|bend| {
@@ -901,6 +908,15 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || (!face_selection_is_resolved(removed_faces) && !empty_removed_faces_are_resolved)
                 || thickness.is_none()
                 || (outward.is_none() && *mode != Some(cadmpeg_ir::features::ShellMode::BothSides))
+        }
+        FeatureDefinition::Operation(FeatureOperation::UntrimSurface { faces, loops, extension }) => {
+            !face_selection_is_resolved(faces)
+                || extension.is_none()
+                || match loops {
+                    cadmpeg_ir::features::surfaces::UntrimLoops::Unresolved {} => true,
+                    cadmpeg_ir::features::surfaces::UntrimLoops::Selected { edges } => !edge_selection_is_resolved(edges),
+                    _ => false,
+                }
         }
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
@@ -1879,6 +1895,14 @@ fn design_projection_gaps(
                 | FeatureOperation::UnstitchFaces { faces }
                 | FeatureOperation::OffsetSurface { faces, .. },
             ) => face_selection(faces),
+            FeatureDefinition::Operation(FeatureOperation::UntrimSurface {
+                faces, loops, ..
+            }) => {
+                face_selection(faces);
+                if let cadmpeg_ir::features::surfaces::UntrimLoops::Selected { edges } = loops {
+                    edge_selection(edges);
+                }
+            }
             FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) => {
                 let targets = operands.targets();
                 let replacements = operands.replacements();

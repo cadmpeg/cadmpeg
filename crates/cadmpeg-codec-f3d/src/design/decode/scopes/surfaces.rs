@@ -12,6 +12,7 @@ use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::text::fixed_guid_end;
 use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
@@ -19,6 +20,7 @@ use crate::ids::native_stream;
 use crate::layout::compact_flag_record as flag_record;
 use crate::layout::surface_boundary_group_tail_87 as tail_87;
 use crate::layout::surface_boundary_group_tail_88 as tail_88;
+use crate::layout::surface_untrim_prologue as untrim;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::DesignRuledSurfaceCorner;
 use crate::records::feature::surface_ops::DesignRuledSurfaceMethod;
@@ -27,6 +29,8 @@ use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetSupport;
 use crate::records::feature::surface_ops::DesignSurfaceStitchOperation;
+use crate::records::feature::surface_ops::DesignSurfaceUntrimLoops;
+use crate::records::feature::surface_ops::DesignSurfaceUntrimOperation;
 use crate::records::recipes::ConstructionRecipe;
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
@@ -65,6 +69,183 @@ pub(super) fn exact_surface_extend_operation(
         tolerance: operation.tolerance,
         tolerance_offset: operation.tolerance_offset,
     })
+}
+
+const MARKED_REFERENCE_LEN: usize = 11;
+const U32_LEN: usize = 4;
+
+pub(super) fn exact_surface_untrim_operation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Option<DesignSurfaceUntrimOperation>, CodecError> {
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim {
+        return Ok(None);
+    }
+    let Some(frame) = surface_untrim_frame(bytes, scope) else {
+        return Ok(None);
+    };
+    let Some(count) = View::over_retained(frame.groups).counted(
+        u64_from_index(frame.groups.len() / MARKED_REFERENCE_LEN),
+        MARKED_REFERENCE_LEN,
+    ) else {
+        return Ok(None);
+    };
+    let mut operation = DesignSurfaceUntrimOperation::new(
+        frame.loops,
+        u64_from_index(frame.loops_offset),
+        frame.extension_record_index,
+        frame.face_group_record_index,
+    );
+    operation.padded = frame.padded;
+    operation.loop_group_record_indices =
+        ctx.alloc_filled(count.get(), 0u32, "F3D untrim loop references")?;
+    for (target, chunk) in operation
+        .loop_group_record_indices
+        .iter_mut()
+        .zip(frame.groups.chunks_exact(MARKED_REFERENCE_LEN))
+    {
+        let Some(reference) = marked_record_reference(chunk, 0) else {
+            return Ok(None);
+        };
+        *target = reference;
+    }
+    let mut owners =
+        records
+            .frames(frame.extension_record_index)
+            .filter_map(|(frame_start, frame_end)| {
+                let owner = parse_parameter_owner(bytes.get(frame_start..frame_end)?)?;
+                (owner.record_index == frame.extension_record_index
+                    && owner.scope_record_index == scope.record_index
+                    && owner.local_ordinal == 0)
+                    .then_some(())?;
+                let offset = owner
+                    .evaluated_value_offset
+                    .absolute(u64_from_index(frame_start))?;
+                Some((owner.evaluated_value, offset))
+            });
+    if let (Some((extension, offset)), None) = (owners.next(), owners.next()) {
+        operation.extension = Some(extension);
+        operation.extension_offset = Some(offset);
+    } else {
+        losses.push(crate::loss::F3dLossCode::SurfaceUntrimExtensionUnresolved.note(format!(
+            "SurfaceUntrim {} retains extension reference {} because its numeric owner is missing, ambiguous or inconsistent (DR-601).",
+            scope.id, frame.extension_record_index
+        )));
+    }
+    if !frame.padded {
+        losses.push(crate::loss::F3dLossCode::SurfaceUntrimPaddingAssumed.note(format!(
+            "SurfaceUntrim {} reads the uniquely closed unpadded reference runs as the same loop-removal frame (DR-600).", scope.id
+        )));
+    }
+    let Some((identity, _)) = fixed_relaxed_guid_text(bytes, frame.identity_at)? else {
+        return Ok(None);
+    };
+    if identity.as_str() != "00000000-0000-0000-0000-000000000000" {
+        losses.push(crate::loss::F3dLossCode::SurfaceUntrimTrailingIdentityAssumed.note(format!(
+            "SurfaceUntrim {} treats trailing identifier {} as auxiliary metadata while retaining its decoded loop and extension settings (DR-600).", scope.id, identity.as_str()
+        )));
+        operation.trailing_identity = Some(identity);
+    }
+    Ok(Some(operation))
+}
+
+struct SurfaceUntrimFrame<'a> {
+    groups: &'a [u8],
+    extension_record_index: u32,
+    loops: DesignSurfaceUntrimLoops,
+    loops_offset: usize,
+    face_group_record_index: u32,
+    padded: bool,
+    identity_at: usize,
+}
+
+fn surface_untrim_frame<'a>(
+    bytes: &'a [u8],
+    scope: &DesignParameterScope,
+) -> Option<SurfaceUntrimFrame<'a>> {
+    let prefix_end = usize::try_from(scope.reference_count_offset()).ok()?;
+    let bytes = bytes.get(..prefix_end)?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let count_at = start.checked_add(untrim::LOOP_GROUP_COUNT)?;
+    if bytes
+        .get(start.checked_add(untrim::ZERO_RUN)?..count_at)?
+        .iter()
+        .any(|byte| *byte != 0)
+    {
+        return None;
+    }
+    let mut view = View::over_retained(bytes.get(count_at..)?);
+    let count = view.u32_le()?;
+    let count = view.counted(u64::from(count), MARKED_REFERENCE_LEN)?.get();
+    let groups = view.take(count.checked_mul(MARKED_REFERENCE_LEN)?)?;
+    if groups
+        .chunks_exact(MARKED_REFERENCE_LEN)
+        .any(|chunk| marked_record_reference(chunk, 0).is_none())
+    {
+        return None;
+    }
+    let mut cursor = count_at.checked_add(view.position())?;
+    let extension_record_index = marked_record_reference(bytes, cursor)?;
+    cursor = cursor.checked_add(MARKED_REFERENCE_LEN)?;
+    let loops_offset = cursor;
+    let loops = match View::u32_le_at(bytes, cursor)? {
+        0 => DesignSurfaceUntrimLoops::All,
+        1 => DesignSurfaceUntrimLoops::Internal,
+        2 => DesignSurfaceUntrimLoops::External,
+        3 => DesignSurfaceUntrimLoops::Manual,
+        _ => return None,
+    };
+    cursor = cursor.checked_add(U32_LEN)?;
+    let mut endings = [cursor, cursor.checked_add(U32_LEN)?]
+        .into_iter()
+        .filter(|at| *at == cursor || View::u32_le_at(bytes, cursor) == Some(0))
+        .filter_map(|at| {
+            untrim_face_group_reference(bytes, at)
+                .map(|(group, identity_at)| (group, at != cursor, identity_at))
+        });
+    let (Some((face_group_record_index, padded, identity_at)), None) =
+        (endings.next(), endings.next())
+    else {
+        return None;
+    };
+    let mut references = scope.reference_members().values().copied();
+    if references.next() != Some(extension_record_index)
+        || references.next() != Some(face_group_record_index)
+    {
+        return None;
+    }
+    for chunk in groups.chunks_exact(MARKED_REFERENCE_LEN) {
+        let group = marked_record_reference(chunk, 0)?;
+        references.by_ref().find(|reference| *reference == group)?;
+    }
+    Some(SurfaceUntrimFrame {
+        groups,
+        extension_record_index,
+        loops,
+        loops_offset,
+        face_group_record_index,
+        padded,
+        identity_at,
+    })
+}
+
+fn untrim_face_group_reference(bytes: &[u8], runs_at: usize) -> Option<(u32, usize)> {
+    if View::u32_le_at(bytes, runs_at)? != 0
+        || View::u32_le_at(bytes, runs_at.checked_add(U32_LEN)?)? != 0
+        || View::u32_le_at(bytes, runs_at.checked_add(2 * U32_LEN)?)? != 1
+    {
+        return None;
+    }
+    let reference_at = runs_at.checked_add(3 * U32_LEN)?;
+    let face_group = marked_record_reference(bytes, reference_at)?;
+    let identity_at = reference_at.checked_add(MARKED_REFERENCE_LEN)?;
+    let guid_end = fixed_guid_end(bytes, identity_at)?;
+    let table_at = guid_end.checked_add(3)?;
+    (bytes.get(guid_end..table_at)? == [0; 3] && table_at == bytes.len())
+        .then_some((face_group, identity_at))
 }
 
 pub(super) fn exact_surface_offset_operation(

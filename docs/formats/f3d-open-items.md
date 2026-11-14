@@ -1010,6 +1010,14 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** A producer-generated radial TSM must retain a deleted domain slot at `p` and map a live element with raw slot `q > p`. The raw-slot prediction is `q`; the compact-index prediction after one deletion is `q-1`. Saving must preserve the deleted slot to separate these predictions. A controlled radial export with a nondefault sweep must establish the sweep-to-angle rule.
 
+### SM-02. Unfold controls, rule factor and Refold association
+
+**Question.** Which authored controls establish the Unfold selection slots, all-bends flag, settings-reference layout, rule neutral-axis factor and Refold source association?
+
+**Known.** The Unfold prefix contains a control byte and four ordered references. Both construction groups use role `0x10`. The projection reads the first group as bend faces, the fourth as the stationary face, and control zero/one as selected/all bends. `feature.unfold-selection-slots-assumed` and `feature.unfold-all-bends-flag-assumed` identify these readings. A settings primary can contain present input references before the rule. A unique registered rule target inside the bounded settings frame, whose closing local owner reference names this Unfold, supplies the rule link with `feature.unfold-settings-rule-reference-assumed` when the mask-and-slots form is unresolved. The unique material-trailer scalar of the owning settings rule supplies the neutral-axis factor with `feature.unfold-material-scalar-factor-assumed`. The unique preceding typed Unfold in the same ordered GroupMode supplies the Refold source with `feature.refold-group-source-assumed`. A resolved source must be emitted earlier in the same stream. Missing or ambiguous source links, rule factors, prefixes, selections and control values retain neutral partial constructions with their specific unresolved or native-selection losses.
+
+**Need.** Controlled edits of each selection, the all-bends setting, settings input presence and the rule factor, plus a group containing several Unfold operations, must establish these associations.
+
 ### SM-01. Bend line association and stationary role
 
 **Question.** How does a Bend scope associate each angular owner with a selected sketch line and its stationary region?
@@ -1254,6 +1262,8 @@ The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are t
 
 **Conflict.** None.
 
+**Note.** Projection through explicit set references retains the flags and corner type in feature properties. A set with a true flag reports `feature.chamfer-tangent-chain-assumed`; a miter or blend corner reports `feature.chamfer-corner-treatment-unresolved`.
+
 ### DR-467. Face that a Hole's `bounded_face` operands name
 
 **Question.** Which face do the `bounded_face` operands of a Hole scope name?
@@ -1280,13 +1290,13 @@ The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are t
 
 **Question.** Which Hole parameters remain active when the extent controls, parameter associations, or entry-treatment dimensions leave the complete construction unresolved, and which standard sizing controls define a neutral clearance or thread specification?
 
-**Known.** Extent control `1` can coexist with a `HoleDepth` owner and an absent saved-depth property. The parameter owners retain the diameter, tip, treatment and reference-distance expressions and evaluated values. The sizing block retains four ordered names for standard, fit, size and fastener, followed by the entry-type word for simple, counterbore or countersink form.
+**Known.** Extent control `1` can coexist with a `HoleDepth` owner and an absent saved-depth property. The parameter owners retain the diameter, tip, treatment and reference-distance expressions and evaluated values. The sizing block retains four ordered names for standard, fit, size and fastener, followed by the entry-type word for simple, counterbore or countersink form. The standard, size and fit names of a clearance hole fill its neutral clearance specification; that specification's modeled, cosmetic, hand and depth fields take fixed values and report `feature.hole-clearance-fields-assumed`.
 
 **Need.** Controlled non-distance Holes that vary the stored depth independently of the target, partial and competing treatment parameter sets, and standard sizing controls that establish modeled, cosmetic, handedness and depth settings.
 
 **Conflict.** None.
 
-**Note.** The decoder retains independently admitted dimensions, parameter expressions and extent metadata on a neutral Hole. A readable entry-type word selects the active form; unmatched treatment parameters remain attached. An unresolved extent, entry-type or parameter association reports `feature.hole-parameters-independent-assumed`; an incomplete or conflicting shape reports `feature.hole-shape-partial-assumed`. Native sizing names remain source properties and report `feature.hole-standard-sizing-assumed`.
+**Note.** The decoder retains independently admitted dimensions, parameter expressions and extent metadata on a neutral Hole. A readable entry-type word selects the active form; unmatched treatment parameters remain attached. An unresolved extent, entry-type or parameter association reports `feature.hole-parameters-independent-assumed`; an incomplete or conflicting shape reports `feature.hole-shape-partial-assumed`. The four sizing names remain source properties. A sizing block that gives no clearance specification reports `feature.hole-standard-sizing-assumed`.
 
 ### DR-471. Hole drilling direction with an unavailable control
 
@@ -2226,7 +2236,27 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** None.
 
-### DR-625. Counted Shell prefix byte and partial envelopes
+### DR-600. SurfaceUntrim retained groups and prefix variants
+
+**Question.** How do stored manual-loop groups affect a nonmanual loop choice, which selection does an incomplete group definition denote, and what does a nonnull trailing identifier select?
+
+**Known.** `f3d.md` §3.1 "A `SurfaceUntrim` scope removes trim loops" defines the loop choices and the ordered face and loop-group references. A nonmanual choice can retain loop-group references. The primary prefix closes at the ordered-reference count.
+
+**Need.** Saves that change the loop choice while retaining selected loops, complete definitions for each referenced group, a save with the unpadded closed prefix, and a save with a nonnull trailing identifier.
+
+**Note.** `feature.surface-untrim-stored-loop-groups-assumed` reads stored groups alongside a nonmanual choice as inactive selections. `feature.surface-untrim-loop-groups-aggregated-assumed` represents multiple manual groups by their scope expression. `feature.surface-untrim-group-selection-assumed` retains a scope expression for missing, ambiguous or inconsistent groups. `feature.surface-untrim-padding-assumed` admits uniquely closed unpadded runs. `feature.surface-untrim-frame-assumed` projects the operation with unresolved settings when its prefix has no closed reading. `feature.surface-untrim-trailing-identity-assumed` retains a nonnull identifier as auxiliary metadata while applying the decoded loop and extension settings.
+
+### DR-601. SurfaceUntrim signed extension and missing scalar definitions
+
+**Question.** Does a negative evaluated extension contract the exterior boundary, and which scalar definition applies when a referenced owner is incomplete or duplicated?
+
+**Known.** The extension reference names a numeric owner of local ordinal zero in the same scope. Its evaluated scalar is finite and expressed in centimetres. Extension applies when an exterior boundary is removed.
+
+**Need.** A save with negative extension and its resulting boundary, and complete owner definitions for ambiguous extension references.
+
+**Note.** `feature.surface-untrim-negative-extension-assumed` retains a negative scalar as signed neutral extension. `feature.surface-untrim-extension-unresolved` preserves the parsed frame when its scalar owner does not resolve uniquely. `feature.surface-untrim-extension-unrepresentable` retains the native value when its millimetre conversion overflows.
+
+### DR-622. Counted Shell prefix byte and partial envelopes
 
 **Question.** Which option does the counted Shell prefix byte select, and which fields preserve the wall-slot direction when that byte is nonzero or the envelope tail is incomplete?
 
@@ -2238,7 +2268,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** Partial Shell projection reports `feature.shell-counted-control-assumed` for reading the byte as a separate prefix field, `feature.shell-slot-direction-assumed` for the nonzero form's inside-first reading and `feature.shell-envelope-assumed` when a unique partial prefix supplies wall data. Unresolved values and selections remain in `shell:source` with their references and byte locations.
 
-### DR-626. Simultaneous Shell face and body groups
+### DR-623. Simultaneous Shell face and body groups
 
 **Question.** How do the removed-face group and the target-body group jointly select a Shell operation when its prefix names both groups?
 
@@ -2424,13 +2454,13 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which stored field assigns the first distance of a two-distance chamfer, or the distance of a distance-angle chamfer, to an input support face?
 
-**Known.** Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false.
+**Known.** Chamfer sets reference their edge groups and dimensional owners independently. One scope can combine equal-distance, two-distance, and distance-angle sets. Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false.
 
 **Need.** A rule that binds each selected input edge to its distance reference face, with both face widths checked against the stored dimensional specification. The rule must cover reversed recipe-reference order, propagated edge chains, and support faces split by earlier operations.
 
 **Conflict.** None.
 
-**Note.** The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
+**Note.** Projection through explicit set references keeps owner-slot order with forward direction and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
 
 ### DR-342. Chamfer recipes with conflicting transition selections
 
@@ -2454,7 +2484,19 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** The result plane forms an angle of approximately 21.2 degrees with the second input plane and 38.8 degrees with the first. Each differs from the 30-degree IR angle.
 
-**Note.** DR-341 tracks the input reference-face assignment.
+**Note.** Projection through explicit set references reports `feature.chamfer-angle-reference-assumed` when it reads the stored angle as the neutral reference-face angle. DR-341 tracks the input reference-face assignment.
+
+### DR-640. Chamfer parameter recovery from incomplete definitions
+
+**Question.** Which value and role remain authoritative when a Chamfer set's parameter definition, owner backlink, source kind, or unit token is incomplete or inconsistent, and when can an owner's evaluated scalar be stale?
+
+**Known.** A set's kind word identifies its distance and angle slots. The set references their owners. A parameter owner carries an evaluated scalar and a parameter reference; the parameter carries an owner backlink, source kind, and optional unit token. Fixed scalar records retain their record identities and values independently of a set list.
+
+**Need.** Controlled saves that distinguish current parameter values from stale owner values, parameter namespaces that share an owner, and incomplete reference graphs with independent dimensions for each set.
+
+**Conflict.** None.
+
+**Note.** The decoder uses a unique parameter backlink when its owner is absent, with `feature.chamfer-parameter-owner-assumed`. It uses a stored owner or fixed scalar when the parameter definition is absent, with `feature.chamfer-parameter-value-assumed`. Explicit slots select the most likely role and canonical unit, with `feature.chamfer-parameter-kind-assumed` or `feature.chamfer-parameter-unit-assumed` for a discrepancy. Ambiguous definitions retain the identified form and raw parameters with `feature.chamfer-definition-unresolved`. Explicit set references survive an owner-order conflict with `feature.chamfer-set-conflict`.
 
 ### DR-360. One-sided face-target Extrude without a termination group
 

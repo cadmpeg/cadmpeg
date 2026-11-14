@@ -1756,12 +1756,10 @@ fn extend_related_design_records(
             &prereqs.design_parameter_owners,
             &prereqs.design_parameters,
         );
-    let chamfer_set_conflicts =
-        crate::design::decode::scopes::chamfer_set::retain_consistent_chamfer_sets(
-            &mut design.design_parameter_scopes,
-            &decoded_groups,
-            &prereqs.design_parameter_owners,
-        );
+    let chamfer_set_conflicts = crate::design::decode::scopes::chamfer_set::chamfer_set_conflicts(
+        &design.design_parameter_scopes,
+        &prereqs.design_parameter_owners,
+    );
     profile_losses.extend(
         crate::design::decode::scopes::chamfer_set::chamfer_set_conflict_loss(
             &chamfer_set_conflicts,

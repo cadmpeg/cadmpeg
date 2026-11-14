@@ -765,7 +765,7 @@ pub(crate) mod copy_paste_bodies_scope_prefix {
 /// Spec §3.1. Record length 21 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header. Prologue byte 0 ends the prologue at offset 21; prologue byte 1 is followed by u32 0 and ends it at offset 25.
+/// Offsets are relative to the primary indexed header. Prologue byte 0 ends the prologue at offset 21; prologue byte 1 is followed by u32 0 and ends it at offset 25. Each referenced set stores its own specification-kind word.
 /// ```
 pub(crate) mod chamfer_scope_prologue {
     /// Record length in bytes. Spec §3.1.
@@ -5896,6 +5896,16 @@ pub(crate) mod placement_indexed_prefix {
     pub(crate) const ZERO_PREFIX: usize = 11;
 }
 
+/// Byte offsets for the `surface_untrim_prologue` record.
+///
+/// Spec §3.1. Record length 25 B.
+pub(crate) mod surface_untrim_prologue {
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `loop_group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LOOP_GROUP_COUNT: usize = 21;
+}
+
 /// Byte offsets for the `surface_patch_boundary_settings_prefix` record.
 ///
 /// Spec §3.1. Record length 38 B.
@@ -9939,4 +9949,28 @@ pub(crate) mod marked_sphere_local_frame {
     pub(crate) const IDENTITY: usize = 0;
     /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
     pub(crate) const MATRIX: usize = 1;
+}
+
+/// Byte offsets for the `sheet_metal_fold_scope_prefix` record.
+///
+/// Spec §3.1.
+pub(crate) mod sheet_metal_fold_scope_prefix {
+    /// Offset of `zero_run` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `extension` (`u8`). Spec §3.1.
+    pub(crate) const EXTENSION: usize = 20;
+}
+
+/// Byte offsets for the `sheet_metal_unfold_refold_group` record.
+///
+/// Spec §3.1.
+pub(crate) mod sheet_metal_unfold_refold_group {
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `name` (`bytes[46]`). Spec §3.1.
+    pub(crate) const NAME: usize = 21;
+    /// Offset of `mode` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MODE: usize = 67;
+    /// Offset of `first_member` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_MEMBER: usize = 76;
 }

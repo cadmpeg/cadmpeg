@@ -664,7 +664,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 21 B
 
-Offsets are relative to the primary indexed header. Prologue byte 0 ends the prologue at offset 21; prologue byte 1 is followed by u32 0 and ends it at offset 25.
+Offsets are relative to the primary indexed header. Prologue byte 0 ends the prologue at offset 21; prologue byte 1 is followed by u32 0 and ends it at offset 25. Each referenced set stores its own specification-kind word.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs`
@@ -1729,6 +1729,46 @@ Spec §3.1 · layout: byte offsets · size: 43 B
 Unstated regions:
 
 - `0..21` (21 B): Mesh operation scope prefix.
+
+## `mesh_combine_v1_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 34 B
+
+Flag-01 offsets. The mesh scope flag controls the inserted prefix word.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/combine.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 4 | `prefix_word` | `u32` | little | spec | Flag `01` inserts a u32 |
+| 25 | 4 | `operation` | `u32` | little | spec | the operation selector |
+| 29 | 1 | `control_byte` | `u8` | little | spec | a control byte |
+| 30 | 4 | `tool_count` | `u32` | little | spec | the tool-group count |
+
+Unstated regions:
+
+- `0..21` (21 B): Indexed header and mesh scope prefix.
+
+## `mesh_combine_v2_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 34 B
+
+Flag-00 offsets. The mesh scope flag controls the inserted prefix word.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/combine.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 4 | `operation` | `u32` | little | spec | the operation selector |
+| 25 | 4 | `control_word` | `u32` | little | spec | an additional control word |
+| 29 | 1 | `control_byte` | `u8` | little | spec | a control byte |
+| 30 | 4 | `tool_count` | `u32` | little | spec | the tool-group count |
+
+Unstated regions:
+
+- `0..21` (21 B): Indexed header and mesh scope prefix.
 
 ## `paramesh_guid_join_prefix`
 
@@ -6606,6 +6646,19 @@ Class members follow this 21-byte prefix. Version 4 admits marked and unmarked m
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is |
 | 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | The bytes from indexed-header offset 11 through 20 are zero |
 
+## `surface_untrim_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/surfaces.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The SurfaceUntrim prologue |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | ten zero bytes |
+| 21 | 4 | `loop_group_count` | `u32` | little | spec | u32 loop-group count |
+
 ## `surface_patch_boundary_settings_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 38 B
@@ -11306,45 +11359,35 @@ Parsed by:
 | 2 | 4 | `occurrence_ordinal` | `u32` | little | spec | Two prefix bytes, the u32 one-based occurrence ordinal |
 | 6 | 1 | `guid_marker` | `u8` | little | spec | The two-byte prefix form permits marker `u8 1` after the ordinal · value `1` |
 
-## `mesh_combine_v1_scope_prefix`
+## `sheet_metal_fold_scope_prefix`
 
-Spec §3.1 · layout: byte offsets · size: 34 B
-
-Flag-01 offsets. The mesh scope flag controls the inserted prefix word.
+Spec §3.1 · layout: byte offsets · size: not stated
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/combine.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fold.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 21 | 4 | `prefix_word` | `u32` | little | spec | Flag `01` inserts a u32 |
-| 25 | 4 | `operation` | `u32` | little | spec | the operation selector |
-| 29 | 1 | `control_byte` | `u8` | little | spec | a control byte |
-| 30 | 4 | `tool_count` | `u32` | little | spec | the tool-group count |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Their fold-scope prefix contains the indexed header |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | Their fold-scope prefix contains the indexed header |
+| 20 | 1 | `extension` | `u8` | little | spec | Their fold-scope prefix contains the indexed header |
 
-Unstated regions:
+## `sheet_metal_unfold_refold_group`
 
-- `0..21` (21 B): Indexed header and mesh scope prefix.
-
-## `mesh_combine_v2_scope_prefix`
-
-Spec §3.1 · layout: byte offsets · size: 34 B
-
-Flag-00 offsets. The mesh scope flag controls the inserted prefix word.
+Spec §3.1 · layout: byte offsets · size: not stated
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/combine.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fold.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 21 | 4 | `operation` | `u32` | little | spec | the operation selector |
-| 25 | 4 | `control_word` | `u32` | little | spec | an additional control word |
-| 29 | 1 | `control_byte` | `u8` | little | spec | a control byte |
-| 30 | 4 | `tool_count` | `u32` | little | spec | the tool-group count |
-
-Unstated regions:
-
-- `0..21` (21 B): Indexed header and mesh scope prefix.
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The `UnfoldRefoldGroupMode` carrier has type GUID |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | The `UnfoldRefoldGroupMode` carrier has type GUID |
+| 21 | 46 | `name` | `bytes[46]` | little | spec | The `UnfoldRefoldGroupMode` carrier has type GUID |
+| 67 | 4 | `mode` | `u32` | little | spec | The `UnfoldRefoldGroupMode` carrier has type GUID |
+| 71 | 1 | `marker` | `u8` | little | spec | The `UnfoldRefoldGroupMode` carrier has type GUID |
+| 72 | 4 | `member_count` | `u32` | little | spec | The `UnfoldRefoldGroupMode` carrier has type GUID |
+| 76 | 1 | `first_member` | `u8` | little | spec | Presence byte of the first local reference. A complete local reference occupies 11 or 51 bytes. |
 
 ## Not tabulated
 

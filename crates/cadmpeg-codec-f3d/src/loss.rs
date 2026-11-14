@@ -26,6 +26,16 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
+    UnfoldAllBendsFlagAssumed,
+    UnfoldControlUnresolved,
+    UnfoldSelectionSlotsAssumed,
+    UnfoldSelectionNative,
+    UnfoldEnvelopeUnresolved,
+    UnfoldMaterialScalarFactorAssumed,
+    UnfoldRuleFactorUnresolved,
+    UnfoldSettingsRuleReferenceAssumed,
+    RefoldGroupSourceAssumed,
+    RefoldSourceUnresolved,
     BendLineOwnerOrderAssumed,
     BendStationaryRoleAssumed,
     BendAngleUnresolved,
@@ -78,6 +88,16 @@ pub(crate) enum F3dLossCode {
     ConstructionClosingFlagAssumed,
     /// A Chamfer's non-face group is read as its edge group despite its role.
     ChamferEdgeRoleAssumed,
+    ChamferDefinitionUnresolved,
+    ChamferSelectionUnresolved,
+    ChamferReferenceFaceAssumed,
+    ChamferAngleReferenceAssumed,
+    ChamferCornerTreatmentUnresolved,
+    ChamferTangentChainAssumed,
+    ChamferParameterOwnerAssumed,
+    ChamferParameterValueAssumed,
+    ChamferParameterKindAssumed,
+    ChamferParameterUnitAssumed,
     /// A Coil's Boolean target group whose member count is not one is read as one body selection.
     CoilTargetMembersAssumed,
     /// Design configuration JSON members have no assigned neutral semantics.
@@ -362,6 +382,8 @@ pub(crate) enum F3dLossCode {
     /// A tapped Hole keeps its stored diameter instead of the bore of its thread size.
     HoleTappedDiameterStored,
     HoleStandardSizingAssumed,
+    /// A clearance Hole's specification takes fixed values for the fields it does not store.
+    HoleClearanceFieldsAssumed,
     HoleCarrierAxisAssumed,
     /// Align operand roles and motion have no neutral binding.
     AlignOperandsUnresolved,
@@ -574,6 +596,15 @@ pub(crate) enum F3dLossCode {
     FeatureFaceGroupsMethodUnmapped,
     FeatureFaceGroupsBoundaryDistanceAssumed,
     FeatureFaceGroupsSettingUnassigned,
+    SurfaceUntrimFrameAssumed,
+    SurfaceUntrimGroupSelectionAssumed,
+    SurfaceUntrimStoredLoopGroupsAssumed,
+    SurfaceUntrimLoopGroupsAggregatedAssumed,
+    SurfaceUntrimExtensionUnresolved,
+    SurfaceUntrimExtensionUnrepresentable,
+    SurfaceUntrimNegativeExtensionAssumed,
+    SurfaceUntrimPaddingAssumed,
+    SurfaceUntrimTrailingIdentityAssumed,
     UnstitchFrameAssumed,
     UnstitchGroupSelectionAssumed,
     UnstitchPrologueControlsAssumed,
@@ -911,6 +942,16 @@ impl F3dLossCode {
         Self::ConstructionTrackingPathUntyped,
         Self::ConstructionClosingFlagAssumed,
         Self::ChamferEdgeRoleAssumed,
+        Self::ChamferDefinitionUnresolved,
+        Self::ChamferSelectionUnresolved,
+        Self::ChamferReferenceFaceAssumed,
+        Self::ChamferAngleReferenceAssumed,
+        Self::ChamferCornerTreatmentUnresolved,
+        Self::ChamferTangentChainAssumed,
+        Self::ChamferParameterOwnerAssumed,
+        Self::ChamferParameterValueAssumed,
+        Self::ChamferParameterKindAssumed,
+        Self::ChamferParameterUnitAssumed,
         Self::CoilTargetMembersAssumed,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
@@ -1093,6 +1134,7 @@ impl F3dLossCode {
         Self::HoleExtentLeadingWordAssumed,
         Self::HoleTappedDiameterStored,
         Self::HoleStandardSizingAssumed,
+        Self::HoleClearanceFieldsAssumed,
         Self::HoleCarrierAxisAssumed,
         Self::AlignOperandsUnresolved,
         Self::AlignEnvelopeUnparsed,
@@ -1214,6 +1256,15 @@ impl F3dLossCode {
         Self::FeatureFaceGroupsMethodUnmapped,
         Self::FeatureFaceGroupsBoundaryDistanceAssumed,
         Self::FeatureFaceGroupsSettingUnassigned,
+        Self::SurfaceUntrimFrameAssumed,
+        Self::SurfaceUntrimGroupSelectionAssumed,
+        Self::SurfaceUntrimStoredLoopGroupsAssumed,
+        Self::SurfaceUntrimLoopGroupsAggregatedAssumed,
+        Self::SurfaceUntrimExtensionUnresolved,
+        Self::SurfaceUntrimExtensionUnrepresentable,
+        Self::SurfaceUntrimNegativeExtensionAssumed,
+        Self::SurfaceUntrimPaddingAssumed,
+        Self::SurfaceUntrimTrailingIdentityAssumed,
         Self::UnstitchFrameAssumed,
         Self::UnstitchGroupSelectionAssumed,
         Self::UnstitchPrologueControlsAssumed,
@@ -1391,6 +1442,20 @@ impl F3dLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::SceneOverrideRefused => "scene.override-refused",
+            Self::UnfoldAllBendsFlagAssumed => "feature.unfold-all-bends-flag-assumed",
+            Self::UnfoldControlUnresolved => "feature.unfold-control-unresolved",
+            Self::UnfoldSelectionSlotsAssumed => "feature.unfold-selection-slots-assumed",
+            Self::UnfoldSelectionNative => "feature.unfold-selection-native",
+            Self::UnfoldEnvelopeUnresolved => "feature.unfold-envelope-unresolved",
+            Self::UnfoldMaterialScalarFactorAssumed => {
+                "feature.unfold-material-scalar-factor-assumed"
+            }
+            Self::UnfoldRuleFactorUnresolved => "feature.unfold-rule-factor-unresolved",
+            Self::UnfoldSettingsRuleReferenceAssumed => {
+                "feature.unfold-settings-rule-reference-assumed"
+            }
+            Self::RefoldGroupSourceAssumed => "feature.refold-group-source-assumed",
+            Self::RefoldSourceUnresolved => "feature.refold-source-unresolved",
             Self::BendLineOwnerOrderAssumed => "feature.bend-line-owner-order-assumed",
             Self::BendStationaryRoleAssumed => "feature.bend-stationary-role-assumed",
             Self::BendAngleUnresolved => "feature.bend-angle-unresolved",
@@ -1426,6 +1491,16 @@ impl F3dLossCode {
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConstructionClosingFlagAssumed => "feature.construction-closing-flag-assumed",
             Self::ChamferEdgeRoleAssumed => "feature.chamfer-edge-role-assumed",
+            Self::ChamferDefinitionUnresolved => "feature.chamfer-definition-unresolved",
+            Self::ChamferSelectionUnresolved => "feature.chamfer-selection-unresolved",
+            Self::ChamferReferenceFaceAssumed => "feature.chamfer-reference-face-assumed",
+            Self::ChamferAngleReferenceAssumed => "feature.chamfer-angle-reference-assumed",
+            Self::ChamferCornerTreatmentUnresolved => "feature.chamfer-corner-treatment-unresolved",
+            Self::ChamferTangentChainAssumed => "feature.chamfer-tangent-chain-assumed",
+            Self::ChamferParameterOwnerAssumed => "feature.chamfer-parameter-owner-assumed",
+            Self::ChamferParameterValueAssumed => "feature.chamfer-parameter-value-assumed",
+            Self::ChamferParameterKindAssumed => "feature.chamfer-parameter-kind-assumed",
+            Self::ChamferParameterUnitAssumed => "feature.chamfer-parameter-unit-assumed",
             Self::CoilTargetMembersAssumed => "feature.coil-target-members-assumed",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
@@ -1710,6 +1785,7 @@ impl F3dLossCode {
             Self::HoleExtentLeadingWordAssumed => "feature.hole-extent-leading-word-assumed",
             Self::HoleTappedDiameterStored => "feature.hole-tapped-diameter-stored",
             Self::HoleStandardSizingAssumed => "feature.hole-standard-sizing-assumed",
+            Self::HoleClearanceFieldsAssumed => "feature.hole-clearance-fields-assumed",
             Self::HoleCarrierAxisAssumed => "feature.hole-carrier-axis-assumed",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::MoveUnprojected => "feature.move-unprojected",
@@ -1862,6 +1938,27 @@ impl F3dLossCode {
             }
             Self::FeatureFaceGroupsSettingUnassigned => {
                 "feature.mesh-face-groups-setting-unassigned"
+            }
+            Self::SurfaceUntrimFrameAssumed => "feature.surface-untrim-frame-assumed",
+            Self::SurfaceUntrimGroupSelectionAssumed => {
+                "feature.surface-untrim-group-selection-assumed"
+            }
+            Self::SurfaceUntrimStoredLoopGroupsAssumed => {
+                "feature.surface-untrim-stored-loop-groups-assumed"
+            }
+            Self::SurfaceUntrimLoopGroupsAggregatedAssumed => {
+                "feature.surface-untrim-loop-groups-aggregated-assumed"
+            }
+            Self::SurfaceUntrimExtensionUnresolved => "feature.surface-untrim-extension-unresolved",
+            Self::SurfaceUntrimExtensionUnrepresentable => {
+                "feature.surface-untrim-extension-unrepresentable"
+            }
+            Self::SurfaceUntrimNegativeExtensionAssumed => {
+                "feature.surface-untrim-negative-extension-assumed"
+            }
+            Self::SurfaceUntrimPaddingAssumed => "feature.surface-untrim-padding-assumed",
+            Self::SurfaceUntrimTrailingIdentityAssumed => {
+                "feature.surface-untrim-trailing-identity-assumed"
             }
             Self::UnstitchFrameAssumed => "feature.unstitch-frame-assumed",
             Self::UnstitchGroupSelectionAssumed => "feature.unstitch-group-selection-assumed",
@@ -2090,7 +2187,17 @@ impl F3dLossCode {
             | Self::BendStationarySelectionNative
             | Self::BendRuleRadiusUnresolved
             | Self::BendAngleOwnerBacklinkAssumed
-            | Self::BendCachedOwnerAngleAssumed => Severity::Warning,
+            | Self::BendCachedOwnerAngleAssumed
+            | Self::UnfoldAllBendsFlagAssumed
+            | Self::UnfoldControlUnresolved
+            | Self::UnfoldSelectionSlotsAssumed
+            | Self::UnfoldSelectionNative
+            | Self::UnfoldEnvelopeUnresolved
+            | Self::UnfoldMaterialScalarFactorAssumed
+            | Self::UnfoldRuleFactorUnresolved
+            | Self::UnfoldSettingsRuleReferenceAssumed
+            | Self::RefoldGroupSourceAssumed
+            | Self::RefoldSourceUnresolved => Severity::Warning,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => Severity::Info,
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
@@ -2155,6 +2262,16 @@ impl F3dLossCode {
             | Self::ConstructionTrackingPathUntyped
             | Self::ConstructionClosingFlagAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::ChamferDefinitionUnresolved
+            | Self::ChamferSelectionUnresolved
+            | Self::ChamferReferenceFaceAssumed
+            | Self::ChamferAngleReferenceAssumed
+            | Self::ChamferCornerTreatmentUnresolved
+            | Self::ChamferTangentChainAssumed
+            | Self::ChamferParameterOwnerAssumed
+            | Self::ChamferParameterValueAssumed
+            | Self::ChamferParameterKindAssumed
+            | Self::ChamferParameterUnitAssumed
             | Self::CoilTargetMembersAssumed
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
@@ -2326,6 +2443,7 @@ impl F3dLossCode {
             | Self::HoleExtentLeadingWordAssumed
             | Self::HoleTappedDiameterStored
             | Self::HoleStandardSizingAssumed
+            | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
@@ -2449,6 +2567,15 @@ impl F3dLossCode {
             | Self::FeatureFaceGroupsMethodUnmapped
             | Self::FeatureFaceGroupsBoundaryDistanceAssumed
             | Self::FeatureFaceGroupsSettingUnassigned
+            | Self::SurfaceUntrimFrameAssumed
+            | Self::SurfaceUntrimGroupSelectionAssumed
+            | Self::SurfaceUntrimStoredLoopGroupsAssumed
+            | Self::SurfaceUntrimLoopGroupsAggregatedAssumed
+            | Self::SurfaceUntrimExtensionUnresolved
+            | Self::SurfaceUntrimExtensionUnrepresentable
+            | Self::SurfaceUntrimNegativeExtensionAssumed
+            | Self::SurfaceUntrimPaddingAssumed
+            | Self::SurfaceUntrimTrailingIdentityAssumed
             | Self::UnstitchFrameAssumed
             | Self::UnstitchGroupSelectionAssumed
             | Self::UnstitchPrologueControlsAssumed
@@ -2602,7 +2729,17 @@ impl F3dLossCode {
             | Self::BendStationarySelectionNative
             | Self::BendRuleRadiusUnresolved
             | Self::BendAngleOwnerBacklinkAssumed
-            | Self::BendCachedOwnerAngleAssumed => LossTaxonomy::FeatureHistoryRetained,
+            | Self::BendCachedOwnerAngleAssumed
+            | Self::UnfoldAllBendsFlagAssumed
+            | Self::UnfoldControlUnresolved
+            | Self::UnfoldSelectionSlotsAssumed
+            | Self::UnfoldSelectionNative
+            | Self::UnfoldEnvelopeUnresolved
+            | Self::UnfoldMaterialScalarFactorAssumed
+            | Self::UnfoldRuleFactorUnresolved
+            | Self::UnfoldSettingsRuleReferenceAssumed
+            | Self::RefoldGroupSourceAssumed
+            | Self::RefoldSourceUnresolved => LossTaxonomy::FeatureHistoryRetained,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => {
                 LossTaxonomy::FeatureHistoryRetained
             }
@@ -2623,6 +2760,16 @@ impl F3dLossCode {
             Self::ScopeOwnerUnresolved
             | Self::ConstructionClosingFlagAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::ChamferDefinitionUnresolved
+            | Self::ChamferSelectionUnresolved
+            | Self::ChamferReferenceFaceAssumed
+            | Self::ChamferAngleReferenceAssumed
+            | Self::ChamferCornerTreatmentUnresolved
+            | Self::ChamferTangentChainAssumed
+            | Self::ChamferParameterOwnerAssumed
+            | Self::ChamferParameterValueAssumed
+            | Self::ChamferParameterKindAssumed
+            | Self::ChamferParameterUnitAssumed
             | Self::CoilTargetMembersAssumed
             | Self::OperationPoseApplied
             | Self::OperationPoseDisagrees
@@ -2796,6 +2943,7 @@ impl F3dLossCode {
             | Self::HoleExtentLeadingWordAssumed
             | Self::HoleTappedDiameterStored
             | Self::HoleStandardSizingAssumed
+            | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
@@ -2914,6 +3062,15 @@ impl F3dLossCode {
             | Self::FeatureFaceGroupsMethodUnmapped
             | Self::FeatureFaceGroupsBoundaryDistanceAssumed
             | Self::FeatureFaceGroupsSettingUnassigned
+            | Self::SurfaceUntrimFrameAssumed
+            | Self::SurfaceUntrimGroupSelectionAssumed
+            | Self::SurfaceUntrimStoredLoopGroupsAssumed
+            | Self::SurfaceUntrimLoopGroupsAggregatedAssumed
+            | Self::SurfaceUntrimExtensionUnresolved
+            | Self::SurfaceUntrimExtensionUnrepresentable
+            | Self::SurfaceUntrimNegativeExtensionAssumed
+            | Self::SurfaceUntrimPaddingAssumed
+            | Self::SurfaceUntrimTrailingIdentityAssumed
             | Self::UnstitchFrameAssumed
             | Self::UnstitchGroupSelectionAssumed
             | Self::UnstitchPrologueControlsAssumed
@@ -3182,6 +3339,16 @@ mod tests {
                 "feature.tracking-path-untyped",
                 "feature.construction-closing-flag-assumed",
                 "feature.chamfer-edge-role-assumed",
+                "feature.chamfer-definition-unresolved",
+                "feature.chamfer-selection-unresolved",
+                "feature.chamfer-reference-face-assumed",
+                "feature.chamfer-angle-reference-assumed",
+                "feature.chamfer-corner-treatment-unresolved",
+                "feature.chamfer-tangent-chain-assumed",
+                "feature.chamfer-parameter-owner-assumed",
+                "feature.chamfer-parameter-value-assumed",
+                "feature.chamfer-parameter-kind-assumed",
+                "feature.chamfer-parameter-unit-assumed",
                 "feature.coil-target-members-assumed",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
@@ -3364,6 +3531,7 @@ mod tests {
                 "feature.hole-extent-leading-word-assumed",
                 "feature.hole-tapped-diameter-stored",
                 "feature.hole-standard-sizing-assumed",
+                "feature.hole-clearance-fields-assumed",
                 "feature.hole-carrier-axis-assumed",
                 "feature.align-operands-unresolved",
                 "feature.align-envelope-unparsed",
@@ -3485,6 +3653,15 @@ mod tests {
                 "feature.mesh-face-groups-method-unmapped",
                 "feature.mesh-face-groups-boundary-distance-assumed",
                 "feature.mesh-face-groups-setting-unassigned",
+                "feature.surface-untrim-frame-assumed",
+                "feature.surface-untrim-group-selection-assumed",
+                "feature.surface-untrim-stored-loop-groups-assumed",
+                "feature.surface-untrim-loop-groups-aggregated-assumed",
+                "feature.surface-untrim-extension-unresolved",
+                "feature.surface-untrim-extension-unrepresentable",
+                "feature.surface-untrim-negative-extension-assumed",
+                "feature.surface-untrim-padding-assumed",
+                "feature.surface-untrim-trailing-identity-assumed",
                 "feature.unstitch-frame-assumed",
                 "feature.unstitch-group-selection-assumed",
                 "feature.unstitch-prologue-controls-assumed",

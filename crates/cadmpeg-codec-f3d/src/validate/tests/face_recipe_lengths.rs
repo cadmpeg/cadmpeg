@@ -229,7 +229,11 @@ fn operand_ir(
         historical_support_contexts: Vec::new(),
         resolved_face_slots: Vec::new(),
         resolved_active_face: None,
-        next_record_index: 105,
+        next_record_index: if next_reference_at == Some(recipe_program_offset.saturating_add(8)) {
+            2
+        } else {
+            105
+        },
         next_byte_offset: recipe_program_offset.saturating_add(8),
     })
     .unwrap();
@@ -487,4 +491,57 @@ fn sweep_profile_face_operand_requires_a_topology_recipe_member() {
         1
     );
     assert_eq!(findings(None).len(), 1);
+}
+
+#[test]
+fn surface_untrim_face_groups_admit_both_face_envelopes_with_exact_ownership() {
+    use crate::records::feature::scope::DesignFeatureKind;
+    use crate::records::recipes::ConstructionRecipeKind;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+
+    for (kind, operand_length) in [
+        (ConstructionRecipeKind::Face, 16),
+        (ConstructionRecipeKind::BoundedFace, 24),
+    ] {
+        for ordinal in [0, 1] {
+            let admitted = operand_findings(
+                DesignFeatureKind::SurfaceUntrim,
+                kind,
+                operand_length,
+                1_047,
+                Some(DesignOperandRole::ROLE_0X9),
+                None,
+                ordinal,
+            );
+            assert!(admitted.is_empty(), "{admitted:#?}");
+        }
+        for role in [None, Some(DesignOperandRole::ROLE_0X10)] {
+            assert_eq!(
+                operand_findings(
+                    DesignFeatureKind::SurfaceUntrim,
+                    kind,
+                    operand_length,
+                    1_047,
+                    role,
+                    None,
+                    0,
+                )
+                .len(),
+                1
+            );
+        }
+        assert_eq!(
+            operand_findings(
+                DesignFeatureKind::SurfaceUntrim,
+                kind,
+                operand_length,
+                1_047,
+                Some(DesignOperandRole::ROLE_0X9),
+                Some(1_047 + operand_length + 7),
+                0,
+            )
+            .len(),
+            1
+        );
+    }
 }

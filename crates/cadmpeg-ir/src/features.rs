@@ -58,6 +58,10 @@ use sheet_metal::SheetMetalBendLinesConstruction;
 pub mod patterns;
 use patterns::{PatternKind, PatternSeed};
 
+#[doc = "Surface operation settings and constructors."]
+pub mod surfaces;
+use surfaces::UntrimLoops;
+
 macro_rules! checked_feature_geometry {
     ($(#[$meta:meta])* $name:ident, $raw:ident, $value:ident, $valid:expr, $error:literal $(, $getter:ident)*) => {
         $(#[$meta])*
@@ -3464,6 +3468,16 @@ pub enum FeatureOperation {
         /// Transition form and evaluated radius.
         transition: SheetMetalTransition,
     },
+    #[doc = "Flattens selected bends of an existing sheet."]
+    SheetMetalUnfold {
+        #[doc = "Independently decoded unfolding inputs."]
+        construction: sheet_metal::SheetMetalUnfoldConstruction,
+    },
+    #[doc = "Restores the bends flattened by a preceding Unfold."]
+    SheetMetalRefold {
+        #[doc = "Associated unfolding operation."]
+        construction: sheet_metal::SheetMetalRefoldConstruction,
+    },
     #[doc = "Bends an existing sheet along selected sketch lines."]
     SheetMetalBendLines {
         #[doc = "Independently decoded bend inputs."]
@@ -3781,6 +3795,16 @@ pub enum FeatureOperation {
         distance: Option<PositiveLength>,
         /// Geometric continuation law.
         method: SurfaceExtension,
+    },
+    #[doc = "Removes trim loops from selected surface faces."]
+    UntrimSurface {
+        #[doc = "Surface faces whose trim loops are removed."]
+        faces: FaceSelection,
+        #[doc = "Trim loops removed from the selected faces."]
+        loops: UntrimLoops,
+        #[doc = "Signed exterior-boundary extension in canonical millimeters."]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        extension: Option<Length>,
     },
     /// Ruled surface grown from selected boundary edges.
     RuledSurface {
