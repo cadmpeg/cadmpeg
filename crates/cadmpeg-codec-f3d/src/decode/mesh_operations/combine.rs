@@ -113,14 +113,14 @@ fn project(
     tools: BodySelection,
     scope: Option<&str>,
     notes: &mut Notes<'_>,
-) -> FeatureOperation {
+) -> Result<FeatureOperation, CodecError> {
     let Some(control @ 0..=3) = control else {
         notes.losses.push(F3dLossCode::FeatureMeshCombineSelectorUnruled.note(format!(
             "Mesh combination {} retains operation selector {control:?}; its neutral operation is unresolved.", notes.source
         )));
-        return FeatureOperation::Unresolved {
+        return Ok(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Combine,
-        };
+        });
     };
     let operands = match CombineOperands::new(target, tools) {
         Ok(operands) => operands,
@@ -129,7 +129,7 @@ fn project(
                 "Mesh combination {} retains its operand facts because selection admission failed: {error}.", notes.source
             )));
             CombineOperands::new(BodySelection::Unresolved, BodySelection::Unresolved)
-                .expect("unresolved combine selections have unknown arity and overlap")
+                .map_err(CodecError::malformed)?
         }
     };
     if control == 3 {
@@ -165,7 +165,7 @@ fn project(
             }
             _ => native(scope),
         };
-        return FeatureOperation::Compound { members };
+        return Ok(FeatureOperation::Compound { members });
     }
     notes.losses.push(
         F3dLossCode::FeatureMeshCombineKeepToolsAssumedFalse.note(format!(
@@ -179,7 +179,7 @@ fn project(
             notes.source
         )),
     );
-    FeatureOperation::Combine {
+    Ok(FeatureOperation::Combine {
         operands,
         op: match control {
             0 => BooleanKind::Join,
@@ -188,7 +188,7 @@ fn project(
         },
         keep_tools: false,
         destination: CombineDestination::TargetComponent,
-    }
+    })
 }
 
 fn captured(
@@ -274,7 +274,7 @@ fn captured(
     notes.losses.push(F3dLossCode::FeatureMeshCombineSourceUnresolved.note(format!(
         "Mesh combination {} retains its source body and geometry references while historical mesh geometry remains unresolved.", notes.source
     )));
-    Ok(project(parsed.control, target, tools, Some(scope), notes))
+    project(parsed.control, target, tools, Some(scope), notes)
 }
 
 pub(in crate::decode) fn bind_features(
@@ -346,7 +346,7 @@ pub(in crate::decode) fn bind_features(
                     BodySelection::Unresolved,
                     None,
                     &mut notes,
-                )
+                )?
             }
         };
         for (key, value) in notes.properties {

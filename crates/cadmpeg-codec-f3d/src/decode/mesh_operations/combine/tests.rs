@@ -37,7 +37,8 @@ fn combine_boolean_controls_preserve_operands_and_name_both_default_assumptions(
             local(&["9", "8"]),
             Some(SCOPE),
             &mut notes,
-        );
+        )
+        .unwrap();
         let FeatureOperation::Combine {
             operands,
             op,
@@ -70,7 +71,8 @@ fn combine_merge_keeps_target_before_ordered_tools_and_names_the_interpretation(
         local(&["9", "8"]),
         Some(SCOPE),
         &mut notes,
-    );
+    )
+    .unwrap();
     assert_eq!(
         operation,
         FeatureOperation::Compound {
@@ -98,7 +100,7 @@ fn combine_rejected_arity_and_overlap_keep_the_known_boolean_kind() {
         (local(&["7"]), local(&["7", "9"])),
     ] {
         let mut notes = notes();
-        let operation = project(Some(1), target, tools, Some(SCOPE), &mut notes);
+        let operation = project(Some(1), target, tools, Some(SCOPE), &mut notes).unwrap();
         let FeatureOperation::Combine { operands, op, .. } = operation else {
             panic!("expected cut")
         };
@@ -122,7 +124,8 @@ fn combine_unknown_controls_keep_a_neutral_family_without_default_assumptions() 
             BodySelection::Unresolved,
             None,
             &mut notes,
-        );
+        )
+        .unwrap();
         assert_eq!(
             operation,
             FeatureOperation::Unresolved {
@@ -146,7 +149,8 @@ fn combine_unavailable_merge_sources_do_not_invent_a_scope_identity() {
         BodySelection::Unresolved,
         None,
         &mut notes,
-    );
+    )
+    .unwrap();
     assert_eq!(
         operation,
         FeatureOperation::Compound {
