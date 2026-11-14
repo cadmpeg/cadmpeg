@@ -192,6 +192,7 @@ impl Serialize for DesignParameterScope {
         emit_opt!("scale_operation", self.scale_operation());
         emit_opt!("reverse_normal_operation", self.reverse_normal_operation());
         emit_opt!("path_pattern_settings", self.path_pattern_settings());
+        emit_opt!("mesh_face_groups", self.mesh_face_groups());
         emit_opt!("surface_stitch_operation", self.surface_stitch_operation());
         emit_opt!("surface_extend_operation", self.surface_extend_operation());
         emit_opt!("surface_offset_operation", self.surface_offset_operation());

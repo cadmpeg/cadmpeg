@@ -2677,6 +2677,18 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The specialized scope payload stays uninterpreted. The result bodies remain available with `feature.stored-bodies-recipe-absent`.
 
+### DR-492. Mesh face-group method, tolerance and selection semantics
+
+**Question.** How do the method code, dimensioned boundary tolerance, two mesh-GUID references, leading Combine UUID and ordered UUID run define the historical face-group edit?
+
+**Known.** `f3d.md` §3.1 "The mesh face-group parameter scopes" defines the registrations and prefix sequence. The method carrier stores `0` and `1`. Boundary tolerance has a length unit. The second mesh-GUID reference precedes the counted UUID run. Combine's leading UUID can also occur in that run. The construction member references a mesh body whose owning scope can precede the edit.
+
+**Need.** Independent saves that vary method, mesh scale, selected-group order and cardinality, including edits to an existing subset and saves with absent inactive settings. Bind each UUID to a historical triangle group through its mesh-GUID state.
+
+**Conflict.** The user-facing tolerance is described as a proportion of mesh extent; the native parameter is dimensioned as length.
+
+**Note.** The decoder reads method `0` as Fast and `1` as Accurate with `feature.mesh-face-groups-method-assumed`. It preserves dimensioned tolerance as an absolute millimetre distance with `feature.mesh-face-groups-boundary-distance-assumed`. It retains the scope as the mesh source expression with `feature.mesh-face-groups-source-assumed` and a complete UUID run as ordered group selectors with `feature.mesh-face-groups-group-roles-assumed`. The first mesh reference and leading Combine UUID survive in source properties with `feature.mesh-face-groups-related-role-unassigned` and `feature.mesh-face-groups-group-hint-role-unassigned`. A missing, ambiguous or unsupported first mesh registration reports `feature.mesh-face-groups-related-target-unverified`. Unassigned settings and incomplete member runs retain their native evidence with distinct loss codes.
+
 ### DR-493. Partial PathPattern seed and placement semantics
 
 **Question.** Which native evidence distinguishes a feature index from a coincident topology identity in a role-`0x4` PathPattern seed, and how does the reordered settings instance table define placement?

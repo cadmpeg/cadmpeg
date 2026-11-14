@@ -1906,6 +1906,7 @@ pub(crate) fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfaceTrim)
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::PathPattern
+            || scope.mesh_face_groups().is_some()
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Scale)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::CircularPattern)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::RectangularPattern)

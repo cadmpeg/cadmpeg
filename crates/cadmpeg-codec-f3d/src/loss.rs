@@ -522,6 +522,20 @@ pub(crate) enum F3dLossCode {
     FeatureBodySelectionNative,
     /// Reverse Normal body-group members lack the whole-body record type.
     FeatureReverseNormalBodyUnverified,
+    FeatureFaceGroupsTypeUnverified,
+    FeatureFaceGroupsPrefixUnparsed,
+    FeatureFaceGroupsSourceAssumed,
+    FeatureFaceGroupsSourceUnavailable,
+    FeatureFaceGroupsSourceTargetUnverified,
+    FeatureFaceGroupsRelatedMeshTargetUnverified,
+    FeatureFaceGroupsRelatedMeshRoleUnassigned,
+    FeatureFaceGroupsGroupHintRoleUnassigned,
+    FeatureFaceGroupsGroupRolesAssumed,
+    FeatureFaceGroupsMemberRunUnrepresentable,
+    FeatureFaceGroupsMethodAssumed,
+    FeatureFaceGroupsMethodUnmapped,
+    FeatureFaceGroupsBoundaryDistanceAssumed,
+    FeatureFaceGroupsSettingUnassigned,
     UnstitchFrameAssumed,
     UnstitchGroupSelectionAssumed,
     UnstitchPrologueControlsAssumed,
@@ -1110,6 +1124,20 @@ impl F3dLossCode {
         Self::FeatureWorkAxisEndpointToleranceAssumed,
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
+        Self::FeatureFaceGroupsTypeUnverified,
+        Self::FeatureFaceGroupsPrefixUnparsed,
+        Self::FeatureFaceGroupsSourceAssumed,
+        Self::FeatureFaceGroupsSourceUnavailable,
+        Self::FeatureFaceGroupsSourceTargetUnverified,
+        Self::FeatureFaceGroupsRelatedMeshTargetUnverified,
+        Self::FeatureFaceGroupsRelatedMeshRoleUnassigned,
+        Self::FeatureFaceGroupsGroupHintRoleUnassigned,
+        Self::FeatureFaceGroupsGroupRolesAssumed,
+        Self::FeatureFaceGroupsMemberRunUnrepresentable,
+        Self::FeatureFaceGroupsMethodAssumed,
+        Self::FeatureFaceGroupsMethodUnmapped,
+        Self::FeatureFaceGroupsBoundaryDistanceAssumed,
+        Self::FeatureFaceGroupsSettingUnassigned,
         Self::UnstitchFrameAssumed,
         Self::UnstitchGroupSelectionAssumed,
         Self::UnstitchPrologueControlsAssumed,
@@ -1659,6 +1687,38 @@ impl F3dLossCode {
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
+            Self::FeatureFaceGroupsTypeUnverified => "feature.mesh-face-groups-type-unverified",
+            Self::FeatureFaceGroupsPrefixUnparsed => "feature.mesh-face-groups-prefix-unparsed",
+            Self::FeatureFaceGroupsSourceAssumed => "feature.mesh-face-groups-source-assumed",
+            Self::FeatureFaceGroupsSourceUnavailable => {
+                "feature.mesh-face-groups-source-unavailable"
+            }
+            Self::FeatureFaceGroupsSourceTargetUnverified => {
+                "feature.mesh-face-groups-source-target-unverified"
+            }
+            Self::FeatureFaceGroupsRelatedMeshTargetUnverified => {
+                "feature.mesh-face-groups-related-target-unverified"
+            }
+            Self::FeatureFaceGroupsRelatedMeshRoleUnassigned => {
+                "feature.mesh-face-groups-related-role-unassigned"
+            }
+            Self::FeatureFaceGroupsGroupHintRoleUnassigned => {
+                "feature.mesh-face-groups-group-hint-role-unassigned"
+            }
+            Self::FeatureFaceGroupsGroupRolesAssumed => {
+                "feature.mesh-face-groups-group-roles-assumed"
+            }
+            Self::FeatureFaceGroupsMemberRunUnrepresentable => {
+                "feature.mesh-face-groups-member-run-unrepresentable"
+            }
+            Self::FeatureFaceGroupsMethodAssumed => "feature.mesh-face-groups-method-assumed",
+            Self::FeatureFaceGroupsMethodUnmapped => "feature.mesh-face-groups-method-unmapped",
+            Self::FeatureFaceGroupsBoundaryDistanceAssumed => {
+                "feature.mesh-face-groups-boundary-distance-assumed"
+            }
+            Self::FeatureFaceGroupsSettingUnassigned => {
+                "feature.mesh-face-groups-setting-unassigned"
+            }
             Self::UnstitchFrameAssumed => "feature.unstitch-frame-assumed",
             Self::UnstitchGroupSelectionAssumed => "feature.unstitch-group-selection-assumed",
             Self::UnstitchPrologueControlsAssumed => "feature.unstitch-prologue-controls-assumed",
@@ -2179,6 +2239,20 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
+            | Self::FeatureFaceGroupsTypeUnverified
+            | Self::FeatureFaceGroupsPrefixUnparsed
+            | Self::FeatureFaceGroupsSourceAssumed
+            | Self::FeatureFaceGroupsSourceTargetUnverified
+            | Self::FeatureFaceGroupsRelatedMeshTargetUnverified
+            | Self::FeatureFaceGroupsRelatedMeshRoleUnassigned
+            | Self::FeatureFaceGroupsGroupHintRoleUnassigned
+            | Self::FeatureFaceGroupsSourceUnavailable
+            | Self::FeatureFaceGroupsGroupRolesAssumed
+            | Self::FeatureFaceGroupsMemberRunUnrepresentable
+            | Self::FeatureFaceGroupsMethodAssumed
+            | Self::FeatureFaceGroupsMethodUnmapped
+            | Self::FeatureFaceGroupsBoundaryDistanceAssumed
+            | Self::FeatureFaceGroupsSettingUnassigned
             | Self::UnstitchFrameAssumed
             | Self::UnstitchGroupSelectionAssumed
             | Self::UnstitchPrologueControlsAssumed
@@ -2587,6 +2661,20 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
+            | Self::FeatureFaceGroupsTypeUnverified
+            | Self::FeatureFaceGroupsPrefixUnparsed
+            | Self::FeatureFaceGroupsSourceAssumed
+            | Self::FeatureFaceGroupsSourceTargetUnverified
+            | Self::FeatureFaceGroupsRelatedMeshTargetUnverified
+            | Self::FeatureFaceGroupsRelatedMeshRoleUnassigned
+            | Self::FeatureFaceGroupsGroupHintRoleUnassigned
+            | Self::FeatureFaceGroupsSourceUnavailable
+            | Self::FeatureFaceGroupsGroupRolesAssumed
+            | Self::FeatureFaceGroupsMemberRunUnrepresentable
+            | Self::FeatureFaceGroupsMethodAssumed
+            | Self::FeatureFaceGroupsMethodUnmapped
+            | Self::FeatureFaceGroupsBoundaryDistanceAssumed
+            | Self::FeatureFaceGroupsSettingUnassigned
             | Self::UnstitchFrameAssumed
             | Self::UnstitchGroupSelectionAssumed
             | Self::UnstitchPrologueControlsAssumed
@@ -3104,6 +3192,20 @@ mod tests {
                 "feature.work-axis-endpoint-tolerance-assumed",
                 "feature.body-selection-native",
                 "feature.reverse-normal-body-unverified",
+                "feature.mesh-face-groups-type-unverified",
+                "feature.mesh-face-groups-prefix-unparsed",
+                "feature.mesh-face-groups-source-assumed",
+                "feature.mesh-face-groups-source-unavailable",
+                "feature.mesh-face-groups-source-target-unverified",
+                "feature.mesh-face-groups-related-target-unverified",
+                "feature.mesh-face-groups-related-role-unassigned",
+                "feature.mesh-face-groups-group-hint-role-unassigned",
+                "feature.mesh-face-groups-group-roles-assumed",
+                "feature.mesh-face-groups-member-run-unrepresentable",
+                "feature.mesh-face-groups-method-assumed",
+                "feature.mesh-face-groups-method-unmapped",
+                "feature.mesh-face-groups-boundary-distance-assumed",
+                "feature.mesh-face-groups-setting-unassigned",
                 "feature.unstitch-frame-assumed",
                 "feature.unstitch-group-selection-assumed",
                 "feature.unstitch-prologue-controls-assumed",

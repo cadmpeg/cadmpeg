@@ -5370,6 +5370,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 {
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
                 }
+                None if scope.mesh_face_groups().is_some() => {
+                    group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
+                }
                 None if scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::Align =>
                 {
@@ -5399,27 +5402,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 }
                 None => false,
             };
-            (design::design_feature_family(&scope.kind()).is_some()
-                || matches!(
-                    scope.kind(),
-                    crate::records::feature::scope::DesignFeatureKind::Emboss
-                        | crate::records::feature::scope::DesignFeatureKind::RemoveBody
-                        | crate::records::feature::scope::DesignFeatureKind::ReverseNormal
-                        | crate::records::feature::scope::DesignFeatureKind::Modify
-                        | crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
-                        | crate::records::feature::scope::DesignFeatureKind::SplitFace
-                        | crate::records::feature::scope::DesignFeatureKind::PathPattern
-                        | crate::records::feature::scope::DesignFeatureKind::MoveFace
-                        | crate::records::feature::scope::DesignFeatureKind::DeleteFace
-                        | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
-                        | crate::records::feature::scope::DesignFeatureKind::UnStitch
-                        | crate::records::feature::scope::DesignFeatureKind::Decal
-                        | crate::records::feature::scope::DesignFeatureKind::Align
-                        | crate::records::feature::scope::DesignFeatureKind::BaseFlange
-                        | crate::records::feature::scope::DesignFeatureKind::EdgeFlange
-                        | crate::records::feature::scope::DesignFeatureKind::Hem
-                ))
-                && role_is_valid
+            role_is_valid
                 && usize::try_from(group.scope_reference_ordinal)
                     .ok()
                     .and_then(|ordinal| scope.reference_members().values().nth(ordinal))

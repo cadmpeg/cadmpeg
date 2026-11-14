@@ -3094,12 +3094,44 @@ fn check_feature_references(
             }
             FeatureOperation::SewBodies { bodies, .. } => body_selections.push(bodies),
             FeatureOperation::BaseFeature { bodies } => body_selections.push(bodies),
-            FeatureOperation::MeshImport {
-                tessellations: source,
+            FeatureOperation::MeshGenerateFaceGroups {
+                source: tessellations,
+                ..
             }
-            | FeatureOperation::MeshSection { source, .. }
-            | FeatureOperation::MeshModify { source, .. } => {
-                if let crate::features::mesh::MeshSelection::Tessellations(tessellations) = source {
+            | FeatureOperation::MeshCombineFaceGroups {
+                source: tessellations,
+            }
+            | FeatureOperation::MeshImport { tessellations }
+            | FeatureOperation::MeshSection {
+                source: tessellations,
+                ..
+            }
+            | FeatureOperation::MeshModify {
+                source: tessellations,
+                ..
+            } => {
+                if matches!(
+                    definition,
+                    FeatureOperation::MeshImport { .. }
+                        | FeatureOperation::MeshGenerateFaceGroups { .. }
+                        | FeatureOperation::MeshCombineFaceGroups { .. }
+                ) {
+                    if let crate::features::mesh::MeshSelection::Unresolved { feature: origin } =
+                        tessellations
+                    {
+                        if !features.contains(origin.as_str()) {
+                            ref_error(
+                                findings,
+                                feature.id.as_str(),
+                                "mesh source feature",
+                                origin.as_str(),
+                            );
+                        }
+                    }
+                }
+                if let crate::features::mesh::MeshSelection::Tessellations(tessellations) =
+                    tessellations
+                {
                     for tessellation in tessellations {
                         if ids
                             .tessellations(tessellation.as_str(), crate::index::StandardIndex)
@@ -3108,7 +3140,15 @@ fn check_feature_references(
                             ref_error(
                                 findings,
                                 feature.id.as_str(),
-                                "mesh source tessellation",
+                                if matches!(
+                                    definition,
+                                    FeatureOperation::MeshGenerateFaceGroups { .. }
+                                        | FeatureOperation::MeshCombineFaceGroups { .. }
+                                ) {
+                                    "mesh face-group tessellation"
+                                } else {
+                                    "mesh source tessellation"
+                                },
                                 tessellation.as_str(),
                             );
                         }
