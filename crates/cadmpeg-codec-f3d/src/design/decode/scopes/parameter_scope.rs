@@ -184,6 +184,17 @@ pub(crate) fn decode_parameter_scopes(
             scope.id =
                 design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
             let type_info = stream_types.get(&u64::from(scope.record_index)).copied();
+            if type_info
+                .is_some_and(|(guid, _)| guid.eq_ignore_ascii_case(super::position::TYPE_GUID))
+            {
+                scope.captured_positions =
+                    super::position::decode(ctx, bytes, &records, &scope, &stream_types)?;
+                if scope.captured_positions.is_none() {
+                    losses.push(crate::loss::F3dLossCode::PositionEnvelopeUnparsed.note(format!(
+                        "Position scope {} has no admitted version-six captured-position envelope; its native scope is retained.", scope.id
+                    )));
+                }
+            }
             let normal = super::super::patch::surface_patch_normal(bytes, &scope, type_info);
             let selection =
                 super::super::patch::surface_patch_selection(ctx, bytes, &scope, type_info)?;
@@ -341,7 +352,9 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             if let Some(construction) =
-                exact_solid_primitive(bytes, &records, &scope, parameter_owners)
+                super::sphere::decode(bytes, &records, &scope, parameter_owners, parameters)
+                    .map(crate::records::feature::primitives::DesignSolidPrimitive::Sphere)
+                    .or_else(|| exact_solid_primitive(bytes, &records, &scope, parameter_owners))
             {
                 match (scope.payload_mut(), construction) {
                     (
@@ -363,7 +376,7 @@ pub(crate) fn decode_parameter_scopes(
                     _ => {
                         return Err(CodecError::NotImplemented(
                             "F3D solid primitive payload kind mismatch".into(),
-                        ))
+                        ));
                     }
                 }
             }
@@ -452,7 +465,8 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_move_face_operation(bytes, &records, &scope);
+                let construction =
+                    exact_move_face_operation(bytes, &records, &scope, &class_types, &mut losses);
                 if let Some(operation) = &construction {
                     losses.extend(move_transform_references_loss(&scope, operation));
                     losses.extend(move_transform_prefix_losses(&scope, operation));
@@ -630,6 +644,7 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_assembly_alignment_with_types(
+                    ctx,
                     bytes,
                     &records,
                     &scope,
@@ -1147,6 +1162,26 @@ pub(super) fn reference_table_ends_at(
             == Some(end)
 }
 
+fn scope_reference_table_ends_at(
+    kind: &str,
+    start: usize,
+    count_at: usize,
+    count: usize,
+    stride: usize,
+    end: usize,
+) -> bool {
+    reference_table_ends_at(count_at, count, stride, end)
+        || kind == "MoveFace"
+            && count == 0
+            && count_at.checked_add(4) == Some(end)
+            && [
+                crate::layout::move_face_marker_zero_prologue::REFERENCE_COUNT,
+                crate::layout::move_face_marker_one_prologue::REFERENCE_COUNT,
+            ]
+            .into_iter()
+            .any(|offset| start.checked_add(offset) == Some(count_at))
+}
+
 pub(crate) fn parameter_scope_tail_length_is_valid(
     kind: impl AsRef<str>,
     tail_length: usize,
@@ -1187,6 +1222,7 @@ enum ScopeTailForm {
     Named,
     /// The 76-byte fixed tail with its three references in the typed spelling.
     TypedFixed,
+    TypedExtended,
 }
 
 fn unparsed_rigid_group_tail_length(
@@ -1315,24 +1351,45 @@ fn unparsed_rigid_group_tail_length(
     paired.checked_sub(kind_end)
 }
 
-/// Whether `bytes[kind_end..paired_at]` is the typed-reference 196-byte tail:
-/// u32 ordinal, fifteen zero bytes, a typed reference, the preceding
-/// history-state identity, u32 + f64 + u32, a typed reference, two zero
-/// bytes, a typed reference, and two zero bytes.
-fn typed_fixed_scope_tail_is_valid(bytes: &[u8], kind_end: usize, paired_at: usize) -> bool {
+fn typed_fixed_scope_tail_is_valid(
+    bytes: &[u8],
+    kind_end: usize,
+    paired_at: usize,
+    extended: bool,
+) -> bool {
     use crate::bytes::typed_local_reference_target as target;
     (|| {
         let tail = bytes.get(kind_end..paired_at)?;
-        (tail.len() == typed_tail::LEN
+        let shift = usize::from(extended) * crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
+        let state =
+            tail.get(typed_tail::SECOND_ZERO_RUN_2 + shift..typed_tail::THIRD_REFERENCE + shift)?;
+        (tail.len() == typed_tail::LEN + shift
             && tail.get(typed_tail::ZERO_RUN_15..typed_tail::FIRST_REFERENCE)? == [0; 15]
             && target(tail, typed_tail::FIRST_REFERENCE).is_some()
-            && target(tail, typed_tail::SECOND_REFERENCE).is_some()
-            && tail.get(typed_tail::SECOND_ZERO_RUN_2..typed_tail::THIRD_REFERENCE)? == [0; 2]
-            && target(tail, typed_tail::THIRD_REFERENCE).is_some()
-            && tail.get(typed_tail::THIRD_ZERO_RUN_2..typed_tail::LEN)? == [0; 2])
+            && (!extended || target(tail, typed_tail::PREVIOUS_HISTORY_STATE_ID).is_some())
+            && target(tail, typed_tail::SECOND_REFERENCE + shift).is_some()
+            && if extended {
+                state.iter().all(|byte| *byte <= 1)
+            } else {
+                state == [0; 2]
+            }
+            && target(tail, typed_tail::THIRD_REFERENCE + shift).is_some()
+            && tail.get(typed_tail::THIRD_ZERO_RUN_2 + shift..typed_tail::LEN + shift)? == [0; 2])
             .then_some(())
     })()
     .is_some()
+}
+
+pub(crate) fn typed_scope_previous_history_offset(kind: &str, tail_length: usize) -> Option<usize> {
+    if tail_length == typed_tail::LEN {
+        Some(typed_tail::PREVIOUS_HISTORY_STATE_ID)
+    } else if kind == "Assemble"
+        && tail_length == typed_tail::LEN + crate::bytes::TYPED_LOCAL_REFERENCE_LEN
+    {
+        Some(typed_tail::PREVIOUS_HISTORY_STATE_ID + crate::bytes::TYPED_LOCAL_REFERENCE_LEN)
+    } else {
+        None
+    }
 }
 
 fn parameter_scope_previous_history_offset_for_form(
@@ -1344,7 +1401,9 @@ fn parameter_scope_previous_history_offset_for_form(
 ) -> Option<usize> {
     match tail_form {
         ScopeTailForm::Named => return None,
-        ScopeTailForm::TypedFixed => return Some(typed_tail::PREVIOUS_HISTORY_STATE_ID),
+        ScopeTailForm::TypedFixed | ScopeTailForm::TypedExtended => {
+            return typed_scope_previous_history_offset(kind, tail_length)
+        }
         ScopeTailForm::Fixed => {}
     }
     if rigid_group && kind == "As-built" {
@@ -1403,12 +1462,22 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         let mut named_candidate = None;
         let mut named_ambiguous = false;
         let kind_scan_end = paired_at.checked_sub(72)?;
-        for at in (start.checked_add(11)?..paired_at)
+        let kind_offsets = (start.checked_add(11)?..paired_at)
             .rev()
             .take(590 + 4 + 2 * 256)
             .rev()
-            .take_while(|at| *at < kind_scan_end)
-        {
+            .take_while(|at| *at < kind_scan_end);
+        let move_face_frame = type_family.as_ref().map_or_else(
+            || {
+                kind_offsets.clone().any(|at| {
+                    lp_utf16_bounded(bytes, at, 1..=256).is_some_and(|(kind, _)| {
+                        scope_feature_kind(&kind, None) == Some(scope::DesignFeatureKind::MoveFace)
+                    })
+                })
+            },
+            |family| *family == scope::DesignFeatureKind::MoveFace,
+        );
+        for at in kind_offsets {
             let Some((kind, kind_end)) = lp_utf16_bounded(bytes, at, 1..=256) else {
                 continue;
             };
@@ -1419,6 +1488,25 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             let kind = selected
                 .as_ref()
                 .map_or(kind.as_str(), scope::DesignFeatureKind::as_str);
+            if move_face_frame
+                && !at.checked_sub(4).is_some_and(|end| {
+                    (start + 11..end).any(|count_at| {
+                        View::u32_le_at(bytes, count_at)
+                            .and_then(|count| usize::try_from(count).ok())
+                            .is_some_and(|count| {
+                                [11, crate::bytes::TYPED_LOCAL_REFERENCE_LEN]
+                                    .into_iter()
+                                    .any(|stride| {
+                                        scope_reference_table_ends_at(
+                                            kind, start, count_at, count, stride, end,
+                                        )
+                                    })
+                            })
+                    })
+                })
+            {
+                continue;
+            }
             let Some(tail_length) = paired_at.checked_sub(kind_end) else {
                 continue;
             };
@@ -1438,14 +1526,21 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             {
                 fixed_ambiguous = true;
             }
-            if kind != "Canvas"
-                && tail_length == typed_tail::LEN
-                && typed_fixed_scope_tail_is_valid(bytes, kind_end, paired_at)
-                && fixed_candidate
-                    .replace((at, kind_end, tail_length, ScopeTailForm::TypedFixed))
-                    .is_some()
+            if kind != "Canvas" && typed_scope_previous_history_offset(kind, tail_length).is_some()
             {
-                fixed_ambiguous = true;
+                let extended = tail_length != typed_tail::LEN;
+                let form = if extended {
+                    ScopeTailForm::TypedExtended
+                } else {
+                    ScopeTailForm::TypedFixed
+                };
+                if typed_fixed_scope_tail_is_valid(bytes, kind_end, paired_at, extended)
+                    && fixed_candidate
+                        .replace((at, kind_end, tail_length, form))
+                        .is_some()
+                {
+                    fixed_ambiguous = true;
+                }
             }
             let named_tail_possible = (78..=590).contains(&tail_length)
                 && tail_length.is_multiple_of(2)
@@ -1511,7 +1606,10 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         // tail selects the 51-byte typed reference-table entries.
         let typed_canvas =
             kind == scope::DesignFeatureKind::Canvas && tail_length == typed_canvas_tail::LEN;
-        let typed_references = tail_form == ScopeTailForm::TypedFixed || typed_canvas;
+        let typed_references = matches!(
+            tail_form,
+            ScopeTailForm::TypedFixed | ScopeTailForm::TypedExtended
+        ) || typed_canvas;
         let stride = if typed_references {
             crate::bytes::TYPED_LOCAL_REFERENCE_LEN
         } else {
@@ -1520,7 +1618,14 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         let mut reference_table = None;
         for count_at in start + 11..reference_table_end {
             let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
-            if !reference_table_ends_at(count_at, count, stride, reference_table_end) {
+            if !scope_reference_table_ends_at(
+                kind.as_str(),
+                start,
+                count_at,
+                count,
+                stride,
+                reference_table_end,
+            ) {
                 continue;
             }
             let first = count_at.checked_add(4)?;

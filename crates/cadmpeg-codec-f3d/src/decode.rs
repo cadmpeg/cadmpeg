@@ -500,7 +500,7 @@ fn axis_angle_is_resolved(axis_angle: &cadmpeg_ir::features::AxisAngle) -> bool 
 fn face_motion_is_resolved(motion: &cadmpeg_ir::features::FaceMotion) -> bool {
     use cadmpeg_ir::features::FaceMotion;
     match motion {
-        FaceMotion::Offset { .. } => true,
+        FaceMotion::Offset { .. } | FaceMotion::Transform { .. } => true,
         FaceMotion::Translate { direction, .. } => direction.unit().is_some(),
         FaceMotion::Rotate { axis_dir, .. } => axis_dir.unit().is_some(),
     }
@@ -857,6 +857,10 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         }
         FeatureDefinition::Operation(FeatureOperation::InsertComponent { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::InsertComponents { components }) => !components.is_resolved(),
+        FeatureDefinition::Operation(FeatureOperation::CapturedComponentPositions { positions }) => {
+            positions.iter().any(|position| position.occurrence.is_none()
+                || matches!(position.transform, cadmpeg_ir::features::CapturedPositionTransform::Native { .. }))
+        }
         FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::Shell {
             bodies,
@@ -1900,7 +1904,9 @@ fn design_projection_gaps(
                         PatternSeed::Bodies(bodies) => {
                             gaps.body_selections += native_body_selection_count(bodies);
                         }
-                        PatternSeed::Feature(_) | PatternSeed::Occurrences(..) => {}
+                        PatternSeed::Native(_)
+                        | PatternSeed::Feature(_)
+                        | PatternSeed::Occurrences(..) => {}
                     }
                 }
                 match pattern.definition() {
@@ -1908,6 +1914,14 @@ fn design_projection_gaps(
                     PatternTransform::CurveDriven {
                         path: Some(path), ..
                     } => gaps.path_selections += usize::from(!loft_path_is_resolved(path)),
+                    PatternTransform::CurveDrivenPartial { parameters } => {
+                        gaps.path_selections += usize::from(
+                            parameters
+                                .path
+                                .as_ref()
+                                .is_none_or(|path| !loft_path_is_resolved(path)),
+                        );
+                    }
                     _ => {}
                 }
             }
@@ -2507,6 +2521,7 @@ fn report_design_projection_gaps(
     for scope in &native.design_parameter_scopes {
         if scope.occurrence_transfer.is_none()
             && scope.occurrence_transfer_intent.is_none()
+            && scope.captured_positions.is_none()
             && scope.payload().is_uninterpreted()
         {
             uninterpreted_scopes += 1;

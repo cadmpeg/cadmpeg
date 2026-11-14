@@ -583,6 +583,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             properties.remove("AxisOrigin");
             properties.remove("AxisDirection");
             match motion {
+                FaceMotion::Transform { .. } => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has a complete face transform with no native encoding",
+                        feature.id
+                    )));
+                }
                 FaceMotion::Offset { distance } => {
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Offset".into());
                     parameters.insert(

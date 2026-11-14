@@ -91,6 +91,7 @@ fn align_motion_validator_checks_form_links_leading_fields_and_omitted_identity(
             codes: [2, 0],
             matrix_omitted: true,
         }),
+        ..DesignMoveOperation::default()
     });
     let header = crate::records::decal::DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:design-record#806".into(),
