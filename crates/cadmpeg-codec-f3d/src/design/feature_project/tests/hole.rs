@@ -885,7 +885,7 @@ fn an_extents_to_hole_ends_at_the_one_face_its_member_resolves() {
 }
 
 #[test]
-fn a_resolved_extents_to_face_reports_its_assumption() {
+fn a_resolved_extents_to_face_adds_no_loss() {
     use crate::records::topology::extrude_selection::DesignOperandRole;
     let scope = extents_to_scope();
     let parameters = hole_parameters()[1..].to_vec();
@@ -896,7 +896,7 @@ fn a_resolved_extents_to_face_reports_its_assumption() {
         .collect();
     let groups = [extent_group(DesignOperandRole::ROLE_0X5, &[7])];
     let mut losses = Vec::new();
-    project_hole(
+    let definition = project_hole(
         &scope,
         &indexed,
         &groups,
@@ -905,9 +905,27 @@ fn a_resolved_extents_to_face_reports_its_assumption() {
     )
     .unwrap()
     .expect("hole");
-    assert!(losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::HoleExtentFaceAssumed.kind()));
+    let FeatureDefinition::Operation(FeatureOperation::Hole { extent, .. }) = definition else {
+        panic!("expected a hole");
+    };
+    assert!(matches!(
+        extent,
+        Some(cadmpeg_ir::features::LinearTermination::ToFace {
+            face: FaceSelection::Historical { .. },
+            offset: None,
+        })
+    ));
+    let mut native_losses = Vec::new();
+    project_hole(
+        &scope,
+        &indexed,
+        &groups,
+        &[extent_member(Vec::new())],
+        &mut native_losses,
+    )
+    .unwrap()
+    .expect("hole");
+    assert_eq!(losses, native_losses);
 }
 
 #[test]

@@ -7965,7 +7965,7 @@ fn hole_extent_loss(scope: &DesignParameterScope) -> cadmpeg_ir::report::loss::L
 /// The face that ends an Extents To Hole. Its sole
 /// role-`0x0000000500000000` group has one member. When that member is the
 /// one direct `face` recipe operand of the scope at its record and resolves
-/// one face of the preceding state, that face ends the hole (DR-243).
+/// one face of the preceding state, that face ends the hole.
 /// Otherwise the group stays the native selection.
 fn hole_extent_face(
     scope: &DesignParameterScope,
@@ -8153,16 +8153,6 @@ fn project_hole(
         losses.push(hole_extent_loss(scope));
         LinearTermination::Unresolved {}
     });
-    if let LinearTermination::ToFace {
-        face: FaceSelection::Historical { native, .. },
-        ..
-    } = &extent
-    {
-        losses.push(crate::loss::F3dLossCode::HoleExtentFaceAssumed.note(format!(
-            "Hole scope {} ends at the face that the member of its Extents To group {native} resolves.",
-            scope.id
-        )));
-    }
     let parameter = |source_kind: &str| {
         let mut matches = parameters
             .iter()
