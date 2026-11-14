@@ -392,4 +392,26 @@ fn esfera_primitiva_projects_like_sphere() {
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
     );
     assert!((radius.get() - 10.0).abs() < f64::EPSILON);
+    if let DesignScopePayloadMut::SpherePrimitive(Some(sphere)) = scope.payload_mut() {
+        sphere.support_transform = Some(crate::records::identity::Located {
+            value: crate::records::sketch_placement::SketchPlacementMatrix::try_from([
+                [0.0, -1.0, 0.0, 4.0],
+                [1.0, 0.0, 0.0, 5.0],
+                [0.0, 0.0, 1.0, 6.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ])
+            .unwrap(),
+            offset: 100,
+        });
+    }
+    let Some(FeatureDefinition::Operation(FeatureOperation::Sphere { center, radius, .. })) =
+        project_solid_primitive(&scope, &[], &mut Vec::new())
+    else {
+        panic!("sphere with composed support");
+    };
+    assert_eq!(
+        center.get(),
+        cadmpeg_ir::math::Point3::new(20.0, 60.0, 90.0)
+    );
+    assert!((radius.get() - 10.0).abs() < f64::EPSILON);
 }

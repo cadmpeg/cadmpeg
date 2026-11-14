@@ -1330,17 +1330,17 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding. The public Voron Trident `z_mounts_front.f3d` has nine such scopes. Component context bindings identify their result owners. The source-body and source-frame joins require the derivation references independently of those owner bindings.
 
-### DR-552. Sphere placement flags and unresolved placement references
+### DR-552. Sphere frame assumptions and unresolved placement references
 
-**Question.** How do the inferred-axis and orientation flags change a sphere centre, and which placement supplies the centre when its reference is unresolved?
+**Question.** Which typed prefix applies when its leading padding byte is absent, how do unresolved local-frame markers and placement flags change a sphere centre, and which support frame applies when its reference is unresolved?
 
 **Known.** Reference-placed spheres retain a diameter owner, result operation, and placement reference. Placement constructions carry a solved matrix or an identity marker. Sphere axis rotation preserves its shape.
 
-**Need.** Controlled saves with nonzero placement flags and a changed sphere centre, and a reference-placed sphere with a resolvable external placement.
+**Need.** Controlled saves with one-byte-short typed prefixes, nonzero placement flags and a changed sphere centre, and a reference-placed sphere with a resolvable external placement.
 
 **Conflict.** None.
 
-**Note.** The decoder uses the stored solved frame with `feature.sphere-placement-flags-assumed` when its flags are unresolved. It assumes an origin centre with `feature.sphere-placement-frame-assumed` when the referenced frame has no unique usable local definition.
+**Note.** The decoder reads a one-byte-short typed prefix with `feature.sphere-prefix-framing-assumed`. It uses the stored solved frame with `feature.sphere-placement-flags-assumed` when its flags are unresolved. It applies an identity support frame with `feature.sphere-placement-frame-assumed` when the referenced frame has no unique usable local definition. It preserves a rigid local matrix with `feature.sphere-local-matrix-framing-assumed` when its marker is unresolved, and applies identity with `feature.sphere-local-frame-assumed` when the local pose is unusable.
 
 ### DR-551. Sphere diameter references with incomplete ownership
 
@@ -2218,7 +2218,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** None.
 
-### DR-622. Counted Shell prefix byte and partial envelopes
+### DR-625. Counted Shell prefix byte and partial envelopes
 
 **Question.** Which option does the counted Shell prefix byte select, and which fields preserve the wall-slot direction when that byte is nonzero or the envelope tail is incomplete?
 
@@ -2230,7 +2230,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** Partial Shell projection reports `feature.shell-counted-control-assumed` for reading the byte as a separate prefix field, `feature.shell-slot-direction-assumed` for the nonzero form's inside-first reading and `feature.shell-envelope-assumed` when a unique partial prefix supplies wall data. Unresolved values and selections remain in `shell:source` with their references and byte locations.
 
-### DR-623. Simultaneous Shell face and body groups
+### DR-626. Simultaneous Shell face and body groups
 
 **Question.** How do the removed-face group and the target-body group jointly select a Shell operation when its prefix names both groups?
 
