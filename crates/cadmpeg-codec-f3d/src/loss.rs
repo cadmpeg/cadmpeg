@@ -463,6 +463,7 @@ pub(crate) enum F3dLossCode {
     SurfaceUntrimExtensionUnrepresentable,
     SurfaceUntrimNegativeExtensionAssumed,
     SurfaceUntrimPaddingAssumed,
+    SurfaceUntrimTrailingIdentityAssumed,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
     /// A Combine frame that matches the fixed fields of the operand-list
@@ -966,6 +967,7 @@ impl F3dLossCode {
         Self::SurfaceUntrimExtensionUnrepresentable,
         Self::SurfaceUntrimNegativeExtensionAssumed,
         Self::SurfaceUntrimPaddingAssumed,
+        Self::SurfaceUntrimTrailingIdentityAssumed,
         Self::FeatureCombineSelectionNative,
         Self::FeatureCombinePrologueAssumed,
         Self::FeatureCombineOperandListRefused,
@@ -1414,6 +1416,9 @@ impl F3dLossCode {
                 "feature.surface-untrim-negative-extension-assumed"
             }
             Self::SurfaceUntrimPaddingAssumed => "feature.surface-untrim-padding-assumed",
+            Self::SurfaceUntrimTrailingIdentityAssumed => {
+                "feature.surface-untrim-trailing-identity-assumed"
+            }
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
@@ -1838,6 +1843,7 @@ impl F3dLossCode {
             | Self::SurfaceUntrimExtensionUnrepresentable
             | Self::SurfaceUntrimNegativeExtensionAssumed
             | Self::SurfaceUntrimPaddingAssumed
+            | Self::SurfaceUntrimTrailingIdentityAssumed
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
@@ -2167,6 +2173,7 @@ impl F3dLossCode {
             | Self::SurfaceUntrimExtensionUnrepresentable
             | Self::SurfaceUntrimNegativeExtensionAssumed
             | Self::SurfaceUntrimPaddingAssumed
+            | Self::SurfaceUntrimTrailingIdentityAssumed
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
@@ -2591,6 +2598,7 @@ mod tests {
                 "feature.surface-untrim-extension-unrepresentable",
                 "feature.surface-untrim-negative-extension-assumed",
                 "feature.surface-untrim-padding-assumed",
+                "feature.surface-untrim-trailing-identity-assumed",
                 "feature.combine-selection-native",
                 "feature.combine-prologue-assumed",
                 "feature.combine-operand-list-refused",

@@ -140,6 +140,15 @@ pub(super) fn exact_surface_untrim_operation(
             "SurfaceUntrim {} reads the uniquely closed unpadded reference runs as the same loop-removal frame (DR-490).", scope.id
         )));
     }
+    let Some((identity, _)) = fixed_relaxed_guid_text(bytes, frame.identity_at)? else {
+        return Ok(None);
+    };
+    if identity.as_str() != "00000000-0000-0000-0000-000000000000" {
+        losses.push(crate::loss::F3dLossCode::SurfaceUntrimTrailingIdentityAssumed.note(format!(
+            "SurfaceUntrim {} treats trailing identifier {} as auxiliary metadata while retaining its decoded loop and extension settings (DR-490).", scope.id, identity.as_str()
+        )));
+        operation.trailing_identity = Some(identity);
+    }
     Ok(Some(operation))
 }
 
@@ -150,6 +159,7 @@ struct SurfaceUntrimFrame<'a> {
     loops_offset: usize,
     face_group_record_index: u32,
     padded: bool,
+    identity_at: usize,
 }
 
 fn surface_untrim_frame<'a>(
@@ -192,8 +202,13 @@ fn surface_untrim_frame<'a>(
     let mut endings = [cursor, cursor.checked_add(U32_LEN)?]
         .into_iter()
         .filter(|at| *at == cursor || View::u32_le_at(bytes, cursor) == Some(0))
-        .filter_map(|at| untrim_face_group_reference(bytes, at).map(|group| (group, at != cursor)));
-    let (Some((face_group_record_index, padded)), None) = (endings.next(), endings.next()) else {
+        .filter_map(|at| {
+            untrim_face_group_reference(bytes, at)
+                .map(|(group, identity_at)| (group, at != cursor, identity_at))
+        });
+    let (Some((face_group_record_index, padded, identity_at)), None) =
+        (endings.next(), endings.next())
+    else {
         return None;
     };
     let mut references = scope.reference_members().values().copied();
@@ -213,10 +228,11 @@ fn surface_untrim_frame<'a>(
         loops_offset,
         face_group_record_index,
         padded,
+        identity_at,
     })
 }
 
-fn untrim_face_group_reference(bytes: &[u8], runs_at: usize) -> Option<u32> {
+fn untrim_face_group_reference(bytes: &[u8], runs_at: usize) -> Option<(u32, usize)> {
     if View::u32_le_at(bytes, runs_at)? != 0
         || View::u32_le_at(bytes, runs_at.checked_add(U32_LEN)?)? != 0
         || View::u32_le_at(bytes, runs_at.checked_add(2 * U32_LEN)?)? != 1
@@ -225,9 +241,11 @@ fn untrim_face_group_reference(bytes: &[u8], runs_at: usize) -> Option<u32> {
     }
     let reference_at = runs_at.checked_add(3 * U32_LEN)?;
     let face_group = marked_record_reference(bytes, reference_at)?;
-    let guid_end = fixed_guid_end(bytes, reference_at.checked_add(MARKED_REFERENCE_LEN)?)?;
+    let identity_at = reference_at.checked_add(MARKED_REFERENCE_LEN)?;
+    let guid_end = fixed_guid_end(bytes, identity_at)?;
     let table_at = guid_end.checked_add(3)?;
-    (bytes.get(guid_end..table_at)? == [0; 3] && table_at == bytes.len()).then_some(face_group)
+    (bytes.get(guid_end..table_at)? == [0; 3] && table_at == bytes.len())
+        .then_some((face_group, identity_at))
 }
 
 pub(super) fn exact_surface_offset_operation(

@@ -2005,13 +2005,13 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-490. SurfaceUntrim retained groups and prefix variants
 
-**Question.** How do stored manual-loop groups affect a nonmanual loop choice, and which selection does an incomplete group definition denote?
+**Question.** How do stored manual-loop groups affect a nonmanual loop choice, which selection does an incomplete group definition denote, and what does a nonnull trailing identifier select?
 
 **Known.** `f3d.md` §3.1 "A `SurfaceUntrim` scope removes trim loops" defines the loop choices and the ordered face and loop-group references. A nonmanual choice can retain loop-group references. The primary prefix closes at the ordered-reference count.
 
-**Need.** Saves that change the loop choice while retaining selected loops, complete definitions for each referenced group, and a save with the unpadded closed prefix.
+**Need.** Saves that change the loop choice while retaining selected loops, complete definitions for each referenced group, a save with the unpadded closed prefix, and a save with a nonnull trailing identifier.
 
-**Note.** `feature.surface-untrim-stored-loop-groups-assumed` reads stored groups alongside a nonmanual choice as inactive selections. `feature.surface-untrim-loop-groups-aggregated-assumed` represents multiple manual groups by their scope expression. `feature.surface-untrim-group-selection-assumed` retains a scope expression for missing, ambiguous or inconsistent groups. `feature.surface-untrim-padding-assumed` admits uniquely closed unpadded runs. `feature.surface-untrim-frame-assumed` projects the operation with unresolved settings when its prefix has no closed reading.
+**Note.** `feature.surface-untrim-stored-loop-groups-assumed` reads stored groups alongside a nonmanual choice as inactive selections. `feature.surface-untrim-loop-groups-aggregated-assumed` represents multiple manual groups by their scope expression. `feature.surface-untrim-group-selection-assumed` retains a scope expression for missing, ambiguous or inconsistent groups. `feature.surface-untrim-padding-assumed` admits uniquely closed unpadded runs. `feature.surface-untrim-frame-assumed` projects the operation with unresolved settings when its prefix has no closed reading. `feature.surface-untrim-trailing-identity-assumed` retains a nonnull identifier as auxiliary metadata while applying the decoded loop and extension settings.
 
 ### DR-491. SurfaceUntrim signed extension and missing scalar definitions
 

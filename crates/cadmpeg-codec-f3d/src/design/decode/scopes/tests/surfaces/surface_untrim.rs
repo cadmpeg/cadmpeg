@@ -57,6 +57,7 @@ struct UntrimFrame<'a> {
     loop_count: Option<u32>,
     truncate_prefix: usize,
     scope_shift: u64,
+    identity: &'a str,
 }
 
 impl UntrimFrame<'_> {
@@ -75,6 +76,7 @@ impl UntrimFrame<'_> {
             loop_count: None,
             truncate_prefix: 0,
             scope_shift: 0,
+            identity: "00000000-0000-0000-0000-000000000000",
         }
     }
 
@@ -123,7 +125,7 @@ impl UntrimFrame<'_> {
             }
         }
         bytes.extend_from_slice(&36u32.to_le_bytes());
-        for unit in "00000000-0000-0000-0000-000000000000".encode_utf16() {
+        for unit in self.identity.encode_utf16() {
             bytes.extend_from_slice(&unit.to_le_bytes());
         }
         bytes.extend_from_slice(&[0; 3]);
@@ -206,6 +208,7 @@ fn every_loop_type_reads_the_extension_and_the_face_group() {
                     face_group_record_index: FACE_GROUP,
                     loop_group_record_indices: Vec::new(),
                     padded,
+                    trailing_identity: None,
                 })
             );
         }
@@ -221,6 +224,28 @@ fn manual_loops_read_the_loop_group_before_the_extension_reference() {
     assert_eq!(operation.loop_group_record_indices, [LOOP_GROUP]);
     assert_eq!(operation.face_group_record_index, FACE_GROUP);
     assert_eq!(operation.extension_record_index, OWNER);
+}
+
+#[test]
+fn nonnull_trailing_identity_keeps_the_decoded_operation_with_a_named_assumption() {
+    let (operation, _, losses) = UntrimFrame {
+        identity: "11111111-2222-3333-4444-555555555555",
+        ..UntrimFrame::manual_loops()
+    }
+    .decode_with_losses();
+    let operation = operation.unwrap();
+    assert_eq!(
+        operation.trailing_identity.unwrap().as_str(),
+        "11111111-2222-3333-4444-555555555555"
+    );
+    assert_eq!(operation.loops, DesignSurfaceUntrimLoops::Manual);
+    assert_eq!(operation.loop_group_record_indices, [50]);
+    assert_eq!(operation.extension.unwrap().get(), 0.3);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.surface-untrim-trailing-identity-assumed"
+    );
 }
 
 #[test]

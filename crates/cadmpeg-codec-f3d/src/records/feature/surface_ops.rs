@@ -63,10 +63,21 @@ pub(crate) struct DesignSurfaceUntrimOperation {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) loop_group_record_indices: Vec<u32>,
     pub(crate) padded: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_untrim_trailing_identity"
+    )]
+    pub(crate) trailing_identity: Option<crate::records::mesh::DesignRelaxedGuidText>,
 }
 
 cadmpeg_core::named_optional_field!(deserialize_untrim_extension, FiniteReal, "extension");
 cadmpeg_core::named_optional_field!(deserialize_untrim_extension_offset, u64, "extension_offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_untrim_trailing_identity,
+    crate::records::mesh::DesignRelaxedGuidText,
+    "trailing_identity"
+);
 
 impl DesignSurfaceUntrimOperation {
     pub(crate) fn new(
@@ -84,6 +95,7 @@ impl DesignSurfaceUntrimOperation {
             face_group_record_index,
             loop_group_record_indices: Vec::new(),
             padded: true,
+            trailing_identity: None,
         }
     }
 }
