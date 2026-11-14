@@ -3136,7 +3136,7 @@ pub enum FeatureOperation {
         /// Complete geometric and parametric construction definition.
         construction: CoilConstruction,
         /// Result-body semantics.
-        result: CoilResult,
+        result: SolidFeatureResult,
     },
     /// Solid sphere primitive.
     Sphere {
@@ -3600,6 +3600,20 @@ pub enum FeatureOperation {
             deserialize_with = "deserialize_side"
         )]
         side: Option<ThickenSide>,
+        #[doc = "Result-body creation or Boolean combination, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thicken_result"
+        )]
+        result: Option<SolidFeatureResult>,
+        #[doc = "Whether the face selection extends along tangent faces, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_tangent_chain"
+        )]
+        tangent_chain: Option<bool>,
     },
     /// Surface copied at a signed normal offset from selected support faces.
     OffsetSurface {
@@ -4194,6 +4208,21 @@ impl FeatureOperation {
             faces,
             loops: UntrimLoops::Unresolved,
             extension: None,
+        }
+    }
+
+    #[doc = "Construct a Thicken with unspecified result and tangent-chain settings."]
+    pub fn thicken(
+        faces: FaceSelection,
+        thickness: Option<PositiveLength>,
+        side: Option<ThickenSide>,
+    ) -> Self {
+        Self::Thicken {
+            faces,
+            thickness,
+            side,
+            result: None,
+            tangent_chain: None,
         }
     }
 
@@ -8137,15 +8166,15 @@ pub enum CoilSectionPlacement {
     Outside,
 }
 
-/// Result semantics of a solid Coil primitive.
+#[doc = "Result semantics of a solid-producing feature."]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum CoilResult {
+pub enum SolidFeatureResult {
     /// Create an independent body.
     NewBody {},
-    /// Combine the swept volume with selected existing bodies.
+    #[doc = "Combine the produced volume with selected existing bodies."]
     Boolean {
         /// Join, cut, or intersection operation.
         operation: BooleanKind,
@@ -9917,3 +9946,5 @@ cadmpeg_core::named_optional_field!(
 );
 
 cadmpeg_core::named_optional_field!(deserialize_plane_target_source, PlaneTargetSource, "source");
+cadmpeg_core::named_optional_field!(deserialize_thicken_result, SolidFeatureResult, "result");
+cadmpeg_core::named_optional_field!(deserialize_tangent_chain, bool, "tangent_chain");

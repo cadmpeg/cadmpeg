@@ -2621,7 +2621,7 @@ kind = "byte"
 section = "3.1"
 anchor = "A `Thicken` scope primary frame stores nine zero bytes at offsets 11 through 19"
 size = 21
-note = "Offsets are relative to the primary indexed header. The prologue marker selects whether the prologue ends at offset 21, 25, or 26."
+note = "Offsets are relative to the primary indexed header. The prologue marker and the optional flag byte place the result operation at offset 21, 22, 25, or 26."
 
 [[record.field]]
 name = "indexed_header"
@@ -2643,6 +2643,188 @@ offset = 20
 type = "u8"
 source = "spec"
 anchor = "a prologue marker at offset 20"
+
+[[record]]
+name = "thicken_compact_result_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The result-operation u32 starts at offset 21, 22, 25, or 26"
+size = 25
+note = "Offsets are relative to the primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "after the indexed header"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "prologue_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "a prologue marker at offset 20"
+
+[[record.field]]
+name = "result_operation"
+offset = 21
+type = "u32"
+endianness = "little"
+source = "spec"
+anchor = "stores `1` for join, `2` for cut, `3` for intersect, or `4` for a new body"
+
+[[record]]
+name = "thicken_compact_flagged_result_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The result-operation u32 starts at offset 21, 22, 25, or 26"
+size = 26
+note = "Offsets are relative to the primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "after the indexed header"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "prologue_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "a prologue marker at offset 20"
+
+[[record.field]]
+name = "prologue_flag"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "An optional prologue flag byte stores `0` or `1`"
+
+[[record.field]]
+name = "result_operation"
+offset = 22
+type = "u32"
+endianness = "little"
+source = "spec"
+anchor = "stores `1` for join, `2` for cut, `3` for intersect, or `4` for a new body"
+
+[[record]]
+name = "thicken_marked_result_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The result-operation u32 starts at offset 21, 22, 25, or 26"
+size = 29
+note = "Offsets are relative to the primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "after the indexed header"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "prologue_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "a prologue marker at offset 20"
+
+[[record.field]]
+name = "marker_zero_word"
+offset = 21
+type = "u32"
+endianness = "little"
+source = "spec"
+anchor = "Marker `1` is followed by u32 zero"
+
+[[record.field]]
+name = "result_operation"
+offset = 25
+type = "u32"
+endianness = "little"
+source = "spec"
+anchor = "stores `1` for join, `2` for cut, `3` for intersect, or `4` for a new body"
+
+[[record]]
+name = "thicken_marked_flagged_result_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The result-operation u32 starts at offset 21, 22, 25, or 26"
+size = 30
+note = "Offsets are relative to the primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "after the indexed header"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "prologue_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "a prologue marker at offset 20"
+
+[[record.field]]
+name = "marker_zero_word"
+offset = 21
+type = "u32"
+endianness = "little"
+source = "spec"
+anchor = "Marker `1` is followed by u32 zero"
+
+[[record.field]]
+name = "prologue_flag"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "An optional prologue flag byte stores `0` or `1`"
+
+[[record.field]]
+name = "result_operation"
+offset = 26
+type = "u32"
+endianness = "little"
+source = "spec"
+anchor = "stores `1` for join, `2` for cut, `3` for intersect, or `4` for a new body"
 
 [[record]]
 name = "design_mirror_scope_class369_tail"
@@ -25820,6 +26002,77 @@ offset = 178
 type = "bytes[76]"
 source = "spec"
 anchor = "Its LP-UTF16 null GUID starts at offset 178"
+
+[[record]]
+name = "component_insert_matrix_scope_404_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+size = 258
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "prologue"
+offset = 11
+type = "bytes[18]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 29
+type = "u64"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "zero_after_identity"
+offset = 37
+type = "bytes[4]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "relation_reference"
+offset = 41
+type = "bytes[5]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "zero_after_relation"
+offset = 46
+type = "bytes[6]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "matrix_markers"
+offset = 52
+type = "bytes[2]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "transform"
+offset = 54
+type = "f64[16]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "null_guid"
+offset = 182
+type = "bytes[76]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
 
 [[record]]
 name = "component_insert_identity_scope_276_prefix"

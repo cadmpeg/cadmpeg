@@ -1830,9 +1830,9 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-313. Prologue flag byte of the Thicken scope frame
 
-**Question.** Which Thicken setting does the prologue flag byte of the six-byte marker-one prologue of a `Thicken` scope select?
+**Question.** Which Thicken setting does the prologue flag byte of the optional-flag prologue of a `Thicken` scope select?
 
-**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the byte position and the two settled flag bytes. Saves that change the thickness sign, the symmetric direction, and tangent-chain selection store prologue flag byte `0`. The decoder records `feature.thicken-flags-assumed` when the byte is `1` and projects the Thicken from its symmetric flag and its thickness; the tangent-chain flag stays on the native record.
+**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the byte position and the two settled flag bytes. Saves that change the thickness sign, the symmetric direction, and tangent-chain selection store prologue flag byte `0`. The decoder records `feature.thicken-flags-assumed` when the byte is `1` and projects its decoded result, symmetric flag, tangent-chain flag and thickness.
 
 **Need.** Saves of one `Thicken` that change one further setting at a time and store prologue flag byte `1`.
 
@@ -1844,13 +1844,25 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** What does the u32 zero that can follow the marked scalar reference of a `Thicken` scope encode, and which scopes store it?
 
-**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the field and the u32 `1` before the marked auxiliary reference that places it. The decoder reads scopes with and without the field and keeps no value from it.
+**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the field and the three counted reference runs that follow it. The decoder reads scopes with and without the field and keeps no value from it.
 
 **Need.** `Thicken` scopes that store a nonzero value in the field, or saves of one `Thicken` from application versions whose frames differ in the field.
 
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-503. Thicken identity runs and incomplete construction references
+
+**Question.** Which entities do the first counted prefix run and unmatched Thicken prefixes identify, and how do incomplete group definitions select their operands?
+
+**Known.** Result words `1` through `4` select join, cut, intersect and new-body construction. The third counted run selects a Boolean body group. The first run retains its reference indices on the native Thicken record. The decoder projects an unmatched prefix with `feature.thicken-frame-assumed`. Missing or ambiguous scalar definitions retain the result, flags and groups with `feature.thicken-thickness-unresolved`. Incomplete input and target groups retain their scope expressions with `feature.thicken-face-selection-assumed` and `feature.thicken-target-selection-assumed`. Zero or overflowing converted thickness retains its source scalar with `feature.thicken-thickness-unrepresentable`.
+
+**Need.** Controlled saves that change the first-run identities and reference definitions independently, plus additional closed prefix forms.
+
+**Conflict.** None.
+
+**Note.** A retained group can bind to an earlier body recipe. A retained scope expression keeps the decoded construction available when that binding remains unresolved.
 
 ### DR-269. Marker-one Revolve frames of other lengths
 
@@ -2574,3 +2586,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Controlled public assemblies that identify both selected components and vary the operand paths independently of the connector frames and alignment values.
 
 **Note.** The neutral joint uses the native scope identity as its operand object and the stored construction reference as its native element path, with a missing document container. `assembly.connector-operands-assumed` names this operand-context assumption. `assembly.motion-binding-assumed` records the adjacent-motion or fixed-relation reading from DR-250. The timeline feature names the retained joint before archive operand descent. A missing document identity supplies no implied occurrence placement.
+
+### DR-491. Source membership and container of an unbound Component Insert
+
+**Question.** Which source occurrence and containing component does a Component Insert scope select when its relation carrier or authored placement path remains unresolved?
+
+**Known.** The shared identity and matrix scope forms in §3.1 of `f3d.md` retain an occurrence identity, one relation reference, and a scope-local placement. The carrier contributes the source occurrence role used by external-reference binding. The scope occurrence identity can repeat across scopes.
+
+**Need.** Controlled public assemblies with independently varied source occurrences, containing components, and placement matrices, including a retained relation with an unresolved source document.
+
+**Note.** Each authored insertion scope with a decoded placement can produce one unresolved-prototype occurrence at the document root. The per-scope membership reading is assumed. `assembly.component-insert-container-assumed` records that container-frame reading. A feature with unresolved source membership uses its native selection in a neutral component insertion and reports `feature.component-insert-membership-assumed`. The native scope retains the relation reference, occurrence identity, and decoded placement.

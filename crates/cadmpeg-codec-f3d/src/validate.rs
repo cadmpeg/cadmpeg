@@ -3026,7 +3026,24 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
         };
         let component_insert_link = match scope.component_insert_construction() {
-            None => true,
+            None => scope.component_insert_placement().is_none_or(|placement| {
+                scope.reference_members().len() == 1
+                    && match (
+                        scope.canonical_name_frame_length(),
+                        placement.matrix.as_ref(),
+                    ) {
+                        (Some(272 | 276), None) => true,
+                        (Some(frame @ (400 | 404)), Some(matrix)) => scope
+                            .byte_offset()
+                            .checked_add(
+                            u64_from_index(
+                                crate::layout::component_insert_matrix_scope_400_prefix::TRANSFORM,
+                            ) + frame
+                                - 400,
+                        ) == Some(matrix.offset),
+                        _ => false,
+                    }
+            }),
             Some(construction) => {
                 let relation =
                     records_by_index.get(&(native_stream, construction.relation_record_index));
