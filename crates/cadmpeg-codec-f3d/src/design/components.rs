@@ -2232,7 +2232,7 @@ impl ComponentInserts {
         let mut losses = Vec::new();
         if self.assumed_containers != 0 {
             losses.push(F3dLossCode::ComponentInsertContainerAssumed.note(format!(
-                "{} Component Insert occurrence(s) use their decoded scope placement in the document root with an unresolved prototype; the container frame is assumed (DR-487).", self.assumed_containers
+                "{} Component Insert occurrence(s) use their decoded scope placement in the document root with an unresolved prototype; the container frame is assumed (DR-491).", self.assumed_containers
             )));
         }
         if self.unplaced != 0 {

@@ -2457,7 +2457,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder preserves the neutral deletion family. It records `feature.delete-face-frame-controls-assumed` for unfamiliar frames and `feature.delete-face-group-selection-assumed` for missing or inconsistent face groups.
 
-### DR-486. UnStitch prologue flag and reference runs
+### DR-489. UnStitch prologue flag and reference runs
 
 **Question.** Which setting does the UnStitch selection flag encode, and which entities do the identity and source reference runs name?
 
@@ -2525,7 +2525,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The specialized scope payload stays uninterpreted. The result bodies remain available with `feature.stored-bodies-recipe-absent`.
 
-### DR-486. Operand containers of unqualified Assemble connectors
+### DR-490. Operand containers of unqualified Assemble connectors
 
 **Question.** Which occurrence or document contains a connector when its scope retains the connector reference and frame but its operand qualifier does not decode?
 
@@ -2535,7 +2535,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The neutral joint uses the native scope identity as its operand object and the stored construction reference as its native element path, with a missing document container. `assembly.connector-operands-assumed` names this operand-context assumption. `assembly.motion-binding-assumed` records the adjacent-motion or fixed-relation reading from DR-250. The timeline feature names the retained joint before archive operand descent. A missing document identity supplies no implied occurrence placement.
 
-### DR-487. Source membership and container of an unbound Component Insert
+### DR-491. Source membership and container of an unbound Component Insert
 
 **Question.** Which source occurrence and containing component does a Component Insert scope select when its relation carrier or authored placement path remains unresolved?
 
