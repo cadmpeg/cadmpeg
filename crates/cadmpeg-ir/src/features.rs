@@ -3468,6 +3468,11 @@ pub enum FeatureOperation {
         /// Transition form and evaluated radius.
         transition: SheetMetalTransition,
     },
+    #[doc = "Creates a sheet by extruding open profiles with rounded bends."]
+    SheetMetalContourFlange {
+        #[doc = "Independently decoded profile, travel and sheet-rule inputs."]
+        construction: sheet_metal::SheetMetalContourFlangeConstruction,
+    },
     #[doc = "Flattens selected bends of an existing sheet."]
     SheetMetalUnfold {
         #[doc = "Independently decoded unfolding inputs."]

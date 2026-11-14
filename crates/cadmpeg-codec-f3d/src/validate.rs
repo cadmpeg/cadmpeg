@@ -2232,8 +2232,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             _ => true,
         };
         let fold_links = scope
-            .unfold_operation()
+            .contour_flange_operation()
             .is_none_or(|operation| operation.valid_for_scope(scope))
+            && scope
+                .unfold_operation()
+                .is_none_or(|operation| operation.valid_for_scope(scope))
             && scope
                 .refold_operation()
                 .is_none_or(|operation| operation.valid_for_scope(scope));

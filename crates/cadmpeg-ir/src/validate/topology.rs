@@ -3295,6 +3295,7 @@ fn check_feature_references(
                     face_selections.push(face);
                 }
             }
+            FeatureOperation::SheetMetalContourFlange { .. } => {}
             FeatureOperation::SheetMetalUnfold { construction } => {
                 face_selections.extend(construction.stationary.iter());
                 face_selections.extend(construction.bends.iter());
@@ -4687,6 +4688,9 @@ fn definition_profiles(
         crate::features::FeatureOperation::SheetMetalAttachedPlate { profile, .. }
         | crate::features::FeatureOperation::SheetMetalBaseFlange { profile, .. }
         | crate::features::FeatureOperation::Wrap { profile, .. } => profiles.push(profile),
+        crate::features::FeatureOperation::SheetMetalContourFlange { construction } => {
+            profiles.extend(construction.profile.as_ref());
+        }
         crate::features::FeatureOperation::Revolve { construction, .. } => {
             profiles.extend(construction.profile());
         }
@@ -4768,6 +4772,22 @@ fn definition_terminations(
                 ]);
             }
         },
+        crate::features::FeatureOperation::SheetMetalContourFlange { construction } => {
+            if let Some(extent) = &construction.extent {
+                match extent {
+                    crate::features::ExtrudeExtent::OneSided { side }
+                    | crate::features::ExtrudeExtent::Symmetric { side } => {
+                        terminations.push(TerminationRef::Linear(&side.termination));
+                    }
+                    crate::features::ExtrudeExtent::TwoSided { first, second } => {
+                        terminations.extend([
+                            TerminationRef::Linear(&first.termination),
+                            TerminationRef::Linear(&second.termination),
+                        ]);
+                    }
+                }
+            }
+        }
         crate::features::FeatureOperation::Revolve { construction, .. } => {
             match construction.extent() {
                 Some(
@@ -5132,6 +5152,9 @@ fn check_feature_sketch_references(
             FeatureOperation::SheetMetalAttachedPlate { profile, .. }
             | FeatureOperation::SheetMetalBaseFlange { profile, .. } => {
                 profiles.push(ProfileReference::Planar(profile));
+            }
+            FeatureOperation::SheetMetalContourFlange { construction } => {
+                profiles.extend(construction.profile.as_ref().map(ProfileReference::Planar));
             }
             FeatureOperation::Rib { construction, .. } => {
                 profiles.extend(construction.profile.as_ref().map(ProfileReference::Planar));

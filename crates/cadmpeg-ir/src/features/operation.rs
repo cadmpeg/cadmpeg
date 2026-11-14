@@ -68,6 +68,7 @@ impl FeatureOperation {
             },
             Self::SheetMetalAttachedPlate { .. } => Some("sheet metal attached plate"),
             Self::SheetMetalBend { .. } => Some("sheet metal bend"),
+            Self::SheetMetalContourFlange { .. } => Some("sheet metal contour flange"),
             Self::SheetMetalUnfold { .. } => Some("sheet metal unfold"),
             Self::SheetMetalRefold { .. } => Some("sheet metal refold"),
             Self::Block { .. } => Some("block"),

@@ -748,6 +748,7 @@ impl Serialize for DesignFeatureKind {
 
 design_feature_kinds! {
     data {
+        ContourFlange => "ContourFlange": Option<super::sheet_metal::contour::DesignContourFlangeOperation>,
         Unfold => "Unfold": Option<super::sheet_metal::fold::DesignUnfoldOperation>,
         Refold => "Refold": Option<super::sheet_metal::fold::DesignRefoldOperation>,
         Sketch => "Sketch": Option<DesignSketchEntityBinding>,
@@ -1130,6 +1131,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_path_pattern_settings"
     )]
     path_pattern_settings: Option<crate::records::feature::patterns::DesignPathPatternSettings>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_contour_flange_operation"
+    )]
+    contour_flange_operation: Option<super::sheet_metal::contour::DesignContourFlangeOperation>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -2312,6 +2319,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::RemoveBody => DesignScopePayload::RemoveBody,
             DesignFeatureKind::Face => DesignScopePayload::Face,
             DesignFeatureKind::Bend => DesignScopePayload::Bend,
+            DesignFeatureKind::ContourFlange => {
+                DesignScopePayload::ContourFlange(wire.contour_flange_operation.take())
+            }
             DesignFeatureKind::Unfold => DesignScopePayload::Unfold(wire.unfold_operation.take()),
             DesignFeatureKind::Refold => DesignScopePayload::Refold(wire.refold_operation.take()),
             DesignFeatureKind::SpherePrimitive => {
@@ -2375,6 +2385,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.scale_operation.is_some()
             || wire.reverse_normal_operation.is_some()
             || wire.path_pattern_settings.is_some()
+            || wire.contour_flange_operation.is_some()
             || wire.unfold_operation.is_some()
             || wire.refold_operation.is_some()
             || wire.mesh_face_groups.is_some()
@@ -2463,8 +2474,11 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             paired_byte_offset: wire.paired_byte_offset,
         })?;
         if admitted
-            .unfold_operation()
+            .contour_flange_operation()
             .is_some_and(|operation| !operation.valid_for_scope(&admitted))
+            || admitted
+                .unfold_operation()
+                .is_some_and(|operation| !operation.valid_for_scope(&admitted))
             || admitted
                 .refold_operation()
                 .is_some_and(|operation| !operation.valid_for_scope(&admitted))
@@ -2561,6 +2575,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             scale_operation: None,
             reverse_normal_operation: None,
             path_pattern_settings: None,
+            contour_flange_operation: None,
             unfold_operation: None,
             refold_operation: None,
             mesh_face_groups: None,
@@ -2700,6 +2715,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 DesignEdgeFlangeScope::Unresolved => {}
             },
             DesignScopePayload::Hem(value) => wire.hem_operation = value,
+            DesignScopePayload::ContourFlange(value) => wire.contour_flange_operation = value,
             DesignScopePayload::Unfold(value) => wire.unfold_operation = value,
             DesignScopePayload::Refold(value) => wire.refold_operation = value,
             DesignScopePayload::Fillet(value) => {
@@ -3186,6 +3202,15 @@ impl DesignParameterScope {
         match &self.payload {
             DesignScopePayload::SpirePrimitive(value)
             | DesignScopePayload::CoilPrimitive(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn contour_flange_operation(
+        &self,
+    ) -> Option<&super::sheet_metal::contour::DesignContourFlangeOperation> {
+        match &self.payload {
+            DesignScopePayload::ContourFlange(value) => value.as_ref(),
             _ => None,
         }
     }
@@ -3927,4 +3952,10 @@ cadmpeg_core::named_optional_field!(
     deserialize_refold_operation,
     super::sheet_metal::fold::DesignRefoldOperation,
     "refold_operation"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_contour_flange_operation,
+    super::sheet_metal::contour::DesignContourFlangeOperation,
+    "contour_flange_operation"
 );

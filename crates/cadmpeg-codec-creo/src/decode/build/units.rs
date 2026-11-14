@@ -474,6 +474,15 @@ fn scale_feature_operation(
             transition,
             ..
         } => scale_attached_sheet_metal(inside_radius, relief, transition, scale)?,
+        FeatureOperation::SheetMetalContourFlange { construction } => {
+            scale_optional_positive_length(&mut construction.thickness, scale)?;
+            if let Some(radius) = &mut construction.inside_radius {
+                scale_nonnegative_length(radius, scale)?;
+            }
+            if let Some(extent) = &mut construction.extent {
+                scale_extrude_extent(extent, scale)?;
+            }
+        }
         FeatureOperation::SheetMetalBendLines { construction } => {
             scale_optional_positive_length(&mut construction.inside_radius, scale)?;
         }
@@ -2667,6 +2676,62 @@ mod tests {
                 transition.radius.get()
             ],
             [2.0, 4.0, 6.0, 8.0, 10.0, 12.0]
+        );
+    }
+}
+
+#[cfg(test)]
+mod contour_tests {
+    use super::*;
+    use cadmpeg_ir::{
+        features::{
+            sheet_metal::SheetMetalContourFlangeConstruction, ExtrudeExtent, ExtrudeSide,
+            FeatureOperation, LinearTermination,
+        },
+        scalar::{NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal},
+    };
+
+    #[test]
+    fn contour_scaling_visits_sheet_lengths_and_signed_travel() {
+        let mut operation = FeatureOperation::SheetMetalContourFlange {
+            construction: SheetMetalContourFlangeConstruction {
+                thickness: PositiveLength::new(1.0),
+                inside_radius: NonNegativeLength::new(0.5),
+                extent: Some(ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: NonZeroLength::new(-2.0).expect("nonzero synthetic travel"),
+                        },
+                        draft: None,
+                    },
+                }),
+                ..Default::default()
+            },
+        };
+        crate::decode::with_service_context(|ctx| {
+            scale_feature_operation(
+                ctx,
+                &mut operation,
+                PositiveReal::new(25.4).expect("positive synthetic scale"),
+            )
+        })
+        .expect("contour construction scales");
+        let FeatureOperation::SheetMetalContourFlange { construction } = operation else {
+            panic!("contour flange");
+        };
+        assert_eq!(
+            construction.thickness.expect("scaled thickness").get(),
+            25.4
+        );
+        assert_eq!(
+            construction
+                .inside_radius
+                .expect("scaled inside radius")
+                .get(),
+            12.7
+        );
+        assert!(
+            matches!(construction.extent, Some(ExtrudeExtent::OneSided { side: ExtrudeSide { termination: LinearTermination::Blind { length }, .. } }) if length.get() == -50.8)
         );
     }
 }

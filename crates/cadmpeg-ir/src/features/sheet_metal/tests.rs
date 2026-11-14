@@ -219,3 +219,95 @@ fn fold_constructions_distinguish_absent_present_and_null_inputs() {
         .to_string();
     assert!(error.contains("unfold"), "{error}");
 }
+
+#[test]
+fn contour_construction_roundtrips_signed_travel_and_rejects_named_nulls() {
+    use super::SheetMetalContourFlangeConstruction;
+    let empty: SheetMetalContourFlangeConstruction = serde_json::from_value(json!({})).unwrap();
+    assert_eq!(empty, SheetMetalContourFlangeConstruction::default());
+    assert_eq!(serde_json::to_value(empty).unwrap(), json!({}));
+    let value = json!({
+        "profile": {"kind": "native", "value": "test:profile"},
+        "direction": {"x": 0.0, "y": -1.0, "z": 0.0},
+        "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": -15.0}}},
+        "thickness": 1.25,
+        "inside_radius": 0.0,
+        "side": "left",
+        "neutral_factor": 0.44
+    });
+    let construction: SheetMetalContourFlangeConstruction =
+        serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(serde_json::to_value(construction).unwrap(), value);
+    for key in [
+        "profile",
+        "direction",
+        "extent",
+        "thickness",
+        "inside_radius",
+        "side",
+        "neutral_factor",
+    ] {
+        let mut invalid = value.clone();
+        invalid[key] = serde_json::Value::Null;
+        let error = serde_json::from_value::<SheetMetalContourFlangeConstruction>(invalid)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(key), "{error}");
+    }
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn contour_schema_declares_absence_and_rejects_explicit_nulls() {
+    use super::SheetMetalContourFlangeConstruction;
+    let schema =
+        serde_json::to_value(schemars::schema_for!(SheetMetalContourFlangeConstruction)).unwrap();
+    let properties = schema["properties"].as_object().unwrap();
+    assert!(schema.get("required").is_none());
+    for name in [
+        "profile",
+        "direction",
+        "extent",
+        "thickness",
+        "inside_radius",
+        "side",
+        "neutral_factor",
+    ] {
+        assert!(
+            !properties[name].to_string().contains("\"null\""),
+            "{name}: {}",
+            properties[name]
+        );
+        let mut value = json!({});
+        value[name] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<SheetMetalContourFlangeConstruction>(value).is_err());
+    }
+}
+
+#[test]
+fn contour_identity_rewrite_traverses_its_profile_reference() {
+    use super::SheetMetalContourFlangeConstruction;
+    use crate::{
+        features::{FeatureId, PlanarProfileRef},
+        schema::rewrite::typed::{IdentityMap, RewriteIdentities},
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let construction = SheetMetalContourFlangeConstruction {
+        profile: Some(PlanarProfileRef::Feature(
+            FeatureId::mint("test:model:feature#source").unwrap(),
+        )),
+        ..Default::default()
+    };
+    let arena = DecodeArena::new();
+    let (context, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut map = IdentityMap::new(|source: &str| Ok(source.replace("#source", "#rewritten")));
+    let rewritten = construction.rewrite_identities(&context, &mut map).unwrap();
+    assert_eq!(
+        rewritten.profile,
+        Some(PlanarProfileRef::Feature(
+            FeatureId::mint("test:model:feature#rewritten").unwrap()
+        ))
+    );
+    map.finish().unwrap();
+}

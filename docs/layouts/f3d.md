@@ -11481,6 +11481,78 @@ Parsed by:
 Unstated regions:
 
 - `0..11` (11 B): Indexed record header.
+## `sheet_metal_contour_short_prefix`
+
+Spec §3.1 · layout: byte offsets · size: not stated
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/contour.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A `ContourFlange` scope uses type GUID |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | A `ContourFlange` scope uses type GUID |
+| 20 | 1 | `extension` | `u8` | little | spec | A `ContourFlange` scope uses type GUID |
+| 21 | 1 | `present` | `u8` | little | spec | A `ContourFlange` scope uses type GUID |
+| 22 | 4 | `operation` | `u32` | little | spec | A `ContourFlange` scope uses type GUID |
+
+## `sheet_metal_contour_expanded_prefix`
+
+Spec §3.1 · layout: byte offsets · size: not stated
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/contour.rs`
+- `crates/cadmpeg-codec-f3d/src/records/feature/sheet_metal/contour.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A `ContourFlange` scope uses type GUID |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | A `ContourFlange` scope uses type GUID |
+| 20 | 1 | `extension` | `u8` | little | spec | A `ContourFlange` scope uses type GUID |
+| 21 | 4 | `extension_payload` | `u32` | little | spec | A `ContourFlange` scope uses type GUID |
+| 25 | 1 | `present` | `u8` | little | spec | A `ContourFlange` scope uses type GUID |
+| 26 | 4 | `operation` | `u32` | little | spec | A `ContourFlange` scope uses type GUID |
+
+## `sheet_metal_contour_vector_owner`
+
+Spec §3.1 · layout: byte offsets · size: not stated
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/contour.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `direction` | `f64[3]` | little | spec | The ContourFlange vector-owner lane contains |
+| 24 | 1 | `zero` | `u8` | little | spec | The ContourFlange vector-owner lane contains |
+| 25 | 9 | `owner_reference_prefix` | `bytes[9]` | little | spec | The ContourFlange vector-owner lane contains |
+
+## `sheet_metal_contour_compact_carrier`
+
+Spec §3.1 · layout: byte offsets · size: not stated
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/contour.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `control` | `u32` | little | spec | Immediately before the carrier reference |
+| 4 | 1 | `zero` | `u8` | little | spec | Immediately before the carrier reference |
+| 5 | 11 | `carrier_reference` | `bytes[11]` | little | spec | Immediately before the carrier reference |
+| 16 | 8 | `thickness` | `f64` | little | spec | Immediately before the carrier reference |
+
+## `sheet_metal_contour_typed_carrier`
+
+Spec §3.1 · layout: byte offsets · size: not stated
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/contour.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `control` | `u32` | little | spec | Immediately before the carrier reference |
+| 4 | 1 | `zero` | `u8` | little | spec | Immediately before the carrier reference |
+| 5 | 51 | `carrier_reference` | `bytes[51]` | little | spec | Immediately before the carrier reference |
+| 56 | 8 | `thickness` | `f64` | little | spec | Immediately before the carrier reference |
 
 ## Not tabulated
 

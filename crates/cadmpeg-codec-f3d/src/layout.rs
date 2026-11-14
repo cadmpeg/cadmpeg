@@ -10047,4 +10047,38 @@ pub(crate) mod edge_flange_two_offset_wrapper {
     pub(crate) const NESTED: usize = 89;
     /// Stated value of `closing_zero` (`u8`). Spec §3.1.
     pub(crate) const CLOSING_ZERO_VALUE: u8 = 0;
+/// Byte offsets for the `sheet_metal_contour_short_prefix` record.
+///
+/// Spec §3.1.
+pub(crate) mod sheet_metal_contour_short_prefix {
+    /// Offset of `zero_run` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `extension` (`u8`). Spec §3.1.
+    pub(crate) const EXTENSION: usize = 20;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 22;
+}
+
+/// Byte offsets for the `sheet_metal_contour_expanded_prefix` record.
+///
+/// Spec §3.1.
+pub(crate) mod sheet_metal_contour_expanded_prefix {
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 26;
+}
+
+/// Byte offsets for the `sheet_metal_contour_vector_owner` record.
+///
+/// Spec §3.1.
+pub(crate) mod sheet_metal_contour_vector_owner {
+    /// Offset of `owner_reference_prefix` (`bytes[9]`). Spec §3.1.
+    pub(crate) const OWNER_REFERENCE_PREFIX: usize = 25;
+}
+
+/// Byte offsets for the `sheet_metal_contour_compact_carrier` record.
+///
+/// Spec §3.1.
+pub(crate) mod sheet_metal_contour_compact_carrier {
+    /// Offset of `carrier_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CARRIER_REFERENCE: usize = 5;
 }
