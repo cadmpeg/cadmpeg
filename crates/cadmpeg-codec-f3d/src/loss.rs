@@ -32,6 +32,8 @@ pub(crate) enum F3dLossCode {
     BendRadiusFirstAssumed,
     BendStationarySelectionNative,
     BendRuleRadiusUnresolved,
+    BendAngleOwnerBacklinkAssumed,
+    BendCachedOwnerAngleAssumed,
     /// A displayed path matches several neutral occurrences.
     SceneOverrideAmbiguous,
     /// A displayed path has no neutral occurrence.
@@ -1315,6 +1317,8 @@ impl F3dLossCode {
             Self::BendRadiusFirstAssumed => "feature.bend-radius-first-assumed",
             Self::BendStationarySelectionNative => "feature.bend-stationary-selection-native",
             Self::BendRuleRadiusUnresolved => "feature.bend-rule-radius-unresolved",
+            Self::BendAngleOwnerBacklinkAssumed => "feature.bend-angle-owner-backlink-assumed",
+            Self::BendCachedOwnerAngleAssumed => "feature.bend-cached-owner-angle-assumed",
             Self::SceneOverrideAmbiguous => "scene.override-ambiguous",
             Self::SceneOverrideUnbound => "scene.override-unbound",
             Self::ScopeOwnerUnresolved => "scope.owner-unresolved",
@@ -1938,7 +1942,9 @@ impl F3dLossCode {
             | Self::BendRadiusFirstAssumed
             | Self::BendLineOwnerOrderAssumed
             | Self::BendStationarySelectionNative
-            | Self::BendRuleRadiusUnresolved => Severity::Warning,
+            | Self::BendRuleRadiusUnresolved
+            | Self::BendAngleOwnerBacklinkAssumed
+            | Self::BendCachedOwnerAngleAssumed => Severity::Warning,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => Severity::Info,
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
@@ -2410,7 +2416,9 @@ impl F3dLossCode {
             | Self::BendRadiusFirstAssumed
             | Self::BendLineOwnerOrderAssumed
             | Self::BendStationarySelectionNative
-            | Self::BendRuleRadiusUnresolved => LossTaxonomy::FeatureHistoryRetained,
+            | Self::BendRuleRadiusUnresolved
+            | Self::BendAngleOwnerBacklinkAssumed
+            | Self::BendCachedOwnerAngleAssumed => LossTaxonomy::FeatureHistoryRetained,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => {
                 LossTaxonomy::FeatureHistoryRetained
             }
