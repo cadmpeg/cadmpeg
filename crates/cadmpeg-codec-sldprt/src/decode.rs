@@ -1313,7 +1313,7 @@ pub(crate) fn append_design_losses(
                 FeatureOperation::MeshImport { .. }
                 | FeatureOperation::MeshSection { .. }
                 | FeatureOperation::MeshModify { .. }
-                | FeatureOperation::MeshConvert { .. } => false,
+                | FeatureOperation::MeshConvert(_) => false,
                 FeatureOperation::InsertComponent { occurrence } => !ir
                     .model
                     .occurrences

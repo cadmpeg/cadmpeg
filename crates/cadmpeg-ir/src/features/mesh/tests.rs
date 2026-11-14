@@ -367,11 +367,11 @@ fn conversion_wire_preserves_ordered_source_contexts() {
         ]
     });
     let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
-    let FeatureOperation::MeshConvert { sources, .. } = &operation else {
+    let FeatureOperation::MeshConvert(conversion) = &operation else {
         panic!("mesh conversion");
     };
-    assert_eq!(sources.len(), 3);
-    assert_eq!(sources[0], sources[1]);
+    assert_eq!(conversion.sources.len(), 3);
+    assert_eq!(conversion.sources[0], conversion.sources[1]);
     assert_eq!(serde_json::to_value(operation).unwrap(), wire);
     for method in ["faceted", "prismatic"] {
         let mut known = wire.clone();
@@ -443,4 +443,30 @@ fn conversion_rewrites_declared_native_and_typed_source_identities() {
         map.finish()
     })
     .unwrap();
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn conversion_schema_exposes_sources_on_the_tagged_operation() {
+    fn find_conversion(value: &serde_json::Value) -> Option<&serde_json::Value> {
+        if value["properties"]["definition"]["const"] == "mesh_convert"
+            || value["properties"]["definition"]["enum"] == serde_json::json!(["mesh_convert"])
+        {
+            return Some(value);
+        }
+        match value {
+            serde_json::Value::Object(fields) => fields.values().find_map(find_conversion),
+            serde_json::Value::Array(values) => values.iter().find_map(find_conversion),
+            _ => None,
+        }
+    }
+    let schema = serde_json::to_value(schemars::schema_for!(FeatureOperation)).unwrap();
+    let conversion = find_conversion(&schema).unwrap();
+    assert_eq!(conversion["properties"]["sources"]["type"], "array");
+    assert!(conversion["required"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("sources")));
+    assert!(conversion["properties"]["method"].is_object());
+    assert_eq!(conversion["additionalProperties"], false);
 }

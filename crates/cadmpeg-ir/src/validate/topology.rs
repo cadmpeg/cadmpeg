@@ -3155,8 +3155,8 @@ fn check_feature_references(
                     }
                 }
             }
-            FeatureOperation::MeshConvert { sources, .. } => {
-                for source in sources {
+            FeatureOperation::MeshConvert(conversion) => {
+                for source in &conversion.sources {
                     if let crate::features::mesh::MeshSelection::Tessellations(tessellations) =
                         source
                     {

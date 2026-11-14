@@ -6,7 +6,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::mesh::{MeshConversionMethod, MeshSelection};
+use cadmpeg_ir::features::mesh::{MeshConversion, MeshConversionMethod, MeshSelection};
 use cadmpeg_ir::features::{
     Feature, FeatureDefinition, FeatureOperation, NativeSelections, SelectionReference,
 };
@@ -253,9 +253,9 @@ pub(in crate::decode) fn bind_features(
         losses.append(&mut notes.losses);
         feature
             .evaluation
-            .set_definition(FeatureDefinition::Operation(
-                FeatureOperation::MeshConvert { sources, method },
-            ));
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::MeshConvert(
+                MeshConversion::new(sources, method),
+            )));
     }
     Ok(())
 }

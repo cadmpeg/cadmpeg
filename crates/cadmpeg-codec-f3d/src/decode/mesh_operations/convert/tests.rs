@@ -186,12 +186,12 @@ fn project(stream: &[u8], metadata: Option<&[u8]>, scoped: bool) -> (Feature, Ve
 }
 
 fn sources(feature: &Feature) -> &[MeshSelection] {
-    let FeatureDefinition::Operation(FeatureOperation::MeshConvert { sources, .. }) =
+    let FeatureDefinition::Operation(FeatureOperation::MeshConvert(conversion)) =
         feature.evaluation.definition()
     else {
         panic!("mesh conversion");
     };
-    sources
+    &conversion.sources
 }
 
 #[test]
@@ -248,12 +248,12 @@ fn conversion_methods_read_the_named_control_values_and_retain_unknown_values() 
         let (mut stream, meta) = fixture(4, 1);
         stream[25..29].copy_from_slice(&value.to_le_bytes());
         let (feature, codes) = project(&stream, Some(&meta), true);
-        let FeatureDefinition::Operation(FeatureOperation::MeshConvert { method, .. }) =
+        let FeatureDefinition::Operation(FeatureOperation::MeshConvert(conversion)) =
             feature.evaluation.definition()
         else {
             panic!("mesh conversion");
         };
-        assert_eq!(*method, expected);
+        assert_eq!(conversion.method, expected);
         assert_eq!(
             feature.source_properties["mesh-conversion-control"],
             value.to_string()
