@@ -141,7 +141,12 @@ pub(crate) fn joint_binds_after_merge(
     types: &StreamTypes<'_>,
 ) -> bool {
     scope.assembly_alignment().is_some_and(|alignment| {
-        alignment.frame_sense.is_some() && relation_only(scope, alignment, types)
+        alignment.frame_sense.is_some()
+            && matches!(
+                alignment.form,
+                Some(DesignAssemblyAlignmentForm::Qualified(_))
+            )
+            && relation_only(scope, alignment, types)
     })
 }
 
