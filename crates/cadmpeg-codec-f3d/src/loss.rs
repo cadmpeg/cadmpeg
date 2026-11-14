@@ -549,6 +549,11 @@ pub(crate) enum F3dLossCode {
     FeatureRectangularPatternPlacementNotTransferred,
     /// A `Thicken` scope stores a prologue flag byte `1` whose Thicken setting is unresolved.
     FeatureThickenFlagsAssumed,
+    ThickenTargetSelectionAssumed,
+    ThickenFrameAssumed,
+    ThickenThicknessUnresolved,
+    ThickenThicknessUnrepresentable,
+    ThickenFaceSelectionAssumed,
     /// A `Shell` reference table stores references outside its face-group members.
     FeatureShellTableMembersAssumed,
     FeatureShellIndependentWallsNative,
@@ -1048,6 +1053,11 @@ impl F3dLossCode {
         Self::FeaturePathPatternPlacementNotTransferred,
         Self::FeatureRectangularPatternPlacementNotTransferred,
         Self::FeatureThickenFlagsAssumed,
+        Self::ThickenTargetSelectionAssumed,
+        Self::ThickenFrameAssumed,
+        Self::ThickenThicknessUnresolved,
+        Self::ThickenThicknessUnrepresentable,
+        Self::ThickenFaceSelectionAssumed,
         Self::FeatureShellTableMembersAssumed,
         Self::FeatureShellIndependentWallsNative,
         Self::FeatureShellPrefixFlagAssumed,
@@ -1543,6 +1553,11 @@ impl F3dLossCode {
                 "feature.rectangular-pattern-placement-not-transferred"
             }
             Self::FeatureThickenFlagsAssumed => "feature.thicken-flags-assumed",
+            Self::ThickenTargetSelectionAssumed => "feature.thicken-target-selection-assumed",
+            Self::ThickenFrameAssumed => "feature.thicken-frame-assumed",
+            Self::ThickenThicknessUnresolved => "feature.thicken-thickness-unresolved",
+            Self::ThickenThicknessUnrepresentable => "feature.thicken-thickness-unrepresentable",
+            Self::ThickenFaceSelectionAssumed => "feature.thicken-face-selection-assumed",
             Self::FeatureShellTableMembersAssumed => "feature.shell-table-members-assumed",
             Self::FeatureShellIndependentWallsNative => "feature.shell-independent-walls-native",
             Self::FeatureShellPrefixFlagAssumed => "feature.shell-prefix-flag-assumed",
@@ -1978,6 +1993,11 @@ impl F3dLossCode {
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
+            | Self::ThickenTargetSelectionAssumed
+            | Self::ThickenThicknessUnresolved
+            | Self::ThickenThicknessUnrepresentable
+            | Self::ThickenFrameAssumed
+            | Self::ThickenFaceSelectionAssumed
             | Self::FeatureShellTableMembersAssumed
             | Self::FeatureShellIndependentWallsNative
             | Self::FeatureShellPrefixFlagAssumed
@@ -2327,6 +2347,11 @@ impl F3dLossCode {
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
+            | Self::ThickenTargetSelectionAssumed
+            | Self::ThickenThicknessUnresolved
+            | Self::ThickenThicknessUnrepresentable
+            | Self::ThickenFrameAssumed
+            | Self::ThickenFaceSelectionAssumed
             | Self::FeatureShellTableMembersAssumed
             | Self::FeatureShellIndependentWallsNative
             | Self::FeatureShellPrefixFlagAssumed
@@ -2781,6 +2806,11 @@ mod tests {
                 "feature.path-pattern-placement-not-transferred",
                 "feature.rectangular-pattern-placement-not-transferred",
                 "feature.thicken-flags-assumed",
+                "feature.thicken-target-selection-assumed",
+                "feature.thicken-frame-assumed",
+                "feature.thicken-thickness-unresolved",
+                "feature.thicken-thickness-unrepresentable",
+                "feature.thicken-face-selection-assumed",
                 "feature.shell-table-members-assumed",
                 "feature.shell-independent-walls-native",
                 "feature.shell-prefix-flag-assumed",
