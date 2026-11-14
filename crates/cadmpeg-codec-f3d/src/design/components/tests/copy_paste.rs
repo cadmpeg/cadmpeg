@@ -178,19 +178,36 @@ fn project(
 }
 
 #[test]
-fn a_strict_copy_transfer_preserves_insert_component_projection() {
+fn a_strict_copy_transfer_retains_history_when_its_occurrence_resolves() {
     let projected = [product_occurrence(&copy())];
     let (definition, losses) = project(
         &strict_copy_scope(translated(6.0)),
         &[source(), copy()],
         &projected,
     );
-    let FeatureDefinition::Operation(FeatureOperation::InsertComponent { occurrence }) = definition
+    let FeatureDefinition::Operation(FeatureOperation::ComponentTransfer {
+        mode,
+        occurrence,
+        component,
+        target_owner,
+        source_transform,
+        target_transform,
+        ..
+    }) = definition
     else {
-        panic!("a fully joined CopyPaste keeps its existing insertion projection");
+        panic!("a fully joined CopyPaste retains its transfer history");
     };
-    assert_eq!(occurrence, projected[0].id);
-    assert!(losses.is_empty());
+    assert_eq!(mode, cadmpeg_ir::features::ComponentTransferMode::Copy);
+    assert_eq!(occurrence, Some(projected[0].id.clone()));
+    assert!(component.is_some());
+    assert_eq!(component, target_owner);
+    assert_eq!(source_transform, target_transform);
+    assert_eq!(source_transform.unwrap().rows()[0][3], 60.0);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::FeatureOccurrenceTransferSourceUnresolved.kind()
+    );
 }
 
 #[test]

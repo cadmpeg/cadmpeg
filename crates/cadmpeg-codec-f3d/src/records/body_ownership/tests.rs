@@ -187,3 +187,47 @@ fn single_local_list_checks_count_extent_targets_and_identity() {
         }
     }
 }
+
+#[test]
+fn single_local_zero_word_membership_keeps_explicit_owner() {
+    for bodies in [&[][..], &[900][..], &[900, 901][..]] {
+        let paired = local_tail(bodies, 40);
+        let mut bytes = paired[..4 + bodies.len() * 11].to_vec();
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&paired[paired.len() - 11..]);
+        let join = membership(&bytes).unwrap();
+        assert_eq!(join.component, 40);
+        assert_eq!(join.bodies().collect::<Vec<_>>(), bodies);
+        for (ordinal, body) in bodies.iter().enumerate() {
+            assert_eq!(
+                join.proof(60, 100, ordinal).unwrap().component_for(*body),
+                Some(40)
+            );
+        }
+        let mut frame = vec![7; 23];
+        frame.extend_from_slice(&bytes);
+        assert_eq!(terminal_membership(&frame), Some(23));
+        bytes[4 + bodies.len() * 11] = 2;
+        assert!(membership(&bytes).is_none());
+    }
+}
+
+#[test]
+fn registered_body_types_disambiguate_a_zero_word_tail_from_a_prefix() {
+    let paired = local_tail(&[900], 40);
+    let mut single = paired[..15].to_vec();
+    single.extend_from_slice(&paired[paired.len() - 11..]);
+    for zero in [false, true] {
+        let mut frame = 1_u32.to_le_bytes().to_vec();
+        frame.extend_from_slice(&single[..15]);
+        if zero {
+            frame.extend_from_slice(&0_u32.to_le_bytes());
+        }
+        frame.extend_from_slice(&single[15..]);
+        let start = super::terminal_membership_for_bodies(&frame, |body| body == 900).unwrap();
+        assert_eq!(start, 4);
+        let join = membership(&frame[start..]).unwrap();
+        assert_eq!(join.bodies().collect::<Vec<_>>(), [900]);
+        assert_eq!(join.component, 40);
+    }
+}

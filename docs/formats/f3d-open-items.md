@@ -44,6 +44,28 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** The boundary program and source/history join of carrier type `50AEE8B4-9456-4DD7-847D-6F6C909BBB9D`, and a stored replacement or revision join that establishes membership of each added boundary curve and the feature-time parameter intervals of its adjacent members. This join must distinguish a boundary edit from an additional unselected region.
 
+### DR-523. Saved timeline marker position
+
+**Question.** Which record and field select the saved rollback position in the authored timeline?
+
+**Known.** `f3d.md` §3.1 "The Fusion feature-timeline record has type GUID" defines the context reference and ordered item run. One local corpus file has one 54-item run and two empty runs. Its final item is a Combine scope. Both history-state identities of that scope are null, which establishes suppression under §3.1 "An `Extrude`, `Fillet`, `Chamfer`, `Hole`, `Thread`, or `Combine` scope". Move scopes 6194 and 6642 occupy positions 45 and 51 and carry result states 3100 and 3106. Assemble scope 10307 occupies position 52. Companion RemoveBody 10422 belongs to the Combine item. The bound ASM histories terminate at states 3106 and 441.
+
+**Need.** Controlled saves that move the timeline marker across one active feature while preserving its suppression state. Bind the changed field to the timeline context and the selected BREP state in two independent designs. Compare a separate pair that changes suppression while preserving the marker position.
+
+**Note.** A suppressed final item establishes its own execution state. Its authored position and the terminal ASM state identities remain distinct from the saved rollback position. Joint activation remains under DR-249.
+
+### DR-520. Version-four operation-table pose selection
+
+**Question.** How does a version-four operation table select an occurrence, its final pose, and the saved operation state?
+
+**Known.** `f3d.md` §1.4 "**Direct operation-table poses.**" defines versions zero and one. One local corpus file registers three version-four records of the same type. Two records reference the root component and a common operation type; one also references an Assemble operation. The version-one prefix reading gives an empty occurrence path. Two independent public controls carry version-three tables with empty paths and version-two root-placement envelopes. The decoder retains these tables with `assembly.operation-table-pose-native`.
+
+**Need.** The complete version-three and version-four table grammars, a typed join from the table to the affected occurrence, and a saved-state selector. Compare two independent designs with an insertion followed by one position change, then vary suppression and the timeline position separately. Verify the coordinate frame against the containing occurrence and the selected component body.
+
+**Conflict.** In one local corpus file, a version-four table references the Assemble scope that precedes the final timeline item. The occurrence envelope carries a separate matrix. Their occurrence identity and pose precedence require a typed join. The admitted direct-path rule requires one occurrence-placement reference.
+
+**Note.** DR-113 covers pose precedence and saved-state selection across other path forms. This item covers the version-four wire grammar and its occurrence join. DR-523 covers the rollback marker. The complete table remains native.
+
 ### DR-463. Analytic sketch-curve tail flag frames
 
 **Question.** Which analytic sketch-curve tail frames carry the construction flag, and how does the type version select each frame?
@@ -988,7 +1010,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** A producer-generated radial TSM must retain a deleted domain slot at `p` and map a live element with raw slot `q > p`. The raw-slot prediction is `q`; the compact-index prediction after one deletion is `q-1`. Saving must preserve the deleted slot to separate these predictions. A controlled radial export with a nondefault sweep must establish the sweep-to-angle rule.
 
-### DR-625. Bend line association and stationary role
+### SM-01. Bend line association and stationary role
 
 **Question.** How does a Bend scope associate each angular owner with a selected sketch line and its stationary region?
 
@@ -2038,7 +2060,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder leaves unresolved construction settings unset and reports `feature.mesh-shell-controls-unresolved`.
 
-### DR-622. Mesh conversion controls
+### DR-625. Mesh conversion controls
 
 **Question.** Which conversion control selects the organic method, and which construction settings do the wrapper control fields select?
 
@@ -2050,7 +2072,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder reports `feature.mesh-conversion-method-assumed` for the control-to-method reading and `feature.mesh-conversion-method-unresolved` for an unruled control. A truncated scope reports `feature.mesh-conversion-scope-unparsed` or `feature.mesh-conversion-tail-partial` and retains readable controls and inputs.
 
-### DR-623. Mesh conversion output envelope
+### DR-626. Mesh conversion output envelope
 
 **Question.** Which format discriminator selects the optional four-byte control before the output count?
 
@@ -2062,7 +2084,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder reports `feature.mesh-conversion-envelope-assumed` for this envelope reading.
 
-### DR-624. Mesh conversion geometry identities
+### DR-627. Mesh conversion geometry identities
 
 **Question.** Which historical tessellation and neutral result body does each conversion wrapper identify?
 
@@ -2204,7 +2226,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** None.
 
-### DR-626. Counted Shell prefix byte and partial envelopes
+### DR-622. Counted Shell prefix byte and partial envelopes
 
 **Question.** Which option does the counted Shell prefix byte select, and which fields preserve the wall-slot direction when that byte is nonzero or the envelope tail is incomplete?
 
@@ -2216,7 +2238,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** Partial Shell projection reports `feature.shell-counted-control-assumed` for reading the byte as a separate prefix field, `feature.shell-slot-direction-assumed` for the nonzero form's inside-first reading and `feature.shell-envelope-assumed` when a unique partial prefix supplies wall data. Unresolved values and selections remain in `shell:source` with their references and byte locations.
 
-### DR-627. Simultaneous Shell face and body groups
+### DR-623. Simultaneous Shell face and body groups
 
 **Question.** How do the removed-face group and the target-body group jointly select a Shell operation when its prefix names both groups?
 
@@ -2862,3 +2884,15 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The unresolved members retain their native identities and report `history.edge-midpoints-unresolved`. DR-164 tracks selectors over populated lanes; DR-224 tracks incomplete transition proofs.
+
+### DR-530. Body frame of object-prelude occurrence snapshots
+
+**Question.** How does the closing placement of an object-prelude occurrence map the solved BREP body frame into its containing component?
+
+**Known.** The BMG carriers 505–508, 577–582, 587, 624 and 664 and PFA carrier 259 have an object property prelude, a one-byte zero ordinal prefix, and one closing placement. Their carrier GUID follows the ordinal directly. The closing component reference precedes the placement flag. BMG chain 582 × 578 × 624 gives the 50T disk a Y axis with its XZ center at (-4.3,13.5) mm; the mating shaft axis is near (0,0) mm. PFA carrier 259 rotates the solved flange's X axis to Z; the mating pulley has axis X. These files have zero admitted CommonData component paths. The leading-source and closing-local placements in the F30 generation are separate fields in another complete envelope.
+
+**Need.** A controlled object-prelude save with a moved component, its original and solved BREP frames, and an independent current placement. Determine the reference frame of the closing matrix and the body-frame correction before admitting that matrix as a body placement.
+
+**Conflict.** Treating every object-prelude closing matrix as a solved-body local placement gives the two incorrect mating placements above.
+
+**Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve.
