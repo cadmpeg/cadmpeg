@@ -36,6 +36,8 @@ pub(crate) enum F3dLossCode {
     ScopeOwnerUnresolved,
     /// A history output body belongs to another product definition.
     ScopeOutputOwnerMismatch,
+    /// Unadmitted output membership prevents a unique history product owner.
+    ScopeOutputOwnerUnresolved,
     /// A bound sketch collection belongs to another product definition.
     ScopeSketchOwnerMismatch,
     /// Component-path constraints prevent a uniform operation-table pose.
@@ -123,6 +125,11 @@ pub(crate) enum F3dLossCode {
     RootInstanceDefinitionUnbound,
     /// Alternate occurrence frames without a unique primary-indexed selection.
     LocalOccurrenceEnvelopeSuperseded,
+    /// A registered unnamed local occurrence has an unresolved envelope.
+    LocalOccurrenceEnvelopeNative,
+    /// A component-path record with only local elements matches no admitted
+    /// local path form.
+    LocalComponentPathNative,
     /// A leading-flag occurrence frame whose record the occurrence-placement
     /// type row does not register.
     LocalOccurrenceTypeUnregistered,
@@ -867,6 +874,7 @@ impl F3dLossCode {
         Self::OperationPoseApplied,
         Self::ScopeOwnerUnresolved,
         Self::ScopeOutputOwnerMismatch,
+        Self::ScopeOutputOwnerUnresolved,
         Self::ScopeSketchOwnerMismatch,
         Self::OperationPoseDisagrees,
         Self::OperationPoseNative,
@@ -913,6 +921,8 @@ impl F3dLossCode {
         Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
         Self::LocalOccurrenceEnvelopeSuperseded,
+        Self::LocalOccurrenceEnvelopeNative,
+        Self::LocalComponentPathNative,
         Self::LocalOccurrenceTypeUnregistered,
         Self::LocalOccurrenceYieldedToRegistered,
         Self::LocalOccurrenceKeyRepeated,
@@ -1361,6 +1371,7 @@ impl F3dLossCode {
             Self::SceneOverrideUnbound => "scene.override-unbound",
             Self::ScopeOwnerUnresolved => "scope.owner-unresolved",
             Self::ScopeOutputOwnerMismatch => "scope.output-owner-mismatch",
+            Self::ScopeOutputOwnerUnresolved => "scope.output-owner-unresolved",
             Self::ScopeSketchOwnerMismatch => "scope.sketch-owner-mismatch",
             Self::OperationPoseApplied => "assembly.operation-table-pose",
             Self::OperationPoseDisagrees => "assembly.operation-table-pose-disagrees",
@@ -1417,6 +1428,8 @@ impl F3dLossCode {
             Self::ComponentNamingSpaceUnbound => "assembly.component-naming-space-unbound",
             Self::RootInstanceDefinitionUnbound => "assembly.root-instance-definition-unbound",
             Self::SavedFreeEdgeBodyUnowned => "assembly.saved-free-edge-body-unowned",
+            Self::LocalOccurrenceEnvelopeNative => "assembly.local-occurrence-envelope-native",
+            Self::LocalComponentPathNative => "assembly.local-component-path-native",
             Self::LocalOccurrenceIdentityOrdinalUnresolved => {
                 "assembly.local-occurrence-identity-ordinal-unresolved"
             }
@@ -2032,6 +2045,7 @@ impl F3dLossCode {
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
             Self::ScopeOwnerUnresolved
+            | Self::ScopeOutputOwnerUnresolved
             | Self::OperationPoseApplied
             | Self::OperationPoseNative
             | Self::BodylessDesignCarrier
@@ -2118,6 +2132,8 @@ impl F3dLossCode {
             | Self::LocalOccurrenceSourceUnregistered
             | Self::LocalOccurrenceKeyRepeated
             | Self::LocalOccurrenceFirstMatrixRefused
+            | Self::LocalOccurrenceEnvelopeNative
+            | Self::LocalComponentPathNative
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::LocalOccurrenceTypeUnregistered
             | Self::LocalOccurrenceYieldedToRegistered
@@ -2524,9 +2540,9 @@ impl F3dLossCode {
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => {
                 LossTaxonomy::FeatureHistoryRetained
             }
-            Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => {
-                LossTaxonomy::FeatureHistoryRetained
-            }
+            Self::ScopeOutputOwnerMismatch
+            | Self::ScopeOutputOwnerUnresolved
+            | Self::ScopeSketchOwnerMismatch => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
@@ -2946,6 +2962,8 @@ impl F3dLossCode {
             | Self::LocalOccurrenceTypeUnregistered
             | Self::LocalOccurrenceKeyRepeated
             | Self::LocalOccurrenceFirstMatrixRefused
+            | Self::LocalOccurrenceEnvelopeNative
+            | Self::LocalComponentPathNative
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
@@ -3069,6 +3087,7 @@ mod tests {
                 "assembly.operation-table-pose",
                 "scope.owner-unresolved",
                 "scope.output-owner-mismatch",
+                "scope.output-owner-unresolved",
                 "scope.sketch-owner-mismatch",
                 "assembly.operation-table-pose-disagrees",
                 "assembly.operation-table-pose-native",
@@ -3115,6 +3134,8 @@ mod tests {
                 "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
                 "assembly.local-occurrence-envelope-superseded",
+                "assembly.local-occurrence-envelope-native",
+                "assembly.local-component-path-native",
                 "assembly.local-occurrence-type-unregistered",
                 "assembly.local-occurrence-yielded-to-registered",
                 "assembly.local-occurrence-key-repeated",

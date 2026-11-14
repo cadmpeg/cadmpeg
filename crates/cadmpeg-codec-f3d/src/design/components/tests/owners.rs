@@ -187,3 +187,35 @@ fn a_unique_owner_chain_composes_and_unresolved_owners_keep_the_root_placement()
         }
     }
 }
+
+#[test]
+fn an_unbound_fallback_body_has_a_stored_frame_definition() {
+    let components = std::collections::BTreeMap::from([(
+        super::STREAM.to_owned(),
+        crate::design::decode::components::StreamComponents::default(),
+    )]);
+    let body = cadmpeg_ir::ids::BodyId::mint(super::COMPONENT_BODY).unwrap();
+    let bodies = BTreeSet::from([body.clone()]);
+    let mut binding = super::binding(1000, 900, super::COMPONENT_BODY);
+    binding.component_owner = None;
+    let bindings = [binding];
+    let sources = super::super::LocalComponentSources {
+        hidden_bodies: None,
+        scopes: &[],
+        occurrences: &[],
+        paths: &[],
+        components: &components,
+        body_bindings: &bindings,
+        bodies: Some(&bodies),
+        root_ordinal_start: 0,
+        limits: cadmpeg_core::decode::ResourceLimits::default(),
+    };
+    let projection = super::super::project_local_components(&sources).unwrap();
+    assert!(projection.occurrences.is_empty());
+    assert_eq!(projection.definitions.len(), 1);
+    assert_eq!(projection.definitions[0].bodies, [body]);
+    assert!(projection
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::ComponentBodyOwnerFallback.kind()));
+}
