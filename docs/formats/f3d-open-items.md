@@ -3010,3 +3010,27 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The tool stays native and reports `feature.combine-tool-body-unbound`. Proven tools of the same `Combine` still add their generating features as dependencies.
+
+### DR-651. Bounded-face recipe with more nodes than its lane face has boundary edges
+
+**Question.** What do the nodes of an `Extrude` termination bounded-face recipe count when the recipe stores more nodes than the one candidate face of its operand lanes has boundary edges in the preceding topology?
+
+**Known.** One termination recipe stores 18 nodes: eight one-clause nodes that each bind a closed edge, and ten two-clause nodes. The lane face of its first operand is the only face that the lanes name. In the preceding topology that face has 16 boundary edges: eight closed edges, each a single-edge loop, and one outer loop of eight edges. The eight closed edges match eight one-clause nodes. The ten two-clause nodes exceed the eight outer-loop edges by two.
+
+**Need.** A save that stores a termination recipe whose face boundary has one split or merged outer edge, with the topology state of the recipe and the preceding state of the feature.
+
+**Conflict.** None.
+
+**Note.** The termination stays the native selection and reports `feature.face-selection-native`.
+
+### DR-652. Base Feature frame of 257 bytes with the zero-body prefix
+
+**Question.** Does a class-341 `Base Feature` primary paired with class 263 and a 257-byte frame store an empty result-body set?
+
+**Known.** The frame carries `u8 1` at offset 20, zero bytes at offsets 11 through 19 and 21 through 31, `u8 1` at offset 32, the shared metadata record at offset 33, u32 `36` at offset 55, a null GUID at offset 59, u32 `1` at offset 134, the current history-state u32 at offset 149, and the kind at offset 157, as the class-444 zero-body frame does. The frame is one byte shorter than the 258-byte zero-body frame. The current and previous history-state identities are equal. No decoded body-entity suffix or result record exists. Three such scopes occur in one design.
+
+**Need.** The meaning of the one byte by which the frame is shorter, from a design that stores such a scope after a feature that changes bodies.
+
+**Conflict.** None.
+
+**Note.** The scope stays a native `Base Feature` selection and reports `feature.stored-bodies-unbound`.
