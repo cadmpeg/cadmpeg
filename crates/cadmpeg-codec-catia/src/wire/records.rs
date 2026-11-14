@@ -306,7 +306,7 @@ pub(crate) enum ConsolidatedFrameWidth {
     Two,
     /// Three-byte header token.
     Three,
-    /// Four-byte header token in a B-family allocation run.
+    /// Four-byte header token in an allocation run.
     Four,
 }
 
@@ -979,8 +979,13 @@ fn parse_record(
     let (family, width, token_at, length) = if let Some(width) = data
         .get(pos)
         .and_then(|byte| byte.checked_sub(0xa4))
-        .and_then(ConsolidatedFrameWidth::from_byte)
-    {
+        .and_then(|width| {
+            if allocation_run && width == 4 {
+                Some(ConsolidatedFrameWidth::Four)
+            } else {
+                ConsolidatedFrameWidth::from_byte(width)
+            }
+        }) {
         let length = View::u32_le_at(data, pos.checked_add(a_frame::PAYLOAD_LEN)?)
             .and_then(|value| usize::try_from(value).ok())?;
         (

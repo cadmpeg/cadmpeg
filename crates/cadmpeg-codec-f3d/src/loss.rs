@@ -268,6 +268,9 @@ pub(crate) enum F3dLossCode {
     SurfacePatchUnorderedReferenceRunsAssumed,
     /// A box scope has no fully decoded dimensions and local frame.
     FeatureBoxPrimitiveUnresolved,
+    FeatureBoxOffsetFrameAssumed,
+    FeatureBoxSupportFrameAssumed,
+    FeatureBoxSupportFlagsAssumed,
     /// Sheet-metal base flanges projected with their stored thickness copy because
     /// their rule states no thickness.
     SheetThicknessUnruled,
@@ -279,14 +282,14 @@ pub(crate) enum F3dLossCode {
     ModifyUnprojected,
     /// Hole extent controls do not define an admitted termination.
     HoleExtentUnproven,
-    /// An Extents To Hole ends at the face its extent group member resolves.
-    HoleExtentFaceAssumed,
     /// A Hole carrier and its point-data records do not define an admitted placement.
     HolePlacementUnproven,
     HoleReferenceDimensionsNative,
     HoleParametersIndependentAssumed,
     HoleShapePartialAssumed,
     HoleExtentLeadingWordAssumed,
+    /// A tapped Hole keeps its stored diameter instead of the bore of its thread size.
+    HoleTappedDiameterStored,
     HoleStandardSizingAssumed,
     HoleCarrierAxisAssumed,
     /// Align operand roles and motion have no neutral binding.
@@ -378,6 +381,8 @@ pub(crate) enum F3dLossCode {
     SketchPlacementUnprojected,
     /// Decoded sketch points have no neutral sketch entity.
     SketchPointUnprojected,
+    /// One indexed sketch-point record failed decoding.
+    SketchPointUndecoded,
     /// Decoded sketch curves have no neutral sketch entity.
     SketchCurveUnprojected,
     /// Decoded sketch surfaces have no neutral spatial sketch entity.
@@ -894,17 +899,20 @@ impl F3dLossCode {
         Self::SurfacePatchUnnamedGroupsAssumedInactive,
         Self::SurfacePatchUnorderedReferenceRunsAssumed,
         Self::FeatureBoxPrimitiveUnresolved,
+        Self::FeatureBoxOffsetFrameAssumed,
+        Self::FeatureBoxSupportFrameAssumed,
+        Self::FeatureBoxSupportFlagsAssumed,
         Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
         Self::MoveUnprojected,
         Self::ModifyUnprojected,
         Self::HoleExtentUnproven,
-        Self::HoleExtentFaceAssumed,
         Self::HolePlacementUnproven,
         Self::HoleReferenceDimensionsNative,
         Self::HoleParametersIndependentAssumed,
         Self::HoleShapePartialAssumed,
         Self::HoleExtentLeadingWordAssumed,
+        Self::HoleTappedDiameterStored,
         Self::HoleStandardSizingAssumed,
         Self::HoleCarrierAxisAssumed,
         Self::AlignOperandsUnresolved,
@@ -953,6 +961,7 @@ impl F3dLossCode {
         Self::SketchDimensionNativeRetained,
         Self::SketchPlacementUnprojected,
         Self::SketchPointUnprojected,
+        Self::SketchPointUndecoded,
         Self::SketchCurveUnprojected,
         Self::SketchSurfaceUnprojected,
         Self::SketchTextUnprojected,
@@ -1334,6 +1343,9 @@ impl F3dLossCode {
                 "feature.surface-patch-unordered-reference-runs-assumed"
             }
             Self::FeatureBoxPrimitiveUnresolved => "feature.box-primitive-unresolved",
+            Self::FeatureBoxOffsetFrameAssumed => "feature.box-offset-frame-assumed",
+            Self::FeatureBoxSupportFrameAssumed => "feature.box-support-frame-assumed",
+            Self::FeatureBoxSupportFlagsAssumed => "feature.box-support-flags-assumed",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
             Self::FeatureMeshImportTessellationsUnresolved => {
                 "feature.mesh-import-tessellations-unresolved"
@@ -1362,12 +1374,12 @@ impl F3dLossCode {
             Self::FeatureChamferSetConflict => "feature.chamfer-set-conflict",
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
-            Self::HoleExtentFaceAssumed => "feature.hole-extent-face-assumed",
             Self::HolePlacementUnproven => "feature.hole-placement-unproven",
             Self::HoleReferenceDimensionsNative => "feature.hole-reference-dimensions-native",
             Self::HoleParametersIndependentAssumed => "feature.hole-parameters-independent-assumed",
             Self::HoleShapePartialAssumed => "feature.hole-shape-partial-assumed",
             Self::HoleExtentLeadingWordAssumed => "feature.hole-extent-leading-word-assumed",
+            Self::HoleTappedDiameterStored => "feature.hole-tapped-diameter-stored",
             Self::HoleStandardSizingAssumed => "feature.hole-standard-sizing-assumed",
             Self::HoleCarrierAxisAssumed => "feature.hole-carrier-axis-assumed",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
@@ -1404,6 +1416,7 @@ impl F3dLossCode {
             Self::SketchDimensionNativeRetained => "sketch.dimension-native",
             Self::SketchPlacementUnprojected => "sketch.placement-unprojected",
             Self::SketchPointUnprojected => "sketch.point-unprojected",
+            Self::SketchPointUndecoded => "sketch.point-undecoded",
             Self::SketchCurveUnprojected => "sketch.curve-unprojected",
             Self::SketchSurfaceUnprojected => "sketch.surface-unprojected",
             Self::SketchTextUnprojected => "sketch.text-unprojected",
@@ -1817,18 +1830,21 @@ impl F3dLossCode {
             | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
             | Self::FeatureBoxPrimitiveUnresolved
+            | Self::FeatureBoxOffsetFrameAssumed
+            | Self::FeatureBoxSupportFrameAssumed
+            | Self::FeatureBoxSupportFlagsAssumed
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureMeshImportTessellationsUnresolved
             | Self::FeatureMeshImportEmptySourceAssumed
             | Self::FeatureMeshImportSourceUnparsed
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
-            | Self::HoleExtentFaceAssumed
             | Self::HolePlacementUnproven
             | Self::HoleReferenceDimensionsNative
             | Self::HoleParametersIndependentAssumed
             | Self::HoleShapePartialAssumed
             | Self::HoleExtentLeadingWordAssumed
+            | Self::HoleTappedDiameterStored
             | Self::HoleStandardSizingAssumed
             | Self::HoleCarrierAxisAssumed
             | Self::FeatureScopeUnprojected
@@ -1881,6 +1897,7 @@ impl F3dLossCode {
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
             | Self::SketchPointUnprojected
+            | Self::SketchPointUndecoded
             | Self::SketchCurveUnprojected
             | Self::SketchSurfaceUnprojected
             | Self::SketchTextUnprojected
@@ -2169,6 +2186,9 @@ impl F3dLossCode {
             | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
             | Self::FeatureBoxPrimitiveUnresolved
+            | Self::FeatureBoxOffsetFrameAssumed
+            | Self::FeatureBoxSupportFrameAssumed
+            | Self::FeatureBoxSupportFlagsAssumed
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureMeshImportTessellationsUnresolved
             | Self::FeatureMeshImportEmptySourceAssumed
@@ -2179,12 +2199,12 @@ impl F3dLossCode {
             | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
             | Self::HoleExtentUnproven
-            | Self::HoleExtentFaceAssumed
             | Self::HolePlacementUnproven
             | Self::HoleReferenceDimensionsNative
             | Self::HoleParametersIndependentAssumed
             | Self::HoleShapePartialAssumed
             | Self::HoleExtentLeadingWordAssumed
+            | Self::HoleTappedDiameterStored
             | Self::HoleStandardSizingAssumed
             | Self::HoleCarrierAxisAssumed
             | Self::FeatureScopeUnprojected
@@ -2401,7 +2421,8 @@ impl F3dLossCode {
             Self::BrepBlobUndecoded
             | Self::SurfaceShapeNotDecoded
             | Self::GeometryNotTransferred
-            | Self::TsplineCageUndecoded => LossTaxonomy::GeometryNotTransferred,
+            | Self::TsplineCageUndecoded
+            | Self::SketchPointUndecoded => LossTaxonomy::GeometryNotTransferred,
             Self::MeshContainerUnjoined | Self::MeshContainerMissing => {
                 LossTaxonomy::AssetNotTransferred
             }
@@ -2623,17 +2644,20 @@ mod tests {
                 "feature.surface-patch-unnamed-groups-assumed-inactive",
                 "feature.surface-patch-unordered-reference-runs-assumed",
                 "feature.box-primitive-unresolved",
+                "feature.box-offset-frame-assumed",
+                "feature.box-support-frame-assumed",
+                "feature.box-support-flags-assumed",
                 "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",
                 "feature.move-unprojected",
                 "feature.modify-unprojected",
                 "feature.hole-extent-unproven",
-                "feature.hole-extent-face-assumed",
                 "feature.hole-placement-unproven",
                 "feature.hole-reference-dimensions-native",
                 "feature.hole-parameters-independent-assumed",
                 "feature.hole-shape-partial-assumed",
                 "feature.hole-extent-leading-word-assumed",
+                "feature.hole-tapped-diameter-stored",
                 "feature.hole-standard-sizing-assumed",
                 "feature.hole-carrier-axis-assumed",
                 "feature.align-operands-unresolved",
@@ -2682,6 +2706,7 @@ mod tests {
                 "sketch.dimension-native",
                 "sketch.placement-unprojected",
                 "sketch.point-unprojected",
+                "sketch.point-undecoded",
                 "sketch.curve-unprojected",
                 "sketch.surface-unprojected",
                 "sketch.text-unprojected",

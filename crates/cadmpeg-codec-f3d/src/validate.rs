@@ -15,6 +15,7 @@ mod emboss;
 mod extrude_operands;
 mod path_pattern;
 mod sheet_metal_settings;
+mod sketch_scope;
 mod xref;
 
 use xref::validate_xref_placement_sources;
@@ -2143,7 +2144,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let entities_by_suffix = &ctx.entities_by_suffix;
-    let placements_by_scope = &ctx.placements_by_scope;
     let mut scope_indices = HashSet::new();
     let mut stream_types_by_stream = std::collections::HashMap::new();
     for scope in &native.design_parameter_scopes {
@@ -4392,8 +4392,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && joint_origin_link
             && work_point_link
             && work_plane_link
-            && (scope.sketch_entity().is_none()
-                || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
+            && sketch_scope::placement_link(ctx, scope)
             && unique_index;
         if !valid {
             push_constant_finding(

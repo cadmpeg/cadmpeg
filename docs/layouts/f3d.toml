@@ -3671,7 +3671,7 @@ kind = "byte"
 section = "3.1"
 anchor = "Type version `4` stores the extent controls `01 01 X 00` directly"
 size = 4
-note = "Offsets are relative to the end of the Hole property block, or to the end of the u32 word that type versions 5 and 7 store after it. Type version 3 stores only the two-byte prefix."
+note = "Offsets are relative to the end of the Hole property block, or to the end of the u32 tap type that type versions 5 and 7 store after it. Type version 3 stores only the two-byte prefix."
 
 [[record.field]]
 name = "prefix"
@@ -35686,3 +35686,325 @@ offset = 17
 type = "u8"
 source = "spec"
 anchor = "reference, six zero bytes, an identity byte"
+
+[[record]]
+name = "marked_reference_box_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The marked-reference `BoxPrimitive` form has an eight-member or ten-member ordered reference table"
+size = 339
+note = "Scope-relative prefix through the ordered reference count."
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/solid_primitive.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Bytes 11 through 20 are zero, byte 21 is `0x01`"
+
+[[record.field]]
+name = "form_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "Bytes 11 through 20 are zero, byte 21 is `0x01`"
+
+[[record.field]]
+name = "operation"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "the result-operation u32 is at offset 22 with the four values of the named form"
+
+[[record.field]]
+name = "nested_marker"
+offset = 26
+type = "u8"
+source = "spec"
+anchor = "and byte 26 is `0x01`"
+
+[[record.field]]
+name = "references"
+offset = 27
+type = "bytes[77]"
+source = "spec"
+anchor = "Seven eleven-byte marked references start at offset 27"
+
+[[record.field]]
+name = "zero_before_matrix"
+offset = 104
+type = "u8"
+source = "spec"
+anchor = "Byte 104 is zero"
+
+[[record.field]]
+name = "matrix"
+offset = 105
+type = "f64[16]"
+source = "spec"
+anchor = "The row-major rigid right-handed 4x4 f64 matrix at offset 105"
+
+[[record.gap]]
+offset = 233
+size = 23
+note = "Bytes between the matrix and null GUID."
+
+[[record.field]]
+name = "guid_code_unit_count"
+offset = 256
+type = "u32"
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 null GUID begins at offset 256"
+
+[[record.field]]
+name = "guid"
+offset = 260
+type = "bytes[72]"
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 null GUID begins at offset 256"
+
+[[record.field]]
+name = "zero_run_3"
+offset = 332
+type = "bytes[3]"
+source = "spec"
+anchor = "followed by three zero bytes at offset 332"
+
+[[record.field]]
+name = "reference_count"
+offset = 335
+type = "u32"
+source = "spec"
+anchor = "the reference count at offset 335"
+
+[[record]]
+name = "prefixed_marked_reference_box_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The prefixed marked-reference `BoxPrimitive` forms store nine zero bytes"
+size = 343
+note = "Scope-relative prefix through the ordered reference count."
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/solid_primitive.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "one_prefix"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at offset 20"
+
+[[record.field]]
+name = "zero_flag"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "zero at offset 24"
+
+[[record.field]]
+name = "form_marker"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "`0x01` at offset 25"
+
+[[record.field]]
+name = "operation"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "Their result-operation u32 is at offset 26"
+
+[[record.field]]
+name = "nested_marker"
+offset = 30
+type = "u8"
+source = "spec"
+anchor = "followed by `0x01` at offset 30"
+
+[[record.field]]
+name = "references"
+offset = 31
+type = "bytes[77]"
+source = "spec"
+anchor = "seven eleven-byte marked references at offset 31"
+
+[[record.field]]
+name = "zero_before_matrix"
+offset = 108
+type = "u8"
+source = "spec"
+anchor = "Byte 108 is zero"
+
+[[record.field]]
+name = "matrix"
+offset = 109
+type = "f64[16]"
+source = "spec"
+anchor = "the box-local rigid matrix starts at offset 109"
+
+[[record.field]]
+name = "guid_code_unit_count"
+offset = 260
+type = "u32"
+source = "spec"
+anchor = "null GUID at offset 260"
+
+[[record.field]]
+name = "guid"
+offset = 264
+type = "bytes[72]"
+source = "spec"
+anchor = "null GUID at offset 260"
+
+[[record.field]]
+name = "zero_run_3"
+offset = 336
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes at offset 336"
+
+[[record.field]]
+name = "reference_count"
+offset = 339
+type = "u32"
+source = "spec"
+anchor = "the reference count at offset 339"
+
+[[record.gap]]
+offset = 237
+size = 23
+note = "Bytes between the matrix and null GUID."
+
+[[record]]
+name = "extended_prefixed_marked_reference_box_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The prefixed marked-reference `BoxPrimitive` forms store nine zero bytes"
+size = 347
+note = "Scope-relative prefix through the ordered reference count."
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/solid_primitive.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "one_prefix"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at offset 20"
+
+[[record.field]]
+name = "zero_flag"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "zero at offset 24"
+
+[[record.field]]
+name = "form_marker"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "`0x01` at offset 25"
+
+[[record.field]]
+name = "operation"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "Their result-operation u32 is at offset 26"
+
+[[record.field]]
+name = "nested_marker"
+offset = 30
+type = "u8"
+source = "spec"
+anchor = "followed by `0x01` at offset 30"
+
+[[record.field]]
+name = "references"
+offset = 31
+type = "bytes[77]"
+source = "spec"
+anchor = "seven eleven-byte marked references at offset 31"
+
+[[record.field]]
+name = "zero_before_matrix"
+offset = 108
+type = "u8"
+source = "spec"
+anchor = "Byte 108 is zero"
+
+[[record.field]]
+name = "matrix"
+offset = 109
+type = "f64[16]"
+source = "spec"
+anchor = "the box-local rigid matrix starts at offset 109"
+
+[[record.field]]
+name = "guid_code_unit_count"
+offset = 264
+type = "u32"
+source = "spec"
+anchor = "GUID at offset 264"
+
+[[record.field]]
+name = "guid"
+offset = 268
+type = "bytes[72]"
+source = "spec"
+anchor = "GUID at offset 264"
+
+[[record.field]]
+name = "zero_run_3"
+offset = 340
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes at offset 340"
+
+[[record.field]]
+name = "reference_count"
+offset = 343
+type = "u32"
+source = "spec"
+anchor = "the reference count at offset 343"
+
+[[record.gap]]
+offset = 237
+size = 27
+note = "Bytes between the matrix and null GUID."
