@@ -61,6 +61,7 @@ fn fixture_with_flags(
             secondary_id: 0,
             geometry: None,
             planar_z_noise: None,
+            tail_marker: None,
         });
     }
     let profiles = profile_entities

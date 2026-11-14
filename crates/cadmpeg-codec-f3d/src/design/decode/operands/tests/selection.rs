@@ -1176,6 +1176,7 @@ fn a_sketch_point_frame_matches_no_curve_and_names_no_topology_identity() {
         secondary_id: 0,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     };
     assert!(!super::super::entity_selection_matches_curve(
         &point, &curve

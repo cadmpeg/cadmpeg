@@ -207,7 +207,7 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
 }
 
 #[test]
-fn unadmitted_membership_keeps_the_body_in_an_uninstanced_definition() {
+fn unadmitted_membership_places_the_body_once_at_its_stored_frame() {
     for owners in [&[][..], &[200, 300][..], &[999][..]] {
         let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(owners);
         let bytes = f3d_with_breps_and_design(
@@ -236,12 +236,36 @@ fn unadmitted_membership_keeps_the_body_in_an_uninstanced_definition() {
             .iter()
             .find(|definition| !definition.bodies.is_empty())
             .unwrap();
-        assert!(model.occurrences.iter().all(|occurrence| {
-            occurrence.prototype
-                != cadmpeg_ir::products::PrototypeReference::Local {
-                    definition: definition.id.clone(),
-                }
-        }));
+        let stored = model
+            .occurrences
+            .iter()
+            .filter(|occurrence| {
+                occurrence.prototype
+                    == cadmpeg_ir::products::PrototypeReference::Local {
+                        definition: definition.id.clone(),
+                    }
+            })
+            .collect::<Vec<_>>();
+        // A model without occurrences stays flat; otherwise the definition
+        // has one identity occurrence below the document root.
+        if model.occurrences.is_empty() {
+            assert!(stored.is_empty());
+        } else {
+            assert_eq!(stored.len(), 1);
+            assert_eq!(
+                stored[0].parent,
+                cadmpeg_ir::products::OccurrenceParent::Root {}
+            );
+            assert_eq!(
+                stored[0].transform,
+                cadmpeg_ir::transform::Transform::identity()
+            );
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == F3dLossCode::StoredFrameOccurrence.kind()));
+        }
         assert!(result.report().losses.iter().any(|loss| loss.code
             == if owners.is_empty() {
                 F3dLossCode::ComponentBodyOwnerFallback.kind()

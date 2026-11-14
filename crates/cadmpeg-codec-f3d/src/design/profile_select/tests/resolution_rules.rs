@@ -1070,6 +1070,7 @@ fn unresolved_explicit_region_fixture(
             secondary_id: 0,
             geometry: None,
             planar_z_noise: None,
+            tail_marker: None,
         });
     }
     let sketch = make_sketch(
@@ -1625,6 +1626,7 @@ fn resolved_explicit_profiles_reject_partial_or_hole_candidates() {
                 secondary_id: 0,
                 geometry: None,
                 planar_z_noise: None,
+                tail_marker: None,
             });
         }
         // Loop 0: outer triangle [100, 101, 102]; Loop 1: inner circle [200].

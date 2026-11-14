@@ -1551,6 +1551,7 @@ fn fixed_kind_edge_and_revolve_operations(
             .unwrap(),
         ),
         planar_z_noise: None,
+        tail_marker: None,
     };
     let projected = crate::design::feature_project::project_fixed_revolve_with_entities(
         &indexed_revolve_scope,

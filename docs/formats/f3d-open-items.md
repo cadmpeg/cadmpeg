@@ -2106,6 +2106,42 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder reports `feature.mesh-conversion-source-unresolved` and `feature.mesh-conversion-output-unresolved`. DR-504 tracks input member-tail selections.
 
+### MC-04. Mesh combination selector three
+
+**Question.** Which result structure does mesh combination selector `3` create?
+
+**Known.** The selector follows the mesh scope prefix. The decoder projects selector `3` as a compound with target members followed by tool members.
+
+**Need.** Controlled saves that distinguish preserved interior structures, ordered compound members, and the resulting mesh-body identity.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-combine-merge-assumed`.
+
+### MC-05. Mesh combination retention and destination
+
+**Question.** Which fields select tool retention and the result component of a mesh combination?
+
+**Known.** The version-2 prefix contains an additional control word. Both versions contain a control byte. Boolean projection assumes consumed tools and the target component. Compound projection retains the controls with unresolved retention and destination.
+
+**Need.** Controlled saves that change Keep Tools and New Component independently, with both scope versions.
+
+**Conflict.** None.
+
+**Note.** Boolean projection reports `feature.mesh-combine-keep-tools-assumed-false` and `feature.mesh-combine-destination-assumed-target-component`. Compound projection reports `feature.mesh-combine-keep-tools-unresolved` and `feature.mesh-combine-destination-unresolved`.
+
+### MC-06. Legacy mesh combination Boolean selectors
+
+**Question.** Which operations do version-1 mesh combination selectors `0`, `1`, and `2` select?
+
+**Known.** Both scope versions store an operation selector. The decoder applies the version-2 Boolean selector mapping to these version-1 values.
+
+**Need.** Version-1 saves with independently selected join, cut, and intersection operations.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-combine-legacy-boolean-assumed`.
+
 ### DR-373. Mesh body and collection-owner payload fields
 
 **Question.** What do the compact matrix flags, the further mesh-body reference slot, and the remaining mesh-body, mesh-wrapper, and collection-owner payload fields mean?
@@ -2951,38 +2987,26 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve.
 
-### MC-04. Mesh combination selector three
+### DR-562. Occurrence of a cross-component Combine tool body
 
-**Question.** Which result structure does mesh combination selector `3` create?
+**Question.** Which occurrence of its component supplies the body that a cross-component `Combine` tool names?
 
-**Known.** The selector follows the mesh scope prefix. The decoder projects selector `3` as a compound with target members followed by tool members.
+**Known.** The browser node of a tool names the body entity suffix and the creating scope. The history-only body-map pair of that suffix names the BREP blob and body selector. The operand-list body-selection record stores an occurrence list before the body-node list.
 
-**Need.** Controlled saves that distinguish preserved interior structures, ordered compound members, and the resulting mesh-body identity.
-
-**Conflict.** None.
-
-**Note.** The decoder reports `feature.mesh-combine-merge-assumed`.
-
-### MC-05. Mesh combination retention and destination
-
-**Question.** Which fields select tool retention and the result component of a mesh combination?
-
-**Known.** The version-2 prefix contains an additional control word. Both versions contain a control byte. Boolean projection assumes consumed tools and the target component. Compound projection retains the controls with unresolved retention and destination.
-
-**Need.** Controlled saves that change Keep Tools and New Component independently, with both scope versions.
+**Need.** A design that places one component more than once and combines the body of one placement, with the occurrence-list entries of the tool decoded against the component instance records.
 
 **Conflict.** None.
 
-**Note.** Boolean projection reports `feature.mesh-combine-keep-tools-assumed-false` and `feature.mesh-combine-destination-assumed-target-component`. Compound projection reports `feature.mesh-combine-keep-tools-unresolved` and `feature.mesh-combine-destination-unresolved`.
+**Note.** A generated tool identifies its generating feature and body-map pair only.
 
-### MC-06. Legacy mesh combination Boolean selectors
+### DR-563. Derived Base Feature creators of Combine tools
 
-**Question.** Which operations do version-1 mesh combination selectors `0`, `1`, and `2` select?
+**Question.** Which timeline feature regenerates a `Combine` tool body whose creating scope is a `Derived Base Feature` scope?
 
-**Known.** Both scope versions store an operation selector. The decoder applies the version-2 Boolean selector mapping to these version-1 values.
+**Known.** The `Derived Base Feature` scope is not a timeline item. Its record references the tool body entity. The `DerivedInstance` scope of the derived component references a class-407 record, and that record references a component-instance record listed under `ComponentInstancesRoot` and the `DerivedInstance` scope. No record found references both the `Derived Base Feature` scope and the `DerivedInstance` scope or its class-407 record.
 
-**Need.** Version-1 saves with independently selected join, cut, and intersection operations.
+**Need.** A stored reference that joins the `Derived Base Feature` scope or its body to a timeline feature.
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.mesh-combine-legacy-boolean-assumed`.
+**Note.** The tool stays native and reports `feature.combine-tool-body-unbound`. Proven tools of the same `Combine` still add their generating features as dependencies.

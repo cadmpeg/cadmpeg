@@ -3950,6 +3950,10 @@ fn decode_sketch_curve_identities_from_stream(
                 )
             });
 
+        let tail_marker = geometry
+            .as_ref()
+            .filter(|geometry| !matches!(geometry, SketchCurveGeometry::Nurbs { .. }))
+            .and_then(|_| planar_tail_marker(payload, geometry_offset));
         let backlink = trailing_sketch_owner_reference(payload)
             .map(|target| SketchBacklink::resolve(&groups, record_index, target));
         if backlink.is_some_and(|backlink| backlink.unlisted) {
@@ -3974,6 +3978,7 @@ fn decode_sketch_curve_identities_from_stream(
             secondary_id,
             geometry,
             planar_z_noise,
+            tail_marker,
         });
     }
     push_unlisted_group_member_loss(losses, stream, "curve", &unlisted);
@@ -4422,6 +4427,40 @@ fn decode_sketch_curve_identity_variant(
         View::u64_le_at(payload, 70 + shift)?,
         View::u64_le_at(payload, 125 + shift)?,
     ))
+}
+
+/// Bytes of the planar analytic payload that precede the reference run.
+const PLANAR_ANALYTIC_PAYLOAD_LEN: usize = 96;
+/// Bytes of the planar tail that the reference run, pad, and marker occupy.
+const PLANAR_TAIL_WINDOW_LEN: usize = 80;
+
+/// The fourth opaque byte of the planar analytic tail that follows the
+/// payload at `geometry_offset`: `N` (1 to 3) marked references, `P` zero pad
+/// bytes, then three opaque bytes and the marker. `None` for a tail of another shape.
+fn planar_tail_marker(payload: &[u8], geometry_offset: usize) -> Option<u8> {
+    let start = geometry_offset.checked_add(PLANAR_ANALYTIC_PAYLOAD_LEN)?;
+    let end = start
+        .checked_add(PLANAR_TAIL_WINDOW_LEN)?
+        .min(payload.len());
+    let tail = payload.get(start..end)?;
+    let mut references = 0usize;
+    let mut cursor = 0usize;
+    while tail.get(cursor) == Some(&1) && tail.get(cursor + 5..cursor + 11) == Some(&[0; 6][..]) {
+        references += 1;
+        cursor += 11;
+    }
+    if !(1..=3).contains(&references) {
+        return None;
+    }
+    let pad = if references == 1 { 5 } else { 3 };
+    if tail
+        .get(cursor..cursor + pad)?
+        .iter()
+        .any(|&byte| byte != 0)
+    {
+        return None;
+    }
+    tail.get(cursor + pad + 3).copied()
 }
 
 struct DecodedSketchCurveGeometry {
