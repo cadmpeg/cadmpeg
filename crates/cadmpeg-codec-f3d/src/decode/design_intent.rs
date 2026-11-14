@@ -627,6 +627,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         ctx,
         &crate::design::feature_project::ProjectInputs {
             native: &projection_parameters,
+            source_parameters: &prereqs.design_parameters,
             owners: &prereqs.design_parameter_owners,
             scopes: &design.design_parameter_scopes,
             timelines,

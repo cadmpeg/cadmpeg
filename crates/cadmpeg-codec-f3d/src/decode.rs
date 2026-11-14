@@ -945,7 +945,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             groups.is_empty()
                 || groups
                     .iter()
-                    .any(|group| !edge_selection_is_resolved(&group.edges))
+                    .any(|group| !edge_selection_is_resolved(&group.edges) || group.radius.is_unresolved())
         }
         FeatureDefinition::Operation(
             FeatureOperation::DeleteFace { faces, .. } | FeatureOperation::UnstitchFaces { faces },

@@ -54,10 +54,12 @@ fn indexed_tangency_weight_with_a_unit_retains_the_native_feature(
                 &mut Vec::new(),
             )
         })?;
-        let FeatureDefinition::Operation(FeatureOperation::Native {
-            parameters: expressions,
-            ..
-        }) = definition
+        let crate::design::feature_project::fillet_partial::FilletProjection::Existing(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                parameters: expressions,
+                ..
+            }),
+        ) = definition
         else {
             return Err("expected a native Fillet for a unit-bearing tangency weight".into());
         };

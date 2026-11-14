@@ -83,8 +83,10 @@ macro_rules! or_none {
 
 mod delete_face;
 mod extrude;
+mod fillet_partial;
 
 use extrude::{bind_extrude_work_plane_targets, project_extrude};
+use fillet_partial::FilletProjection;
 
 fn unique_feature_match<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
     let first = matches.next()?;
@@ -99,6 +101,7 @@ fn unique_feature_match<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
 #[cfg_attr(test, derive(Default))]
 pub(crate) struct ProjectInputs<'a> {
     pub(crate) native: &'a [DesignParameter],
+    pub(crate) source_parameters: &'a [DesignParameter],
     pub(crate) owners: &'a [DesignParameterOwner],
     pub(crate) scopes: &'a [DesignParameterScope],
     pub(crate) timelines: &'a [DesignFeatureTimeline],
@@ -723,6 +726,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             }
             let family = design_feature_family(&scope.kind());
             let mut inserted_bodies: Vec<cadmpeg_ir::ids::BodyId> = Vec::new();
+            let mut promoted_fillet_source = None;
             let definition = match family {
                 Some(DesignFeatureFamily::Sketch) => {
                     FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -752,14 +756,20 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     );
                     definition
                 }
-                Some(DesignFeatureFamily::Fillet) => project_fillet_arm(
+                Some(DesignFeatureFamily::Fillet) => match project_fillet_arm(
                     ctx,
                     inputs,
                     scope,
                     parameters.as_slice(),
                     native_scope,
                     &mut projection_losses,
-                )?,
+                )? {
+                    FilletProjection::Existing(definition) => definition,
+                    FilletProjection::Promoted { definition, source } => {
+                        promoted_fillet_source = Some(source);
+                        definition
+                    }
+                },
                 Some(DesignFeatureFamily::Chamfer) => {
                     let mut chamfer = if parameters.is_empty() {
                         project_fixed_chamfer(
@@ -1580,7 +1590,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         && scope.previous_history_state_id().is_none(),
                 ),
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                source_properties: if matches!(
+                source_properties: if promoted_fillet_source.is_some() || matches!(
                     &definition,
                     FeatureDefinition::Operation(FeatureOperation::Native { .. })
                 ) || matches!(family, Some(DesignFeatureFamily::Hole))
@@ -1588,6 +1598,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     || shell_has_independent_walls(scope)
                 {
                     let mut properties = scope_properties(scope, native_scope, placements, &parameters)?;
+                    if let Some(source) = promoted_fillet_source {
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("fillet:source"),
+                            serde_json::to_string(&source).map_err(CodecError::malformed)?,
+                        );
+                    }
                     if shell_has_independent_walls(scope)
                         && matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Shell { .. }))
                     {
@@ -2778,14 +2794,14 @@ fn native_scope_definition(
     }))
 }
 
-fn project_fillet_arm(
+fn project_fillet_arm<'a>(
     ctx: &DecodeContext<'_>,
-    inputs: &ProjectInputs<'_>,
-    scope: &DesignParameterScope,
-    parameters: &[(u32, &DesignParameter)],
+    inputs: &ProjectInputs<'a>,
+    scope: &'a DesignParameterScope,
+    parameters: &[(u32, &'a DesignParameter)],
     native_scope: &str,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
+) -> Result<FilletProjection<'a>, CodecError> {
     use cadmpeg_ir::features::{
         edge_treatments::{FilletGroup, RadiusSpec},
         EdgeSelection, FeatureDefinition, FeatureOperation,
@@ -2797,7 +2813,7 @@ fn project_fillet_arm(
             inputs.construction_groups,
         )
     {
-        return native_scope_definition(scope, parameters);
+        return fillet_partial::project(ctx, inputs, scope, parameters, native_scope, losses);
     }
 
     if parameters.is_empty() {
@@ -2809,7 +2825,7 @@ fn project_fillet_arm(
             inputs.fillet_radius_groups,
             inputs.histories,
         )? {
-            return Ok(definition);
+            return Ok(FilletProjection::Existing(definition));
         }
     }
 
@@ -2822,8 +2838,6 @@ fn project_fillet_arm(
         }
     }
     assignments.sort_by_key(|left| left.group_ordinal);
-    // A face group that no assignment covers selects faces whose radius set is
-    // not stored, so the feature keeps its native form.
     if !assignments.is_empty()
         && inputs.construction_groups.iter().any(|group| {
             native_stream(&group.id) == Some(native_scope)
@@ -2835,11 +2849,11 @@ fn project_fillet_arm(
                     .all(|assignment| assignment.group_record_index != group.record_index)
         })
     {
-        return native_scope_definition(scope, parameters);
+        return fillet_partial::project(ctx, inputs, scope, parameters, native_scope, losses);
     }
     if !assignments.is_empty() {
         let Some(assignments) = resolved_fillet_assignments(&assignments, parameters) else {
-            return native_scope_definition(scope, parameters);
+            return fillet_partial::project(ctx, inputs, scope, parameters, native_scope, losses);
         };
         let mut groups = Vec::new();
         for resolved in assignments {
@@ -2877,16 +2891,16 @@ fn project_fillet_arm(
         }
         let groups = groups.try_into().ok();
         return groups.map_or_else(
-            || native_scope_definition(scope, parameters),
+            || fillet_partial::project(ctx, inputs, scope, parameters, native_scope, losses),
             |groups| {
-                Ok(FeatureDefinition::Operation(FeatureOperation::Fillet {
-                    groups,
-                }))
+                Ok(FilletProjection::Existing(FeatureDefinition::Operation(
+                    FeatureOperation::Fillet { groups },
+                )))
             },
         );
     }
     if let Some(definition) = project_variable_fillet(scope, parameters, inputs, ctx, losses)? {
-        return Ok(definition);
+        return Ok(FilletProjection::Existing(definition));
     }
     if parameters.is_empty() {
         if let Some(definition) = project_fixed_fillet_with_corners(
@@ -2898,25 +2912,27 @@ fn project_fillet_arm(
             inputs.histories,
             (ctx, losses),
         )? {
-            return Ok(definition);
+            return Ok(FilletProjection::Existing(definition));
         }
     }
     let [(_, parameter)] = parameters else {
-        return native_scope_definition(scope, parameters);
+        return fillet_partial::project(ctx, inputs, scope, parameters, native_scope, losses);
     };
     let Some(radius) = (parameter.source_kind() == "Radius")
         .then(|| design_positive_length(parameter))
         .flatten()
     else {
-        return native_scope_definition(scope, parameters);
+        return fillet_partial::project(ctx, inputs, scope, parameters, native_scope, losses);
     };
-    Ok(FeatureDefinition::Operation(FeatureOperation::Fillet {
-        groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
-            edges: EdgeSelection::Native(scope.id.clone()),
-            radius: RadiusSpec::Constant { radius },
-            tangency_weight: None,
-        }),
-    }))
+    Ok(FilletProjection::Existing(FeatureDefinition::Operation(
+        FeatureOperation::Fillet {
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
+                edges: EdgeSelection::Native(scope.id.clone()),
+                radius: RadiusSpec::Constant { radius },
+                tangency_weight: None,
+            }),
+        },
+    )))
 }
 
 struct ResolvedFilletAssignment<'a> {
@@ -3113,48 +3129,13 @@ fn project_full_round_fillet(
     fillet_radius_groups: &[DesignFilletRadiusGroup],
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    let stream = or_none!(native_stream(&scope.id));
-    if owners.iter().any(|owner| {
-        native_stream(owner.id()) == Some(stream)
-            && owner.scope_record_index() == scope.record_index
-    }) || fillet_radius_groups.iter().any(|assignment| {
-        native_stream(&assignment.id) == Some(stream)
-            && assignment.scope_record_index == scope.record_index
-    }) {
-        return Ok(None);
-    }
-    let mut groups = construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
-    });
-    let group = or_none!(groups.next());
-    if groups.next().is_some()
-        || group.role() != DesignOperandRole::BODIES_A
-        || group.members().len() != 1
-        || group.frame.trailing_records().len() != 1
-        || group.frame.trailing_flags().len() != 1
-        || group.frame.trailing_records()[0].value != group.frame.trailing_flags()[0].record_index
-        || !group.frame.trailing_flags()[0].value
-        || group.frame.variant
-    {
-        return Ok(None);
-    }
-    let [crate::records::identity::Located { value: member, .. }] = group.members() else {
-        return Ok(None);
-    };
-    let mut operands = face_operands.iter().filter(|operand| {
-        native_stream(&operand.id) == Some(stream)
-            && operand.scope_record_index == scope.record_index
-            && operand.group_record_index() == Some(group.record_index)
-            && operand.group_member_ordinal() == Some(0)
-            && operand.record_index() == *member
-    });
-    let operand = or_none!(operands.next());
-    if operands.next().is_some() {
-        return Ok(None);
-    }
-    if operand.recipe_kind != ConstructionRecipeKind::BoundedFace {
-        return Ok(None);
-    }
+    let (group, operand) = or_none!(full_round_fillet_source(
+        scope,
+        construction_groups,
+        face_operands,
+        owners,
+        fillet_radius_groups,
+    ));
     if operand.resolved_face_slots.is_empty() {
         return Ok(None);
     }
@@ -3174,6 +3155,58 @@ fn project_full_round_fillet(
             )),
         },
     )))
+}
+
+fn full_round_fillet_source<'a>(
+    scope: &DesignParameterScope,
+    construction_groups: &'a [DesignConstructionOperandGroup],
+    face_operands: &'a [DesignFaceOperand],
+    owners: &[DesignParameterOwner],
+    fillet_radius_groups: &[DesignFilletRadiusGroup],
+) -> Option<(&'a DesignConstructionOperandGroup, &'a DesignFaceOperand)> {
+    let stream = native_stream(&scope.id)?;
+    if owners.iter().any(|owner| {
+        native_stream(owner.id()) == Some(stream)
+            && owner.scope_record_index() == scope.record_index
+    }) || fillet_radius_groups.iter().any(|assignment| {
+        native_stream(&assignment.id) == Some(stream)
+            && assignment.scope_record_index == scope.record_index
+    }) {
+        return None;
+    }
+    let mut groups = construction_groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
+    });
+    let group = groups.next()?;
+    if groups.next().is_some()
+        || group.role() != DesignOperandRole::BODIES_A
+        || group.members().len() != 1
+        || group.frame.trailing_records().len() != 1
+        || group.frame.trailing_flags().len() != 1
+        || group.frame.trailing_records()[0].value != group.frame.trailing_flags()[0].record_index
+        || !group.frame.trailing_flags()[0].value
+        || group.frame.variant
+    {
+        return None;
+    }
+    let [crate::records::identity::Located { value: member, .. }] = group.members() else {
+        return None;
+    };
+    let mut operands = face_operands.iter().filter(|operand| {
+        native_stream(&operand.id) == Some(stream)
+            && operand.scope_record_index == scope.record_index
+            && operand.group_record_index() == Some(group.record_index)
+            && operand.group_member_ordinal() == Some(0)
+            && operand.record_index() == *member
+    });
+    let operand = operands.next()?;
+    if operands.next().is_some() {
+        return None;
+    }
+    if operand.recipe_kind != ConstructionRecipeKind::BoundedFace {
+        return None;
+    }
+    Some((group, operand))
 }
 
 fn design_body_selection(

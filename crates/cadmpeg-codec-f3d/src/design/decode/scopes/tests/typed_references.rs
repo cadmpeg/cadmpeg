@@ -7,6 +7,8 @@ use crate::test_support::lp_utf16;
 
 const TYPE: &str = "11111111-2222-3333-4444-555555555555";
 
+mod fillet;
+
 fn typed_reference(out: &mut Vec<u8>, target: u32) {
     out.push(1);
     out.extend_from_slice(&u64::from(target).to_le_bytes());
@@ -15,8 +17,7 @@ fn typed_reference(out: &mut Vec<u8>, target: u32) {
     out.extend_from_slice(&[0, 0]);
 }
 
-/// A Sketch scope frame with a two-entry typed table and the 196-byte tail.
-fn typed_scope_frame(previous_history: u32) -> Vec<u8> {
+fn typed_scope_frame(previous_history: u32, kind: &str) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"336");
@@ -26,7 +27,7 @@ fn typed_scope_frame(previous_history: u32) -> Vec<u8> {
     typed_reference(&mut bytes, 222);
     typed_reference(&mut bytes, 234);
     bytes.extend_from_slice(&7u32.to_le_bytes());
-    lp_utf16(&mut bytes, "Sketch");
+    lp_utf16(&mut bytes, kind);
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 15]);
     typed_reference(&mut bytes, 229);
@@ -63,7 +64,7 @@ fn parse(bytes: &[u8]) -> Option<crate::records::feature::scope::DesignParameter
 
 #[test]
 fn typed_scope_reads_the_wide_reference_table_and_196_byte_tail() {
-    let scope = parse(&typed_scope_frame(5)).expect("typed scope");
+    let scope = parse(&typed_scope_frame(5, "Sketch")).expect("typed scope");
     assert_eq!(
         scope.kind(),
         crate::records::feature::scope::DesignFeatureKind::Sketch
@@ -78,7 +79,7 @@ fn typed_scope_reads_the_wide_reference_table_and_196_byte_tail() {
 
 #[test]
 fn typed_scope_tail_requires_its_typed_references() {
-    let mut bytes = typed_scope_frame(5);
+    let mut bytes = typed_scope_frame(5, "Sketch");
     let tail_reference = bytes.len() - 11 - 2 - 51;
     bytes[tail_reference + 9] = 35;
     assert!(parse(&bytes).is_none());

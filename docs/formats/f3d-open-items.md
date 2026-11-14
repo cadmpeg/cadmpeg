@@ -2172,7 +2172,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** None.
+**Note.** A scope without a decoded radius carrier projects as a neutral Fillet with an unresolved radius law and dimension. `feature.fillet-radius-unresolved` identifies that uncertainty; `feature.fillet-references-unresolved` retains the unclassified reference contribution. Decoded source records and ordered references remain in `fillet:source` and the scope reference properties. A full-round projection requires the documented group structure and a matching bounded-face operand; a native or partial center selection carries `feature.fillet-full-round-center-unresolved`. A missing bounded-face definition does not establish full-round semantics.
 
 ### DR-322. Selected-face Extrude start without a start group
 

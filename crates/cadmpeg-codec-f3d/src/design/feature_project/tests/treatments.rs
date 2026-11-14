@@ -1844,8 +1844,8 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
                     &mut Vec::new(),
                 )
             }),
-            Ok(FeatureDefinition::Operation(
-                FeatureOperation::Native { .. }
+            Ok(super::super::fillet_partial::FilletProjection::Existing(
+                FeatureDefinition::Operation(FeatureOperation::Native { .. })
             ))
         ));
     }

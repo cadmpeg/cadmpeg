@@ -134,6 +134,7 @@ pub(super) fn encode_design_bulkstream(
             decode_ctx,
             &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
+                source_parameters: &native.design_parameters,
                 owners: &native.design_parameter_owners,
                 scopes: &native.design_parameter_scopes,
                 timelines: &native.design_feature_timelines,
