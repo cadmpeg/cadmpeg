@@ -1444,6 +1444,95 @@ fn extra_parameters_and_native_sizing_keep_the_admitted_hole_dimensions() {
 }
 
 #[test]
+fn a_clearance_hole_maps_its_sizing_names_to_a_clearance_specification() {
+    use cadmpeg_ir::features::holes::{
+        HoleConstruction, HoleSpecification, HoleThreadDepth, ThreadHand,
+    };
+    let project = |tap_type: u32| {
+        let mut scope = hole_scope();
+        if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) =
+            scope.payload_mut()
+        {
+            let extent = slot.extent.as_mut().unwrap();
+            extent.leading_word = Some(crate::records::identity::Located {
+                value: tap_type,
+                offset: 5,
+            });
+            extent.standard = Some(crate::records::feature::hole::DesignHoleStandard {
+                offset: 10,
+                standard: "Ansi Metric M Profile".into(),
+                fit: "Normal".into(),
+                size: "M3".into(),
+                fastener: "Flat Head Machine Screw".into(),
+            });
+        }
+        let parameters = hole_parameters();
+        let indexed: Vec<_> = parameters
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (u32::try_from(i).unwrap(), p))
+            .collect();
+        let mut losses = Vec::new();
+        let Some(FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. })) =
+            project_hole(&scope, &indexed, &[], &[], &mut losses).unwrap()
+        else {
+            panic!("Hole")
+        };
+        (shape, losses)
+    };
+    let (shape, losses) = project(1);
+    let HoleConstruction::Form {
+        specification: Some(specification),
+        ..
+    } = shape.construction()
+    else {
+        panic!("clearance specification")
+    };
+    assert_eq!(
+        specification.as_ref(),
+        &HoleSpecification::Clearance {
+            standard: cadmpeg_core::text::NonBlankString::new("Ansi Metric M Profile").unwrap(),
+            designation: Some("M3".into()),
+            fit: Some("Normal".into()),
+            modeled: true,
+            cosmetic: false,
+            hand: ThreadHand::Right,
+            depth: HoleThreadDepth::HoleDepth,
+            clearance: None,
+        }
+    );
+    assert_eq!(shape.diameter().unwrap().get(), 4.0);
+    let has = |losses: &[cadmpeg_ir::report::loss::LossNote], code: crate::loss::F3dLossCode| {
+        losses.iter().any(|loss| loss.code == code.kind())
+    };
+    assert!(has(
+        &losses,
+        crate::loss::F3dLossCode::HoleClearanceFieldsAssumed
+    ));
+    assert!(!has(
+        &losses,
+        crate::loss::F3dLossCode::HoleStandardSizingAssumed
+    ));
+
+    let (shape, losses) = project(0);
+    assert!(matches!(
+        shape.construction(),
+        HoleConstruction::Form {
+            specification: None,
+            ..
+        }
+    ));
+    assert!(has(
+        &losses,
+        crate::loss::F3dLossCode::HoleStandardSizingAssumed
+    ));
+    assert!(!has(
+        &losses,
+        crate::loss::F3dLossCode::HoleClearanceFieldsAssumed
+    ));
+}
+
+#[test]
 fn competing_bore_parameters_keep_both_expressions_and_an_unresolved_diameter() {
     let scope = hole_scope();
     let mut parameters = hole_parameters().to_vec();

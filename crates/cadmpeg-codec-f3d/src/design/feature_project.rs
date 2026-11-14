@@ -8704,6 +8704,7 @@ fn project_hole(
             "Hole {} projects its admitted dimensions independently of unresolved extent, entry-type or parameter associations; its encoded entry type governs the active treatment and all parameter values and expressions are retained (DR-470).", scope.id
         )));
     }
+    let specification = hole_clearance_specification(scope);
     if let Some(extent) = scope.hole_extent() {
         if let Some(loss) = extent
             .leading_word
@@ -8712,7 +8713,11 @@ fn project_hole(
         {
             losses.push(loss);
         }
-        if extent.standard.is_some() {
+        if specification.is_some() {
+            losses.push(crate::loss::F3dLossCode::HoleClearanceFieldsAssumed.note(format!(
+                "Hole {} sets the modeled, cosmetic, hand and depth fields of its clearance specification to modeled, cosmetic off, right hand and hole depth; its sizing block stores the standard, fit, size and fastener names only.", scope.id
+            )));
+        } else if extent.standard.is_some() {
             losses.push(crate::loss::F3dLossCode::HoleStandardSizingAssumed.note(format!(
                 "Hole {} assumes its scalar geometry is independent of its native standard sizing names, which remain source properties (DR-470).", scope.id
             )));
@@ -8754,7 +8759,7 @@ fn project_hole(
         shape: cadmpeg_ir::features::holes::HoleShape::new(
             cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind,
-                specification: None,
+                specification: specification.map(Box::new),
             },
             None,
             diameter,
@@ -8766,6 +8771,28 @@ fn project_hole(
         taper_angle: None,
         allow_multi_profile_faces: None,
     })))
+}
+
+/// The clearance specification of a clearance Hole (tap type `1`) with standard sizing names.
+fn hole_clearance_specification(
+    scope: &DesignParameterScope,
+) -> Option<cadmpeg_ir::features::holes::HoleSpecification> {
+    let extent = scope.hole_extent()?;
+    if extent.leading_word.as_ref()?.value != 1 {
+        return None;
+    }
+    let names = extent.standard.as_ref()?;
+    let named = |name: &str| (!name.trim().is_empty()).then(|| name.to_owned());
+    Some(cadmpeg_ir::features::holes::HoleSpecification::Clearance {
+        standard: cadmpeg_core::text::NonBlankString::new(names.standard.clone())?,
+        designation: named(&names.size),
+        fit: named(&names.fit),
+        modeled: true,
+        cosmetic: false,
+        hand: cadmpeg_ir::features::holes::ThreadHand::Right,
+        depth: cadmpeg_ir::features::holes::HoleThreadDepth::HoleDepth,
+        clearance: None,
+    })
 }
 
 fn project_replace_face(
