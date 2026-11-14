@@ -973,7 +973,6 @@ pub(crate) fn decode_face_operands(
             && group.role() == DesignOperandRole::PROFILE;
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
             && !is_split_face_operand
-            && !is_bend_stationary
         {
             for member in group.members() {
                 seen.insert((stream, scope.record_index, member.value));
