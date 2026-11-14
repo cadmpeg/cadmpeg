@@ -26,6 +26,10 @@ fn unfold_projects_partial_inputs_and_preserves_flag_and_rule_scalar() {
     assert!(losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::UnfoldEnvelopeUnresolved.kind()));
+    crate::design::test_support::name_scope_references(&mut source, [20, 30, 40]);
+    source
+        .try_edit(|draft| crate::design::test_support::lengthen_scope_frame(draft, 512))
+        .unwrap();
     for (flag, expected) in [(0, Some(false)), (1, Some(true)), (7, None)] {
         if let DesignScopePayloadMut::Unfold(slot) = source.payload_mut() {
             *slot = Some(DesignUnfoldOperation {
@@ -51,13 +55,19 @@ fn unfold_projects_partial_inputs_and_preserves_flag_and_rule_scalar() {
                     offset: 55,
                 },
                 rule_record_index: Some(60),
+                rule_reference_assumed: true,
                 rule_material_scalar: Some(Located {
                     value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
                     offset: 900,
                 }),
             });
         }
-        let definition = unfold(&source, &ProjectInputs::default(), &mut Vec::new()).unwrap();
+        assert!(source.unfold_operation().unwrap().valid_for_scope(&source));
+        let mut losses = Vec::new();
+        let definition = unfold(&source, &ProjectInputs::default(), &mut losses).unwrap();
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code == F3dLossCode::UnfoldSettingsRuleReferenceAssumed.kind()));
         let FeatureDefinition::Operation(FeatureOperation::SheetMetalUnfold { construction }) =
             definition
         else {

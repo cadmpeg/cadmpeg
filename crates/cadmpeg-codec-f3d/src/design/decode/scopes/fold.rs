@@ -102,8 +102,9 @@ fn unfold(
     {
         return None;
     }
-    let rule_record_index =
-        settings_rule(bytes, records, types, settings.value, scope.record_index);
+    let rule = settings_rule(bytes, records, types, settings.value, scope.record_index);
+    let rule_record_index = rule.map(|(index, _)| index);
+    let rule_reference_assumed = rule.is_some_and(|(_, assumed)| assumed);
     let rule_material_scalar =
         rule_record_index.and_then(|rule| material_scalar(bytes, records, types, rule));
     Some(DesignUnfoldOperation {
@@ -114,11 +115,77 @@ fn unfold(
         wrapper,
         stationary_group,
         rule_record_index,
+        rule_reference_assumed,
         rule_material_scalar,
     })
 }
 
 fn settings_rule(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    types: &Types<'_>,
+    index: u32,
+    owner: u32,
+) -> Option<(u32, bool)> {
+    if let Some(index) = exact_settings_rule(bytes, records, types, index, owner) {
+        return Some((index, false));
+    }
+    let (guid, version) = *types.get(&u64::from(index))?;
+    if !guid.eq_ignore_ascii_case(SETTINGS_GUID) || !matches!(version, 1..=3) {
+        return None;
+    }
+    let mut result = None;
+    for (start, end) in records.frames(index) {
+        let Some(frame) = View::over_retained(bytes).child(start, end) else {
+            continue;
+        };
+        let mut prefix = frame;
+        if prefix.skip(11).is_none() || prefix.take(10) != Some(&[0; 10][..]) {
+            continue;
+        }
+        let mut owner_at = None;
+        for width in [11, crate::bytes::TYPED_LOCAL_REFERENCE_LEN] {
+            let Some(at) = end.checked_sub(width) else {
+                continue;
+            };
+            let mut tail = frame;
+            if tail.seek(at).is_none() {
+                continue;
+            }
+            let Some(target) = local(&mut tail, types, Some(UNFOLD_GUID)) else {
+                continue;
+            };
+            if target.value != owner || !tail.is_empty() {
+                continue;
+            }
+            if owner_at.replace(at).is_some() {
+                return None;
+            }
+        }
+        let Some(owner_at) = owner_at else {
+            continue;
+        };
+        for at in prefix.position()..owner_at {
+            let mut candidate = frame;
+            candidate.seek(at)?;
+            let Some(reference) = local(&mut candidate, types, Some(RULE_GUID)) else {
+                continue;
+            };
+            if candidate.position() > owner_at
+                || !(typed(types, reference.value, RULE_GUID, 0)
+                    || typed(types, reference.value, RULE_GUID, 1))
+            {
+                continue;
+            }
+            if result.replace(reference.value).is_some() {
+                return None;
+            }
+        }
+    }
+    result.map(|index| (index, true))
+}
+
+fn exact_settings_rule(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     types: &Types<'_>,

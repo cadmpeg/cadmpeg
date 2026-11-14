@@ -33,6 +33,7 @@ pub(crate) enum F3dLossCode {
     UnfoldEnvelopeUnresolved,
     UnfoldMaterialScalarFactorAssumed,
     UnfoldRuleFactorUnresolved,
+    UnfoldSettingsRuleReferenceAssumed,
     RefoldGroupSourceAssumed,
     RefoldSourceUnresolved,
     BendLineOwnerOrderAssumed,
@@ -1405,6 +1406,9 @@ impl F3dLossCode {
                 "feature.unfold-material-scalar-factor-assumed"
             }
             Self::UnfoldRuleFactorUnresolved => "feature.unfold-rule-factor-unresolved",
+            Self::UnfoldSettingsRuleReferenceAssumed => {
+                "feature.unfold-settings-rule-reference-assumed"
+            }
             Self::RefoldGroupSourceAssumed => "feature.refold-group-source-assumed",
             Self::RefoldSourceUnresolved => "feature.refold-source-unresolved",
             Self::BendLineOwnerOrderAssumed => "feature.bend-line-owner-order-assumed",
@@ -2098,6 +2102,7 @@ impl F3dLossCode {
             | Self::UnfoldEnvelopeUnresolved
             | Self::UnfoldMaterialScalarFactorAssumed
             | Self::UnfoldRuleFactorUnresolved
+            | Self::UnfoldSettingsRuleReferenceAssumed
             | Self::RefoldGroupSourceAssumed
             | Self::RefoldSourceUnresolved => Severity::Warning,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => Severity::Info,
@@ -2617,6 +2622,7 @@ impl F3dLossCode {
             | Self::UnfoldEnvelopeUnresolved
             | Self::UnfoldMaterialScalarFactorAssumed
             | Self::UnfoldRuleFactorUnresolved
+            | Self::UnfoldSettingsRuleReferenceAssumed
             | Self::RefoldGroupSourceAssumed
             | Self::RefoldSourceUnresolved => LossTaxonomy::FeatureHistoryRetained,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => {

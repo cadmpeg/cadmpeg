@@ -46,6 +46,9 @@ fn unfold_prefix_reads_both_reference_forms_and_extension_widths() {
                 let types = HashMap::from([(10, (UNFOLD_GUID, 0))]);
                 let value = unfold(&bytes, &records, &scope, &types).unwrap();
                 assert!(value.valid_for_scope(&scope));
+                let mut unresolved_link = value.clone();
+                unresolved_link.rule_reference_assumed = true;
+                assert!(!unresolved_link.valid_for_scope(&scope));
                 let mut invalid = value.clone();
                 invalid.prefix_end += 1;
                 assert!(!invalid.valid_for_scope(&scope));
@@ -302,7 +305,51 @@ fn settings_rule_checks_versioned_optional_slots_and_owner_boundary() {
             indexed_header(&mut bytes, *b"001", 30);
             let types = HashMap::from([(30, (SETTINGS_GUID, version))]);
             let records = IndexedRecordOffsets::build(&bytes);
-            assert_eq!(settings_rule(&bytes, &records, &types, 30, 80), Some(60));
+            assert_eq!(
+                settings_rule(&bytes, &records, &types, 30, 80),
+                Some((60, false))
+            );
+            assert_eq!(settings_rule(&bytes, &records, &types, 30, 81), None);
+            bytes[11] = 1;
+            assert_eq!(settings_rule(&bytes, &records, &types, 30, 80), None);
+        }
+    }
+}
+
+#[test]
+fn settings_rule_recovers_unique_typed_target_with_present_inputs() {
+    for typed_references in [false, true] {
+        for ambiguous in [false, true] {
+            let mut bytes = Vec::new();
+            indexed_header(&mut bytes, *b"000", 30);
+            bytes.extend([0; 10]);
+            reference(&mut bytes, 70, typed_references.then_some(WRAPPER_GUID));
+            bytes.extend([0; 12]);
+            reference(&mut bytes, 60, typed_references.then_some(RULE_GUID));
+            if ambiguous {
+                reference(&mut bytes, 61, typed_references.then_some(RULE_GUID));
+            }
+            bytes.extend([1, 0, 0]);
+            reference(
+                &mut bytes,
+                31,
+                typed_references.then_some(PRESENTATION_GUID),
+            );
+            bytes.push(0);
+            reference(&mut bytes, 80, typed_references.then_some(UNFOLD_GUID));
+            indexed_header(&mut bytes, *b"001", 30);
+            let types = HashMap::from([
+                (30, (SETTINGS_GUID, 3)),
+                (60, (RULE_GUID, 1)),
+                (61, (RULE_GUID, 0)),
+                (70, (WRAPPER_GUID, 0)),
+                (80, (UNFOLD_GUID, 0)),
+            ]);
+            let records = IndexedRecordOffsets::build(&bytes);
+            assert_eq!(
+                settings_rule(&bytes, &records, &types, 30, 80),
+                if ambiguous { None } else { Some((60, true)) }
+            );
             assert_eq!(settings_rule(&bytes, &records, &types, 30, 81), None);
             bytes[11] = 1;
             assert_eq!(settings_rule(&bytes, &records, &types, 30, 80), None);

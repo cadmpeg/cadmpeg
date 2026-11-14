@@ -18,6 +18,9 @@ pub(super) fn unfold(
 ) -> Result<FeatureDefinition, CodecError> {
     let mut construction = SheetMetalUnfoldConstruction::default();
     if let Some(operation) = scope.unfold_operation() {
+        if operation.rule_reference_assumed {
+            losses.push(F3dLossCode::UnfoldSettingsRuleReferenceAssumed.note(format!("Unfold scope {} reads the unique registered rule reference in its bounded owner-closing settings frame {}.", scope.id, operation.settings.value)));
+        }
         construction.all_bends = match operation.control.value {
             0 => Some(false),
             1 => Some(true),

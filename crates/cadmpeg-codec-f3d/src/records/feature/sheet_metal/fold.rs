@@ -17,6 +17,8 @@ pub(crate) struct DesignUnfoldOperation {
         deserialize_with = "deserialize_rule_record_index"
     )]
     pub(crate) rule_record_index: Option<u32>,
+    #[serde(default)]
+    pub(crate) rule_reference_assumed: bool,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -89,6 +91,7 @@ impl DesignUnfoldOperation {
                     .any(|member| member == index)
             })
             && (self.rule_material_scalar.is_none() || self.rule_record_index.is_some())
+            && (!self.rule_reference_assumed || self.rule_record_index.is_some())
     }
 }
 
