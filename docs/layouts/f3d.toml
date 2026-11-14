@@ -1943,7 +1943,7 @@ kind = "byte"
 section = "3.1"
 anchor = "A parameter-owned `Chamfer` scope names its chamfer sets in a prefix"
 size = 21
-note = "Offsets are relative to the primary indexed header. Prologue byte 0 ends the prologue at offset 21; prologue byte 1 is followed by u32 0 and ends it at offset 25."
+note = "Offsets are relative to the primary indexed header. Prologue byte 0 ends the prologue at offset 21; prologue byte 1 is followed by u32 0 and ends it at offset 25. Each referenced set stores its own specification-kind word."
 
 [[record.field]]
 name = "indexed_header"

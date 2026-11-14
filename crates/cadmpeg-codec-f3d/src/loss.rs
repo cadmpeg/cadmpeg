@@ -78,6 +78,16 @@ pub(crate) enum F3dLossCode {
     ConstructionClosingFlagAssumed,
     /// A Chamfer's non-face group is read as its edge group despite its role.
     ChamferEdgeRoleAssumed,
+    ChamferDefinitionUnresolved,
+    ChamferSelectionUnresolved,
+    ChamferReferenceFaceAssumed,
+    ChamferAngleReferenceAssumed,
+    ChamferCornerTreatmentUnresolved,
+    ChamferTangentChainAssumed,
+    ChamferParameterOwnerAssumed,
+    ChamferParameterValueAssumed,
+    ChamferParameterKindAssumed,
+    ChamferParameterUnitAssumed,
     /// A Coil's Boolean target group whose member count is not one is read as one body selection.
     CoilTargetMembersAssumed,
     /// Design configuration JSON members have no assigned neutral semantics.
@@ -899,6 +909,16 @@ impl F3dLossCode {
         Self::ConstructionTrackingPathUntyped,
         Self::ConstructionClosingFlagAssumed,
         Self::ChamferEdgeRoleAssumed,
+        Self::ChamferDefinitionUnresolved,
+        Self::ChamferSelectionUnresolved,
+        Self::ChamferReferenceFaceAssumed,
+        Self::ChamferAngleReferenceAssumed,
+        Self::ChamferCornerTreatmentUnresolved,
+        Self::ChamferTangentChainAssumed,
+        Self::ChamferParameterOwnerAssumed,
+        Self::ChamferParameterValueAssumed,
+        Self::ChamferParameterKindAssumed,
+        Self::ChamferParameterUnitAssumed,
         Self::CoilTargetMembersAssumed,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
@@ -1402,6 +1422,16 @@ impl F3dLossCode {
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConstructionClosingFlagAssumed => "feature.construction-closing-flag-assumed",
             Self::ChamferEdgeRoleAssumed => "feature.chamfer-edge-role-assumed",
+            Self::ChamferDefinitionUnresolved => "feature.chamfer-definition-unresolved",
+            Self::ChamferSelectionUnresolved => "feature.chamfer-selection-unresolved",
+            Self::ChamferReferenceFaceAssumed => "feature.chamfer-reference-face-assumed",
+            Self::ChamferAngleReferenceAssumed => "feature.chamfer-angle-reference-assumed",
+            Self::ChamferCornerTreatmentUnresolved => "feature.chamfer-corner-treatment-unresolved",
+            Self::ChamferTangentChainAssumed => "feature.chamfer-tangent-chain-assumed",
+            Self::ChamferParameterOwnerAssumed => "feature.chamfer-parameter-owner-assumed",
+            Self::ChamferParameterValueAssumed => "feature.chamfer-parameter-value-assumed",
+            Self::ChamferParameterKindAssumed => "feature.chamfer-parameter-kind-assumed",
+            Self::ChamferParameterUnitAssumed => "feature.chamfer-parameter-unit-assumed",
             Self::CoilTargetMembersAssumed => "feature.coil-target-members-assumed",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
@@ -2105,6 +2135,16 @@ impl F3dLossCode {
             | Self::ConstructionTrackingPathUntyped
             | Self::ConstructionClosingFlagAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::ChamferDefinitionUnresolved
+            | Self::ChamferSelectionUnresolved
+            | Self::ChamferReferenceFaceAssumed
+            | Self::ChamferAngleReferenceAssumed
+            | Self::ChamferCornerTreatmentUnresolved
+            | Self::ChamferTangentChainAssumed
+            | Self::ChamferParameterOwnerAssumed
+            | Self::ChamferParameterValueAssumed
+            | Self::ChamferParameterKindAssumed
+            | Self::ChamferParameterUnitAssumed
             | Self::CoilTargetMembersAssumed
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
@@ -2561,6 +2601,16 @@ impl F3dLossCode {
             Self::ScopeOwnerUnresolved
             | Self::ConstructionClosingFlagAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::ChamferDefinitionUnresolved
+            | Self::ChamferSelectionUnresolved
+            | Self::ChamferReferenceFaceAssumed
+            | Self::ChamferAngleReferenceAssumed
+            | Self::ChamferCornerTreatmentUnresolved
+            | Self::ChamferTangentChainAssumed
+            | Self::ChamferParameterOwnerAssumed
+            | Self::ChamferParameterValueAssumed
+            | Self::ChamferParameterKindAssumed
+            | Self::ChamferParameterUnitAssumed
             | Self::CoilTargetMembersAssumed
             | Self::OperationPoseApplied
             | Self::OperationPoseDisagrees
@@ -3108,6 +3158,16 @@ mod tests {
                 "feature.tracking-path-untyped",
                 "feature.construction-closing-flag-assumed",
                 "feature.chamfer-edge-role-assumed",
+                "feature.chamfer-definition-unresolved",
+                "feature.chamfer-selection-unresolved",
+                "feature.chamfer-reference-face-assumed",
+                "feature.chamfer-angle-reference-assumed",
+                "feature.chamfer-corner-treatment-unresolved",
+                "feature.chamfer-tangent-chain-assumed",
+                "feature.chamfer-parameter-owner-assumed",
+                "feature.chamfer-parameter-value-assumed",
+                "feature.chamfer-parameter-kind-assumed",
+                "feature.chamfer-parameter-unit-assumed",
                 "feature.coil-target-members-assumed",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
