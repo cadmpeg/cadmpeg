@@ -107,7 +107,10 @@ fn a_face_recipe_program_ends_at_the_end_of_the_stream() {
     .expect("the stream end terminates the program");
     assert_eq!(operand.recipe_program, [0, -1]);
     assert_eq!(operand.next_record_index, 0);
-    assert_eq!(operand.next_byte_offset(), u64::try_from(bytes.len()).unwrap());
+    assert_eq!(
+        operand.next_byte_offset(),
+        u64::try_from(bytes.len()).unwrap()
+    );
     assert!(super::parse_face_operand(
         &bytes,
         &records,
