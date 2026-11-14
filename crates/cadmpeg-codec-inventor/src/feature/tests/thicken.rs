@@ -255,6 +255,7 @@ fn projects_thicken_with_native_selection_thickness_and_ordered_results() {
         faces,
         thickness,
         side,
+        ..
     }) = feature.evaluation.definition()
     else {
         panic!("thicken operation")
