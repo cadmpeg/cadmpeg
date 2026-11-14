@@ -6614,7 +6614,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 180 B
 
-Offsets are relative to the end of the 51-byte prefix or of the first matrix. A matrix frame repeats the matrix after the body; the 20-byte identity tail closes the frame.
+Offsets are relative to the end of the 51-byte prefix or of the first matrix. The local-placement flag selects the optional matrix after the body; the 20-byte identity tail closes the frame.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
@@ -6627,7 +6627,7 @@ Parsed by:
 | 162 | 1 | `path_marker` | `u8` | little | spec | one zero byte, `u8 1`, u32 path count `1` · value `1` |
 | 163 | 4 | `path_count` | `u32` | little | spec | one zero byte, `u8 1`, u32 path count `1` · value `1` |
 | 168 | 9 | `component_reference_repeat` | `bytes[9]` | little | spec | the repeated marked component-record reference |
-| 179 | 1 | `identity_flag_repeat` | `u8` | little | spec | a copy of the identity flag |
+| 179 | 1 | `identity_flag_repeat` | `u8` | little | spec | the local-placement identity flag |
 
 Unstated regions:
 
@@ -10861,6 +10861,21 @@ Parsed by:
 Unstated regions:
 
 - `237..264` (27 B): Bytes between the matrix and null GUID.
+
+## `legacy_external_leading_placement_prefix`
+
+Spec §1.4 · layout: byte offsets · size: 7 B
+
+Offsets start at the member sequence after the empty attribute block. The optional source matrix and UUIDs follow this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `control` | `u16` | little | spec | The empty-attribute generation can insert a source-placement flag |
+| 2 | 4 | `ordinal` | `u32` | little | spec | after the positive ordinal and before the two UUIDs |
+| 6 | 1 | `source_identity_flag` | `u8` | little | spec | Flag `1` stores source identity |
 
 ## Not tabulated
 

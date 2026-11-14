@@ -1524,6 +1524,14 @@ struct LegacyAttributedPlacementDetails<'a> {
 fn legacy_attributed_placement_details(
     body: &[u8],
 ) -> Option<LegacyAttributedPlacementDetails<'_>> {
+    legacy_attributed_placement_generation(body, false)
+        .or_else(|| legacy_attributed_placement_generation(body, true))
+}
+
+fn legacy_attributed_placement_generation(
+    body: &[u8],
+    leading_placement: bool,
+) -> Option<LegacyAttributedPlacementDetails<'_>> {
     let tag_units = usize::try_from(legacy_prefix::CLASS_TAG_LENGTH_VALUE).ok()?;
     let (tag, _) = lp_ascii_strict(body, legacy_prefix::CLASS_TAG_LENGTH, tag_units..=tag_units)?;
     if !tag.as_bytes().iter().all(u8::is_ascii_digit)
@@ -1549,25 +1557,52 @@ fn legacy_attributed_placement_details(
     let attributes = body.get(legacy_prefix::LEN..)?;
     let attributes_len = legacy_placement_attributes_len(attributes)?;
     let members_start = legacy_prefix::LEN + attributes_len;
-    let members = body.get(members_start..members_start + legacy_members::LEN)?;
+    let leading_len = if leading_placement {
+        if attributes_len
+            != crate::layout::legacy_attributed_external_placement_empty_attributes::LEN
+        {
+            return None;
+        }
+        let flag_at = members_start + legacy_members::METADATA_GUID_LENGTH;
+        match *body.get(flag_at)? {
+            1 => 1,
+            0 => {
+                decode_rigid_matrix(body, flag_at + 1)?;
+                129
+            }
+            _ => return None,
+        }
+    } else {
+        0
+    };
+    let member_offset = |offset: usize| {
+        offset
+            + if offset >= legacy_members::METADATA_GUID_LENGTH {
+                leading_len
+            } else {
+                0
+            }
+    };
+    let members = body.get(members_start..members_start + legacy_members::LEN + leading_len)?;
     let control = View::u16_le_at(members, legacy_members::CONTROL)?;
     if (control != legacy_members::CONTROL_VALUE
         && !(control == legacy_identity_control::CONTROL_VALUE
-            && attributes_len == legacy_attributes::LEN
-            && members.get(legacy_members::IDENTITY_FLAG) == Some(&1)))
+            && (leading_placement
+                || (attributes_len == legacy_attributes::LEN
+                    && members.get(member_offset(legacy_members::IDENTITY_FLAG)) == Some(&1)))))
         || View::u32_le_at(members, legacy_members::ORDINAL)? == 0
-        || members.get(legacy_members::REFERENCE_SEPARATOR)
+        || members.get(member_offset(legacy_members::REFERENCE_SEPARATOR))
             != Some(&legacy_members::REFERENCE_SEPARATOR_VALUE)
     {
         return None;
     }
     for (offset, units) in [
         (
-            legacy_members::METADATA_GUID_LENGTH,
+            member_offset(legacy_members::METADATA_GUID_LENGTH),
             legacy_members::METADATA_GUID_LENGTH_VALUE,
         ),
         (
-            legacy_members::TRACKING_GUID_LENGTH,
+            member_offset(legacy_members::TRACKING_GUID_LENGTH),
             legacy_members::TRACKING_GUID_LENGTH_VALUE,
         ),
     ] {
@@ -1579,27 +1614,27 @@ fn legacy_attributed_placement_details(
             return None;
         }
     }
-    let mut reference_end = legacy_members::METADATA_REFERENCE;
+    let mut reference_end = member_offset(legacy_members::METADATA_REFERENCE);
     if !matches!(
         take_reference(members, &mut reference_end)?,
         Reference::CrossSegment { target, inline_type_guid: None, .. } if target != 0
-    ) || reference_end != legacy_members::REFERENCE_SEPARATOR
+    ) || reference_end != member_offset(legacy_members::REFERENCE_SEPARATOR)
     {
         return None;
     }
-    let mut repeated_end = legacy_members::REPEATED_TARGET_REFERENCE;
+    let mut repeated_end = member_offset(legacy_members::REPEATED_TARGET_REFERENCE);
     let repeated = take_legacy_occurrence_reference(members, &mut repeated_end)?;
-    if repeated_end != legacy_members::IDENTITY_FLAG
+    if repeated_end != member_offset(legacy_members::IDENTITY_FLAG)
         || repeated.entity != first.entity
         || repeated.source_occurrence_identity != first.source_occurrence_identity
         || !repeated.type_guid.eq_ignore_ascii_case(first.type_guid)
     {
         return None;
     }
-    let tail_start = members_start + legacy_members::LEN;
+    let tail_start = members_start + legacy_members::LEN + leading_len;
     let tail = body.get(tail_start..)?;
     let (tail, identity_tail_start, transform) =
-        match *members.get(legacy_members::IDENTITY_FLAG)? {
+        match *members.get(member_offset(legacy_members::IDENTITY_FLAG))? {
             1 => (tail, tail_start, None),
             0 if tail.len() == legacy_matrix_tail::LEN => (
                 tail.get(legacy_matrix_tail::ZERO..)?,
@@ -1639,14 +1674,16 @@ fn legacy_attributed_placement_details(
         carrier_record_index: View::u64_le_at(body, legacy_prefix::ENTITY)?,
         occurrence_guid: lp_utf16_bounded_view(
             members,
-            legacy_members::TRACKING_GUID_LENGTH,
+            member_offset(legacy_members::TRACKING_GUID_LENGTH),
             tracking_units..=tracking_units,
         )?
         .0
         .to_string()
         .try_into()
         .ok()?,
-        occurrence_guid_offset: members_start + legacy_members::TRACKING_GUID_LENGTH + 4,
+        occurrence_guid_offset: members_start
+            + member_offset(legacy_members::TRACKING_GUID_LENGTH)
+            + 4,
         owner,
         role,
         role_offset: identity_tail_start + legacy_identity_tail::ROLE_LENGTH + 4,

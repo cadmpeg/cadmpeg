@@ -141,11 +141,6 @@ fn a_leading_flag_frame_with_one_wrong_field_states_no_occurrence() {
         edit(&|bytes| {
             bytes.pop();
         });
-        if matrix {
-            edit(&|bytes| {
-                bytes[body + 180 + 24..body + 180 + 32].copy_from_slice(&6.0_f64.to_le_bytes());
-            });
-        }
         for bytes in cases {
             assert!(parse(&bytes).is_none());
         }
@@ -398,4 +393,39 @@ fn a_class_256_leading_flag_frame_stores_a_matrix_only_after_ordinal_one() {
     assert!(losses.is_empty());
 
     assert!(!parse(&frame(true)).unwrap().is_class_256_first_matrix());
+}
+
+#[test]
+fn closing_placement_can_differ_from_the_saved_source_frame() {
+    let mut bytes = frame(true);
+    bytes[231 + 128 + 24..231 + 128 + 32].copy_from_slice(&6.0_f64.to_le_bytes());
+    let record = parse(&bytes).unwrap();
+    assert_eq!(record.transform().unwrap().offset, 359);
+    assert_eq!(record.transform().unwrap().value.rows()[0][3], 6.0);
+    let wire = serde_json::to_value(&record).unwrap();
+    let reread: DesignComponentOccurrence = serde_json::from_value(wire).unwrap();
+    assert_eq!(record, reread);
+
+    let mut bytes = frame(false);
+    bytes[230] = 0;
+    bytes.splice(231..231, MATRIX.into_iter().flat_map(f64::to_le_bytes));
+    let record = parse(&bytes).unwrap();
+    assert_eq!(record.transform().unwrap().offset, 231);
+    assert_eq!(record.transform().unwrap().value.rows()[0][3], 5.0);
+    let wire = serde_json::to_value(&record).unwrap();
+    let reread: DesignComponentOccurrence = serde_json::from_value(wire).unwrap();
+    assert_eq!(record, reread);
+}
+
+#[test]
+fn a_source_matrix_can_close_with_current_identity() {
+    let mut bytes = frame(true);
+    bytes[358] = 1;
+    bytes.drain(359..487);
+    let record = parse(&bytes).unwrap();
+    assert!(record.transform().is_none());
+    let wire = serde_json::to_value(&record).unwrap();
+    assert_eq!(wire["owner_entity_offset"], 369);
+    let reread: DesignComponentOccurrence = serde_json::from_value(wire).unwrap();
+    assert_eq!(record, reread);
 }
