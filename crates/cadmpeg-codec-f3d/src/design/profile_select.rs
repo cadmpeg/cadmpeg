@@ -4141,7 +4141,7 @@ fn compact_profile_loops(
     sketch: &cadmpeg_ir::sketches::Sketch,
     resolution: &SketchCurveSelectionResolution<'_>,
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
-    if sketch.profiles.len() < 2 {
+    if sketch.profiles.is_empty() {
         return None;
     }
     let operand = scope.extrude_profile()?;

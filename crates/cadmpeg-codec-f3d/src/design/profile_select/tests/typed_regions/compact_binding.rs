@@ -97,3 +97,94 @@ fn compact_members_with_missing_geometry_retain_the_selection_for_every_profile_
         assert_eq!(selections.as_slice(), &["stream:scope#7".to_owned()]);
     }
 }
+
+#[test]
+fn a_complete_compact_loop_can_name_the_single_sketch_profile() {
+    use crate::records::feature::scope::{DesignExtrudeScope, DesignScopePayload};
+    use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
+
+    let placements = [placement()];
+    let sketch_id = neutral_sketch_id(&placements[0]);
+    let curves = [curve(31, 11, 0), curve(32, 12, 0)];
+    let entities = [(11, 1.0), (12, 2.0)].map(|(primary, radius)| {
+        SketchEntity::new(
+            neutral_sketch_curve_id(&sketch_id, primary, 0),
+            sketch_id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: Length::new(radius).unwrap(),
+            })
+            .unwrap(),
+        )
+    });
+    let sketches = [Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        native_ref: None,
+        placement: SketchPlacement::Unresolved {},
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
+            entity: entities[0].id().clone(),
+            reversed: false,
+        }]])
+        .unwrap(),
+    }];
+    let operand: DesignSketchProfileOperand = serde_json::from_value(json!({
+        "scope_reference_ordinal": 0, "record_index": 10, "byte_offset": 10,
+        "class_tag": "343", "asset_id": "01234567-89ab-cdef-0123-456789abcdef",
+        "asset_id_offset": 20, "entity_id": "Sketch_42", "entity_suffix": 42,
+        "entity_reference_offset": 100, "paired_class_tag": "265", "paired_byte_offset": 200,
+        "compact_tail_flags": [false, false]
+    }))
+    .unwrap();
+    let scope = DesignParameterScope::empty(
+        "stream:scope#7",
+        DesignScopePayload::Extrude(Some(DesignExtrudeScope {
+            extrude_profile: Some(operand),
+            ..Default::default()
+        })),
+        7,
+    );
+    let mut group = group();
+    group
+        .try_set_members(group.members()[..1].to_vec())
+        .unwrap();
+    group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::PROFILE,
+        );
+    let groups = [group];
+    let mut compact = selection(10, 0, 11, true);
+    compact.groups[0].region[0].entries[0].primary_id_offset -= 40;
+    compact.identity_end_offset -= 40;
+    let resolve = |selections: &[DesignProfileCurveSelection]| {
+        super::super::super::compact_profile_loops(
+            &scope,
+            &sketches[0],
+            &SketchCurveSelectionResolution {
+                scopes: &[],
+                groups: &groups,
+                operands: &[],
+                profile_curves: selections,
+                placements: &placements,
+                curve_identities: &curves,
+                sketches: &sketches,
+                sketch_entities: &entities,
+                spatial_sketches: &[],
+                spatial_sketch_entities: &[],
+            },
+        )
+    };
+    assert_eq!(
+        resolve(std::slice::from_ref(&compact)),
+        Some(ProfileRef::Planar(
+            PlanarProfileRef::sketch_profiles(sketch_id, vec![0]).unwrap()
+        ))
+    );
+    compact.groups[0].region[0].entries[0].primary_id = 12;
+    assert!(resolve(std::slice::from_ref(&compact)).is_none());
+    compact.groups[0].region[0].entries[0].primary_id = 11;
+    compact.groups[0].region[0].entries[0].entry_fields[1] = 2;
+    assert!(resolve(std::slice::from_ref(&compact)).is_none());
+}
