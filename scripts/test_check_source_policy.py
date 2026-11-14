@@ -686,6 +686,50 @@ class PlacementRules(TempSourceCase):
         self.assertEqual([f.path for f in self.findings("test_size")], ["crates/demo/tests/smoke.rs"])
 
 
+class GeneratedLayoutSizeRules(TempSourceCase):
+    HEADER = ("// SPDX-License-Identifier: Apache-2.0\n"
+              "//! Byte-offset and value constants generated from `docs/layouts/demo.toml`.\n")
+
+    def register_layout(self) -> None:
+        self.write("crates/cadmpeg/tests/layout_tables/generate.rs", '\n'.join([
+            'pub(crate) const GENERATED_LAYOUT_RS: &[(&str, &str)] = &[',
+            '    ("demo", "crates/demo/src/layout.rs"),',
+            '];', '',
+        ]))
+
+    def test_registered_layout_retains_other_policy_checks(self) -> None:
+        self.register_layout()
+        self.write("crates/demo/src/lib.rs", "mod layout;\n")
+        self.write("crates/demo/src/layout.rs", _pad_lines(
+            self.HEADER.splitlines() + ["const VALUE: u32 = u32::from_le_bytes([0; 4]);"], 6))
+        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4):
+            findings = policy.check_source()
+        self.assertEqual([f.rule for f in findings], ["unapproved_endian_read"])
+
+    def test_generated_header_without_registration_keeps_size_limit(self) -> None:
+        self.write("crates/demo/src/layout.rs", _pad_lines(self.HEADER.splitlines(), 6))
+        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4):
+            findings = self.findings("production_size")
+        self.assertEqual([f.path for f in findings], ["crates/demo/src/layout.rs"])
+
+    def test_registered_path_requires_matching_generated_header(self) -> None:
+        self.register_layout()
+        for header in ["", self.HEADER.replace("demo.toml", "another.toml")]:
+            with self.subTest(header=header):
+                self.write("crates/demo/src/layout.rs", _pad_lines(header.splitlines(), 6))
+                with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4):
+                    findings = self.findings("production_size")
+                self.assertEqual([f.path for f in findings], ["crates/demo/src/layout.rs"])
+
+    def test_tuple_outside_registry_keeps_size_limit(self) -> None:
+        self.write("crates/cadmpeg/tests/layout_tables/generate.rs",
+                   'const OTHER: &[(&str, &str)] = &[("demo", "crates/demo/src/layout.rs")];\n')
+        self.write("crates/demo/src/layout.rs", _pad_lines(self.HEADER.splitlines(), 6))
+        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4):
+            findings = self.findings("production_size")
+        self.assertEqual([f.path for f in findings], ["crates/demo/src/layout.rs"])
+
+
 class ModuleVisibility(TempSourceCase):
     def test_private_inner_module_cannot_grant_crate_reach(self) -> None:
         self.write("crates/demo/src/lib.rs", "pub mod outer;\n")

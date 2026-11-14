@@ -42,7 +42,11 @@ CPU affinity mask, capped by `PYTHON_CPU_COUNT` when it is set. Set
   test-only `#[path]` module includes are prohibited.
 - Test files and inline test modules have a 2,000-line limit. Golden test files
   are excluded. Production files have a 10,000-line limit after removing
-  `cfg(test)` items. These are maintenance limits, not correctness proofs.
+  `cfg(test)` items. Layout constants registered in the layout generator's
+  `GENERATED_LAYOUT_RS` list and carrying its matching source-table header are
+  excluded from the production size limit. Their tables and byte-exact generation
+  test govern the generated contents; all other source checks still apply.
+  These are maintenance limits, not correctness proofs.
 - A module-level `fn`, `const` or `static` claims no more reach than its module
   can grant. A module the declaration chain caps below the crate root cannot be
   named from outside that cap, so `pub(crate)` on such an item spells reach the

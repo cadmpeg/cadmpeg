@@ -742,6 +742,21 @@ PLATFORM_LIBM_CALL = re.compile(
 )
 
 
+@cached_analysis
+def generated_layout_formats() -> dict[str, str]:
+    """Registered layout outputs, keyed by path, from the layout generator."""
+    generator = ROOT / "crates/cadmpeg/tests/layout_tables/generate.rs"
+    try:
+        source = generator.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    registry = re.search(r"\bGENERATED_LAYOUT_RS\b[^=]*=\s*&\[(.*?)\];", source, re.DOTALL)
+    if registry is None:
+        return {}
+    return {path: format_id for format_id, path in
+            re.findall(r'\("(\w+)",\s*"([^"]+/layout\.rs)"\)', registry[1])}
+
+
 def scan_patterns(path: Path, source: str) -> list[Finding]:
     """Inspect each source pattern once and report its location."""
     code, size = production_source(source)
@@ -793,8 +808,14 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
                            "Codec crates read only their own native namespace; the convert gate assumes it (ExportPlan::carried_errors).")
 
     if size > PRODUCTION_LINE_LIMIT:
-        report("production_size", 1,
-               f"Production file has {size} lines excluding cfg(test) items; limit is {PRODUCTION_LINE_LIMIT}.")
+        layout = generated_layout_formats().get(relative_path(path))
+        generated = layout is not None and source.startswith(
+            "// SPDX-License-Identifier: Apache-2.0\n"
+            f"//! Byte-offset and value constants generated from `docs/layouts/{layout}.toml`.\n"
+        )
+        if not generated:
+            report("production_size", 1,
+                   f"Production file has {size} lines excluding cfg(test) items; limit is {PRODUCTION_LINE_LIMIT}.")
 
     markers = endian_markers(source)
     lines = code.splitlines()
