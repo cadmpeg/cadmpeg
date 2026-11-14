@@ -609,7 +609,7 @@ fn attributed_component_occurrence(
     }
     let component_record_index = component.0;
     let count = View::u32_le_at(frame, count_at)?;
-    if !(1..=MAX_OCCURRENCE_ATTRIBUTES).contains(&count) {
+    if count > MAX_OCCURRENCE_ATTRIBUTES {
         return None;
     }
     let mut attributes = Vec::new();

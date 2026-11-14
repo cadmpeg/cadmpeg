@@ -164,6 +164,8 @@ pub(crate) enum F3dLossCode {
     /// A complete joint occurrence path has no unique merged insertion instance.
     AssemblyOperandDescentUnresolved,
     AssemblyJointSourceBindingAssumed,
+    AssemblyConnectorOperandsAssumed,
+    AssemblyMotionBindingAssumed,
     /// A joint operand path continues inside an unmerged inserted document; the
     /// remaining keys stay a nested occurrence path.
     AssemblyOperandNestedPathRetained,
@@ -208,6 +210,12 @@ pub(crate) enum F3dLossCode {
     /// A Base Feature has no complete unique body binding.
     FeatureStoredBodiesUnbound,
     FeatureDerivedInstanceComponentInsertAssumed,
+    FeatureDerivedInstanceSourcesUnresolved,
+    FeatureDerivedInstanceCarrierPlacementAssumed,
+    FeatureDerivedInstanceScopePlacementAssumed,
+    FeatureDerivedInstanceContextTransformAssumed,
+    FeatureDerivedInstancePlacementUnrepresentable,
+    FeatureDerivedInstanceDefinitionUnresolved,
     /// A paste keeps its bodies; its source pairs or a source node do not resolve.
     FeaturePasteSourcesUnresolved,
     FeatureOccurrenceTransferSourceUnresolved,
@@ -254,6 +262,20 @@ pub(crate) enum F3dLossCode {
     FeatureSweepPathTangentAssumedFalse,
     FeatureSweepLinearizeAssumedFalse,
     FeatureSweepControlsUninterpreted,
+    FeaturePipeSourceUnresolved,
+    FeaturePipeOperationUnresolved,
+    FeaturePipeHollowUnresolved,
+    FeaturePipeScalarUnresolved,
+    FeaturePipeSectionUnresolved,
+    FeaturePipePathUnresolved,
+    FeaturePipePathExtentUnresolved,
+    FeaturePipePathParameterizationAssumed,
+    FeaturePipePathRoleAssumed,
+    FeaturePipeTargetsRetainedNative,
+    FeaturePipeTargetsUnresolved,
+    FeaturePipePointOriginUnresolved,
+    FeaturePipePathTangentAssumedFalse,
+    FeaturePipeLinearizeAssumedFalse,
     SurfacePatchInteriorConstraintAssumed,
     SurfacePatchUnnamedGroupsAssumedInactive,
     SurfacePatchUnorderedReferenceRunsAssumed,
@@ -468,6 +490,9 @@ pub(crate) enum F3dLossCode {
     FeatureBodySelectionNative,
     /// Reverse Normal body-group members lack the whole-body record type.
     FeatureReverseNormalBodyUnverified,
+    UnstitchFrameAssumed,
+    UnstitchGroupSelectionAssumed,
+    UnstitchPrologueControlsAssumed,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
     /// A Combine frame that matches the fixed fields of the operand-list
@@ -531,6 +556,7 @@ pub(crate) enum F3dLossCode {
     FeatureThickenFlagsAssumed,
     /// A `Shell` reference table stores references outside its face-group members.
     FeatureShellTableMembersAssumed,
+    FeatureShellIndependentWallsNative,
     /// A compact, marked, or counted `Shell` prefix stores an offset-21 Boolean whose Shell option is unresolved.
     FeatureShellPrefixFlagAssumed,
     /// Feature face operands stay unresolved inside historical selections.
@@ -804,6 +830,8 @@ impl F3dLossCode {
         Self::AssemblyOperandDescentAmbiguous,
         Self::AssemblyOperandDescentUnresolved,
         Self::AssemblyJointSourceBindingAssumed,
+        Self::AssemblyConnectorOperandsAssumed,
+        Self::AssemblyMotionBindingAssumed,
         Self::AssemblyOperandNestedPathRetained,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
@@ -830,6 +858,12 @@ impl F3dLossCode {
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureStoredBodiesUnbound,
         Self::FeatureDerivedInstanceComponentInsertAssumed,
+        Self::FeatureDerivedInstanceSourcesUnresolved,
+        Self::FeatureDerivedInstanceCarrierPlacementAssumed,
+        Self::FeatureDerivedInstanceScopePlacementAssumed,
+        Self::FeatureDerivedInstanceContextTransformAssumed,
+        Self::FeatureDerivedInstancePlacementUnrepresentable,
+        Self::FeatureDerivedInstanceDefinitionUnresolved,
         Self::FeaturePasteSourcesUnresolved,
         Self::FeatureOccurrenceTransferSourceUnresolved,
         Self::FeatureOccurrenceTransferOwnerUnresolved,
@@ -861,6 +895,20 @@ impl F3dLossCode {
         Self::FeatureSweepPathTangentAssumedFalse,
         Self::FeatureSweepLinearizeAssumedFalse,
         Self::FeatureSweepControlsUninterpreted,
+        Self::FeaturePipeSourceUnresolved,
+        Self::FeaturePipeOperationUnresolved,
+        Self::FeaturePipeHollowUnresolved,
+        Self::FeaturePipeScalarUnresolved,
+        Self::FeaturePipeSectionUnresolved,
+        Self::FeaturePipePathUnresolved,
+        Self::FeaturePipePathExtentUnresolved,
+        Self::FeaturePipePathParameterizationAssumed,
+        Self::FeaturePipePathRoleAssumed,
+        Self::FeaturePipeTargetsRetainedNative,
+        Self::FeaturePipeTargetsUnresolved,
+        Self::FeaturePipePointOriginUnresolved,
+        Self::FeaturePipePathTangentAssumedFalse,
+        Self::FeaturePipeLinearizeAssumedFalse,
         Self::SurfacePatchInteriorConstraintAssumed,
         Self::SurfacePatchUnnamedGroupsAssumedInactive,
         Self::SurfacePatchUnorderedReferenceRunsAssumed,
@@ -976,6 +1024,9 @@ impl F3dLossCode {
         Self::FeatureWorkAxisEndpointToleranceAssumed,
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
+        Self::UnstitchFrameAssumed,
+        Self::UnstitchGroupSelectionAssumed,
+        Self::UnstitchPrologueControlsAssumed,
         Self::FeatureCombineSelectionNative,
         Self::FeatureCombinePrologueAssumed,
         Self::FeatureCombineOperandListRefused,
@@ -1009,6 +1060,7 @@ impl F3dLossCode {
         Self::FeatureRectangularPatternPlacementNotTransferred,
         Self::FeatureThickenFlagsAssumed,
         Self::FeatureShellTableMembersAssumed,
+        Self::FeatureShellIndependentWallsNative,
         Self::FeatureShellPrefixFlagAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureTrimCellTableNative,
@@ -1195,6 +1247,8 @@ impl F3dLossCode {
             Self::AssemblyOperandDescentAmbiguous => "assembly.operand-descent-ambiguous",
             Self::AssemblyOperandDescentUnresolved => "assembly.operand-descent-unresolved",
             Self::AssemblyJointSourceBindingAssumed => "assembly.joint-source-binding-assumed",
+            Self::AssemblyConnectorOperandsAssumed => "assembly.connector-operands-assumed",
+            Self::AssemblyMotionBindingAssumed => "assembly.motion-binding-assumed",
             Self::AssemblyOperandNestedPathRetained => "assembly.operand-nested-path-retained",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
@@ -1217,6 +1271,24 @@ impl F3dLossCode {
             Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
             Self::FeatureDerivedInstanceComponentInsertAssumed => {
                 "feature.derived-instance-component-insert-assumed"
+            }
+            Self::FeatureDerivedInstanceSourcesUnresolved => {
+                "feature.derived-instance-sources-unresolved"
+            }
+            Self::FeatureDerivedInstanceCarrierPlacementAssumed => {
+                "feature.derived-instance-carrier-placement-assumed"
+            }
+            Self::FeatureDerivedInstanceScopePlacementAssumed => {
+                "feature.derived-instance-scope-placement-assumed"
+            }
+            Self::FeatureDerivedInstanceContextTransformAssumed => {
+                "feature.derived-instance-context-transform-assumed"
+            }
+            Self::FeatureDerivedInstancePlacementUnrepresentable => {
+                "feature.derived-instance-placement-unrepresentable"
+            }
+            Self::FeatureDerivedInstanceDefinitionUnresolved => {
+                "feature.derived-instance-definition-unresolved"
             }
             Self::FeaturePasteSourcesUnresolved => "feature.paste-sources-unresolved",
             Self::FeatureOccurrenceTransferSourceUnresolved => {
@@ -1261,6 +1333,22 @@ impl F3dLossCode {
             Self::FeatureSweepPathTangentAssumedFalse => "feature.sweep-path-tangent-assumed-false",
             Self::FeatureSweepLinearizeAssumedFalse => "feature.sweep-linearize-assumed-false",
             Self::FeatureSweepControlsUninterpreted => "feature.sweep-controls-uninterpreted",
+            Self::FeaturePipeSourceUnresolved => "feature.pipe-source-unresolved",
+            Self::FeaturePipeOperationUnresolved => "feature.pipe-operation-unresolved",
+            Self::FeaturePipeHollowUnresolved => "feature.pipe-hollow-unresolved",
+            Self::FeaturePipeScalarUnresolved => "feature.pipe-scalar-unresolved",
+            Self::FeaturePipeSectionUnresolved => "feature.pipe-section-unresolved",
+            Self::FeaturePipePathUnresolved => "feature.pipe-path-unresolved",
+            Self::FeaturePipePathExtentUnresolved => "feature.pipe-path-extent-unresolved",
+            Self::FeaturePipePathParameterizationAssumed => {
+                "feature.pipe-path-parameterization-assumed"
+            }
+            Self::FeaturePipePathRoleAssumed => "feature.pipe-path-role-assumed",
+            Self::FeaturePipeTargetsRetainedNative => "feature.pipe-targets-retained-native",
+            Self::FeaturePipeTargetsUnresolved => "feature.pipe-targets-unresolved",
+            Self::FeaturePipePointOriginUnresolved => "feature.pipe-point-origin-unresolved",
+            Self::FeaturePipePathTangentAssumedFalse => "feature.pipe-path-tangent-assumed-false",
+            Self::FeaturePipeLinearizeAssumedFalse => "feature.pipe-linearize-assumed-false",
             Self::SurfacePatchInteriorConstraintAssumed => {
                 "feature.surface-patch-interior-constraint-assumed"
             }
@@ -1419,6 +1507,9 @@ impl F3dLossCode {
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
+            Self::UnstitchFrameAssumed => "feature.unstitch-frame-assumed",
+            Self::UnstitchGroupSelectionAssumed => "feature.unstitch-group-selection-assumed",
+            Self::UnstitchPrologueControlsAssumed => "feature.unstitch-prologue-controls-assumed",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
@@ -1466,6 +1557,7 @@ impl F3dLossCode {
             }
             Self::FeatureThickenFlagsAssumed => "feature.thicken-flags-assumed",
             Self::FeatureShellTableMembersAssumed => "feature.shell-table-members-assumed",
+            Self::FeatureShellIndependentWallsNative => "feature.shell-independent-walls-native",
             Self::FeatureShellPrefixFlagAssumed => "feature.shell-prefix-flag-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
@@ -1683,6 +1775,8 @@ impl F3dLossCode {
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyJointSourceBindingAssumed
+            | Self::AssemblyConnectorOperandsAssumed
+            | Self::AssemblyMotionBindingAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
@@ -1701,6 +1795,12 @@ impl F3dLossCode {
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
             | Self::FeatureDerivedInstanceComponentInsertAssumed
+            | Self::FeatureDerivedInstanceSourcesUnresolved
+            | Self::FeatureDerivedInstanceCarrierPlacementAssumed
+            | Self::FeatureDerivedInstanceScopePlacementAssumed
+            | Self::FeatureDerivedInstanceContextTransformAssumed
+            | Self::FeatureDerivedInstancePlacementUnrepresentable
+            | Self::FeatureDerivedInstanceDefinitionUnresolved
             | Self::FeaturePasteSourcesUnresolved
             | Self::FeatureOccurrenceTransferSourceUnresolved
             | Self::FeatureOccurrenceTransferOwnerUnresolved
@@ -1730,6 +1830,20 @@ impl F3dLossCode {
             | Self::FeatureSweepPathTangentAssumedFalse
             | Self::FeatureSweepLinearizeAssumedFalse
             | Self::FeatureSweepControlsUninterpreted
+            | Self::FeaturePipeSourceUnresolved
+            | Self::FeaturePipeOperationUnresolved
+            | Self::FeaturePipeHollowUnresolved
+            | Self::FeaturePipeScalarUnresolved
+            | Self::FeaturePipeSectionUnresolved
+            | Self::FeaturePipePathUnresolved
+            | Self::FeaturePipePathExtentUnresolved
+            | Self::FeaturePipePathParameterizationAssumed
+            | Self::FeaturePipePathRoleAssumed
+            | Self::FeaturePipeTargetsRetainedNative
+            | Self::FeaturePipeTargetsUnresolved
+            | Self::FeaturePipePointOriginUnresolved
+            | Self::FeaturePipePathTangentAssumedFalse
+            | Self::FeaturePipeLinearizeAssumedFalse
             | Self::SurfacePatchInteriorConstraintAssumed
             | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
@@ -1848,6 +1962,9 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
+            | Self::UnstitchFrameAssumed
+            | Self::UnstitchGroupSelectionAssumed
+            | Self::UnstitchPrologueControlsAssumed
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
@@ -1881,6 +1998,7 @@ impl F3dLossCode {
             | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
             | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellIndependentWallsNative
             | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
@@ -2035,6 +2153,12 @@ impl F3dLossCode {
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
             | Self::FeatureDerivedInstanceComponentInsertAssumed
+            | Self::FeatureDerivedInstanceSourcesUnresolved
+            | Self::FeatureDerivedInstanceCarrierPlacementAssumed
+            | Self::FeatureDerivedInstanceScopePlacementAssumed
+            | Self::FeatureDerivedInstanceContextTransformAssumed
+            | Self::FeatureDerivedInstancePlacementUnrepresentable
+            | Self::FeatureDerivedInstanceDefinitionUnresolved
             | Self::FeaturePasteSourcesUnresolved
             | Self::FeatureOccurrenceTransferSourceUnresolved
             | Self::FeatureOccurrenceTransferOwnerUnresolved
@@ -2064,6 +2188,20 @@ impl F3dLossCode {
             | Self::FeatureSweepPathTangentAssumedFalse
             | Self::FeatureSweepLinearizeAssumedFalse
             | Self::FeatureSweepControlsUninterpreted
+            | Self::FeaturePipeSourceUnresolved
+            | Self::FeaturePipeOperationUnresolved
+            | Self::FeaturePipeHollowUnresolved
+            | Self::FeaturePipeScalarUnresolved
+            | Self::FeaturePipeSectionUnresolved
+            | Self::FeaturePipePathUnresolved
+            | Self::FeaturePipePathExtentUnresolved
+            | Self::FeaturePipePathParameterizationAssumed
+            | Self::FeaturePipePathRoleAssumed
+            | Self::FeaturePipeTargetsRetainedNative
+            | Self::FeaturePipeTargetsUnresolved
+            | Self::FeaturePipePointOriginUnresolved
+            | Self::FeaturePipePathTangentAssumedFalse
+            | Self::FeaturePipeLinearizeAssumedFalse
             | Self::SurfacePatchInteriorConstraintAssumed
             | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
@@ -2182,6 +2320,9 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
+            | Self::UnstitchFrameAssumed
+            | Self::UnstitchGroupSelectionAssumed
+            | Self::UnstitchPrologueControlsAssumed
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
@@ -2215,6 +2356,7 @@ impl F3dLossCode {
             | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
             | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellIndependentWallsNative
             | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
@@ -2236,6 +2378,8 @@ impl F3dLossCode {
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyJointSourceBindingAssumed
+            | Self::AssemblyConnectorOperandsAssumed
+            | Self::AssemblyMotionBindingAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
@@ -2439,6 +2583,8 @@ mod tests {
                 "assembly.operand-descent-ambiguous",
                 "assembly.operand-descent-unresolved",
                 "assembly.joint-source-binding-assumed",
+                "assembly.connector-operands-assumed",
+                "assembly.motion-binding-assumed",
                 "assembly.operand-nested-path-retained",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
@@ -2465,6 +2611,12 @@ mod tests {
                 "feature.stored-bodies-recipe-absent",
                 "feature.stored-bodies-unbound",
                 "feature.derived-instance-component-insert-assumed",
+                "feature.derived-instance-sources-unresolved",
+                "feature.derived-instance-carrier-placement-assumed",
+                "feature.derived-instance-scope-placement-assumed",
+                "feature.derived-instance-context-transform-assumed",
+                "feature.derived-instance-placement-unrepresentable",
+                "feature.derived-instance-definition-unresolved",
                 "feature.paste-sources-unresolved",
                 "feature.occurrence-transfer-source-unresolved",
                 "feature.occurrence-transfer-owner-unresolved",
@@ -2496,6 +2648,20 @@ mod tests {
                 "feature.sweep-path-tangent-assumed-false",
                 "feature.sweep-linearize-assumed-false",
                 "feature.sweep-controls-uninterpreted",
+                "feature.pipe-source-unresolved",
+                "feature.pipe-operation-unresolved",
+                "feature.pipe-hollow-unresolved",
+                "feature.pipe-scalar-unresolved",
+                "feature.pipe-section-unresolved",
+                "feature.pipe-path-unresolved",
+                "feature.pipe-path-extent-unresolved",
+                "feature.pipe-path-parameterization-assumed",
+                "feature.pipe-path-role-assumed",
+                "feature.pipe-targets-retained-native",
+                "feature.pipe-targets-unresolved",
+                "feature.pipe-point-origin-unresolved",
+                "feature.pipe-path-tangent-assumed-false",
+                "feature.pipe-linearize-assumed-false",
                 "feature.surface-patch-interior-constraint-assumed",
                 "feature.surface-patch-unnamed-groups-assumed-inactive",
                 "feature.surface-patch-unordered-reference-runs-assumed",
@@ -2611,6 +2777,9 @@ mod tests {
                 "feature.work-axis-endpoint-tolerance-assumed",
                 "feature.body-selection-native",
                 "feature.reverse-normal-body-unverified",
+                "feature.unstitch-frame-assumed",
+                "feature.unstitch-group-selection-assumed",
+                "feature.unstitch-prologue-controls-assumed",
                 "feature.combine-selection-native",
                 "feature.combine-prologue-assumed",
                 "feature.combine-operand-list-refused",
@@ -2644,6 +2813,7 @@ mod tests {
                 "feature.rectangular-pattern-placement-not-transferred",
                 "feature.thicken-flags-assumed",
                 "feature.shell-table-members-assumed",
+                "feature.shell-independent-walls-native",
                 "feature.shell-prefix-flag-assumed",
                 "feature.face-operand-unresolved",
                 "feature.trim-cell-table-native",
