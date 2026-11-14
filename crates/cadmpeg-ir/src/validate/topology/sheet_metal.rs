@@ -247,4 +247,69 @@ mod tests {
             .iter()
             .any(|finding| finding.message.contains("another feature's input topology")));
     }
+    #[test]
+    fn refold_source_requires_unfold_kind_earlier_ordinal_and_dependency() {
+        use crate::features::{
+            sheet_metal::{SheetMetalRefoldConstruction, SheetMetalUnfoldConstruction},
+            DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
+            FeatureOperation,
+        };
+        let mut ir = crate::examples::unit_cube().unwrap();
+        let source = FeatureId::mint("test:model:feature#unfold").unwrap();
+        let target = FeatureId::mint("test:model:feature#refold").unwrap();
+        let feature = |id, ordinal, operation| Feature {
+            product_definition: None,
+            id,
+            ordinal,
+            name: None,
+            suppressed: None,
+            dependencies: DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(operation)),
+            native_ref: None,
+        };
+        ir.model.features = vec![
+            feature(
+                source.clone(),
+                0,
+                FeatureOperation::SheetMetalUnfold {
+                    construction: SheetMetalUnfoldConstruction::default(),
+                },
+            ),
+            feature(
+                target,
+                1,
+                FeatureOperation::SheetMetalRefold {
+                    construction: SheetMetalRefoldConstruction {
+                        unfold: Some(source.clone()),
+                    },
+                },
+            ),
+        ];
+        ir.model.features[1].dependencies.insert(source.clone());
+        let check = |ir: &crate::CadIr| {
+            crate::validate::validate_neutral(ir, Vec::new())
+                .unwrap()
+                .findings
+                .into_iter()
+                .filter(|finding| finding.message.contains("refold Unfold"))
+                .collect::<Vec<_>>()
+        };
+        assert!(check(&ir).is_empty());
+        ir.model.features[1].dependencies = DistinctMembers::default();
+        assert!(!check(&ir).is_empty());
+        ir.model.features[1].dependencies.insert(source);
+        ir.model.features[0].ordinal = 2;
+        assert!(!check(&ir).is_empty());
+        ir.model.features[0].ordinal = 0;
+        ir.model.features[0].evaluation.edit(|definition, _| {
+            *definition = FeatureDefinition::Operation(FeatureOperation::SheetMetalRefold {
+                construction: SheetMetalRefoldConstruction::default(),
+            })
+        });
+        assert!(!check(&ir).is_empty());
+    }
 }

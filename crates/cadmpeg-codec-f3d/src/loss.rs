@@ -26,6 +26,15 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
+    UnfoldAllBendsFlagAssumed,
+    UnfoldControlUnresolved,
+    UnfoldSelectionSlotsAssumed,
+    UnfoldSelectionNative,
+    UnfoldEnvelopeUnresolved,
+    UnfoldMaterialScalarFactorAssumed,
+    UnfoldRuleFactorUnresolved,
+    RefoldGroupSourceAssumed,
+    RefoldSourceUnresolved,
     BendLineOwnerOrderAssumed,
     BendStationaryRoleAssumed,
     BendAngleUnresolved,
@@ -1363,6 +1372,17 @@ impl F3dLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::SceneOverrideRefused => "scene.override-refused",
+            Self::UnfoldAllBendsFlagAssumed => "feature.unfold-all-bends-flag-assumed",
+            Self::UnfoldControlUnresolved => "feature.unfold-control-unresolved",
+            Self::UnfoldSelectionSlotsAssumed => "feature.unfold-selection-slots-assumed",
+            Self::UnfoldSelectionNative => "feature.unfold-selection-native",
+            Self::UnfoldEnvelopeUnresolved => "feature.unfold-envelope-unresolved",
+            Self::UnfoldMaterialScalarFactorAssumed => {
+                "feature.unfold-material-scalar-factor-assumed"
+            }
+            Self::UnfoldRuleFactorUnresolved => "feature.unfold-rule-factor-unresolved",
+            Self::RefoldGroupSourceAssumed => "feature.refold-group-source-assumed",
+            Self::RefoldSourceUnresolved => "feature.refold-source-unresolved",
             Self::BendLineOwnerOrderAssumed => "feature.bend-line-owner-order-assumed",
             Self::BendStationaryRoleAssumed => "feature.bend-stationary-role-assumed",
             Self::BendAngleUnresolved => "feature.bend-angle-unresolved",
@@ -2034,7 +2054,16 @@ impl F3dLossCode {
             | Self::BendStationarySelectionNative
             | Self::BendRuleRadiusUnresolved
             | Self::BendAngleOwnerBacklinkAssumed
-            | Self::BendCachedOwnerAngleAssumed => Severity::Warning,
+            | Self::BendCachedOwnerAngleAssumed
+            | Self::UnfoldAllBendsFlagAssumed
+            | Self::UnfoldControlUnresolved
+            | Self::UnfoldSelectionSlotsAssumed
+            | Self::UnfoldSelectionNative
+            | Self::UnfoldEnvelopeUnresolved
+            | Self::UnfoldMaterialScalarFactorAssumed
+            | Self::UnfoldRuleFactorUnresolved
+            | Self::RefoldGroupSourceAssumed
+            | Self::RefoldSourceUnresolved => Severity::Warning,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => Severity::Info,
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
@@ -2532,7 +2561,16 @@ impl F3dLossCode {
             | Self::BendStationarySelectionNative
             | Self::BendRuleRadiusUnresolved
             | Self::BendAngleOwnerBacklinkAssumed
-            | Self::BendCachedOwnerAngleAssumed => LossTaxonomy::FeatureHistoryRetained,
+            | Self::BendCachedOwnerAngleAssumed
+            | Self::UnfoldAllBendsFlagAssumed
+            | Self::UnfoldControlUnresolved
+            | Self::UnfoldSelectionSlotsAssumed
+            | Self::UnfoldSelectionNative
+            | Self::UnfoldEnvelopeUnresolved
+            | Self::UnfoldMaterialScalarFactorAssumed
+            | Self::UnfoldRuleFactorUnresolved
+            | Self::RefoldGroupSourceAssumed
+            | Self::RefoldSourceUnresolved => LossTaxonomy::FeatureHistoryRetained,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => {
                 LossTaxonomy::FeatureHistoryRetained
             }

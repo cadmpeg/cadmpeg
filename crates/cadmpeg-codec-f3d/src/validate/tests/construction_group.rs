@@ -782,3 +782,54 @@ fn a_path_pattern_group_role_matches_its_scope_reference_ordinal() {
         assert_eq!(findings(path_table(), 3, DesignOperandRole::BODIES_B), 1);
     });
 }
+
+#[test]
+fn sheet_metal_fold_and_line_bend_groups_validate_their_source_roles() {
+    use crate::records::{
+        feature::scope::{DesignFeatureKind, DesignParameterScope},
+        topology::{
+            construction::DesignConstructionOperandRole, extrude_selection::DesignOperandRole,
+        },
+    };
+    for (kind, role, valid) in [
+        (DesignFeatureKind::Bend, DesignOperandRole::ROLE_0X21, true),
+        (DesignFeatureKind::Bend, DesignOperandRole::ROLE_0X10, true),
+        (DesignFeatureKind::Bend, DesignOperandRole::BODIES_A, false),
+        (
+            DesignFeatureKind::Unfold,
+            DesignOperandRole::ROLE_0X10,
+            true,
+        ),
+        (DesignFeatureKind::Unfold, DesignOperandRole::BODIES_A, true),
+        (
+            DesignFeatureKind::Unfold,
+            DesignOperandRole::BODIES_B,
+            false,
+        ),
+        (DesignFeatureKind::Refold, DesignOperandRole::BODIES_B, true),
+        (
+            DesignFeatureKind::Refold,
+            DesignOperandRole::ROLE_0X10,
+            false,
+        ),
+    ] {
+        crate::test_support::with_decode_context(|decode| {
+            let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+            let mut native = native(true, false);
+            let mut scope = DesignParameterScope::empty(
+                "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+                kind,
+                10,
+            );
+            crate::design::test_support::name_scope_references(&mut scope, [100, 101]);
+            native.design_parameter_scopes[0] = scope;
+            native.design_construction_operand_groups[0].scope_reference_ordinal = 1;
+            native.design_construction_operand_groups[0].operand_role =
+                DesignConstructionOperandRole::Other(role);
+            let ctx = super::super::Ctx::new(&ir, &native, decode);
+            let mut findings = Vec::new();
+            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            assert_eq!(findings.is_empty(), valid, "{findings:?}");
+        });
+    }
+}

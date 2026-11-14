@@ -9940,3 +9940,27 @@ pub(crate) mod marked_sphere_local_frame {
     /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
     pub(crate) const MATRIX: usize = 1;
 }
+
+/// Byte offsets for the `sheet_metal_fold_scope_prefix` record.
+///
+/// Spec §3.1.
+pub(crate) mod sheet_metal_fold_scope_prefix {
+    /// Offset of `zero_run` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `extension` (`u8`). Spec §3.1.
+    pub(crate) const EXTENSION: usize = 20;
+}
+
+/// Byte offsets for the `sheet_metal_unfold_refold_group` record.
+///
+/// Spec §3.1.
+pub(crate) mod sheet_metal_unfold_refold_group {
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `name` (`bytes[46]`). Spec §3.1.
+    pub(crate) const NAME: usize = 21;
+    /// Offset of `mode` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MODE: usize = 67;
+    /// Offset of `first_member` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_MEMBER: usize = 76;
+}
