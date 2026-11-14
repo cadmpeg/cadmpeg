@@ -4472,6 +4472,46 @@ fn resolve_profile_curve_path(
     cadmpeg_ir::features::PathRef::sketch_curves(sketch, curves).ok()
 }
 
+/// The Sketch placements that a typed profile selection names through the
+/// record its chain record references.
+///
+/// A placement whose Sketch scope is that record carries the selection. When
+/// no placement in the stream carries it, the record is not a Sketch scope of
+/// any sketch. The selection then names the one scope-less placement whose
+/// Sketch container the record references through a typed local reference and
+/// whose entity suffix equals the owner text of every member selection.
+fn selection_placements<'a>(
+    placements: &'a [DesignSketchPlacement],
+    stream: &str,
+    sketch_scope: u32,
+    selections: &[&crate::records::topology::entity_selection::DesignProfileCurveSelection],
+) -> Vec<&'a DesignSketchPlacement> {
+    let in_stream =
+        |placement: &&DesignSketchPlacement| native_stream(&placement.id) == Some(stream);
+    let scoped: Vec<_> = placements
+        .iter()
+        .filter(in_stream)
+        .filter(|placement| placement.scope_record_index == Some(sketch_scope))
+        .collect();
+    if !scoped.is_empty() || selections.is_empty() {
+        return scoped;
+    }
+    placements
+        .iter()
+        .filter(in_stream)
+        .filter(|placement| placement.scope_record_index.is_none())
+        .filter(|placement| {
+            let Ok(suffix) = u32::try_from(placement.entity_id.suffix()) else {
+                return false;
+            };
+            selections.iter().all(|selection| {
+                selection.owner_text.parse::<u32>() == Ok(suffix)
+                    && selection.scope_sketch_containers.contains(&suffix)
+            })
+        })
+        .collect()
+}
+
 fn profile_curve_selection_curves(
     group: &DesignConstructionOperandGroup,
     stream: &str,
@@ -4524,10 +4564,8 @@ fn profile_curve_selection_curves(
         selections.push(selection);
     }
     let sketch_scope = available!(sketch_scope);
-    let mut matching_placements = resolution.placements.iter().filter(|placement| {
-        native_stream(&placement.id) == Some(stream)
-            && placement.scope_record_index == Some(sketch_scope)
-    });
+    let mut matching_placements =
+        selection_placements(resolution.placements, stream, sketch_scope, &selections).into_iter();
     let placement = available!(matching_placements.next());
     if matching_placements.next().is_some()
         || owner_text != Some(placement.entity_id.suffix().to_string().as_str())
@@ -5205,7 +5243,13 @@ fn native_revolve_profile(
             && match (profile, curve_selection) {
                 (Some(profile), _) => placement.entity_id == profile.entity_id,
                 (None, Some(selection)) => {
-                    placement.scope_record_index == Some(selection.sketch_scope_record_index)
+                    selection_placements(
+                        resolution.placements,
+                        native_stream(&group.id).unwrap_or_default(),
+                        selection.sketch_scope_record_index,
+                        &[selection],
+                    )
+                    .contains(&placement)
                         && selection.owner_text.parse::<u64>().ok()
                             == Some(placement.entity_id.suffix())
                 }

@@ -992,6 +992,70 @@ fn sketch_member_run_counts_base_point_and_stops_at_count() {
     assert_eq!(values(&bytes), Vec::<u32>::new());
 }
 
+fn push_typed_member_reference(bytes: &mut Vec<u8>, target: u32, guid: &str) {
+    bytes.push(1);
+    bytes.extend_from_slice(&u64::from(target).to_le_bytes());
+    bytes.extend_from_slice(&36u32.to_le_bytes());
+    bytes.extend_from_slice(guid.as_bytes());
+    bytes.extend_from_slice(&[0, 0]);
+}
+
+/// A typed member-run record for sketch container 100 with `name`.
+fn typed_member_run_record(name: &str, members: &[u32]) -> Vec<u8> {
+    const HEAD: &str = "F47A46FB-DA27-4AFA-8A72-1B38FA596E23";
+    const POINT: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"306");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    push_typed_member_reference(&mut bytes, 316, HEAD);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 1]);
+    let units: Vec<u16> = name.encode_utf16().collect();
+    bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
+    for unit in units {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    bytes.push(0);
+    bytes.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
+    for member in members {
+        push_typed_member_reference(&mut bytes, *member, POINT);
+    }
+    bytes
+}
+
+#[test]
+fn typed_sketch_member_run_follows_the_name_and_counts_typed_references() {
+    let values = |bytes: &[u8]| {
+        tested_parse_sketch_member_run(bytes, 0, 100)
+            .into_iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        values(&typed_member_run_record("", &[317, 319])),
+        [317, 319]
+    );
+    let named = typed_member_run_record("Reconstructed-Sketch1", &[317, 319, 321]);
+    assert_eq!(values(&named), [317, 319, 321]);
+    let located = tested_parse_sketch_member_run(&named, 0, 100);
+    let first = 81 + 2 * "Reconstructed-Sketch1".len() + 4;
+    assert_eq!(located[0].offset, u64_from_index(first + 1));
+    assert_eq!(located[1].offset, u64_from_index(first + 51 + 1));
+    // The container suffix must equal the record index of the paired record.
+    assert_eq!(tested_parse_sketch_member_run(&named, 0, 101), vec![]);
+    // A run that overruns the stream names no members.
+    let mut short = named.clone();
+    short.truncate(short.len() - 1);
+    assert_eq!(values(&short), Vec::<u32>::new());
+    // A name followed by a nonzero byte is not this form.
+    let mut broken = named;
+    let terminator = 80 + 2 * "Reconstructed-Sketch1".len();
+    broken[terminator] = 1;
+    assert_eq!(values(&broken), Vec::<u32>::new());
+}
+
 #[test]
 fn sketch_member_run_backfills_relation_free_owners() {
     let mut bytes = vec![0u8; 40];
