@@ -5,6 +5,10 @@ use crate::records::feature::scope::DesignFeatureKind;
 
 const FAMILIES: &[(&str, DesignFeatureKind)] = &[
     (
+        "1CF7B9E3-5DB6-4F9D-A131-6DE7535BFF52",
+        DesignFeatureKind::Bend,
+    ),
+    (
         "359F7902-43B0-445C-8F4B-FED1D15B2680",
         DesignFeatureKind::Align,
     ),

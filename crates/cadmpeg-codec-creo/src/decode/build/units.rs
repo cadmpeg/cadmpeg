@@ -474,6 +474,9 @@ fn scale_feature_operation(
             transition,
             ..
         } => scale_attached_sheet_metal(inside_radius, relief, transition, scale)?,
+        FeatureOperation::SheetMetalBendLines { construction } => {
+            scale_optional_positive_length(&mut construction.inside_radius, scale)?;
+        }
         FeatureOperation::SheetMetalCorner { .. } => {}
         FeatureOperation::SheetMetalEdgeFlange {
             height,
