@@ -15,6 +15,7 @@ mod emboss;
 mod extrude_operands;
 mod path_pattern;
 mod sheet_metal_settings;
+mod sketch_scope;
 mod xref;
 
 use xref::validate_xref_placement_sources;
@@ -2143,7 +2144,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let entities_by_suffix = &ctx.entities_by_suffix;
-    let placements_by_scope = &ctx.placements_by_scope;
     let mut scope_indices = HashSet::new();
     let mut stream_types_by_stream = std::collections::HashMap::new();
     for scope in &native.design_parameter_scopes {
@@ -3033,16 +3033,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         placement.matrix.as_ref(),
                     ) {
                         (Some(272 | 276), None) => true,
-                        (Some(400), Some(matrix)) => {
-                            scope.byte_offset().checked_add(u64_from_index(
+                        (Some(frame @ (400 | 404)), Some(matrix)) => scope
+                            .byte_offset()
+                            .checked_add(
+                            u64_from_index(
                                 crate::layout::component_insert_matrix_scope_400_prefix::TRANSFORM,
-                            )) == Some(matrix.offset)
-                        }
-                        (Some(404), Some(matrix)) => {
-                            scope.byte_offset().checked_add(u64_from_index(
-                                crate::layout::component_insert_matrix_scope_404_prefix::TRANSFORM,
-                            )) == Some(matrix.offset)
-                        }
+                            ) + frame
+                                - 400,
+                        ) == Some(matrix.offset),
                         _ => false,
                     }
             }),
@@ -4411,8 +4409,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && joint_origin_link
             && work_point_link
             && work_plane_link
-            && (scope.sketch_entity().is_none()
-                || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
+            && sketch_scope::placement_link(ctx, scope)
             && unique_index;
         if !valid {
             push_constant_finding(
@@ -5350,6 +5347,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     crate::records::feature::scope::DesignFeatureKind::MoveFace
                         | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
+                        | crate::records::feature::scope::DesignFeatureKind::UnStitch
                 ) =>
                 {
                     group.role() == DesignOperandRole::ROLE_0X10 && group.extrude_role().is_none()
@@ -5414,6 +5412,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         | crate::records::feature::scope::DesignFeatureKind::MoveFace
                         | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
+                        | crate::records::feature::scope::DesignFeatureKind::UnStitch
                         | crate::records::feature::scope::DesignFeatureKind::Decal
                         | crate::records::feature::scope::DesignFeatureKind::Align
                         | crate::records::feature::scope::DesignFeatureKind::BaseFlange
@@ -7798,6 +7797,7 @@ fn validate_face_operands<'a>(
                                 crate::records::feature::scope::DesignFeatureKind::MoveFace
                                     | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                                     | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
+                                    | crate::records::feature::scope::DesignFeatureKind::UnStitch
                             ) =>
                             {
                                 group.is_some_and(|group| {

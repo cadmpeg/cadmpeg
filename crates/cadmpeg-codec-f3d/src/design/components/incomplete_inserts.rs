@@ -48,7 +48,7 @@ pub(crate) fn project_features(
             .evaluation
             .set_definition(FeatureDefinition::Operation(definition));
         losses.push(F3dLossCode::FeatureComponentInsertMembershipAssumed.note(format!(
-            "{} is represented as a component insertion with unresolved source membership; each placed scope supplies one unresolved occurrence, with per-scope membership assumed. Its native scope and decoded placement are retained (DR-487).", scope.id
+            "{} is represented as a component insertion with unresolved source membership; each placed scope supplies one unresolved occurrence, with per-scope membership assumed. Its native scope and decoded placement are retained (DR-491).", scope.id
         )));
     }
     Ok(losses)

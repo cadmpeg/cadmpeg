@@ -2,13 +2,14 @@
 //! Component insert, derived instance, occurrence and copy-paste component features.
 
 use crate::records::identity::{Located, IDENTITY_MATRIX};
-use crate::records::mesh::{DesignOccurrenceKey, DesignRelaxedGuidText};
+use crate::records::mesh::{DesignGuidText, DesignOccurrenceKey, DesignRelaxedGuidText};
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
 pub(crate) const OCCURRENCE_PLACEMENT_TYPE_GUID: &str = "CE2913AA-CFE0-4F04-9102-24424ED3BCFA";
+pub(crate) const DERIVED_INSTANCE_RELATION_TYPE_GUID: &str = "2D6E13A1-BBEF-4FB3-9277-00D99F634136";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct DesignComponentInsertScope {
@@ -283,19 +284,142 @@ impl From<DesignComponentInsertConstruction> for DesignComponentInsertConstructi
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignDerivedInstanceConstruction {
     /// Scope prologue record referenced by the fixed field at scope offset 22.
-    pub(crate) reference_record_index: u32,
-    /// Scope-owned class-310 relation record.
-    pub(crate) relation_record_index: u32,
-    /// Class-380 component-occurrence carrier named by the relation.
-    pub(crate) carrier_record_index: u32,
-    /// Component definition GUID carried by the joined occurrence.
+    pub(crate) reference: DesignDerivedInstanceReference,
+    pub(crate) placements: Vec<DesignDerivedInstanceSourcePlacement>,
+    pub(crate) auxiliary_pairs: Vec<DesignDerivedInstanceAuxiliaryPair>,
+    pub(crate) repeated_references: Vec<DesignDerivedInstanceReference>,
+    pub(crate) primary_reference: DesignDerivedInstanceReference,
+    pub(crate) context_placement: DesignDerivedInstancePlacement,
+    pub(crate) trailer_guid: DesignRelaxedGuidText,
+    pub(crate) sources: Vec<DesignDerivedInstanceSource>,
+}
+
+impl DesignDerivedInstanceConstruction {
+    pub(crate) fn placement_for(&self, target: u64) -> Option<DesignDerivedInstancePlacement> {
+        let mut placements = self
+            .placements
+            .iter()
+            .filter(|entry| {
+                entry.reference.target == target
+                    && entry
+                        .reference
+                        .matches_type(DERIVED_INSTANCE_RELATION_TYPE_GUID)
+            })
+            .map(|entry| entry.placement);
+        let first = placements.next()?;
+        placements
+            .all(|placement| placement.value() == first.value())
+            .then_some(first)
+    }
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_derived_source_relation,
+    DesignDerivedInstanceRelation,
+    "relation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_derived_relation_carrier,
+    DesignDerivedInstanceCarrier,
+    "carrier"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_derived_reference_type_guid,
+    DesignGuidText,
+    "type_guid"
+);
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignDerivedInstanceSource {
+    pub(crate) reference: DesignDerivedInstanceReference,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_derived_source_relation",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) relation: Option<DesignDerivedInstanceRelation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignDerivedInstanceSourcePlacement {
+    pub(crate) reference: DesignDerivedInstanceReference,
+    pub(crate) placement: DesignDerivedInstancePlacement,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignDerivedInstanceAuxiliaryPair {
+    pub(crate) auxiliary: DesignDerivedInstanceReference,
+    pub(crate) relation: DesignDerivedInstanceReference,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignDerivedInstanceRelation {
+    pub(crate) carrier_reference: DesignDerivedInstanceReference,
+    pub(crate) middle_reference: DesignDerivedInstanceReference,
+    pub(crate) scope_reference: DesignDerivedInstanceReference,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_derived_relation_carrier",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) carrier: Option<DesignDerivedInstanceCarrier>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignDerivedInstanceCarrier {
+    pub(crate) component_record_index: u64,
     pub(crate) component_guid: DesignRelaxedGuidText,
-    /// Placed occurrence GUID carried by the joined occurrence.
     pub(crate) occurrence_guid: DesignOccurrenceKey,
-    /// Row-major local-to-model placement in centimetres.
     pub(crate) transform: SketchPlacementMatrix,
-    /// Byte offset of the first scope-local transform scalar.
-    pub(crate) transform_offset: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum DesignDerivedInstancePlacement {
+    Identity {
+        flag_offset: u64,
+    },
+    Matrix {
+        value: [[cadmpeg_ir::scalar::FiniteReal; 4]; 4],
+        offset: u64,
+    },
+}
+
+impl DesignDerivedInstancePlacement {
+    pub(crate) fn value(&self) -> [[f64; 4]; 4] {
+        match self {
+            Self::Identity { .. } => SketchPlacementMatrix::IDENTITY.into(),
+            Self::Matrix { value, .. } => {
+                value.map(|row| row.map(cadmpeg_ir::scalar::FiniteReal::get))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignDerivedInstanceReference {
+    pub(crate) target: u64,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_derived_reference_type_guid",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) type_guid: Option<DesignGuidText>,
+}
+
+impl DesignDerivedInstanceReference {
+    pub(crate) fn plain(target: u64) -> Self {
+        Self {
+            target,
+            type_guid: None,
+        }
+    }
+
+    pub(crate) fn matches_type(&self, expected: &str) -> bool {
+        self.type_guid
+            .as_ref()
+            .is_none_or(|guid| guid.as_str().eq_ignore_ascii_case(expected))
+    }
 }
 
 /// Owner-entity offset in the identity-placement frame.
