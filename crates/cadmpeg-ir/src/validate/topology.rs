@@ -25,6 +25,39 @@ mod composite;
 pub(super) mod graphs;
 mod sheet_metal;
 
+fn check_split_face_input_run(
+    findings: &mut Vec<Finding>,
+    subject: &str,
+    method: &crate::features::SplitFaceMethod,
+) {
+    if let crate::features::SplitFaceMethod::AlongVector {
+        native_inputs,
+        native_input_count,
+        native_inputs_complete,
+        ..
+    } = method
+    {
+        let count_matches = native_input_count.map_or_else(
+            || native_inputs.is_empty() && !native_inputs_complete,
+            |count| {
+                u64::try_from(native_inputs.len())
+                    .ok()
+                    .is_some_and(|length| {
+                        length <= u64::from(count)
+                            && (!native_inputs_complete || length == u64::from(count))
+                    })
+            },
+        );
+        if !count_matches {
+            geometry_error(
+                findings,
+                subject,
+                "split-face direction input run is inconsistent",
+            );
+        }
+    }
+}
+
 fn collect_pattern_paths<'a>(
     pattern: &'a PatternKind,
     paths: &mut Vec<&'a crate::features::PathRef>,
@@ -2677,6 +2710,11 @@ fn check_feature_references(
             }
         }
         for (feature, state) in &configuration.feature_states {
+            if let crate::features::FeatureOperation::SplitFace { method, .. } =
+                state.definition.operation()
+            {
+                check_split_face_input_run(findings, configuration.id.as_str(), method);
+            }
             let feature_ordinal = features.get(feature.as_str()).copied();
             if feature_ordinal.is_none() {
                 ref_error(
@@ -3590,32 +3628,7 @@ fn check_feature_references(
                 method,
             } => {
                 face_selections.push(targets);
-                if let crate::features::SplitFaceMethod::AlongVector {
-                    native_inputs,
-                    native_input_count,
-                    native_inputs_complete,
-                    ..
-                } = method
-                {
-                    let count_matches = native_input_count.map_or_else(
-                        || native_inputs.is_empty() && !native_inputs_complete,
-                        |count| {
-                            u64::try_from(native_inputs.len())
-                                .ok()
-                                .is_some_and(|length| {
-                                    length <= u64::from(count)
-                                        && (!native_inputs_complete || length == u64::from(count))
-                                })
-                        },
-                    );
-                    if !count_matches {
-                        geometry_error(
-                            findings,
-                            feature.id.as_str(),
-                            "split-face direction input run is inconsistent",
-                        );
-                    }
-                }
+                check_split_face_input_run(findings, feature.id.as_str(), method);
                 match tool {
                     SplitFaceTool::Faces(faces) => face_selections.push(faces),
                     SplitFaceTool::Native(_) => {}

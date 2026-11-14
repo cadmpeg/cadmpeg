@@ -458,49 +458,99 @@ mod tests {
 
     #[test]
     fn split_face_direction_input_metadata_matches_the_retained_slots() {
-        for (count, complete, slots, valid) in [
-            (None, false, 0, true),
-            (None, true, 0, false),
-            (None, false, 1, false),
-            (Some(0), true, 0, true),
-            (Some(1), true, 1, true),
-            (Some(2), false, 1, true),
-            (Some(2), true, 1, false),
-            (Some(0), false, 1, false),
-        ] {
-            let mut ir = CadIr::empty();
-            ir.model.features.push(Feature {
-                product_definition: None,
-                id: FeatureId::mint("test:model:feature#split").unwrap(),
-                ordinal: 0,
-                name: None,
-                suppressed: None,
-                dependencies: crate::features::DistinctMembers::default(),
-                source_properties: BTreeMap::default(),
-                source_tag: None,
-                source_text: None,
-                source_content: crate::features::FeatureContent::default(),
-                native_ref: None,
-                evaluation: crate::features::FeatureEvaluation::from_definition(
-                    FeatureDefinition::Operation(FeatureOperation::SplitFace {
-                        targets: FaceSelection::Unresolved,
-                        tool: SplitFaceTool::Native("source-tool".into()),
-                        method: crate::features::SplitFaceMethod::AlongVector {
-                            direction: None,
-                            native_carrier: None,
-                            native_inputs: if slots == 0 { Vec::new() } else { vec![None] },
-                            native_input_count: count,
-                            native_inputs_complete: complete,
+        let cases: &[(&[u8], bool)] = &[
+            (br#"{"kind":"along_vector"}"#, true),
+            (br#"{"kind":"along_vector","native_inputs_complete":true}"#, false),
+            (br#"{"kind":"along_vector","native_inputs":[null]}"#, false),
+            (br#"{"kind":"along_vector","native_input_count":0,"native_inputs_complete":true}"#, true),
+            (br#"{"kind":"along_vector","native_inputs":[null],"native_input_count":1,"native_inputs_complete":true}"#, true),
+            (br#"{"kind":"along_vector","native_inputs":[null],"native_input_count":2}"#, true),
+            (br#"{"kind":"along_vector","native_inputs":[null],"native_input_count":2,"native_inputs_complete":true}"#, false),
+            (br#"{"kind":"along_vector","native_inputs":[null],"native_input_count":0}"#, false),
+        ];
+        for &(bytes, valid) in cases {
+            let method: crate::features::SplitFaceMethod = serde_json::from_slice(bytes).unwrap();
+            for configuration_local in [false, true] {
+                let definition = FeatureDefinition::Operation(FeatureOperation::SplitFace {
+                    targets: FaceSelection::Unresolved,
+                    tool: SplitFaceTool::Native("source-tool".into()),
+                    method: method.clone(),
+                });
+                let feature_id = FeatureId::mint("test:model:feature#split").unwrap();
+                let configuration_id =
+                    ConfigurationId::mint("test:model:configuration#alternate").unwrap();
+                let mut ir = CadIr::empty();
+                ir.model.features.push(Feature {
+                    product_definition: None,
+                    id: feature_id.clone(),
+                    ordinal: 0,
+                    name: None,
+                    suppressed: Some(false),
+                    dependencies: crate::features::DistinctMembers::default(),
+                    source_properties: BTreeMap::default(),
+                    source_tag: None,
+                    source_text: None,
+                    source_content: crate::features::FeatureContent::default(),
+                    native_ref: None,
+                    evaluation: crate::features::FeatureEvaluation::from_definition(
+                        if configuration_local {
+                            FeatureDefinition::Operation(FeatureOperation::SplitFace {
+                                targets: FaceSelection::Unresolved,
+                                tool: SplitFaceTool::Native("source-tool".into()),
+                                method: crate::features::SplitFaceMethod::default(),
+                            })
+                        } else {
+                            definition.clone()
                         },
-                    }),
-                ),
-            });
-            let report = validate_neutral(&ir, Vec::new()).unwrap();
-            let inconsistent = report
-                .findings
-                .iter()
-                .any(|finding| finding.message == "split-face direction input run is inconsistent");
-            assert_eq!(inconsistent, !valid);
+                    ),
+                });
+                if configuration_local {
+                    ir.model.configurations.push(DesignConfiguration {
+                        id: configuration_id.clone(),
+                        ordinal: 0,
+                        active: true,
+                        source_index: None,
+                        name: None,
+                        material: None,
+                        properties: BTreeMap::default(),
+                        parameter_overrides: BTreeMap::default(),
+                        bodies: Some(crate::features::DistinctMembers::default()),
+                        parameter_values: BTreeMap::default(),
+                        feature_states: BTreeMap::from([(
+                            feature_id.clone(),
+                            ConfigurationFeatureState {
+                                evaluation: crate::features::ConfigurationEvaluation::Active {
+                                    outputs: crate::features::DistinctMembers::default(),
+                                },
+                                dependencies: crate::features::DistinctMembers::default(),
+                                definition,
+                            },
+                        )]),
+                        native_ref: None,
+                    });
+                }
+                let report = validate_neutral(&ir, Vec::new()).unwrap();
+                let inconsistent = report
+                    .findings
+                    .iter()
+                    .filter(|finding| {
+                        finding.message == "split-face direction input run is inconsistent"
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    inconsistent.len(),
+                    usize::from(!valid),
+                    "{configuration_local}: {bytes:?}"
+                );
+                if !valid {
+                    let subject = if configuration_local {
+                        configuration_id.as_str()
+                    } else {
+                        feature_id.as_str()
+                    };
+                    assert_eq!(inconsistent[0].entity.as_deref(), Some(subject));
+                }
+            }
         }
     }
 
