@@ -452,8 +452,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         ),
     );
     if untyped_tracking_paths != 0 {
-        push_loss_vec(&mut losses, F3dLossCode::ConstructionTrackingPathUntyped,
-            format_args!("{untyped_tracking_paths} construction tracking path reference(s) remain source-only because no matching indexed registration was admitted."));
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::ConstructionTrackingPathUntyped,
+            format_args!(
+                "{untyped_tracking_paths} construction tracking path reference(s) remain source-only because no matching indexed registration was admitted."
+            ),
+        );
     }
     for history in &mut design.asm_histories {
         history.release_topologies();
@@ -488,7 +493,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         push_loss_vec(
             &mut losses,
             F3dLossCode::PlacementConstructionUntyped,
-            format_args!("{} placement construction record(s) remain source-only because their registration or bounded member layout is unsupported or ambiguous.", placements.unparsed),
+            format_args!(
+                "{} placement construction record(s) remain source-only because their registration or bounded member layout is unsupported or ambiguous.",
+                placements.unparsed
+            ),
         );
     }
 
@@ -513,6 +521,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     );
     losses.extend(
         crate::design::decode::placement_construction::cylinders::bind(
+            &mut design.design_parameter_scopes,
+            &design.design_placement_constructions,
+        ),
+    );
+    losses.extend(
+        crate::design::decode::placement_construction::spheres::bind(
             &mut design.design_parameter_scopes,
             &design.design_placement_constructions,
         ),
@@ -673,7 +687,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         push_loss_vec(
             &mut losses,
             F3dLossCode::BodyReferenceTailUntyped,
-            format_args!("{} whole-body reference tail(s) remain source-only because no complete standard reference-run frame was admitted.", tails.unparsed),
+            format_args!(
+                "{} whole-body reference tail(s) remain source-only because no complete standard reference-run frame was admitted.",
+                tails.unparsed
+            ),
         );
     }
 
@@ -1215,6 +1232,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         products.occurrences,
         &design.design_parameter_scopes,
     );
+    losses.extend(crate::design::position::bind_occurrences(
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &occurrence_paths,
+    ));
     losses.extend(crate::design::components::paths::bind_feature_paths(
         &mut model.features,
         &occurrence_paths,
@@ -1341,10 +1363,12 @@ pub(super) fn scope_related_indices(
             .values()
             .copied()
             .chain(thread_trailer)
+            .chain(scope.move_operation().map(|operation| operation.transform_record_index))
+            .chain(scope.move_operation().and_then(|operation| operation.face_group.as_ref().map(|group| group.value)))
             .chain(
                 scope
                     .path_pattern_settings()
-                    .map(|settings| settings.settings_record_index),
+                    .and_then(|settings| settings.settings_record_index),
             )
             .chain(
                 scope
@@ -1464,6 +1488,50 @@ fn extend_related_design_records(
     design.design_record_headers.extend(scope_headers);
     let indices = scope_related_indices(&design.design_parameter_scopes);
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
+    for scope in design
+        .design_parameter_scopes
+        .iter()
+        .filter(|scope| scope.kind() == crate::records::feature::scope::DesignFeatureKind::MoveFace)
+    {
+        let Some(operation) = scope.move_operation() else {
+            continue;
+        };
+        let invalid = || CodecError::malformed("MoveFace selected transform header is invalid");
+        let start = usize::try_from(operation.form_offset)
+            .ok()
+            .and_then(|offset| offset.checked_sub(operation.relative_form_offset()?))
+            .ok_or_else(invalid)?;
+        let stream = crate::ids::native_stream(&scope.id).ok_or_else(invalid)?;
+        let entry = scan
+            .design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+            .ok_or_else(invalid)?;
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let (tag, after_tag) =
+            crate::bytes::lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
+                .ok_or_else(invalid)?;
+        if cadmpeg_core::decode::View::u32_le_at(bytes, after_tag)
+            != Some(operation.transform_record_index)
+        {
+            return Err(invalid());
+        }
+        let selected = DesignRecordHeader {
+            id: format!("{stream}:design-record-header#{start}"),
+            record_index: operation.transform_record_index,
+            class_tag: tag.to_owned().try_into().map_err(|_| invalid())?,
+            byte_offset: cadmpeg_core::decode::u64_from_index(start),
+        };
+        if let Some(header) = design.design_record_headers.iter_mut().find(|header| {
+            crate::ids::native_stream(&header.id) == Some(stream)
+                && header.record_index == selected.record_index
+        }) {
+            *header = selected;
+        } else {
+            design.design_record_headers.push(selected);
+        }
+    }
+    design
+        .design_record_headers
+        .sort_by(|left, right| left.id.cmp(&right.id));
     crate::design::decode::deleted_members::mark_deleted_members(
         scan,
         &mut design.design_parameter_scopes,

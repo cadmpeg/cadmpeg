@@ -515,3 +515,39 @@ fn corner_requires_a_preceding_bend_dependency() {
         .iter()
         .any(|finding| finding.message.contains("dependencies")));
 }
+
+#[test]
+fn captured_component_positions_validate_resolved_occurrences() {
+    let mut ir = unit_cube().unwrap();
+    let definition = |occurrence| {
+        crate::features::FeatureDefinition::Operation(
+            crate::features::FeatureOperation::CapturedComponentPositions {
+                positions: vec![crate::features::CapturedComponentPosition {
+                    selector: crate::ids::NativeId::mint("synthetic:test:selector#pose").unwrap(),
+                    occurrence,
+                    transform: crate::features::CapturedPositionTransform::Affine {
+                        transform: crate::transform::Transform::identity(),
+                    },
+                }],
+            },
+        )
+    };
+    let mut feature: crate::features::Feature = serde_json::from_value(serde_json::json!({
+        "id": "synthetic:test:feature#positions", "ordinal": 0, "suppressed": false,
+        "definition": definition(None)
+    }))
+    .unwrap();
+    let feature_index = ir.model.features.len();
+    ir.model.features.push(feature.clone());
+    let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+    assert!(!findings
+        .iter()
+        .any(|finding| finding.entity.as_deref() == Some("synthetic:test:feature#positions")));
+    feature.evaluation.set_definition(definition(Some(
+        crate::ids::OccurrenceId::mint("synthetic:test:occurrence#missing").unwrap(),
+    )));
+    ir.model.features[feature_index] = feature;
+    let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+    assert!(findings.iter().any(|finding| finding.message
+        == "references missing captured component occurrence `synthetic:test:occurrence#missing`"));
+}

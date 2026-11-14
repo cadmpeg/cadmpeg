@@ -175,7 +175,7 @@ pub(super) fn pattern_group_seeds(
 /// Feature seeds named by a face-role group whose members are all compact
 /// entity selections. Each compact identity is the record index of a
 /// modelling feature scope in the same stream other than `scope`.
-fn entity_selection_feature_seeds(
+pub(super) fn entity_selection_feature_seeds(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],

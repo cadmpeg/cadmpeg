@@ -5,6 +5,9 @@ use crate::records::identity::ReferenceRun;
 use crate::records::parameters::DesignParameterOwnerWire;
 use crate::test_support::indexed_header;
 
+mod extended_tails;
+mod owner_runs;
+
 const OTHER_GUID: &str = "11111111-1111-1111-1111-111111111111";
 const EPS_ALIGNMENT: f64 = 1e-12;
 
@@ -260,13 +263,16 @@ fn version_five_grammar_selects_lanes_with_variable_reference_counts() {
             assert_eq!(grammar.owners, [100, 109, 103, 106]);
             let expected_span = 377 + (u64::from(count) + 12) * 11 + 256 + 4 * u64::from(expanded);
             assert_eq!(scope.frame_length(), expected_span);
-            let decoded = super::super::assembly_alignment::exact_assembly_alignment_with_types(
-                &bytes,
-                &IndexedRecordOffsets::build(&bytes),
-                &scope,
-                &owners,
-                &types,
-            )
+            let decoded = crate::test_support::with_decode_context(|ctx| {
+                super::super::assembly_alignment::exact_assembly_alignment_with_types(
+                    ctx,
+                    &bytes,
+                    &IndexedRecordOffsets::build(&bytes),
+                    &scope,
+                    &owners,
+                    &types,
+                )
+            })
             .unwrap()
             .unwrap();
             assert!((decoded.angle() - std::f64::consts::FRAC_PI_2).abs() < EPS_ALIGNMENT);
@@ -303,22 +309,26 @@ fn version_five_grammar_refuses_wrong_version_truncation_and_unproved_extensions
     let mut extra_owners = owners.clone();
     let (_, _, additional, _) = fixture(false, true, false, 4);
     extra_owners.push(additional[4].clone());
-    assert!(alignment(
+    assert!(crate::test_support::with_decode_context(|ctx| alignment(
+        ctx,
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &scope,
         &extra_owners,
         &types
-    )
+    ))
     .unwrap()
     .is_none());
-    let decoded = alignment(
-        &bytes,
-        &IndexedRecordOffsets::build(&bytes),
-        &scope,
-        &owners,
-        &types,
-    )
+    let decoded = crate::test_support::with_decode_context(|ctx| {
+        alignment(
+            ctx,
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &owners,
+            &types,
+        )
+    })
     .unwrap()
     .unwrap();
     assert!(!valid_alignment(&scope, &decoded, &types, &extra_owners));
@@ -363,13 +373,16 @@ fn version_three_grammar_consumes_compact_typed_and_identity_forms() {
 fn version_three_decoder_selects_owner_references_and_connector_facing() {
     for first_owner in [4, 8] {
         let (bytes, scope, owners, types) = fixture(false, true, true, first_owner);
-        let decoded = super::super::assembly_alignment::exact_assembly_alignment_with_types(
-            &bytes,
-            &IndexedRecordOffsets::build(&bytes),
-            &scope,
-            &owners,
-            &types,
-        )
+        let decoded = crate::test_support::with_decode_context(|ctx| {
+            super::super::assembly_alignment::exact_assembly_alignment_with_types(
+                ctx,
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                &scope,
+                &owners,
+                &types,
+            )
+        })
         .unwrap()
         .unwrap();
         assert!((decoded.angle() - std::f64::consts::FRAC_PI_2).abs() < EPS_ALIGNMENT);
@@ -484,9 +497,11 @@ fn version_three_decoder_keeps_qualified_scope_connectors_and_reports_partial_bi
     let (mut bytes, mut scope, owners, mut types) = fixture(false, true, true, 8);
     append_paths(&mut bytes, &mut types);
     let records = IndexedRecordOffsets::build(&bytes);
-    let decoded = super::super::assembly_alignment::exact_assembly_alignment_with_types(
-        &bytes, &records, &scope, &owners, &types,
-    )
+    let decoded = crate::test_support::with_decode_context(|ctx| {
+        super::super::assembly_alignment::exact_assembly_alignment_with_types(
+            ctx, &bytes, &records, &scope, &owners, &types,
+        )
+    })
     .unwrap()
     .unwrap();
     assert!(matches!(
@@ -514,9 +529,11 @@ fn version_three_decoder_keeps_qualified_scope_connectors_and_reports_partial_bi
     let joint_at = grammar.locator_offsets[1] + grammar.stride;
     bytes[joint_at + 1..joint_at + 9].copy_from_slice(&28_u64.to_le_bytes());
     types.insert(28, ("7F5A0426-1D2A-4DC4-9F06-58631F69D2F5", 4));
-    let partial = super::super::assembly_alignment::exact_assembly_alignment_with_types(
-        &bytes, &records, &scope, &owners, &types,
-    )
+    let partial = crate::test_support::with_decode_context(|ctx| {
+        super::super::assembly_alignment::exact_assembly_alignment_with_types(
+            ctx, &bytes, &records, &scope, &owners, &types,
+        )
+    })
     .unwrap()
     .unwrap();
     assert!(matches!(
@@ -607,10 +624,12 @@ fn version_three_nonzero_tail_state_projects_with_assumed_operand_context() {
         append_paths(&mut bytes, &mut types);
         let records = IndexedRecordOffsets::build(&bytes);
         assert!(matches!(
-            alignment(&bytes, &records, &scope, &owners, &types)
-                .unwrap()
-                .unwrap()
-                .form,
+            crate::test_support::with_decode_context(|ctx| alignment(
+                ctx, &bytes, &records, &scope, &owners, &types
+            ))
+            .unwrap()
+            .unwrap()
+            .form,
             Some(DesignAssemblyAlignmentForm::Qualified(_))
         ));
         let end = usize::try_from(scope.paired_byte_offset()).unwrap();
@@ -618,9 +637,11 @@ fn version_three_nonzero_tail_state_projects_with_assumed_operand_context() {
         bytes[state_at..state_at + 2].copy_from_slice(&state);
         assert_eq!(parse(&bytes, &scope, &types).unwrap().tail_state, state);
         let records = IndexedRecordOffsets::build(&bytes);
-        let decoded = alignment(&bytes, &records, &scope, &owners, &types)
-            .unwrap()
-            .unwrap();
+        let decoded = crate::test_support::with_decode_context(|ctx| {
+            alignment(ctx, &bytes, &records, &scope, &owners, &types)
+        })
+        .unwrap()
+        .unwrap();
         assert!(matches!(
             decoded.form,
             Some(DesignAssemblyAlignmentForm::Frames { .. })
@@ -647,13 +668,16 @@ fn version_three_nonzero_tail_state_projects_with_assumed_operand_context() {
 fn version_five_decoder_keeps_connector_frames_with_qualified_paths() {
     let (mut bytes, scope, owners, mut types) = versioned_fixture(5, 7, false, false, false, 0);
     append_paths(&mut bytes, &mut types);
-    let decoded = super::super::assembly_alignment::exact_assembly_alignment_with_types(
-        &bytes,
-        &IndexedRecordOffsets::build(&bytes),
-        &scope,
-        &owners,
-        &types,
-    )
+    let decoded = crate::test_support::with_decode_context(|ctx| {
+        super::super::assembly_alignment::exact_assembly_alignment_with_types(
+            ctx,
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &owners,
+            &types,
+        )
+    })
     .unwrap()
     .unwrap();
     assert!(matches!(
@@ -673,13 +697,16 @@ fn version_five_decoder_keeps_connector_frames_with_qualified_paths() {
 fn version_five_compact_identity_at_legacy_length_remains_a_relation() {
     let (bytes, scope, owners, types) = versioned_fixture(5, 28, false, false, true, 0);
     assert_eq!(scope.frame_length(), u64_from_index(five::LEN));
-    let decoded = alignment(
-        &bytes,
-        &IndexedRecordOffsets::build(&bytes),
-        &scope,
-        &owners,
-        &types,
-    )
+    let decoded = crate::test_support::with_decode_context(|ctx| {
+        alignment(
+            ctx,
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &owners,
+            &types,
+        )
+    })
     .unwrap()
     .unwrap();
     assert!(valid_alignment(&scope, &decoded, &types, &owners));
@@ -692,13 +719,16 @@ fn version_five_locator_matrix_forms_qualify_validate_and_project() {
         let (mut bytes, mut scope, owners, mut types) =
             versioned_fixture(5, 7, false, false, false, 0);
         append_locator_paths(&mut bytes, &mut types, Some((null, word)));
-        let decoded = alignment(
-            &bytes,
-            &IndexedRecordOffsets::build(&bytes),
-            &scope,
-            &owners,
-            &types,
-        )
+        let decoded = crate::test_support::with_decode_context(|ctx| {
+            alignment(
+                ctx,
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                &scope,
+                &owners,
+                &types,
+            )
+        })
         .unwrap()
         .unwrap();
         assert!(matches!(
@@ -737,13 +767,16 @@ fn version_five_locator_wrong_word_and_span_project_with_assumed_operand_context
         if wrong_span {
             bytes.insert(locator_at + 215, 0);
         }
-        let decoded = alignment(
-            &bytes,
-            &IndexedRecordOffsets::build(&bytes),
-            &scope,
-            &owners,
-            &types,
-        )
+        let decoded = crate::test_support::with_decode_context(|ctx| {
+            alignment(
+                ctx,
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                &scope,
+                &owners,
+                &types,
+            )
+        })
         .unwrap()
         .unwrap();
         assert!(matches!(
@@ -788,13 +821,16 @@ fn version_four_grammar_reads_the_compact_extended_prologue_and_tail_marker() {
             assert_eq!(grammar.owners, [100, 109, 103, 106]);
             assert_eq!(grammar.tail_state, [0, 0]);
             assert_eq!(grammar.joint, 29);
-            let decoded = alignment(
-                &bytes,
-                &IndexedRecordOffsets::build(&bytes),
-                &scope,
-                &owners,
-                &types,
-            )
+            let decoded = crate::test_support::with_decode_context(|ctx| {
+                alignment(
+                    ctx,
+                    &bytes,
+                    &IndexedRecordOffsets::build(&bytes),
+                    &scope,
+                    &owners,
+                    &types,
+                )
+            })
             .unwrap()
             .expect("version-4 alignment");
             assert!(valid_alignment(&scope, &decoded, &types, &owners));
@@ -807,13 +843,16 @@ fn version_four_grammar_reads_the_compact_extended_prologue_and_tail_marker() {
 fn version_four_joint_with_a_zero_tail_projects_as_assumed_active() {
     let (mut bytes, mut scope, owners, mut types) = versioned_fixture(4, 7, false, false, false, 0);
     append_locator_paths(&mut bytes, &mut types, Some((false, 2)));
-    let decoded = alignment(
-        &bytes,
-        &IndexedRecordOffsets::build(&bytes),
-        &scope,
-        &owners,
-        &types,
-    )
+    let decoded = crate::test_support::with_decode_context(|ctx| {
+        alignment(
+            ctx,
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &owners,
+            &types,
+        )
+    })
     .unwrap()
     .unwrap();
     assert!(matches!(
@@ -879,13 +918,16 @@ fn version_four_connectors_cover_identity_expansion_and_plain_references() {
             let grammar = parse(&bytes, &scope, &types).unwrap();
             assert_eq!(grammar.frames[0].reference_record_index, 10);
             assert_eq!(grammar.frames[1].reference_record_index, 20);
-            let decoded = alignment(
-                &bytes,
-                &IndexedRecordOffsets::build(&bytes),
-                &scope,
-                &owners,
-                &types,
-            )
+            let decoded = crate::test_support::with_decode_context(|ctx| {
+                alignment(
+                    ctx,
+                    &bytes,
+                    &IndexedRecordOffsets::build(&bytes),
+                    &scope,
+                    &owners,
+                    &types,
+                )
+            })
             .unwrap()
             .unwrap();
             assert!(valid_alignment(&scope, &decoded, &types, &owners));

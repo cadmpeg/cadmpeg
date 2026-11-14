@@ -345,6 +345,59 @@ fn occurrence_merge_rewrites_only_member_native_record_text() {
 }
 
 #[test]
+fn occurrence_merge_scopes_unmaterialized_partial_pattern_references() {
+    use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::features::patterns::{
+        curve_driven::CurveDrivenPatternParameters, PatternKind, PatternSeed, PatternTransform,
+    };
+    use cadmpeg_ir::features::PathRef;
+
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let source = "f3d:Design1/BulkStream.dat:design-record#91";
+    let mut row = feature("f3d:model:feature#pattern", 0);
+    row.name = Some(source.into());
+    row.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
+            seeds: vec![PatternSeed::Native(source.into())],
+            pattern: PatternKind::new(PatternTransform::CurveDrivenPartial {
+                parameters: CurveDrivenPatternParameters {
+                    path: Some(PathRef::Native(source.into())),
+                    ..Default::default()
+                },
+            })
+            .unwrap(),
+        }),
+    );
+    let mut model = Model::default();
+    model.features.push(row.clone());
+    for occurrence in ["left", "right"] {
+        let targets = super::super::native_record_targets(&Native::default(), occurrence);
+        let mut scoped_model = model.clone();
+        super::super::rescope_partial_pattern_sources(&mut scoped_model, occurrence);
+        let native_text = TextReplacements::build(targets.iter()).unwrap();
+        let rewritten = OccurrenceScope {
+            ctx: &ctx,
+            occurrence,
+            native_text: &native_text,
+        }
+        .rewrite(scoped_model.features.remove(0))
+        .unwrap();
+        assert_eq!(rewritten.name.as_deref(), Some(source));
+        let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+            rewritten.evaluation.definition()
+        else {
+            panic!("pattern")
+        };
+        let PatternTransform::CurveDrivenPartial { parameters } = pattern.definition() else {
+            panic!("partial")
+        };
+        let expected = format!("f3d:xref/{occurrence}/Design1/BulkStream.dat:design-record#91");
+        assert_eq!(parameters.path, Some(PathRef::Native(expected.clone())));
+        assert_eq!(seeds, &[PatternSeed::Native(expected)]);
+    }
+}
+
+#[test]
 fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
     use cadmpeg_ir::document::EntityRewrite;
     let ctx = cadmpeg_test_support::service_decode_context();
