@@ -5,6 +5,7 @@
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
 /// Byte offsets for the `feature_input_shifted_scalar_trailer` record.
+///
 /// Spec §2. Record length 35 B.
 ///
 /// ```text
@@ -28,6 +29,7 @@ pub(crate) mod feature_input_shifted_scalar_trailer {
 }
 
 /// Byte offsets for the `feature_input_operand_cell12` record.
+///
 /// Spec §2. Record length 12 B.
 ///
 /// ```text
@@ -47,6 +49,7 @@ pub(crate) mod feature_input_operand_cell12 {
 }
 
 /// Byte offsets for the `outer_header` record.
+///
 /// Spec §1.1. Record length 8 B.
 pub(crate) mod outer_header {
     /// Record length in bytes. Spec §1.1.
@@ -56,6 +59,7 @@ pub(crate) mod outer_header {
 }
 
 /// Byte offsets for the `block_frame_header` record.
+///
 /// Spec §1.1. Record length 26 B.
 ///
 /// ```text
@@ -79,6 +83,7 @@ pub(crate) mod block_frame_header {
 }
 
 /// Byte offsets for the `cache_cell_header` record.
+///
 /// Spec §1.2. Record length 26 B.
 ///
 /// ```text
@@ -98,6 +103,7 @@ pub(crate) mod cache_cell_header {
 }
 
 /// Byte offsets for the `tail_directory_entry` record.
+///
 /// Spec §1.3. Record length 40 B.
 ///
 /// ```text
@@ -121,6 +127,7 @@ pub(crate) mod tail_directory_entry {
 }
 
 /// Byte offsets for the `zip_central_header` record.
+///
 /// Spec §1.3. Record length 46 B.
 ///
 /// ```text
@@ -148,6 +155,7 @@ pub(crate) mod zip_central_header {
 }
 
 /// Byte offsets for the `zip_central_descriptor` record.
+///
 /// Spec §1.3. Record length 14 B.
 ///
 /// ```text
@@ -159,6 +167,7 @@ pub(crate) mod zip_central_descriptor {
 }
 
 /// Byte offsets for the `zlb_wrapper_header` record.
+///
 /// Spec §1. Record length 24 B.
 ///
 /// ```text
@@ -179,6 +188,7 @@ pub(crate) mod zlb_wrapper_header {
 }
 
 /// Byte offsets for the `parasolid_chain_section_header` record.
+///
 /// Spec §1. Record length 20 B.
 ///
 /// ```text
@@ -190,6 +200,7 @@ pub(crate) mod parasolid_chain_section_header {
 }
 
 /// Byte offsets for the `parasolid_chain_frame_header` record.
+///
 /// Spec §1. Record length 8 B.
 ///
 /// ```text
@@ -205,6 +216,7 @@ pub(crate) mod parasolid_chain_frame_header {
 }
 
 /// Byte offsets for the `world_point` record.
+///
 /// Spec §4. Record length 38 B.
 ///
 /// ```text
@@ -220,6 +232,7 @@ pub(crate) mod world_point {
 }
 
 /// Byte offsets for the `face_bare` record.
+///
 /// Spec §4. Record length 37 B.
 ///
 /// ```text
@@ -241,6 +254,7 @@ pub(crate) mod face_bare {
 }
 
 /// Byte offsets for the `face_tripled` record.
+///
 /// Spec §4. Record length 48 B.
 ///
 /// ```text
@@ -262,6 +276,7 @@ pub(crate) mod face_tripled {
 }
 
 /// Byte offsets for the `edge_bare` record.
+///
 /// Spec §4. Record length 30 B.
 ///
 /// ```text
@@ -279,6 +294,7 @@ pub(crate) mod edge_bare {
 }
 
 /// Byte offsets for the `edge_tripled` record.
+///
 /// Spec §4. Record length 38 B.
 ///
 /// ```text
@@ -296,6 +312,7 @@ pub(crate) mod edge_tripled {
 }
 
 /// Byte offsets for the `vertex_bare` record.
+///
 /// Spec §4. Record length 26 B.
 ///
 /// ```text
@@ -315,6 +332,7 @@ pub(crate) mod vertex_bare {
 }
 
 /// Byte offsets for the `vertex_tripled` record.
+///
 /// Spec §4. Record length 32 B.
 ///
 /// ```text
@@ -334,6 +352,7 @@ pub(crate) mod vertex_tripled {
 }
 
 /// Byte offsets for the `world_point_tripled` record.
+///
 /// Spec §4. Record length 42 B.
 ///
 /// ```text
@@ -349,6 +368,7 @@ pub(crate) mod world_point_tripled {
 }
 
 /// Byte offsets for the `loop_bare` record.
+///
 /// Spec §4. Record length 14 B.
 ///
 /// ```text
@@ -362,6 +382,7 @@ pub(crate) mod loop_bare {
 }
 
 /// Byte offsets for the `loop_tripled` record.
+///
 /// Spec §4. Record length 18 B.
 ///
 /// ```text
@@ -375,6 +396,7 @@ pub(crate) mod loop_tripled {
 }
 
 /// Byte offsets for the `fin_bare` record.
+///
 /// Spec §4. Record length 21 B.
 ///
 /// ```text
@@ -390,6 +412,7 @@ pub(crate) mod fin_bare {
 }
 
 /// Byte offsets for the `fin_tripled` record.
+///
 /// Spec §4. Record length 30 B.
 ///
 /// ```text
@@ -405,6 +428,7 @@ pub(crate) mod fin_tripled {
 }
 
 /// Byte offsets for the `entity_common_header` record.
+///
 /// Spec §5. Record length 12 B.
 ///
 /// ```text
@@ -424,6 +448,7 @@ pub(crate) mod entity_common_header {
 }
 
 /// Byte offsets for the `attribute_instance_00_51` record.
+///
 /// Spec §5. Record length 14 B.
 ///
 /// ```text
@@ -439,6 +464,7 @@ pub(crate) mod attribute_instance_00_51 {
 }
 
 /// Byte offsets for the `compact_analytic_header` record.
+///
 /// Spec §7.1. Record length 17 B.
 ///
 /// ```text
@@ -450,6 +476,7 @@ pub(crate) mod compact_analytic_header {
 }
 
 /// Byte offsets for the `bspline_surface_descriptor` record.
+///
 /// Spec §7.2. Record length 42 B.
 ///
 /// ```text
@@ -495,6 +522,7 @@ pub(crate) mod bspline_surface_descriptor {
 }
 
 /// Byte offsets for the `bspline_curve_descriptor` record.
+///
 /// Spec §7.2. Record length 25 B.
 ///
 /// ```text
@@ -524,6 +552,7 @@ pub(crate) mod bspline_curve_descriptor {
 }
 
 /// Byte offsets for the `bspline_array_header` record.
+///
 /// Spec §7.2. Record length 6 B.
 ///
 /// ```text
@@ -539,6 +568,7 @@ pub(crate) mod bspline_array_header {
 }
 
 /// Byte offsets for the `bspline_compact_array_header` record.
+///
 /// Spec §7.2. Record length 4 B.
 ///
 /// ```text
@@ -552,6 +582,7 @@ pub(crate) mod bspline_compact_array_header {
 }
 
 /// Byte offsets for the `chart_00_28` record.
+///
 /// Spec §7.3. Record length 52 B.
 ///
 /// ```text
@@ -575,6 +606,7 @@ pub(crate) mod chart_00_28 {
 }
 
 /// Byte offsets for the `support_uv_00_cc` record.
+///
 /// Spec §7.3. Record length 7 B.
 ///
 /// ```text
@@ -588,6 +620,7 @@ pub(crate) mod support_uv_00_cc {
 }
 
 /// Byte offsets for the `rolling_ball_blend_00_38` record.
+///
 /// Spec §7.4. Record length 56 B.
 ///
 /// ```text
@@ -617,6 +650,7 @@ pub(crate) mod rolling_ball_blend_00_38 {
 }
 
 /// Byte offsets for the `blend_bound_00_3b` record.
+///
 /// Spec §7.4. Record length 21 B.
 ///
 /// ```text
@@ -634,6 +668,7 @@ pub(crate) mod blend_bound_00_3b {
 }
 
 /// Byte offsets for the `offset_surface_00_3c` record.
+///
 /// Spec §7.5. Record length 37 B.
 ///
 /// ```text
@@ -659,6 +694,7 @@ pub(crate) mod offset_surface_00_3c {
 }
 
 /// Byte offsets for the `current_extended_zero_tail_92_profile_curve` record.
+///
 /// Spec §2. Record length 92 B.
 ///
 /// ```text
@@ -721,6 +757,7 @@ pub(crate) mod current_extended_zero_tail_92_profile_curve {
 }
 
 /// Byte offsets for the `extended_wide_104_profile_curve` record.
+///
 /// Spec §2. Record length 104 B.
 ///
 /// ```text
@@ -752,6 +789,7 @@ pub(crate) mod extended_wide_104_profile_curve {
 }
 
 /// Byte offsets for the `legacy_wide_112_profile_roster_curve` record.
+///
 /// Spec §2. Record length 112 B.
 ///
 /// ```text
@@ -775,6 +813,7 @@ pub(crate) mod legacy_wide_112_profile_roster_curve {
 }
 
 /// Byte offsets for the `legacy_wide_104_profile_roster_curve` record.
+///
 /// Spec §2. Record length 104 B.
 ///
 /// ```text
@@ -796,6 +835,7 @@ pub(crate) mod legacy_wide_104_profile_roster_curve {
 }
 
 /// Byte offsets for the `extended_geometry_104_indexed_arc` record.
+///
 /// Spec §2. Record length 104 B.
 ///
 /// ```text
@@ -825,6 +865,7 @@ pub(crate) mod extended_geometry_104_indexed_arc {
 }
 
 /// Byte offsets for the `extended_geometry_104_indexed_circle` record.
+///
 /// Spec §2. Record length 104 B.
 ///
 /// ```text
@@ -852,6 +893,7 @@ pub(crate) mod extended_geometry_104_indexed_circle {
 }
 
 /// Byte offsets for the `current_profile_104_indexed_circle` record.
+///
 /// Spec §2. Record length 104 B.
 ///
 /// ```text
@@ -902,6 +944,7 @@ pub(crate) mod current_profile_104_indexed_circle {
 }
 
 /// Byte offsets for the `current_profile_circle_dimension` record.
+///
 /// Spec §2. Record length 145 B.
 ///
 /// ```text
@@ -974,6 +1017,7 @@ pub(crate) mod current_profile_circle_dimension {
 }
 
 /// Byte offsets for the `extended_profile_104_indexed_arc` record.
+///
 /// Spec §2. Record length 104 B.
 ///
 /// ```text
@@ -999,6 +1043,7 @@ pub(crate) mod extended_profile_104_indexed_arc {
 }
 
 /// Byte offsets for the `extended_profile_terminal_102_indexed_arc` record.
+///
 /// Spec §2. Record length 102 B.
 ///
 /// ```text
@@ -1014,6 +1059,7 @@ pub(crate) mod extended_profile_terminal_102_indexed_arc {
 }
 
 /// Byte offsets for the `compact_indexed_curve_continuation120` record.
+///
 /// Spec §2. Record length 122 B.
 ///
 /// ```text
@@ -1062,6 +1108,7 @@ pub(crate) mod compact_indexed_curve_continuation120 {
 }
 
 /// Byte offsets for the `compact_legacy_140_relation_display_curve` record.
+///
 /// Spec §2. Record length 140 B.
 ///
 /// ```text
@@ -1136,6 +1183,7 @@ pub(crate) mod compact_legacy_140_relation_display_curve {
 }
 
 /// Byte offsets for the `current_terminal_relation_carrier` record.
+///
 /// Spec §2. Record length 136 B.
 ///
 /// ```text
@@ -1187,6 +1235,7 @@ pub(crate) mod current_terminal_relation_carrier {
 }
 
 /// Byte offsets for the `extended_selector44_indexed_line_continuation` record.
+///
 /// Spec §2. Record length 84 B.
 ///
 /// ```text
@@ -1212,6 +1261,7 @@ pub(crate) mod extended_selector44_indexed_line_continuation {
 }
 
 /// Byte offsets for the `extended_selector44_indexed_line_control_terminal` record.
+///
 /// Spec §2. Record length 170 B.
 ///
 /// ```text
@@ -1235,6 +1285,7 @@ pub(crate) mod extended_selector44_indexed_line_control_terminal {
 }
 
 /// Byte offsets for the `legacy_140_single_incidence_profile_point` record.
+///
 /// Spec §2. Record length 140 B.
 ///
 /// ```text
@@ -1265,6 +1316,7 @@ pub(crate) mod legacy_140_single_incidence_profile_point {
 }
 
 /// Byte offsets for the `legacy_144_single_incidence_profile_point` record.
+///
 /// Spec §2. Record length 144 B.
 ///
 /// ```text
@@ -1321,6 +1373,7 @@ pub(crate) mod legacy_144_single_incidence_profile_point {
 }
 
 /// Byte offsets for the `extended_geometry_locus_96_construction_line` record.
+///
 /// Spec §2. Record length 96 B.
 ///
 /// ```text
@@ -1350,6 +1403,7 @@ pub(crate) mod extended_geometry_locus_96_construction_line {
 }
 
 /// Byte offsets for the `compact_legacy_96_profile_roster_curve` record.
+///
 /// Spec §2. Record length 96 B.
 ///
 /// ```text
@@ -1425,6 +1479,7 @@ pub(crate) mod compact_legacy_96_profile_roster_curve {
 }
 
 /// Byte offsets for the `compact_legacy_84_construction_line` record.
+///
 /// Spec §2. Record length 84 B.
 ///
 /// ```text
@@ -1480,6 +1535,7 @@ pub(crate) mod compact_legacy_84_construction_line {
 }
 
 /// Byte offsets for the `compact_legacy_84_coordinate_roster_curve` record.
+///
 /// Spec §2. Record length 84 B.
 ///
 /// ```text
@@ -1527,6 +1583,7 @@ pub(crate) mod compact_legacy_84_coordinate_roster_curve {
 }
 
 /// Byte offsets for the `compact_legacy_68_profile_variant_curve` record.
+///
 /// Spec §2. Record length 68 B.
 ///
 /// ```text
@@ -1550,6 +1607,7 @@ pub(crate) mod compact_legacy_68_profile_variant_curve {
 }
 
 /// Byte offsets for the `compact_legacy_90_geometry_line` record.
+///
 /// Spec §2. Record length 90 B.
 ///
 /// ```text
@@ -1585,6 +1643,7 @@ pub(crate) mod compact_legacy_90_geometry_line {
 }
 
 /// Byte offsets for the `compact_legacy_142_profile_curve` record.
+///
 /// Spec §2. Record length 142 B.
 ///
 /// ```text
@@ -1636,6 +1695,7 @@ pub(crate) mod compact_legacy_142_profile_curve {
 }
 
 /// Byte offsets for the `compact_legacy_code_two_profile_point` record.
+///
 /// Spec §2. Record length 132 B.
 ///
 /// ```text
@@ -1679,6 +1739,7 @@ pub(crate) mod compact_legacy_code_two_profile_point {
 }
 
 /// Byte offsets for the `compact_legacy_terminal_diameter_circle` record.
+///
 /// Spec §2. Record length 121 B.
 ///
 /// ```text
@@ -1716,6 +1777,7 @@ pub(crate) mod compact_legacy_terminal_diameter_circle {
 }
 
 /// Byte offsets for the `current_geometry_locus_arc_handle_point` record.
+///
 /// Spec §2. Record length 167 B.
 ///
 /// ```text
@@ -1784,6 +1846,7 @@ pub(crate) mod current_geometry_locus_arc_handle_point {
 }
 
 /// Byte offsets for the `current_geometry_locus_arc_handle_point_terminal` record.
+///
 /// Spec §2. Record length 171 B.
 ///
 /// ```text
@@ -1797,6 +1860,7 @@ pub(crate) mod current_geometry_locus_arc_handle_point_terminal {
 }
 
 /// Byte offsets for the `reference_point_short_solved_cache` record.
+///
 /// Spec §2. Record length 277 B.
 ///
 /// ```text
@@ -1820,6 +1884,7 @@ pub(crate) mod reference_point_short_solved_cache {
 }
 
 /// Byte offsets for the `reference_point_long_solved_cache` record.
+///
 /// Spec §2. Record length 293 B.
 ///
 /// ```text
@@ -1839,6 +1904,7 @@ pub(crate) mod reference_point_long_solved_cache {
 }
 
 /// Byte offsets for the `extrusion_sparse_operation_trailer` record.
+///
 /// Spec §2. Record length 40 B.
 pub(crate) mod extrusion_sparse_operation_trailer {
     /// Record length in bytes. Spec §2.
@@ -1868,6 +1934,7 @@ pub(crate) mod extrusion_sparse_operation_trailer {
 }
 
 /// Byte offsets for the `extrusion_sparse_long_zero_operation_trailer` record.
+///
 /// Spec §2. Record length 44 B.
 pub(crate) mod extrusion_sparse_long_zero_operation_trailer {
     /// Record length in bytes. Spec §2.
@@ -1879,6 +1946,7 @@ pub(crate) mod extrusion_sparse_long_zero_operation_trailer {
 }
 
 /// Byte offsets for the `component_source_two_handle_record` record.
+///
 /// Spec §2. Record length 48 B.
 pub(crate) mod component_source_two_handle_record {
     /// Offset of `feature_id` (`u32`, little-endian). Spec §2.
@@ -1904,6 +1972,7 @@ pub(crate) mod component_source_two_handle_record {
 }
 
 /// Byte offsets for the `component_source_three_handle_record` record.
+///
 /// Spec §2. Record length 52 B.
 pub(crate) mod component_source_three_handle_record {
     /// Offset of `third_handle` (`u32`, little-endian). Spec §2.
@@ -1915,6 +1984,7 @@ pub(crate) mod component_source_three_handle_record {
 }
 
 /// Byte offsets for the `extrusion_boundary_operation_trailer` record.
+///
 /// Spec §2. Record length 24 B.
 pub(crate) mod extrusion_boundary_operation_trailer {
     /// Record length in bytes. Spec §2.
@@ -1926,6 +1996,7 @@ pub(crate) mod extrusion_boundary_operation_trailer {
 }
 
 /// Byte offsets for the `extrusion_narrow_boundary_operation_trailer` record.
+///
 /// Spec §2. Record length 20 B.
 pub(crate) mod extrusion_narrow_boundary_operation_trailer {
     /// Record length in bytes. Spec §2.
@@ -1937,6 +2008,7 @@ pub(crate) mod extrusion_narrow_boundary_operation_trailer {
 }
 
 /// Byte offsets for the `coordinate_system_component_point` record.
+///
 /// Spec §2. Record length 151 B.
 pub(crate) mod coordinate_system_component_point {
     /// Record length in bytes. Spec §2.
@@ -1974,6 +2046,7 @@ pub(crate) mod coordinate_system_component_point {
 }
 
 /// Byte offsets for the `coordinate_system_extended_component_point` record.
+///
 /// Spec §2. Record length 165 B.
 pub(crate) mod coordinate_system_extended_component_point {
     /// Record length in bytes. Spec §2.
@@ -2007,6 +2080,7 @@ pub(crate) mod coordinate_system_extended_component_point {
 }
 
 /// Byte offsets for the `coordinate_system_component_path_prefix` record.
+///
 /// Spec §2. Record length 110 B.
 ///
 /// ```text
@@ -2022,6 +2096,7 @@ pub(crate) mod coordinate_system_component_path_prefix {
 }
 
 /// Byte offsets for the `coordinate_system_component_path_suffix` record.
+///
 /// Spec §2. Record length 86 B.
 ///
 /// ```text
@@ -2051,6 +2126,7 @@ pub(crate) mod coordinate_system_component_path_suffix {
 }
 
 /// Byte offsets for the `coordinate_system_ordinal_axis_tail` record.
+///
 /// Spec §2. Record length 35 B.
 ///
 /// ```text
@@ -2070,6 +2146,7 @@ pub(crate) mod coordinate_system_ordinal_axis_tail {
 }
 
 /// Byte offsets for the `coordinate_system_two_point_separator` record.
+///
 /// Spec §2. Record length 14 B.
 pub(crate) mod coordinate_system_two_point_separator {
     /// Record length in bytes. Spec §2.
@@ -2085,6 +2162,7 @@ pub(crate) mod coordinate_system_two_point_separator {
 }
 
 /// Byte offsets for the `coordinate_system_two_point_tail` record.
+///
 /// Spec §2. Record length 94 B.
 pub(crate) mod coordinate_system_two_point_tail {
     /// Record length in bytes. Spec §2.
@@ -2106,6 +2184,7 @@ pub(crate) mod coordinate_system_two_point_tail {
 }
 
 /// Byte offsets for the `coordinate_system_endpoint_path_prefix` record.
+///
 /// Spec §2. Record length 110 B.
 ///
 /// ```text
@@ -2131,6 +2210,7 @@ pub(crate) mod coordinate_system_endpoint_path_prefix {
 }
 
 /// Byte offsets for the `coordinate_system_endpoint_path_suffix` record.
+///
 /// Spec §2. Record length 142 B.
 ///
 /// ```text
@@ -2160,6 +2240,7 @@ pub(crate) mod coordinate_system_endpoint_path_suffix {
 }
 
 /// Byte offsets for the `coordinate_system_line_axis` record.
+///
 /// Spec §2. Record length 113 B.
 pub(crate) mod coordinate_system_line_axis {
     /// Record length in bytes. Spec §2.
@@ -2183,6 +2264,7 @@ pub(crate) mod coordinate_system_line_axis {
 }
 
 /// Byte offsets for the `coordinate_system_xy_tail` record.
+///
 /// Spec §2. Record length 29 B.
 pub(crate) mod coordinate_system_xy_tail {
     /// Record length in bytes. Spec §2.
@@ -2194,6 +2276,7 @@ pub(crate) mod coordinate_system_xy_tail {
 }
 
 /// Byte offsets for the `constructed_reference_plane_fixed_frame` record.
+///
 /// Spec §2. Record length 97 B.
 ///
 /// ```text
@@ -2215,6 +2298,7 @@ pub(crate) mod constructed_reference_plane_fixed_frame {
 }
 
 /// Byte offsets for the `constructed_reference_plane_matrix_frame` record.
+///
 /// Spec §2. Record length 121 B.
 ///
 /// ```text
@@ -2234,6 +2318,7 @@ pub(crate) mod constructed_reference_plane_matrix_frame {
 }
 
 /// Byte offsets for the `component_face_nested_reference_prefix` record.
+///
 /// Spec §2. Record length 102 B.
 ///
 /// ```text
@@ -2245,6 +2330,7 @@ pub(crate) mod component_face_nested_reference_prefix {
 }
 
 /// Byte offsets for the `component_face_compact_reference_prefix` record.
+///
 /// Spec §2. Record length 82 B.
 ///
 /// ```text
@@ -2256,6 +2342,7 @@ pub(crate) mod component_face_compact_reference_prefix {
 }
 
 /// Byte offsets for the `component_face_flagged_operation_prefix` record.
+///
 /// Spec §2. Record length 86 B.
 ///
 /// ```text
@@ -2267,6 +2354,7 @@ pub(crate) mod component_face_flagged_operation_prefix {
 }
 
 /// Byte offsets for the `temporary_axis_reference_nine_scalar` record.
+///
 /// Spec §2. Record length 311 B.
 ///
 /// ```text
@@ -2303,6 +2391,7 @@ pub(crate) mod temporary_axis_reference_nine_scalar {
 }
 
 /// Byte offsets for the `temporary_axis_compact_boundary` record.
+///
 /// Spec §2. Record length 13 B.
 pub(crate) mod temporary_axis_compact_boundary {
     /// Record length in bytes. Spec §2.
@@ -2318,6 +2407,7 @@ pub(crate) mod temporary_axis_compact_boundary {
 }
 
 /// Byte offsets for the `temporary_axis_declared_boundary_prefix` record.
+///
 /// Spec §2. Record length 7 B.
 pub(crate) mod temporary_axis_declared_boundary_prefix {
     /// Record length in bytes. Spec §2.
@@ -2335,6 +2425,7 @@ pub(crate) mod temporary_axis_declared_boundary_prefix {
 }
 
 /// Byte offsets for the `cosmetic_thread_component_edge_wrapper_prefix` record.
+///
 /// Spec §2. Record length 17 B.
 ///
 /// ```text
@@ -2356,6 +2447,7 @@ pub(crate) mod cosmetic_thread_component_edge_wrapper_prefix {
 }
 
 /// Byte offsets for the `cosmetic_thread_repeated_edge_ref_prefix` record.
+///
 /// Spec §2. Record length 8 B.
 ///
 /// ```text
@@ -2369,6 +2461,7 @@ pub(crate) mod cosmetic_thread_repeated_edge_ref_prefix {
 }
 
 /// Byte offsets for the `display_lists_scene_source_binding` record.
+///
 /// Spec §8. Record length 16 B.
 pub(crate) mod display_lists_scene_source_binding {
     /// Record length in bytes. Spec §8.
@@ -2382,6 +2475,7 @@ pub(crate) mod display_lists_scene_source_binding {
 }
 
 /// Byte offsets for the `display_lists_inline_visual_properties_prefix` record.
+///
 /// Spec §8. Record length 22 B.
 ///
 /// ```text
@@ -2393,6 +2487,7 @@ pub(crate) mod display_lists_inline_visual_properties_prefix {
 }
 
 /// Byte offsets for the `visual_states_feature_appearance_prefix` record.
+///
 /// Spec §8. Record length 36 B.
 ///
 /// ```text
@@ -2433,6 +2528,7 @@ pub(crate) mod visual_states_feature_appearance_prefix {
 }
 
 /// Byte offsets for the `transformed_reference_plane_metadata` record.
+///
 /// Spec §8. Record length 25 B.
 ///
 /// ```text
@@ -2446,6 +2542,7 @@ pub(crate) mod transformed_reference_plane_metadata {
 }
 
 /// Byte offsets for the `transformed_reference_enclosure_extent` record.
+///
 /// Spec §8. Record length 80 B.
 ///
 /// ```text
@@ -2457,6 +2554,7 @@ pub(crate) mod transformed_reference_enclosure_extent {
 }
 
 /// Byte offsets for the `display_lists_compact_face_header` record.
+///
 /// Spec §8. Record length 8 B.
 ///
 /// ```text
@@ -2472,6 +2570,7 @@ pub(crate) mod display_lists_compact_face_header {
 }
 
 /// Byte offsets for the `display_lists_extended_face_header` record.
+///
 /// Spec §8. Record length 40 B.
 ///
 /// ```text
@@ -2493,6 +2592,7 @@ pub(crate) mod display_lists_extended_face_header {
 }
 
 /// Byte offsets for the `draft_plane_reference_prefix` record.
+///
 /// Spec §2. Record length 112 B.
 ///
 /// ```text
@@ -2528,6 +2628,7 @@ pub(crate) mod draft_plane_reference_prefix {
 }
 
 /// Byte offsets for the `draft_compact_selection_prefix` record.
+///
 /// Spec §2. Record length 30 B.
 ///
 /// ```text
@@ -2547,6 +2648,7 @@ pub(crate) mod draft_compact_selection_prefix {
 }
 
 /// Byte offsets for the `draft_aligned_direction_frame` record.
+///
 /// Spec §2. Record length 120 B.
 pub(crate) mod draft_aligned_direction_frame {
     /// Record length in bytes. Spec §2.
@@ -2560,6 +2662,7 @@ pub(crate) mod draft_aligned_direction_frame {
 }
 
 /// Byte offsets for the `draft_extended_direction_frame` record.
+///
 /// Spec §2. Record length 153 B.
 pub(crate) mod draft_extended_direction_frame {
     /// Record length in bytes. Spec §2.
@@ -2569,6 +2672,7 @@ pub(crate) mod draft_extended_direction_frame {
 }
 
 /// Byte offsets for the `current_indexed_spatial_xyz_point_prefix` record.
+///
 /// Spec §2. Record length 96 B.
 ///
 /// ```text
@@ -2607,6 +2711,7 @@ pub(crate) mod current_indexed_spatial_xyz_point_prefix {
 }
 
 /// Byte offsets for the `current_indexed_spatial_xyz_terminal_reference_prefix_short` record.
+///
 /// Spec §2. Record length 330 B.
 ///
 /// ```text
@@ -2636,6 +2741,7 @@ pub(crate) mod current_indexed_spatial_xyz_terminal_reference_prefix_short {
 }
 
 /// Byte offsets for the `current_indexed_spatial_xyz_terminal_reference_prefix_long` record.
+///
 /// Spec §2. Record length 334 B.
 ///
 /// ```text
@@ -2665,6 +2771,7 @@ pub(crate) mod current_indexed_spatial_xyz_terminal_reference_prefix_long {
 }
 
 /// Byte offsets for the `compact_current_spatial_marker_point` record.
+///
 /// Spec §2. Record length 82 B.
 ///
 /// ```text
@@ -2702,6 +2809,7 @@ pub(crate) mod compact_current_spatial_marker_point {
 }
 
 /// Byte offsets for the `wide_spatial_marker_coordinate_prefix` record.
+///
 /// Spec §2. Record length 90 B.
 ///
 /// ```text
@@ -2718,6 +2826,7 @@ pub(crate) mod wide_spatial_marker_coordinate_prefix {
 }
 
 /// Byte offsets for the `swift_gtol_display_head` record.
+///
 /// Spec §2.1. Record length 10 B.
 ///
 /// ```text
@@ -2737,6 +2846,7 @@ pub(crate) mod swift_gtol_display_head {
 }
 
 /// Byte offsets for the `swift_feature_reference` record.
+///
 /// Spec §2.1. Record length 10 B.
 ///
 /// ```text
@@ -2752,6 +2862,7 @@ pub(crate) mod swift_feature_reference {
 }
 
 /// Byte offsets for the `identity_reference_header` record.
+///
 /// Spec §2.3. Record length 38 B.
 ///
 /// ```text
@@ -2784,6 +2895,7 @@ pub(crate) mod identity_reference_header {
 }
 
 /// Byte offsets for the `named_object_header` record.
+///
 /// Spec §2.3. Record length 16 B.
 ///
 /// ```text
@@ -2795,6 +2907,7 @@ pub(crate) mod named_object_header {
 }
 
 /// Byte offsets for the `attribute_definition_short_refs` record.
+///
 /// Spec §5. Record length 38 B.
 ///
 /// ```text
@@ -2820,6 +2933,7 @@ pub(crate) mod attribute_definition_short_refs {
 }
 
 /// Byte offsets for the `attribute_short_references` record.
+///
 /// Spec §5. Record length 22 B.
 ///
 /// ```text
@@ -2839,6 +2953,7 @@ pub(crate) mod attribute_short_references {
 }
 
 /// Byte offsets for the `display_lists_extended_metadata` record.
+///
 /// Spec §8. Record length 128 B.
 ///
 /// ```text
@@ -2864,6 +2979,7 @@ pub(crate) mod display_lists_extended_metadata {
 }
 
 /// Byte offsets for the `parasolid_b_curve_short` record.
+///
 /// Spec §2. Record length 21 B.
 ///
 /// ```text
@@ -2881,6 +2997,7 @@ pub(crate) mod parasolid_b_curve_short {
 }
 
 /// Byte offsets for the `parasolid_nurbs_curve_short` record.
+///
 /// Spec §2. Record length 25 B.
 ///
 /// ```text
@@ -2892,6 +3009,7 @@ pub(crate) mod parasolid_nurbs_curve_short {
 }
 
 /// Byte offsets for the `parasolid_edited_type_header` record.
+///
 /// Spec §4.1. Record length 3 B.
 pub(crate) mod parasolid_edited_type_header {
     /// Offset of `node_type` (`u16`, big-endian). Spec §4.1.
@@ -2901,6 +3019,7 @@ pub(crate) mod parasolid_edited_type_header {
 }
 
 /// Byte offsets for the `parasolid_construction_prefix` record.
+///
 /// Spec §2. Record length 8 B.
 ///
 /// ```text
@@ -2916,6 +3035,7 @@ pub(crate) mod parasolid_construction_prefix {
 }
 
 /// Byte offsets for the `visual_component_body_prefix` record.
+///
 /// Spec §8. Record length 17 B.
 ///
 /// ```text
@@ -2937,6 +3057,7 @@ pub(crate) mod visual_component_body_prefix {
 }
 
 /// Byte offsets for the `named_padding_header` record.
+///
 /// Spec §1.4. Record length 40 B.
 ///
 /// ```text
@@ -2958,6 +3079,7 @@ pub(crate) mod named_padding_header {
 }
 
 /// Byte offsets for the `footer_padding_body` record.
+///
 /// Spec §1.4. Record length 18 B.
 ///
 /// ```text
@@ -2981,6 +3103,7 @@ pub(crate) mod footer_padding_body {
 }
 
 /// Byte offsets for the `zip_eocd_header` record.
+///
 /// Spec §1.4. Record length 22 B.
 ///
 /// ```text
@@ -3006,6 +3129,7 @@ pub(crate) mod zip_eocd_header {
 }
 
 /// Byte offsets for the `integer_values_header` record.
+///
 /// Spec §5. Record length 6 B.
 ///
 /// ```text
@@ -3021,6 +3145,7 @@ pub(crate) mod integer_values_header {
 }
 
 /// Byte offsets for the `mfc_new_class_header` record.
+///
 /// Spec §8. Record length 6 B.
 pub(crate) mod mfc_new_class_header {
     /// Record length in bytes. Spec §8.
@@ -3034,6 +3159,7 @@ pub(crate) mod mfc_new_class_header {
 }
 
 /// Byte offsets for the `part_root_short` record.
+///
 /// Spec §8. Record length 4 B.
 pub(crate) mod part_root_short {
     /// Record length in bytes. Spec §8.
@@ -3043,6 +3169,7 @@ pub(crate) mod part_root_short {
 }
 
 /// Byte offsets for the `part_root_long` record.
+///
 /// Spec §8. Record length 12 B.
 pub(crate) mod part_root_long {
     /// Record length in bytes. Spec §8.
@@ -3054,6 +3181,7 @@ pub(crate) mod part_root_long {
 }
 
 /// Byte offsets for the `component_edge_type_signature` record.
+///
 /// Spec §2. Record length 12 B.
 pub(crate) mod component_edge_type_signature {
     /// Offset of `native_feature_object_id` (`u32`, little-endian). Spec §2.
@@ -3061,6 +3189,7 @@ pub(crate) mod component_edge_type_signature {
 }
 
 /// Byte offsets for the `oleps_stream_header` record.
+///
 /// Spec §8.1. Record length 28 B.
 pub(crate) mod oleps_stream_header {
     /// Record length in bytes. Spec §8.1.
@@ -3076,6 +3205,7 @@ pub(crate) mod oleps_stream_header {
 }
 
 /// Byte offsets for the `oleps_section_descriptor` record.
+///
 /// Spec §8.1. Record length 20 B.
 pub(crate) mod oleps_section_descriptor {
     /// Record length in bytes. Spec §8.1.
@@ -3087,6 +3217,7 @@ pub(crate) mod oleps_section_descriptor {
 }
 
 /// Byte offsets for the `oleps_property_set_header` record.
+///
 /// Spec §8.1. Record length 8 B.
 pub(crate) mod oleps_property_set_header {
     /// Record length in bytes. Spec §8.1.
@@ -3098,6 +3229,7 @@ pub(crate) mod oleps_property_set_header {
 }
 
 /// Byte offsets for the `oleps_property_identifier_offset` record.
+///
 /// Spec §8.1. Record length 8 B.
 pub(crate) mod oleps_property_identifier_offset {
     /// Record length in bytes. Spec §8.1.
@@ -3109,6 +3241,7 @@ pub(crate) mod oleps_property_identifier_offset {
 }
 
 /// Byte offsets for the `oleps_typed_value_header` record.
+///
 /// Spec §8.1. Record length 4 B.
 pub(crate) mod oleps_typed_value_header {
     /// Record length in bytes. Spec §8.1.
@@ -3122,6 +3255,7 @@ pub(crate) mod oleps_typed_value_header {
 }
 
 /// Byte offsets for the `oleps_dictionary_header` record.
+///
 /// Spec §8.1. Record length 4 B.
 pub(crate) mod oleps_dictionary_header {
     /// Record length in bytes. Spec §8.1.
@@ -3131,6 +3265,7 @@ pub(crate) mod oleps_dictionary_header {
 }
 
 /// Byte offsets for the `oleps_dictionary_entry_prefix` record.
+///
 /// Spec §8.1. Record length 8 B.
 pub(crate) mod oleps_dictionary_entry_prefix {
     /// Record length in bytes. Spec §8.1.
@@ -3142,6 +3277,7 @@ pub(crate) mod oleps_dictionary_entry_prefix {
 }
 
 /// Byte offsets for the `parasolid_terminal` record.
+///
 /// Spec §3.1.1. Record length 4 B.
 ///
 /// ```text
@@ -3161,6 +3297,7 @@ pub(crate) mod parasolid_terminal {
 }
 
 /// Byte offsets for the `weldment_xt_entry_prefix` record.
+///
 /// Spec §3.1.1. Record length 8 B.
 ///
 /// ```text
@@ -3178,6 +3315,7 @@ pub(crate) mod weldment_xt_entry_prefix {
 }
 
 /// Byte offsets for the `draft_declared_neutral_frame` record.
+///
 /// Spec §2. Record length 120 B.
 pub(crate) mod draft_declared_neutral_frame {
     /// Record length in bytes. Spec §2.
@@ -3199,6 +3337,7 @@ pub(crate) mod draft_declared_neutral_frame {
 }
 
 /// Byte offsets for the `configuration_manager_scalar_prefix` record.
+///
 /// Spec §8. Record length 125 B.
 ///
 /// ```text
@@ -3216,6 +3355,7 @@ pub(crate) mod configuration_manager_scalar_prefix {
 }
 
 /// Byte offsets for the `spun_surface_profile` record.
+///
 /// Spec §7.1. Record length 112 B.
 ///
 /// ```text
@@ -3235,6 +3375,7 @@ pub(crate) mod spun_surface_profile {
 }
 
 /// Byte offsets for the `compact_principal_plane_component` record.
+///
 /// Spec §2. Record length 138 B.
 pub(crate) mod compact_principal_plane_component {
     /// Offset of `source` (`u32`, little-endian). Spec §2.
@@ -3256,6 +3397,7 @@ pub(crate) mod compact_principal_plane_component {
 }
 
 /// Byte offsets for the `extrusion_compact_operation_trailer` record.
+///
 /// Spec §2. Record length 40 B.
 pub(crate) mod extrusion_compact_operation_trailer {
     /// Record length in bytes. Spec §2.

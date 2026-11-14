@@ -292,6 +292,38 @@ pub(crate) const GENERATED_LAYOUT_RS: &[(&str, &str)] = &[
     ("zip", "crates/cadmpeg-container/src/layout.rs"),
 ];
 
+pub(crate) fn external_layout_files(
+    format: &str,
+    rendered: &mut String,
+) -> Result<Vec<(String, String)>, String> {
+    if format != "f3d" {
+        return Ok(Vec::new());
+    }
+    let mut files = Vec::new();
+    for module in [
+        "base_feature_class_452_262_compact",
+        "base_feature_class_452_262_expanded",
+    ] {
+        let opening = format!("pub(crate) mod {module} {{\n");
+        let start = rendered.find(&opening).ok_or_else(|| {
+            format!("external layout module {module} is absent from generated output")
+        })?;
+        let body_start = start + opening.len();
+        let body_end = body_start
+            + rendered[body_start..].find("\n}").ok_or_else(|| {
+                format!("external layout module {module} has no closing boundary")
+            })?;
+        let mut body = rendered.lines().next().unwrap_or_default().to_string();
+        body.push('\n');
+        body.push_str(&rendered[body_start..body_end]);
+        body.push('\n');
+        files.push((format!("layout/{module}.rs"), rustfmt_source(&body)));
+        rendered.replace_range(start..body_end + 2, &format!("pub(crate) mod {module};"));
+    }
+    *rendered = rustfmt_source(rendered);
+    Ok(files)
+}
+
 const RUST_KEYWORDS: &[&str] = &[
     "Self", "abstract", "as", "async", "await", "become", "box", "break", "const", "continue",
     "crate", "do", "dyn", "else", "enum", "extern", "false", "final", "fn", "for", "if", "impl",
@@ -498,6 +530,7 @@ fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<Stri
             "/// Byte offsets for the `{}` record.",
             record.name
         )?;
+        writeln!(modules, "///")?;
         match record.size {
             Some(size) => {
                 writeln!(
@@ -666,8 +699,49 @@ fn rustfmt_source(src: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::emit_layout_rs;
+    use super::{emit_layout_rs, external_layout_files};
     use crate::LayoutFile;
+
+    #[test]
+    fn external_layout_modules_preserve_items_and_test_gates() {
+        let mut source = "// SPDX-License-Identifier: Apache-2.0\npub(crate) mod base_feature_class_452_262_compact {\n    #[cfg(test)]\n    pub(crate) const VALUE: usize = 7;\n}\npub(crate) mod base_feature_class_452_262_expanded {\n    pub(crate) const VALUE: usize = 11;\n}\n".to_string();
+        let files = external_layout_files("f3d", &mut source).unwrap();
+        assert_eq!(files.len(), 2);
+        let root = syn::parse_file(&source).unwrap();
+        assert_eq!(root.items.len(), 2);
+        assert!(root
+            .items
+            .iter()
+            .all(|item| matches!(item, syn::Item::Mod(module) if module.content.is_none())));
+        for ((_, body), expected) in files.iter().zip([7, 11]) {
+            let file = syn::parse_file(body).unwrap();
+            assert_eq!(file.items.len(), 1);
+            let syn::Item::Const(item) = &file.items[0] else {
+                panic!("constant item required")
+            };
+            let syn::Expr::Lit(value) = item.expr.as_ref() else {
+                panic!("literal value required")
+            };
+            let syn::Lit::Int(value) = &value.lit else {
+                panic!("integer value required")
+            };
+            assert_eq!(value.base10_parse::<u32>().unwrap(), expected);
+            assert_eq!(item.attrs.len(), usize::from(expected == 7));
+        }
+    }
+
+    #[test]
+    fn external_layout_modules_reject_missing_boundaries() {
+        for input in ["", "pub(crate) mod base_feature_class_452_262_compact {\n"] {
+            assert!(external_layout_files("f3d", &mut input.to_string()).is_err());
+        }
+        let mut other = "pub(crate) mod ordinary {}".to_string();
+        let original = other.clone();
+        assert!(external_layout_files("demo", &mut other)
+            .unwrap()
+            .is_empty());
+        assert_eq!(other, original);
+    }
 
     #[test]
     fn layout_emission_filters_records_values_tokens_and_test_reads(

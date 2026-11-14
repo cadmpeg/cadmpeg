@@ -67,6 +67,7 @@ pub(crate) mod token {
 }
 
 /// Byte offsets for the `pvs_header` record.
+///
 /// Spec §3.1. Record length 18 B.
 pub(crate) mod pvs_header {
     /// Record length in bytes. Spec §3.1.
@@ -78,6 +79,7 @@ pub(crate) mod pvs_header {
 }
 
 /// Byte offsets for the `pvs_stream_entry_head` record.
+///
 /// Spec §3.2. Record length 3 B.
 ///
 /// ```text
@@ -97,6 +99,7 @@ pub(crate) mod pvs_stream_entry_head {
 }
 
 /// Byte offsets for the `ol_header` record.
+///
 /// Spec §4.1. Record length 22 B.
 pub(crate) mod ol_header {
     /// Record length in bytes. Spec §4.1.
@@ -112,6 +115,7 @@ pub(crate) mod ol_header {
 }
 
 /// Byte offsets for the `ol_directory_entry` record.
+///
 /// Spec §4.2. Record length 8 B.
 pub(crate) mod ol_directory_entry {
     /// Record length in bytes. Spec §4.2.
@@ -123,6 +127,7 @@ pub(crate) mod ol_directory_entry {
 }
 
 /// Byte offsets for the `ol_preamble_block` record.
+///
 /// Spec §4.3. Record length 19 B.
 pub(crate) mod ol_preamble_block {
     /// Record length in bytes. Spec §4.3.
@@ -138,6 +143,7 @@ pub(crate) mod ol_preamble_block {
 }
 
 /// Byte offsets for the `tlv_header` record.
+///
 /// Spec §4.4. Record length 8 B.
 ///
 /// ```text
@@ -153,6 +159,7 @@ pub(crate) mod tlv_header {
 }
 
 /// Byte offsets for the `appearance_values` record.
+///
 /// Spec §5.1. Record length 56 B.
 pub(crate) mod appearance_values {
     /// Record length in bytes. Spec §5.1.
@@ -172,6 +179,7 @@ pub(crate) mod appearance_values {
 }
 
 /// Byte offsets for the `patch_header_head` record.
+///
 /// Spec §6.2. Record length 13 B.
 ///
 /// ```text
@@ -187,6 +195,7 @@ pub(crate) mod patch_header_head {
 }
 
 /// Byte offsets for the `vertex_block_head` record.
+///
 /// Spec §6.3. Record length 5 B.
 ///
 /// ```text
@@ -202,6 +211,7 @@ pub(crate) mod vertex_block_head {
 }
 
 /// Byte offsets for the `edge_tessellation_header` record.
+///
 /// Spec §7.2. Record length 12 B.
 pub(crate) mod edge_tessellation_header {
     /// Record length in bytes. Spec §7.2.
@@ -211,6 +221,7 @@ pub(crate) mod edge_tessellation_header {
 }
 
 /// Byte offsets for the `loop_record` record.
+///
 /// Spec §8.11. Record length 4 B.
 pub(crate) mod loop_record {
     /// Record length in bytes. Spec §8.11.
@@ -218,6 +229,7 @@ pub(crate) mod loop_record {
 }
 
 /// Byte offsets for the `coedge_record` record.
+///
 /// Spec §8.12. Record length 13 B.
 pub(crate) mod coedge_record {
     /// Record length in bytes. Spec §8.12.

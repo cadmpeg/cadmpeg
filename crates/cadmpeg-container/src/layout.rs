@@ -5,6 +5,7 @@
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
 /// Byte offsets for the `digital_signature` record.
+///
 /// Spec §3. Record length 6 B.
 pub(crate) mod digital_signature {
     /// Record length in bytes. Spec §3.
@@ -14,6 +15,7 @@ pub(crate) mod digital_signature {
 }
 
 /// Byte offsets for the `central_header` record.
+///
 /// Spec §1. Record length 46 B.
 pub(crate) mod central_header {
     /// Record length in bytes. Spec §1.
@@ -39,6 +41,7 @@ pub(crate) mod central_header {
 }
 
 /// Byte offsets for the `local_header` record.
+///
 /// Spec §2. Record length 30 B.
 pub(crate) mod local_header {
     /// Record length in bytes. Spec §2.
@@ -50,6 +53,7 @@ pub(crate) mod local_header {
 }
 
 /// Byte offsets for the `end_record` record.
+///
 /// Spec §3. Record length 22 B.
 pub(crate) mod end_record {
     /// Record length in bytes. Spec §3.
@@ -68,6 +72,7 @@ pub(crate) mod end_record {
 }
 
 /// Byte offsets for the `zip64_end` record.
+///
 /// Spec §3. Record length 56 B.
 pub(crate) mod zip64_end {
     /// Record length in bytes. Spec §3.
@@ -92,6 +97,7 @@ pub(crate) mod zip64_end {
 }
 
 /// Byte offsets for the `zip64_locator` record.
+///
 /// Spec §3. Record length 20 B.
 pub(crate) mod zip64_locator {
     /// Record length in bytes. Spec §3.

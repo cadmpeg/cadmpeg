@@ -5,6 +5,7 @@
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
 /// Byte offsets for the `unix_compress_header` record.
+///
 /// Spec §1. Record length 3 B.
 ///
 /// ```text
@@ -22,6 +23,7 @@ pub(crate) mod unix_compress_header {
 }
 
 /// Byte offsets for the `cmnm_model_name_record` record.
+///
 /// Spec §1. Record length 11 B.
 ///
 /// ```text
@@ -37,6 +39,7 @@ pub(crate) mod cmnm_model_name_record {
 }
 
 /// Byte offsets for the `type24_first_coordinate_bounded_round` record.
+///
 /// Spec §3.3. Record length 50 B.
 ///
 /// ```text
@@ -58,6 +61,7 @@ pub(crate) mod type24_first_coordinate_bounded_round {
 }
 
 /// Byte offsets for the `type24_segmented_first_coordinate_bounded_round` record.
+///
 /// Spec §3.3. Record length 56 B.
 ///
 /// ```text
@@ -81,6 +85,7 @@ pub(crate) mod type24_segmented_first_coordinate_bounded_round {
 }
 
 /// Byte offsets for the `model_double_xar_metric_scale` record.
+///
 /// Spec §Constants and cache references. Record length 4 B.
 pub(crate) mod model_double_xar_metric_scale {
     /// Record length in bytes. Spec §Constants and cache references.
@@ -90,6 +95,7 @@ pub(crate) mod model_double_xar_metric_scale {
 }
 
 /// Byte offsets for the `model_double_xar_imperial_scale` record.
+///
 /// Spec §Constants and cache references. Record length 11 B.
 pub(crate) mod model_double_xar_imperial_scale {
     /// Record length in bytes. Spec §Constants and cache references.
@@ -103,6 +109,7 @@ pub(crate) mod model_double_xar_imperial_scale {
 }
 
 /// Byte offsets for the `model_double_xar_control` record.
+///
 /// Spec §Constants and cache references. Record length 4 B.
 pub(crate) mod model_double_xar_control {
     /// Record length in bytes. Spec §Constants and cache references.
@@ -112,6 +119,7 @@ pub(crate) mod model_double_xar_control {
 }
 
 /// Byte offsets for the `section_full_width_scalar` record.
+///
 /// Spec §5. Record length 9 B.
 ///
 /// ```text
@@ -127,6 +135,7 @@ pub(crate) mod section_full_width_scalar {
 }
 
 /// Byte offsets for the `type24_cap_envelope_control_prefix` record.
+///
 /// Spec §3.2. Record length 22 B.
 ///
 /// ```text

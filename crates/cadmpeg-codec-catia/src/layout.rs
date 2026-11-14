@@ -13,6 +13,7 @@ pub(crate) mod token {
 }
 
 /// Byte offsets for the `outer_header` record.
+///
 /// Spec §3.1. Record length 64 B.
 ///
 /// ```text
@@ -30,6 +31,7 @@ pub(crate) mod outer_header {
 }
 
 /// Byte offsets for the `inner_header` record.
+///
 /// Spec §3.2. Record length 16 B.
 ///
 /// ```text
@@ -45,6 +47,7 @@ pub(crate) mod inner_header {
 }
 
 /// Byte offsets for the `stream_descriptor_header` record.
+///
 /// Spec §3.4. Record length 84 B.
 ///
 /// ```text
@@ -60,6 +63,7 @@ pub(crate) mod stream_descriptor_header {
 }
 
 /// Byte offsets for the `extent_struct` record.
+///
 /// Spec §3.4. Record length 20 B.
 ///
 /// ```text
@@ -81,6 +85,7 @@ pub(crate) mod extent_struct {
 }
 
 /// Byte offsets for the `vertex_roster_row` record.
+///
 /// Spec §3.5. Record length 7 B.
 ///
 /// ```text
@@ -98,6 +103,7 @@ pub(crate) mod vertex_roster_row {
 }
 
 /// Byte offsets for the `freeform_surface_core` record.
+///
 /// Spec §3.5. Record length 47 B.
 ///
 /// ```text
@@ -115,6 +121,7 @@ pub(crate) mod freeform_surface_core {
 }
 
 /// Byte offsets for the `analytic_surface_plane` record.
+///
 /// Spec §5.8. Record length 49 B.
 ///
 /// ```text
@@ -134,6 +141,7 @@ pub(crate) mod analytic_surface_plane {
 }
 
 /// Byte offsets for the `analytic_surface_cylinder` record.
+///
 /// Spec §5.8. Record length 73 B.
 ///
 /// ```text
@@ -151,6 +159,7 @@ pub(crate) mod analytic_surface_cylinder {
 }
 
 /// Byte offsets for the `analytic_surface_cone` record.
+///
 /// Spec §5.8. Record length 73 B.
 pub(crate) mod analytic_surface_cone {
     /// Record length in bytes. Spec §5.8.
@@ -164,6 +173,7 @@ pub(crate) mod analytic_surface_cone {
 }
 
 /// Byte offsets for the `analytic_surface_sphere` record.
+///
 /// Spec §5.8. Record length 65 B.
 pub(crate) mod analytic_surface_sphere {
     /// Record length in bytes. Spec §5.8.
@@ -177,6 +187,7 @@ pub(crate) mod analytic_surface_sphere {
 }
 
 /// Byte offsets for the `analytic_surface_torus` record.
+///
 /// Spec §5.8. Record length 77 B.
 pub(crate) mod analytic_surface_torus {
     /// Record length in bytes. Spec §5.8.
@@ -190,6 +201,7 @@ pub(crate) mod analytic_surface_torus {
 }
 
 /// Byte offsets for the `a_family_frame` record.
+///
 /// Spec §6. Record length 7 B.
 ///
 /// ```text
@@ -207,6 +219,7 @@ pub(crate) mod a_family_frame {
 }
 
 /// Byte offsets for the `b_family_frame` record.
+///
 /// Spec §6. Record length 4 B.
 ///
 /// ```text
@@ -220,6 +233,7 @@ pub(crate) mod b_family_frame {
 }
 
 /// Byte offsets for the `a9_03_frame` record.
+///
 /// Spec §8. Record length 4 B.
 ///
 /// ```text
@@ -237,6 +251,7 @@ pub(crate) mod a9_03_frame {
 }
 
 /// Byte offsets for the `zero_entity_edge_stride_5e1a` record.
+///
 /// Spec §8. Record length 38 B.
 ///
 /// ```text
@@ -252,6 +267,7 @@ pub(crate) mod zero_entity_edge_stride_5e1a {
 }
 
 /// Byte offsets for the `zero_entity_vertex_owner_5d06` record.
+///
 /// Spec §8. Record length 18 B.
 pub(crate) mod zero_entity_vertex_owner_5d06 {
     /// Record length in bytes. Spec §8.
@@ -265,6 +281,7 @@ pub(crate) mod zero_entity_vertex_owner_5d06 {
 }
 
 /// Byte offsets for the `zero_entity_pcurve_2171` record.
+///
 /// Spec §8. Record length 125 B.
 ///
 /// ```text
@@ -282,6 +299,7 @@ pub(crate) mod zero_entity_pcurve_2171 {
 }
 
 /// Byte offsets for the `e5_record_frame` record.
+///
 /// Spec §9. Record length 13 B.
 ///
 /// ```text
@@ -297,6 +315,7 @@ pub(crate) mod e5_record_frame {
 }
 
 /// Byte offsets for the `value_block_7c0b` record.
+///
 /// Spec §7.4. Record length 6 B.
 ///
 /// ```text
@@ -310,6 +329,7 @@ pub(crate) mod value_block_7c0b {
 }
 
 /// Byte offsets for the `outer_alias_row` record.
+///
 /// Spec §7.5. Record length 24 B.
 ///
 /// ```text
@@ -335,6 +355,7 @@ pub(crate) mod outer_alias_row {
 }
 
 /// Byte offsets for the `fbb_face_row` record.
+///
 /// Spec §7.4. Record length 8 B.
 ///
 /// ```text
@@ -354,6 +375,7 @@ pub(crate) mod fbb_face_row {
 }
 
 /// Byte offsets for the `storage_member_core` record.
+///
 /// Spec §7.6. Record length 20 B.
 pub(crate) mod storage_member_core {
     /// Record length in bytes. Spec §7.6.
@@ -371,6 +393,7 @@ pub(crate) mod storage_member_core {
 }
 
 /// Byte offsets for the `storage_member_direct_prefix` record.
+///
 /// Spec §7.6. Record length 4 B.
 pub(crate) mod storage_member_direct_prefix {
     /// Record length in bytes. Spec §7.6.
@@ -380,6 +403,7 @@ pub(crate) mod storage_member_direct_prefix {
 }
 
 /// Byte offsets for the `storage_member_nullable_prefix` record.
+///
 /// Spec §7.6. Record length 8 B.
 pub(crate) mod storage_member_nullable_prefix {
     /// Record length in bytes. Spec §7.6.
@@ -391,6 +415,7 @@ pub(crate) mod storage_member_nullable_prefix {
 }
 
 /// Byte offsets for the `storage_member_number_prefix` record.
+///
 /// Spec §7.6. Record length 6 B.
 pub(crate) mod storage_member_number_prefix {
     /// Record length in bytes. Spec §7.6.
@@ -402,6 +427,7 @@ pub(crate) mod storage_member_number_prefix {
 }
 
 /// Byte offsets for the `inline_schema_words` record.
+///
 /// Spec §7.3. Record length 12 B.
 pub(crate) mod inline_schema_words {
     /// Record length in bytes. Spec §7.3.
@@ -421,6 +447,7 @@ pub(crate) mod inline_schema_words {
 }
 
 /// Byte offsets for the `e5_nurbs_pcurve_limits` record.
+///
 /// Spec §9. Record length 37 B.
 pub(crate) mod e5_nurbs_pcurve_limits {
     /// Record length in bytes. Spec §9.
@@ -428,6 +455,7 @@ pub(crate) mod e5_nurbs_pcurve_limits {
 }
 
 /// Byte offsets for the `e5_nurbs_surface_limits` record.
+///
 /// Spec §9. Record length 148 B.
 pub(crate) mod e5_nurbs_surface_limits {
     /// Record length in bytes. Spec §9.
@@ -435,6 +463,7 @@ pub(crate) mod e5_nurbs_surface_limits {
 }
 
 /// Byte offsets for the `b5_loop_numeric_terminal` record.
+///
 /// Spec §6.7. Record length 62 B.
 ///
 /// ```text
@@ -454,6 +483,7 @@ pub(crate) mod b5_loop_numeric_terminal {
 }
 
 /// Byte offsets for the `surface_terminal_span_tail` record.
+///
 /// Spec §6.6. Record length 141 B.
 ///
 /// ```text
@@ -475,6 +505,7 @@ pub(crate) mod surface_terminal_span_tail {
 }
 
 /// Byte offsets for the `b5_cone_payload` record.
+///
 /// Spec §6.7. Record length 185 B.
 pub(crate) mod b5_cone_payload {
     /// Record length in bytes. Spec §6.7.
@@ -508,6 +539,7 @@ pub(crate) mod b5_cone_payload {
 }
 
 /// Byte offsets for the `rolling_ball_tail_prefix` record.
+///
 /// Spec §6.2. Record length 57 B.
 pub(crate) mod rolling_ball_tail_prefix {
     /// Record length in bytes. Spec §6.2.
@@ -521,6 +553,7 @@ pub(crate) mod rolling_ball_tail_prefix {
 }
 
 /// Byte offsets for the `rolling_ball_tail_unmapped_suffix` record.
+///
 /// Spec §6.2. Record length 22 B.
 pub(crate) mod rolling_ball_tail_unmapped_suffix {
     /// Record length in bytes. Spec §6.2.
@@ -534,6 +567,7 @@ pub(crate) mod rolling_ball_tail_unmapped_suffix {
 }
 
 /// Byte offsets for the `consolidated_wide_face_roster_prefix` record.
+///
 /// Spec §6.4. Record length 3 B.
 pub(crate) mod consolidated_wide_face_roster_prefix {
     /// Record length in bytes. Spec §6.4.
@@ -545,6 +579,7 @@ pub(crate) mod consolidated_wide_face_roster_prefix {
 }
 
 /// Byte offsets for the `b5_plane_payload` record.
+///
 /// Spec §6.7. Record length 121 B.
 pub(crate) mod b5_plane_payload {
     /// Record length in bytes. Spec §6.7.
@@ -566,6 +601,7 @@ pub(crate) mod b5_plane_payload {
 }
 
 /// Byte offsets for the `b5_cylinder_payload` record.
+///
 /// Spec §6.7. Record length 137 B.
 pub(crate) mod b5_cylinder_payload {
     /// Record length in bytes. Spec §6.7.
@@ -593,6 +629,7 @@ pub(crate) mod b5_cylinder_payload {
 }
 
 /// Byte offsets for the `b5_sphere_payload` record.
+///
 /// Spec §6.7. Record length 153 B.
 pub(crate) mod b5_sphere_payload {
     /// Record length in bytes. Spec §6.7.
@@ -620,6 +657,7 @@ pub(crate) mod b5_sphere_payload {
 }
 
 /// Byte offsets for the `b5_torus_payload` record.
+///
 /// Spec §6.7. Record length 201 B.
 pub(crate) mod b5_torus_payload {
     /// Record length in bytes. Spec §6.7.
@@ -655,6 +693,7 @@ pub(crate) mod b5_torus_payload {
 }
 
 /// Byte offsets for the `indexed_visualization_point_header` record.
+///
 /// Spec §5.4.2. Record length 19 B.
 pub(crate) mod indexed_visualization_point_header {
     /// Record length in bytes. Spec §5.4.2.
@@ -672,6 +711,7 @@ pub(crate) mod indexed_visualization_point_header {
 }
 
 /// Byte offsets for the `indexed_visualization_point_row` record.
+///
 /// Spec §5.4.2. Record length 12 B.
 pub(crate) mod indexed_visualization_point_row {
     /// Record length in bytes. Spec §5.4.2.
@@ -683,6 +723,7 @@ pub(crate) mod indexed_visualization_point_row {
 }
 
 /// Byte offsets for the `indexed_visualization_scalar_prefix` record.
+///
 /// Spec §5.4.2. Record length 5 B.
 pub(crate) mod indexed_visualization_scalar_prefix {
     /// Record length in bytes. Spec §5.4.2.
@@ -692,6 +733,7 @@ pub(crate) mod indexed_visualization_scalar_prefix {
 }
 
 /// Byte offsets for the `b_four_reference_edge_payload` record.
+///
 /// Spec §6.3. Record length 5 B.
 ///
 /// ```text
@@ -707,6 +749,7 @@ pub(crate) mod b_four_reference_edge_payload {
 }
 
 /// Byte offsets for the `rolling_ball_tail_scalar_branch` record.
+///
 /// Spec §6.2. Record length 2 B.
 pub(crate) mod rolling_ball_tail_scalar_branch {
     /// Stated value of `branch` (`bytes[2]`). Spec §6.2.
@@ -714,6 +757,7 @@ pub(crate) mod rolling_ball_tail_scalar_branch {
 }
 
 /// Byte offsets for the `e5_rolling_ball_tail` record.
+///
 /// Spec §9. Record length 63 B.
 pub(crate) mod e5_rolling_ball_tail {
     /// Record length in bytes. Spec §9.
@@ -723,6 +767,7 @@ pub(crate) mod e5_rolling_ball_tail {
 }
 
 /// Byte offsets for the `b5_line_profile` record.
+///
 /// Spec §6.7. Record length 73 B.
 pub(crate) mod b5_line_profile {
     /// Record length in bytes. Spec §6.7.
@@ -738,6 +783,7 @@ pub(crate) mod b5_line_profile {
 }
 
 /// Byte offsets for the `b5_arc_profile` record.
+///
 /// Spec §6.7. Record length 113 B.
 pub(crate) mod b5_arc_profile {
     /// Record length in bytes. Spec §6.7.
@@ -759,6 +805,7 @@ pub(crate) mod b5_arc_profile {
 }
 
 /// Byte offsets for the `b5_revolution_carrier_tail` record.
+///
 /// Spec §6.7. Record length 171 B.
 pub(crate) mod b5_revolution_carrier_tail {
     /// Record length in bytes. Spec §6.7.
@@ -790,6 +837,7 @@ pub(crate) mod b5_revolution_carrier_tail {
 }
 
 /// Byte offsets for the `container_property_header` record.
+///
 /// Spec §3.1. Record length 12 B.
 pub(crate) mod container_property_header {
     /// Record length in bytes. Spec §3.1.
@@ -801,6 +849,7 @@ pub(crate) mod container_property_header {
 }
 
 /// Byte offsets for the `container_property_record` record.
+///
 /// Spec §3.1. Record length 14 B.
 pub(crate) mod container_property_record {
     /// Record length in bytes. Spec §3.1.

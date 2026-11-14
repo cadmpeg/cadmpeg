@@ -5,6 +5,7 @@
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
 /// Byte offsets for the `mesh_kernel_side_entry_header` record.
+///
 /// Spec §11. Record length 264 B.
 ///
 /// ```text
@@ -22,6 +23,7 @@ pub(crate) mod mesh_kernel_side_entry_header {
 }
 
 /// Byte offsets for the `mesh_facet` record.
+///
 /// Spec §11. Record length 24 B.
 ///
 /// ```text
@@ -33,6 +35,7 @@ pub(crate) mod mesh_facet {
 }
 
 /// Byte offsets for the `link_array_side_entry_header` record.
+///
 /// Spec §9. Record length 4 B.
 ///
 /// ```text
@@ -44,6 +47,7 @@ pub(crate) mod link_array_side_entry_header {
 }
 
 /// Byte offsets for the `fillet_edge_item` record.
+///
 /// Spec §11. Record length 20 B.
 ///
 /// ```text
