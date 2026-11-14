@@ -715,7 +715,7 @@ pub(crate) mod shell_compact_slot_scope_prefix {
 /// Spec §3.1. Record length 27 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed scope header. The marked prefix starts its wall slots at offset 26. The counted prefix stores zero at offset 26 and starts its wall slots at offset 27.
+/// Offsets are relative to the primary indexed scope header. The marked prefix starts its wall slots at offset 26. The counted prefix stores its prefix byte at offset 26 and starts its wall slots at offset 27.
 /// ```
 pub(crate) mod shell_marked_slot_scope_prefix {
     /// Record length in bytes. Spec §3.1.
@@ -1208,6 +1208,26 @@ pub(crate) mod mesh_operation_scope_prefix {
     pub(crate) const ZERO_RUN_9: usize = 11;
     /// Offset of `flag` (`u8`). Spec §3.1.
     pub(crate) const FLAG: usize = 20;
+}
+
+/// Byte offsets for the `mesh_convert_input_prefix` record.
+///
+/// Spec §3.1. Record length 33 B.
+pub(crate) mod mesh_convert_input_prefix {
+    /// Offset of `zero_run_11` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_11: usize = 11;
+    /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const GROUP_REFERENCE: usize = 22;
+}
+
+/// Byte offsets for the `mesh_convert_output_prefix` record.
+///
+/// Spec §3.1. Record length 110 B.
+pub(crate) mod mesh_convert_output_prefix {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `guid_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GUID_LENGTH: usize = 21;
 }
 
 /// Byte offsets for the `mesh_operation_group_prefix` record.

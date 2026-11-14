@@ -1338,7 +1338,8 @@ pub(crate) fn append_design_losses(
                 | FeatureOperation::MeshCombineFaceGroups { .. } => true,
                 FeatureOperation::MeshImport { .. }
                 | FeatureOperation::MeshSection { .. }
-                | FeatureOperation::MeshModify { .. } => false,
+                | FeatureOperation::MeshModify { .. }
+                | FeatureOperation::MeshConvert(_) => false,
                 FeatureOperation::InsertComponent { occurrence } => !ir
                     .model
                     .occurrences

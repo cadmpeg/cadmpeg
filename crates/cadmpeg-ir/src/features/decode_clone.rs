@@ -211,6 +211,7 @@ rewrite_enum!(FeatureOperation, []; {
     MeshCombineFaceGroups { source },
     MeshSection { source, plane, sketch },
     MeshModify { source, modification },
+    MeshConvert(field0),
     InsertBodies { bodies },
     InsertComponent { occurrence },
     InsertComponents { components },

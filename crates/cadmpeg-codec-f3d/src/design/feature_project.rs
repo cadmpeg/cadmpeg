@@ -53,6 +53,7 @@ mod path_pattern;
 mod pattern_seeds;
 mod reverse_normal;
 mod revolve_target;
+pub(crate) mod shell_fallback;
 mod surface_offset;
 mod surface_patch;
 mod surface_untrim;
