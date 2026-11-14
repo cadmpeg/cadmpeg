@@ -1224,6 +1224,8 @@ The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are t
 
 **Conflict.** None.
 
+**Note.** Projection through explicit set references retains the flags and corner type in feature properties. A set with a true flag reports `feature.chamfer-tangent-chain-assumed`; a miter or blend corner reports `feature.chamfer-corner-treatment-unresolved`.
+
 ### DR-467. Face that a Hole's `bounded_face` operands name
 
 **Question.** Which face do the `bounded_face` operands of a Hole scope name?
@@ -2340,7 +2342,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
+**Note.** Projection through explicit set references keeps owner-slot order with forward direction and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
 
 ### DR-342. Chamfer recipes with conflicting transition selections
 
@@ -2364,7 +2366,19 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** The result plane forms an angle of approximately 21.2 degrees with the second input plane and 38.8 degrees with the first. Each differs from the 30-degree IR angle.
 
-**Note.** DR-341 tracks the input reference-face assignment.
+**Note.** Projection through explicit set references reports `feature.chamfer-angle-reference-assumed` when it reads the stored angle as the neutral reference-face angle. DR-341 tracks the input reference-face assignment.
+
+### DR-640. Chamfer parameter recovery from incomplete definitions
+
+**Question.** Which value and role remain authoritative when a Chamfer set's parameter definition, owner backlink, source kind, or unit token is incomplete or inconsistent, and when can an owner's evaluated scalar be stale?
+
+**Known.** A set's kind word identifies its distance and angle slots. The set references their owners. A parameter owner carries an evaluated scalar and a parameter reference; the parameter carries an owner backlink, source kind, and optional unit token. Fixed scalar records retain their record identities and values independently of a set list.
+
+**Need.** Controlled saves that distinguish current parameter values from stale owner values, parameter namespaces that share an owner, and incomplete reference graphs with independent dimensions for each set.
+
+**Conflict.** None.
+
+**Note.** The decoder uses a unique parameter backlink when its owner is absent, with `feature.chamfer-parameter-owner-assumed`. It uses a stored owner or fixed scalar when the parameter definition is absent, with `feature.chamfer-parameter-value-assumed`. Explicit slots select the most likely role and canonical unit, with `feature.chamfer-parameter-kind-assumed` or `feature.chamfer-parameter-unit-assumed` for a discrepancy. Ambiguous definitions retain the identified form and raw parameters with `feature.chamfer-definition-unresolved`. Explicit set references survive an owner-order conflict with `feature.chamfer-set-conflict`.
 
 ### DR-360. One-sided face-target Extrude without a termination group
 

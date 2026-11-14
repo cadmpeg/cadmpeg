@@ -1,17 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{design_positive_length, unique_feature_match, ProjectInputs};
+use super::{unique_feature_match, ProjectInputs};
+use crate::design::decode::scopes::chamfer_set as set_layout;
 use crate::design::edge_resolve::resolved_edge_treatment_group_with_corners;
-use crate::design::face_resolve::design_angle;
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
-use crate::records::feature::chamfer_set::DesignChamferSetSpec;
+use crate::records::feature::chamfer_set::{DesignChamferSet, DesignChamferSetSpec};
 use crate::records::feature::scope::DesignParameterScope;
-use crate::records::feature::work_geometry::DesignEdgeTreatmentVertexOperand;
 use crate::records::parameters::DesignParameter;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
-use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
-use crate::records::topology::edge_identity::DesignEdgeOperand;
-use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
@@ -20,88 +16,192 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::report::loss::LossNote;
 
-pub(super) fn project(
-    scope: &DesignParameterScope,
-    parameters: &[(u32, &DesignParameter)],
-    inputs: &ProjectInputs<'_>,
-    ctx: &DecodeContext<'_>,
-    losses: &mut Vec<LossNote>,
-) -> Result<FeatureDefinition, CodecError> {
-    if parameters.is_empty() {
-        if let Some(definition) = project_fixed_chamfer(
+pub(super) struct Projection<'p, 'data> {
+    legacy_compatible: bool,
+    scope: &'p DesignParameterScope,
+    inputs: &'p ProjectInputs<'data>,
+    specifications: Option<Vec<Option<(ChamferSpec, Vec<LossNote>)>>>,
+}
+
+pub(super) fn prepare<'p, 'data>(
+    scope: &'p DesignParameterScope,
+    inputs: &'p ProjectInputs<'data>,
+) -> Projection<'p, 'data> {
+    let specifications = scope.chamfer_sets().map(|sets| {
+        sets.sets
+            .iter()
+            .map(|set| set_spec(scope, set.spec, inputs))
+            .collect::<Vec<_>>()
+    });
+    let legacy_compatible = scope.chamfer_sets().is_none_or(|sets| {
+        sets.sets.first().is_some_and(|first| {
+            sets.sets.iter().all(|set| {
+                set_form(set.spec) == set_form(first.spec)
+                    && unique_feature_match(inputs.construction_groups.iter().filter(|group| {
+                        native_stream(&group.id) == native_stream(&scope.id)
+                            && group.scope_record_index == scope.record_index
+                            && group.record_index == set.group_record_index
+                    }))
+                    .is_some()
+            })
+        }) && set_layout::agrees_with_owner_order(scope, sets, inputs.owners) == Some(true)
+            && specifications.as_ref().is_some_and(|specs| {
+                specs
+                    .iter()
+                    .all(|spec| spec.as_ref().is_some_and(|(_, notes)| notes.is_empty()))
+            })
+    });
+    Projection {
+        legacy_compatible,
+        scope,
+        inputs,
+        specifications,
+    }
+}
+
+impl Projection<'_, '_> {
+    pub(super) fn legacy_compatible(&self) -> bool {
+        self.legacy_compatible
+    }
+    pub(super) fn project(
+        self,
+        parameters: &[(u32, &DesignParameter)],
+        ctx: &DecodeContext<'_>,
+        losses: &mut Vec<LossNote>,
+    ) -> Result<FeatureDefinition, CodecError> {
+        let Self {
             scope,
-            inputs.construction_groups,
-            inputs.edge_operands,
-            inputs.edge_identity_operands,
-            inputs.edge_treatment_vertex_operands,
-            inputs.histories,
-            (ctx, losses),
-        )? {
-            return Ok(definition);
-        }
-    }
-    if let Some(definition) = project_chamfer(scope, parameters, inputs, ctx, losses)? {
-        return Ok(definition);
-    }
-    if let Some(sets) = scope.chamfer_sets() {
-        let mut groups = Vec::new();
-        for set in &sets.sets {
-            let spec = set_spec(scope, set.spec, inputs).unwrap_or_else(|| {
+            inputs,
+            specifications,
+            ..
+        } = self;
+        if let (Some(sets), Some(specifications)) = (scope.chamfer_sets(), specifications) {
+            let claimed = sets
+                .sets
+                .iter()
+                .flat_map(|set| set_layout::spec_owners(set.spec))
+                .flatten()
+                .collect::<std::collections::HashSet<_>>();
+            let claimed_parameters = inputs
+                .owners
+                .iter()
+                .filter(|owner| {
+                    native_stream(owner.id()) == native_stream(&scope.id)
+                        && owner.scope_record_index() == scope.record_index
+                        && claimed.contains(&owner.record_index())
+                })
+                .map(|owner| owner.parameter_record_index())
+                .collect::<std::collections::HashSet<_>>();
+            let extra = parameters
+                .iter()
+                .filter(|(_, parameter)| {
+                    !claimed_parameters.contains(&parameter.record_index)
+                        && parameter
+                            .owner_record_index()
+                            .is_none_or(|owner| !claimed.contains(&owner))
+                })
+                .count();
+            if extra != 0 {
                 losses.push(F3dLossCode::ChamferDefinitionUnresolved.note(format!(
-                    "Chamfer set {} of {} retains its form with unresolved dimensions; its parameter ownership or scalar is incomplete.",
+                "Chamfer {} retains {} additional parameter(s) in native metadata because its set slots do not assign their behavior.", scope.id, extra
+            )));
+            }
+            if sets.corner_type
+                != crate::records::feature::chamfer_set::DesignChamferCornerType::Chamfer
+            {
+                losses.push(F3dLossCode::ChamferCornerTreatmentUnresolved.note(format!(
+                "Chamfer {} retains {:?} corner treatment in its native set metadata; neutral corner construction remains unresolved.",
+                scope.id, sets.corner_type
+            )));
+            }
+            let mut groups = Vec::new();
+            for (set, specification) in sets.sets.iter().zip(specifications) {
+                if set.tangent_chain {
+                    losses.push(F3dLossCode::ChamferTangentChainAssumed.note(format!(
+                    "Chamfer set {} of {} uses its retained selector as the complete propagated selection for its tangent-chain flag (DR-460).",
                     set.record_index, scope.id
                 )));
-                ChamferSpec::Unresolved { form: Some(set_form(set.spec)) }
-            });
-            let group = unique_feature_match(inputs.construction_groups.iter().filter(|group| {
-                native_stream(&group.id) == native_stream(&scope.id)
-                    && group.scope_record_index == scope.record_index
-                    && group.record_index == set.group_record_index
-            }));
-            let edges = match group {
-                Some(group) => selection(scope, group, inputs, ctx, losses)?,
-                None => unresolved_selection(scope, losses),
-            };
-            groups.push(ChamferGroup { edges, spec });
+                }
+                let spec = match specification {
+                    Some((spec, notes)) => {
+                        losses.extend(notes);
+                        spec
+                    }
+                    None => {
+                        losses.push(F3dLossCode::ChamferDefinitionUnresolved.note(format!(
+                        "Chamfer set {} of {} retains its form with unresolved dimensions; its parameter ownership or scalar is incomplete.",
+                        set.record_index, scope.id
+                    )));
+                        ChamferSpec::Unresolved {
+                            form: Some(set_form(set.spec)),
+                        }
+                    }
+                };
+                if !spec.is_unresolved()
+                    && !matches!(set.spec, DesignChamferSetSpec::EqualDistance { .. })
+                {
+                    losses.push(F3dLossCode::ChamferReferenceFaceAssumed.note(format!(
+                    "Chamfer set {} of {} applies its owner-slot order with forward direction; the input reference-face assignment is assumed (DR-341).",
+                    set.record_index, scope.id
+                )));
+                    if matches!(set.spec, DesignChamferSetSpec::DistanceAngle { .. }) {
+                        losses.push(F3dLossCode::ChamferAngleReferenceAssumed.note(format!(
+                        "Chamfer set {} of {} reads the stored radian angle as the neutral angle from the distance reference face (DR-343).",
+                        set.record_index, scope.id
+                    )));
+                    }
+                }
+                let group =
+                    unique_feature_match(inputs.construction_groups.iter().filter(|group| {
+                        native_stream(&group.id) == native_stream(&scope.id)
+                            && group.scope_record_index == scope.record_index
+                            && group.record_index == set.group_record_index
+                    }));
+                let edges = match group {
+                    Some(group) => selection(scope, group, inputs, ctx, losses)?,
+                    None => unresolved_selection(scope, Some(set), losses),
+                };
+                groups.push(ChamferGroup { edges, spec });
+            }
+            if let Ok(groups) = groups.try_into() {
+                return Ok(FeatureDefinition::Operation(FeatureOperation::Chamfer {
+                    groups,
+                    flip_direction: false,
+                }));
+            }
         }
-        if let Ok(groups) = groups.try_into() {
-            return Ok(FeatureDefinition::Operation(FeatureOperation::Chamfer {
-                groups,
-                flip_direction: false,
-            }));
-        }
-    }
-    losses.push(F3dLossCode::ChamferDefinitionUnresolved.note(format!(
+        losses.push(F3dLossCode::ChamferDefinitionUnresolved.note(format!(
         "Chamfer {} retains its selectors and parameter expressions with an unresolved specification; the dimensional lanes do not establish a complete pairing.",
         scope.id
     )));
-    let mut groups = Vec::new();
-    let mut native_groups = inputs
-        .construction_groups
-        .iter()
-        .filter(|group| {
-            native_stream(&group.id) == native_stream(&scope.id)
-                && group.scope_record_index == scope.record_index
-                && group.extrude_role().is_none()
-        })
-        .collect::<Vec<_>>();
-    native_groups.sort_by_key(|group| group.scope_reference_ordinal);
-    for group in native_groups {
-        groups.push(ChamferGroup {
-            edges: selection(scope, group, inputs, ctx, losses)?,
-            spec: ChamferSpec::Unresolved { form: None },
+        let mut groups = Vec::new();
+        let mut native_groups = inputs
+            .construction_groups
+            .iter()
+            .filter(|group| {
+                native_stream(&group.id) == native_stream(&scope.id)
+                    && group.scope_record_index == scope.record_index
+                    && group.extrude_role().is_none()
+            })
+            .collect::<Vec<_>>();
+        native_groups.sort_by_key(|group| group.scope_reference_ordinal);
+        for group in native_groups {
+            groups.push(ChamferGroup {
+                edges: selection(scope, group, inputs, ctx, losses)?,
+                spec: ChamferSpec::Unresolved { form: None },
+            });
+        }
+        let groups = groups.try_into().unwrap_or_else(|_| {
+            cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+                edges: unresolved_selection(scope, None, losses),
+                spec: ChamferSpec::Unresolved { form: None },
+            })
         });
+        Ok(FeatureDefinition::Operation(FeatureOperation::Chamfer {
+            groups,
+            flip_direction: false,
+        }))
     }
-    let groups = groups.try_into().unwrap_or_else(|_| {
-        cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
-            edges: unresolved_selection(scope, losses),
-            spec: ChamferSpec::Unresolved { form: None },
-        })
-    });
-    Ok(FeatureDefinition::Operation(FeatureOperation::Chamfer {
-        groups,
-        flip_direction: false,
-    }))
 }
 
 fn set_form(spec: DesignChamferSetSpec) -> ChamferForm {
@@ -112,58 +212,164 @@ fn set_form(spec: DesignChamferSetSpec) -> ChamferForm {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum Slot {
+    Distance,
+    FirstDistance,
+    SecondDistance,
+    Angle,
+}
+
+fn source_scalar<'a>(
+    scope: &DesignParameterScope,
+    record_index: u32,
+    slot: Slot,
+    inputs: &ProjectInputs<'a>,
+    losses: &mut Vec<LossNote>,
+) -> Option<(f64, Option<&'a str>)> {
+    let stream = native_stream(&scope.id)?;
+    let mut owners = inputs.owners.iter().filter(|owner| {
+        native_stream(owner.id()) == Some(stream) && owner.record_index() == record_index
+    });
+    let owner = owners.next();
+    if owners.next().is_some()
+        || owner.is_some_and(|owner| owner.scope_record_index() != scope.record_index)
+    {
+        return None;
+    }
+    let mut parameters = inputs.native.iter().filter(|parameter| {
+        native_stream(&parameter.id) == Some(stream)
+            && owner.map_or_else(
+                || parameter.owner_record_index() == Some(record_index),
+                |owner| parameter.record_index == owner.parameter_record_index(),
+            )
+    });
+    let parameter = parameters.next();
+    if parameters.next().is_some() {
+        return None;
+    }
+    let Some(parameter) = parameter else {
+        let value = match owner {
+            Some(owner) => owner.evaluated_value().get(),
+            None => {
+                use crate::records::feature::fixed_parameters::DesignFixedChamferParameters;
+                match scope.fixed_chamfer_parameters()? {
+                    DesignFixedChamferParameters::EqualDistance { distance }
+                        if distance.record_index == record_index =>
+                    {
+                        distance.value.get()
+                    }
+                    DesignFixedChamferParameters::TwoDistances { first, .. }
+                        if first.record_index == record_index =>
+                    {
+                        first.value.get()
+                    }
+                    DesignFixedChamferParameters::TwoDistances { second, .. }
+                        if second.record_index == record_index =>
+                    {
+                        second.value.get()
+                    }
+                    _ => return None,
+                }
+            }
+        };
+        losses.push(F3dLossCode::ChamferParameterValueAssumed.note(format!(
+            "Chamfer {} reads owner {}'s stored scalar as its {:?} value because the parameter definition is absent.",
+            scope.id, record_index, slot
+        )));
+        return Some((value, None));
+    };
+    if parameter.owner_record_index() != Some(record_index) {
+        return None;
+    }
+    let unit = parameter.unit().map(|field| field.value.as_str());
+    let valid_unit = unit.is_some_and(|unit| match slot {
+        Slot::Angle => super::design_angle_unit(unit),
+        _ => super::design_length_unit(unit),
+    });
+    if !valid_unit {
+        losses.push(F3dLossCode::ChamferParameterUnitAssumed.note(format!(
+            "Chamfer {} reads parameter {}'s canonical scalar as {:?} despite unit {:?}.",
+            scope.id, parameter.record_index, slot, unit
+        )));
+    }
+    if owner.is_none() {
+        losses.push(F3dLossCode::ChamferParameterOwnerAssumed.note(format!(
+            "Chamfer {} binds parameter {} to owner {} through its backlink because the owner definition is absent.",
+            scope.id, parameter.record_index, record_index
+        )));
+    }
+    let kinds = match slot {
+        Slot::Distance => set_layout::DISTANCE_KINDS,
+        Slot::FirstDistance => set_layout::FIRST_DISTANCE_KINDS,
+        Slot::SecondDistance => set_layout::SECOND_DISTANCE_KINDS,
+        Slot::Angle => set_layout::ANGLE_KINDS,
+    };
+    let kind = parameter.source_kind_str();
+    if !kinds.contains(&kind) {
+        losses.push(F3dLossCode::ChamferParameterKindAssumed.note(format!(
+            "Chamfer {} reads parameter {} as the {:?} slot of its explicit set despite source kind {}.",
+            scope.id, parameter.record_index, slot, kind
+        )));
+    }
+    Some((parameter.evaluated_value().get(), Some(kind)))
+}
+
 fn set_spec(
     scope: &DesignParameterScope,
     spec: DesignChamferSetSpec,
     inputs: &ProjectInputs<'_>,
-) -> Option<ChamferSpec> {
-    let parameter = |record_index| {
-        let stream = native_stream(&scope.id)?;
-        let owner = unique_feature_match(inputs.owners.iter().filter(|owner| {
-            native_stream(owner.id()) == Some(stream)
-                && owner.scope_record_index() == scope.record_index
-                && owner.record_index() == record_index
-        }))?;
-        unique_feature_match(inputs.native.iter().filter(|parameter| {
-            native_stream(&parameter.id) == Some(stream)
-                && parameter.record_index == owner.parameter_record_index()
-                && parameter.owner_record_index() == Some(record_index)
-        }))
+) -> Option<(ChamferSpec, Vec<LossNote>)> {
+    let mut losses = Vec::new();
+    let distance = |record_index, slot, losses: &mut Vec<LossNote>| {
+        let (value, kind) = source_scalar(scope, record_index, slot, inputs, losses)?;
+        Some((cadmpeg_ir::scalar::PositiveLength::new(value * 10.0)?, kind))
     };
-    match spec {
+    let spec = match spec {
         DesignChamferSetSpec::EqualDistance {
             distance_owner_record_index,
-        } => Some(ChamferSpec::Distance {
-            distance: design_positive_length(parameter(distance_owner_record_index)?)?,
-        }),
+        } => ChamferSpec::Distance {
+            distance: distance(distance_owner_record_index, Slot::Distance, &mut losses)?.0,
+        },
         DesignChamferSetSpec::TwoDistances {
             first_owner_record_index,
             second_owner_record_index,
         } => {
-            if first_owner_record_index == second_owner_record_index {
-                return None;
+            let (first, first_kind) =
+                distance(first_owner_record_index, Slot::FirstDistance, &mut losses)?;
+            let (second, second_kind) =
+                distance(second_owner_record_index, Slot::SecondDistance, &mut losses)?;
+            if matches!((first_kind, second_kind), (Some(first), Some(second))
+                if set_layout::FIRST_DISTANCE_KINDS.contains(&first)
+                    && set_layout::SECOND_DISTANCE_KINDS.contains(&second)
+                    && !set_layout::two_distance_kinds_pair(first, second))
+            {
+                losses.push(F3dLossCode::ChamferParameterKindAssumed.note(format!(
+                    "Chamfer {} pairs distance owners {} and {} by their explicit set slots across parameter namespaces.",
+                    scope.id, first_owner_record_index, second_owner_record_index
+                )));
             }
-            Some(ChamferSpec::TwoDistances {
-                first: design_positive_length(parameter(first_owner_record_index)?)?,
-                second: design_positive_length(parameter(second_owner_record_index)?)?,
-            })
+            ChamferSpec::TwoDistances { first, second }
         }
         DesignChamferSetSpec::DistanceAngle {
             distance_owner_record_index,
             angle_owner_record_index,
         } => {
-            if distance_owner_record_index == angle_owner_record_index {
-                return None;
-            }
-            Some(ChamferSpec::DistanceAngle {
-                distance: design_positive_length(parameter(distance_owner_record_index)?)?,
-                angle: cadmpeg_ir::scalar::InteriorAngle::try_from(design_angle(parameter(
-                    angle_owner_record_index,
-                )?)?)
-                .ok()?,
-            })
+            let distance = distance(distance_owner_record_index, Slot::Distance, &mut losses)?.0;
+            let (angle, _) = source_scalar(
+                scope,
+                angle_owner_record_index,
+                Slot::Angle,
+                inputs,
+                &mut losses,
+            )?;
+            let angle =
+                cadmpeg_ir::scalar::InteriorAngle::try_from(cadmpeg_ir::scalar::Angle::new(angle)?)
+                    .ok()?;
+            ChamferSpec::DistanceAngle { distance, angle }
         }
-    }
+    };
+    Some((spec, losses))
 }
 
 fn selection(
@@ -190,294 +396,20 @@ fn selection(
     )
 }
 
-fn unresolved_selection(scope: &DesignParameterScope, losses: &mut Vec<LossNote>) -> EdgeSelection {
+pub(super) fn unresolved_selection(
+    scope: &DesignParameterScope,
+    set: Option<&DesignChamferSet>,
+    losses: &mut Vec<LossNote>,
+) -> EdgeSelection {
+    let selection = set
+        .zip(native_stream(&scope.id))
+        .map(|(set, stream)| format!("{stream}:design-record-header#{}", set.byte_offset))
+        .unwrap_or_else(|| scope.id.clone());
     losses.push(F3dLossCode::ChamferSelectionUnresolved.note(format!(
-        "Chamfer {} retains its scope selection because its construction group is missing or ambiguous.",
-        scope.id
+        "Chamfer {} retains native selection {} because its construction group is missing or ambiguous.",
+        scope.id, selection
     )));
-    EdgeSelection::Native(scope.id.clone())
-}
-
-pub(super) fn retains_parameters(definition: &FeatureDefinition) -> bool {
-    match definition {
-        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) => {
-            let first = std::mem::discriminant(&groups.as_slice()[0].spec);
-            groups.as_slice().iter().any(|group| {
-                group.spec.is_unresolved() || std::mem::discriminant(&group.spec) != first
-            })
-        }
-        _ => false,
-    }
-}
-
-fn project_chamfer(
-    scope: &DesignParameterScope,
-    parameters: &[(u32, &DesignParameter)],
-    inputs: &ProjectInputs<'_>,
-    ctx: &DecodeContext<'_>,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    enum Lanes<'a> {
-        Distance(&'a [&'a DesignParameter]),
-        TwoDistances(&'a [&'a DesignParameter], &'a [&'a DesignParameter]),
-        DistanceAngle(&'a [&'a DesignParameter], &'a [&'a DesignParameter]),
-    }
-    use cadmpeg_ir::features::{
-        edge_treatments::{ChamferGroup, ChamferSpec},
-        FeatureDefinition, FeatureOperation,
-    };
-
-    let construction_groups = inputs.construction_groups;
-    let edge_operands = inputs.edge_operands;
-    let edge_identity_operands = inputs.edge_identity_operands;
-    let edge_treatment_vertex_operands = inputs.edge_treatment_vertex_operands;
-    let histories = inputs.histories;
-    let native_scope = native_stream(&scope.id);
-    let mut edge_groups = Vec::new();
-    for group in construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == native_scope
-            && group.scope_record_index == scope.record_index
-            && group.extrude_role().is_none()
-    }) {
-        edge_groups.push(group);
-    }
-    edge_groups.sort_by(|left, right| {
-        left.scope_reference_ordinal
-            .cmp(&right.scope_reference_ordinal)
-    });
-    let ordered_parameters =
-        |matches_kind: &dyn Fn(&str) -> bool| -> Result<Vec<&DesignParameter>, CodecError> {
-            {
-                let mut matches = Vec::new();
-                for parameter in parameters
-                    .iter()
-                    .filter(|(_, parameter)| matches_kind(parameter.source_kind_str()))
-                    .copied()
-                {
-                    matches.push(parameter);
-                }
-                matches.sort_by_key(|left| left.0);
-                let mut out = Vec::new();
-                for (_, parameter) in matches {
-                    out.push(parameter);
-                }
-                Ok(out)
-            }
-        };
-    let distances = ordered_parameters(&|kind| kind == "Distance")?;
-    let first_distances = ordered_parameters(&|kind| kind == "Distance 1")?;
-    let second_distances = ordered_parameters(&|kind| kind == "Distance 2")?;
-    let left_distances = ordered_parameters(&|kind| kind == "leftDistance")?;
-    let right_distances = ordered_parameters(&|kind| kind == "rightDistance")?;
-    let angles =
-        ordered_parameters(&|kind| matches!(kind, "Angle" | "Rotate Angle" | "rotateAngle"))?;
-    let face_groups = edge_groups
-        .iter()
-        .filter(|group| group.role() == DesignOperandRole::ROLE_0X10)
-        .count();
-    let one_specification = [&distances, &first_distances, &left_distances]
-        .into_iter()
-        .map(Vec::len)
-        .sum::<usize>()
-        == 1;
-    let shared_specification =
-        one_specification && face_groups != 0 && edge_groups.len() - face_groups == 1;
-    let group_count = if shared_specification {
-        1
-    } else {
-        edge_groups.len().max(1)
-    };
-    let edge_role_assumed = shared_specification
-        && edge_groups.iter().any(|group| {
-            !matches!(
-                group.role(),
-                DesignOperandRole::ROLE_0X10 | DesignOperandRole::BODIES_B
-            )
-        });
-    if !parameters.iter().all(|(_, parameter)| {
-        matches!(
-            parameter.source_kind_str(),
-            "Distance"
-                | "Distance 1"
-                | "Distance 2"
-                | "leftDistance"
-                | "rightDistance"
-                | "Angle"
-                | "Rotate Angle"
-                | "rotateAngle"
-        )
-    }) {
-        return Ok(None);
-    }
-
-    let lanes = if !left_distances.is_empty() || !right_distances.is_empty() {
-        if !distances.is_empty() || !first_distances.is_empty() || !second_distances.is_empty() {
-            return Ok(None);
-        }
-        if right_distances.is_empty() && !angles.is_empty() {
-            if left_distances.len() != group_count || angles.len() != group_count {
-                return Ok(None);
-            }
-            Lanes::DistanceAngle(&left_distances, &angles)
-        } else if right_distances.is_empty() {
-            if left_distances.len() != group_count {
-                return Ok(None);
-            }
-            Lanes::Distance(&left_distances)
-        } else {
-            if !angles.is_empty()
-                || left_distances.len() != group_count
-                || right_distances.len() != group_count
-            {
-                return Ok(None);
-            }
-            Lanes::TwoDistances(&left_distances, &right_distances)
-        }
-    } else if !first_distances.is_empty() || !second_distances.is_empty() {
-        if !distances.is_empty()
-            || !angles.is_empty()
-            || first_distances.len() != group_count
-            || second_distances.len() != group_count
-        {
-            return Ok(None);
-        }
-        Lanes::TwoDistances(&first_distances, &second_distances)
-    } else if !angles.is_empty() {
-        if distances.len() != group_count || angles.len() != group_count {
-            return Ok(None);
-        }
-        Lanes::DistanceAngle(&distances, &angles)
-    } else if !distances.is_empty() {
-        if distances.len() != group_count {
-            return Ok(None);
-        }
-        Lanes::Distance(&distances)
-    } else {
-        return Ok(None);
-    };
-    let mut candidates = Vec::new();
-    for ordinal in 0..group_count {
-        let spec = match lanes {
-            Lanes::Distance(distance) => design_positive_length(distance[ordinal])
-                .map(|distance| ChamferSpec::Distance { distance }),
-            Lanes::TwoDistances(first, second) => design_positive_length(first[ordinal])
-                .zip(design_positive_length(second[ordinal]))
-                .map(|(first, second)| ChamferSpec::TwoDistances { first, second }),
-            Lanes::DistanceAngle(distance, angle) => design_positive_length(distance[ordinal])
-                .zip(
-                    design_angle(angle[ordinal])
-                        .and_then(|value| cadmpeg_ir::scalar::InteriorAngle::try_from(value).ok()),
-                )
-                .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle }),
-        };
-        let spec = or_none!(spec);
-        candidates.push(spec);
-    }
-    let mut groups = Vec::new();
-    if edge_groups.is_empty() {
-        groups.push(ChamferGroup {
-            edges: unresolved_selection(scope, losses),
-            spec: candidates[0],
-        });
-    }
-    for (ordinal, group) in edge_groups.into_iter().enumerate() {
-        let spec = *or_none!(candidates.get(if group_count == 1 { 0 } else { ordinal }));
-        let group = ChamferGroup {
-            edges: resolved_edge_treatment_group_with_corners(
-                group,
-                crate::design::edge_resolve::EdgeTreatmentInputs {
-                    groups: construction_groups,
-                    operands: edge_operands,
-                    identity_operands: edge_identity_operands,
-                    vertex_operands: edge_treatment_vertex_operands,
-                    histories,
-                    previous_state_id: scope.previous_history_state_id(),
-                    feature_id: &crate::ids::neutral_feature_id(scope),
-                    treatment_radius: None,
-                },
-                ctx,
-                losses,
-            )?,
-            spec,
-        };
-        groups.push(group);
-    }
-    let groups = or_none!(groups.try_into().ok());
-    if edge_role_assumed {
-        losses.push(crate::loss::F3dLossCode::ChamferEdgeRoleAssumed.note(format!(
-            "Chamfer scope {} shares one specification between face groups and a group whose role is not the edge role; the group is read as the edge group.",
-            scope.id
-        )));
-    }
-    Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::Chamfer {
-            groups,
-            flip_direction: false,
-        },
-    )))
-}
-
-fn project_fixed_chamfer(
-    scope: &DesignParameterScope,
-    construction_groups: &[DesignConstructionOperandGroup],
-    edge_operands: &[DesignEdgeOperand],
-    edge_identity_operands: &[DesignEdgeIdentityOperand],
-    edge_treatment_vertex_operands: &[DesignEdgeTreatmentVertexOperand],
-    histories: &[crate::history_records::AsmHistory],
-    (ctx, losses): (
-        &DecodeContext<'_>,
-        &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    ),
-) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{
-        edge_treatments::{ChamferGroup, ChamferSpec},
-        FeatureDefinition, FeatureOperation,
-    };
-
-    let fixed = or_none!(scope.fixed_chamfer_parameters());
-    let stream = or_none!(native_stream(&scope.id));
-    let group = unique_feature_match(construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
-    }));
-    let spec = match fixed {
-        crate::records::feature::fixed_parameters::DesignFixedChamferParameters::EqualDistance { distance } => {
-            ChamferSpec::Distance {
-                distance: or_none!(cadmpeg_ir::scalar::PositiveLength::new(distance.value.get() * 10.0)),
-            }
-        }
-        crate::records::feature::fixed_parameters::DesignFixedChamferParameters::TwoDistances { first, second } => {
-            ChamferSpec::TwoDistances {
-                first: or_none!(cadmpeg_ir::scalar::PositiveLength::new(first.value.get() * 10.0)),
-                second: or_none!(cadmpeg_ir::scalar::PositiveLength::new(second.value.get() * 10.0)),
-            }
-        }
-    };
-    Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::Chamfer {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
-                edges: match group {
-                    None => unresolved_selection(scope, losses),
-                    Some(group) => resolved_edge_treatment_group_with_corners(
-                        group,
-                        crate::design::edge_resolve::EdgeTreatmentInputs {
-                            groups: construction_groups,
-                            operands: edge_operands,
-                            identity_operands: edge_identity_operands,
-                            vertex_operands: edge_treatment_vertex_operands,
-                            histories,
-                            previous_state_id: scope.previous_history_state_id(),
-                            feature_id: &crate::ids::neutral_feature_id(scope),
-                            treatment_radius: None,
-                        },
-                        ctx,
-                        losses,
-                    )?,
-                },
-                spec,
-            }),
-            flip_direction: false,
-        },
-    )))
+    EdgeSelection::Native(selection)
 }
 
 pub(super) fn retained_parameters<'a>(
@@ -485,42 +417,36 @@ pub(super) fn retained_parameters<'a>(
     inputs: &ProjectInputs<'a>,
 ) -> Vec<&'a DesignParameter> {
     let stream = native_stream(&scope.id);
+    let mut references = scope
+        .reference_members()
+        .values()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    if let Some(sets) = scope.chamfer_sets() {
+        references.extend(
+            sets.sets
+                .iter()
+                .flat_map(|set| set_layout::spec_owners(set.spec))
+                .flatten(),
+        );
+    }
+    let owned = inputs
+        .owners
+        .iter()
+        .filter(|owner| {
+            native_stream(owner.id()) == stream && owner.scope_record_index() == scope.record_index
+        })
+        .map(|owner| owner.parameter_record_index())
+        .collect::<std::collections::HashSet<_>>();
     inputs
         .native
         .iter()
         .filter(|parameter| {
             native_stream(&parameter.id) == stream
-                && (inputs.owners.iter().any(|owner| {
-                    native_stream(owner.id()) == stream
-                        && owner.scope_record_index() == scope.record_index
-                        && owner.parameter_record_index() == parameter.record_index
-                }) || parameter.owner_record_index().is_some_and(|owner| {
-                    scope
-                        .reference_members()
-                        .values()
-                        .any(|member| member == owner)
-                        || scope.chamfer_sets().is_some_and(|sets| {
-                            sets.sets.iter().any(|set| match set.spec {
-                                DesignChamferSetSpec::EqualDistance {
-                                    distance_owner_record_index,
-                                } => owner == distance_owner_record_index,
-                                DesignChamferSetSpec::TwoDistances {
-                                    first_owner_record_index,
-                                    second_owner_record_index,
-                                } => {
-                                    owner == first_owner_record_index
-                                        || owner == second_owner_record_index
-                                }
-                                DesignChamferSetSpec::DistanceAngle {
-                                    distance_owner_record_index,
-                                    angle_owner_record_index,
-                                } => {
-                                    owner == distance_owner_record_index
-                                        || owner == angle_owner_record_index
-                                }
-                            })
-                        })
-                }))
+                && (owned.contains(&parameter.record_index)
+                    || parameter
+                        .owner_record_index()
+                        .is_some_and(|owner| references.contains(&owner)))
         })
         .collect()
 }

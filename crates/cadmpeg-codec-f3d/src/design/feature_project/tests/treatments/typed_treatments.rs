@@ -11,6 +11,7 @@ use crate::records::feature::scope::DesignParameterScopeDraft;
 use crate::records::feature::scope::DesignScopePayloadMut;
 use crate::records::identity::Located;
 use crate::records::identity::ReferenceRun;
+use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::parameters::DesignParameterOwnerWire;
 use crate::records::parameters::DesignParameterSource;
@@ -717,9 +718,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
             if groups.as_slice().iter().all(|group| group.spec.is_unresolved())
     ));
-    let retained: Vec<DesignParameter> = serde_json::from_str(
-        &features[0].source_properties["chamfer:parameters"],
-    ).unwrap();
+    let retained: Vec<DesignParameter> =
+        serde_json::from_str(&features[0].source_properties["chamfer:parameters"]).unwrap();
     assert_eq!(retained.len(), 3);
 
     let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
@@ -747,9 +747,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
             if groups.as_slice().iter().all(|group| group.spec.is_unresolved())
     ));
-    let retained: Vec<DesignParameter> = serde_json::from_str(
-        &features[0].source_properties["chamfer:parameters"],
-    ).unwrap();
+    let retained: Vec<DesignParameter> =
+        serde_json::from_str(&features[0].source_properties["chamfer:parameters"]).unwrap();
     assert_eq!(retained.len(), 2);
 
     let mut construction_groups = [construction_group(90, 17), construction_group(80, 4)];

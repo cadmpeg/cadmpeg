@@ -744,6 +744,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
             }
             let family = design_feature_family(&scope.kind());
+            let mut retain_chamfer_records = false;
             let mut inserted_bodies: Vec<cadmpeg_ir::ids::BodyId> = Vec::new();
             let definition = match family {
                 Some(DesignFeatureFamily::Sketch) => {
@@ -782,9 +783,21 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     native_scope,
                     &mut projection_losses,
                 )?,
-                Some(DesignFeatureFamily::Chamfer) => chamfer::project(
-                    scope, &parameters, inputs, ctx, &mut projection_losses,
-                )?,
+                Some(DesignFeatureFamily::Chamfer) => {
+                    let projection = chamfer::prepare(scope, inputs);
+                    let mut definition = if projection.legacy_compatible() && parameters.is_empty() {
+                        project_fixed_chamfer(scope, construction_groups, edge_operands,
+                            edge_identity_operands, edge_treatment_vertex_operands, histories,
+                            (ctx, &mut projection_losses))?
+                    } else { None };
+                    if definition.is_none() && projection.legacy_compatible() {
+                        definition = project_chamfer(scope, &parameters, inputs, ctx, &mut projection_losses)?;
+                    }
+                    definition.map_or_else(|| {
+                        retain_chamfer_records = true;
+                        projection.project(&parameters, ctx, &mut projection_losses)
+                    }, Ok)?
+                }
                 Some(DesignFeatureFamily::Combine) => project_combine(scope, native_scope)
                     .unwrap_or_else(|| {
                         projection_losses.push(crate::loss::F3dLossCode::FeatureCombineDefinitionUnresolved.note(
@@ -1598,12 +1611,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 ) || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CurveDrivenPartial { .. }))
                     || matches!(family, Some(DesignFeatureFamily::Hole))
                     || matches!(family, Some(DesignFeatureFamily::Emboss))
-                    || chamfer::retains_parameters(&definition)
+                    || retain_chamfer_records
                     || shell_has_independent_walls(scope)
                     || extended_joint_origin
                 {
                     let mut properties = scope_properties(scope, native_scope, placements, &parameters)?;
-                    if chamfer::retains_parameters(&definition) {
+                    if retain_chamfer_records {
                         properties.insert(
                             cadmpeg_core::nonblank_literal!("chamfer:parameters"),
                             serde_json::to_string(&chamfer::retained_parameters(scope, inputs))
@@ -6255,6 +6268,284 @@ pub(crate) fn untyped_parameter_unit_count(parameters: &[DesignParameter]) -> us
         })
         .count()
 }
+
+fn project_chamfer(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+    inputs: &ProjectInputs<'_>,
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
+    enum Lanes<'a> {
+        Distance(&'a [&'a DesignParameter]),
+        TwoDistances(&'a [&'a DesignParameter], &'a [&'a DesignParameter]),
+        DistanceAngle(&'a [&'a DesignParameter], &'a [&'a DesignParameter]),
+    }
+    use cadmpeg_ir::features::{
+        edge_treatments::{ChamferGroup, ChamferSpec},
+        FeatureDefinition, FeatureOperation,
+    };
+
+    let construction_groups = inputs.construction_groups;
+    let edge_operands = inputs.edge_operands;
+    let edge_identity_operands = inputs.edge_identity_operands;
+    let edge_treatment_vertex_operands = inputs.edge_treatment_vertex_operands;
+    let histories = inputs.histories;
+    let native_scope = native_stream(&scope.id);
+    let mut edge_groups = Vec::new();
+    for group in construction_groups.iter().filter(|group| {
+        native_stream(&group.id) == native_scope
+            && group.scope_record_index == scope.record_index
+            && group.extrude_role().is_none()
+    }) {
+        edge_groups.push(group);
+    }
+    edge_groups.sort_by(|left, right| {
+        left.scope_reference_ordinal
+            .cmp(&right.scope_reference_ordinal)
+    });
+    let ordered_parameters =
+        |matches_kind: &dyn Fn(&str) -> bool| -> Result<Vec<&DesignParameter>, CodecError> {
+            {
+                let mut matches = Vec::new();
+                for parameter in parameters
+                    .iter()
+                    .filter(|(_, parameter)| matches_kind(parameter.source_kind_str()))
+                    .copied()
+                {
+                    matches.push(parameter);
+                }
+                matches.sort_by_key(|left| left.0);
+                let mut out = Vec::new();
+                for (_, parameter) in matches {
+                    out.push(parameter);
+                }
+                Ok(out)
+            }
+        };
+    let distances = ordered_parameters(&|kind| kind == "Distance")?;
+    let first_distances = ordered_parameters(&|kind| kind == "Distance 1")?;
+    let second_distances = ordered_parameters(&|kind| kind == "Distance 2")?;
+    let left_distances = ordered_parameters(&|kind| kind == "leftDistance")?;
+    let right_distances = ordered_parameters(&|kind| kind == "rightDistance")?;
+    let angles =
+        ordered_parameters(&|kind| matches!(kind, "Angle" | "Rotate Angle" | "rotateAngle"))?;
+    // Face-role groups next to the one edge-role group add faces to that
+    // selection. When the scope stores one specification, they all take it.
+    let face_groups = edge_groups
+        .iter()
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X10)
+        .count();
+    let one_specification = [&distances, &first_distances, &left_distances]
+        .into_iter()
+        .map(Vec::len)
+        .sum::<usize>()
+        == 1;
+    let shared_specification =
+        one_specification && face_groups != 0 && edge_groups.len() - face_groups == 1;
+    let group_count = if shared_specification {
+        1
+    } else {
+        edge_groups.len().max(1)
+    };
+    // The specification is shared with one edge-role group. Any other role
+    // keeps that reading and says so.
+    let edge_role_assumed = shared_specification
+        && edge_groups.iter().any(|group| {
+            !matches!(
+                group.role(),
+                DesignOperandRole::ROLE_0X10 | DesignOperandRole::BODIES_B
+            )
+        });
+    if !parameters.iter().all(|(_, parameter)| {
+        matches!(
+            parameter.source_kind_str(),
+            "Distance"
+                | "Distance 1"
+                | "Distance 2"
+                | "leftDistance"
+                | "rightDistance"
+                | "Angle"
+                | "Rotate Angle"
+                | "rotateAngle"
+        )
+    }) {
+        return Ok(None);
+    }
+
+    let lanes = if !left_distances.is_empty() || !right_distances.is_empty() {
+        if !distances.is_empty() || !first_distances.is_empty() || !second_distances.is_empty() {
+            return Ok(None);
+        }
+        if right_distances.is_empty() && !angles.is_empty() {
+            if left_distances.len() != group_count || angles.len() != group_count {
+                return Ok(None);
+            }
+            Lanes::DistanceAngle(&left_distances, &angles)
+        } else if right_distances.is_empty() {
+            if left_distances.len() != group_count {
+                return Ok(None);
+            }
+            Lanes::Distance(&left_distances)
+        } else {
+            if !angles.is_empty()
+                || left_distances.len() != group_count
+                || right_distances.len() != group_count
+            {
+                return Ok(None);
+            }
+            Lanes::TwoDistances(&left_distances, &right_distances)
+        }
+    } else if !first_distances.is_empty() || !second_distances.is_empty() {
+        if !distances.is_empty()
+            || !angles.is_empty()
+            || first_distances.len() != group_count
+            || second_distances.len() != group_count
+        {
+            return Ok(None);
+        }
+        Lanes::TwoDistances(&first_distances, &second_distances)
+    } else if !angles.is_empty() {
+        if distances.len() != group_count || angles.len() != group_count {
+            return Ok(None);
+        }
+        Lanes::DistanceAngle(&distances, &angles)
+    } else if !distances.is_empty() {
+        if distances.len() != group_count {
+            return Ok(None);
+        }
+        Lanes::Distance(&distances)
+    } else {
+        return Ok(None);
+    };
+    let mut candidates = Vec::new();
+    for ordinal in 0..group_count {
+        let spec = match lanes {
+            Lanes::Distance(distance) => design_positive_length(distance[ordinal])
+                .map(|distance| ChamferSpec::Distance { distance }),
+            Lanes::TwoDistances(first, second) => design_positive_length(first[ordinal])
+                .zip(design_positive_length(second[ordinal]))
+                .map(|(first, second)| ChamferSpec::TwoDistances { first, second }),
+            Lanes::DistanceAngle(distance, angle) => design_positive_length(distance[ordinal])
+                .zip(
+                    design_angle(angle[ordinal])
+                        .and_then(|value| cadmpeg_ir::scalar::InteriorAngle::try_from(value).ok()),
+                )
+                .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle }),
+        };
+        let spec = or_none!(spec);
+        candidates.push(spec);
+    }
+    let mut groups = Vec::new();
+    if edge_groups.is_empty() {
+        groups.push(ChamferGroup {
+            edges: chamfer::unresolved_selection(scope, None, losses),
+            spec: candidates[0],
+        });
+    }
+    for (ordinal, group) in edge_groups.into_iter().enumerate() {
+        let spec = *or_none!(candidates.get(if group_count == 1 { 0 } else { ordinal }));
+        let group = ChamferGroup {
+            edges: resolved_edge_treatment_group_with_corners(
+                group,
+                crate::design::edge_resolve::EdgeTreatmentInputs {
+                    groups: construction_groups,
+                    operands: edge_operands,
+                    identity_operands: edge_identity_operands,
+                    vertex_operands: edge_treatment_vertex_operands,
+                    histories,
+                    previous_state_id: scope.previous_history_state_id(),
+                    feature_id: &crate::ids::neutral_feature_id(scope),
+                    treatment_radius: None,
+                },
+                ctx,
+                losses,
+            )?,
+            spec,
+        };
+        groups.push(group);
+    }
+    let groups = or_none!(groups.try_into().ok());
+    if edge_role_assumed {
+        losses.push(crate::loss::F3dLossCode::ChamferEdgeRoleAssumed.note(format!(
+            "Chamfer scope {} shares one specification between face groups and a group whose role is not the edge role; the group is read as the edge group.",
+            scope.id
+        )));
+    }
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::Chamfer {
+            groups,
+            flip_direction: false,
+        },
+    )))
+}
+
+fn project_fixed_chamfer(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+    edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
+    edge_treatment_vertex_operands: &[DesignEdgeTreatmentVertexOperand],
+    histories: &[crate::history_records::AsmHistory],
+    (ctx, losses): (
+        &DecodeContext<'_>,
+        &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
+    use cadmpeg_ir::features::{
+        edge_treatments::{ChamferGroup, ChamferSpec},
+        FeatureDefinition, FeatureOperation,
+    };
+
+    let fixed = or_none!(scope.fixed_chamfer_parameters());
+    let stream = or_none!(native_stream(&scope.id));
+    let group = unique_feature_match(construction_groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
+    }));
+    let spec = match fixed {
+        crate::records::feature::fixed_parameters::DesignFixedChamferParameters::EqualDistance { distance } => {
+            ChamferSpec::Distance {
+                distance: or_none!(cadmpeg_ir::scalar::PositiveLength::new(distance.value.get() * 10.0)),
+            }
+        }
+        crate::records::feature::fixed_parameters::DesignFixedChamferParameters::TwoDistances { first, second } => {
+            ChamferSpec::TwoDistances {
+                first: or_none!(cadmpeg_ir::scalar::PositiveLength::new(first.value.get() * 10.0)),
+                second: or_none!(cadmpeg_ir::scalar::PositiveLength::new(second.value.get() * 10.0)),
+            }
+        }
+    };
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::Chamfer {
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+                edges: match group {
+                    None => chamfer::unresolved_selection(scope, None, losses),
+                    Some(group) => resolved_edge_treatment_group_with_corners(
+                        group,
+                        crate::design::edge_resolve::EdgeTreatmentInputs {
+                            groups: construction_groups,
+                            operands: edge_operands,
+                            identity_operands: edge_identity_operands,
+                            vertex_operands: edge_treatment_vertex_operands,
+                            histories,
+                            previous_state_id: scope.previous_history_state_id(),
+                            feature_id: &crate::ids::neutral_feature_id(scope),
+                            treatment_radius: None,
+                        },
+                        ctx,
+                        losses,
+                    )?,
+                },
+                spec,
+            }),
+            flip_direction: false,
+        },
+    )))
+}
+
+/// Whether a scope of this family with null current and preceding
+/// history-state identities is suppressed. An active scope of these families
+/// changes ASM topology and carries both identities.
 
 fn stateless_scope_is_suppressed(family: DesignFeatureFamily) -> bool {
     matches!(

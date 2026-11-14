@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::chamfer_set::{
-    chamfer_set_conflict_loss, chamfer_set_list, retain_consistent_chamfer_sets,
+    chamfer_set_conflict_loss, chamfer_set_conflicts, chamfer_set_list,
 };
-use super::super::fillet_set::decoded_group_keys;
 use crate::records::feature::chamfer_set::{DesignChamferSetListForm, DesignChamferSetSpec};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-use crate::records::parameters::{
-    DesignParameter, DesignParameterDraft, DesignParameterOwner, DesignParameterOwnerWire,
-    DesignParameterSource,
-};
+use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 const SCOPE: u32 = 282;
@@ -161,74 +157,48 @@ fn stream_with(
     (bytes, scope)
 }
 
-fn owned(owner_record_index: u32, source_kind: &str) -> (DesignParameter, DesignParameterOwner) {
-    let parameter_record_index = owner_record_index - 1;
+fn owner(owner_record_index: u32, local_ordinal: u32) -> DesignParameterOwner {
     let base = u64::from(owner_record_index) * 200;
-    let parameter = DesignParameter::try_from(DesignParameterDraft {
-        id: format!("{STREAM}:design-parameter#{parameter_record_index}"),
-        byte_offset: base,
-        class_tag: "305".to_owned().try_into().unwrap(),
-        record_index: parameter_record_index,
-        source_ordinal: 0,
-        source: DesignParameterSource::new(source_kind.to_owned(), Some(owner_record_index), None)
-            .unwrap(),
-        expression: "1".to_owned(),
-        expression_offset: base + 20,
-        source_kind_offset: base + 40,
-        unit: None,
-        name: source_kind.into(),
-        name_offset: base + 60,
-        evaluated_value: 1.0,
-        evaluated_value_offset: base + 80,
-    })
-    .unwrap();
-    let owner = DesignParameterOwner::try_from(DesignParameterOwnerWire {
+    DesignParameterOwner::try_from(DesignParameterOwnerWire {
         id: format!("{STREAM}:design-parameter-owner#{owner_record_index}"),
         byte_offset: base + 100,
         frame_length: 99,
         class_tag: "296".to_owned().try_into().unwrap(),
         record_index: owner_record_index,
         scope_record_index: SCOPE,
-        local_ordinal: 0,
+        local_ordinal,
         evaluated_value: 1.0,
         evaluated_value_offset: base + 140,
-        parameter_record_index,
+        parameter_record_index: owner_record_index - 1,
         owned_ordinal: 0,
         variant: None,
         companion_record_index: owner_record_index + 1,
     })
-    .unwrap();
-    (parameter, owner)
+    .unwrap()
 }
 
 fn decode_bytes(
     bytes: &[u8],
     scope: &DesignParameterScope,
-    kinds: [&str; 2],
 ) -> Option<crate::records::feature::chamfer_set::DesignChamferSetList> {
-    let (first_parameter, first_owner) = owned(FIRST_OWNER, kinds[0]);
-    let (second_parameter, second_owner) = owned(SECOND_OWNER, kinds[1]);
     chamfer_set_list(
         bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(bytes),
         scope,
-        &[first_parameter, second_parameter],
-        &[first_owner, second_owner],
     )
 }
 
 fn decode(
     form: Form,
     compact: bool,
-    kinds: [&str; 2],
 ) -> Option<crate::records::feature::chamfer_set::DesignChamferSetList> {
     let (bytes, scope) = stream(form, compact);
-    decode_bytes(&bytes, &scope, kinds)
+    decode_bytes(&bytes, &scope)
 }
 
 #[test]
 fn each_set_form_names_its_group_owners_and_auxiliary_record() {
-    let list = decode(Form::Equal, false, ["Distance", "Angle"]).unwrap();
+    let list = decode(Form::Equal, false).unwrap();
     assert_eq!(list.form, DesignChamferSetListForm::Current);
     assert_eq!(list.entry_count, 2);
     let [set] = list.sets.as_slice() else {
@@ -251,7 +221,7 @@ fn each_set_form_names_its_group_owners_and_auxiliary_record() {
             distance_owner_record_index: FIRST_OWNER
         }
     );
-    let two = decode(Form::TwoDistances, false, ["Distance 1", "Distance 2"]).unwrap();
+    let two = decode(Form::TwoDistances, false).unwrap();
     assert_eq!(
         two.sets[0].spec,
         DesignChamferSetSpec::TwoDistances {
@@ -259,7 +229,7 @@ fn each_set_form_names_its_group_owners_and_auxiliary_record() {
             second_owner_record_index: SECOND_OWNER
         }
     );
-    let angle = decode(Form::DistanceAngle, false, ["leftDistance", "Rotate Angle"]).unwrap();
+    let angle = decode(Form::DistanceAngle, false).unwrap();
     assert_eq!(
         angle.sets[0].spec,
         DesignChamferSetSpec::DistanceAngle {
@@ -267,16 +237,9 @@ fn each_set_form_names_its_group_owners_and_auxiliary_record() {
             angle_owner_record_index: SECOND_OWNER
         }
     );
-    let compact = decode(Form::CompactEqual, true, ["Distance", "Angle"]).unwrap();
+    let compact = decode(Form::CompactEqual, true).unwrap();
     assert_eq!(compact.form, DesignChamferSetListForm::Compact);
     assert_eq!(compact.sets[0].frame_length, 82);
-}
-
-#[test]
-fn an_owner_outside_the_spec_namespace_rejects_the_set() {
-    assert!(decode(Form::Equal, false, ["Distance 1", "Angle"]).is_none());
-    assert!(decode(Form::TwoDistances, false, ["Distance 1", "Angle"]).is_none());
-    assert!(decode(Form::DistanceAngle, false, ["Distance", "Distance 2"]).is_none());
 }
 
 #[test]
@@ -300,7 +263,6 @@ fn each_unadmitted_byte_rejects_the_set_list() {
         (81, 35),
         (71, 0x30),
         (set_start + 41, 0x30),
-        (set_start + 61, 0x30),
         (set_start + 21, 2),
         (set_start + 22, 1),
         (set_start + 36, 2),
@@ -312,37 +274,26 @@ fn each_unadmitted_byte_rejects_the_set_list() {
         let mut bytes = bytes.clone();
         bytes[at] = value;
         assert!(
-            decode_bytes(&bytes, &scope, ["Distance", "Angle"]).is_none(),
+            decode_bytes(&bytes, &scope).is_none(),
             "byte {at} = {value}"
         );
     }
 }
 
 #[test]
-fn a_mixed_two_distance_namespace_rejects_the_set() {
-    assert!(decode(Form::TwoDistances, false, ["Distance 1", "rightDistance"]).is_none());
-    assert!(decode(Form::TwoDistances, false, ["leftDistance", "Distance 2"]).is_none());
-    assert!(decode(Form::TwoDistances, false, ["leftDistance", "rightDistance"]).is_some());
-}
-
-#[test]
 fn each_form_rejects_a_nonzero_unnamed_byte_and_a_second_frame() {
-    for (form, kinds) in [
-        (Form::TwoDistances, ["Distance 1", "Distance 2"]),
-        (Form::DistanceAngle, ["Distance", "Angle"]),
-        (Form::CompactEqual, ["Distance", "Angle"]),
-    ] {
+    for form in [Form::TwoDistances, Form::DistanceAngle, Form::CompactEqual] {
         let (bytes, scope) = stream(form, matches!(form, Form::CompactEqual));
-        assert!(decode_bytes(&bytes, &scope, kinds).is_some());
+        assert!(decode_bytes(&bytes, &scope).is_some());
         let set_start =
             crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
         let mut mutated = bytes.clone();
         mutated[set_start + 22] = 1;
-        assert!(decode_bytes(&mutated, &scope, kinds).is_none());
+        assert!(decode_bytes(&mutated, &scope).is_none());
         let mut third = bytes.clone();
         third.extend(header(b"268", SET));
         third.resize(third.len() + 16, 0);
-        assert!(decode_bytes(&third, &scope, kinds).is_none());
+        assert!(decode_bytes(&third, &scope).is_none());
     }
 }
 
@@ -350,21 +301,11 @@ fn each_form_rejects_a_nonzero_unnamed_byte_and_a_second_frame() {
 fn prologue_kind_and_duplicate_references_reject_the_set_list() {
     let (mut bytes, scope) = stream(Form::CompactEqual, true);
     bytes[21] = 1;
-    assert!(decode_bytes(&bytes, &scope, ["Distance", "Angle"]).is_none());
+    assert!(decode_bytes(&bytes, &scope).is_none());
     let (bytes, scope) = stream_with(Form::Equal, false, 1, DesignFeatureKind::Fillet);
-    assert!(decode_bytes(&bytes, &scope, ["Distance", "Angle"]).is_none());
+    assert!(decode_bytes(&bytes, &scope).is_none());
     let (bytes, scope) = stream_with(Form::Equal, false, 2, DesignFeatureKind::Chamfer);
-    assert!(decode_bytes(&bytes, &scope, ["Distance", "Angle"]).is_none());
-    let (bytes, scope) = stream(Form::Equal, false);
-    let (first_parameter, first_owner) = owned(FIRST_OWNER, "Distance");
-    assert!(chamfer_set_list(
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &[first_parameter],
-        &[first_owner.clone(), first_owner],
-    )
-    .is_none());
+    assert!(decode_bytes(&bytes, &scope).is_none());
 }
 
 fn crossed_sets(crossed: bool) -> (DesignParameterScope, [DesignParameterOwner; 2]) {
@@ -375,12 +316,6 @@ fn crossed_sets(crossed: bool) -> (DesignParameterScope, [DesignParameterOwner; 
         SCOPE,
     );
     crate::design::test_support::name_scope_references(&mut scope, [GROUP, GROUP + 1]);
-    let owner = |record_index: u32, local_ordinal: u32| {
-        let (_, owner) = owned(record_index, "Distance");
-        let mut wire = serde_json::to_value(&owner).unwrap();
-        wire["local_ordinal"] = serde_json::json!(local_ordinal);
-        serde_json::from_value::<DesignParameterOwner>(wire).unwrap()
-    };
     let owners = [owner(FIRST_OWNER, 0), owner(SECOND_OWNER, 1)];
     let (first, second) = if crossed {
         (SECOND_OWNER, FIRST_OWNER)
@@ -412,31 +347,24 @@ fn crossed_sets(crossed: bool) -> (DesignParameterScope, [DesignParameterOwner; 
     (scope, owners)
 }
 
-fn decoded_keys() -> super::super::fillet_set::DecodedGroupKeys {
-    [GROUP, GROUP + 1]
-        .into_iter()
-        .map(|group| (STREAM.to_owned(), SCOPE, group))
-        .collect()
-}
-
 #[test]
 fn a_set_list_in_owner_order_is_kept() {
     let (scope, owners) = crossed_sets(false);
-    let mut scopes = vec![scope];
-    let conflicts = retain_consistent_chamfer_sets(&mut scopes, &decoded_keys(), &owners);
+    let scopes = vec![scope];
+    let conflicts = chamfer_set_conflicts(&scopes, &owners);
     assert!(conflicts.is_empty());
     assert!(scopes[0].chamfer_sets().is_some());
     assert!(chamfer_set_conflict_loss(&conflicts).is_none());
 }
 
 #[test]
-fn a_set_list_against_owner_order_is_dropped_and_reported() {
+fn a_set_list_against_owner_order_is_retained_and_reported() {
     let (scope, owners) = crossed_sets(true);
-    let mut scopes = vec![scope];
-    let conflicts = retain_consistent_chamfer_sets(&mut scopes, &decoded_keys(), &owners);
+    let scopes = vec![scope];
+    let conflicts = chamfer_set_conflicts(&scopes, &owners);
     assert_eq!(conflicts, [scopes[0].id.clone()]);
-    assert!(scopes[0].chamfer_sets().is_none());
-    assert!(scopes[0].payload().is_uninterpreted());
+    assert!(scopes[0].chamfer_sets().is_some());
+    assert!(!scopes[0].payload().is_uninterpreted());
     let loss = chamfer_set_conflict_loss(&conflicts).unwrap();
     assert_eq!(
         loss.code,
@@ -445,21 +373,21 @@ fn a_set_list_against_owner_order_is_dropped_and_reported() {
 }
 
 #[test]
-fn an_ungrouped_set_list_is_cleared() {
+fn an_ungrouped_set_list_is_retained_without_a_false_order_conflict() {
     let (bytes, mut scope) = stream(Form::Equal, false);
-    let list = decode_bytes(&bytes, &scope, ["Distance", "Angle"]);
+    let list = decode_bytes(&bytes, &scope);
     assert!(list.is_some());
     if let crate::records::feature::scope::DesignScopePayloadMut::Chamfer(slot) =
         scope.payload_mut()
     {
         slot.sets = list;
     }
-    let mut scopes = vec![scope];
+    let scopes = vec![scope];
     assert!(!scopes[0].payload().is_uninterpreted());
-    let conflicts = retain_consistent_chamfer_sets(&mut scopes, &decoded_group_keys(&[]), &[]);
+    let conflicts = chamfer_set_conflicts(&scopes, &[]);
     assert!(conflicts.is_empty());
-    assert!(scopes[0].chamfer_sets().is_none());
-    assert!(scopes[0].payload().is_uninterpreted());
+    assert!(scopes[0].chamfer_sets().is_some());
+    assert!(!scopes[0].payload().is_uninterpreted());
 }
 
 #[test]
@@ -475,7 +403,7 @@ fn corner_type_and_tangent_chain_read_from_their_bytes() {
         let mut bytes = bytes.clone();
         bytes[21] = value;
         bytes[set_start + 21] = 0;
-        let list = decode_bytes(&bytes, &scope, ["Distance", "Angle"]).unwrap();
+        let list = decode_bytes(&bytes, &scope).unwrap();
         assert_eq!(list.corner_type, corner_type);
         assert!(!list.sets[0].tangent_chain);
     }
@@ -526,25 +454,10 @@ fn a_scope_can_name_equal_and_two_distance_set_frames_together() {
     bytes.extend(header(b"267", other_set));
     bytes.extend(header(b"285", AUXILIARY));
     bytes.resize(bytes.len() + 47, 0);
-    let owned = [
-        owned(FIRST_OWNER, "Distance"),
-        owned(FIRST_OWNER + 20, "Distance 1"),
-        owned(SECOND_OWNER + 20, "Distance 2"),
-    ];
-    let parameters = owned
-        .iter()
-        .map(|(parameter, _)| parameter.clone())
-        .collect::<Vec<_>>();
-    let owners = owned
-        .into_iter()
-        .map(|(_, owner)| owner)
-        .collect::<Vec<_>>();
     let list = chamfer_set_list(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
-        &parameters,
-        &owners,
     )
     .unwrap();
     assert_eq!(list.sets.len(), 2);
@@ -561,9 +474,24 @@ fn a_scope_can_name_equal_and_two_distance_set_frames_together() {
             &bytes[..end],
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes[..end]),
             &scope,
-            &parameters,
-            &owners
         )
         .is_none());
     }
+}
+
+#[test]
+fn recognized_sets_keep_references_whose_definitions_or_generic_members_are_missing() {
+    let (mut bytes, mut scope) = stream(Form::Equal, false);
+    let set_start =
+        crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
+    bytes[set_start + 60..set_start + 71].copy_from_slice(&reference(900_000));
+    crate::design::test_support::name_scope_references(&mut scope, []);
+    let list = decode_bytes(&bytes, &scope).unwrap();
+    assert_eq!(list.sets[0].auxiliary_record_index, 900_000);
+    assert_eq!(
+        list.sets[0].spec,
+        DesignChamferSetSpec::EqualDistance {
+            distance_owner_record_index: FIRST_OWNER
+        }
+    );
 }
