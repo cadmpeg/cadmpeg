@@ -729,6 +729,24 @@ class GeneratedLayoutSizeRules(TempSourceCase):
             findings = self.findings("production_size")
         self.assertEqual([f.path for f in findings], ["crates/demo/src/layout.rs"])
 
+    def test_non_code_registry_entries_keep_size_limit(self) -> None:
+        declaration = '\n'.join([
+            'pub(crate) const GENERATED_LAYOUT_RS: &[(&str, &str)] = &[',
+            '    ("demo", "crates/demo/src/layout.rs"),',
+            '];', '',
+        ])
+        for source in [
+            'const EXAMPLE: &str = r#"\n' + declaration + '"#;\n',
+            '/*\n' + declaration + '*/\n',
+            declaration.replace('    ("demo",', '    // ("demo",'),
+        ]:
+            with self.subTest(source=source):
+                self.write("crates/cadmpeg/tests/layout_tables/generate.rs", source)
+                self.write("crates/demo/src/layout.rs", _pad_lines(self.HEADER.splitlines(), 6))
+                with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4):
+                    findings = self.findings("production_size")
+                self.assertEqual([f.path for f in findings], ["crates/demo/src/layout.rs"])
+
 
 class ModuleVisibility(TempSourceCase):
     def test_private_inner_module_cannot_grant_crate_reach(self) -> None:

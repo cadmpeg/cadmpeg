@@ -750,11 +750,17 @@ def generated_layout_formats() -> dict[str, str]:
         source = generator.read_text(encoding="utf-8")
     except FileNotFoundError:
         return {}
-    registry = re.search(r"\bGENERATED_LAYOUT_RS\b[^=]*=\s*&\[(.*?)\];", source, re.DOTALL)
+    code = mask_rust_non_code(source)
+    registry = re.search(
+        r"^pub\(crate\)\s+const\s+GENERATED_LAYOUT_RS\s*:[^=;]*=\s*&\[(.*?)\];",
+        code, re.MULTILINE | re.DOTALL,
+    )
     if registry is None:
         return {}
-    return {path: format_id for format_id, path in
-            re.findall(r'\("(\w+)",\s*"([^"]+/layout\.rs)"\)', registry[1])}
+    entries = source[registry.start(1):registry.end(1)]
+    return {entry[2]: entry[1] for entry in
+            re.finditer(r'\("(\w+)",\s*"([^"]+/layout\.rs)"\)', entries)
+            if code[registry.start(1) + entry.start()] == "("}
 
 
 def scan_patterns(path: Path, source: str) -> list[Finding]:
