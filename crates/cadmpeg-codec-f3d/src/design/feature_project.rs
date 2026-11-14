@@ -7876,8 +7876,8 @@ pub(super) fn hole_tap_type_loss(
         HOLE_TAP_TAPPED => Some(crate::loss::F3dLossCode::HoleTappedDiameterStored.note(format!(
             "Tapped Hole {scope_id} keeps its stored HoleDiameter; Fusion models the bore diameter that its thread size gives."
         ))),
-        HOLE_TAP_TAPER_TAPPED => Some(crate::loss::F3dLossCode::HoleTappedDiameterStored.note(format!(
-            "Taper-tapped Hole {scope_id} keeps its stored HoleDiameter; Fusion models the tapered bore that its thread size gives."
+        HOLE_TAP_TAPER_TAPPED => Some(crate::loss::F3dLossCode::HoleTaperTappedBoreCylindrical.note(format!(
+            "Taper-tapped Hole {scope_id} keeps a cylindrical bore of its stored HoleDiameter; Fusion models the tapered bore that its thread size gives."
         ))),
         other => Some(crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed.note(format!(
             "Hole {scope_id} assumes its scalar geometry is independent of tap type {other} (DR-106)."
