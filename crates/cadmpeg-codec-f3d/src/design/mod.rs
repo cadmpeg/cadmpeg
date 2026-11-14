@@ -110,6 +110,7 @@ pub(crate) fn design_feature_family(
         | Kind::CylinderPrimitive
         | Kind::Emboss
         | Kind::Align
+        | Kind::Bend
         | Kind::Native(_)
         | Kind::Canvas
         | Kind::Decal

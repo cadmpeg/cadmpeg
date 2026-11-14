@@ -250,6 +250,7 @@ rewrite_enum!(FeatureOperation, []; {
     SheetMetalAttachedPlate { profile, thickness, side, attachment },
     SheetMetalBend { plate, attachment, inside_radius, relief, transition },
     SheetMetalCorner { bend, effect },
+    SheetMetalBendLines { construction },
     SheetMetalEdgeFlange { edges, height, angle, height_datum, bend_position, width, bend_radius },
     SheetMetalHem { edges, bend_position, form, direction, bend_radius },
     Fillet { groups },
@@ -589,3 +590,6 @@ rewrite_record!(super::Feature, []; { id, product_definition, ordinal, name, sup
 rewrite_record!(super::FeatureContent, []; (field0));
 rewrite_enum!(super::FeatureSourceContent, []; { Text(value), Parameter(value), Feature(value) });
 rewrite_enum!(super::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });
+
+rewrite_record!(super::SheetMetalBendLinesConstruction, []; { bends, stationary, inside_radius });
+rewrite_record!(super::SheetMetalLineBend, []; { line, angle });

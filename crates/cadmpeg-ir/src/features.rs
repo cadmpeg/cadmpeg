@@ -3391,6 +3391,11 @@ pub enum FeatureOperation {
         /// Transition form and evaluated radius.
         transition: SheetMetalTransition,
     },
+    #[doc = "Bends an existing sheet along selected sketch lines."]
+    SheetMetalBendLines {
+        #[doc = "Independently decoded bend inputs."]
+        construction: SheetMetalBendLinesConstruction,
+    },
     /// Corner evaluation on a bend with an explicit geometric effect.
     SheetMetalCorner {
         /// Bend on which the corner is evaluated.
@@ -6074,10 +6079,34 @@ pub enum ThickenSide {
     Both,
 }
 
-/// Relief form selected by the document's sheet-metal rule.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = "Inputs of a sheet-metal bend along sketch lines."]
+pub struct SheetMetalBendLinesConstruction {
+    #[doc = "Line bends in source selection order."]
+    pub bends: Vec<SheetMetalLineBend>,
+    #[doc = "Face kept stationary during bending, when decoded."]
+    pub stationary: Option<FaceSelection>,
+    #[doc = "Inside bend radius in millimetres, when decoded."]
+    pub inside_radius: Option<PositiveLength>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = "One sketch-line selection and its signed bend angle."]
+pub struct SheetMetalLineBend {
+    #[doc = "Sketch line or retained source selection."]
+    pub line: Option<PathRef>,
+    #[doc = "Signed angle in radians, when decoded."]
+    pub angle: Option<Angle>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[doc = "Relief form selected by the document sheet-metal rule."]
 pub enum SheetMetalReliefForm {
     /// Use the active document rule's bend-relief form.
     StyleDefault,

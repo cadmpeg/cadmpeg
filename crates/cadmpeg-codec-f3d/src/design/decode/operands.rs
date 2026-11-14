@@ -936,6 +936,9 @@ pub(crate) fn decode_face_operands(
             == Some(DesignFeatureFamily::Mirror)
             && group.role() == DesignOperandRole::ROLE_0X5;
         let is_pattern_face_seed = crate::design::is_pattern_face_seed_group(&scope.kind(), group);
+        let is_bend_stationary = scope.kind()
+            == crate::records::feature::scope::DesignFeatureKind::Bend
+            && group.role() == DesignOperandRole::ROLE_0X10;
         let is_split_face_operand = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::SplitFace
             && group.role() == DesignOperandRole::ROLE_0X10;
@@ -970,6 +973,7 @@ pub(crate) fn decode_face_operands(
             && group.role() == DesignOperandRole::PROFILE;
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
             && !is_split_face_operand
+            && !is_bend_stationary
         {
             for member in group.members() {
                 seen.insert((stream, scope.record_index, member.value));
@@ -989,6 +993,7 @@ pub(crate) fn decode_face_operands(
             && !is_mirror_plane
             && !is_pattern_face_seed
             && !is_split_face_operand
+            && !is_bend_stationary
             && !is_delete_face_operand
             && !is_emboss_face
             && !is_thread_face
@@ -1926,6 +1931,7 @@ pub(crate) fn decode_construction_operand_groups(
             || matches!(
                 scope.kind(),
                 crate::records::feature::scope::DesignFeatureKind::BaseFlange
+                    | crate::records::feature::scope::DesignFeatureKind::Bend
                     | crate::records::feature::scope::DesignFeatureKind::EdgeFlange
                     | crate::records::feature::scope::DesignFeatureKind::Hem
             )

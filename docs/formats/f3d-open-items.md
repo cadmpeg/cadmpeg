@@ -2576,3 +2576,11 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Controlled public assemblies with independently varied source occurrences, containing components, and placement matrices, including a retained relation with an unresolved source document.
 
 **Note.** Each authored insertion scope with a decoded placement can produce one unresolved-prototype occurrence at the document root. The per-scope membership reading is assumed. `assembly.component-insert-container-assumed` records that container-frame reading. A feature with unresolved source membership uses its native selection in a neutral component insertion and reports `feature.component-insert-membership-assumed`. The native scope retains the relation reference, occurrence identity, and decoded placement.
+
+### DR-492. Bend line association and stationary role
+
+**Question.** How does a Bend scope associate each angular owner with a selected sketch line and its stationary region?
+
+**Known.** The scope's ordered reference table contains construction groups, their members, and `BendAngle` owners. A role-`0x10` group carries a face selection. `BendRadius` parameters carry explicit radius overrides. The projection associates each angular owner with the group two references before it and interprets the role-`0x10` group as the stationary face. `feature.bend-line-owner-order-assumed` and `feature.bend-stationary-role-assumed` identify those readings. Missing angular definitions and unresolved rule radii carry `feature.bend-angle-unresolved` and `feature.bend-rule-radius-unresolved`. Multiple explicit radii use the first value and carry `feature.bend-radius-first-assumed`.
+
+**Need.** A controlled Bend with reordered sketch-line selections, independent angle changes, a changed stationary region, and a document-rule radius change.

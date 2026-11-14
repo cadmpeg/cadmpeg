@@ -10862,6 +10862,21 @@ Unstated regions:
 
 - `237..264` (27 B): Bytes between the matrix and null GUID.
 
+## `bend_scope_angular_reference_roles`
+
+Spec §3.1 · layout: ordered slots (no stated byte offsets) · size: not stated
+
+Ordered reference roles for Bend angular inputs.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/feature_project/bend_lines.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `construction_group` | `u32` | little | spec | The ordered scope references carry the construction groups, selection operands, and parameter owners. |
+| 1 | `selection_operand` | `u32` | little | spec | The ordered scope references carry the construction groups, selection operands, and parameter owners. |
+| 2 | `angular_parameter_owner` | `u32` | little | spec | The parameter owner retains the association between a value and the scope reference table. |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

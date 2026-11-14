@@ -83,6 +83,7 @@ macro_rules! or_none {
     };
 }
 
+mod bend_lines;
 mod delete_face;
 mod extrude;
 
@@ -1256,7 +1257,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs, ctx)?
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 None => {
-                    if let Some(primitive) = project_solid_primitive(
+                    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Bend {
+                        bend_lines::project(scope, &parameters, inputs, &mut projection_losses)?
+                    } else if let Some(primitive) = project_solid_primitive(
                         scope,
                         inputs.placement_constructions,
                         &mut projection_losses,

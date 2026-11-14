@@ -627,6 +627,14 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || modeled.is_none()
                 || extent.is_none()
         }
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalBendLines { construction }) => {
+            construction.bends.is_empty()
+                || construction.bends.iter().any(|bend| {
+                    bend.angle.is_none() || bend.line.as_ref().is_none_or(|line| !loft_path_is_resolved(line))
+                })
+                || construction.stationary.as_ref().is_none_or(|face| !face_selection_is_resolved(face))
+                || construction.inside_radius.is_none()
+        }
         FeatureDefinition::Operation(FeatureOperation::Unresolved { .. }) => true,
         FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
             !datum_plane_frame_is_resolved(*frame)

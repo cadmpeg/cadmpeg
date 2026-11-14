@@ -3212,6 +3212,16 @@ fn check_feature_references(
                     face_selections.push(face);
                 }
             }
+            FeatureOperation::SheetMetalBendLines { construction } => {
+                if let Some(stationary) = &construction.stationary {
+                    face_selections.push(stationary);
+                }
+                for bend in &construction.bends {
+                    if let Some(line) = &bend.line {
+                        paths.push(line);
+                    }
+                }
+            }
             FeatureOperation::SheetMetalEdgeFlange { edges, height, .. } => {
                 edge_selections.push(edges);
                 if matches!(height, crate::features::SheetMetalFlangeHeight::ToObject {

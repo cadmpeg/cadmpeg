@@ -709,6 +709,7 @@ design_feature_kinds! {
         UnStitch => "UnStitch",
         RemoveBody => "RemoveBody",
         Face => "Face",
+        Bend => "Bend",
     }
 }
 
@@ -2114,6 +2115,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::UnStitch => DesignScopePayload::UnStitch,
             DesignFeatureKind::RemoveBody => DesignScopePayload::RemoveBody,
             DesignFeatureKind::Face => DesignScopePayload::Face,
+            DesignFeatureKind::Bend => DesignScopePayload::Bend,
             DesignFeatureKind::SpherePrimitive => {
                 DesignScopePayload::SpherePrimitive(match wire.solid_primitive.take() {
                     None => None,
@@ -2509,6 +2511,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::UnStitch
             | DesignScopePayload::RemoveBody
             | DesignScopePayload::Face
+            | DesignScopePayload::Bend
             | DesignScopePayload::Native(_) => {}
         }
         if base_flange_scope_is_absent(wire.base_flange.as_ref()) {
