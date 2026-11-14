@@ -413,7 +413,7 @@ fn attached_plate_and_bend_validate_profiles_edges_and_history() {
 
 #[test]
 fn an_attached_plate_requires_one_bend() {
-    use crate::features::*;
+    use crate::features::{sheet_metal::SheetMetalThicknessSide, *};
     use crate::scalar::{NonNegativeLength, PositiveLength};
     let mut ir = crate::CadIr::empty();
     let id = FeatureId::mint("test:model:feature#plate").unwrap();
