@@ -1494,7 +1494,7 @@ fn hole_specification(
         cadmpeg_ir::features::holes::HoleConstruction::Form { specification, .. } => {
             specification.as_deref()
         }
-        _ => None,
+        cadmpeg_ir::features::holes::HoleConstruction::NativeThread { .. } => None,
     }
 }
 
