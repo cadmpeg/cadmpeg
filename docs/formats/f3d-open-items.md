@@ -882,6 +882,14 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** A writer must know when to emit a list and which occurrences it names.
 
+### DR-494. Identity-pair words of a typed path
+
+**Question.** What does the u32 word after each u32 value 2 of a typed occurrence path state?
+
+**Known.** `f3d.md` "Assembly operands" gives the two pair words of a typed path record. Each word is 0 or 1. The observed pairs are `(0, 0)`, `(0, 1)`, and `(1, 1)`. The records of one continued path store the same pair. The decoder reads the occurrence and identity GUIDs of a path with word 1 as it reads them with word 0, and charges `assembly.operand-path-word-assumed` for each projected joint that reads such a path.
+
+**Need.** One joint saved with each value of the words would show whether a word changes which occurrence or connector the path selects. A writer must know when to emit word 1.
+
 ### XR-01. `neutronData` with a different GUID
 
 **Question.** What does `neutronData` mean when its GUID is different from the `neutronRole` GUID?

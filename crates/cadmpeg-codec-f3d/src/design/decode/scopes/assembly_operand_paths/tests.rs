@@ -796,32 +796,66 @@ fn rigid_group_locator_refuses_cross_version_lengths() {
 }
 
 #[test]
-fn typed_path_refuses_unsettled_identity_words() {
+fn typed_path_keeps_its_identity_pair_words() {
     use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
 
     let bytes = identity_qualified_path_bytes(*b"340", true);
     let identity_word = bytes.len() - (8 + 2 * 76 + 4 + 8);
     let tail_word = bytes.len() - 8;
-    let read = |bytes: &[u8]| {
-        exact_assembly_operand_path(
-            bytes,
-            0,
-            65,
-            bytes.len(),
-            path_link(),
+    let read = |bytes: &[u8], type_guid| {
+        exact_assembly_operand_path(bytes, 0, 65, bytes.len(), path_link(), type_guid).unwrap()
+    };
+    let with_words = |first: u32, second: u32| {
+        let mut changed = bytes.clone();
+        changed[identity_word + 4..identity_word + 8].copy_from_slice(&first.to_le_bytes());
+        changed[tail_word..tail_word + 4].copy_from_slice(&second.to_le_bytes());
+        changed
+    };
+    for (first, second) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+        let path = read(
+            &with_words(first, second),
             Some(TYPED_OCCURRENCE_PATH_TYPE_GUID),
         )
-        .unwrap()
-    };
-    assert!(read(&bytes).is_some());
-    for (identity, tail) in [
-        (0x0000_0001_0000_0002u64, 0u64),
-        (2, 1),
-        (0x0000_0001_0000_0002, 1),
-    ] {
-        let mut changed = bytes.clone();
-        changed[identity_word..identity_word + 8].copy_from_slice(&identity.to_le_bytes());
-        changed[tail_word..tail_word + 8].copy_from_slice(&tail.to_le_bytes());
-        assert!(read(&changed).is_none());
+        .expect("typed path");
+        assert_eq!(
+            path.identity_pair_words()
+                .iter()
+                .map(|word| (word.value, word.offset))
+                .collect::<Vec<_>>(),
+            [
+                (first, u64::try_from(identity_word + 4).unwrap()),
+                (second, u64::try_from(tail_word).unwrap()),
+            ]
+        );
     }
+    let path = read(&with_words(1, 0), Some(TYPED_OCCURRENCE_PATH_TYPE_GUID)).unwrap();
+    let wire = serde_json::to_value(&path).unwrap();
+    assert_eq!(wire["identity_pair_words"], serde_json::json!([1, 0]));
+    let round: crate::records::feature::assembly::DesignAssemblyOperandPath =
+        serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(round, path);
+    for (field, value) in [
+        ("identity_pair_words", serde_json::json!([2, 0])),
+        ("identity_pair_word_offsets", serde_json::json!([1])),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = value;
+        assert!(serde_json::from_value::<
+            crate::records::feature::assembly::DesignAssemblyOperandPath,
+        >(invalid)
+        .is_err());
+    }
+    for (first, second) in [(2, 0), (0, 2)] {
+        assert!(read(
+            &with_words(first, second),
+            Some(TYPED_OCCURRENCE_PATH_TYPE_GUID)
+        )
+        .is_none());
+    }
+
+    let listed = identity_qualified_path_bytes(*b"390", true);
+    let mut changed = listed.clone();
+    changed[identity_word + 4..identity_word + 8].copy_from_slice(&1_u32.to_le_bytes());
+    assert!(read(&listed, None).is_some_and(|path| path.identity_pair_words().is_empty()));
+    assert!(read(&changed, None).is_none());
 }
