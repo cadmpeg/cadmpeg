@@ -33023,10 +33023,18 @@ anchor = "Version 5 uses the same type GUID and field order"
 [[record.field]]
 name = "owner_suffix_zeros"
 offset = 531
-type = "bytes[6]"
+type = "bytes[2]"
 source = "spec"
-anchor = "Version 5 uses the same type GUID and field order"
-value = [0, 0, 0, 0, 0, 0]
+anchor = "An additional-owner run follows the four explicit alignment references."
+value = [0, 0]
+
+[[record.field]]
+name = "additional_owner_count"
+offset = 533
+type = "u32"
+source = "spec"
+anchor = "An additional-owner run follows the four explicit alignment references."
+value = 0
 
 [[record.field]]
 name = "locator_count"
