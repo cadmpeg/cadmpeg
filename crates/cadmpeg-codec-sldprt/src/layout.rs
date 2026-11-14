@@ -3395,3 +3395,23 @@ pub(crate) mod compact_principal_plane_component {
     /// Offset of `trailer_sentinel` (`u32`, little-endian). Spec §2.
     pub(crate) const TRAILER_SENTINEL: usize = 126;
 }
+
+/// Byte offsets for the `extrusion_compact_operation_trailer` record.
+///
+/// Spec §2. Record length 40 B.
+pub(crate) mod extrusion_compact_operation_trailer {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 40;
+    /// Offset of `continuation_word` (`u16`, little-endian). Spec §2.
+    pub(crate) const CONTINUATION_WORD: usize = 16;
+    /// Offset of `marker` (`u16`, little-endian). Spec §2.
+    pub(crate) const MARKER: usize = 18;
+    /// Offset of `reference` (`u16`, little-endian). Spec §2.
+    pub(crate) const REFERENCE: usize = 20;
+    /// Offset of `zero_after_reference` (`bytes[12]`). Spec §2.
+    pub(crate) const ZERO_AFTER_REFERENCE: usize = 22;
+    /// Offset of `final_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const FINAL_TOKEN: usize = 34;
+    /// Offset of `zero_tail` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_TAIL: usize = 36;
+}
