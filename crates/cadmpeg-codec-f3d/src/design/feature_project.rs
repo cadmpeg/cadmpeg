@@ -1281,10 +1281,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs, ctx)?
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                Some(DesignFeatureFamily::SheetMetalBend) => {
+                    bend_lines::project(scope, &parameters, inputs, &mut projection_losses)?
+                }
                 None => {
-                    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Bend {
-                        bend_lines::project(scope, &parameters, inputs, &mut projection_losses)?
-                    } else if let Some(definition) = super::position::project(scope, &mut projection_losses) {
+                    if let Some(definition) = super::position::project(scope, &mut projection_losses) {
                         definition
                     } else if let Some(primitive) = project_solid_primitive(
                         scope,
