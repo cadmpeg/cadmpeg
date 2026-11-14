@@ -88,7 +88,8 @@ fn transition_geometry_property_requires_bound_attribute_only_transition() {
             &owners,
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert_eq!(
             feature
                 .source_properties

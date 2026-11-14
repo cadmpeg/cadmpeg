@@ -416,7 +416,8 @@ fn split_plane_only_emitted_for_split_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_unresolved
             .source_properties
@@ -437,7 +438,8 @@ fn split_plane_only_emitted_for_split_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_split
             .source_properties
@@ -491,7 +493,8 @@ fn split_plane_only_emitted_for_split_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         features[1]
             .source_properties
@@ -547,7 +550,8 @@ fn split_plane_only_emitted_for_split_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
 
     assert_eq!(
         feature_extrude
@@ -603,7 +607,8 @@ fn split_plane_unresolved_when_multiple_inserted_planes_ambiguous() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
 
     assert_eq!(
         feature_split
@@ -659,7 +664,8 @@ fn split_plane_emitted_when_multiple_inserted_planes_are_equivalent() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
 
     assert_eq!(
         feature_split
@@ -705,7 +711,8 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_split
             .source_properties
@@ -748,7 +755,8 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_split2
             .source_properties
@@ -836,7 +844,8 @@ fn split_plane_ignores_side_face_separating_unrelated_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feat_valid
             .source_properties
@@ -897,7 +906,8 @@ fn split_plane_ignores_side_face_separating_unrelated_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feat_unrelated
             .source_properties
@@ -972,7 +982,8 @@ fn split_plane_unresolved_when_inserted_face_is_unclassifiable() {
             &Default::default(),
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert_eq!(
             feature_split
                 .source_properties
@@ -1069,7 +1080,8 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
             &Default::default(),
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert_eq!(
             feature_split
                 .source_properties
@@ -1109,7 +1121,8 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
                 &Default::default(),
                 None,
             )
-            .unwrap();
+            .unwrap()
+            .losses;
             assert!(
                 prev_losses.iter().all(|loss| {
                     loss.code != crate::loss::F3dLossCode::HistoricalBodyCenterPartial.kind()
@@ -1168,7 +1181,8 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feat_coplanar
             .source_properties
@@ -1323,7 +1337,8 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feat_half
             .source_properties
@@ -1424,7 +1439,8 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feat_unresolved_combine
             .source_properties
@@ -1460,7 +1476,8 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feat_split
             .source_properties
@@ -1478,7 +1495,8 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feat_identity
             .source_properties
@@ -1593,7 +1611,8 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         seq_features[0]
             .source_properties
@@ -1635,7 +1654,8 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feat_transition_deleted
             .source_properties
@@ -1656,7 +1676,8 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feat_active
             .source_properties
@@ -1691,7 +1712,8 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         seq_other_brep[0]
             .source_properties
@@ -1734,7 +1756,8 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
             &Default::default(),
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert_eq!(
             seq_same[0]
                 .source_properties
@@ -1913,7 +1936,9 @@ fn split_and_body_properties_follow_bound_history_across_equal_state_numbers() {
             vec![history_first.clone(), history_second.clone()]
         };
 
-        bind_feature_outputs(&mut features, &scopes, &mut histories, &[], &owners, None).unwrap();
+        bind_feature_outputs(&mut features, &scopes, &mut histories, &[], &owners, None)
+            .unwrap()
+            .losses;
 
         assert_eq!(
             features[0]

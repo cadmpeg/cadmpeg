@@ -54,6 +54,7 @@ mod reverse_normal;
 mod revolve_target;
 mod surface_offset;
 mod surface_patch;
+pub(crate) mod sweep_fallback;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
 const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;

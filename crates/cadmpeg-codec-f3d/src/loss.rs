@@ -241,6 +241,19 @@ pub(crate) enum F3dLossCode {
     FeaturePipeCircularSectionAssumed,
     /// A Pipe with one unit and one zero fraction is assumed to start its section at a path end.
     FeaturePipePathEndSectionAssumed,
+    FeatureSweepSourceUnavailable,
+    FeatureSweepOperationPrefixAssumed,
+    FeatureSweepOperationUnresolved,
+    FeatureSweepSectionRoleAssumed,
+    FeatureSweepProfileCarrierAssumed,
+    FeatureSweepSelectionUnresolved,
+    FeatureSweepScalarUnresolved,
+    FeatureSweepTargetsNative,
+    FeatureSweepResultModeUnresolved,
+    FeatureSweepResultModeInferred,
+    FeatureSweepPathTangentAssumedFalse,
+    FeatureSweepLinearizeAssumedFalse,
+    FeatureSweepControlsUninterpreted,
     SurfacePatchInteriorConstraintAssumed,
     SurfacePatchUnnamedGroupsAssumedInactive,
     SurfacePatchUnorderedReferenceRunsAssumed,
@@ -835,6 +848,19 @@ impl F3dLossCode {
         Self::FeaturePipeWholePathExtentAssumed,
         Self::FeaturePipeCircularSectionAssumed,
         Self::FeaturePipePathEndSectionAssumed,
+        Self::FeatureSweepSourceUnavailable,
+        Self::FeatureSweepOperationPrefixAssumed,
+        Self::FeatureSweepOperationUnresolved,
+        Self::FeatureSweepSectionRoleAssumed,
+        Self::FeatureSweepProfileCarrierAssumed,
+        Self::FeatureSweepSelectionUnresolved,
+        Self::FeatureSweepScalarUnresolved,
+        Self::FeatureSweepTargetsNative,
+        Self::FeatureSweepResultModeUnresolved,
+        Self::FeatureSweepResultModeInferred,
+        Self::FeatureSweepPathTangentAssumedFalse,
+        Self::FeatureSweepLinearizeAssumedFalse,
+        Self::FeatureSweepControlsUninterpreted,
         Self::SurfacePatchInteriorConstraintAssumed,
         Self::SurfacePatchUnnamedGroupsAssumedInactive,
         Self::SurfacePatchUnorderedReferenceRunsAssumed,
@@ -1222,6 +1248,19 @@ impl F3dLossCode {
             Self::FeaturePipeWholePathExtentAssumed => "feature.pipe-whole-path-extent-assumed",
             Self::FeaturePipeCircularSectionAssumed => "feature.pipe-circular-section-assumed",
             Self::FeaturePipePathEndSectionAssumed => "feature.pipe-path-end-section-assumed",
+            Self::FeatureSweepSourceUnavailable => "feature.sweep-source-unavailable",
+            Self::FeatureSweepOperationPrefixAssumed => "feature.sweep-operation-prefix-assumed",
+            Self::FeatureSweepOperationUnresolved => "feature.sweep-operation-unresolved",
+            Self::FeatureSweepSectionRoleAssumed => "feature.sweep-section-role-assumed",
+            Self::FeatureSweepProfileCarrierAssumed => "feature.sweep-profile-carrier-assumed",
+            Self::FeatureSweepSelectionUnresolved => "feature.sweep-selection-unresolved",
+            Self::FeatureSweepScalarUnresolved => "feature.sweep-scalar-unresolved",
+            Self::FeatureSweepTargetsNative => "feature.sweep-targets-native",
+            Self::FeatureSweepResultModeUnresolved => "feature.sweep-result-mode-unresolved",
+            Self::FeatureSweepResultModeInferred => "feature.sweep-result-mode-inferred",
+            Self::FeatureSweepPathTangentAssumedFalse => "feature.sweep-path-tangent-assumed-false",
+            Self::FeatureSweepLinearizeAssumedFalse => "feature.sweep-linearize-assumed-false",
+            Self::FeatureSweepControlsUninterpreted => "feature.sweep-controls-uninterpreted",
             Self::SurfacePatchInteriorConstraintAssumed => {
                 "feature.surface-patch-interior-constraint-assumed"
             }
@@ -1678,6 +1717,19 @@ impl F3dLossCode {
             | Self::FeaturePipeWholePathExtentAssumed
             | Self::FeaturePipeCircularSectionAssumed
             | Self::FeaturePipePathEndSectionAssumed
+            | Self::FeatureSweepSourceUnavailable
+            | Self::FeatureSweepOperationPrefixAssumed
+            | Self::FeatureSweepOperationUnresolved
+            | Self::FeatureSweepSectionRoleAssumed
+            | Self::FeatureSweepProfileCarrierAssumed
+            | Self::FeatureSweepSelectionUnresolved
+            | Self::FeatureSweepScalarUnresolved
+            | Self::FeatureSweepTargetsNative
+            | Self::FeatureSweepResultModeUnresolved
+            | Self::FeatureSweepResultModeInferred
+            | Self::FeatureSweepPathTangentAssumedFalse
+            | Self::FeatureSweepLinearizeAssumedFalse
+            | Self::FeatureSweepControlsUninterpreted
             | Self::SurfacePatchInteriorConstraintAssumed
             | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
@@ -1999,6 +2051,19 @@ impl F3dLossCode {
             | Self::FeaturePipeWholePathExtentAssumed
             | Self::FeaturePipeCircularSectionAssumed
             | Self::FeaturePipePathEndSectionAssumed
+            | Self::FeatureSweepSourceUnavailable
+            | Self::FeatureSweepOperationPrefixAssumed
+            | Self::FeatureSweepOperationUnresolved
+            | Self::FeatureSweepSectionRoleAssumed
+            | Self::FeatureSweepProfileCarrierAssumed
+            | Self::FeatureSweepSelectionUnresolved
+            | Self::FeatureSweepScalarUnresolved
+            | Self::FeatureSweepTargetsNative
+            | Self::FeatureSweepResultModeUnresolved
+            | Self::FeatureSweepResultModeInferred
+            | Self::FeatureSweepPathTangentAssumedFalse
+            | Self::FeatureSweepLinearizeAssumedFalse
+            | Self::FeatureSweepControlsUninterpreted
             | Self::SurfacePatchInteriorConstraintAssumed
             | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::SurfacePatchUnorderedReferenceRunsAssumed
@@ -2418,6 +2483,19 @@ mod tests {
                 "feature.pipe-whole-path-extent-assumed",
                 "feature.pipe-circular-section-assumed",
                 "feature.pipe-path-end-section-assumed",
+                "feature.sweep-source-unavailable",
+                "feature.sweep-operation-prefix-assumed",
+                "feature.sweep-operation-unresolved",
+                "feature.sweep-section-role-assumed",
+                "feature.sweep-profile-carrier-assumed",
+                "feature.sweep-selection-unresolved",
+                "feature.sweep-scalar-unresolved",
+                "feature.sweep-targets-native",
+                "feature.sweep-result-mode-unresolved",
+                "feature.sweep-result-mode-inferred",
+                "feature.sweep-path-tangent-assumed-false",
+                "feature.sweep-linearize-assumed-false",
+                "feature.sweep-controls-uninterpreted",
                 "feature.surface-patch-interior-constraint-assumed",
                 "feature.surface-patch-unnamed-groups-assumed-inactive",
                 "feature.surface-patch-unordered-reference-runs-assumed",

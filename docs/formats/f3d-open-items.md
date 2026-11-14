@@ -2398,6 +2398,26 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** A standalone timeline feature names its decoded neutral joint while source operands remain unresolved. The decoder preserves their identities and charges `assembly.joint-source-binding-assumed`.
 
+### DR-486. Partial Sweep sections and controls
+
+**Question.** What assigns section semantics to the role-`0x43` group, and what distinguishes a profile carrier from its separate selection group? Which source controls encode tangent propagation and linearization?
+
+**Known.** Sweep scopes carry a role-`0x43` group before a path group, or a profile carrier with a path and guide-face group without a separate selection group. Scalar owner ordinals zero through five independently identify the two path fractions, two rail fractions, twist and taper. Complete homogeneous output bindings establish the result family when the source operation is known.
+
+**Need.** Controlled changes of the section representation, region membership, tangent propagation and linearization, with the remaining selections and scalar values held fixed.
+
+**Note.** Remaining native definitions project as partial Sweeps. `feature.sweep-section-role-assumed` interprets a unique role-`0x43` group as the section. `feature.sweep-profile-carrier-assumed` retains the carrier identity without widening it to the whole Sketch. Required tangent and linearize flags assume false with `feature.sweep-path-tangent-assumed-false` and `feature.sweep-linearize-assumed-false`. Source records and unclassified controls remain in `sweep:source` with `feature.sweep-controls-uninterpreted`; input-body groups carry `feature.sweep-targets-native`. Missing source, operation, selection, scalar and result-mode joins have separate `feature.sweep-*-unresolved` codes or `feature.sweep-source-unavailable`. Result-family inference carries `feature.sweep-result-mode-inferred` and preserves a known Boolean operation.
+
+### DR-487. Zero marker in the compact Sweep prefix
+
+**Question.** What does the compact Sweep marker distinguish when it is zero?
+
+**Known.** The ten-zero prefix and preceding word `1` occur with either marker value. The zero-marker form retains the six scalar-owner lanes and an existing-body group. The complete native parser requires marker `1`.
+
+**Need.** A controlled change that toggles this marker while retaining the operation, selections and scalar controls.
+
+**Note.** Partial projection reads the preceding word as Join with `feature.sweep-operation-prefix-assumed`. This reading does not depend on successful joins of unrelated scalars or selections. The marker and bounded source record fragments remain in `sweep:source`; complete native admission is unchanged.
+
 ### DR-485. Missing Decal image definitions
 
 **Question.** Which source image and target does a Decal scope select when its image definition is absent or has an unparsed frame?
