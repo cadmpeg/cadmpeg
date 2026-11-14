@@ -593,6 +593,8 @@ pub enum WitnessKind {
     ShellSign,
     /// Linked faces of one sphere whose total area leaves one reading.
     SharedSphere,
+    /// A source-owned degenerate pole clear of nondegenerate, non-seam trims.
+    OwnedPole,
     /// One reading of the face has zero area.
     EmptyReading,
 }
