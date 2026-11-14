@@ -66,6 +66,7 @@ pub(crate) enum DesignFeatureFamily {
     Thread,
     SheetMetalEdgeFlange,
     SheetMetalHem,
+    SheetMetalBend,
 }
 
 /// Return the canonical operation family for a selected feature kind.
@@ -107,6 +108,7 @@ pub(crate) fn design_feature_family(
         Kind::Thread => Some(DesignFeatureFamily::Thread),
         Kind::EdgeFlange => Some(DesignFeatureFamily::SheetMetalEdgeFlange),
         Kind::Hem => Some(DesignFeatureFamily::SheetMetalHem),
+        Kind::Bend => Some(DesignFeatureFamily::SheetMetalBend),
         Kind::SpherePrimitive
         | Kind::TorusPrimitive
         | Kind::BoxPrimitive
