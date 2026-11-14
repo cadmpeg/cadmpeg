@@ -5,6 +5,7 @@ use super::*;
 const PROFILE_PROGRAM_TOLERANCE: f64 = 1.0e-7;
 
 mod arrangement_islands;
+mod identity_unique;
 
 fn divided_circle(two_dividers: bool) -> (Sketch, Vec<SketchEntity>) {
     let id = SketchId::mint("synthetic:test:id#curve-program").unwrap();

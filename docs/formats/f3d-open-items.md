@@ -20,6 +20,30 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-502. Micron compact profile members and descendant selection
+
+**Question.** Which replacement curve closes a compact profile hole after a curve edit, and which descendant regions of the compact group form the selected material?
+
+**Known.** Public Micron_4010_Bed_FAN_v2 Extrusion 1 scope 1319 has profile group 1320 and selection record 1323. The compact selection names Sketch entity 177 through Sketch scope 182. Its exterior has eleven line members: 130, 132, 116, 114, 133, 118, 122, 120, 124, 128, and 126. Four hole rings each have one circle member: 352, 306, 260, and 168. Curve 352 is absent from both the native curve-identity arena and the projected Sketch. Extrusion 3 scope 1423 has profile group 1424 and selection record 1427. Its compact group has one initial exterior with ten entries and five further regions. Their outer/hole entry counts are 5/0, 12/1, 5/0, 1/0, and 1/1. Every named curve of this group resolves. The initial loop repeats curves 105 and 109 with fragment ordinals one, two, and three. DR-340 records the compact descendant-selection question. The complete-loop resolver requires empty further-region lists and incidence counts of one.
+
+**Need.** A stored replacement or feature-time revision join for circle 352, and a material-selection rule for the initial region and its descendants. The rule must bind the compact incidence operands to directed curve intervals and identify the selected holes.
+
+### DR-500. Counted profile incidence ordinals and curve partitions
+
+**Question.** Which curve partition does the second incidence word select, and what does the third incidence word count?
+
+**Known.** Each 40-byte member carries a traversal flag and two positive incidence words. Public BHCS Revolve 1 selects curve 116 with `(1,2)` and curve 118 with `(2,2)`. Its directed arrangement boundary uses the first interval of curve 116 and the second interval of curve 118. Public SHCS Revolve 1 selects curve 138 with `(2,3)`. Public Standoff Revolve 1 repeats curve 179 with `(1,2)` and `(2,2)` in one exterior loop. The complete intersection partition of SHCS curve 138 has four pieces, and the stored last word is three. Its selected-member graph excludes curve 147 and has three pieces; the second piece equals the directed arrangement interval. Pulley curve 3853 carries `(3,3)`, while its full selected-member curve graph has four pieces at the intersections with curves 3883, 3905, and 3879. The construction-path grammar in §3.1 supplies fragment ordinals and counts from a serialized primary/related tracking graph. The existing arrangement resolver derives exact parameter ranges and directions from unique directed boundary walks.
+
+**Need.** The join from each counted member to its native primary/related tracking graph, the partition domain and circle phase, the treatment of line extensions, clipped members and coincident curves, and the relation to feature-time sketch revisions. These rules must determine both incidence words and the selected interval in independent designs.
+
+### DR-501. Profile members after sketch boundary edits
+
+**Question.** How does the live profile tracking carrier resolve a boundary selection after Sketch curve edits?
+
+**Known.** Both public V6 nozzle Revolve 1 operands have one region with 17 members. Every member resolves to a projected curve. The current sketch has zero stored profiles. Arc 189 joins selected lines 133 and 135 and occurs outside the member list. Tangent relations 1351 and 1352 join this arc to those lines. Both FIN nozzle Revolve 1 operands have one region with 21 members; arc 182 closes the gap between selected lines 140 and 155 and occurs outside the list. Set Screw Revolve 1 has six members; line 171 closes the gap between selected lines 165 and 149 and occurs outside the list. The selected curves alone have open ends in each design. Each affected profile group has a trailing identity wrapper followed by EntityTracking type `50AEE8B4-9456-4DD7-847D-6F6C909BBB9D`, version zero: V6 group 810 names wrapper 1357 and carrier 1358; FIN group 763 names wrapper 1384 and carrier 1385; Set Screw group 7229 names wrapper 7475 and carrier 7476. V6 tracking carrier 1367 names primary identity 189 and related identities 135 and 133 through axis group 817. Each operand retains its native identity and resolved Sketch carrier.
+
+**Need.** The boundary program and source/history join of carrier type `50AEE8B4-9456-4DD7-847D-6F6C909BBB9D`, and a stored replacement or revision join that establishes membership of each added boundary curve and the feature-time parameter intervals of its adjacent members. This join must distinguish a boundary edit from an additional unselected region.
+
 ### DR-463. Analytic sketch-curve tail flag frames
 
 **Question.** Which analytic sketch-curve tail frames carry the construction flag, and how does the type version select each frame?
@@ -1232,7 +1256,7 @@ The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are t
 
 **Conflict.** None.
 
-**Note.** A repeated identity within one source loop does not prove a complete neutral loop. A program without one unique atomic arrangement match retains its native identity and loss.
+**Note.** A complete neutral-loop match requires distinct identities. Revolve profiles resolve through stored loops or directed member rings. An ambiguous match or a match that requires an interpretation assumption retains the native selection with `feature.profile-selection-native`.
 
 ### DR-125. Counted face-target recipe without a unique historical face
 

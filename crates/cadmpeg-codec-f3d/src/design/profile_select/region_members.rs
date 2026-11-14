@@ -15,6 +15,7 @@ pub(super) fn resolve(
     curves: &[SketchCurveIdentity],
     entities: &[SketchEntity],
     resolution: ScopedExtrudeProfileResolution<'_>,
+    allow_assumptions: bool,
 ) -> Result<Option<PlanarProfileRef>, CodecError> {
     let Some(selection) = &profile.region_selection else {
         return Ok(None);
@@ -49,9 +50,14 @@ pub(super) fn resolve(
     else {
         return Ok(None);
     };
+    if !allow_assumptions
+        && ((selected.coincident && !selected.identity_unique) || selected.island_absence)
+    {
+        return Ok(None);
+    }
     let profile = PlanarProfileRef::sketch_regions(sketch.id.clone(), selected.regions).ok();
     if profile.is_some() {
-        if selected.coincident {
+        if selected.coincident && (allow_assumptions || !selected.identity_unique) {
             resolution.profile_work.note_coincident_direction_assumed();
         }
         if selected.island_absence {

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+
+mod compact_exterior;
 use crate::records::topology::entity_selection::{
     DesignProfileCurveEntry, DesignProfileCurveLoop, DesignProfileCurveSelection,
 };
