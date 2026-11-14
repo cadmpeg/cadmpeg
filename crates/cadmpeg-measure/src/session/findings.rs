@@ -11,16 +11,16 @@
 //!   from its end to its start, the `boundary.pcurve-order` caveat of its
 //!   face.
 //! - [`Check::Orientation`] on a face: its sense disagrees with the winding
-//!   of its loops, or its loops disagree with each other.
+//!   of its loops, its loops disagree with each other, or its declared
+//!   spherical region excludes a source-owned pole.
 //! - [`Check::Orientation`] on a body whose shells are closed: its volume
 //!   readings conflict (`volume.orientation-conflict`), or the flux of the
 //!   unit field exceeds its tolerance (`volume.closure-flux`).
 //!
 //! The pass resolves boundaries, regions, orientation readings and
 //! witnesses for every face, and areas and fluxes for the faces of bodies
-//! whose shells use every edge twice with opposite senses. It computes no
-//! carrier parameter, box or extent. Every item draws a slice of one
-//! findings allowance; an item whose slice runs out gives no finding, and
+//! whose shells use every edge twice with opposite senses. Every item draws
+//! a slice of one findings allowance; an item whose slice runs out gives no finding, and
 //! one [`Check::MeasurementIncomplete`] info finding states how many faces
 //! and bodies the pass did not check.
 
@@ -40,7 +40,7 @@ use crate::edges::{measure_edge, EdgeGeometry};
 use crate::face::{FaceInput, FaceResult, Verdict};
 use crate::failure::{settle, Outcome};
 use crate::reason::CaveatCode;
-use crate::report::{ListedOrder, NormalReading};
+use crate::report::{ListedOrder, NormalReading, WitnessKind};
 use crate::traversal::{traverse_counted, TraversalError};
 use crate::witness::WitnessInput;
 
@@ -381,10 +381,23 @@ fn pcurve_order_findings<'a>(result: &'a FaceResult<'_>) -> impl Iterator<Item =
         })
 }
 
-/// The finding of a face whose sense disagrees with its loop winding, or
-/// whose loops disagree with each other. A face whose witness decides its
-/// reading is reported through its body's volume.
 fn face_finding(result: &FaceResult<'_>) -> Option<Finding> {
+    if result.verdict == Verdict::Contradicted {
+        if let Some(witness) = result
+            .row
+            .orientation
+            .witness
+            .as_ref()
+            .filter(|witness| witness.kind == WitnessKind::OwnedPole)
+        {
+            return Some(warning(
+                Check::Orientation,
+                &result.row.face,
+                vec![witness.entity.clone()],
+                "the face's declared spherical region excludes a source-owned pole".to_owned(),
+            ));
+        }
+    }
     if matches!(result.verdict, Verdict::Conflict | Verdict::Contradicted) {
         return None;
     }
