@@ -206,7 +206,9 @@ fn derived_instance_with_unresolved_sources_keeps_a_neutral_component_selection(
         assert!(
             crate::design::components::project_derived_instance_features(
                 std::slice::from_mut(&mut feature),
-                std::slice::from_ref(&scope)
+                std::slice::from_ref(&scope),
+                &crate::design::components::paths::LocalOccurrencePaths::default(),
+                &[],
             )
             .unwrap()
             .is_empty()
