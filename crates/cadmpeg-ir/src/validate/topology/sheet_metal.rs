@@ -308,7 +308,7 @@ mod tests {
         ir.model.features[0].evaluation.edit(|definition, _| {
             *definition = FeatureDefinition::Operation(FeatureOperation::SheetMetalRefold {
                 construction: SheetMetalRefoldConstruction::default(),
-            })
+            });
         });
         assert!(!check(&ir).is_empty());
     }
