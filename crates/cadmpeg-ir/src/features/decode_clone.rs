@@ -267,6 +267,7 @@ rewrite_enum!(FeatureOperation, []; {
     SheetMetalBend { plate, attachment, inside_radius, relief, transition },
     SheetMetalCorner { bend, effect },
     SheetMetalBendLines { construction },
+    SheetMetalContourFlange { construction },
     SheetMetalUnfold { construction },
     SheetMetalRefold { construction },
     SheetMetalEdgeFlange { edges, height, angle, height_datum, bend_position, width, bend_radius },
@@ -623,3 +624,5 @@ rewrite_record!(super::sheet_metal::SheetMetalLineBend, []; { line, angle });
 
 rewrite_record!(super::sheet_metal::SheetMetalUnfoldConstruction, []; {stationary, bends, all_bends, neutral_factor});
 rewrite_record!(super::sheet_metal::SheetMetalRefoldConstruction, []; {unfold});
+
+rewrite_record!(super::sheet_metal::SheetMetalContourFlangeConstruction, []; {profile, direction, extent, thickness, inside_radius, side, neutral_factor});
