@@ -2778,8 +2778,7 @@ impl CapturedComponentPosition {
     }
 }
 
-/// A feature operation: neutral construction semantics with an explicit native
-/// escape hatch, and no post-processing layer of its own.
+/// A feature operation: neutral construction semantics with an explicit native escape hatch, and no post-processing layer of its own.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "definition", rename_all = "snake_case", deny_unknown_fields)]
