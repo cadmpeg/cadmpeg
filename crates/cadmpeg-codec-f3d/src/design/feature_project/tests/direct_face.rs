@@ -999,7 +999,7 @@ fn move_owner(record_index: u32, local_ordinal: u32, value: f64) -> DesignParame
         "local_ordinal": local_ordinal,
         "evaluated_value": value,
         "evaluated_value_offset": 2040 + record_index,
-        "parameter_record_index": record_index + 500,
+        "parameter_record_index": record_index + 2,
         "owned_ordinal": 1,
         "variant": 0,
         "companion_record_index": record_index + 1,
