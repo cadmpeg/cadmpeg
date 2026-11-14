@@ -847,11 +847,17 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     }));
                     revolve_target::bind_revolve_shape_target(
                         &mut definition,
-                        scope,
-                        construction_groups,
-                        face_operands,
-                        body_recipe_operands,
-                        histories,
+                        &revolve_target::RevolveTargetInputs {
+                            scope,
+                            scopes,
+                            construction_groups,
+                            entity_selection_operands,
+                            face_operands,
+                            body_recipe_operands,
+                            histories,
+                            design_types,
+                            component_naming_spaces,
+                        },
                     );
                     definition
                 }

@@ -7,24 +7,44 @@ use crate::ids::native_stream;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
+use crate::records::topology::entity_selection::DesignEntitySelectionOperand;
 use crate::records::topology::face::DesignFaceOperand;
 use cadmpeg_ir::features::{
     AngularTermination, FaceSelection, FeatureDefinition, FeatureOperation,
-    PartialRevolveConstruction, RevolveConstruction, RevolveExtent,
+    FeatureSupportPlaneFrame, PartialRevolveConstruction, PlaneTargetSource, RevolveConstruction,
+    RevolveExtent,
 };
 
+/// Scope records a one-sided `Revolve` target can name.
+pub(super) struct RevolveTargetInputs<'a> {
+    pub(super) scope: &'a DesignParameterScope,
+    pub(super) scopes: &'a [DesignParameterScope],
+    pub(super) construction_groups: &'a [DesignConstructionOperandGroup],
+    pub(super) entity_selection_operands: &'a [DesignEntitySelectionOperand],
+    pub(super) face_operands: &'a [DesignFaceOperand],
+    pub(super) body_recipe_operands: &'a [DesignBodyRecipeOperand],
+    pub(super) histories: &'a [crate::history_records::AsmHistory],
+    pub(super) design_types: &'a [crate::records::entity_header::SegmentType],
+    pub(super) component_naming_spaces: &'a [crate::records::recipes::DesignComponentNamingSpace],
+}
+
 /// Replace the native target group of a projected one-sided `Revolve` with
-/// the faces it selects in the feature's input state: every face of a
-/// body-recipe target, or the one face of a face-recipe target. A face
-/// recipe that resolves several faces keeps the native group.
+/// what it selects: every face of a body-recipe target in the feature's
+/// input state, the one face of a face-recipe target, or the plane of a
+/// `WorkPlane` or origin-plane entity selection. A face recipe that resolves
+/// several faces keeps the native group.
 pub(super) fn bind_revolve_shape_target(
     definition: &mut FeatureDefinition,
-    scope: &DesignParameterScope,
-    construction_groups: &[DesignConstructionOperandGroup],
-    face_operands: &[DesignFaceOperand],
-    body_recipe_operands: &[DesignBodyRecipeOperand],
-    histories: &[crate::history_records::AsmHistory],
+    inputs: &RevolveTargetInputs<'_>,
 ) {
+    let RevolveTargetInputs {
+        scope,
+        construction_groups,
+        face_operands,
+        body_recipe_operands,
+        histories,
+        ..
+    } = *inputs;
     let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) = definition
     else {
         return;
@@ -56,6 +76,15 @@ pub(super) fn bind_revolve_shape_target(
     };
     if let Some(target) = resolved_body_recipe_selection(scope, group, body_recipe_operands) {
         *termination = AngularTermination::ToShape { target };
+    } else if let Some((plane, source)) = selected_target_plane(inputs, group) {
+        let Some(native) = cadmpeg_core::text::NonBlankString::new(native.clone()) else {
+            return;
+        };
+        *termination = AngularTermination::ToPlane {
+            plane,
+            native,
+            source,
+        };
     } else if let Some(face) = resolved_historical_face_group(
         scope,
         crate::history::effective_scope_previous_history_state_id(scope, histories),
@@ -65,6 +94,41 @@ pub(super) fn bind_revolve_shape_target(
     .filter(|face| matches!(face, FaceSelection::Historical { faces, .. } if faces.len() == 1))
     {
         *termination = AngularTermination::ToFace { face, offset: None };
+    }
+}
+
+/// Return the frame of the plane a target group's sole entity selection
+/// names in a Design stream that binds one component: the `WorkPlane` scope
+/// at the next record, or an origin plane. An identity that has both
+/// readings names no plane.
+fn selected_target_plane(
+    inputs: &RevolveTargetInputs<'_>,
+    group: &DesignConstructionOperandGroup,
+) -> Option<(FeatureSupportPlaneFrame, Option<PlaneTargetSource>)> {
+    let RevolveTargetInputs {
+        scope,
+        scopes,
+        entity_selection_operands,
+        design_types,
+        component_naming_spaces,
+        ..
+    } = *inputs;
+    if !super::scope_stream_has_one_component(scope, component_naming_spaces) {
+        return None;
+    }
+    match (
+        super::selected_work_plane(scope, group, entity_selection_operands, scopes),
+        super::selected_origin_plane(scope, group, entity_selection_operands, design_types),
+    ) {
+        (Some(work_plane), None) => {
+            let frame = super::work_plane_support_frame(work_plane.work_plane_transform()?.into())?;
+            Some((frame, Some(PlaneTargetSource::WorkPlane)))
+        }
+        (None, Some((ordinal, _))) => {
+            let frame = crate::history::selection::design_geometry_origin_plane_frame(ordinal)?;
+            Some((frame, None))
+        }
+        _ => None,
     }
 }
 
