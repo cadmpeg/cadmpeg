@@ -1290,6 +1290,32 @@ pub(crate) fn append_design_losses(
             "{unresolved_extrude_directions} extrusion definition(s) retain native travel sense because finite start and opposite end caps contradict the implicit direction."
         )));
     }
+    let unresolved_extrude_starts = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.evaluation.definition())
+        .chain(ir.model.configurations.iter().flat_map(|configuration| {
+            configuration
+                .feature_states
+                .values()
+                .map(|state| &state.definition)
+        }))
+        .filter(|definition| {
+            matches!(
+                definition.operation(),
+                FeatureOperation::Extrude {
+                    start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
+                    ..
+                }
+            )
+        })
+        .count();
+    if unresolved_extrude_starts > 0 {
+        report.losses.push(SldprtLossCode::FeatureExtrudeStartUnresolved.note(format!(
+            "{unresolved_extrude_starts} extrusion definition(s) retain a native start condition that is neither the profile plane nor an offset plane with an owned scalar."
+        )));
+    }
     let incomplete_typed_features = evaluated_feature_states
         .iter()
         .filter(|state| {
