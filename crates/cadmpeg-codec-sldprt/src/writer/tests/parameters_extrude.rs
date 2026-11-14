@@ -1794,8 +1794,7 @@ fn semantic_writer_retains_partial_native_wall_operations() {
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: FaceSelection::Native(faces),
             thickness: None,
-            side: None,
-        }) if faces == "face:2"
+            side: None, .. }) if faces == "face:2"
     ));
 
     let mut detached = decoded.ir().clone();

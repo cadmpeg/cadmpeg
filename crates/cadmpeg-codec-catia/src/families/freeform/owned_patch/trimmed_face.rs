@@ -1949,20 +1949,40 @@ fn fit_ring(
             }),
             lift_error_mm: 0.0,
         };
-        if context.transverse_recovery == TransverseRecovery::Clamp
-            && (0..=TRIM_STEPS).any(|step| {
-                trim.uv(trim.sample(step, true))
-                    .is_some_and(|[_, v]| v < v_lo || v > v_hi)
-            })
-        {
-            let SolvedSurfaceGeometry::Nurbs(spline) = &solved else {
-                return None;
-            };
-            side.pcurve = edge_alignment::project_spline(&side, spline, |fraction| {
-                let t = interval_parameter(trim.range, fraction);
-                let [u, v] = chart(trim.uv(t)?)?;
-                Some(Point2::new(u, v))
-            })?;
+        if let SolvedSurfaceGeometry::Nurbs(spline) = &solved {
+            let tolerance = side
+                .inferred_accuracy
+                .map_or(GAP_MM, |accuracy| accuracy.bound_mm + GAP_MM);
+            let adjusted = (0..=TRIM_STEPS).any(|step| {
+                let t = trim.sample(step, true);
+                let Some(uv) = trim.uv(t) else {
+                    return false;
+                };
+                if context.transverse_recovery == TransverseRecovery::Clamp
+                    && (uv[1] < v_lo || uv[1] > v_hi)
+                {
+                    return true;
+                }
+                if !matches!(trim.pcurve, PcurveGeometry::Nurbs { .. })
+                    || chart(uv) == Some(carrier.point(uv))
+                {
+                    return false;
+                }
+                let [u, v] = carrier.point(uv);
+                let point =
+                    eval::decode::nurbs_surface_point(EvaluationAdmission::Standard, spline, u, v);
+                match (point, curve_point(&side.curve, t)) {
+                    (Ok(point), Some(edge)) => point.get().distance(edge) > tolerance,
+                    _ => true,
+                }
+            });
+            if adjusted {
+                side.pcurve = edge_alignment::project_spline(&side, spline, |fraction| {
+                    let t = interval_parameter(trim.range, fraction);
+                    let [u, v] = chart(trim.uv(t)?)?;
+                    Some(Point2::new(u, v))
+                })?;
+            }
         }
         sides.push(side);
     }

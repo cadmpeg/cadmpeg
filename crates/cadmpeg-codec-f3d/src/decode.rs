@@ -597,9 +597,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(
             FeatureOperation::ReferenceImage { .. } | FeatureOperation::DatumPrincipalPlane { .. },
         ) => false,
-        FeatureDefinition::Operation(FeatureOperation::MeshImport { tessellations }) => {
-            !matches!(tessellations, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
-        }
+        FeatureDefinition::Operation(
+            FeatureOperation::MeshImport {
+                tessellations: source,
+            }
+            | FeatureOperation::MeshSection { source, .. }
+            | FeatureOperation::MeshModify { source, .. },
+        ) => !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_)),
         FeatureDefinition::Operation(FeatureOperation::Decal { faces, .. }) => {
             !face_selection_is_resolved(faces)
         }
@@ -791,12 +795,12 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             construction,
             result,
         }) => {
-            use cadmpeg_ir::features::{CoilPlacement, CoilResult};
+            use cadmpeg_ir::features::{CoilPlacement, SolidFeatureResult};
 
             matches!(construction.placement, CoilPlacement::Native { .. })
                 || match result {
-                    CoilResult::NewBody {} => false,
-                    CoilResult::Boolean { targets, .. } => !body_selection_is_resolved(targets),
+                    SolidFeatureResult::NewBody {} => false,
+                    SolidFeatureResult::Boolean { targets, .. } => !body_selection_is_resolved(targets),
                 }
         }
         // The draft angle remains available when face recipes fail, but replay
@@ -876,11 +880,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
             thickness,
-            side,
-        }) => {
+            side, result, .. }) => {
             !face_selection_is_resolved(faces)
                 || thickness.is_none()
                 || side.is_none()
+                || matches!(result, Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }) if !body_selection_is_resolved(targets))
         }
         FeatureDefinition::Operation(FeatureOperation::KnitSurface {
             faces,
@@ -943,7 +947,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     .iter()
                     .any(|group| !edge_selection_is_resolved(&group.edges))
         }
-        FeatureDefinition::Operation(FeatureOperation::DeleteFace { faces, .. }) => {
+        FeatureDefinition::Operation(
+            FeatureOperation::DeleteFace { faces, .. } | FeatureOperation::UnstitchFaces { faces },
+        ) => {
             !face_selection_is_resolved(faces)
         }
         FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) => {
@@ -1651,9 +1657,17 @@ fn design_projection_gaps(
                     native_body_selection_count(target) + native_body_selection_count(tools);
             }
             FeatureDefinition::Operation(FeatureOperation::Coil {
-                result: cadmpeg_ir::features::CoilResult::Boolean { targets, .. },
+                result: cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. },
                 ..
             }) => gaps.body_selections += native_body_selection_count(targets),
+            FeatureDefinition::Operation(FeatureOperation::Thicken { faces, result, .. }) => {
+                face_selection(faces);
+                if let Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }) =
+                    result
+                {
+                    gaps.body_selections += native_body_selection_count(targets);
+                }
+            }
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile,
                 start,
@@ -1838,6 +1852,7 @@ fn design_projection_gaps(
             }
             FeatureDefinition::Operation(
                 FeatureOperation::DeleteFace { faces, .. }
+                | FeatureOperation::UnstitchFaces { faces }
                 | FeatureOperation::OffsetSurface { faces, .. },
             ) => face_selection(faces),
             FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) => {
@@ -2452,7 +2467,7 @@ fn report_design_projection_gaps(
         }
         let (code, reason) = if scope.emboss_construction().is_some() {
             (F3dLossCode::EmbossControlsNative,
-             "control words, native pairs, scalar-owner links, selection links, contour membership, and placement have no neutral Wrap mapping")
+             "control words, native pairs, selection links, contour membership, and placement retain their native interpretation; scalar-owner links also expose independent Wrap parameters")
         } else {
             (
                 F3dLossCode::EmbossPrefixUnparsed,
@@ -6079,6 +6094,7 @@ pub(crate) fn apply_body_presentation_names(
 pub(crate) mod design_intent;
 mod geometry_admission;
 mod mesh_import;
+mod mesh_operations;
 mod prereqs;
 
 #[cfg(test)]

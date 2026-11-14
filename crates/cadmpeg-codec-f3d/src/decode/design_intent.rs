@@ -633,6 +633,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             face_operands: &design.design_face_operands,
             body_recipe_operands: &design.design_body_recipe_operands,
             placements: &design.design_sketch_placements,
+            placement_constructions: &design.design_placement_constructions,
             body_bindings: &prereqs.design_body_bindings,
             component_naming_spaces: &prereqs.design_component_naming_spaces,
             histories: &design.asm_histories,
@@ -699,6 +700,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         geometry.mesh_projection,
         &mut losses,
     )?;
+
     crate::design::feature_project::form_cages::bind_form_cages(
         ctx,
         scan,
@@ -789,7 +791,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         geometry.primary_brep,
     )?);
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
-    losses.extend(crate::history::pipe_section::bind_circular_pipe_sections(
+    losses.extend(crate::history::pipe_section::projection::project(
+        scan,
+        &prereqs.design_types,
+        &design.design_record_headers,
         &mut model.features,
         &crate::history::pipe_section::PipeSectionInputs {
             scopes: &design.design_parameter_scopes,
@@ -801,7 +806,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             surfaces: geometry.surfaces,
             linear_tolerance: geometry.tolerances.linear.get(),
         },
-    ));
+    )?);
     losses.extend(crate::history::bind_feature_body_selections(
         &mut model.features,
         &crate::history::FeatureBodySelectionInputs {
@@ -1004,6 +1009,19 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.sketches,
         &model.spatial_sketches,
     )?;
+    super::mesh_operations::bind_features(
+        ctx,
+        scan,
+        &mut model.features,
+        super::mesh_operations::MeshOperationInputs {
+            scopes: &design.design_parameter_scopes,
+            owners: &prereqs.design_parameter_owners,
+            parameters: &prereqs.design_parameters,
+            placements: &design.design_sketch_placements,
+            sketches: &model.sketches,
+        },
+        &mut losses,
+    )?;
     losses.extend(crate::design::sketch_names::bind_sketch_names(
         &model.features,
         &design.design_parameter_scopes,
@@ -1197,16 +1215,18 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         products.occurrences,
         &design.design_parameter_scopes,
     );
-    losses.extend(
-        crate::design::components::project_derived_instance_features(
-            &mut model.features,
-            &design.design_parameter_scopes,
-        )?,
-    );
     losses.extend(crate::design::components::paths::bind_feature_paths(
         &mut model.features,
         &occurrence_paths,
     ));
+    losses.extend(
+        crate::design::components::project_derived_instance_features(
+            &mut model.features,
+            &design.design_parameter_scopes,
+            &occurrence_paths,
+            products.occurrences,
+        )?,
+    );
     losses.extend(
         crate::design::components::project_copy_paste_transfer_features(
             &mut model.features,
@@ -1221,6 +1241,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &design.design_parameter_scopes,
         products.occurrences,
+    );
+    losses.extend(
+        crate::design::components::incomplete_inserts::project_features(
+            &mut model.features,
+            &design.design_parameter_scopes,
+            products.occurrences,
+        )?,
     );
     let mut types_by_stream = std::collections::HashMap::new();
     let bound_at_merge = design

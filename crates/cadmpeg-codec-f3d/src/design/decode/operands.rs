@@ -944,6 +944,7 @@ pub(crate) fn decode_face_operands(
             crate::records::feature::scope::DesignFeatureKind::MoveFace
                 | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                 | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
+                | crate::records::feature::scope::DesignFeatureKind::UnStitch
         );
         let is_emboss_face = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::Emboss
@@ -1916,6 +1917,7 @@ pub(crate) fn decode_construction_operand_groups(
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Modify
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::UnStitch
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal
             || (scope.kind() == crate::records::feature::scope::DesignFeatureKind::Emboss
                 && scope.emboss_operand_construction().is_some())
@@ -6784,6 +6786,9 @@ pub(super) fn parse_face_operand(
         let offset = records.first_at_or_after(position, record_index)?;
         *slot = offset;
         position = offset.checked_add(11)?;
+    }
+    if parse_sketch_profile_region_selection(bytes, header.record_index, offsets[0]).is_some() {
+        return None;
     }
     let stream = native_stream(&scope.id)?;
     let recipe_start = u64::try_from(offsets[3]).ok()?;

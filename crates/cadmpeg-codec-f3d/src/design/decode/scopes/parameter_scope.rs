@@ -22,8 +22,8 @@ use super::combine::exact_combine_operation;
 use super::component_constructions::bind_component_pattern_occurrences;
 use super::component_constructions::exact_component_insert_construction;
 use super::component_constructions::exact_copy_paste_component_operation;
-use super::component_constructions::exact_derived_instance_construction;
 use super::copy_paste_bodies::exact_copy_paste_bodies_operation;
+use super::derived_instance;
 use super::direct_face::exact_direct_face_operation;
 use super::direct_face::exact_modify_operation;
 use super::direct_face::exact_move_face_operation;
@@ -396,7 +396,8 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_thicken_operation(bytes, &records, &scope, &mut losses);
+                let construction =
+                    exact_thicken_operation(ctx, bytes, &records, &scope, &mut losses)?;
                 if let scope::DesignScopePayloadMut::Thicken(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -671,12 +672,22 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_component_insert_construction(bytes, &records, &scope)?;
+                let unresolved_placement = construction
+                    .is_none()
+                    .then(|| {
+                        super::component_constructions::unresolved_component_insert_placement(
+                            bytes, &scope,
+                        )
+                    })
+                    .flatten();
                 if let scope::DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() {
-                    *slot = construction;
+                    slot.construction = construction;
+                    slot.unresolved_placement = unresolved_placement;
                 }
             }
             {
-                let construction = exact_derived_instance_construction(
+                let construction = derived_instance::construction(
+                    ctx,
                     bytes,
                     &records,
                     &scope,

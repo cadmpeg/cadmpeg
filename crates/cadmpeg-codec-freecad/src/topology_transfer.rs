@@ -741,6 +741,8 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                     self.shell_component_id(&key, component_index)?
                 };
                 let mut faces = Vec::new();
+                let mut wire_edges = Vec::new();
+                let coedge_start = ir.model.coedges.len();
                 for &face_index in component {
                     if let Some(face) = self.append_face(
                         ir,
@@ -748,16 +750,18 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                         face_uses[face_index],
                         transform,
                         reversed,
+                        &mut wire_edges,
                     )? {
                         faces.push(face);
                     }
                 }
+                retain_wire_edges(&ir.model.coedges[coedge_start..], &mut wire_edges);
                 ir.model.shells.push(
                     Shell::new(
                         component_id.clone(),
                         region.clone(),
                         faces,
-                        Vec::new(),
+                        wire_edges,
                         Vec::new(),
                     )
                     .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
@@ -774,6 +778,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
         }
         let mut faces = Vec::new();
         let mut wire_edges = Vec::new();
+        let coedge_start = ir.model.coedges.len();
         match shape.kind() {
             TextShapeKind::Face => {
                 let shape_use = TextShapeUse {
@@ -781,9 +786,14 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                     orientation: TextOrientation::Forward,
                     location: 0.into(),
                 };
-                if let Some(face) =
-                    self.append_face(ir, &shell_id, &shape_use, transform, reversed)?
-                {
+                if let Some(face) = self.append_face(
+                    ir,
+                    &shell_id,
+                    &shape_use,
+                    transform,
+                    reversed,
+                    &mut wire_edges,
+                )? {
                     faces.push(face);
                 }
             }
@@ -829,6 +839,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             }
             _ => {}
         }
+        retain_wire_edges(&ir.model.coedges[coedge_start..], &mut wire_edges);
         ir.model.shells.push(
             Shell::new(
                 shell_id.clone(),
@@ -906,6 +917,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
         face_use: &TextShapeUse,
         parent: Located,
         reversed: bool,
+        wire_edges: &mut Vec<EdgeId>,
     ) -> Result<Option<FaceId>, CodecError> {
         let face_transform = self.compose(parent, self.location(face_use.location)?)?;
         let face_reversed = reversed ^ is_reversed(face_use.orientation);
@@ -1051,14 +1063,28 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             let wire_transform = self.compose(face_transform, self.location(wire_use.location)?)?;
             let wire = self.shape(wire_use.shape)?.clone();
             let mut edge_uses = Vec::new();
-            edge_uses.extend(
-                wire.children
-                    .iter()
-                    .filter(|child| {
-                        self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Edge
-                    })
-                    .cloned(),
-            );
+            let mut non_boundary_count = 0_usize;
+            for child in wire
+                .children
+                .iter()
+                .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Edge)
+            {
+                if is_boundary(wire_use.orientation) && is_boundary(child.orientation) {
+                    edge_uses.push(child.clone());
+                } else {
+                    let edge = self.ensure_edge(ir, child, wire_transform)?;
+                    wire_edges.push(edge.id);
+                    non_boundary_count += 1;
+                }
+            }
+            if non_boundary_count > 0 {
+                self.losses.push(FreecadLossCode::TopologyNonBoundaryIncidenceRetained.note(
+                    format!(
+                        "face {face_id} wire {} retains {non_boundary_count} non-boundary edge use(s) as edge geometry; face incidence remains native",
+                        wire_use.shape,
+                    ),
+                ));
+            }
             let wire_reversed = face_reversed ^ is_reversed(wire_use.orientation);
             if wire_reversed {
                 edge_uses.reverse();
@@ -1725,13 +1751,17 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             let face_reversed = is_reversed(face_use.orientation);
             for wire_use in &self.shape(face_use.shape)?.children {
                 let wire = self.shape(wire_use.shape)?;
-                if wire.kind() != TextShapeKind::Wire {
+                if wire.kind() != TextShapeKind::Wire || !is_boundary(wire_use.orientation) {
                     continue;
                 }
                 let wire_transform =
                     self.compose(face_transform, self.location(wire_use.location)?)?;
                 let wire_reversed = face_reversed ^ is_reversed(wire_use.orientation);
-                for edge_use in &wire.children {
+                for edge_use in wire
+                    .children
+                    .iter()
+                    .filter(|child| is_boundary(child.orientation))
+                {
                     if let TextTShapeGeometry::Edge {
                         degenerated: false, ..
                     } = self.shape(edge_use.shape)?.geometry
@@ -2370,6 +2400,22 @@ fn exact_transforms_equal(left: Transform, right: Transform) -> bool {
         .flatten()
         .zip(right.rows().into_iter().flatten())
         .all(|(left, right)| left == right)
+}
+
+fn retain_wire_edges(coedges: &[Coedge], edges: &mut Vec<EdgeId>) {
+    if edges.is_empty() {
+        return;
+    }
+    let boundary: HashSet<_> = coedges.iter().map(|coedge| &coedge.edge).collect();
+    let mut retained = HashSet::new();
+    edges.retain(|edge| !boundary.contains(edge) && retained.insert(edge.clone()));
+}
+
+fn is_boundary(orientation: TextOrientation) -> bool {
+    matches!(
+        orientation,
+        TextOrientation::Forward | TextOrientation::Reversed
+    )
 }
 
 fn is_reversed(orientation: TextOrientation) -> bool {

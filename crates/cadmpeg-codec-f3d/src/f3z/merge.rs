@@ -577,7 +577,11 @@ fn omit_unbound_member_joints(
     model.assembly_joints.retain(|joint| {
         let unresolved = joint.connectors().any(|connector| {
             let OperandContainer::Occurrence { occurrence, occurrence_path } = &connector.operand.container else {
-                return matches!(connector.operand.container, OperandContainer::External { .. });
+                return matches!(
+                    &connector.operand.container,
+                    OperandContainer::External { external_document }
+                        if !matches!(external_document, cadmpeg_ir::products::ExternalDocument::Missing {})
+                );
             };
             if occurrence_path.is_empty() && connector.operand.subelements.is_empty() {
                 return false;
