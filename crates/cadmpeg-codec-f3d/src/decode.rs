@@ -3507,6 +3507,14 @@ impl<'a> F3dDecodeSession<'a> {
         }
         self.ir.model.product_definitions.extend(local.definitions);
         self.ir.model.occurrences.extend(local.occurrences);
+        crate::design::decode::hidden_occurrences::apply_hidden_occurrences(
+            &mut self.ir.model.occurrences,
+            &prereqs.design_component_occurrences,
+            prereqs
+                .xref_table()
+                .map_or(&[], |table| table.references.as_slice()),
+            &prereqs.design_hidden_occurrences,
+        );
         self.report.losses.extend(local.losses);
         let mut component_inserts = crate::design::components::ComponentInserts::decide(
             &prereqs.design_parameter_scopes,
