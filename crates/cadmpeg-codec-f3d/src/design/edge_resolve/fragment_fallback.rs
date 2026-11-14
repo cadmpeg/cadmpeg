@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+//! Complete unresolved treatment members from historical recipe boundaries.
 
 use super::{
     native_stream, resolved_edge_operand, DesignConstructionOperandGroup,
@@ -120,19 +121,21 @@ pub(super) fn apply_group(
         if !unresolved.contains(&operand.id) || resolved_edge_operand(operand).is_some() {
             continue;
         }
-        if identities.iter().any(|identity| {
-            native_stream(&identity.id) == native_stream(&group.id)
-                && identity.scope_record_index == group.scope_record_index
-                && identity.group_record_index == group.record_index
-                && identity.record_index() == operand.record_index()
-                && (identity.resolved_edge_slot.is_some()
-                    || !identity.resolved_edge_slots.is_empty())
-        }) {
-            continue;
-        }
         let Some(edge) = crate::history::fragment_edge::context_edge(operand, boundaries) else {
             continue;
         };
+        if (edge.inferred || !operand.transition_deleted_edge_slots.contains(&edge.slot))
+            && identities.iter().any(|identity| {
+                native_stream(&identity.id) == native_stream(&group.id)
+                    && identity.scope_record_index == group.scope_record_index
+                    && identity.group_record_index == group.record_index
+                    && identity.record_index() == operand.record_index()
+                    && (identity.resolved_edge_slot.is_some()
+                        || !identity.resolved_edge_slots.is_empty())
+            })
+        {
+            continue;
+        }
         let id = crate::ids::history_input_edge_id(
             &crate::ids::feature_input_prefix(feature, state_id),
             edge.slot,
