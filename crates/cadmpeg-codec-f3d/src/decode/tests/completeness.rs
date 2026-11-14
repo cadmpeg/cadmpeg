@@ -2,12 +2,11 @@
 //! Completeness predicates for projected design feature definitions.
 
 use super::super::feature_definition_is_incomplete;
+use cadmpeg_ir::features::surfaces::UntrimLoops;
 
 #[test]
 fn surface_untrim_completeness_tracks_faces_loops_and_extension_independently() {
-    use cadmpeg_ir::features::{
-        EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, UntrimLoops,
-    };
+    use cadmpeg_ir::features::{EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation};
     let faces = FaceSelection::Faces(vec![
         cadmpeg_ir::ids::FaceId::mint("synthetic:test:face#1").unwrap()
     ]);

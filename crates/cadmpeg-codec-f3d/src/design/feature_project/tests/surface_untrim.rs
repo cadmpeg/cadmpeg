@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_ir::features::surfaces::UntrimLoops;
 
 use crate::design::feature_project::surface_untrim::project_surface_untrim;
 use crate::loss::F3dLossCode;
@@ -9,9 +10,7 @@ use crate::records::feature::surface_ops::{
     DesignSurfaceUntrimLoops, DesignSurfaceUntrimOperation,
 };
 use crate::records::topology::construction::DesignConstructionOperandGroup;
-use cadmpeg_ir::features::{
-    EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, UntrimLoops,
-};
+use cadmpeg_ir::features::{EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 
 const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:scope#40";

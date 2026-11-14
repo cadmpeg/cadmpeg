@@ -885,8 +885,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !face_selection_is_resolved(faces)
                 || extension.is_none()
                 || match loops {
-                    cadmpeg_ir::features::UntrimLoops::Unresolved => true,
-                    cadmpeg_ir::features::UntrimLoops::Selected { edges } => !edge_selection_is_resolved(edges),
+                    cadmpeg_ir::features::surfaces::UntrimLoops::Unresolved => true,
+                    cadmpeg_ir::features::surfaces::UntrimLoops::Selected { edges } => !edge_selection_is_resolved(edges),
                     _ => false,
                 }
         }
@@ -1872,7 +1872,7 @@ fn design_projection_gaps(
                 faces, loops, ..
             }) => {
                 face_selection(faces);
-                if let cadmpeg_ir::features::UntrimLoops::Selected { edges } = loops {
+                if let cadmpeg_ir::features::surfaces::UntrimLoops::Selected { edges } = loops {
                     edge_selection(edges);
                 }
             }

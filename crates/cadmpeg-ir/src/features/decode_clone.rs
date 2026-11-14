@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity rewrite implementations for feature records.
 
+use super::surfaces::UntrimLoops;
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
     BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
@@ -23,7 +24,7 @@ use super::{
     SketchProfileRegions, SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool,
     SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
     ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
-    UntrimLoops, VertexSelection,
+    VertexSelection,
 };
 
 rewrite_enum!(AngularTermination, []; {

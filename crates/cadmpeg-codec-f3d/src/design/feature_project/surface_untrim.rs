@@ -8,9 +8,8 @@ use crate::records::topology::{
     body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
     face::DesignFaceOperand,
 };
-use cadmpeg_ir::features::{
-    EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, UntrimLoops,
-};
+use cadmpeg_ir::features::surfaces::UntrimLoops;
+use cadmpeg_ir::features::{EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 
 fn scope_group<'a>(

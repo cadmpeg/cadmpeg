@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 
 #[test]
 fn surface_untrim_requires_resolved_faces_loops_and_distance() {
-    use cadmpeg_ir::features::UntrimLoops;
+    use cadmpeg_ir::features::surfaces::UntrimLoops;
     let face = FaceSelection::Faces(vec![
         cadmpeg_ir::ids::FaceId::mint("synthetic:test:face#1").unwrap()
     ]);

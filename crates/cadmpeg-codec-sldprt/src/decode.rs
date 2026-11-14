@@ -1726,8 +1726,8 @@ pub(crate) fn append_design_losses(
                     incomplete_face_selection(faces)
                         || extension.is_none()
                         || match loops {
-                            cadmpeg_ir::features::UntrimLoops::Unresolved => true,
-                            cadmpeg_ir::features::UntrimLoops::Selected { edges } => {
+                            cadmpeg_ir::features::surfaces::UntrimLoops::Unresolved => true,
+                            cadmpeg_ir::features::surfaces::UntrimLoops::Selected { edges } => {
                                 incomplete_edge_selection(edges)
                             }
                             _ => false,

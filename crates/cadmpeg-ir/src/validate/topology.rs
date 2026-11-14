@@ -3443,7 +3443,7 @@ fn check_feature_references(
             }
             FeatureOperation::UntrimSurface { faces, loops, .. } => {
                 face_selections.push(faces);
-                if let crate::features::UntrimLoops::Selected { edges } = loops {
+                if let crate::features::surfaces::UntrimLoops::Selected { edges } = loops {
                     edge_selections.push(edges);
                 }
             }
