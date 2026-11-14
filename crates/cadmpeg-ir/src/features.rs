@@ -122,8 +122,7 @@ impl FinitePoint3 {
         z: 0.0,
     });
 
-    /// The point with three finite coordinates. Every coordinate is finite,
-    /// so the point is admitted without a check.
+    /// The point with three finite coordinates. Every coordinate is finite, so the point is admitted without a check.
     #[must_use]
     pub const fn from_coordinates(x: FiniteReal, y: FiniteReal, z: FiniteReal) -> Self {
         Self(Point3 {
@@ -133,8 +132,7 @@ impl FinitePoint3 {
         })
     }
 
-    /// Reflect through the model origin. Negation keeps every coordinate
-    /// finite, so the result stays admitted.
+    /// Reflect through the model origin. Negation keeps every coordinate finite, so the result stays admitted.
     #[must_use]
     pub fn negated(self) -> Self {
         Self(Point3::new(-self.0.x, -self.0.y, -self.0.z))
@@ -189,8 +187,7 @@ impl FiniteVector3 {
         z: 0.0,
     });
 
-    /// The vector with three finite components. Every component is finite,
-    /// so the vector is admitted without a check.
+    /// The vector with three finite components. Every component is finite, so the vector is admitted without a check.
     #[must_use]
     pub const fn from_components(x: FiniteReal, y: FiniteReal, z: FiniteReal) -> Self {
         Self(Vector3 {
@@ -240,8 +237,7 @@ checked_feature_geometry!(
 );
 
 impl From<UnitVector3> for FiniteVector3 {
-    /// Carry an admitted unit direction as a finite displacement. Its
-    /// components are finite, so no admission can refuse it.
+    /// Carry an admitted unit direction as a finite displacement. Its components are finite, so no admission can refuse it.
     fn from(value: UnitVector3) -> Self {
         Self(*value.as_raw())
     }
@@ -890,8 +886,7 @@ impl FeatureCircularArc {
         ))
     }
 
-    /// Build an arc from checked parts. The argument types state the whole
-    /// arc contract, so nothing is checked again.
+    /// Build an arc from checked parts. The argument types state the whole arc contract, so nothing is checked again.
     #[must_use]
     pub const fn from_parts(
         center: FinitePoint3,
