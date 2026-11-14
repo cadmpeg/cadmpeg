@@ -20,6 +20,7 @@ pub(crate) enum MeshOperationKind {
     Smooth,
     Shell,
     ReverseNormals,
+    Remove,
 }
 
 impl MeshOperationKind {
@@ -32,6 +33,7 @@ impl MeshOperationKind {
             "MeshSmooth" => Self::Smooth,
             "MeshShell" => Self::Shell,
             "MeshReverseNormals" => Self::ReverseNormals,
+            "MeshRemove" => Self::Remove,
             _ => return None,
         })
     }
@@ -68,6 +70,7 @@ pub(crate) enum MeshOperationFields {
         thickness_owner: u32,
     },
     ReverseNormals,
+    Remove,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -250,11 +253,16 @@ pub(crate) fn read_scope(
                 .unwrap_or(0),
         },
         MeshOperationKind::ReverseNormals => MeshOperationFields::ReverseNormals,
+        MeshOperationKind::Remove => MeshOperationFields::Remove,
     };
     let mut output_geometry = None;
     let mut input_geometry = 0;
     let mut source_group = 0;
     let tail_error = (|| {
+        if matches!(fields, MeshOperationFields::Remove) {
+            source_group = cursor.reference("source group reference")?;
+            return Ok(());
+        }
         output_geometry = cursor.optional_reference("output geometry reference")?;
         input_geometry = cursor.reference("input geometry reference")?;
         cursor.expect_u32("tail-word-after-input-geometry", 0)?;
@@ -332,12 +340,18 @@ impl<'a> MeshOperationRecords<'a> {
             MeshOperationKind::Smooth => ("F84CD988-9696-458D-8AF3-795D12E6B9EF", 2),
             MeshOperationKind::Shell => ("1514CDB8-BB81-4895-A953-7B12F4504F99", 2),
             MeshOperationKind::ReverseNormals => ("4AB7A6BD-C40C-4C44-B7CA-0D415B6E4412", 0),
+            MeshOperationKind::Remove => ("57A2E341-A23A-469D-B41D-59B57A9AD8B8", 0),
+        };
+        let base = if matches!(kind, MeshOperationKind::Remove) {
+            "63A5A106-D239-4D6B-A96B-319CA9B9BA6A"
+        } else {
+            "90B8D2C6-05BB-4D0F-89EF-83AAC46CA1FF"
         };
         self.record(
             scope_index,
             "operation scope record",
             guid,
-            "90B8D2C6-05BB-4D0F-89EF-83AAC46CA1FF",
+            base,
             "Fusion",
             Some(version),
         )

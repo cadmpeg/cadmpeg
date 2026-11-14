@@ -1596,6 +1596,25 @@ Unstated regions:
 
 - `0..11` (11 B): Indexed header.
 
+## `mesh_remove_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 108 B
+
+Flag-00 offsets. Flag-01 inserts a four-byte prefix word and shifts the later fields.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 11 | `source_group` | `bytes[11]` | little | spec | a marked source-group reference at offset 21 |
+| 32 | 4 | `guid_length` | `u32` | little | spec | a u32 scope-GUID length of `36` at offset 32 · value `36` |
+| 36 | 72 | `scope_guid` | `bytes[72]` | little | spec | the 36 UTF-16LE scope-GUID code units at offset 36 |
+
+Unstated regions:
+
+- `0..21` (21 B): Indexed header and mesh scope prefix.
+
 ## `mesh_operation_geometry_tail`
 
 Spec §3.1 · layout: byte offsets · size: 38 B

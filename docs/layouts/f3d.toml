@@ -4951,6 +4951,42 @@ anchor = "the body reference starts at offset 99"
 
 
 [[record]]
+name = "mesh_remove_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A `MeshRemove` scope has type GUID"
+size = 108
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations.rs"]
+note = "Flag-00 offsets. Flag-01 inserts a four-byte prefix word and shifts the later fields."
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "Indexed header and mesh scope prefix."
+
+[[record.field]]
+name = "source_group"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked source-group reference at offset 21"
+
+[[record.field]]
+name = "guid_length"
+offset = 32
+type = "u32"
+value = 36
+source = "spec"
+anchor = "a u32 scope-GUID length of `36` at offset 32"
+
+[[record.field]]
+name = "scope_guid"
+offset = 36
+type = "bytes[72]"
+source = "spec"
+anchor = "the 36 UTF-16LE scope-GUID code units at offset 36"
+
+[[record]]
 name = "mesh_operation_geometry_tail"
 kind = "byte"
 section = "3.1"
