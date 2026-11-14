@@ -797,6 +797,7 @@ fn exact_typed_zero_body_base_feature(
     }
     Some(DesignBaseFeatureConstruction::ResultBodies {
         null_reference_flag_offset: None,
+        repeats_body_suffixes: false,
         bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
         metadata_record,
         metadata_record_offset: scope.byte_offset()
@@ -1138,6 +1139,7 @@ fn exact_wide_zero_body_base_feature(
     }
     Some(DesignBaseFeatureConstruction::ResultBodies {
         null_reference_flag_offset: None,
+        repeats_body_suffixes: false,
         bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
         metadata_record,
         metadata_record_offset: scope.byte_offset()
@@ -1220,6 +1222,7 @@ fn exact_wide_shifted_zero_body_base_feature(
     }
     Some(DesignBaseFeatureConstruction::ResultBodies {
         null_reference_flag_offset: None,
+        repeats_body_suffixes: false,
         bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
         metadata_record,
         metadata_record_offset: scope.byte_offset()
@@ -1261,6 +1264,7 @@ pub(super) fn exact_base_feature_construction(
         if scope.frame_length() == 267 {
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
                 null_reference_flag_offset: None,
+                repeats_body_suffixes: false,
                 bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
                 metadata_record: View::u32_le_at(
                     bytes,
@@ -1319,6 +1323,7 @@ pub(super) fn exact_base_feature_construction(
             }
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
                 null_reference_flag_offset: None,
+                repeats_body_suffixes: false,
                 bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
                 metadata_record,
                 metadata_record_offset: scope.byte_offset()
@@ -1407,6 +1412,7 @@ pub(super) fn exact_base_feature_construction(
             }
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
                 null_reference_flag_offset: None,
+                repeats_body_suffixes: false,
                 bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
                 metadata_record,
                 metadata_record_offset: scope.byte_offset()
@@ -1555,9 +1561,13 @@ pub(super) fn exact_base_feature_construction(
             }
             cursor += null_count::LEN;
         }
+        let first_repeat = View::u32_le_at(bytes, cursor + compact_entry::BODY_ENTITY_SUFFIX)?;
+        let repeats_body_suffixes = ordinary_metadata_width.is_some()
+            && first_repeat != references.first()?.value
+            && u64::from(first_repeat) == entities.first()?.value;
         let mut repeated_reference_fields = Vec::new();
         for ordinal in 0..body_count {
-            let expected = if compact {
+            let expected = if compact || repeats_body_suffixes {
                 u32::try_from(entities[ordinal].value).ok()?
             } else {
                 references[ordinal].value
@@ -1633,6 +1643,7 @@ pub(super) fn exact_base_feature_construction(
         let first = first?;
         admitted.then_some(Ok(DesignBaseFeatureConstruction::ResultBodies {
             null_reference_flag_offset,
+            repeats_body_suffixes,
             bodies: DesignBaseFeatureResults::WithRepeatedFields { first, rest },
             metadata_record,
             metadata_record_offset,

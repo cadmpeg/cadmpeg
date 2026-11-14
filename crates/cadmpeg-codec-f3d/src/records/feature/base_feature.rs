@@ -103,6 +103,9 @@ pub(crate) enum DesignBaseFeatureConstruction {
         /// Byte offset of the first trailing-field byte of the marked null
         /// reference when that byte is `1`.
         null_reference_flag_offset: Option<u64>,
+        /// The ordinary repeated run holds the body suffixes in place of the
+        /// passive references.
+        repeats_body_suffixes: bool,
     },
     /// Direct-modeling body-reference envelope used by the class-365/class-262 and
     /// class-377/class-259 forms.
@@ -198,12 +201,14 @@ impl Clone for DesignBaseFeatureConstruction {
                 metadata_record_offset,
                 metadata_field,
                 null_reference_flag_offset,
+                repeats_body_suffixes,
             } => Self::ResultBodies {
                 bodies: bodies.clone(),
                 metadata_record: *metadata_record,
                 metadata_record_offset: *metadata_record_offset,
                 metadata_field: metadata_field.clone(),
                 null_reference_flag_offset: *null_reference_flag_offset,
+                repeats_body_suffixes: *repeats_body_suffixes,
             },
             Self::BodyBasedOnFaces {
                 body,
@@ -322,6 +327,8 @@ impl Serialize for DesignBaseFeatureConstruction {
                 result_fields: ResultBodyColumn<'a, NativeBytes<[u8; 6]>>,
                 #[serde(skip_serializing_if = "Option::is_none")]
                 null_reference_flag_offset: Option<u64>,
+                #[serde(skip_serializing_if = "std::ops::Not::not")]
+                repeats_body_suffixes: bool,
             },
             BodyBasedOnFaces {
                 body_entity_suffixes: [u64; 1],
@@ -396,6 +403,7 @@ impl Serialize for DesignBaseFeatureConstruction {
                 metadata_record_offset,
                 metadata_field,
                 null_reference_flag_offset,
+                repeats_body_suffixes,
             } => BorrowedWire::ResultBodies {
                 body_entity_suffixes: ResultBodyColumn {
                     bodies,
@@ -438,6 +446,7 @@ impl Serialize for DesignBaseFeatureConstruction {
                     value: |row| row.result.field.into(),
                 },
                 null_reference_flag_offset: *null_reference_flag_offset,
+                repeats_body_suffixes: *repeats_body_suffixes,
             },
             Self::BodyBasedOnFaces {
                 body,
@@ -650,6 +659,10 @@ enum DesignBaseFeatureConstructionWire {
             deserialize_with = "deserialize_null_reference_flag_offset"
         )]
         null_reference_flag_offset: Option<u64>,
+        /// The ordinary repeated run holds the body suffixes in place of the
+        /// passive references.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        repeats_body_suffixes: bool,
     },
     /// Direct-modeling body-reference envelope used by the class-365/class-262 and
     /// class-377/class-259 forms.
@@ -817,6 +830,7 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                 result_record_offsets,
                 result_fields,
                 null_reference_flag_offset,
+                repeats_body_suffixes,
             } => {
                 let count = body_entity_suffixes.len();
                 for (field, len) in [
@@ -890,6 +904,7 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                     metadata_record_offset,
                     metadata_field,
                     null_reference_flag_offset,
+                    repeats_body_suffixes,
                 }
             }
             DesignBaseFeatureConstructionWire::BodyBasedOnFaces {
@@ -1130,6 +1145,7 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                 metadata_record_offset,
                 metadata_field,
                 null_reference_flag_offset,
+                repeats_body_suffixes,
             } => {
                 let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect();
                 let body_entity_suffix_offsets =
@@ -1176,6 +1192,7 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                     result_record_offsets,
                     result_fields,
                     null_reference_flag_offset,
+                    repeats_body_suffixes,
                 }
             }
             DesignBaseFeatureConstruction::BodyBasedOnFaces {

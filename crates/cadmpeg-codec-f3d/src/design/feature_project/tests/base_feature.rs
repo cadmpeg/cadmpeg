@@ -43,6 +43,7 @@ fn base_feature(null_reference_flag_offset: Option<u64>) -> DesignParameterScope
             metadata_record_offset: 82,
             metadata_field: vec![0; 6].into(),
             null_reference_flag_offset,
+            repeats_body_suffixes: true,
         });
     }
     scope

@@ -816,9 +816,10 @@ fn null_reference_flag(bytes: &[u8], scope: &DesignParameterScope) -> (bool, Opt
 }
 
 /// One-body ordinary form: entity and passive-reference runs, the marked null
-/// reference at offset 54, the repeated run, the metadata record with a
-/// six-byte field, and the result run; the kind starts at `169 + 52`.
-fn ordinary_one_body_frame() -> (Vec<u8>, DesignParameterScope) {
+/// reference at offset 54, the repeated run of `repeated` at offset 69, the
+/// metadata record with a six-byte field, and the result run; the kind starts
+/// at `169 + 52`.
+fn ordinary_one_body_frame_repeating(repeated: u32) -> (Vec<u8>, DesignParameterScope) {
     let kind_offset = 169 + 52;
     let frame_length = kind_offset + 110;
     let mut bytes = vec![0u8; frame_length];
@@ -831,7 +832,7 @@ fn ordinary_one_body_frame() -> (Vec<u8>, DesignParameterScope) {
     bytes[54] = 1;
     bytes[65..69].copy_from_slice(&1u32.to_le_bytes());
     bytes[69] = 1;
-    bytes[70..74].copy_from_slice(&215u32.to_le_bytes());
+    bytes[70..74].copy_from_slice(&repeated.to_le_bytes());
     bytes[81] = 1;
     bytes[82..90].copy_from_slice(&206u64.to_le_bytes());
     bytes[96..100].copy_from_slice(&1u32.to_le_bytes());
@@ -858,6 +859,27 @@ fn ordinary_one_body_frame() -> (Vec<u8>, DesignParameterScope) {
         })
         .unwrap();
     (bytes, scope)
+}
+
+fn ordinary_one_body_frame() -> (Vec<u8>, DesignParameterScope) {
+    ordinary_one_body_frame_repeating(215)
+}
+
+#[test]
+fn an_ordinary_frame_repeats_its_passive_references_or_its_body_suffixes() {
+    for (repeated, expected) in [(215, Some(false)), (209, Some(true)), (300, None)] {
+        let (bytes, scope) = ordinary_one_body_frame_repeating(repeated);
+        let repeats = exact_base_feature_construction(&bytes, &scope)
+            .unwrap()
+            .map(|construction| match construction {
+                DesignBaseFeatureConstruction::ResultBodies {
+                    repeats_body_suffixes,
+                    ..
+                } => repeats_body_suffixes,
+                _ => panic!("ordinary frame reads result bodies"),
+            });
+        assert_eq!(repeats, expected, "repeated {repeated}");
+    }
 }
 
 #[test]
