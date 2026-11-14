@@ -1548,7 +1548,7 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Conflict.** None.
 
-**Note.** None.
+**Note.** For a non-operand-list Combine stored as Join with kept tools and no deleted bodies, the history binding assumes Cut and reports `feature.combine-kept-tools-cut-assumed`. The native operation remains stored in the scope.
 
 ### DR-561. Destination of a Combine new-component result
 
@@ -2196,7 +2196,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** None.
 
-### DR-622. Counted Shell prefix byte and partial envelopes
+### DR-625. Counted Shell prefix byte and partial envelopes
 
 **Question.** Which option does the counted Shell prefix byte select, and which fields preserve the wall-slot direction when that byte is nonzero or the envelope tail is incomplete?
 
@@ -2208,7 +2208,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** Partial Shell projection reports `feature.shell-counted-control-assumed` for reading the byte as a separate prefix field, `feature.shell-slot-direction-assumed` for the nonzero form's inside-first reading and `feature.shell-envelope-assumed` when a unique partial prefix supplies wall data. Unresolved values and selections remain in `shell:source` with their references and byte locations.
 
-### DR-623. Simultaneous Shell face and body groups
+### DR-626. Simultaneous Shell face and body groups
 
 **Question.** How do the removed-face group and the target-body group jointly select a Shell operation when its prefix names both groups?
 
@@ -2854,3 +2854,15 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The unresolved members retain their native identities and report `history.edge-midpoints-unresolved`. DR-164 tracks selectors over populated lanes; DR-224 tracks incomplete transition proofs.
+
+### DR-554. Interior null timeline items
+
+**Question.** Does a null item before a non-null reference occupy a timeline position?
+
+**Known.** A counted feature-timeline run can contain a one-byte null before another local reference. The local references retain their serialized order.
+
+**Need.** Controlled saves with a removed or suppressed timeline item and a visible timeline, including a save with a null between two readable references.
+
+**Conflict.** None.
+
+**Note.** The decoder assumes the null names no item and reports `feature.timeline-null-slot-assumed`.
