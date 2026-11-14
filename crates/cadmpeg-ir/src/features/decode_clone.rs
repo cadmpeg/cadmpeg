@@ -3,11 +3,12 @@
 
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
-    BodyMembers, BodySelection, CoilConstruction, CoilPlacement, CoilResult, CombineOperands,
-    ComponentTransferMode, DatumPlaneReference, DatumPointConstruction, DistinctMembers,
-    DraftAnchor, DraftPull, DraftSecondSide, EdgeSelection, ExtrudeDirection, ExtrudeExtent,
-    ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion,
-    FaceSelection, FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
+    BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
+    CoilConstruction, CoilPlacement, CombineOperands, ComponentTransferMode, DatumPlaneReference,
+    DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull, DraftSecondSide,
+    EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+    ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion, FaceSelection,
+    FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
     FilledSurfaceContinuity, FilledSurfaceContinuityState, GeneratedBodyRef, GeneratedCurveRef,
     GeneratedEdgeRef, GeneratedFaceRef, GeneratedSweepSection, GeneratedVertexRef,
     GeometryImportPath, HelicalSweepConstruction, InsertedBodies, InsertedComponents,
@@ -19,9 +20,10 @@ use super::{
     SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding,
     SketchPointSelection, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion,
-    SketchProfileRegions, SplitBodyTool, SplitFacePlanes, SplitFaceTool, SurfaceBoundary,
-    SweepGuideRail, SweepOrientation, SweepSection, SweepShape, ThreePointSelection, TreeChildren,
-    TrimBodyOperands, TrimCellSelection, TrimRegion, VertexSelection,
+    SketchProfileRegions, SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool,
+    SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
+    ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
+    VertexSelection,
 };
 
 rewrite_enum!(AngularTermination, []; {
@@ -38,6 +40,11 @@ rewrite_enum!(AngularTermination, []; {
 });
 
 rewrite_record!(AxisAngle, []; { origin, direction, angle });
+rewrite_record!(CapturedComponentPosition, []; { selector, occurrence, transform });
+rewrite_enum!(CapturedPositionTransform, []; {
+    Affine { transform },
+    Native { scope, row },
+});
 
 rewrite_enum!(BinderConstruction, []; {
     Shape { trace_support },
@@ -76,7 +83,7 @@ rewrite_enum!(CoilPlacement, []; {
     Native { native_ref },
 });
 
-rewrite_enum!(CoilResult, []; {
+rewrite_enum!(SolidFeatureResult, []; {
     NewBody {  },
     Boolean { operation, targets },
 });
@@ -173,6 +180,7 @@ rewrite_enum!(FaceMotion, []; {
     Offset { distance },
     Translate { direction, distance },
     Rotate { axis_origin, axis_dir, angle },
+    Transform { transform },
 });
 
 rewrite_enum!(FaceSelection, []; {
@@ -196,10 +204,13 @@ rewrite_enum!(FeatureOperation, []; {
     TreeNode { role, children },
     BaseFeature { bodies },
     MeshImport { tessellations },
+    MeshSection { source, plane, sketch },
+    MeshModify { source, modification },
     InsertBodies { bodies },
     InsertComponent { occurrence },
     InsertComponents { components },
     ComponentTransfer { mode, occurrence, component, source_owner, target_owner, source_transform, target_transform },
+    CapturedComponentPositions { positions },
     AssemblyJoint { joint },
     Form { cages },
     CosmeticThread { face, standard, designation, diameter, pitch, modeled, extent },
@@ -263,10 +274,11 @@ rewrite_enum!(FeatureOperation, []; {
     RuledBetweenCurves { first, second, orientation },
     SectionShape { operands, approximate },
     MirrorShape { source, plane_origin, plane_normal, plane_reference },
-    Thicken { faces, thickness, side },
+Thicken { faces, thickness, side, result, tangent_chain },
     OffsetSurface { faces, distance },
     KnitSurface { faces, merge_entities, create_solid, gap_tolerance },
     SewBodies { bodies, gap_tolerance },
+    UnstitchFaces { faces },
     FilledSurface { boundary, support_faces, continuity, merge_result, interior_constraints, reverse_normal },
     TrimSurface { faces, tool, keep },
     ExtendSurface { faces, distance, method },

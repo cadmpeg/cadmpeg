@@ -6,6 +6,78 @@ use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
 
 #[test]
+fn complete_face_motion_preserves_its_literal_affine_wire() {
+    use crate::features::FaceMotion;
+    use crate::transform::Transform;
+
+    let motion = FaceMotion::Transform {
+        transform: Transform::affine([[0., -1., 0., 2.5], [1., 0., 0., -5.], [0., 0., 1., 1.25]])
+            .unwrap(),
+    };
+    let expected = serde_json::json!({
+        "kind": "transform",
+        "transform": [
+            [0.0, -1.0, 0.0, 2.5],
+            [1.0, 0.0, 0.0, -5.0],
+            [0.0, 0.0, 1.0, 1.25]
+        ]
+    });
+    assert_eq!(serde_json::to_value(&motion).unwrap(), expected);
+    assert_eq!(
+        serde_json::from_value::<FaceMotion>(expected).unwrap(),
+        motion
+    );
+    let wire = serde_json::to_string(&motion).unwrap();
+    assert_eq!(serde_json::from_str::<FaceMotion>(&wire).unwrap(), motion);
+}
+
+#[test]
+fn complete_face_motion_rejects_malformed_or_nonfinite_wire() {
+    use crate::features::FaceMotion;
+    for wire in [
+        r#"{"kind":"transform","transform":[[1,0,0,0],[0,1,0,0]]}"#,
+        r#"{"kind":"transform","transform":[[1,0,0,0],[0,1,0,0],[0,0,1,1e999]]}"#,
+        r#"{"kind":"transform","transform":[[1,0,0,0],[0,1,0,0],[0,0,1,0]],"distance":1}"#,
+        r#"{"kind":"transform"}"#,
+    ] {
+        assert!(serde_json::from_str::<FaceMotion>(wire).is_err());
+    }
+}
+
+#[test]
+fn complete_face_motion_survives_identity_rewrite() {
+    use crate::features::FaceMotion;
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+    use crate::transform::Transform;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let motion = FaceMotion::Transform {
+        transform: Transform::affine([[0., -1., 0., 2.5], [1., 0., 0., -5.], [0., 0., 1., 1.25]])
+            .unwrap(),
+    };
+    let arena = DecodeArena::new();
+    let (context, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut map = IdentityMap::new(|source: &str| Ok(source.to_owned()));
+    assert_eq!(
+        motion
+            .clone()
+            .rewrite_identities(&context, &mut map)
+            .unwrap(),
+        motion
+    );
+    let mut references = Vec::new();
+    motion
+        .visit_identity_references(&context, &mut |reference| {
+            references.push(reference.to_owned());
+            Ok(())
+        })
+        .unwrap();
+    assert!(references.is_empty());
+    map.finish().unwrap();
+}
+
+#[test]
 fn a_standalone_feature_wire_declares_no_regeneration_parent() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
@@ -1875,4 +1947,22 @@ fn component_transfer_omits_unresolved_operands_and_refuses_their_null_spelling(
             .to_string();
         assert!(error.contains(key), "{error}");
     }
+}
+
+#[test]
+fn unstitch_faces_carries_its_face_selection_on_the_wire() {
+    use crate::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+
+    let definition = FeatureDefinition::Operation(FeatureOperation::UnstitchFaces {
+        faces: FaceSelection::Native("native:face-group".into()),
+    });
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(wire["definition"], "unstitch_faces");
+    assert_eq!(
+        serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+    let mut extended = wire;
+    extended["heal"] = serde_json::json!(false);
+    assert!(serde_json::from_value::<FeatureDefinition>(extended).is_err());
 }

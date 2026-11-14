@@ -15,6 +15,7 @@ mod emboss;
 mod extrude_operands;
 mod path_pattern;
 mod sheet_metal_settings;
+mod sketch_scope;
 mod xref;
 
 use xref::validate_xref_placement_sources;
@@ -1884,56 +1885,33 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         let group = ctx
             .operand_groups_by_index
             .get(&(native_stream, image.target_group_record_index));
-        let operand = group.and_then(|group| {
-            let member = group.members().first()?.value;
-            ctx.native
-                .design_body_recipe_operands
+        let neutral_is_valid = !ctx.holds_design_intent() || scope.is_some_and(|scope| {
+            let expected_faces = crate::design::decode::decal::DecalTargets {
+                groups: &ctx.native.design_construction_operand_groups,
+                operands: &ctx.native.design_body_recipe_operands,
+            }
+            .faces(scope, image.target_group_record_index)
+            .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(scope.id.clone()));
+            ctx.ir
+                .model
+                .features
                 .iter()
-                .find(|operand| {
-                    design_stream(&operand.id) == native_stream
-                        && operand.scope_record_index == image.scope_record_index()
-                        && operand.record_index() == member
-                        && operand.owner.group() == Some((group.record_index, 0))
+                .any(|feature| {
+                    feature.native_ref.as_deref() == Some(scope.id.as_str()) &&
+                    matches!(
+                        feature.evaluation.definition(),
+                        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Decal {
+                            asset,
+                            faces,
+                            mapping: cadmpeg_ir::features::DecalMapping::FitToFaces,
+                            opacity: None,
+                        }) if faces == &expected_faces
+                            && ctx.ir.model.assets.iter().any(|candidate| {
+                                candidate.id == *asset
+                                    && candidate.name.as_ref().map(cadmpeg_core::text::NonBlankString::as_str) == Some(image.asset.name())
+                            })
+                    )
                 })
-        });
-        let projected =
-            if image.mapping_mode == crate::records::decal::DesignDecalMappingMode::FitToFaces {
-                if let Some(operand) = operand {
-                    let mut faces = (operand
-                        .references()
-                        .iter()
-                        .flat_map(|reference| reference.candidate_faces.iter()))
-                    .cloned()
-                    .collect::<Vec<_>>();
-                    faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-                    faces.dedup();
-                    (!faces.is_empty()).then_some((operand, faces))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-        let neutral_is_valid = projected.is_none_or(|(operand, expected_faces)| {
-            scope.is_some_and(|scope| {
-                ctx.ir.model.features.iter().any(|feature| {
-                    feature.native_ref.as_deref() == Some(scope.id.as_str())
-                        && matches!(
-                            feature.evaluation.definition(),
-                            cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Decal {
-                                asset,
-                                faces: cadmpeg_ir::features::FaceSelection::Resolved { faces, native },
-                                mapping: cadmpeg_ir::features::DecalMapping::FitToFaces,
-                                opacity: None,
-                            }) if faces == &expected_faces
-                                && native == &operand.id
-                                && ctx.ir.model.assets.iter().any(|candidate| {
-                                    candidate.id == *asset
-                                        && candidate.name.as_ref().map(cadmpeg_core::text::NonBlankString::as_str) == Some(image.asset.name())
-                                })
-                        )
-                })
-            })
         });
         let scope_valid = scope.is_some_and(|scope| {
             scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal
@@ -1956,9 +1934,7 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             && group.is_some_and(|group| {
                 group.scope_record_index == image.scope_record_index()
                     && group.role() == TARGET_ROLE
-                    && group.members().len() == 1
             })
-            && operand.is_some()
             && neutral_is_valid;
         if !valid {
             push_constant_finding(
@@ -2168,7 +2144,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let entities_by_suffix = &ctx.entities_by_suffix;
-    let placements_by_scope = &ctx.placements_by_scope;
     let mut scope_indices = HashSet::new();
     let mut stream_types_by_stream = std::collections::HashMap::new();
     for scope in &native.design_parameter_scopes {
@@ -3051,7 +3026,24 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
         };
         let component_insert_link = match scope.component_insert_construction() {
-            None => true,
+            None => scope.component_insert_placement().is_none_or(|placement| {
+                scope.reference_members().len() == 1
+                    && match (
+                        scope.canonical_name_frame_length(),
+                        placement.matrix.as_ref(),
+                    ) {
+                        (Some(272 | 276), None) => true,
+                        (Some(frame @ (400 | 404)), Some(matrix)) => scope
+                            .byte_offset()
+                            .checked_add(
+                            u64_from_index(
+                                crate::layout::component_insert_matrix_scope_400_prefix::TRANSFORM,
+                            ) + frame
+                                - 400,
+                        ) == Some(matrix.offset),
+                        _ => false,
+                    }
+            }),
             Some(construction) => {
                 let relation =
                     records_by_index.get(&(native_stream, construction.relation_record_index));
@@ -4417,8 +4409,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && joint_origin_link
             && work_point_link
             && work_plane_link
-            && (scope.sketch_entity().is_none()
-                || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
+            && sketch_scope::placement_link(ctx, scope)
             && unique_index;
         if !valid {
             push_constant_finding(
@@ -5318,9 +5309,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         DesignOperandRole::BODIES_B | DesignOperandRole::ROLE_0X43
                     ) && group.extrude_role().is_none()
                 }
-                Some(_) => false,
-                None if scope.kind()
-                    == crate::records::feature::scope::DesignFeatureKind::Emboss =>
+                Some(design::DesignFeatureFamily::Emboss) =>
                 {
                     scope.emboss_operand_construction().is_some_and(|construction| {
                         (group.record_index == construction.profile_group.value
@@ -5329,6 +5318,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 && group.role() == DesignOperandRole::ROLE_0X10)
                     }) && group.extrude_role().is_none()
                 }
+                Some(_) => false,
                 None if matches!(
                     scope.kind(),
                     crate::records::feature::scope::DesignFeatureKind::RemoveBody
@@ -5356,6 +5346,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     crate::records::feature::scope::DesignFeatureKind::MoveFace
                         | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
+                        | crate::records::feature::scope::DesignFeatureKind::UnStitch
                 ) =>
                 {
                     group.role() == DesignOperandRole::ROLE_0X10 && group.extrude_role().is_none()
@@ -5377,6 +5368,14 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     == crate::records::feature::scope::DesignFeatureKind::Decal =>
                 {
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
+                }
+                None if scope.kind()
+                    == crate::records::feature::scope::DesignFeatureKind::Align =>
+                {
+                    matches!(
+                        group.role(),
+                        DesignOperandRole::BODIES_A | DesignOperandRole::ROLE_0X5
+                    ) && group.extrude_role().is_none()
                 }
                 None if scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::BaseFlange =>
@@ -5412,7 +5411,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         | crate::records::feature::scope::DesignFeatureKind::MoveFace
                         | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
+                        | crate::records::feature::scope::DesignFeatureKind::UnStitch
                         | crate::records::feature::scope::DesignFeatureKind::Decal
+                        | crate::records::feature::scope::DesignFeatureKind::Align
                         | crate::records::feature::scope::DesignFeatureKind::BaseFlange
                         | crate::records::feature::scope::DesignFeatureKind::EdgeFlange
                         | crate::records::feature::scope::DesignFeatureKind::Hem
@@ -5862,22 +5863,38 @@ fn validate_fillet_sets(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 })
                 .is_some_and(|parameter| parameter.source_kind() == kind)
         };
-        let valid = list.sets.iter().all(|set| {
-            let law = match set.law {
-                DesignFilletSetLaw::Constant {
-                    radius_owner_record_index,
-                } => owned_kind(radius_owner_record_index, "Radius"),
-                DesignFilletSetLaw::Chordal {
-                    chord_length_owner_record_index,
-                } => owned_kind(chord_length_owner_record_index, "ChordLen"),
-            };
-            law && owned_kind(set.tangency_weight_owner_record_index, "TangencyWeight")
-                && scope
-                    .reference_members()
-                    .values()
-                    .any(|member| *member == set.group_record_index)
-        }) && design::design_feature_family(&scope.kind())
-            == Some(design::DesignFeatureFamily::Fillet);
+        let constant_frame = |set: &records::feature::fillet_set::DesignFilletSet| {
+            set.frame_length == 97
+                && matches!(
+                    set.law,
+                    records::feature::fillet_set::DesignFilletSetLaw::Constant { .. }
+                )
+        };
+        let flags_admitted = (list.form
+            != records::feature::fillet_set::DesignFilletSetListForm::Compact
+            || list.rolling_ball_corner)
+            && list
+                .sets
+                .iter()
+                .all(|set| set.curvature_continuity.is_some() == constant_frame(set));
+        let valid = flags_admitted
+            && list.sets.iter().all(|set| {
+                let law = match set.law {
+                    DesignFilletSetLaw::Constant {
+                        radius_owner_record_index,
+                    } => owned_kind(radius_owner_record_index, "Radius"),
+                    DesignFilletSetLaw::Chordal {
+                        chord_length_owner_record_index,
+                    } => owned_kind(chord_length_owner_record_index, "ChordLen"),
+                };
+                law && owned_kind(set.tangency_weight_owner_record_index, "TangencyWeight")
+                    && scope
+                        .reference_members()
+                        .values()
+                        .any(|member| *member == set.group_record_index)
+            })
+            && design::design_feature_family(&scope.kind())
+                == Some(design::DesignFeatureFamily::Fillet);
         if !valid {
             push_constant_finding(
                 findings,
@@ -7755,8 +7772,7 @@ fn validate_face_operands<'a>(
                                             && identity.class_tag == operand.class_tag
                                     })
                             }
-                            None if scope.kind()
-                                == crate::records::feature::scope::DesignFeatureKind::Emboss =>
+                            Some(design::DesignFeatureFamily::Emboss) =>
                             {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X10
@@ -7779,6 +7795,7 @@ fn validate_face_operands<'a>(
                                 crate::records::feature::scope::DesignFeatureKind::MoveFace
                                     | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                                     | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
+                                    | crate::records::feature::scope::DesignFeatureKind::UnStitch
                             ) =>
                             {
                                 group.is_some_and(|group| {

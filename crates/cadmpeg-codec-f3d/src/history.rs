@@ -2538,7 +2538,10 @@ pub(crate) fn bind_feature_body_selections(
                 break 'feature_edit;
             }
             if let FeatureDefinition::Operation(FeatureOperation::Coil {
-                result: cadmpeg_ir::features::CoilResult::Boolean { targets, .. },
+                result: cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. },
+                ..
+            } | FeatureOperation::Thicken {
+                result: Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }),
                 ..
             }) = definition
             {
@@ -3553,7 +3556,9 @@ pub(crate) fn bind_feature_face_selections(
                         operands,
                         &transition.topology.faces.updated,
                     );
-                    crate::design::feature_project::list_thicken_whole_bodies(faces, scope, groups);
+                    crate::design::feature_project::thicken::list_thicken_whole_bodies(
+                        faces, scope, groups,
+                    );
                     selection::bind_body_recipe_face_selection(
                         faces,
                         feature_id,
@@ -8517,6 +8522,7 @@ fn bind_historical_edge_operand<'a>(
             operand.recipe_structure.as_ref(),
             &operand.recipe_references,
             &operand.preceding_boundary_edge_slots,
+            &operand.transition_deleted_edge_slots,
             topology,
             topology_queries,
         ) {
@@ -8543,8 +8549,9 @@ pub(crate) fn inferred_edge_selection_note(
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct SideOneEdge {
     pub(crate) slot: i64,
-    /// Whether the edge bounds none of the recipe's candidate faces, so the
-    /// named faces alone select it.
+    /// Whether no proven rule selects the edge: it bounds none of the
+    /// recipe's candidate faces and the operation's transition does not
+    /// prove it, so the named faces alone select it.
     pub(crate) inferred: bool,
 }
 

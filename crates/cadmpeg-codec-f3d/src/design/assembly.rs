@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Project exact Design assembly alignments into neutral joints.
 
 use cadmpeg_core::decode::u64_from_index;
 
@@ -209,6 +208,9 @@ pub(crate) fn joint_placed_identity_occurrences<'a>(
             cadmpeg_ir::OperandContainer::Occurrence { occurrence, .. } => {
                 named.insert(occurrence);
             }
+            cadmpeg_ir::OperandContainer::External {
+                external_document: ExternalDocument::Missing {},
+            } => {}
             cadmpeg_ir::OperandContainer::External { external_document } => {
                 if !documents.contains(&external_document) {
                     documents.push(external_document);
@@ -887,6 +889,8 @@ pub(crate) fn project_assembly_joints_with_paths(
     let mut malformed_rest_joints = 0_usize;
     let mut native_angular_limits = 0_usize;
     let mut assumed_active = 0_usize;
+    let mut assumed_connector_operands = 0_usize;
+    let mut assumed_additional_owner_motion = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -894,6 +898,16 @@ pub(crate) fn project_assembly_joints_with_paths(
         let motion = scope_joint_motion(scope, stream, motions);
         match project_assembly_joint(scope, stream, &occurrences, scopes, inserts, motion, paths) {
             Ok(Some((mut joint, undecoded))) => {
+                if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble
+                    && scope.assembly_alignment().is_some_and(|alignment| {
+                        alignment.additional_owner_run.as_ref().is_some_and(|run| run.count.value != 0)
+                    })
+                {
+                    assumed_additional_owner_motion += 1;
+                }
+                if has_unqualified_assembly_connectors(scope) {
+                    assumed_connector_operands += 1;
+                }
                 if scope.assembly_alignment().is_some_and(|alignment| {
                     alignment
                         .operand_path_refs()
@@ -962,6 +976,19 @@ pub(crate) fn project_assembly_joints_with_paths(
         }
     }
     let mut losses = Vec::new();
+    if assumed_additional_owner_motion != 0 {
+        losses.push(F3dLossCode::AssemblyAdditionalOwnerMotionAssumed.note(format!(
+            "{assumed_additional_owner_motion} Design assembly relation(s) assume no extra neutral motion constraints from their counted owner runs; the decoded joint motion supplies the relation with a fixed fallback. Additional owner roles and values remain native, and source parameter expressions remain feature source properties."
+        )));
+    }
+    if assumed_connector_operands != 0 {
+        losses.push(F3dLossCode::AssemblyConnectorOperandsAssumed.note(format!(
+            "{assumed_connector_operands} Design assembly joint(s) use native scope identities and connector element paths with missing document containers; the operand context is assumed."
+        )));
+        losses.push(F3dLossCode::AssemblyMotionBindingAssumed.note(format!(
+            "{assumed_connector_operands} Design assembly joint(s) use adjacent decoded motion when available and otherwise a fixed relation; the scope-to-motion binding is assumed."
+        )));
+    }
     if partial_alignments != 0 {
         losses.push(F3dLossCode::AssemblyAlignmentPartial.note(format!(
             "{partial_alignments} Design assembly joint scope(s) were retained natively with partial alignment: joint motion binding, tail activation state or operand paths are unresolved."
@@ -1110,6 +1137,17 @@ fn turn_frame_y_to_z(mut rows: [[f64; 4]; 4]) -> [[f64; 4]; 4] {
     rows
 }
 
+fn has_unqualified_assembly_connectors(scope: &DesignParameterScope) -> bool {
+    scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble
+        && scope.assembly_alignment().is_some_and(|alignment| {
+            alignment.frame_sense.is_some()
+                && matches!(
+                    alignment.form,
+                    Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Frames { .. })
+                )
+        })
+}
+
 fn project_assembly_joint(
     scope: &DesignParameterScope,
     stream: &str,
@@ -1180,8 +1218,24 @@ fn project_assembly_joint(
                 None,
             )
         }
-        // A wide scope always qualifies its operands; frames without
-        // qualifiers are an unprojected joint, not an absent one.
+        Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Frames { frames })
+            if has_unqualified_assembly_connectors(scope) =>
+        {
+            (
+                frames.clone(),
+                frames.each_ref().map(|frame| {
+                    JointOperand::external(
+                        ExternalDocument::Missing {},
+                        scope.id.clone(),
+                        vec![format!(
+                            "construction-record#{}",
+                            frame.reference_record_index
+                        )],
+                    )
+                }),
+                None,
+            )
+        }
         Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Frames { .. })
             if AssemblyScopeGeneration::for_scope(scope)
                 .operand_frame_variant()
@@ -2575,6 +2629,18 @@ mod tests {
             "container": "occurrence",
             "occurrence": "f3d:model:occurrence#xref-1-0",
         }));
+        let missing = container(serde_json::json!({
+            "container": "external",
+            "external_document": {"resolution": "missing"},
+        }));
+        assert_eq!(
+            super::joint_placed_identity_occurrences(&occurrences, [&missing, &missing]),
+            0
+        );
+        assert_eq!(
+            super::joint_placed_identity_occurrences(&occurrences, [&missing, &named]),
+            1
+        );
         // One inserted design named twice accounts for one occurrence.
         assert_eq!(
             super::joint_placed_identity_occurrences(&occurrences, [&external, &external]),
@@ -3320,7 +3386,7 @@ mod tests {
         if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(slot) =
             component_scope.payload_mut()
         {
-            *slot = Some(
+            slot.construction = Some(
                 crate::records::feature::assembly_features::DesignComponentInsertConstruction {
                     relation_record_index: 201,
                     carrier_record_index: 202,

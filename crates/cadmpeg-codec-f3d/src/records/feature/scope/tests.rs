@@ -643,6 +643,7 @@ fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
     if let DesignScopePayloadMut::Fillet(slot) = scope.payload_mut() {
         slot.sets = Some(DesignFilletSetList {
             form: DesignFilletSetListForm::Current,
+            rolling_ball_corner: true,
             sets: vec![DesignFilletSet {
                 record_index: 2,
                 byte_offset: 300,
@@ -652,7 +653,8 @@ fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
                     radius_owner_record_index: 4,
                 },
                 tangency_weight_owner_record_index: 5,
-                flag: false,
+                tangent_chain: false,
+                curvature_continuity: None,
             }],
         });
     }
@@ -673,12 +675,14 @@ fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
 fn chamfer_sets_round_trip_and_belong_to_chamfer_scopes() {
     use super::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut};
     use crate::records::feature::chamfer_set::{
-        DesignChamferSet, DesignChamferSetList, DesignChamferSetListForm, DesignChamferSetSpec,
+        DesignChamferCornerType, DesignChamferSet, DesignChamferSetList, DesignChamferSetListForm,
+        DesignChamferSetSpec,
     };
     let mut scope = DesignParameterScope::empty("f3d:scope#1", DesignFeatureKind::Chamfer, 1);
     if let DesignScopePayloadMut::Chamfer(slot) = scope.payload_mut() {
         slot.sets = Some(DesignChamferSetList {
             form: DesignChamferSetListForm::Compact,
+            corner_type: DesignChamferCornerType::Chamfer,
             entry_count: 6,
             sets: vec![DesignChamferSet {
                 record_index: 2,
@@ -689,7 +693,8 @@ fn chamfer_sets_round_trip_and_belong_to_chamfer_scopes() {
                     distance_owner_record_index: 4,
                 },
                 auxiliary_record_index: 5,
-                flag: true,
+                entry_count: 1,
+                tangent_chain: true,
             }],
         });
     }
@@ -727,4 +732,55 @@ fn work_plane_scope_display_name_wire_validates_bounds_and_kind() {
     non_work_plane.display_name = Some("Body Split".into());
     let bad_kind = serde_json::to_value(&non_work_plane).unwrap();
     assert!(serde_json::from_value::<DesignParameterScope>(bad_kind).is_err());
+}
+
+#[test]
+fn captured_position_scope_wire_checks_exact_row_extent_and_offsets() {
+    let (_, mut scope, _) = crate::test_support::position::fixture(&[
+        None,
+        Some(cadmpeg_ir::transform::Transform::identity().rows()),
+    ]);
+    scope.captured_positions = Some(
+        serde_json::from_value(serde_json::json!({
+            "rows": [
+                {"target": {"value": 700, "offset": 35}},
+                {"target": {"value": 703, "offset": 48}, "matrix": {
+                    "value": [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0],
+                    "offset": 59
+                }}
+            ], "paths": []
+        }))
+        .unwrap(),
+    );
+    let wire = serde_json::to_value(&scope).unwrap();
+    let decoded = serde_json::from_value::<super::DesignParameterScope>(wire.clone()).unwrap();
+    assert_eq!(decoded, scope);
+    assert_eq!(
+        serde_json::to_value(super::DesignParameterScopeSerde::from(scope)).unwrap(),
+        wire
+    );
+    for field in ["target", "matrix"] {
+        let mut invalid = wire.clone();
+        invalid["captured_positions"]["rows"][1][field]["offset"] = serde_json::json!(1);
+        assert!(
+            serde_json::from_value::<super::DesignParameterScope>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("captured_positions")
+        );
+    }
+    let mut invalid = wire.clone();
+    invalid["captured_positions"]["rows"]
+        .as_array_mut()
+        .unwrap()
+        .pop();
+    assert!(serde_json::from_value::<super::DesignParameterScope>(invalid).is_err());
+    let mut invalid = wire;
+    invalid["captured_positions"] = serde_json::Value::Null;
+    assert!(
+        serde_json::from_value::<super::DesignParameterScope>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains("captured_positions")
+    );
 }

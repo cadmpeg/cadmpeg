@@ -60,3 +60,125 @@ fn align_validator_checks_complete_constructor_length_owners_and_field_locations
         }
     }
 }
+
+#[test]
+fn align_motion_validator_checks_form_links_leading_fields_and_omitted_identity() {
+    use crate::design::decode::scopes::direct_face::move_operation_links_hold;
+    use crate::records::feature::direct_face::{
+        DesignMoveForm, DesignMoveLeading, DesignMoveOperation, DesignMovePrefix,
+        DesignMoveReference,
+    };
+    use crate::records::feature::scope::DesignScopePayloadMut;
+
+    let (bytes, mut scope) = align_prefix_fixture(DesignAlignForm::Extended);
+    let mut envelope = decode_align_envelope(&bytes, &scope).unwrap();
+    envelope.motion = Some(DesignMoveOperation {
+        transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+        transform_offset: 568,
+        transform_record_index: 806,
+        form: DesignMoveForm::Form4,
+        form_offset: 563,
+        transform_reference_offset: envelope.first_reference.offset.checked_sub(1),
+        prefix: Some(DesignMovePrefix {
+            leading: Some(DesignMoveLeading {
+                scalar: cadmpeg_ir::scalar::FiniteReal::new(0.625).unwrap(),
+                references: [
+                    DesignMoveReference::Local { record_index: 810 },
+                    DesignMoveReference::Local { record_index: 812 },
+                ],
+            }),
+            references: std::array::from_fn(|_| DesignMoveReference::Null),
+            codes: [2, 0],
+            matrix_omitted: true,
+        }),
+        ..DesignMoveOperation::default()
+    });
+    let header = crate::records::decal::DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:design-record#806".into(),
+        record_index: 806,
+        byte_offset: 500,
+        class_tag: "500".to_owned().try_into().unwrap(),
+    };
+    let DesignScopePayloadMut::Align(slot) = scope.payload_mut() else {
+        panic!("Align");
+    };
+    *slot = Some(envelope);
+    let valid = |scope: &crate::records::feature::scope::DesignParameterScope| {
+        align_envelope_links_hold(scope, scope.align_envelope().unwrap())
+            && move_operation_links_hold(scope, Some(&header))
+    };
+    assert!(valid(&scope));
+    assert!(!move_operation_links_hold(&scope, None));
+    for field in 0..8 {
+        let mut changed = scope.clone();
+        let DesignScopePayloadMut::Align(Some(envelope)) = changed.payload_mut() else {
+            panic!("Align");
+        };
+        let motion = envelope.motion.as_mut().unwrap();
+        match field {
+            0 => motion.form = DesignMoveForm::Form5,
+            1 => motion.transform_record_index += 1,
+            2 => motion.transform_reference_offset = Some(26),
+            3 => motion.form_offset += 1,
+            4 => motion.transform_offset += 1,
+            5 => {
+                motion
+                    .prefix
+                    .as_mut()
+                    .unwrap()
+                    .leading
+                    .as_mut()
+                    .unwrap()
+                    .references[0] = DesignMoveReference::Typed {
+                    record_index: 810,
+                    type_guid: "broken".into(),
+                }
+            }
+            6 => {
+                let mut matrix = motion.transform.rows();
+                matrix[0][3] = 1.;
+                motion.transform = matrix.try_into().unwrap();
+            }
+            _ => motion.prefix.as_mut().unwrap().leading = None,
+        }
+        assert!(!valid(&changed), "field {field}");
+    }
+    let envelope = scope.align_envelope().unwrap();
+    let scope_wire = serde_json::to_value(&scope).unwrap();
+    assert_eq!(
+        serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(
+            scope_wire.clone()
+        )
+        .unwrap(),
+        scope
+    );
+    assert!(scope_wire.get("move_operation").is_none());
+    let wire = serde_json::to_value(envelope).unwrap();
+    assert_eq!(wire["motion"]["form"], 4);
+    assert_eq!(
+        serde_json::from_value::<crate::records::feature::align::DesignAlignEnvelope>(wire.clone())
+            .unwrap(),
+        *envelope
+    );
+    for field in ["motion", "leading", "scalar"] {
+        let mut changed = wire.clone();
+        match field {
+            "motion" => changed["motion"] = serde_json::Value::Null,
+            "leading" => changed["motion"]["prefix"]["leading"] = serde_json::Value::Null,
+            _ => changed["motion"]["prefix"]["leading"]["scalar"] = serde_json::Value::Null,
+        }
+        assert!(
+            serde_json::from_value::<crate::records::feature::align::DesignAlignEnvelope>(changed)
+                .is_err(),
+            "field {field}"
+        );
+    }
+    let mut legacy = wire;
+    legacy.as_object_mut().unwrap().remove("motion");
+    assert!(
+        serde_json::from_value::<crate::records::feature::align::DesignAlignEnvelope>(legacy)
+            .unwrap()
+            .motion
+            .is_none()
+    );
+}

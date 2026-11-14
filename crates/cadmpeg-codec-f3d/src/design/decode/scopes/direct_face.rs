@@ -16,6 +16,8 @@ use crate::design::DesignFeatureFamily;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::modify_marker_one_prologue as modify_one;
 use crate::layout::modify_marker_zero_prologue as modify_zero;
+use crate::layout::move_face_marker_one_prologue as face_one;
+use crate::layout::move_face_marker_zero_prologue as face_zero;
 use crate::layout::move_marked_transform_prologue as marked_move;
 use crate::layout::move_marker_one_transform_prologue as extended_move;
 use crate::layout::move_transform_frame_253 as move_frame;
@@ -27,6 +29,11 @@ use crate::layout::move_transform_frame_284 as move_frame_284;
 use crate::layout::move_transform_frame_293 as move_frame_293;
 use crate::layout::move_transform_omitted_matrix_frame_125 as omitted_move_125;
 use crate::layout::move_transform_omitted_matrix_frame_126 as omitted_move_126;
+use crate::layout::move_transform_v3_frame_256 as move_v3_frame_256;
+use crate::layout::move_transform_v3_frame_276 as move_v3_frame_276;
+use crate::layout::move_transform_v3_frame_286 as move_v3_frame_286;
+use crate::layout::move_transform_v3_frame_296 as move_v3_frame_296;
+use crate::layout::rigid_transform_leading_prefix as leading_move;
 use crate::layout::scale_legacy_uniform_tail as scale_tail;
 use crate::layout::scale_matrix_marker_one_prologue as scale_matrix_one;
 use crate::layout::scale_matrix_marker_zero_prologue as scale_matrix_zero;
@@ -44,6 +51,7 @@ use std::collections::HashMap;
 
 const RIGID_TRANSFORM_TYPE_GUID: &str = "84E6245F-1CDC-4FB8-8048-163A85FAD3F0";
 const RIGID_TRANSFORM_TYPE_VERSION: u32 = 2;
+const RIGID_TRANSFORM_TYPE_VERSION_3: u32 = 3;
 
 /// Primary-header offset of the marked distance reference of an `OffsetFaces`
 /// scope, or `None` when its prologue is not a known form.
@@ -137,6 +145,25 @@ pub(super) fn exact_move_operation(
     })
 }
 
+pub(super) fn exact_align_operation(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    envelope: &crate::records::feature::align::DesignAlignEnvelope,
+    class_types: &HashMap<u32, &SegmentType>,
+) -> Option<DesignMoveOperation> {
+    let mut operation = move_face_transform(bytes, records, envelope.first_reference.value)?;
+    let start = usize::try_from(operation.form_offset)
+        .ok()?
+        .checked_sub(operation.relative_form_offset()?)?;
+    if operation.form != direct_face::DesignMoveForm::Form4
+        || !rigid_transform_type_matches(bytes, start, class_types)
+    {
+        return None;
+    }
+    operation.transform_reference_offset = Some(envelope.first_reference.offset.checked_sub(1)?);
+    Some(operation)
+}
+
 /// The transform record that a `Move` scope selects by the marked reference
 /// in its prologue.
 fn marked_move_transform(
@@ -176,61 +203,132 @@ fn marked_move_transform(
     Some(operation)
 }
 
-/// Primary-header offset of the marked transform reference of a `MoveFace`
-/// scope, or `None` when its prologue is not a known form.
-///
-/// A marker-one prologue stores `1` at offset 20 and a u32 zero at 21, so its
-/// fields start four bytes later than those of a marker-zero prologue.
-fn move_face_transform_marker(
+fn move_face_operand_markers(
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
-) -> Option<usize> {
+) -> Option<(usize, usize)> {
     let count_offset = usize::try_from(scope.reference_count_offset())
         .ok()?
         .checked_sub(start)?;
-    let transform_marker = match (bytes.get(start + 20)?, count_offset) {
-        (1, 131) if View::u32_le_at(bytes, start + 21) == Some(0) => 26,
-        (0, 127) => 22,
-        _ => return None,
-    };
-    // A byte one precedes the marked transform reference. A u32 one follows it,
-    // then the marked reference to the selected-face group.
-    (bytes.get(start + transform_marker - 1) == Some(&1)
-        && View::u32_le_at(bytes, start + transform_marker + 11) == Some(1))
-    .then_some(transform_marker)
+    let bytes = bytes.get(start..)?;
+    let (flag, transform, reference_flag, group) =
+        match (*bytes.get(face_zero::MARKER)?, count_offset) {
+            (face_one::MARKER_VALUE, face_one::REFERENCE_COUNT)
+                if View::u32_le_at(bytes, face_one::ZERO_WORD) == Some(0) =>
+            {
+                (
+                    face_one::TRANSFORM_FLAG,
+                    face_one::TRANSFORM_REFERENCE,
+                    face_one::REFERENCE_FLAG,
+                    face_one::GROUP_REFERENCE,
+                )
+            }
+            (face_zero::MARKER_VALUE, face_zero::REFERENCE_COUNT) => (
+                face_zero::TRANSFORM_FLAG,
+                face_zero::TRANSFORM_REFERENCE,
+                face_zero::REFERENCE_FLAG,
+                face_zero::GROUP_REFERENCE,
+            ),
+            _ => return None,
+        };
+    (bytes.get(flag) == Some(&1) && View::u32_le_at(bytes, reference_flag) == Some(1))
+        .then_some((transform, group))
 }
 
 pub(super) fn exact_move_face_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    class_types: &HashMap<u32, &SegmentType>,
+    losses: &mut Vec<LossNote>,
 ) -> Option<DesignMoveOperation> {
-    if !is_move_face(scope) || scope.reference_members().len() < 3 {
+    if scope.kind() != scope::DesignFeatureKind::MoveFace {
         return None;
     }
     let start = usize::try_from(scope.byte_offset()).ok()?;
-    let transform_marker = move_face_transform_marker(bytes, scope, start)?;
-    let transform = marked_record_reference(bytes, start + transform_marker)?;
-    let group = marked_record_reference(bytes, start + transform_marker + 15)?;
-    // The transform is the last reference after the group and its members, or
-    // the first reference before them.
-    let mut references = scope.reference_members().values().copied();
-    let first = references.next()?;
-    let second = references.next()?;
-    let last = references.next_back()?;
-    if !(first == group && last == transform || first == transform && second == group) {
-        return None;
+    let (transform_marker, group_marker) = move_face_operand_markers(bytes, scope, start)?;
+    let transform_at = start.checked_add(transform_marker)?;
+    let transform = marked_record_reference(bytes, transform_at)?;
+    let mut typed = None;
+    let mut unregistered = None;
+    let mut typed_ambiguous = false;
+    let mut unregistered_ambiguous = false;
+    let mut conflicting_registration = None;
+    for (frame_start, paired) in records.frames(transform) {
+        let Some((tag, after_tag)) =
+            lp_ascii_filtered_view(bytes, frame_start, 3..=3, u8::is_ascii_digit)
+        else {
+            continue;
+        };
+        if View::u32_le_at(bytes, after_tag) != Some(transform) {
+            continue;
+        }
+        let Ok(tag) = tag.parse::<u32>() else {
+            continue;
+        };
+        let registration = class_types.get(&tag);
+        if let Some(row) = registration.filter(|row| {
+            row.version != RIGID_TRANSFORM_TYPE_VERSION
+                || !row
+                    .type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(RIGID_TRANSFORM_TYPE_GUID)
+        }) {
+            conflicting_registration = Some((tag, *row));
+            continue;
+        }
+        let Some(next) = move_transform_at(bytes, frame_start, paired, transform) else {
+            continue;
+        };
+        if registration.is_some() {
+            typed_ambiguous |= typed.replace(next).is_some();
+        } else {
+            unregistered_ambiguous |= unregistered.replace(next).is_some();
+        }
     }
-    move_face_transform(bytes, records, transform)
+    let mut operation = if let Some(operation) = typed {
+        if typed_ambiguous {
+            return None;
+        }
+        operation
+    } else {
+        if unregistered_ambiguous {
+            return None;
+        }
+        let Some(operation) = unregistered else {
+            if let Some((tag, row)) = conflicting_registration {
+                losses.push(crate::loss::F3dLossCode::FeatureMoveFaceTypeConflict.note(format!(
+                    "MoveFace scope {} retains transform record {transform} natively after conflicting class registration {tag}: {} version {} (DR-401).",
+                    scope.id, row.type_guid.as_str(), row.version
+                )));
+            }
+            return None;
+        };
+        losses.push(crate::loss::F3dLossCode::FeatureMoveFaceTypeAssumed.note(format!(
+            "MoveFace scope {} reads marked transform record {transform} by its frame with unavailable type registration (DR-401).",
+            scope.id
+        )));
+        operation
+    };
+    operation.transform_reference_offset = Some(u64_from_index(transform_at));
+    operation.face_group = start.checked_add(group_marker).and_then(|at| {
+        Some(crate::records::identity::Located {
+            value: marked_record_reference(bytes, at)?,
+            offset: u64_from_index(at.checked_add(1)?),
+        })
+    });
+    let prefix_fields = bytes
+        .get(start.checked_add(face_zero::PREFIX_FIELDS)?..start.checked_add(face_zero::MARKER)?)?;
+    if prefix_fields != [0; 9] {
+        losses.push(crate::loss::F3dLossCode::FeatureMoveFacePrologueAssumed.note(format!(
+            "MoveFace scope {} keeps its marked transform while prefix fields {:?} are assumed to leave motion unchanged (DR-401).",
+            scope.id, prefix_fields
+        )));
+    }
+    Some(operation)
 }
 
-fn is_move_face(scope: &DesignParameterScope) -> bool {
-    scope.kind() == scope::DesignFeatureKind::MoveFace
-}
-
-/// The rigid transform of the record a `MoveFace` scope marks. The marked
-/// reference selects the record, so its class tag and frame length do not.
 fn move_face_transform(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -258,22 +356,21 @@ fn move_transform_at(
     paired: usize,
     record_index: u32,
 ) -> Option<DesignMoveOperation> {
-    use direct_face::{DesignMovePrefix, DesignMoveReference};
+    use direct_face::{DesignMoveLeading, DesignMovePrefix, DesignMoveReference};
 
     let frame = View::over_retained(bytes).child(start, paired)?;
     let bytes = frame.window();
-    if bytes.get(indexed_header::LEN..move_frame_293::FIRST_REFERENCE) != Some(&[0; 20]) {
+    if bytes.get(indexed_header::LEN..leading_move::SCALAR) != Some(&[0; 10]) {
         return None;
     }
-    let mut cursor = move_frame_293::FIRST_REFERENCE;
-    let mut prefix = DesignMovePrefix {
-        references: std::array::from_fn(|_| DesignMoveReference::Null),
-        codes: [0; 2],
-        matrix_omitted: false,
-    };
-    for (ordinal, reference) in prefix.references.iter_mut().enumerate() {
-        if ordinal == 3 {
-            prefix.codes[0] = View::u32_le_at(bytes, cursor)?;
+    let scalar =
+        cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(bytes, leading_move::SCALAR)?)?;
+    let mut cursor = leading_move::LEN;
+    let mut references = std::array::from_fn::<_, 6, _>(|_| DesignMoveReference::Null);
+    let mut codes = [0; 2];
+    for (ordinal, reference) in references.iter_mut().enumerate() {
+        if ordinal == 5 {
+            codes[0] = View::u32_le_at(bytes, cursor)?;
             cursor = cursor.checked_add(4)?;
         }
         *reference = match take_reference(bytes, &mut cursor)? {
@@ -294,10 +391,26 @@ fn move_transform_at(
             _ => return None,
         };
     }
-    prefix.codes[1] = View::u32_le_at(bytes, cursor)?;
+    codes[1] = View::u32_le_at(bytes, cursor)?;
     cursor = cursor.checked_add(4)?;
     let form_at = cursor;
     let form = direct_face::DesignMoveForm::try_from(View::u32_le_at(bytes, cursor)?).ok()?;
+    let [first, second, third, fourth, fifth, sixth] = references;
+    let leading = (form == direct_face::DesignMoveForm::Form4
+        || scalar.get() != 0.0
+        || [&first, &second]
+            .iter()
+            .any(|reference| !matches!(reference, DesignMoveReference::Null)))
+    .then_some(DesignMoveLeading {
+        scalar,
+        references: [first, second],
+    });
+    let mut prefix = DesignMovePrefix {
+        references: [third, fourth, fifth, sixth],
+        codes,
+        matrix_omitted: false,
+        leading,
+    };
     if form == direct_face::DesignMoveForm::Form2 && !prefix.full_references() {
         return None;
     }
@@ -307,21 +420,28 @@ fn move_transform_at(
         1 => true,
         _ => return None,
     };
+    let transform_at = cursor.checked_add(1)?;
     if prefix.matrix_omitted
-        && (form != direct_face::DesignMoveForm::Form5
-            || prefix.codes != [0; 2]
-            || prefix
-                .references
-                .iter()
-                .any(|reference| !matches!(reference, DesignMoveReference::Null))
+        && (!matches!(
+            form,
+            direct_face::DesignMoveForm::Form4 | direct_face::DesignMoveForm::Form5
+        ) || form == direct_face::DesignMoveForm::Form5
+            && (prefix.codes != [0; 2]
+                || prefix.leading.is_some()
+                || prefix
+                    .references
+                    .iter()
+                    .any(|reference| !matches!(reference, DesignMoveReference::Null)))
             || !matches!(
-                paired.checked_sub(start)?,
+                frame
+                    .window()
+                    .len()
+                    .checked_sub(form_at.checked_sub(move_frame::FORM)?)?,
                 omitted_move_125::LEN | omitted_move_126::LEN
             ))
     {
         return None;
     }
-    let transform_at = cursor.checked_add(1)?;
     let mut view = frame;
     view.seek(start.checked_add(transform_at)?)?;
     let transform = if prefix.matrix_omitted {
@@ -341,8 +461,9 @@ fn move_transform_at(
         .any(|reference| !matches!(reference, DesignMoveReference::Null))
         || prefix.codes != [0; 2]
         || form == direct_face::DesignMoveForm::Form2
-        || prefix.matrix_omitted)
-        .then_some(prefix);
+        || prefix.matrix_omitted
+        || prefix.leading.is_some())
+    .then_some(prefix);
     Some(DesignMoveOperation {
         transform,
         transform_offset: u64_from_index(start + transform_at),
@@ -351,6 +472,7 @@ fn move_transform_at(
         form_offset: u64_from_index(start + form_at),
         transform_reference_offset: None,
         prefix,
+        ..DesignMoveOperation::default()
     })
 }
 
@@ -374,7 +496,13 @@ pub(super) fn move_transform_prefix_losses(
     operation: &DesignMoveOperation,
 ) -> Vec<LossNote> {
     let prefix_assumed = operation.prefix.as_ref().is_some_and(|prefix| {
-        prefix.codes != [0; 2]
+        prefix.leading.as_ref().is_some_and(|leading| {
+            leading.scalar.get() != 0.0
+                || leading
+                    .references
+                    .iter()
+                    .any(|reference| !matches!(reference, direct_face::DesignMoveReference::Null))
+        }) || prefix.codes != [0; 2]
             || prefix
                 .references
                 .iter()
@@ -384,7 +512,7 @@ pub(super) fn move_transform_prefix_losses(
     });
     [
         operation.prefix.as_ref().is_some_and(|prefix| prefix.matrix_omitted).then_some(crate::loss::F3dLossCode::FeatureMoveTransformIdentityAssumed),
-        (operation.form == direct_face::DesignMoveForm::Form6).then_some(crate::loss::F3dLossCode::FeatureMoveTransformModeAssumed),
+        matches!(operation.form, direct_face::DesignMoveForm::Form4 | direct_face::DesignMoveForm::Form6).then_some(crate::loss::F3dLossCode::FeatureMoveTransformModeAssumed),
         prefix_assumed.then_some(crate::loss::F3dLossCode::FeatureMoveTransformPrefixAssumed),
     ].into_iter().flatten().map(|code| {
         if code == crate::loss::F3dLossCode::FeatureMoveTransformIdentityAssumed {
@@ -417,7 +545,9 @@ fn unique_move_transform<'a>(
             let Some(next) = move_transform_at(bytes, start, paired, *record_index) else {
                 continue;
             };
-            if !rigid_transform_rule_breaks(bytes, start, paired, next.form, class_types).is_empty()
+            if !rigid_transform_type_matches(bytes, start, class_types)
+                || !rigid_transform_rule_breaks(bytes, start, paired, next.form, class_types)
+                    .is_empty()
             {
                 continue;
             }
@@ -429,6 +559,31 @@ fn unique_move_transform<'a>(
     candidate
 }
 
+fn rigid_transform_type_matches(
+    bytes: &[u8],
+    start: usize,
+    class_types: &HashMap<u32, &SegmentType>,
+) -> bool {
+    rigid_transform_type_version(bytes, start, class_types) == Some(RIGID_TRANSFORM_TYPE_VERSION)
+}
+
+/// The type version of a record whose class type is the rigid-transform type.
+fn rigid_transform_type_version(
+    bytes: &[u8],
+    start: usize,
+    class_types: &HashMap<u32, &SegmentType>,
+) -> Option<u32> {
+    lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
+        .and_then(|(class_tag, _)| class_tag.parse::<u32>().ok())
+        .and_then(|class_tag| class_types.get(&class_tag))
+        .filter(|row| {
+            row.type_guid
+                .as_str()
+                .eq_ignore_ascii_case(RIGID_TRANSFORM_TYPE_GUID)
+        })
+        .map(|row| row.version)
+}
+
 fn rigid_transform_rule_breaks(
     bytes: &[u8],
     start: usize,
@@ -437,30 +592,33 @@ fn rigid_transform_rule_breaks(
     class_types: &HashMap<u32, &SegmentType>,
 ) -> Vec<String> {
     let mut breaks = Vec::new();
-    let typed = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
-        .and_then(|(class_tag, _)| class_tag.parse::<u32>().ok())
-        .and_then(|class_tag| class_types.get(&class_tag))
-        .is_some_and(|row| {
-            row.version == RIGID_TRANSFORM_TYPE_VERSION
-                && row
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(RIGID_TRANSFORM_TYPE_GUID)
-        });
-    if !typed {
+    let version = rigid_transform_type_version(bytes, start, class_types);
+    if !matches!(
+        version,
+        Some(RIGID_TRANSFORM_TYPE_VERSION | RIGID_TRANSFORM_TYPE_VERSION_3)
+    ) {
         breaks.push(format!(
-            "a class type other than {RIGID_TRANSFORM_TYPE_GUID} version {RIGID_TRANSFORM_TYPE_VERSION}"
+            "a class type other than {RIGID_TRANSFORM_TYPE_GUID} version {RIGID_TRANSFORM_TYPE_VERSION} or {RIGID_TRANSFORM_TYPE_VERSION_3}"
         ));
     }
     let Some(frame_length) = paired.checked_sub(start) else {
         breaks.push("a paired header before its primary header".to_owned());
         return breaks;
     };
+    let version_3 = version == Some(RIGID_TRANSFORM_TYPE_VERSION_3);
     let length_form = match frame_length {
-        move_frame::LEN | move_frame_254::LEN => direct_face::DesignMoveForm::Form5,
-        move_frame_273::LEN | move_frame_274::LEN => direct_face::DesignMoveForm::Form1,
-        move_frame_283::LEN | move_frame_284::LEN => direct_face::DesignMoveForm::Form0,
-        move_frame_293::LEN => direct_face::DesignMoveForm::Form2,
+        move_v3_frame_256::LEN if version_3 => direct_face::DesignMoveForm::Form5,
+        move_v3_frame_276::LEN if version_3 => direct_face::DesignMoveForm::Form1,
+        move_v3_frame_286::LEN if version_3 => direct_face::DesignMoveForm::Form0,
+        move_v3_frame_296::LEN if version_3 => direct_face::DesignMoveForm::Form2,
+        move_frame::LEN | move_frame_254::LEN if !version_3 => direct_face::DesignMoveForm::Form5,
+        move_frame_273::LEN | move_frame_274::LEN if !version_3 => {
+            direct_face::DesignMoveForm::Form1
+        }
+        move_frame_283::LEN | move_frame_284::LEN if !version_3 => {
+            direct_face::DesignMoveForm::Form0
+        }
+        move_frame_293::LEN if !version_3 => direct_face::DesignMoveForm::Form2,
         _ => {
             breaks.push(format!("a {frame_length}-byte frame"));
             return breaks;
@@ -563,30 +721,50 @@ pub(crate) fn move_operation_links_hold(
     header: Option<&crate::records::decal::DesignRecordHeader>,
 ) -> bool {
     scope.move_operation().is_none_or(|operation| {
-        header.is_some_and(|header| {
-            (is_move_face(scope)
-                || operation.transform_reference_offset.is_none_or(|offset| {
-                    [
-                        marked_move::TRANSFORM_REFERENCE,
-                        extended_move::TRANSFORM_REFERENCE,
-                    ]
+        let face = scope.kind() == scope::DesignFeatureKind::MoveFace;
+        let face_offsets = [
+            (face_zero::REFERENCE_COUNT, face_zero::TRANSFORM_REFERENCE, face_zero::GROUP_REFERENCE),
+            (face_one::REFERENCE_COUNT, face_one::TRANSFORM_REFERENCE, face_one::GROUP_REFERENCE),
+        ].into_iter().find_map(|(count, transform, group)| {
+            if scope.byte_offset().checked_add(u64_from_index(count)) != Some(scope.reference_count_offset()) {
+                return None;
+            }
+            Some((
+                scope.byte_offset().checked_add(u64_from_index(transform))?,
+                scope.byte_offset().checked_add(u64_from_index(group))?.checked_add(1)?,
+            ))
+        });
+        let transform_offset_valid = operation.transform_reference_offset.is_none_or(|offset| {
+            if face {
+                face_offsets.is_some_and(|(expected, _)| offset == expected)
+            } else {
+                [marked_move::TRANSFORM_REFERENCE, extended_move::TRANSFORM_REFERENCE]
                     .into_iter()
                     .any(|at| scope.byte_offset().checked_add(u64_from_index(at)) == Some(offset))
-                }))
-                && scope
-                    .reference_members()
-                    .values()
-                    .any(|index| *index == operation.transform_record_index)
+            }
+        });
+        let marked_face_link = face && operation.transform_reference_offset.is_some() && transform_offset_valid;
+        header.is_some_and(|header| {
+            transform_offset_valid
+                && operation.face_group.as_ref().is_none_or(|group| {
+                    face && face_offsets.is_some_and(|(_, expected)| group.offset == expected)
+                })
+                && (scope.reference_members().values().any(|index| *index == operation.transform_record_index)
+                    || marked_face_link)
                 && header.record_index == operation.transform_record_index
+                && (operation.form != direct_face::DesignMoveForm::Form4
+                    || operation.prefix.as_ref().is_some_and(|prefix| prefix.leading.is_some()))
                 && operation.prefix.as_ref().is_none_or(|prefix| {
                     (operation.form != direct_face::DesignMoveForm::Form2
                         || prefix.full_references())
                         && (!prefix.matrix_omitted
-                            || operation.form == direct_face::DesignMoveForm::Form5
-                                && prefix.codes == [0; 2]
-                                && prefix.references.iter().all(|reference| {
-                                    matches!(reference, direct_face::DesignMoveReference::Null)
-                                })
+                            || (operation.form == direct_face::DesignMoveForm::Form4
+                                || operation.form == direct_face::DesignMoveForm::Form5
+                                    && prefix.codes == [0; 2]
+                                    && prefix.leading.is_none()
+                                    && prefix.references.iter().all(|reference| {
+                                        matches!(reference, direct_face::DesignMoveReference::Null)
+                                    }))
                                 && operation.transform
                                     == crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY)
                 })

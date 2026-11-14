@@ -86,6 +86,7 @@ impl Serialize for DesignParameterScope {
             };
         }
 
+        emit_opt!("captured_positions", self.captured_positions.as_ref());
         emit_opt!("occurrence_transfer", self.occurrence_transfer.as_ref());
         emit_opt!(
             "occurrence_transfer_intent",
@@ -180,11 +181,13 @@ impl Serialize for DesignParameterScope {
             DesignScopePayload::Thicken(Some(value)) => {
                 emit!("direct_face_operation", DirectFaceRef::Thicken(value));
             }
+            DesignScopePayload::Move(Some(value)) | DesignScopePayload::MoveFace(Some(value)) => {
+                emit!("move_operation", value);
+            }
             _ => {}
         }
 
         emit_opt!("align_envelope", self.align_envelope());
-        emit_opt!("move_operation", self.move_operation());
         emit_opt!("modify_operation", self.modify_operation());
         emit_opt!("scale_operation", self.scale_operation());
         emit_opt!("reverse_normal_operation", self.reverse_normal_operation());
@@ -262,7 +265,11 @@ impl Serialize for DesignParameterScope {
         emit_opt!("assembly_alignment", self.assembly_alignment());
         match &self.payload {
             DesignScopePayload::ComponentInsert(value) => {
-                emit_opt!("component_insert_construction", value.as_ref());
+                emit_opt!("component_insert_construction", value.construction.as_ref());
+                emit_opt!(
+                    "component_insert_placement",
+                    value.unresolved_placement.as_ref()
+                );
             }
             DesignScopePayload::DerivedInstance(value) => {
                 emit_opt!("derived_instance_construction", value.as_ref());

@@ -122,8 +122,7 @@ impl FinitePoint3 {
         z: 0.0,
     });
 
-    /// The point with three finite coordinates. Every coordinate is finite,
-    /// so the point is admitted without a check.
+    /// The point with three finite coordinates. Every coordinate is finite, so the point is admitted without a check.
     #[must_use]
     pub const fn from_coordinates(x: FiniteReal, y: FiniteReal, z: FiniteReal) -> Self {
         Self(Point3 {
@@ -133,8 +132,7 @@ impl FinitePoint3 {
         })
     }
 
-    /// Reflect through the model origin. Negation keeps every coordinate
-    /// finite, so the result stays admitted.
+    /// Reflect through the model origin. Negation keeps every coordinate finite, so the result stays admitted.
     #[must_use]
     pub fn negated(self) -> Self {
         Self(Point3::new(-self.0.x, -self.0.y, -self.0.z))
@@ -189,8 +187,7 @@ impl FiniteVector3 {
         z: 0.0,
     });
 
-    /// The vector with three finite components. Every component is finite,
-    /// so the vector is admitted without a check.
+    /// The vector with three finite components. Every component is finite, so the vector is admitted without a check.
     #[must_use]
     pub const fn from_components(x: FiniteReal, y: FiniteReal, z: FiniteReal) -> Self {
         Self(Vector3 {
@@ -240,8 +237,7 @@ checked_feature_geometry!(
 );
 
 impl From<UnitVector3> for FiniteVector3 {
-    /// Carry an admitted unit direction as a finite displacement. Its
-    /// components are finite, so no admission can refuse it.
+    /// Carry an admitted unit direction as a finite displacement. Its components are finite, so no admission can refuse it.
     fn from(value: UnitVector3) -> Self {
         Self(*value.as_raw())
     }
@@ -890,8 +886,7 @@ impl FeatureCircularArc {
         ))
     }
 
-    /// Build an arc from checked parts. The argument types state the whole
-    /// arc contract, so nothing is checked again.
+    /// Build an arc from checked parts. The argument types state the whole arc contract, so nothing is checked again.
     #[must_use]
     pub const fn from_parts(
         center: FinitePoint3,
@@ -2728,8 +2723,57 @@ pub enum ComponentTransferMode {
     Reparent,
 }
 
-/// A feature operation: neutral construction semantics with an explicit native
-/// escape hatch, and no post-processing layer of its own.
+cadmpeg_core::named_optional_field!(deserialize_captured_occurrence, OccurrenceId, "occurrence");
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[doc = "A canonical affine pose or the ordinal of its retained native matrix."]
+pub enum CapturedPositionTransform {
+    #[doc = "Finite affine pose with translation in canonical millimetres."]
+    Affine {
+        #[doc = "Captured pose in the occurrence assembly context."]
+        transform: Transform,
+    },
+    #[doc = "Matrix retained in the named native scope's ordered captured rows."]
+    Native {
+        #[doc = "Native scope retaining the source coefficients."]
+        scope: crate::ids::NativeId,
+        #[doc = "Zero-based ordinal of the source matrix row."]
+        row: usize,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = "One retained occurrence selector and its captured pose."]
+pub struct CapturedComponentPosition {
+    #[doc = "Native selector retained independently of occurrence resolution."]
+    pub selector: crate::ids::NativeId,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_captured_occurrence"
+    )]
+    #[doc = "Expanded occurrence when the complete selector resolves uniquely."]
+    pub occurrence: Option<OccurrenceId>,
+    #[doc = "Captured pose in the occurrence assembly context."]
+    pub transform: CapturedPositionTransform,
+}
+
+impl CapturedComponentPosition {
+    #[doc = "Construct an unresolved captured pose while preserving its native selector."]
+    pub fn new(selector: crate::ids::NativeId, transform: Transform) -> Self {
+        Self {
+            selector,
+            occurrence: None,
+            transform: CapturedPositionTransform::Affine { transform },
+        }
+    }
+}
+
+/// A feature operation: neutral construction semantics with an explicit native escape hatch, and no post-processing layer of its own.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "definition", rename_all = "snake_case", deny_unknown_fields)]
@@ -2752,6 +2796,32 @@ pub enum FeatureOperation {
         #[doc = "Resolved tessellations or a retained mesh source."]
         #[serde(deserialize_with = "deserialize_local_tessellations")]
         tessellations: mesh::MeshSelection,
+    },
+    #[doc = "Planar section of a mesh whose curves belong to a sketch."]
+    MeshSection {
+        #[doc = "Sectioned mesh."]
+        source: mesh::MeshSelection,
+        #[doc = "Model-space section plane, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_section_plane"
+        )]
+        plane: Option<FeatureSupportPlaneFrame>,
+        #[doc = "Sketch feature that receives the section curves, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_section_sketch"
+        )]
+        sketch: Option<FeatureId>,
+    },
+    #[doc = "Change applied to mesh geometry."]
+    MeshModify {
+        #[doc = "Mesh that the operation changes."]
+        source: mesh::MeshSelection,
+        #[doc = "Applied change."]
+        modification: mesh::MeshModification,
     },
     /// Independent bodies introduced by a copy-and-paste operation. The copies
     /// are the feature's outputs, so the selection carries only its native
@@ -2816,6 +2886,11 @@ pub enum FeatureOperation {
             deserialize_with = "deserialize_transfer_target_transform"
         )]
         target_transform: Option<Transform>,
+    },
+    #[doc = "Independent captured occurrence poses in source order, including repeated selectors."]
+    CapturedComponentPositions {
+        #[doc = "Exactly the captured rows, with an empty capture represented by an empty sequence."]
+        positions: Vec<CapturedComponentPosition>,
     },
     /// Assembly constraint introduced into the product structure.
     AssemblyJoint {
@@ -3136,7 +3211,7 @@ pub enum FeatureOperation {
         /// Complete geometric and parametric construction definition.
         construction: CoilConstruction,
         /// Result-body semantics.
-        result: CoilResult,
+        result: SolidFeatureResult,
     },
     /// Solid sphere primitive.
     Sphere {
@@ -3600,6 +3675,20 @@ pub enum FeatureOperation {
             deserialize_with = "deserialize_side"
         )]
         side: Option<ThickenSide>,
+        #[doc = "Result-body creation or Boolean combination, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thicken_result"
+        )]
+        result: Option<SolidFeatureResult>,
+        #[doc = "Whether the face selection extends along tangent faces, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_tangent_chain"
+        )]
+        tangent_chain: Option<bool>,
     },
     /// Surface copied at a signed normal offset from selected support faces.
     OffsetSurface {
@@ -3634,6 +3723,11 @@ pub enum FeatureOperation {
         /// Maximum accepted boundary gap, when resolved.
         #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         gap_tolerance: Option<PositiveLength>,
+    },
+    /// Separates selected faces from their bodies into individual surface bodies.
+    UnstitchFaces {
+        /// Faces separated by the operation.
+        faces: FaceSelection,
     },
     /// Surface patch spanning a selected edge boundary.
     FilledSurface {
@@ -4173,6 +4267,21 @@ pub enum UnresolvedFamily {
 }
 
 impl FeatureOperation {
+    #[doc = "Construct a Thicken with unspecified result and tangent-chain settings."]
+    pub fn thicken(
+        faces: FaceSelection,
+        thickness: Option<PositiveLength>,
+        side: Option<ThickenSide>,
+    ) -> Self {
+        Self::Thicken {
+            faces,
+            thickness,
+            side,
+            result: None,
+            tangent_chain: None,
+        }
+    }
+
     #[doc = "Construct a component-transfer operation from its readable operands."]
     pub fn component_transfer(
         mode: ComponentTransferMode,
@@ -5672,6 +5781,16 @@ pub enum BodyRetentionMode {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum WrapMode {
+    #[doc = "Material effect with an independently retained signed depth."]
+    Unresolved {
+        #[doc = "Signed depth in millimetres when available."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_wrap_depth"
+        )]
+        depth: Option<Length>,
+    },
     /// Add material above the target face.
     Emboss {
         /// Positive normal offset above the target face.
@@ -7409,6 +7528,11 @@ pub enum FaceMotion {
         /// Signed rotation angle.
         angle: Angle,
     },
+    #[doc = "Complete model-space affine motion in canonical millimetres."]
+    Transform {
+        #[doc = "Row-major transform applied to the selected faces."]
+        transform: Transform,
+    },
 }
 
 /// Model-space axis-angle rotation.
@@ -8091,15 +8215,15 @@ pub enum CoilSectionPlacement {
     Outside,
 }
 
-/// Result semantics of a solid Coil primitive.
+#[doc = "Result semantics of a solid-producing feature."]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum CoilResult {
+pub enum SolidFeatureResult {
     /// Create an independent body.
     NewBody {},
-    /// Combine the swept volume with selected existing bodies.
+    #[doc = "Combine the produced volume with selected existing bodies."]
     Boolean {
         /// Join, cut, or intersection operation.
         operation: BooleanKind,
@@ -9623,6 +9747,8 @@ mod tests;
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_plane, FeatureId, "plane");
+cadmpeg_core::named_optional_field!(deserialize_section_sketch, FeatureId, "sketch");
+cadmpeg_core::named_optional_field!(deserialize_section_plane, FeatureSupportPlaneFrame, "plane");
 cadmpeg_core::named_optional_field!(deserialize_pull, DraftPull, "pull");
 cadmpeg_core::named_optional_field!(deserialize_frame, FeatureSupportPlaneFrame, "frame");
 cadmpeg_core::named_optional_field!(
@@ -9832,6 +9958,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_rib_construction_side, RibSide, "side");
 cadmpeg_core::named_optional_field!(deserialize_offset, Length, "offset");
+cadmpeg_core::named_optional_field!(deserialize_wrap_depth, Length, "depth");
 cadmpeg_core::named_optional_field!(deserialize_draft, SlopeAngle, "draft");
 cadmpeg_core::named_optional_field!(deserialize_wall_thickness, PositiveLength, "wall_thickness");
 cadmpeg_core::named_optional_field!(deserialize_tolerance, PositiveReal, "tolerance");
@@ -9871,3 +9998,5 @@ cadmpeg_core::named_optional_field!(
 );
 
 cadmpeg_core::named_optional_field!(deserialize_plane_target_source, PlaneTargetSource, "source");
+cadmpeg_core::named_optional_field!(deserialize_thicken_result, SolidFeatureResult, "result");
+cadmpeg_core::named_optional_field!(deserialize_tangent_chain, bool, "tangent_chain");

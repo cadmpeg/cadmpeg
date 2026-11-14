@@ -378,6 +378,14 @@ fn scale_feature_operation(
             mode: WrapMode::Scribe,
             ..
         } => {}
+        FeatureOperation::Wrap {
+            mode: WrapMode::Unresolved { depth: Some(depth) },
+            ..
+        } => scale_length(depth, scale)?,
+        FeatureOperation::Wrap {
+            mode: WrapMode::Unresolved { depth: None },
+            ..
+        } => {}
         FeatureOperation::SketchBlockInstance {
             placement: Some(placement),
             ..
@@ -911,6 +919,9 @@ fn scale_face_motion(
         }
         cadmpeg_ir::features::FaceMotion::Rotate { axis_origin, .. } => {
             scale_finite_point3(axis_origin, scale)?;
+        }
+        cadmpeg_ir::features::FaceMotion::Transform { transform } => {
+            scale_transform_translation(transform, scale)?;
         }
     }
     Ok(())
@@ -1577,6 +1588,43 @@ mod tests {
         assert_point3(axis_origin.get(), [25.4, 50.8, 76.2]);
         assert_eq!(axis_dir, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
         assert_close(angle.get(), 0.5);
+    }
+
+    #[test]
+    fn scales_complete_face_motion_translation_and_keeps_its_basis() {
+        use cadmpeg_ir::transform::Transform;
+
+        let transform =
+            Transform::affine([[0., -1., 0., 1.], [1., 0., 0., -2.], [0., 0., 1., 0.5]])
+                .expect("finite affine fixture");
+        let mut motion = FaceMotion::Transform { transform };
+        scale_face_motion(&mut motion, positive(25.4)).expect("finite scaled translation");
+        let FaceMotion::Transform { transform } = motion else {
+            panic!("expected complete transform");
+        };
+        let expected = [[0., -1., 0., 25.4], [1., 0., 0., -50.8], [0., 0., 1., 12.7]];
+        for (actual, expected) in transform
+            .affine_rows()
+            .into_iter()
+            .flatten()
+            .zip(expected.into_iter().flatten())
+        {
+            assert_close(actual, expected);
+        }
+        let mut overflowing = FaceMotion::Transform {
+            transform: Transform::affine([
+                [1., 0., 0., f64::MAX],
+                [0., 1., 0., 0.],
+                [0., 0., 1., 0.],
+            ])
+            .expect("finite translation fixture before scaling"),
+        };
+        let original = overflowing.clone();
+        assert!(matches!(
+            scale_face_motion(&mut overflowing, positive(2.)),
+            Err(CodecError::Malformed(_))
+        ));
+        assert_eq!(overflowing, original);
     }
 
     #[test]

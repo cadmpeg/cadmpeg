@@ -9,8 +9,8 @@ use super::assembly::DesignAssemblyAlignment;
 use crate::records::identity::serialize_absent_u64_offset;
 
 use super::assembly_features::{
-    DesignComponentInsertConstruction, DesignCopyPasteComponentOperation,
-    DesignDerivedInstanceConstruction,
+    DesignComponentInsertConstruction, DesignComponentInsertPlacement, DesignComponentInsertScope,
+    DesignCopyPasteComponentOperation, DesignDerivedInstanceConstruction,
 };
 use super::base_feature::DesignBaseFeatureConstruction;
 use super::body_ops::{
@@ -76,6 +76,12 @@ cadmpeg_core::named_optional_field!(
     "occurrence_transfer_intent"
 );
 
+cadmpeg_core::named_optional_field!(
+    deserialize_captured_positions,
+    super::position::DesignCapturedPositions,
+    "captured_positions"
+);
+
 cadmpeg_core::named_optional_field!(deserialize_source_kind, String, "source_kind");
 cadmpeg_core::named_optional_field!(
     deserialize_label,
@@ -127,6 +133,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_component_insert_construction,
     DesignComponentInsertConstruction,
     "component_insert_construction"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_component_insert_placement,
+    DesignComponentInsertPlacement,
+    "component_insert_placement"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_copy_paste_bodies_operation,
@@ -438,6 +449,12 @@ impl ScopePayloadCompleteness for super::fillet_set::DesignFilletScope {
     }
 }
 
+impl ScopePayloadCompleteness for DesignComponentInsertScope {
+    fn is_uninterpreted(&self) -> bool {
+        self.construction.is_none() && self.unresolved_placement.is_none()
+    }
+}
+
 impl ScopePayloadCompleteness for DesignSurfacePatchScope {
     fn is_uninterpreted(&self) -> bool {
         matches!(
@@ -663,7 +680,7 @@ design_feature_kinds! {
         EdgeFlange => "EdgeFlange": Option<DesignEdgeFlangeOperation>,
         Hem => "Hem": Option<DesignHemOperation>,
         BaseFlange => "BaseFlange": Option<DesignBaseFlangeScope>,
-        ComponentInsert => "Component Insert": Option<DesignComponentInsertConstruction>,
+        ComponentInsert => "Component Insert": DesignComponentInsertScope,
         CopyPaste => "CopyPaste": Option<DesignCopyPasteComponentOperation>,
         JointOrigin => "JointOrigin": Option<DesignJointOriginTransform>,
         WorkPlane => "WorkPlane": Option<DesignWorkPlaneTransform>,
@@ -700,6 +717,7 @@ design_feature_kinds! {
         SplitFace => "SplitFace",
         DeleteFace => "DeleteFace",
         SurfaceDeleteFace => "SurfaceDeleteFace",
+        UnStitch => "UnStitch",
         RemoveBody => "RemoveBody",
         Face => "Face",
     }
@@ -788,6 +806,8 @@ pub(crate) struct DesignParameterScope {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) occurrence_transfer_intent:
         Option<super::occurrence_transfer::DesignOccurrenceTransferIntent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) captured_positions: Option<super::position::DesignCapturedPositions>,
     /// Family-specific construction records.
     payload: DesignScopePayload,
     /// Reference members whose records open a construction-operand group the
@@ -856,6 +876,12 @@ pub(crate) struct DesignParameterScopeDraft {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
 struct DesignParameterScopeSerde {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_captured_positions"
+    )]
+    captured_positions: Option<super::position::DesignCapturedPositions>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1153,6 +1179,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_component_insert_construction"
     )]
     component_insert_construction: Option<DesignComponentInsertConstruction>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_component_insert_placement"
+    )]
+    component_insert_placement: Option<DesignComponentInsertPlacement>,
     /// Exact local-occurrence construction carried by a `DerivedInstance` scope.
     #[serde(
         default,
@@ -1832,6 +1864,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.component_insert_construction.is_some() {
             present.push("component_insert_construction");
         }
+        if wire.component_insert_placement.is_some() {
+            present.push("component_insert_placement");
+        }
         if wire.derived_instance_construction.is_some() {
             present.push("derived_instance_construction");
         }
@@ -2053,7 +2088,17 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignScopePayload::BaseFlange(wire.base_flange.take())
             }
             DesignFeatureKind::ComponentInsert => {
-                DesignScopePayload::ComponentInsert(wire.component_insert_construction.take())
+                if wire.component_insert_construction.is_some()
+                    && wire.component_insert_placement.is_some()
+                {
+                    return Err(DesignParameterScopePayloadError(
+                        "component insert has both a complete construction and an unresolved placement".into(),
+                    ));
+                }
+                DesignScopePayload::ComponentInsert(DesignComponentInsertScope {
+                    construction: wire.component_insert_construction.take(),
+                    unresolved_placement: wire.component_insert_placement.take(),
+                })
             }
             DesignFeatureKind::CopyPaste => {
                 DesignScopePayload::CopyPaste(wire.copy_paste_component_operation.take())
@@ -2095,6 +2140,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
             DesignFeatureKind::DeleteFace => DesignScopePayload::DeleteFace,
             DesignFeatureKind::SurfaceDeleteFace => DesignScopePayload::SurfaceDeleteFace,
+            DesignFeatureKind::UnStitch => DesignScopePayload::UnStitch,
             DesignFeatureKind::RemoveBody => DesignScopePayload::RemoveBody,
             DesignFeatureKind::Face => DesignScopePayload::Face,
             DesignFeatureKind::SpherePrimitive => {
@@ -2179,6 +2225,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.rectangular_pattern_construction.is_some()
             || wire.assembly_alignment.is_some()
             || wire.component_insert_construction.is_some()
+            || wire.component_insert_placement.is_some()
             || wire.derived_instance_construction.is_some()
             || wire.copy_paste_component_operation.is_some()
             || wire.copy_paste_bodies_operation.is_some()
@@ -2201,6 +2248,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 "history_state_id_offset disagrees with kind_offset".into(),
             ));
         }
+        let captured_positions = wire.captured_positions.take();
         let occurrence_transfer = wire.occurrence_transfer.take();
         let occurrence_transfer_intent = wire.occurrence_transfer_intent.take();
         let mut admitted = Self::try_new(DesignParameterScopeDraft {
@@ -2237,6 +2285,14 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 .map_err(DesignParameterScopePayloadError)?,
             paired_byte_offset: wire.paired_byte_offset,
         })?;
+        if captured_positions
+            .as_ref()
+            .is_some_and(|positions| !positions.valid_for_scope(&admitted))
+        {
+            return Err(DesignParameterScopePayloadError(
+                "captured_positions disagrees with scope".into(),
+            ));
+        }
         if occurrence_transfer
             .as_ref()
             .is_some_and(|value| !value.valid_for_scope(&admitted))
@@ -2271,6 +2327,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         }
         admitted.source_kind = wire.source_kind;
         admitted.display_name = wire.display_name;
+        admitted.captured_positions = captured_positions;
         admitted.occurrence_transfer = occurrence_transfer;
         admitted.occurrence_transfer_intent = occurrence_transfer_intent;
         if wire.derived_base_owner.is_some_and(|owner| {
@@ -2293,6 +2350,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
         let history_state_id_offset = scope.history_state_id_offset();
         let (reference_members, reference_member_offsets) = scope.reference_members.into_wire();
         let mut wire = DesignParameterScopeSerde {
+            captured_positions: scope.captured_positions,
             occurrence_transfer: scope.occurrence_transfer,
             occurrence_transfer_intent: scope.occurrence_transfer_intent,
             id: scope.id,
@@ -2347,6 +2405,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             rectangular_pattern_construction: None,
             assembly_alignment: None,
             component_insert_construction: None,
+            component_insert_placement: None,
             derived_instance_construction: None,
             copy_paste_component_operation: None,
             copy_paste_bodies_operation: None,
@@ -2468,7 +2527,8 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.assembly_alignment = value;
             }
             DesignScopePayload::ComponentInsert(value) => {
-                wire.component_insert_construction = value;
+                wire.component_insert_construction = value.construction;
+                wire.component_insert_placement = value.unresolved_placement;
             }
             DesignScopePayload::DerivedInstance(value) => {
                 wire.derived_instance_construction = value;
@@ -2496,6 +2556,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::SplitFace
             | DesignScopePayload::DeleteFace
             | DesignScopePayload::SurfaceDeleteFace
+            | DesignScopePayload::UnStitch
             | DesignScopePayload::RemoveBody
             | DesignScopePayload::Face
             | DesignScopePayload::Native(_) => {}
@@ -2668,7 +2729,17 @@ impl DesignParameterScope {
         if !(draft.byte_offset < draft.reference_count_offset
             && draft.reference_count_offset < draft.kind_offset)
             || (draft.reference_members.is_empty()
-                && empty_table_at != Some(draft.reference_count_offset))
+                && empty_table_at != Some(draft.reference_count_offset)
+                && !(kind == "MoveFace"
+                    && [
+                        crate::layout::move_face_marker_zero_prologue::REFERENCE_COUNT,
+                        crate::layout::move_face_marker_one_prologue::REFERENCE_COUNT,
+                    ]
+                    .into_iter()
+                    .any(|offset| {
+                        draft.byte_offset.checked_add(u64_from_index(offset))
+                            == Some(draft.reference_count_offset)
+                    })))
         {
             return Err(fail("reference_count_offset/reference_members"));
         }
@@ -2723,6 +2794,7 @@ impl DesignParameterScope {
             previous_history_state_id_offset: draft.previous_history_state_id_offset,
             reference_count_offset: draft.reference_count_offset,
             reference_members: draft.reference_members,
+            captured_positions: None,
             occurrence_transfer: None,
             occurrence_transfer_intent: None,
             payload: draft.payload,
@@ -2943,6 +3015,9 @@ impl DesignParameterScope {
     pub(crate) fn move_operation(&self) -> Option<&DesignMoveOperation> {
         match &self.payload {
             DesignScopePayload::Move(value) | DesignScopePayload::MoveFace(value) => value.as_ref(),
+            DesignScopePayload::Align(value) => {
+                value.as_ref().and_then(|envelope| envelope.motion.as_ref())
+            }
             _ => None,
         }
     }
@@ -3154,7 +3229,14 @@ impl DesignParameterScope {
         &self,
     ) -> Option<&DesignComponentInsertConstruction> {
         match &self.payload {
-            DesignScopePayload::ComponentInsert(value) => value.as_ref(),
+            DesignScopePayload::ComponentInsert(value) => value.construction.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn component_insert_placement(&self) -> Option<&DesignComponentInsertPlacement> {
+        match &self.payload {
+            DesignScopePayload::ComponentInsert(value) => value.unresolved_placement.as_ref(),
             _ => None,
         }
     }

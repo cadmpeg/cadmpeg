@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Exact derived-instance, component-insert, copy-paste-component and component-pattern occurrence scopes.
 
 use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
 
-use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::sketch::next_indexed_record_offset;
@@ -23,131 +21,16 @@ use crate::layout::component_insert_relation_345_57 as component_insert_relation
 use crate::layout::component_insert_relation_child_393_58 as component_insert_relation_child_393;
 use crate::layout::component_insert_scope_283_262_257 as component_scope_283_257;
 use crate::layout::component_insert_scope_283_262_385 as component_scope_283_385;
-use crate::layout::derived_instance_relation_310_57 as derived_instance_relation_310;
-use crate::layout::derived_instance_scope_279_261 as derived_instance_279_261;
 use crate::records::feature::assembly_features;
 use crate::records::feature::assembly_features::DesignComponentInsertConstruction;
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 use crate::records::feature::assembly_features::DesignCopyPasteComponentOperation;
-use crate::records::feature::assembly_features::DesignDerivedInstanceConstruction;
 use crate::records::feature::patterns;
 use crate::records::feature::patterns::DesignRectangularPatternInstances;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-
-pub(super) fn exact_derived_instance_construction(
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    scope: &DesignParameterScope,
-    occurrences: &[DesignComponentOccurrence],
-) -> Result<Option<DesignDerivedInstanceConstruction>, CodecError> {
-    if !matches!(
-        scope.kind(),
-        scope::DesignFeatureKind::DerivedInstance | scope::DesignFeatureKind::CopyPaste
-    ) {
-        return Ok(None);
-    }
-    let parsed = (|| {
-        if scope.kind() != scope::DesignFeatureKind::DerivedInstance
-            || scope.class_tag.as_str() != "279"
-            || scope.paired_class_tag.as_str() != "261"
-            || scope.frame_length() != u64_from_index(derived_instance_279_261::LEN)
-            || scope.reference_members().len() != 1
-        {
-            return None;
-        }
-        let start = usize::try_from(scope.byte_offset()).ok()?;
-        if bytes.get(
-            start + derived_instance_279_261::REFERENCE_MARKER
-                ..start + derived_instance_279_261::REFERENCE_RECORD_INDEX,
-        )? != [derived_instance_279_261::REFERENCE_MARKER_VALUE]
-            || bytes.get(
-                start + derived_instance_279_261::REFERENCE_RECORD_INDEX + 4
-                    ..start + derived_instance_279_261::REFERENCE_COUNT,
-            )? != [0; 6]
-            || View::u32_le_at(bytes, start + derived_instance_279_261::REFERENCE_COUNT)?
-                != derived_instance_279_261::REFERENCE_COUNT_VALUE
-            || marked_record_reference(bytes, start + derived_instance_279_261::RELATION_REFERENCE)?
-                != *scope.reference_members().values().next()?
-            || bytes.get(start + derived_instance_279_261::RELATION_REFERENCE + 11) != Some(&0)
-        {
-            return None;
-        }
-        let reference_record_index = View::u32_le_at(
-            bytes,
-            start + derived_instance_279_261::REFERENCE_RECORD_INDEX,
-        )?;
-        let transform_offset = start + derived_instance_279_261::TRANSFORM;
-        let transform = rigid_transform_at(bytes, transform_offset)?;
-
-        let relation_record_index = *scope.reference_members().values().next()?;
-        let relation_at = records.first_at_or_after(0, relation_record_index)?;
-        let (relation_kind, _) =
-            lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_graphic)?;
-        if relation_at >= start
-            || relation_kind != "310"
-            || next_indexed_record_offset(bytes, relation_at + 1)?
-                != relation_at + derived_instance_relation_310::LEN
-            || bytes.get(
-                relation_at + derived_instance_relation_310::INDEXED_HEADER + 11
-                    ..relation_at + derived_instance_relation_310::CARRIER_MARKER,
-            )? != [0; 10]
-            || bytes.get(relation_at + derived_instance_relation_310::CARRIER_MARKER)
-                != Some(&derived_instance_relation_310::CARRIER_MARKER_VALUE)
-            || bytes.get(
-                relation_at + derived_instance_relation_310::CARRIER_RECORD_INDEX + 4
-                    ..relation_at + derived_instance_relation_310::MIDDLE_MARKER,
-            )? != [0; 8]
-            || bytes.get(relation_at + derived_instance_relation_310::MIDDLE_MARKER)
-                != Some(&derived_instance_relation_310::MIDDLE_MARKER_VALUE)
-            || bytes.get(
-                relation_at + derived_instance_relation_310::MIDDLE_RECORD_INDEX + 4
-                    ..relation_at + derived_instance_relation_310::SCOPE_MARKER,
-            )? != [0; 7]
-            || bytes.get(relation_at + derived_instance_relation_310::SCOPE_MARKER)
-                != Some(&derived_instance_relation_310::SCOPE_MARKER_VALUE)
-            || View::u32_le_at(
-                bytes,
-                relation_at + derived_instance_relation_310::SCOPE_RECORD_INDEX,
-            )? != scope.record_index
-            || bytes.get(
-                relation_at + derived_instance_relation_310::SCOPE_RECORD_INDEX + 4
-                    ..relation_at + derived_instance_relation_310::LEN,
-            )? != [0; 6]
-        {
-            return None;
-        }
-        let carrier_record_index = View::u32_le_at(
-            bytes,
-            relation_at + derived_instance_relation_310::CARRIER_RECORD_INDEX,
-        )?;
-        let stream = native_stream(&scope.id)?;
-        let mut candidates = occurrences.iter().filter(|occurrence| {
-            native_stream(&occurrence.id) == Some(stream)
-                && occurrence.class_tag.as_str() == "380"
-                && occurrence.record_index == carrier_record_index
-                && occurrence.byte_offset() < u64_from_index(relation_at)
-                && occurrence.transform().map(|frame| frame.value) == Some(transform)
-        });
-        let carrier = candidates.next()?;
-        if candidates.next().is_some() {
-            return None;
-        }
-        let transform_offset = u64::try_from(transform_offset).ok()?;
-        Some(Ok(DesignDerivedInstanceConstruction {
-            reference_record_index,
-            relation_record_index,
-            carrier_record_index,
-            component_guid: carrier.component_guid.clone(),
-            occurrence_guid: carrier.occurrence_guid.clone(),
-            transform,
-            transform_offset,
-        }))
-    })();
-    parsed.transpose()
-}
 
 pub(super) fn exact_component_insert_construction(
     bytes: &[u8],
@@ -211,7 +94,7 @@ pub(super) fn exact_component_insert_construction(
                 }
                 (400, _) => {
                     let (transform, transform_at, occurrence_identity) =
-                        exact_matrix_insert_scope(bytes, start, relation_record_index)?;
+                        exact_matrix_insert_scope(bytes, start, relation_record_index, false)?;
                     (transform, Some(transform_at), occurrence_identity)
                 }
                 (404, _)
@@ -830,21 +713,75 @@ fn exact_component_insert_scope_283_262_385(
 
 const NULL_COMPONENT_INSERT_GUID: &str = "00000000-0000-0000-0000-000000000000";
 
+pub(super) fn unresolved_component_insert_placement(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<assembly_features::DesignComponentInsertPlacement> {
+    if scope.kind() != scope::DesignFeatureKind::ComponentInsert
+        || scope.reference_members().len() != 1
+    {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let end = usize::try_from(scope.paired_byte_offset()).ok()?;
+    let bytes = bytes.get(..end)?;
+    let relation = *scope.reference_members().values().next()?;
+    let (occurrence_identity, matrix) = match scope.canonical_name_frame_length()? {
+        272 => (
+            exact_identity_insert_scope(bytes, start, relation, false)?,
+            None,
+        ),
+        276 => (
+            exact_identity_insert_scope(bytes, start, relation, true)?,
+            None,
+        ),
+        400 | 404 => {
+            let shifted = scope.canonical_name_frame_length()? == 404;
+            let (value, offset, identity) =
+                exact_matrix_insert_scope(bytes, start, relation, shifted)?;
+            (
+                identity,
+                Some(crate::records::identity::Located {
+                    value,
+                    offset: u64::try_from(offset).ok()?,
+                }),
+            )
+        }
+        _ => return None,
+    };
+    Some(assembly_features::DesignComponentInsertPlacement {
+        occurrence_identity,
+        matrix,
+    })
+}
+
 fn exact_matrix_insert_scope(
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
+    shifted: bool,
 ) -> Option<(
     crate::records::sketch_placement::SketchPlacementMatrix,
     usize,
     u64,
 )> {
+    let delta = if shifted { 4 } else { 0 };
+    let prefix: &[u8] = if shifted {
+        &[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+    } else {
+        &[0; 14]
+    };
+    if bytes.get(
+        start + matrix_insert::ZERO_PREFIX..start + matrix_insert::OCCURRENCE_IDENTITY + delta,
+    )? != prefix
+    {
+        return None;
+    }
+    let start = start + delta;
     let transform_at = start + matrix_insert::TRANSFORM;
-    if bytes.get(start + matrix_insert::ZERO_PREFIX..start + matrix_insert::OCCURRENCE_IDENTITY)?
-        != [0; 14]
-        || bytes.get(
-            start + matrix_insert::ZERO_AFTER_IDENTITY..start + matrix_insert::RELATION_REFERENCE,
-        )? != [0; 4]
+    if bytes.get(
+        start + matrix_insert::ZERO_AFTER_IDENTITY..start + matrix_insert::RELATION_REFERENCE,
+    )? != [0; 4]
         || bytes.get(start + matrix_insert::RELATION_REFERENCE) != Some(&1)
         || View::u32_le_at(bytes, start + matrix_insert::RELATION_REFERENCE + 1)?
             != relation_record_index

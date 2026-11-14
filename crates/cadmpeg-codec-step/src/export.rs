@@ -4747,7 +4747,7 @@ impl<'a> Builder<'a> {
         let fallback_aspect = self
             .emitter
             .emit("SHAPE_ASPECT", &format!("'PMI target','',{pds},.T."));
-        let target_ref = |annotation: &cadmpeg_ir::PmiAnnotation| {
+        let source_target_ref = |annotation: &cadmpeg_ir::PmiAnnotation| {
             annotation
                 .targets
                 .iter()
@@ -4779,6 +4779,76 @@ impl<'a> Builder<'a> {
                 &format!("'PMI geometric targets',{},{context}", refs(&target_items)),
             )
         });
+        let mut annotation_aspects = HashMap::new();
+        let mut all_around_annotations = HashSet::new();
+        let mut unsupported_all_around = HashSet::new();
+        for annotation in &annotations {
+            let modifiers = match &annotation.definition {
+                PmiDefinition::GeometricTolerance { modifiers, .. } => modifiers.as_slice(),
+                PmiDefinition::Dimension(_) => &[],
+                _ => continue,
+            };
+            let mut components = Vec::new();
+            let mut seen = HashSet::new();
+            for target in &annotation.targets {
+                for item in self.pmi_target_refs(target) {
+                    if seen.insert(item) {
+                        components.push(item);
+                    }
+                }
+            }
+            if modifiers
+                .iter()
+                .any(|modifier| modifier.eq_ignore_ascii_case("all_around"))
+            {
+                all_around_annotations.insert(annotation.id.clone());
+                let Some(representation) = target_representation.filter(|_| components.len() >= 2)
+                else {
+                    unsupported_all_around.insert(annotation.id.clone());
+                    self.loss(StepLossCode::PmiAllAroundComponentsUnresolved, format!(
+                        "all-around tolerance '{}' has fewer than two distinct writable geometric components",
+                        annotation.id,
+                    ));
+                    continue;
+                };
+                let scope = self.emitter.emit(
+                    "ALL_AROUND_SHAPE_ASPECT",
+                    &format!(
+                        "{},'',{pds},.T.",
+                        string(annotation.name.as_deref().unwrap_or(""))
+                    ),
+                );
+                for item in components {
+                    let member = self
+                        .emitter
+                        .emit("SHAPE_ASPECT", &format!("'','',{pds},.T."));
+                    self.emitter.emit(
+                        "SHAPE_ASPECT_RELATIONSHIP",
+                        &format!("'','',{scope},{member}"),
+                    );
+                    self.emitter.emit(
+                        "GEOMETRIC_ITEM_SPECIFIC_USAGE",
+                        &format!("'','',{member},{representation},{item}"),
+                    );
+                }
+                annotation_aspects.insert(annotation.id.clone(), scope);
+            } else if !components.is_empty() && source_target_ref(annotation).is_none() {
+                let aspect = self.emitter.emit(
+                    "SHAPE_ASPECT",
+                    &format!(
+                        "{},'',{pds},.T.",
+                        string(annotation.name.as_deref().unwrap_or(""))
+                    ),
+                );
+                annotation_aspects.insert(annotation.id.clone(), aspect);
+            }
+        }
+        let target_ref = |annotation: &cadmpeg_ir::PmiAnnotation| {
+            annotation_aspects
+                .get(&annotation.id)
+                .copied()
+                .or_else(|| source_target_ref(annotation))
+        };
         let mut targets_exact_by_annotation = HashMap::new();
         for annotation in &annotations {
             let semantic = !matches!(&annotation.definition, PmiDefinition::Presentation { .. });
@@ -4796,14 +4866,14 @@ impl<'a> Builder<'a> {
                     exact = false;
                     continue;
                 };
-                if semantic {
+                if semantic && !all_around_annotations.contains(&annotation.id) {
                     for identified_item in identified_items {
                         self.emitter.emit(
                             "GEOMETRIC_ITEM_SPECIFIC_USAGE",
                             &format!("'','',{definition},{used_representation},{identified_item}"),
                         );
                     }
-                } else {
+                } else if !semantic {
                     exact = false;
                 }
             }
@@ -5036,6 +5106,9 @@ impl<'a> Builder<'a> {
                     modifiers,
                     constraints,
                 } => {
+                    if unsupported_all_around.contains(&annotation.id) {
+                        continue;
+                    }
                     if constraints.zones.iter().flat_map(|zone| &zone.projections)
                         .flat_map(cadmpeg_ir::pmi::zones::ToleranceProjection::targets)
                         .any(|target| !matches!(target, PmiTarget::ShapeAspect { source_id } if aspects.contains_key(source_id.as_str())))
@@ -5063,7 +5136,10 @@ impl<'a> Builder<'a> {
                     };
                     let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
                     let modifier_values = Self::emit_geometric_tolerance_modifiers(modifiers);
-                    if !modifiers.is_empty() && modifier_values.is_none() {
+                    let has_modifiers = modifiers
+                        .iter()
+                        .any(|modifier| !modifier.eq_ignore_ascii_case("all_around"));
+                    if has_modifiers && modifier_values.is_none() {
                         continue;
                     }
                     let area_unit =
@@ -5081,7 +5157,7 @@ impl<'a> Builder<'a> {
                     }
                     let measure = self.emit_pmi_measure(magnitude.get());
                     let tolerance_ref = if datum_ref.is_none()
-                        && modifiers.is_empty()
+                        && !has_modifiers
                         && defined_unit.is_none()
                         && area_unit.is_none()
                         && constraints.displacement.is_none()
@@ -5431,6 +5507,7 @@ impl<'a> Builder<'a> {
         ];
         source
             .iter()
+            .filter(|modifier| !modifier.eq_ignore_ascii_case("all_around"))
             .map(|modifier| {
                 let normalized = modifier.to_ascii_lowercase();
                 SUPPORTED
@@ -5438,7 +5515,7 @@ impl<'a> Builder<'a> {
                     .then(|| format!(".{}.", normalized.to_ascii_uppercase()))
             })
             .collect::<Option<Vec<_>>>()
-            .map(|modifiers| modifiers.join(","))
+            .and_then(|modifiers| (!modifiers.is_empty()).then(|| modifiers.join(",")))
     }
 
     fn emit_geometric_tolerance_area_unit(source: Option<&str>) -> Option<String> {

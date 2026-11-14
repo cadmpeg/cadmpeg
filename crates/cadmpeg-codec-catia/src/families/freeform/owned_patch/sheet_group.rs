@@ -16,30 +16,49 @@ use crate::wire::records::{
 };
 
 use super::roster::{
-    allocation_width, backward_roster, legacy_body, logical_bytes, payload, wide_roster, Member,
+    allocation_width, legacy_body, logical_bytes, payload, sheet_references, wide_roster, Member,
 };
 use super::trimmed_face::Source;
 use super::{boundary, fit, CadIr, Patch, Stream};
 
 pub(super) fn root(record: &ConsolidatedRecord, bytes: &[u8]) -> bool {
-    record.family() == Family::B
-        && record.flag() == Flag::Flag13
-        && record.class() == 0x5b
-        && u8::from(record.width()) == 1
+    if record.family() != Family::B
+        || record.flag() != Flag::Flag13
+        || record.class() != 0x5b
+        || allocation_width(bytes, record).is_none()
+    {
+        return false;
+    }
+    let Some(body) = payload(bytes, record).filter(|p| shell_slots(p).is_some()) else {
+        return false;
+    };
+    if u8::from(record.width()) == 1
         && record.header_token() == 5
-        && payload(bytes, record).and_then(shell_slots).is_some()
+        && body.ends_with(&[8, 0xd6, 0x28])
+    {
+        return true;
+    }
+    let Some(next) = record
+        .range()
+        .and_then(|r| parse_consolidated_allocation_record(bytes, r.end, bytes.len()))
+    else {
+        return false;
+    };
+    next.class() == 0x61
+        && next.flag() == Flag::Flag03
+        && payload(bytes, &next)
+            .and_then(|p| sheet_references(p, next.family()))
+            .is_some()
 }
 
 pub(super) fn backward_root(record: &ConsolidatedRecord, bytes: &[u8]) -> bool {
     record.family() == Family::B
         && record.flag() == Flag::Flag13
         && record.class() == 0x5b
-        && payload(bytes, record).is_some_and(|payload| {
-            let Some(distance) = backward_shell_distance(payload) else {
-                return false;
-            };
-            allocation_width(bytes, record) == Some(distance)
-        })
+        && payload(bytes, record)
+            .and_then(backward_shell_distance)
+            .is_some()
+        && allocation_width(bytes, record).is_some()
 }
 
 fn increasing_slots(bytes: &[u8], count: usize, at: &mut usize) -> Option<Vec<usize>> {
@@ -70,8 +89,8 @@ fn shell_slots(bytes: &[u8]) -> Option<Vec<usize>> {
     let count = bytes.first()?.checked_sub(0x80)?;
     let mut at = 1;
     let slots = increasing_slots(bytes, usize::from(count), &mut at)?;
-    let trailer = bounds_trailer(bytes.get(at..)?, count)?;
-    (trailer == [0x08, 0xd6, 0x28]).then_some(slots)
+    bounds_trailer(bytes.get(at..)?, count)?;
+    Some(slots)
 }
 
 fn backward_shell_distance(bytes: &[u8]) -> Option<usize> {
@@ -80,17 +99,19 @@ fn backward_shell_distance(bytes: &[u8]) -> Option<usize> {
     }
     let mut at = 1;
     let reference = allocation_reference(bytes, &mut at)?;
-    if !matches!(reference.encoding, AllocationReferenceEncoding::WidthCoded)
-        || bounds_trailer(bytes.get(at..)?, 1)? != [0x08, 0x64, 0x28]
-    {
+    if !matches!(
+        reference.encoding,
+        AllocationReferenceEncoding::WidthCoded | AllocationReferenceEncoding::BackwardDistance
+    ) {
         return None;
     }
+    bounds_trailer(bytes.get(at..)?, 1)?;
     usize::try_from(reference.value)
         .ok()
         .filter(|&value| value != 0)
 }
 
-fn bounds_trailer(bytes: &[u8], count: u8) -> Option<[u8; 3]> {
+fn bounds_trailer(bytes: &[u8], count: u8) -> Option<&[u8]> {
     let mut tail = View::over_retained(bytes);
     if tail.u8()? != count.checked_mul(4)?.checked_add(1)? || tail.u8()? != 1 {
         return None;
@@ -102,8 +123,8 @@ fn bounds_trailer(bytes: &[u8], count: u8) -> Option<[u8; 3]> {
             return None;
         }
     }
-    let trailer = tail.take(3)?.try_into().ok()?;
-    (tail.remaining() == 0).then_some(trailer)
+    let trailer = tail.take(tail.remaining())?;
+    (trailer == [3] || (trailer.len() == 3 && trailer[0] == 8)).then_some(trailer)
 }
 
 fn roster(bytes: &[u8], family: Family) -> Option<(Vec<usize>, &[u8])> {
@@ -122,6 +143,31 @@ fn roster(bytes: &[u8], family: Family) -> Option<(Vec<usize>, &[u8])> {
         return None;
     }
     Some((slots, bits))
+}
+
+fn allocation_run_start(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+    source: usize,
+    seed: usize,
+) -> Option<usize> {
+    let mut starts = records
+        .iter()
+        .filter(|record| record.source_index() == source)
+        .map(|record| record.source_range().start);
+    let mut start = starts.next()?;
+    let mut position = start;
+    while position < seed {
+        let next = parse_consolidated_allocation_record(bytes, position, bytes.len())
+            .filter(|frame| allocation_width(bytes, frame).is_some());
+        if let Some(frame) = next {
+            position = frame.source_range().end;
+        } else {
+            start = starts.find(|&candidate| candidate > position)?;
+            position = start;
+        }
+    }
+    (position == seed).then_some(start)
 }
 
 struct Allocations {
@@ -262,13 +308,13 @@ impl Allocations {
         if frame.class() != 0x61 || frame.family() != Family::A || frame.flag() != Flag::Flag03 {
             return None;
         }
-        let (distances, bits) = backward_roster(payload(bytes, frame)?)?;
+        let (references, bits) = sheet_references(payload(bytes, frame)?, frame.family())?;
         let mut seen = BTreeSet::new();
-        distances
+        references
             .into_iter()
             .enumerate()
-            .map(|(index, distance)| {
-                let face = self.backward_target(shell, distance)?;
+            .map(|(index, reference)| {
+                let face = self.resolve(shell, reference, true)?;
                 let frame = &self.records[face];
                 if frame.class() != 0x5f
                     || frame.family() != Family::B
@@ -281,6 +327,54 @@ impl Allocations {
                 Some((shell, face, bits[bit / 8] & (1 << (bit % 8)) != 0))
             })
             .collect()
+    }
+
+    fn mixed_faces(
+        &self,
+        bytes: &[u8],
+        group: &ConsolidatedRecord,
+    ) -> Option<Vec<(usize, usize, bool)>> {
+        let group_index = self
+            .records
+            .binary_search_by_key(&group.source_range().start, |r| r.source_range().start)
+            .ok()?;
+        let slots = payload(bytes, &self.records[group_index]).and_then(shell_slots)?;
+        let mut output = Vec::new();
+        let mut seen = BTreeSet::new();
+        for slot in slots {
+            let shell = self
+                .starts
+                .binary_search(&self.after(group_index).checked_add(slot)?)
+                .ok()?;
+            let frame = &self.records[shell];
+            if frame.class() != 0x61 || frame.flag() != Flag::Flag03 {
+                return None;
+            }
+            let (references, bits) = sheet_references(payload(bytes, frame)?, frame.family())?;
+            if !references.iter().any(|r| {
+                matches!(
+                    r.encoding,
+                    AllocationReferenceEncoding::BackwardDistance
+                        | AllocationReferenceEncoding::WidthCoded
+                )
+            }) {
+                return None;
+            }
+            for (index, reference) in references.into_iter().enumerate() {
+                let face = self.resolve(shell, reference, true)?;
+                let frame = &self.records[face];
+                if frame.family() != Family::B
+                    || frame.class() != 0x5f
+                    || frame.flag() != Flag::Flag03
+                    || !seen.insert(face)
+                {
+                    return None;
+                }
+                let bit = index + 4;
+                output.push((shell, face, bits[bit / 8] & (1 << (bit % 8)) != 0));
+            }
+        }
+        Some(output)
     }
 }
 
@@ -331,6 +425,7 @@ pub(super) fn patches(
     } = stream;
     let mut output = Vec::new();
     let mut backward_sources = BTreeSet::new();
+    let mut allocation_starts = BTreeMap::new();
     for group in records
         .iter()
         .filter(|frame| root(frame, data) || backward_root(frame, data))
@@ -339,6 +434,7 @@ pub(super) fn patches(
         let extents = &sources[source];
         let bytes = logical_bytes(ctx, data, extents)?;
         let backward = backward_root(group, data);
+        let mut end_anchored = backward;
         let (alloc, members) = if backward {
             let Some(seed) = records.windows(3).find(|frames| {
                 frames[0].source_index() == source
@@ -347,11 +443,11 @@ pub(super) fn patches(
             }) else {
                 continue;
             };
-            let alloc = Allocations::read(
-                &bytes,
-                seed[0].source_range().start,
-                Some(group.source_range().end),
-            );
+            let seed = seed[0].source_range().start;
+            let start = *allocation_starts.entry((source, seed)).or_insert_with(|| {
+                allocation_run_start(&bytes, records, source, seed).unwrap_or(seed)
+            });
+            let alloc = Allocations::read(&bytes, start, Some(group.source_range().end));
             let members = alloc.backward_faces(&bytes, group);
             (alloc, members)
         } else {
@@ -359,7 +455,42 @@ pub(super) fn patches(
             let members = payload(data, group)
                 .and_then(shell_slots)
                 .and_then(|shells| alloc.faces(&bytes, &shells));
-            (alloc, members)
+            if members.is_some() {
+                (alloc, members)
+            } else {
+                let mixed = alloc.records.first().is_some_and(|frame| {
+                    frame.class() == 0x61
+                        && payload(&bytes, frame)
+                            .and_then(|p| sheet_references(p, frame.family()))
+                            .is_some_and(|(refs, _)| {
+                                refs.iter().any(|r| {
+                                    matches!(
+                                        r.encoding,
+                                        AllocationReferenceEncoding::BackwardDistance
+                                            | AllocationReferenceEncoding::WidthCoded
+                                    )
+                                })
+                            })
+                });
+                if !mixed {
+                    continue;
+                }
+                let Some(seed) = records.windows(3).find(|frames| {
+                    frames[0].source_index() == source
+                        && frames[0].source_range().start < group.source_range().start
+                        && legacy_body(frames, data)
+                }) else {
+                    continue;
+                };
+                let seed = seed[0].source_range().start;
+                let start = *allocation_starts.entry((source, seed)).or_insert_with(|| {
+                    allocation_run_start(&bytes, records, source, seed).unwrap_or(seed)
+                });
+                let alloc = Allocations::read(&bytes, start, Some(bytes.len()));
+                let members = alloc.mixed_faces(&bytes, group);
+                end_anchored = true;
+                (alloc, members)
+            }
         };
         let Some(members) = members else {
             continue;
@@ -368,7 +499,7 @@ pub(super) fn patches(
             backward_sources.insert(source);
         }
         let resolve = |index, reference, family, class| {
-            let target = alloc.resolve(index, reference, backward)?;
+            let target = alloc.resolve(index, reference, end_anchored)?;
             let frame = alloc.records.get(target)?;
             (frame.family() == family && frame.class() == class).then_some(target)
         };
@@ -392,7 +523,7 @@ pub(super) fn patches(
         let trim_source = Source {
             bytes: &bytes,
             records: &alloc.records,
-            resolve: |index, reference| alloc.resolve(index, reference, backward),
+            resolve: |index, reference| alloc.resolve(index, reference, end_anchored),
             physical,
             tensors: &tensors,
         };
@@ -558,6 +689,134 @@ pub(super) fn patches(
 mod tests {
     use super::*;
     use crate::wire::records::parse_consolidated_record;
+
+    #[test]
+    fn sheet_references_reach_allocations_before_the_legacy_body() {
+        let mut bytes = vec![0xb2, 3, 0x5f, 0, 5];
+        bytes.extend([0xa8, 3, 0x32, 0, 0, 0, 0, 0x0c, 4, 0, 0]);
+        let seed = bytes.len();
+        bytes.extend([0xb2, 3, 0x65, 4, 5, 0x81, 3, 5, 0x0d]);
+        bytes.extend([0xb2, 3, 0x60, 2, 5, 0x81, 3]);
+        bytes.extend([0xa5, 3, 0x61, 7, 0, 0, 0, 5, 0x18, 1, 0, 3, 0, 0x11, 3]);
+        bytes.extend([0xb2, 3, 0x5f, 0, 5]);
+        bytes.extend([
+            0xa5, 3, 0x61, 8, 0, 0, 0, 9, 0x18, 2, 0, 0x29, 0x09, 0, 0x13, 3,
+        ]);
+        let group_at = bytes.len();
+        bytes.extend([0xb2, 0x13, 0x5b, 29, 5, 0x81, 5, 5, 1]);
+        bytes.extend([0; 24]);
+        bytes.push(3);
+        let group =
+            parse_consolidated_record(&bytes, group_at, bytes.len()).expect("backward sheet owner");
+        let partial = Allocations::read(&bytes, seed, Some(bytes.len()));
+        assert!(partial.backward_faces(&bytes, &group).is_none());
+        let complete = Allocations::read(&bytes, 0, Some(bytes.len()));
+        assert_eq!(
+            allocation_run_start(&bytes, &complete.records, 0, seed),
+            Some(0)
+        );
+        assert_eq!(
+            complete.backward_faces(&bytes, &group),
+            Some(vec![(6, 0, true), (6, 5, false)])
+        );
+    }
+
+    #[test]
+    fn allocation_run_prefix_stops_at_unframed_bytes() {
+        let bytes = [0xb2, 3, 0x5f, 0, 5, 0xff, 0xb2, 3, 0x5f, 0, 5];
+        let records = [0, 6].map(|offset| {
+            parse_consolidated_record(&bytes, offset, bytes.len()).expect("native frame")
+        });
+        assert_eq!(allocation_run_start(&bytes, &records, 0, 6), Some(6));
+    }
+
+    #[test]
+    fn backward_sheet_owner_keeps_new_and_reused_face_occurrences() {
+        let mut bytes = vec![0xb2, 3, 0x5f, 0, 5];
+        bytes.extend([0xa8, 3, 0x32, 0, 0, 0, 0, 0x0c, 4, 0, 0]);
+        bytes.extend([
+            0xa5, 3, 0x61, 8, 0, 0, 0, 9, 0x18, 2, 0, 3, 0x19, 0, 0x13, 3,
+        ]);
+        bytes.extend([0xb2, 3, 0x5f, 0, 5]);
+        let group_at = bytes.len();
+        bytes.extend([0xb2, 0x13, 0x5b, 29, 5, 0x81, 0x09, 5, 1]);
+        bytes.extend([0; 24]);
+        bytes.push(3);
+        let group =
+            parse_consolidated_record(&bytes, group_at, bytes.len()).expect("backward sheet owner");
+        assert!(backward_root(&group, &bytes));
+        let alloc = Allocations::read(&bytes, 0, Some(bytes.len()));
+        assert_eq!(
+            alloc.backward_faces(&bytes, &group),
+            Some(vec![(2, 3, true), (2, 0, false)])
+        );
+    }
+
+    #[test]
+    fn backward_sheet_roster_crosses_wide_a_frames_and_intervening_allocations() {
+        for (reference, trailer) in [(vec![4, 3], vec![8, 0x64, 0x28]), (vec![0x0d], vec![3])] {
+            let mut bytes = vec![0xb2, 3, 0x5f, 0, 5];
+            let wide_at = bytes.len();
+            bytes.extend([0xa8, 3, 0x32, 0, 0, 0, 0, 0x0c, 4, 0, 0]);
+            bytes.extend([0xa5, 3, 0x61, 7, 0, 0, 0, 5, 0x18, 1, 0, 0x15, 0, 0x13, 3]);
+            bytes.extend([0xb2, 3, 0x25, 1, 9, 0]);
+            let group_at = bytes.len();
+            let length = u8::try_from(27 + reference.len() + trailer.len()).expect("group length");
+            bytes.extend([0xb2, 0x13, 0x5b, length, 5, 0x81]);
+            bytes.extend(&reference);
+            bytes.extend([5, 1]);
+            bytes.extend([0; 24]);
+            bytes.extend(trailer);
+            assert!(parse_consolidated_record(&bytes, wide_at, bytes.len()).is_none());
+            let group = parse_consolidated_record(&bytes, group_at, bytes.len())
+                .expect("sheet group frame");
+            assert!(backward_root(&group, &bytes));
+            let alloc = Allocations::read(&bytes, 0, Some(bytes.len()));
+            assert_eq!(alloc.records.len(), 5);
+            assert_eq!(
+                alloc.backward_faces(&bytes, &group),
+                Some(vec![(2, 0, true)])
+            );
+
+            if reference.len() == 2 {
+                bytes[group_at + 7] = 2;
+            } else {
+                bytes[group_at + 6] = 0x09;
+            }
+            let group = parse_consolidated_record(&bytes, group_at, bytes.len())
+                .expect("sheet group frame");
+            let alloc = Allocations::read(&bytes, 0, Some(bytes.len()));
+            assert!(alloc.backward_faces(&bytes, &group).is_none());
+        }
+    }
+
+    #[test]
+    fn owned_sheet_roster_resolves_new_and_reused_faces_in_occurrence_order() {
+        let mut bytes = vec![0xb2, 3, 0x5f, 0, 5];
+        bytes.extend([0xa8, 3, 0x32, 0, 0, 0, 0, 0x0c, 4, 0, 0]);
+        let group_at = bytes.len();
+        bytes.extend([0xb2, 0x13, 0x5b, 29, 5, 0x81, 3, 5, 1]);
+        bytes.extend([0; 24]);
+        bytes.push(3);
+        let roster_at = bytes.len();
+        bytes.extend([
+            0xa5, 3, 0x61, 8, 0, 0, 0, 9, 0x18, 2, 0, 3, 0x1d, 0, 0x13, 3,
+        ]);
+        bytes.extend([0xb2, 3, 0x5f, 0, 5]);
+        let group =
+            parse_consolidated_record(&bytes, group_at, bytes.len()).expect("sheet group frame");
+        assert!(root(&group, &bytes));
+        let alloc = Allocations::read(&bytes, 0, Some(bytes.len()));
+        assert_eq!(
+            alloc.mixed_faces(&bytes, &group),
+            Some(vec![(3, 4, true), (3, 0, false)])
+        );
+        bytes[roster_at + 12] = 0x19;
+        let alloc = Allocations::read(&bytes, 0, Some(bytes.len()));
+        assert!(alloc.mixed_faces(&bytes, &group).is_none());
+        bytes[roster_at + 2] = 0x5c;
+        assert!(!root(&group, &bytes));
+    }
 
     #[test]
     fn backward_sheet_roster_selects_allocation_ends_in_roster_order() {

@@ -189,6 +189,10 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         DesignFeatureKind::SurfaceDeleteFace,
     ),
     (
+        "8DA2F4A9-C420-419B-AD5D-9CC901DF0B78",
+        DesignFeatureKind::UnStitch,
+    ),
+    (
         "D2BCAE08-CF42-4316-865F-8ED1DFD548E4",
         DesignFeatureKind::SurfaceExtend,
     ),
@@ -262,6 +266,9 @@ pub(super) fn paste_scope_prefix(
 }
 
 pub(super) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {
+    if guid.eq_ignore_ascii_case(super::super::position::TYPE_GUID) {
+        return Some(DesignFeatureKind::native("Position"));
+    }
     FAMILIES
         .iter()
         .find(|(registered, _)| registered.eq_ignore_ascii_case(guid))

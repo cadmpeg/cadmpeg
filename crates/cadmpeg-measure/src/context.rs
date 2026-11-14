@@ -14,8 +14,7 @@ pub(crate) enum Work {
     Row,
     /// What orientation findings read: boundaries, regions and orientation
     /// readings, edge lengths, and, for a face that needs fluxes, its area
-    /// readings and fluxes. Carrier parameters, boxes and extents are not
-    /// computed, and the rows are never reported.
+    /// readings and fluxes.
     Orientation,
 }
 
