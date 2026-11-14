@@ -2419,6 +2419,24 @@ fn scope_properties(
     parameters: &[(u32, &DesignParameter)],
 ) -> Result<std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     let mut properties = std::collections::BTreeMap::new();
+    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble
+        && scope.assembly_alignment().is_some_and(|alignment| {
+            alignment
+                .additional_owner_run
+                .as_ref()
+                .is_some_and(|run| run.count.value != 0)
+        })
+    {
+        for (_, parameter) in parameters {
+            properties.insert(
+                cadmpeg_core::text::NonBlankString::new(format!("parameter:{}", parameter.name()))
+                    .ok_or_else(|| {
+                        CodecError::malformed("assembly parameter property key is blank")
+                    })?,
+                parameter.expression().to_owned(),
+            );
+        }
+    }
     for (ordinal, record_index) in scope.reference_members().values().enumerate() {
         properties.insert(
             cadmpeg_core::text::NonBlankString::new(format!("reference:{ordinal}"))

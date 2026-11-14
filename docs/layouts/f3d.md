@@ -9633,7 +9633,8 @@ Parsed by:
 | 498 | 11 | `z_owner` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
 | 509 | 11 | `x_owner` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
 | 520 | 11 | `y_owner` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
-| 531 | 6 | `owner_suffix_zeros` | `bytes[6]` | little | spec | Version 5 uses the same type GUID and field order · value `[0, 0, 0, 0, 0, 0]` |
+| 531 | 2 | `owner_suffix_zeros` | `bytes[2]` | little | spec | An additional-owner run follows the four explicit alignment references. · value `[0, 0]` |
+| 533 | 4 | `additional_owner_count` | `u32` | little | spec | An additional-owner run follows the four explicit alignment references. · value `0` |
 | 537 | 4 | `locator_count` | `u32` | little | spec | Version 5 uses the same type GUID and field order · value `2` |
 | 541 | 11 | `first_locator` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
 | 552 | 11 | `second_locator` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
