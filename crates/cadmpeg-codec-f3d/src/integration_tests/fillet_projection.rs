@@ -1,4 +1,3 @@
-use super::{parse, typed_scope_frame};
 use crate::design::decode::operands::{
     parse_construction_operand_group, ConstructionOperandGroupParse, RecordFrame,
 };
@@ -13,6 +12,7 @@ use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::records::references::DesignClassTag;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
+use crate::test_support::typed_reference_scopes::{parse, typed_scope_frame};
 use crate::test_support::{indexed_header, push_marked_reference};
 use cadmpeg_ir::features::edge_treatments::RadiusSpec;
 use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};

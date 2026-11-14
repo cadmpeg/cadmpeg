@@ -1466,7 +1466,7 @@ fn parameter_scope_previous_history_offset_for_form(
 }
 
 #[cfg(test)]
-pub(in crate::design::decode) fn parse_parameter_scope(
+pub(crate) fn parse_parameter_scope(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,

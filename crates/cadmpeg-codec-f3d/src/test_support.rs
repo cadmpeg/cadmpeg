@@ -295,3 +295,5 @@ pub(crate) fn loss_codes(
 }
 
 pub(crate) mod move_face;
+
+pub(crate) mod typed_reference_scopes;
