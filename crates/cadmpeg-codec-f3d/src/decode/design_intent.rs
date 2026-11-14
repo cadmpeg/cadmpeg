@@ -641,6 +641,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             face_operands: &design.design_face_operands,
             body_recipe_operands: &design.design_body_recipe_operands,
             placements: &design.design_sketch_placements,
+            placement_constructions: &design.design_placement_constructions,
             body_bindings: &prereqs.design_body_bindings,
             component_naming_spaces: &prereqs.design_component_naming_spaces,
             histories: &design.asm_histories,

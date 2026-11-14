@@ -10122,3 +10122,73 @@ pub(crate) mod assembly_version_four_connector_prefix {
     /// Stated value of `zeros` (`bytes[6]`). Spec §Assembly operands.
     pub(crate) const ZEROS_VALUE: [u8; 6] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 }
+
+/// Byte offsets for the `marked_reference_box_prefix` record.
+///
+/// Spec §3.1. Record length 339 B.
+///
+/// ```text
+/// Scope-relative prefix through the ordered reference count.
+/// ```
+pub(crate) mod marked_reference_box_prefix {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `form_marker` (`u8`). Spec §3.1.
+    pub(crate) const FORM_MARKER: usize = 21;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 22;
+    /// Offset of `nested_marker` (`u8`). Spec §3.1.
+    pub(crate) const NESTED_MARKER: usize = 26;
+    /// Offset of `references` (`bytes[77]`). Spec §3.1.
+    pub(crate) const REFERENCES: usize = 27;
+    /// Offset of `zero_before_matrix` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BEFORE_MATRIX: usize = 104;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 105;
+    /// Offset of `guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GUID_CODE_UNIT_COUNT: usize = 256;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 332;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 335;
+}
+
+/// Byte offsets for the `prefixed_marked_reference_box_prefix` record.
+///
+/// Spec §3.1. Record length 343 B.
+///
+/// ```text
+/// Scope-relative prefix through the ordered reference count.
+/// ```
+pub(crate) mod prefixed_marked_reference_box_prefix {
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `one_prefix` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ONE_PREFIX: usize = 20;
+    /// Offset of `zero_flag` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_FLAG: usize = 24;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 109;
+    /// Offset of `guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GUID_CODE_UNIT_COUNT: usize = 260;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 336;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 339;
+}
+
+/// Byte offsets for the `extended_prefixed_marked_reference_box_prefix` record.
+///
+/// Spec §3.1. Record length 347 B.
+///
+/// ```text
+/// Scope-relative prefix through the ordered reference count.
+/// ```
+pub(crate) mod extended_prefixed_marked_reference_box_prefix {
+    /// Offset of `guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GUID_CODE_UNIT_COUNT: usize = 264;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 340;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 343;
+}

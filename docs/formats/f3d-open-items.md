@@ -20,6 +20,30 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-502. Micron compact profile members and descendant selection
+
+**Question.** Which replacement curve closes a compact profile hole after a curve edit, and which descendant regions of the compact group form the selected material?
+
+**Known.** Public Micron_4010_Bed_FAN_v2 Extrusion 1 scope 1319 has profile group 1320 and selection record 1323. The compact selection names Sketch entity 177 through Sketch scope 182. Its exterior has eleven line members: 130, 132, 116, 114, 133, 118, 122, 120, 124, 128, and 126. Four hole rings each have one circle member: 352, 306, 260, and 168. Curve 352 is absent from both the native curve-identity arena and the projected Sketch. Extrusion 3 scope 1423 has profile group 1424 and selection record 1427. Its compact group has one initial exterior with ten entries and five further regions. Their outer/hole entry counts are 5/0, 12/1, 5/0, 1/0, and 1/1. Every named curve of this group resolves. The initial loop repeats curves 105 and 109 with fragment ordinals one, two, and three. DR-340 records the compact descendant-selection question. The complete-loop resolver requires empty further-region lists and incidence counts of one.
+
+**Need.** A stored replacement or feature-time revision join for circle 352, and a material-selection rule for the initial region and its descendants. The rule must bind the compact incidence operands to directed curve intervals and identify the selected holes.
+
+### DR-500. Counted profile incidence ordinals and curve partitions
+
+**Question.** Which curve partition does the second incidence word select, and what does the third incidence word count?
+
+**Known.** Each 40-byte member carries a traversal flag and two positive incidence words. Public BHCS Revolve 1 selects curve 116 with `(1,2)` and curve 118 with `(2,2)`. Its directed arrangement boundary uses the first interval of curve 116 and the second interval of curve 118. Public SHCS Revolve 1 selects curve 138 with `(2,3)`. Public Standoff Revolve 1 repeats curve 179 with `(1,2)` and `(2,2)` in one exterior loop. The complete intersection partition of SHCS curve 138 has four pieces, and the stored last word is three. Its selected-member graph excludes curve 147 and has three pieces; the second piece equals the directed arrangement interval. Pulley curve 3853 carries `(3,3)`, while its full selected-member curve graph has four pieces at the intersections with curves 3883, 3905, and 3879. The construction-path grammar in §3.1 supplies fragment ordinals and counts from a serialized primary/related tracking graph. The existing arrangement resolver derives exact parameter ranges and directions from unique directed boundary walks.
+
+**Need.** The join from each counted member to its native primary/related tracking graph, the partition domain and circle phase, the treatment of line extensions, clipped members and coincident curves, and the relation to feature-time sketch revisions. These rules must determine both incidence words and the selected interval in independent designs.
+
+### DR-501. Profile members after sketch boundary edits
+
+**Question.** How does the live profile tracking carrier resolve a boundary selection after Sketch curve edits?
+
+**Known.** Both public V6 nozzle Revolve 1 operands have one region with 17 members. Every member resolves to a projected curve. The current sketch has zero stored profiles. Arc 189 joins selected lines 133 and 135 and occurs outside the member list. Tangent relations 1351 and 1352 join this arc to those lines. Both FIN nozzle Revolve 1 operands have one region with 21 members; arc 182 closes the gap between selected lines 140 and 155 and occurs outside the list. Set Screw Revolve 1 has six members; line 171 closes the gap between selected lines 165 and 149 and occurs outside the list. The selected curves alone have open ends in each design. Each affected profile group has a trailing identity wrapper followed by EntityTracking type `50AEE8B4-9456-4DD7-847D-6F6C909BBB9D`, version zero: V6 group 810 names wrapper 1357 and carrier 1358; FIN group 763 names wrapper 1384 and carrier 1385; Set Screw group 7229 names wrapper 7475 and carrier 7476. V6 tracking carrier 1367 names primary identity 189 and related identities 135 and 133 through axis group 817. Each operand retains its native identity and resolved Sketch carrier.
+
+**Need.** The boundary program and source/history join of carrier type `50AEE8B4-9456-4DD7-847D-6F6C909BBB9D`, and a stored replacement or revision join that establishes membership of each added boundary curve and the feature-time parameter intervals of its adjacent members. This join must distinguish a boundary edit from an additional unselected region.
+
 ### DR-463. Analytic sketch-curve tail flag frames
 
 **Question.** Which analytic sketch-curve tail frames carry the construction flag, and how does the type version select each frame?
@@ -68,17 +92,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The decoder checks that the u32 is nonzero, that the 93-byte tail repeats it, and that the final marked reference is present.
 
-### DR-106. Hole extent leading word
+### DR-106. Hole tap types above 2
 
-**Question.** What does the u32 word before the Hole extent controls in type versions 5 and 7 encode?
+**Question.** Which hole settings do Hole tap-type values other than `0`, `1`, and `2` encode?
 
-**Known.** Type versions 3 and 4 omit the word, and type version 3 omits the extent control. The word can be nonzero on Distance and non-distance holes.
+**Known.** `f3d.md` §3.1 "A `Hole` scope starts after its indexed header with eight zero bytes" gives the settled tap-type values. The decoder retains any other value in the extent's `leading_word` and the `hole:extent_leading_word` source property, and reports `feature.hole-extent-leading-word-assumed` for the reading that the stored scalar geometry remains independent of it. The value `1867538229` seen in one System76 chassis Hole has the bytes `35 5F 50 6F`, which read as ASCII text, so the extent block of that Hole can begin at another offset.
 
-**Need.** Controlled Holes of type version 5 or 7 that vary the hole, tap, and position settings independently and bind each word value to one setting.
+**Need.** A controlled taper-tapped Hole, and the setting that writes the word value seen in one System76 chassis Hole.
 
 **Conflict.** None.
-
-**Note.** The decoder retains the word on the native extent and in Hole source properties. A nonzero word reports `feature.hole-extent-leading-word-assumed` for the reading that the stored scalar geometry remains independent of it.
 
 ### DR-220. Hole carrier placement forms
 
@@ -1202,17 +1224,15 @@ The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are t
 
 **Conflict.** None.
 
-### DR-243. Face of an Extents To Hole
+### DR-467. Face that a Hole's `bounded_face` operands name
 
-**Question.** Which face does the member of an Extents To Hole's role-`0x0000000500000000` group name?
+**Question.** Which face do the `bounded_face` operands of a Hole scope name?
 
-**Known.** The member is a `face` recipe operand that follows the group in the scope reference table. In the controls, its candidate lanes name the bottom face of the plate, which is where the hole ends. The start-face `bounded_face` operands of the same scopes name that bottom face too, although the hole starts on the top face.
+**Known.** `f3d.md` §3.1 "A `Hole` scope starts after its indexed header with eight zero bytes" calls these operands start-face operands and admits the Through All form by their recipe kinds and scope-reference order. In the Extents To controls, their candidate lanes name the bottom face of the plate, although the hole starts on the top face.
 
-**Need.** Controls that end the hole on a side face, on a face of another body, and with an offset from the face.
+**Need.** A Hole whose start face, end face, and body bottom face are three different faces.
 
 **Conflict.** None.
-
-**Note.** The decoder projects the one face that the member resolves as the terminating face and reports `feature.hole-extent-face-assumed`. A member that resolves no face or several faces keeps the group as the native face selection.
 
 ### DR-254. Reference edges of a Hole's placement distances
 
@@ -1260,7 +1280,7 @@ The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are t
 
 **Conflict.** None.
 
-**Note.** A repeated identity within one source loop does not prove a complete neutral loop. A program without one unique atomic arrangement match retains its native identity and loss.
+**Note.** A complete neutral-loop match requires distinct identities. Revolve profiles resolve through stored loops or directed member rings. An ambiguous match or a match that requires an interpretation assumption retains the native selection with `feature.profile-selection-native`.
 
 ### DR-125. Counted face-target recipe without a unique historical face
 
@@ -1288,17 +1308,17 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding. The public Voron Trident `z_mounts_front.f3d` has nine such scopes. Component context bindings identify their result owners. The source-body and source-frame joins require the derivation references independently of those owner bindings.
 
-### DR-123. Typed-reference BoxPrimitive offsets and other forms
+### DR-123. BoxPrimitive support frame and planar offset composition
 
-**Question.** How does a nonzero `OffsetDistanceX` or `OffsetDistanceY` owner combine with the stored frame in a `BoxPrimitive` scope with eight typed reference members, and which other frame lengths does the form have?
+**Question.** How does a nonzero `OffsetDistanceX` or `OffsetDistanceY` owner combine with the stored frame in the typed-reference and marked-reference `BoxPrimitive` forms, and how do inferred-axis and flip fields change the support placement?
 
-**Known.** The 1295-byte form stores the result operation, a rigid local frame, and the five box parameter owners; the frame is the box placement when both offset owners are zero. The support-face selection and placement construction references are table members, and the form stores one further typed reference at offset 517 that is not a table member.
+**Known.** Both forms store the result operation, a rigid box-local frame, five parameter owners, and a reference to the support placement construction. The support placement composes on the left of the box-local frame. The 1295-byte form stores one further typed reference at offset 517 outside its table.
 
-**Need.** A scope in this form with a nonzero offset owner and a changed placement, and a scope in any other frame length.
+**Need.** A scope in each form with a nonzero offset owner and a changed placement. Controlled support placements with inferred-axis or flip fields set.
 
 **Conflict.** None.
 
-**Note.** A scope outside the 1295-byte form, or with a nonzero offset owner, remains native with `feature.box-primitive-unresolved`.
+**Note.** The decoder applies nonzero planar offsets along the box-local frame's x and y axes and charges `feature.box-offset-frame-assumed`. A stored rigid support frame with unresolved placement flags transfers with `feature.box-support-flags-assumed`. An absent, ambiguous, or unusable support placement uses an identity support frame with `feature.box-support-frame-assumed`. Dimensions and Boolean operation transfer with these assumed placements.
 
 ### DR-147. Region extent of a tracking-path Extrude selection
 
@@ -1340,9 +1360,9 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** What do the members of a Mirror scope's role-`0x10` group select?
 
-**Known.** `f3d.md` §3.1 "A Design Mirror scope" lists the seed and plane groups. Mirror scopes in the public native-assembly drive-unit design also store a counted role-`0x10` group whose members are class-256 persistent selection records. The same scopes store a role-`0x5` plane group with one bounded-face recipe member. When a Mirror scope has no non-empty role-`0x4` or role-`0x8` group, the decoder uses the role-`0x10` group at scope-reference ordinal one as the seed group of the mirror construction. The members of that group supply face seeds when each decodes as a bounded-face operand. A plane entity selection can have a 29-byte compact identity record whose primary identity is not an origin entity. When the scope has no plane reference and the face candidates of the primary and persistent identities give no plane, the decoder reads the plane from the scope in the same stream at the compact identity plus one. That scope must be a WorkPlane with a finite frame. Each candidate face must be absent from the preceding history state, or lie on one surface with an analytic non-plane definition in that state. A candidate face that gives a plane, a candidate face that does not meet these conditions, or a history that holds the identity and supplies no candidate face voids this reading. The decoder reports `feature.mirror-plane-work-plane-assumed` with each candidate face and its defect.
+**Known.** `f3d.md` §3.1 "A Design Mirror scope" lists the seed and plane groups. Mirror scopes in the public native-assembly drive-unit design also store a counted role-`0x10` group whose members are class-256 persistent selection records. The same scopes store a role-`0x5` plane group with one bounded-face recipe member. When a Mirror scope has no non-empty role-`0x4` or role-`0x8` group, the decoder uses the role-`0x10` group at scope-reference ordinal one as the seed group of the mirror construction. The members of that group supply face seeds when each decodes as a bounded-face operand. A plane entity selection can have a 29-byte compact identity record whose primary identity is not an origin entity. When the type table does not list that identity under the construction-plane type, the scope has no plane reference, and the face candidates of the primary and persistent identities give no plane, the decoder reads the plane from the scope in the same stream at the compact identity plus one. That scope must be a WorkPlane with a finite frame. Each candidate face must be absent from the preceding history state, or lie on one surface with an analytic non-plane definition in that state. A candidate face that gives a plane, a candidate face that does not meet these conditions, or a history that holds the identity and supplies no candidate face voids this reading. The decoder reports `feature.mirror-plane-work-plane-assumed` with each candidate face and its defect.
 
-**Need.** Mirror features with controlled changes to the selected objects, to find which seed kind the group carries and how it relates to the seed group. Mirror features whose plane is a construction plane, saved with the plane selection in each identity form, to show whether the compact identity plus one always names the selected WorkPlane.
+**Need.** Mirror features with controlled changes to the selected objects, to find which seed kind the group carries and how it relates to the seed group. A compact plane selection whose identity the type table does not list under the construction-plane type, to show what that identity names.
 
 **Conflict.** None.
 
