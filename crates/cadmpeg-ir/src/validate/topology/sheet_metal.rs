@@ -210,6 +210,7 @@ mod tests {
             interior: FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("point"),
             tangent: Some(crate::units::UnitVector3::X_AXIS),
             faces: DistinctMembers::default(),
+            supports: Vec::new(),
         };
         let state = |id, input_of| FeatureInputTopology {
             id,

@@ -412,6 +412,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let mut remaining_retained_bytes = prereqs.history_retained_allowance;
     let mut remaining_binding_work = MAX_HISTORY_BINDING_WORK;
     let mut unbound_histories = 0_usize;
+    crate::history::clear_chamfer_orientation();
     for history_brep in container::history_breps(scan) {
         let binding_work = WorkBudget::new(remaining_binding_work);
         let history = decode_asm_history(
@@ -780,6 +781,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_edge_operands,
         &scope_histories,
     );
+    crate::history::clear_chamfer_orientation();
     losses.extend(crate::history::bind_feature_outputs(
         &mut model.features,
         &design.design_parameter_scopes,
