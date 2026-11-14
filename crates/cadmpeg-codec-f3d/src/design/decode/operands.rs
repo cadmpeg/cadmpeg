@@ -2635,7 +2635,7 @@ pub(crate) fn disambiguate_fixed_fillet_parameters(
 }
 
 /// Outcome of reading a scope reference member as a construction-operand group.
-pub(super) enum ConstructionOperandGroupParse {
+pub(crate) enum ConstructionOperandGroupParse {
     /// The record does not open a construction-operand group.
     NotAGroup,
     /// The record opens a group the grammar does not close.
@@ -2737,10 +2737,10 @@ fn extrude_operand_role(
 
 /// Indexed frame identity and stream position.
 #[derive(Clone, Debug)]
-pub(super) struct RecordFrame {
-    pub(super) record_index: u32,
-    pub(super) class_tag: crate::records::references::DesignClassTag,
-    pub(super) byte_offset: u64,
+pub(crate) struct RecordFrame {
+    pub(crate) record_index: u32,
+    pub(crate) class_tag: crate::records::references::DesignClassTag,
+    pub(crate) byte_offset: u64,
 }
 
 impl From<&DesignRecordHeader> for RecordFrame {
@@ -2770,7 +2770,7 @@ impl From<&DesignRecordHeader> for RecordFrame {
 /// this record's own index. That paired header is the next indexed header
 /// with this record's index, and the record's fields are read from the bytes
 /// before it.
-pub(super) fn parse_construction_operand_group(
+pub(crate) fn parse_construction_operand_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
@@ -6763,7 +6763,7 @@ pub(crate) struct FaceOperandFrame<'a> {
     pub(crate) header: &'a DesignRecordHeader,
 }
 
-pub(super) fn parse_face_operand(
+pub(crate) fn parse_face_operand(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,

@@ -293,7 +293,7 @@ const WIDE_DISCRIMINATED_SHIFT: usize = 4;
 
 /// Parse one indexed parameter frame in a Design `BulkStream` test fixture.
 #[cfg(test)]
-pub(in crate::design) fn parse_design_parameter_record(payload: &[u8]) -> Option<DesignParameter> {
+pub(crate) fn parse_design_parameter_record(payload: &[u8]) -> Option<DesignParameter> {
     parse_design_parameter(payload)
         .unwrap()?
         .into_record(TEST_PARAMETER_STREAM, 0)
@@ -1486,7 +1486,7 @@ impl FrameRelative {
 }
 
 /// Parameter owner parsed in frame-relative coordinates.
-pub(in crate::design) struct ParsedParameterOwner {
+pub(crate) struct ParsedParameterOwner {
     pub(super) frame_length: u64,
     pub(super) class_tag: crate::records::references::DesignClassTag,
     pub(super) record_index: u32,
@@ -1504,7 +1504,7 @@ pub(in crate::design) struct ParsedParameterOwner {
 
 impl ParsedParameterOwner {
     /// Locate this owner in its containing stream.
-    pub(in crate::design) fn into_record(
+    pub(crate) fn into_record(
         self,
         stream: &str,
         frame_start: u64,
@@ -1538,7 +1538,7 @@ impl ParsedParameterOwner {
     }
 }
 
-pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner> {
+pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner> {
     parse_parameter_owner_with(frame, OwnerReferenceForm::Plain, OwnerScalar::Numeric).or_else(
         || parse_parameter_owner_with(frame, OwnerReferenceForm::Typed, OwnerScalar::Numeric),
     )
