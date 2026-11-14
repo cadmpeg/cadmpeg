@@ -20,6 +20,7 @@ type Specification = (ChamferSpec, Vec<LossNote>);
 
 pub(super) struct Projection<'p, 'data> {
     legacy_compatible: bool,
+    extra_parameters: usize,
     scope: &'p DesignParameterScope,
     inputs: &'p ProjectInputs<'data>,
     specifications: Option<Vec<Option<Specification>>>,
@@ -28,6 +29,7 @@ pub(super) struct Projection<'p, 'data> {
 pub(super) fn prepare<'p, 'data>(
     scope: &'p DesignParameterScope,
     inputs: &'p ProjectInputs<'data>,
+    parameters: &[(u32, &DesignParameter)],
 ) -> Projection<'p, 'data> {
     let specifications = scope.chamfer_sets().map(|sets| {
         sets.sets
@@ -35,26 +37,55 @@ pub(super) fn prepare<'p, 'data>(
             .map(|set| set_spec(scope, set.spec, inputs))
             .collect::<Vec<_>>()
     });
-    let legacy_compatible = scope.chamfer_sets().is_none_or(|sets| {
-        sets.sets.first().is_some_and(|first| {
-            sets.sets.iter().all(|set| {
-                set_form(set.spec) == set_form(first.spec)
-                    && unique_feature_match(inputs.construction_groups.iter().filter(|group| {
-                        native_stream(&group.id) == native_stream(&scope.id)
-                            && group.scope_record_index == scope.record_index
-                            && group.record_index == set.group_record_index
-                    }))
-                    .is_some()
+    let extra_parameters = scope.chamfer_sets().map_or(0, |sets| {
+        let claimed = sets
+            .sets
+            .iter()
+            .flat_map(|set| set_layout::spec_owners(set.spec))
+            .flatten()
+            .collect::<std::collections::HashSet<_>>();
+        let claimed_parameters = inputs
+            .owners
+            .iter()
+            .filter(|owner| {
+                native_stream(owner.id()) == native_stream(&scope.id)
+                    && owner.scope_record_index() == scope.record_index
+                    && claimed.contains(&owner.record_index())
             })
-        }) && set_layout::agrees_with_owner_order(scope, sets, inputs.owners) == Some(true)
-            && specifications.as_ref().is_some_and(|specs| {
-                specs
-                    .iter()
-                    .all(|spec| spec.as_ref().is_some_and(|(_, notes)| notes.is_empty()))
+            .map(DesignParameterOwner::parameter_record_index)
+            .collect::<std::collections::HashSet<_>>();
+        parameters
+            .iter()
+            .filter(|(_, parameter)| {
+                !claimed_parameters.contains(&parameter.record_index)
+                    && parameter
+                        .owner_record_index()
+                        .is_none_or(|owner| !claimed.contains(&owner))
             })
+            .count()
     });
+    let legacy_compatible = extra_parameters == 0
+        && scope.chamfer_sets().is_none_or(|sets| {
+            sets.sets.first().is_some_and(|first| {
+                sets.sets.iter().all(|set| {
+                    set_form(set.spec) == set_form(first.spec)
+                        && unique_feature_match(inputs.construction_groups.iter().filter(|group| {
+                            native_stream(&group.id) == native_stream(&scope.id)
+                                && group.scope_record_index == scope.record_index
+                                && group.record_index == set.group_record_index
+                        }))
+                        .is_some()
+                })
+            }) && set_layout::agrees_with_owner_order(scope, sets, inputs.owners) == Some(true)
+                && specifications.as_ref().is_some_and(|specs| {
+                    specs
+                        .iter()
+                        .all(|spec| spec.as_ref().is_some_and(|(_, notes)| notes.is_empty()))
+                })
+        });
     Projection {
         legacy_compatible,
+        extra_parameters,
         scope,
         inputs,
         specifications,
@@ -67,7 +98,6 @@ impl Projection<'_, '_> {
     }
     pub(super) fn project(
         self,
-        parameters: &[(u32, &DesignParameter)],
         ctx: &DecodeContext<'_>,
         losses: &mut Vec<LossNote>,
     ) -> Result<FeatureDefinition, CodecError> {
@@ -75,37 +105,13 @@ impl Projection<'_, '_> {
             scope,
             inputs,
             specifications,
+            extra_parameters,
             ..
         } = self;
         if let (Some(sets), Some(specifications)) = (scope.chamfer_sets(), specifications) {
-            let claimed = sets
-                .sets
-                .iter()
-                .flat_map(|set| set_layout::spec_owners(set.spec))
-                .flatten()
-                .collect::<std::collections::HashSet<_>>();
-            let claimed_parameters = inputs
-                .owners
-                .iter()
-                .filter(|owner| {
-                    native_stream(owner.id()) == native_stream(&scope.id)
-                        && owner.scope_record_index() == scope.record_index
-                        && claimed.contains(&owner.record_index())
-                })
-                .map(DesignParameterOwner::parameter_record_index)
-                .collect::<std::collections::HashSet<_>>();
-            let extra = parameters
-                .iter()
-                .filter(|(_, parameter)| {
-                    !claimed_parameters.contains(&parameter.record_index)
-                        && parameter
-                            .owner_record_index()
-                            .is_none_or(|owner| !claimed.contains(&owner))
-                })
-                .count();
-            if extra != 0 {
+            if extra_parameters != 0 {
                 losses.push(F3dLossCode::ChamferDefinitionUnresolved.note(format!(
-                "Chamfer {} retains {} additional parameter(s) in native metadata because its set slots do not assign their behavior.", scope.id, extra
+                "Chamfer {} retains {} additional parameter(s) in native metadata because its set slots do not assign their behavior.", scope.id, extra_parameters
             )));
             }
             if sets.corner_type
@@ -139,20 +145,11 @@ impl Projection<'_, '_> {
                         }
                     }
                 };
-                if !spec.is_unresolved()
-                    && !matches!(set.spec, DesignChamferSetSpec::EqualDistance { .. })
-                {
-                    losses.push(F3dLossCode::ChamferReferenceFaceAssumed.note(format!(
-                    "Chamfer set {} of {} applies its owner-slot order with forward direction; the input reference-face assignment is assumed (DR-341).",
-                    set.record_index, scope.id
-                )));
-                    if matches!(set.spec, DesignChamferSetSpec::DistanceAngle { .. }) {
-                        losses.push(F3dLossCode::ChamferAngleReferenceAssumed.note(format!(
-                        "Chamfer set {} of {} reads the stored radian angle as the neutral angle from the distance reference face (DR-343).",
-                        set.record_index, scope.id
-                    )));
-                    }
-                }
+                note_orientation_assumptions(
+                    &format!("Chamfer set {} of {}", set.record_index, scope.id),
+                    spec,
+                    losses,
+                );
                 let group =
                     unique_feature_match(inputs.construction_groups.iter().filter(|group| {
                         native_stream(&group.id) == native_stream(&scope.id)
@@ -203,6 +200,27 @@ impl Projection<'_, '_> {
             groups,
             flip_direction: false,
         }))
+    }
+}
+
+pub(super) fn note_orientation_assumptions(
+    subject: &str,
+    spec: ChamferSpec,
+    losses: &mut Vec<LossNote>,
+) {
+    if !matches!(
+        spec,
+        ChamferSpec::TwoDistances { .. } | ChamferSpec::DistanceAngle { .. }
+    ) {
+        return;
+    }
+    losses.push(F3dLossCode::ChamferReferenceFaceAssumed.note(format!(
+        "{subject} applies its owner-slot order with forward direction; the input reference-face assignment is assumed (DR-341)."
+    )));
+    if matches!(spec, ChamferSpec::DistanceAngle { .. }) {
+        losses.push(F3dLossCode::ChamferAngleReferenceAssumed.note(format!(
+            "{subject} reads the stored radian angle as the neutral angle from the distance reference face (DR-343)."
+        )));
     }
 }
 
