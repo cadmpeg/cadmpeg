@@ -67,7 +67,7 @@ pub(crate) fn project_thicken(
     list_thicken_whole_bodies(&mut faces, scope, groups);
     if !complete || faces == FaceSelection::Native(scope.id.clone()) {
         losses.push(F3dLossCode::ThickenFaceSelectionAssumed.note(format!(
-            "Thicken {} retains its scope selection where the input groups do not resolve uniquely (DR-489).", scope.id
+            "Thicken {} retains its scope selection where the input groups do not resolve uniquely (DR-503).", scope.id
         )));
         if !complete {
             faces = match faces {
@@ -106,7 +106,7 @@ pub(crate) fn project_thicken(
     }
     let Some(operation) = operation else {
         losses.push(F3dLossCode::ThickenFrameAssumed.note(format!(
-            "Thicken {} projects its available face selection with unresolved construction settings because its prefix has no closed reading (DR-489).", scope.id
+            "Thicken {} projects its available face selection with unresolved construction settings because its prefix has no closed reading (DR-503).", scope.id
         )));
         return Some(FeatureDefinition::Operation(FeatureOperation::thicken(
             faces, None, None,
@@ -151,7 +151,7 @@ pub(crate) fn project_thicken(
                 (Some(group), None) => BodySelection::Native(group.id.clone()),
                 _ => {
                     losses.push(F3dLossCode::ThickenTargetSelectionAssumed.note(format!(
-                        "Thicken {} retains its Boolean target reference {} in the scope selection because the target group is missing or inconsistent (DR-489).", scope.id, boolean.target_group_record_index
+                        "Thicken {} retains its Boolean target reference {} in the scope selection because the target group is missing or inconsistent (DR-503).", scope.id, boolean.target_group_record_index
                     )));
                     BodySelection::Native(scope.id.clone())
                 }

@@ -1852,7 +1852,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** None.
 
-### DR-489. Thicken identity runs and incomplete construction references
+### DR-503. Thicken identity runs and incomplete construction references
 
 **Question.** Which entities do the first counted prefix run and unmatched Thicken prefixes identify, and how do incomplete group definitions select their operands?
 
