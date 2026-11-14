@@ -386,6 +386,25 @@ fn pipe_projection_uses_explicit_circle_with_partial_extent() {
 }
 
 #[test]
+fn pipe_projection_reads_unit_fractions_without_a_point_selection_as_the_whole_path() {
+    use crate::test_support::pipe::{Config, Fixture, SectionFrame};
+    use cadmpeg_ir::features::SolidSweepOperation;
+    let (feature, losses) = projected_fixture(
+        &Fixture::new(Config {
+            values: [1.0, 1.0, 0.5, 0.1],
+            section: Some(SectionFrame::of(0)),
+            ..Default::default()
+        }),
+        |_, _| {},
+    );
+    assert_eq!(
+        sweep_operation_and_extent(feature.evaluation.definition()),
+        Some((SolidSweepOperation::NewBody, 1.0, 1.0))
+    );
+    assert!(losses.is_empty());
+}
+
+#[test]
 fn pipe_projection_keeps_existing_explicit_circle_output() {
     use crate::test_support::pipe::{Config, Fixture, SectionFrame};
     let (feature, losses) = projected_fixture(
@@ -882,14 +901,23 @@ fn bound_with_losses(
             ..
         }))
     );
-    assert_eq!(
-        losses.len(),
-        match (projected, read_circle) {
-            (false, _) => 0,
-            (true, true) => 1,
-            (true, false) => 2,
-        }
-    );
+    let count = |codes: [F3dLossCode; 2]| {
+        losses
+            .iter()
+            .filter(|loss| codes.iter().any(|code| code.kind() == **loss))
+            .count()
+    };
+    let section = count([
+        F3dLossCode::FeaturePipeCircularSectionInferred,
+        F3dLossCode::FeaturePipeCircularSectionAssumed,
+    ]);
+    let extent = count([
+        F3dLossCode::FeaturePipeWholePathExtentAssumed,
+        F3dLossCode::FeaturePipePathEndSectionAssumed,
+    ]);
+    assert_eq!(section, usize::from(projected && !read_circle));
+    assert!(extent <= usize::from(projected));
+    assert_eq!(losses.len(), section + extent);
     (definition, losses)
 }
 
@@ -928,10 +956,7 @@ fn a_new_body_pipe_with_circular_result_faces_projects_as_a_circular_sweep() {
     assert_eq!(circular_section(&definition), Some((2.5, None)));
     assert_eq!(
         losses,
-        [
-            F3dLossCode::FeaturePipeCircularSectionInferred.kind(),
-            F3dLossCode::FeaturePipeWholePathExtentAssumed.kind()
-        ]
+        [F3dLossCode::FeaturePipeCircularSectionInferred.kind()]
     );
     let FeatureDefinition::Operation(FeatureOperation::Sweep {
         path: Some(PathRef::Native(path)),
@@ -1219,8 +1244,41 @@ fn a_new_body_pipe_without_result_bodies_assumes_a_circle() {
     assert_eq!(circular_section(&definition), Some((3.0, Some(1.5))));
     assert_eq!(
         losses,
+        [F3dLossCode::FeaturePipeCircularSectionAssumed.kind()]
+    );
+}
+
+#[test]
+fn a_point_selected_pipe_with_unit_fractions_assumes_its_whole_path_extent() {
+    use crate::test_support::pipe::{Config, Fixture};
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let native = Fixture::new(Config {
+        values: [1.0, 1.0, 0.5, 0.1],
+        point_version: Some(2),
+        ..Default::default()
+    })
+    .decode(&ctx)
+    .unwrap();
+    let scope = &native.design_parameter_scopes[0];
+    assert!(matches!(
+        scope.payload(),
+        DesignScopePayload::Pipe(Some(DesignPipeConstruction {
+            point_selection: Some(_),
+            ..
+        }))
+    ));
+    let (definition, losses) = bound_with_losses(
+        scope,
+        &native.design_parameter_owners,
+        &native.design_construction_operand_groups,
+        &[cylinder(2.5)],
+        |_, _| {},
+    );
+    assert_eq!(circular_section(&definition), Some((2.5, None)));
+    assert_eq!(
+        losses,
         [
-            F3dLossCode::FeaturePipeCircularSectionAssumed.kind(),
+            F3dLossCode::FeaturePipeCircularSectionInferred.kind(),
             F3dLossCode::FeaturePipeWholePathExtentAssumed.kind()
         ]
     );
@@ -1258,10 +1316,7 @@ fn a_read_circular_shape_projects_without_a_section_test() {
         |_, _| {},
     );
     assert_eq!(circular_section(&definition), Some((2.5, None)));
-    assert_eq!(
-        losses,
-        [F3dLossCode::FeaturePipeWholePathExtentAssumed.kind()]
-    );
+    assert!(losses.is_empty());
 }
 
 #[test]
