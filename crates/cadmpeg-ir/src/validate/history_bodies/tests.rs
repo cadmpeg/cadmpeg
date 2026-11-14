@@ -211,11 +211,30 @@ fn a_producer_or_consumer_that_names_no_feature_is_reported() {
 }
 
 #[test]
-fn nest_records_are_not_seen_by_the_top_level_reference_check() {
-    let mut ir = CadIr::empty();
+fn a_history_body_without_a_producer_or_consumer_is_reported() {
+    let mut ir = crate::examples::unit_cube().expect("cube");
     ir.model
         .history_bodies
         .push(history_body("0", scoped(cube_nest())));
+    let found = findings(&ir);
+    assert!(
+        errors(&found).iter().any(|finding| {
+            finding.check == Check::ReferentialIntegrity
+                && finding
+                    .message
+                    .contains("names neither a producing nor a consuming feature")
+        }),
+        "{found:?}"
+    );
+}
+
+#[test]
+fn nest_records_are_not_seen_by_the_top_level_reference_check() {
+    let mut ir = CadIr::empty();
+    ir.model.features.push(feature("test:model:feature#base"));
+    let mut body = history_body("0", scoped(cube_nest()));
+    body.consumed_by = Some(FeatureId::mint("test:model:feature#base").unwrap());
+    ir.model.history_bodies.push(body);
     let report = validate_neutral(&ir, Vec::new()).expect("validation runs");
     assert!(
         !report

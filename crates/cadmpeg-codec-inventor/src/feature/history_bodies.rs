@@ -74,6 +74,8 @@ pub(crate) struct Outcome {
     pub(crate) open: [usize; 3],
     /// Bodies skipped under the nest or work cap.
     pub(crate) bounded: usize,
+    /// Decoded bodies whose Base or Split feature is not a projected feature.
+    pub(crate) unlinked: usize,
 }
 
 /// Nests of a part and their links.
@@ -298,9 +300,14 @@ pub(crate) fn build(
             Some(Extract::Nest(topology)) => {
                 let ordinal = built.bodies.len();
                 let record = &records[want.record];
-                let feature = features
+                let Some(feature) = features
                     .get(record.feature.as_str())
-                    .map(|id| (*id).clone());
+                    .map(|id| (*id).clone())
+                else {
+                    // A history body names the feature it comes from.
+                    built.outcome.unlinked += 1;
+                    continue;
+                };
                 let body = nest(ctx, ordinal, want, feature, *topology)?;
                 ctx.charge_entities(
                     cadmpeg_core::decode::u64_from_index(body.topology.record_count()),
@@ -321,7 +328,7 @@ fn nest(
     ctx: &DecodeContext<'_>,
     ordinal: usize,
     want: &Want,
-    feature: Option<FeatureId>,
+    feature: FeatureId,
     topology: BodyTopology,
 ) -> Result<HistoryBody, CodecError> {
     let prefix = format!("h{ordinal:04}-");
@@ -336,8 +343,8 @@ fn nest(
     map.finish()?;
     sort_by_identity(&mut topology);
     let (produced_by, consumed_by) = match want.role {
-        Role::Base => (feature, None),
-        Role::Split => (None, feature),
+        Role::Base => (Some(feature), None),
+        Role::Split => (None, Some(feature)),
     };
     Ok(HistoryBody {
         id: HistoryBodyId::mint(format!("inventor:{NEST_SCOPE}:nest#h{ordinal:04}"))

@@ -73,8 +73,8 @@ type FaceDef = (
 );
 
 /// [`unit_cube`] with one history body: a second copy of the cube, held in a
-/// nest whose identities are in the `history-body` scope. The model arenas hold
-/// the first copy only.
+/// nest whose identities are in the `history-body` scope, as the result of a
+/// base feature. The model arenas hold the first copy and the feature only.
 pub fn unit_cube_with_history_body() -> Result<CadIr, ExampleError> {
     use crate::history_body::{BodyTopology, HistoryBody, HistoryStateRef};
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
@@ -108,12 +108,34 @@ pub fn unit_cube_with_history_body() -> Result<CadIr, ExampleError> {
     let nest = nest.rewrite_identities(&ctx, &mut map)?;
     map.finish()?;
     ctx.finish_session()?;
+    let feature = crate::features::FeatureId::mint("synthetic:model:feature#base")
+        .map_err(|_| ExampleError::Geometry("the base feature has an identity"))?;
+    ir.model.features.push(crate::features::Feature {
+        product_definition: None,
+        id: feature.clone(),
+        ordinal: 0,
+        name: Some("Base Feature".to_owned()),
+        suppressed: Some(false),
+        dependencies: crate::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            crate::features::FeatureDefinition::Operation(
+                crate::features::FeatureOperation::Sketch {
+                    sketch: crate::features::SketchFeatureBinding::Unresolved,
+                },
+            ),
+        ),
+        native_ref: None,
+    });
     ir.model.history_bodies.push(HistoryBody {
         id: crate::ids::HistoryBodyId::compose(
             &crate::identity_namespace!("synthetic", "history-body", "nest"),
             crate::identity_key!("0"),
         ),
-        produced_by: None,
+        produced_by: Some(feature),
         consumed_by: None,
         state: HistoryStateRef {
             ordinal: 0,

@@ -297,6 +297,9 @@ pub(crate) enum InventorLossCode {
     FeatureHistoryBodyNotClosed,
     /// A part passed the local cap of history bodies or of their materialization work.
     FeatureHistoryBodyBounded,
+    /// The Base or Split feature of a decoded history body is not a projected
+    /// feature, so the body has no origin to name.
+    FeatureHistoryBodyUnlinked,
     /// Drawing records retain unresolved semantics natively.
     DrawingNativeOnly,
     /// A drawing record is outside its typed prefix form.
@@ -447,6 +450,7 @@ impl InventorLossCode {
         Self::FeatureHistoryBodyUndecoded,
         Self::FeatureHistoryBodyNotClosed,
         Self::FeatureHistoryBodyBounded,
+        Self::FeatureHistoryBodyUnlinked,
         Self::DrawingNativeOnly,
         Self::DrawingRecordMalformed,
         Self::PmiTargetUnresolved,
@@ -613,6 +617,7 @@ impl InventorLossCode {
             Self::FeatureHistoryBodyUndecoded => "feature.history-body-undecoded",
             Self::FeatureHistoryBodyNotClosed => "feature.history-body-not-closed",
             Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
+            Self::FeatureHistoryBodyUnlinked => "feature.history-body-unlinked",
             Self::DrawingNativeOnly => "drawing.native-only",
             Self::DrawingRecordMalformed => "drawing.record-malformed",
             Self::PmiTargetUnresolved => "pmi.target-unresolved",
@@ -750,6 +755,7 @@ impl InventorLossCode {
             | Self::FeatureHistoryBodyUndecoded
             | Self::FeatureHistoryBodyNotClosed
             | Self::FeatureHistoryBodyBounded
+            | Self::FeatureHistoryBodyUnlinked
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
@@ -942,6 +948,7 @@ mod tests {
                 "feature.history-body-undecoded",
                 "feature.history-body-not-closed",
                 "feature.history-body-bounded",
+                "feature.history-body-unlinked",
                 "drawing.native-only",
                 "drawing.record-malformed",
                 "pmi.target-unresolved",

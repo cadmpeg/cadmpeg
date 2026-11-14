@@ -739,6 +739,12 @@ fn body_losses(outcome: &super::history_bodies::Outcome) -> Vec<LossNote> {
             outcome.not_closed()
         )));
     }
+    if outcome.unlinked > 0 {
+        notes.push(InventorLossCode::FeatureHistoryBodyUnlinked.note(format!(
+            "{} decoded body(ies) of Split and Base features belong to a feature that is not projected; those bodies have no history body.",
+            outcome.unlinked
+        )));
+    }
     if outcome.bounded > 0 {
         notes.push(InventorLossCode::FeatureHistoryBodyBounded.note(format!(
             "{} body(ies) of Split and Base features passed the local cap of history bodies; those bodies have no history body.",

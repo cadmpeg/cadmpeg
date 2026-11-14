@@ -245,7 +245,7 @@ fn a_nest_moves_into_its_own_scope_and_validates_as_a_document() {
         role: Role::Split,
     };
     let consumer = feature("split");
-    let body = nest(&ctx, 3, &want, Some(consumer.id.clone()), *topology).expect("nest");
+    let body = nest(&ctx, 3, &want, consumer.id.clone(), *topology).expect("nest");
     assert_eq!(body.id.as_str(), "inventor:history-body:nest#h0003");
     assert_eq!(body.consumed_by.as_ref(), Some(&consumer.id));
     assert!(body.produced_by.is_none());
@@ -613,6 +613,20 @@ fn a_state_with_a_reference_to_no_slot_gives_no_nest() {
 }
 
 #[test]
+fn a_decoded_body_of_an_unprojected_feature_gives_no_nest() {
+    let built = build_from(RefWidth::Eight, false, &[split(SPHERE_BODY_KEY)], &[]);
+    assert!(built.bodies.is_empty());
+    assert_eq!(
+        built.outcome,
+        Outcome {
+            requested: 1,
+            unlinked: 1,
+            ..Outcome::default()
+        }
+    );
+}
+
+#[test]
 fn a_base_reads_the_state_after_it() {
     let mut base = record(BASE_TAG, "base", Some(0), Some(CURRENT_BODY_KEY));
     base.state_after = Some(StateRef {
@@ -666,6 +680,7 @@ fn the_losses_name_each_count() {
                 undecoded: 2,
                 open: [1, 0, 1],
                 bounded: 1,
+                unlinked: 1,
             },
             ..Built::default()
         },
@@ -679,6 +694,7 @@ fn the_losses_name_each_count() {
         [
             "feature.history-body-undecoded",
             "feature.history-body-not-closed",
+            "feature.history-body-unlinked",
             "feature.history-body-bounded"
         ]
     );

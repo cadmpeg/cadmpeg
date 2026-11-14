@@ -90,6 +90,15 @@ pub(super) fn check_history_bodies(
     let mut owners = HashSet::new();
     for body in &ir.model.history_bodies {
         let owner = body.id.as_str();
+        if body.produced_by.is_none() && body.consumed_by.is_none() {
+            record_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                Severity::Error,
+                Some(owner),
+                format_args!("history body names neither a producing nor a consuming feature"),
+            );
+        }
         for (role, feature) in [
             ("produced_by", &body.produced_by),
             ("consumed_by", &body.consumed_by),
