@@ -9068,19 +9068,31 @@ fn validate_sketch_relations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
 /// record of every sketch point, curve, and surface.
 fn validate_sketch_geometry_identities(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let native = ctx.native;
-    let mut sketch_point_identities = HashSet::new();
+    // First holder of each point identity, by incident-curve count.
+    let mut sketch_point_identities = std::collections::HashMap::new();
     let mut sketch_geometry_records = HashSet::new();
     // An unresolved owner is not one shared sketch. Enforce uniqueness only
-    // when the owning sketch reference is known.
+    // when the owning sketch reference is known. The center point of a fillet
+    // arc has one incident curve and repeats the identity of the filleted
+    // corner point, which has other incident curves.
     for point in &native.sketch_points {
         let duplicate = if let (Some(persistent_id), Some(owner_reference)) =
             (point.persistent_id(), point.owner_reference)
         {
-            !sketch_point_identities.insert((
+            let incident = point.companion().incident_curves.len();
+            match sketch_point_identities.entry((
                 design_stream(&point.id),
                 owner_reference,
                 persistent_id,
-            ))
+            )) {
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    slot.insert(incident);
+                    false
+                }
+                std::collections::hash_map::Entry::Occupied(first) => {
+                    (incident == 1) == (*first.get() == 1)
+                }
+            }
         } else {
             false
         };
