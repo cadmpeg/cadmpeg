@@ -34,6 +34,37 @@ fn flagged(scope: &[u8], word: u32) -> Vec<u8> {
 }
 
 #[test]
+fn removal_scope_reads_its_source_before_the_counted_scope_guid() {
+    let mut scope = record(7, 108);
+    put(&mut scope, 21, &reference(8));
+    put(&mut scope, 32, &36u32.to_le_bytes());
+    let read = read_scope(MeshOperationKind::Remove, &scope).unwrap();
+    assert_eq!(read.fields, MeshOperationFields::Remove);
+    assert_eq!(read.source_group, 8);
+    assert_eq!(read.input_geometry, 0);
+    assert_eq!(read.output_geometry, None);
+    assert_eq!(read.tail_error, None);
+    assert!(read.deviations.is_empty());
+    let read = read_scope(MeshOperationKind::Remove, &flagged(&scope, 9)).unwrap();
+    assert_eq!(read.source_group, 8);
+    assert_eq!(read.prefix_word, Some(9));
+    assert_eq!(read.tail_error, None);
+}
+
+#[test]
+fn removal_scope_keeps_its_kind_when_the_source_reference_is_truncated() {
+    let mut scope = record(7, 31);
+    put(&mut scope, 21, &[1, 8, 0, 0, 0]);
+    let read = read_scope(MeshOperationKind::Remove, &scope).unwrap();
+    assert_eq!(read.fields, MeshOperationFields::Remove);
+    assert_eq!(read.source_group, 0);
+    assert_eq!(
+        read.tail_error,
+        Some(MeshOperationFraming("source group reference"))
+    );
+}
+
+#[test]
 fn reverse_normals_scope_stores_its_geometry_tail_at_offset_21() {
     let mut scope = record(7, 128);
     tail(&mut scope, 21, 30, 20, 8);
