@@ -8715,7 +8715,7 @@ fn project_hole(
         }
         if specification.is_some() {
             losses.push(crate::loss::F3dLossCode::HoleClearanceFieldsAssumed.note(format!(
-                "Hole {} sets the modeled, cosmetic, hand and depth fields of its clearance specification to modeled, cosmetic off, right hand and hole depth; its sizing block stores the standard, fit, size and fastener names only.", scope.id
+                "Hole {} sets the modeled, cosmetic, hand and depth fields of its clearance specification to modeled, cosmetic off, right hand and hole depth, which its sizing block does not store; its stored diameter gives the bore without comparison to the standard size, and its fastener name remains a source property.", scope.id
             )));
         } else if extent.standard.is_some() {
             losses.push(crate::loss::F3dLossCode::HoleStandardSizingAssumed.note(format!(
@@ -8778,7 +8778,7 @@ fn hole_clearance_specification(
     scope: &DesignParameterScope,
 ) -> Option<cadmpeg_ir::features::holes::HoleSpecification> {
     let extent = scope.hole_extent()?;
-    if extent.leading_word.as_ref()?.value != 1 {
+    if extent.leading_word.as_ref()?.value != HOLE_TAP_CLEARANCE {
         return None;
     }
     let names = extent.standard.as_ref()?;

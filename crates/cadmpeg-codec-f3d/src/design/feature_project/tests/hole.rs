@@ -1443,54 +1443,69 @@ fn extra_parameters_and_native_sizing_keep_the_admitted_hole_dimensions() {
     }
 }
 
+fn project_sized_hole(
+    tap_type: u32,
+    names: Option<(&str, &str, &str)>,
+) -> (
+    cadmpeg_ir::features::holes::HoleShape,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let mut scope = hole_scope();
+    if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
+        let extent = slot.extent.as_mut().unwrap();
+        extent.leading_word = Some(crate::records::identity::Located {
+            value: tap_type,
+            offset: 5,
+        });
+        extent.standard =
+            names.map(
+                |(standard, fit, size)| crate::records::feature::hole::DesignHoleStandard {
+                    offset: 10,
+                    standard: standard.into(),
+                    fit: fit.into(),
+                    size: size.into(),
+                    fastener: "Flat Head Machine Screw".into(),
+                },
+            );
+    }
+    let parameters = hole_parameters();
+    let indexed: Vec<_> = parameters
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (u32::try_from(i).unwrap(), p))
+        .collect();
+    let mut losses = Vec::new();
+    let Some(FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. })) =
+        project_hole(&scope, &indexed, &[], &[], &mut losses).unwrap()
+    else {
+        panic!("Hole")
+    };
+    (shape, losses)
+}
+
+fn has_loss(losses: &[cadmpeg_ir::report::loss::LossNote], code: crate::loss::F3dLossCode) -> bool {
+    losses.iter().any(|loss| loss.code == code.kind())
+}
+
+fn hole_specification(
+    shape: &cadmpeg_ir::features::holes::HoleShape,
+) -> Option<&cadmpeg_ir::features::holes::HoleSpecification> {
+    match shape.construction() {
+        cadmpeg_ir::features::holes::HoleConstruction::Form { specification, .. } => {
+            specification.as_deref()
+        }
+        _ => None,
+    }
+}
+
 #[test]
 fn a_clearance_hole_maps_its_sizing_names_to_a_clearance_specification() {
-    use cadmpeg_ir::features::holes::{
-        HoleConstruction, HoleSpecification, HoleThreadDepth, ThreadHand,
-    };
-    let project = |tap_type: u32| {
-        let mut scope = hole_scope();
-        if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) =
-            scope.payload_mut()
-        {
-            let extent = slot.extent.as_mut().unwrap();
-            extent.leading_word = Some(crate::records::identity::Located {
-                value: tap_type,
-                offset: 5,
-            });
-            extent.standard = Some(crate::records::feature::hole::DesignHoleStandard {
-                offset: 10,
-                standard: "Ansi Metric M Profile".into(),
-                fit: "Normal".into(),
-                size: "M3".into(),
-                fastener: "Flat Head Machine Screw".into(),
-            });
-        }
-        let parameters = hole_parameters();
-        let indexed: Vec<_> = parameters
-            .iter()
-            .enumerate()
-            .map(|(i, p)| (u32::try_from(i).unwrap(), p))
-            .collect();
-        let mut losses = Vec::new();
-        let Some(FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. })) =
-            project_hole(&scope, &indexed, &[], &[], &mut losses).unwrap()
-        else {
-            panic!("Hole")
-        };
-        (shape, losses)
-    };
-    let (shape, losses) = project(1);
-    let HoleConstruction::Form {
-        specification: Some(specification),
-        ..
-    } = shape.construction()
-    else {
-        panic!("clearance specification")
-    };
+    use crate::loss::F3dLossCode::{HoleClearanceFieldsAssumed, HoleStandardSizingAssumed};
+    use cadmpeg_ir::features::holes::{HoleSpecification, HoleThreadDepth, ThreadHand};
+    let (shape, losses) = project_sized_hole(1, Some(("Ansi Metric M Profile", "Normal", "M3")));
     assert_eq!(
-        specification.as_ref(),
-        &HoleSpecification::Clearance {
+        hole_specification(&shape),
+        Some(&HoleSpecification::Clearance {
             standard: cadmpeg_core::text::NonBlankString::new("Ansi Metric M Profile").unwrap(),
             designation: Some("M3".into()),
             fit: Some("Normal".into()),
@@ -1499,37 +1514,44 @@ fn a_clearance_hole_maps_its_sizing_names_to_a_clearance_specification() {
             hand: ThreadHand::Right,
             depth: HoleThreadDepth::HoleDepth,
             clearance: None,
-        }
+        })
     );
     assert_eq!(shape.diameter().unwrap().get(), 4.0);
-    let has = |losses: &[cadmpeg_ir::report::loss::LossNote], code: crate::loss::F3dLossCode| {
-        losses.iter().any(|loss| loss.code == code.kind())
-    };
-    assert!(has(
-        &losses,
-        crate::loss::F3dLossCode::HoleClearanceFieldsAssumed
-    ));
-    assert!(!has(
-        &losses,
-        crate::loss::F3dLossCode::HoleStandardSizingAssumed
-    ));
+    assert!(has_loss(&losses, HoleClearanceFieldsAssumed));
+    assert!(!has_loss(&losses, HoleStandardSizingAssumed));
+}
 
-    let (shape, losses) = project(0);
+#[test]
+fn a_clearance_hole_with_blank_fit_and_size_names_keeps_the_standard() {
+    use cadmpeg_ir::features::holes::HoleSpecification;
+    let (shape, _) = project_sized_hole(1, Some(("Ansi Metric M Profile", " ", "")));
     assert!(matches!(
-        shape.construction(),
-        HoleConstruction::Form {
-            specification: None,
+        hole_specification(&shape),
+        Some(HoleSpecification::Clearance {
+            designation: None,
+            fit: None,
             ..
-        }
+        })
     ));
-    assert!(has(
-        &losses,
-        crate::loss::F3dLossCode::HoleStandardSizingAssumed
-    ));
-    assert!(!has(
-        &losses,
-        crate::loss::F3dLossCode::HoleClearanceFieldsAssumed
-    ));
+}
+
+#[test]
+fn sizing_names_outside_a_clearance_hole_keep_the_sizing_loss() {
+    use crate::loss::F3dLossCode::{
+        HoleClearanceFieldsAssumed, HoleStandardSizingAssumed, HoleTappedDiameterStored,
+    };
+    let names = Some(("Ansi Metric M Profile", "Normal", "M3"));
+    for (tap_type, names) in [(0, names), (2, names), (1, Some((" ", "Normal", "M3")))] {
+        let (shape, losses) = project_sized_hole(tap_type, names);
+        assert_eq!(hole_specification(&shape), None);
+        assert!(has_loss(&losses, HoleStandardSizingAssumed));
+        assert!(!has_loss(&losses, HoleClearanceFieldsAssumed));
+        assert_eq!(has_loss(&losses, HoleTappedDiameterStored), tap_type == 2);
+    }
+    let (shape, losses) = project_sized_hole(1, None);
+    assert_eq!(hole_specification(&shape), None);
+    assert!(!has_loss(&losses, HoleStandardSizingAssumed));
+    assert!(!has_loss(&losses, HoleClearanceFieldsAssumed));
 }
 
 #[test]
