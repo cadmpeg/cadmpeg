@@ -46,6 +46,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 pub(crate) mod form_cages;
+mod mesh_face_groups;
 mod mirror;
 mod paste_copy;
 mod path_pattern;
@@ -54,6 +55,7 @@ mod reverse_normal;
 mod revolve_target;
 mod surface_offset;
 mod surface_patch;
+pub(crate) mod sweep_fallback;
 pub(crate) mod thicken;
 mod unstitch;
 
@@ -1460,6 +1462,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 parameters: BTreeMap::new(),
                             })
                         })
+                    } else if matches!(scope.kind(), crate::records::feature::scope::DesignFeatureKind::GenerateFaceGroups | crate::records::feature::scope::DesignFeatureKind::CombineFaceGroups) {
+                        mesh_face_groups::project(scope, &parameters, design_types, &mut projection_losses)
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::PathPattern
                     {
@@ -1613,7 +1617,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: if matches!(
                     &definition,
-                    FeatureDefinition::Operation(FeatureOperation::Native { .. })
+                    FeatureDefinition::Operation(FeatureOperation::Native { .. } | FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. })
                 ) || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CurveDrivenPartial { .. }))
                     || matches!(family, Some(DesignFeatureFamily::Hole))
                     || matches!(family, Some(DesignFeatureFamily::Emboss))
@@ -2621,6 +2625,45 @@ fn scope_properties(
         }) {
             let id = crate::ids::neutral_sketch_id(placement);
             properties.insert(cadmpeg_core::nonblank_literal!("profile"), id.into_string());
+        }
+    }
+    if let Some(construction) = scope.mesh_face_groups() {
+        for (key, field) in [
+            (
+                cadmpeg_core::nonblank_literal!("mesh-face-groups:method-code"),
+                &construction.method_code,
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("mesh-face-groups:source-mesh"),
+                &construction.source_mesh,
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("mesh-face-groups:related-mesh"),
+                &construction.related_mesh,
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("mesh-face-groups:group-count"),
+                &construction.group_count,
+            ),
+        ] {
+            if let Some(field) = field {
+                properties.insert(key, field.value.to_string());
+            }
+        }
+        if let Some(hint) = &construction.group_hint {
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("mesh-face-groups:group-hint"),
+                hint.value.clone(),
+            );
+        }
+        for (ordinal, group) in construction.groups.iter().enumerate() {
+            properties.insert(
+                cadmpeg_core::text::NonBlankString::new(format!(
+                    "mesh-face-groups:group:{ordinal}"
+                ))
+                .ok_or_else(|| CodecError::malformed("blank mesh group property"))?,
+                group.value.clone(),
+            );
         }
     }
     if matches!(
