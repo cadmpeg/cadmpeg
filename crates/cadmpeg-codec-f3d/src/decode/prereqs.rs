@@ -208,7 +208,7 @@ pub(super) fn decode(
         ambiguous_current_poses: design_ambiguous_current_poses,
         losses: design_component_occurrence_losses,
         paths: design_component_paths,
-    } = crate::design::decode::components::decode_component_occurrences(scan)?;
+    } = crate::design::decode::components::decode_component_occurrences(ctx, scan)?;
     let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
         scopes: mut design_parameter_scopes,
         losses: design_parameter_scope_losses,
