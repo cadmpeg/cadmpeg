@@ -112,18 +112,65 @@ pub(crate) struct DesignShellOutsideWall {
 }
 
 /// Exact `Thicken` construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignThickenOperation {
     /// Signed thickness in source centimetres.
-    pub(crate) signed_thickness: FiniteReal,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_thicken_signed_thickness"
+    )]
+    pub(crate) signed_thickness: Option<FiniteReal>,
     /// Referenced scalar record.
     pub(crate) thickness_record_index: u32,
     /// Byte offset of the scalar.
-    pub(crate) thickness_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_thicken_thickness_offset"
+    )]
+    pub(crate) thickness_offset: Option<u64>,
     /// Whether the thickness is added on both sides of the selected faces.
     pub(crate) symmetric: bool,
     /// Whether the selection extends along tangent faces.
     pub(crate) tangent_chain: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) group_record_indices: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) identity_record_indices: Vec<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_thicken_boolean"
+    )]
+    pub(crate) boolean: Option<DesignThickenBoolean>,
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_thicken_signed_thickness,
+    FiniteReal,
+    "signed_thickness"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_thicken_thickness_offset,
+    u64,
+    "thickness_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_thicken_boolean, DesignThickenBoolean, "boolean");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignThickenBoolean {
+    pub(crate) operation: DesignThickenBooleanOperation,
+    pub(crate) operation_offset: u64,
+    pub(crate) target_group_record_index: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignThickenBooleanOperation {
+    Join,
+    Cut,
+    Intersect,
 }
 
 cadmpeg_core::named_optional_field!(

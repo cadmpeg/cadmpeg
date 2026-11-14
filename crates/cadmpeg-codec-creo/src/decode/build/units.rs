@@ -378,6 +378,14 @@ fn scale_feature_operation(
             mode: WrapMode::Scribe,
             ..
         } => {}
+        FeatureOperation::Wrap {
+            mode: WrapMode::Unresolved { depth: Some(depth) },
+            ..
+        } => scale_length(depth, scale)?,
+        FeatureOperation::Wrap {
+            mode: WrapMode::Unresolved { depth: None },
+            ..
+        } => {}
         FeatureOperation::SketchBlockInstance {
             placement: Some(placement),
             ..

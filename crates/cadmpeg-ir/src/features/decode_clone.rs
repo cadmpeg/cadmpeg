@@ -3,7 +3,7 @@
 
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
-    BodyMembers, BodySelection, CoilConstruction, CoilPlacement, CoilResult, CombineOperands,
+    BodyMembers, BodySelection, CoilConstruction, CoilPlacement, CombineOperands,
     ComponentTransferMode, DatumPlaneReference, DatumPointConstruction, DistinctMembers,
     DraftAnchor, DraftPull, DraftSecondSide, EdgeSelection, ExtrudeDirection, ExtrudeExtent,
     ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion,
@@ -19,9 +19,10 @@ use super::{
     SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding,
     SketchPointSelection, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion,
-    SketchProfileRegions, SplitBodyTool, SplitFacePlanes, SplitFaceTool, SurfaceBoundary,
-    SweepGuideRail, SweepOrientation, SweepSection, SweepShape, ThreePointSelection, TreeChildren,
-    TrimBodyOperands, TrimCellSelection, TrimRegion, VertexSelection,
+    SketchProfileRegions, SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool,
+    SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
+    ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
+    VertexSelection,
 };
 
 rewrite_enum!(AngularTermination, []; {
@@ -76,7 +77,7 @@ rewrite_enum!(CoilPlacement, []; {
     Native { native_ref },
 });
 
-rewrite_enum!(CoilResult, []; {
+rewrite_enum!(SolidFeatureResult, []; {
     NewBody {  },
     Boolean { operation, targets },
 });
@@ -264,7 +265,7 @@ rewrite_enum!(FeatureOperation, []; {
     RuledBetweenCurves { first, second, orientation },
     SectionShape { operands, approximate },
     MirrorShape { source, plane_origin, plane_normal, plane_reference },
-    Thicken { faces, thickness, side },
+Thicken { faces, thickness, side, result, tangent_chain },
     OffsetSurface { faces, distance },
     KnitSurface { faces, merge_entities, create_solid, gap_tolerance },
     SewBodies { bodies, gap_tolerance },

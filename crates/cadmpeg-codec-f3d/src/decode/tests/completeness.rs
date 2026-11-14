@@ -327,18 +327,18 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         })
     ));
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces: faces.clone(),
-            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()),
-            side: Some(ThickenSide::Forward),
-        })
+        &FeatureDefinition::Operation(FeatureOperation::thicken(
+            faces.clone(),
+            Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()),
+            Some(ThickenSide::Forward)
+        ))
     ));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces: faces.clone(),
-            thickness: None,
-            side: Some(ThickenSide::Both),
-        })
+        &FeatureDefinition::Operation(FeatureOperation::thicken(
+            faces.clone(),
+            None,
+            Some(ThickenSide::Both)
+        ))
     ));
 
     let shell = |bodies, removed_faces| {
