@@ -26,6 +26,14 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
+    BendLineOwnerOrderAssumed,
+    BendStationaryRoleAssumed,
+    BendAngleUnresolved,
+    BendRadiusFirstAssumed,
+    BendStationarySelectionNative,
+    BendRuleRadiusUnresolved,
+    BendAngleOwnerBacklinkAssumed,
+    BendCachedOwnerAngleAssumed,
     /// A displayed path matches several neutral occurrences.
     SceneOverrideAmbiguous,
     /// A displayed path has no neutral occurrence.
@@ -1355,6 +1363,14 @@ impl F3dLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::SceneOverrideRefused => "scene.override-refused",
+            Self::BendLineOwnerOrderAssumed => "feature.bend-line-owner-order-assumed",
+            Self::BendStationaryRoleAssumed => "feature.bend-stationary-role-assumed",
+            Self::BendAngleUnresolved => "feature.bend-angle-unresolved",
+            Self::BendRadiusFirstAssumed => "feature.bend-radius-first-assumed",
+            Self::BendStationarySelectionNative => "feature.bend-stationary-selection-native",
+            Self::BendRuleRadiusUnresolved => "feature.bend-rule-radius-unresolved",
+            Self::BendAngleOwnerBacklinkAssumed => "feature.bend-angle-owner-backlink-assumed",
+            Self::BendCachedOwnerAngleAssumed => "feature.bend-cached-owner-angle-assumed",
             Self::SceneOverrideAmbiguous => "scene.override-ambiguous",
             Self::SceneOverrideUnbound => "scene.override-unbound",
             Self::ScopeOwnerUnresolved => "scope.owner-unresolved",
@@ -2011,6 +2027,14 @@ impl F3dLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::SceneOverrideRefused => Severity::Warning,
+            Self::BendStationaryRoleAssumed
+            | Self::BendAngleUnresolved
+            | Self::BendRadiusFirstAssumed
+            | Self::BendLineOwnerOrderAssumed
+            | Self::BendStationarySelectionNative
+            | Self::BendRuleRadiusUnresolved
+            | Self::BendAngleOwnerBacklinkAssumed
+            | Self::BendCachedOwnerAngleAssumed => Severity::Warning,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => Severity::Info,
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
@@ -2501,6 +2525,14 @@ impl F3dLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::SceneOverrideRefused => LossTaxonomy::RecordNotTyped,
+            Self::BendStationaryRoleAssumed
+            | Self::BendAngleUnresolved
+            | Self::BendRadiusFirstAssumed
+            | Self::BendLineOwnerOrderAssumed
+            | Self::BendStationarySelectionNative
+            | Self::BendRuleRadiusUnresolved
+            | Self::BendAngleOwnerBacklinkAssumed
+            | Self::BendCachedOwnerAngleAssumed => LossTaxonomy::FeatureHistoryRetained,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => {
                 LossTaxonomy::FeatureHistoryRetained
             }

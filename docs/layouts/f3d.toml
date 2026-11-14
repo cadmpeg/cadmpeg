@@ -17610,6 +17610,32 @@ section = "1.3"
 anchor = "`Manifest.dat` grammar"
 
 [[record]]
+name = "bend_scope_angular_reference_roles"
+kind = "slot"
+section = "3.1"
+anchor = "A `Bend` scope owns one `BendAngle` parameter"
+note = "Ordered reference roles for Bend angular inputs."
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/feature_project/bend_lines.rs"
+
+[[record.field]]
+name = "construction_group"
+type = "u32"
+source = "spec"
+anchor = "The ordered scope references carry the construction groups, selection operands, and parameter owners."
+
+[[record.field]]
+name = "selection_operand"
+type = "u32"
+source = "spec"
+anchor = "The ordered scope references carry the construction groups, selection operands, and parameter owners."
+
+[[record.field]]
+name = "angular_parameter_owner"
+type = "u32"
+source = "spec"
+anchor = "The parameter owner retains the association between a value and the scope reference table."
+
+[[record]]
 name = "edge_flange_fixed_operation_section"
 kind = "byte"
 section = "3.1"
