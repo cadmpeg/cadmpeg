@@ -1895,3 +1895,31 @@ mod split_plane;
 mod stored_results;
 
 mod transition_geometry;
+
+#[test]
+fn base_feature_output_blob_selects_its_complete_output_chain() {
+    let (mut feature, scope, mut history, mut body) = output_binding_inputs();
+    body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep/selected.smbh/brep:entity#1").unwrap();
+    feature.evaluation.set_outputs(
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![body.id.clone()]).unwrap(),
+    );
+    history.id = "f3d:Breps.BlobParts/BREP.selected.smbh:asm-history#1".into();
+    let mut other = history.clone();
+    other.id = "f3d:Breps.BlobParts/BREP.other.smbh:asm-history#1".into();
+    let losses = super::super::bind_feature_outputs(
+        std::slice::from_mut(&mut feature),
+        &[scope],
+        &mut [other, history],
+        std::slice::from_ref(&body),
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    assert!(losses.iter().any(|note| {
+        note.code == crate::loss::F3dLossCode::HistoricalOutputBlobHistoryInferred.kind()
+    }));
+    assert!(!losses.iter().any(|note| {
+        note.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()
+    }));
+    assert_eq!(feature.evaluation.outputs(), &[body.id]);
+}

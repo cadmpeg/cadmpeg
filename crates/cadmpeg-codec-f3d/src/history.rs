@@ -22,6 +22,7 @@ mod combine_selection;
 pub(crate) mod compact_lineage;
 mod delete_face;
 pub(crate) mod edge_flange;
+pub(crate) mod edge_recipe_scope;
 mod edge_samples;
 pub(crate) mod extrude_target;
 pub(crate) mod face_admission;
@@ -1183,7 +1184,8 @@ pub(crate) fn bind_feature_outputs(
     losses.append(&mut inferred_histories);
     let output_chains = features
         .iter()
-        .map(|feature| {
+        .enumerate()
+        .map(|(index, feature)| {
             let (current, previous) = feature_history_states(feature, scopes, histories)?;
             output_chain::OutputChain::resolve(
                 histories,
@@ -1193,7 +1195,8 @@ pub(crate) fn bind_feature_outputs(
                     .native_ref
                     .as_deref()
                     .and_then(|id| scope_histories.get(id))
-                    .map(String::as_str),
+                    .map(String::as_str)
+                    .or_else(|| feature_sources[index].map(|source| histories[source].id.as_str())),
             )
         })
         .collect::<Vec<_>>();
@@ -5312,7 +5315,9 @@ pub(crate) fn bind_scope_histories(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     body_bindings: &[crate::records::bodies::DesignBodyBinding],
     body_recipe_operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
+    edge_recipes: edge_recipe_scope::Sources<'_>,
     histories: &[AsmHistory],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> HashMap<String, String> {
     let mut candidates = Vec::new();
     for scope in scopes {
@@ -5347,6 +5352,7 @@ pub(crate) fn bind_scope_histories(
         }
     }
     let mut resolved = HashMap::<String, String>::new();
+    let mut inferred_scopes = HashSet::<String>::new();
     for (scope, candidates) in &candidates {
         if candidates.len() == 1 {
             insert_scope_history_binding(&mut resolved, &scope.id, &candidates[0].id);
@@ -5400,6 +5406,15 @@ pub(crate) fn bind_scope_histories(
                 continue;
             }
         }
+        if let Some(history) = edge_recipe_scope::select(scope, edge_recipes, candidates) {
+            insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
+            inferred_scopes.insert(scope.id.clone());
+            losses.push(crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.note(format!(
+                "scope {}: its state pair occurs in several histories; it reads {}, whose BREP blob agrees with every qualified edge-recipe face candidate.",
+                scope.id, history.id
+            )));
+            continue;
+        }
         let Some(construction) = scope.base_feature_construction() else {
             continue;
         };
@@ -5426,7 +5441,7 @@ pub(crate) fn bind_scope_histories(
             insert_scope_history_binding(&mut resolved, &scope.id, history_id);
         }
     }
-    let mut groups = HashMap::<(&str, i64, Option<i64>), Vec<usize>>::new();
+    let mut groups = BTreeMap::<(&str, i64, Option<i64>), Vec<usize>>::new();
     for (index, (scope, _)) in candidates.iter().enumerate() {
         let (Some(stream), Some(state_id)) = (
             crate::ids::native_stream(&scope.id),
@@ -5474,6 +5489,17 @@ pub(crate) fn bind_scope_histories(
                     .filter(|history| !assigned.contains(history.id.as_str()));
                 if let Some(history) = remaining.next().filter(|_| remaining.next().is_none()) {
                     insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
+                    let rests_on_inference = members.iter().any(|other| {
+                        let other = &candidates[*other].0.id;
+                        other != &scope.id && inferred_scopes.contains(other)
+                    });
+                    if rests_on_inference {
+                        inferred_scopes.insert(scope.id.clone());
+                        losses.push(crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.note(format!(
+                            "scope {}: it reads {}, the only candidate history that no other scope with its state pair holds, and one of those scopes reads its history through edge-recipe face candidates.",
+                            scope.id, history.id
+                        )));
+                    }
                     progress = true;
                 }
             }
