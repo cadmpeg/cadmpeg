@@ -609,7 +609,7 @@ fn attributed_component_occurrence(
     }
     let component_record_index = component.0;
     let count = View::u32_le_at(frame, count_at)?;
-    if !(1..=MAX_OCCURRENCE_ATTRIBUTES).contains(&count) {
+    if count > MAX_OCCURRENCE_ATTRIBUTES {
         return None;
     }
     let mut attributes = Vec::new();
@@ -768,7 +768,7 @@ fn leading_flag_component_occurrence(
     let ordinal =
         std::num::NonZeroU32::new(View::u32_le_at(frame, leading_prefix::OCCURRENCE_ORDINAL)?)?;
     let identity_flag = *frame.get(leading_prefix::IDENTITY_FLAG)?;
-    let (placement, matrix) = match identity_flag {
+    let (source_placement, matrix) = match identity_flag {
         1 if ordinal.get() == 1 => (DesignComponentOccurrencePlacement::Base, None),
         1 => (
             DesignComponentOccurrencePlacement::Identity { ordinal },
@@ -806,18 +806,29 @@ fn leading_flag_component_occurrence(
         || View::u64_le_at(frame, at(leading_body::COMPONENT_REFERENCE_REPEAT) + 1)?
             != component_record_index
         || frame.get(repeat_end..at(leading_body::IDENTITY_FLAG_REPEAT))? != [0; 2]
-        || frame.get(at(leading_body::IDENTITY_FLAG_REPEAT)) != Some(&identity_flag)
     {
         return None;
     }
     let record_reference = View::u64_le_at(frame, at(leading_body::RECORD_REFERENCE) + 1)?;
     let mut tail = at(leading_body::LEN);
-    if let Some(matrix) = matrix {
-        if frame.get(tail..tail + MATRIX_BYTES)? != matrix {
-            return None;
+    let placement = match *frame.get(at(leading_body::IDENTITY_FLAG_REPEAT))? {
+        1 if ordinal.get() == 1 => DesignComponentOccurrencePlacement::Base,
+        1 => DesignComponentOccurrencePlacement::Identity { ordinal },
+        0 => {
+            let transform = super::scopes::shared_frames::rigid_transform_at(frame, tail)?;
+            tail += MATRIX_BYTES;
+            DesignComponentOccurrencePlacement::Explicit { ordinal, transform }
         }
-        tail += MATRIX_BYTES;
-    }
+        _ => return None,
+    };
+    let source_placement = (source_placement != placement).then_some(
+        crate::records::feature::assembly_features::DesignOccurrenceSourcePlacement {
+            transform: match source_placement {
+                DesignComponentOccurrencePlacement::Explicit { transform, .. } => Some(transform),
+                _ => None,
+            },
+        },
+    );
     if frame.get(tail..tail + identity_tail::OWNER_MARKER)? != [0; 9]
         || frame.get(tail + identity_tail::OWNER_MARKER) != Some(&identity_tail::OWNER_MARKER_VALUE)
         || frame.get(tail + identity_tail::OWNER_ENTITY + 8..)? != [0; 2]
@@ -843,6 +854,7 @@ fn leading_flag_component_occurrence(
         DesignLeadingFlagOccurrenceFrame {
             ordinal_prefix,
             record_reference,
+            source_placement,
         },
     )
     .ok()?;

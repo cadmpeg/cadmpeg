@@ -432,6 +432,7 @@ pub(crate) enum SketchPointClosure {
     Selector0State0,
     Selector0State1,
     Selector1State0,
+    Selector1State1,
     Selector2State1,
     Selector4State0,
     Selector4State1,
@@ -441,7 +442,7 @@ impl SketchPointClosure {
     pub(crate) fn selector(self) -> u64 {
         match self {
             Self::Selector0State0 | Self::Selector0State1 => 0,
-            Self::Selector1State0 => 1,
+            Self::Selector1State0 | Self::Selector1State1 => 1,
             Self::Selector2State1 => 2,
             Self::Selector4State0 | Self::Selector4State1 => 4,
         }
@@ -450,7 +451,10 @@ impl SketchPointClosure {
     pub(crate) fn state(self) -> u8 {
         match self {
             Self::Selector0State0 | Self::Selector1State0 | Self::Selector4State0 => 0,
-            Self::Selector0State1 | Self::Selector2State1 | Self::Selector4State1 => 1,
+            Self::Selector0State1
+            | Self::Selector1State1
+            | Self::Selector2State1
+            | Self::Selector4State1 => 1,
         }
     }
 
@@ -459,6 +463,7 @@ impl SketchPointClosure {
             (0, 0) => Some(Self::Selector0State0),
             (0, 1) => Some(Self::Selector0State1),
             (1, 0) => Some(Self::Selector1State0),
+            (1, 1) => Some(Self::Selector1State1),
             (2, 1) => Some(Self::Selector2State1),
             (4, 0) => Some(Self::Selector4State0),
             (4, 1) => Some(Self::Selector4State1),
@@ -2503,6 +2508,38 @@ impl SketchNurbsPoles {
 mod tests {
     use super::{SketchCurveGeometry, SketchPoint, SketchSurface, SketchText};
     use serde_json::json;
+
+    #[test]
+    fn point_closure_preserves_selector_one_state_one() {
+        use super::{SketchPointClosure, SketchPointClosure10, SketchPointClosure10Inline};
+
+        let closure = SketchPointClosure::from_pair(1, 1).unwrap();
+        assert_eq!(closure, SketchPointClosure::Selector1State1);
+        assert_eq!(closure.selector(), 1);
+        assert_eq!(closure.state(), 1);
+        assert!(SketchPointClosure10::from_closure(closure).is_none());
+        assert!(SketchPointClosure10Inline::from_closure(closure).is_none());
+        for kind in ["version11", "version11_inline_typed"] {
+            let mut wire = native_point_wire(&json!({"kind": kind}));
+            wire["closure"] = json!({"selector": 1, "state": 1});
+            wire["flags"] = json!("0000000000000000");
+            wire["record_form"]["padded_paired_reference"] = json!(false);
+            wire["record_form"]["trailing_reference"] = json!(17);
+            let point: SketchPoint = serde_json::from_value(wire).unwrap();
+            let serialized = serde_json::to_value(&point).unwrap();
+            assert_eq!(serialized["closure"], json!({"selector": 1, "state": 1}));
+            let restored: SketchPoint = serde_json::from_value(serialized.clone()).unwrap();
+            assert_eq!(restored, point);
+            let mut version_ten = serialized;
+            version_ten["record_form"]["kind"] = json!(if kind == "version11" {
+                "version10"
+            } else {
+                "version10_inline_typed"
+            });
+            let error = serde_json::from_value::<SketchPoint>(version_ten).unwrap_err();
+            assert!(error.to_string().contains("version-10"));
+        }
+    }
 
     #[test]
     fn sketch_geometry_constructors_preserve_standard_values() {

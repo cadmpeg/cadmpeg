@@ -149,7 +149,6 @@ fn authored_binary_exact_shape_declared_reading_matches_source_dimensions() {
 }
 
 #[test]
-#[ignore = "the spherical face has an unconfirmed orientation and volume is unavailable"]
 fn authored_binary_exact_shape_has_confirmed_measures() {
     let bytes =
         include_bytes!("../../../../corpus/freecad_fcstd/fixtures/binary_exact_shape.FCStd");

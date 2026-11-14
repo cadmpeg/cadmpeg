@@ -574,6 +574,37 @@ class CheckoutLocationTests(unittest.TestCase):
 
 
 class PlacementRules(TempSourceCase):
+    def generated_layout(self, *, lines: int = 9, declaration: str = "pub(crate) const LEN: usize = 11;") -> str:
+        self.write("docs/layouts/demo.toml", 'schema = 1\nformat = "demo"\n')
+        return _pad_lines([
+            "// SPDX-License-Identifier: Apache-2.0",
+            "//! Byte-offset and value constants generated from `docs/layouts/demo.toml`.",
+            declaration,
+        ], lines)
+
+    def test_generated_layout_constants_have_a_bounded_larger_limit(self) -> None:
+        self.write("crates/demo/src/layout.rs", self.generated_layout())
+        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4), patch.object(policy, "GENERATED_LAYOUT_LINE_LIMIT", 10):
+            self.assertEqual(self.findings("production_size"), [])
+            self.write("crates/demo/src/layout.rs", self.generated_layout(lines=11))
+            self.assertEqual([finding.path for finding in self.findings("production_size")], ["crates/demo/src/layout.rs"])
+
+    def test_authored_layouts_keep_the_ordinary_limit(self) -> None:
+        self.write("crates/demo/src/layout.rs", self.generated_layout(declaration="fn authored() {}"))
+        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4):
+            self.assertEqual([finding.path for finding in self.findings("production_size")], ["crates/demo/src/layout.rs"])
+
+    def test_layout_provenance_and_file_name_are_required(self) -> None:
+        source = self.generated_layout()
+        self.write("crates/demo/src/other.rs", source)
+        self.write("crates/demo/src/layout.rs", source.replace("demo.toml", "missing.toml"))
+        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4):
+            self.assertEqual({finding.path for finding in self.findings("production_size")}, {"crates/demo/src/other.rs", "crates/demo/src/layout.rs"})
+
+    def test_generated_layouts_keep_other_policy_checks(self) -> None:
+        self.write("crates/demo/src/layout.rs", self.generated_layout(declaration="#[allow(dead_code)]\npub(crate) const LEN: usize = 11;"))
+        self.assertEqual([finding.path for finding in self.findings("lint_suppression")], ["crates/demo/src/layout.rs"])
+
     def test_production_cfg_is_not_test_placement_or_excluded_from_size(self) -> None:
         self.write("crates/demo/src/lib.rs", '\n'.join([
             '#[cfg(not(test))]', '#[path = "prod.rs"]', 'mod prod;',
