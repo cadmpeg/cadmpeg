@@ -854,6 +854,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             shells: geometry.shells,
         },
     ));
+    losses.extend(crate::history::combine_history_tools::bind(
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &prereqs.design_body_bindings,
+    ));
     losses.extend(crate::history::bind_feature_face_selections(
         &mut model.features,
         &mut model.feature_input_topologies,
