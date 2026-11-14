@@ -8,6 +8,7 @@ mod attached_plates;
 mod distinct_members;
 mod draft_second_side;
 mod revolve;
+mod thicken;
 mod unit_directions;
 
 #[test]

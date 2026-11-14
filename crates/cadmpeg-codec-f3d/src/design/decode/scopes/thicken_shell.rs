@@ -21,107 +21,240 @@ use cadmpeg_ir::report::loss::LossNote;
 const WALL_SLOT_LEN: usize = 11;
 const MARKED_REFERENCE_LEN: usize = 11;
 const U32_LEN: usize = 4;
-const THICKEN_FORM: u32 = 4;
-const GUID_ZERO_RUN: usize = 8;
 const TABLE_ZERO_RUN: usize = 3;
 const CORNERED_ZERO_RUN: usize = 12;
 const MARKED_ZERO_RUN: usize = 8;
 const COUNTED_ZERO_RUN: usize = 4;
 
+struct ThickenFrame<'a> {
+    groups: &'a [u8],
+    identities: &'a [u8],
+    typed: bool,
+    thickness_record_index: u32,
+    flags: [u8; 2],
+    boolean: Option<crate::records::feature::direct_face::DesignThickenBoolean>,
+    prologue_flag: Option<(usize, u8)>,
+}
+
 pub(super) fn exact_thicken_operation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     losses: &mut Vec<LossNote>,
-) -> Option<DesignThickenOperation> {
-    if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Thicken) {
-        return None;
-    }
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    zero_run_end(
-        bytes,
-        start + thicken::ZERO_RUN_9,
-        thicken::PROLOGUE_MARKER - thicken::ZERO_RUN_9,
-    )?;
-    let (mut cursor, prologue_flag) = match bytes.get(start + thicken::PROLOGUE_MARKER)? {
-        0 => (start + thicken::LEN, None),
-        1 if View::u32_le_at(bytes, start + thicken::LEN)? == 0 => {
-            let short_end = start + thicken::LEN + U32_LEN;
-            match bytes.get(short_end)? {
-                _ if View::u32_le_at(bytes, short_end)? == THICKEN_FORM => (short_end, None),
-                flag @ (0 | 1) => (short_end + 1, Some((short_end, *flag))),
-                _ => return None,
-            }
-        }
-        _ => return None,
+) -> Result<Option<DesignThickenOperation>, cadmpeg_core::CodecError> {
+    let Some(frame) = thicken_frame(bytes, scope) else {
+        return Ok(None);
     };
-    if View::u32_le_at(bytes, cursor)? != THICKEN_FORM {
-        return None;
-    }
-    let group_count = View::u32_le_at(bytes, cursor + U32_LEN)?;
-    cursor += 2 * U32_LEN;
-    let table = scope
-        .reference_members()
-        .values()
-        .copied()
-        .collect::<Vec<_>>();
-    let mut groups = Vec::new();
-    for _ in 0..group_count {
-        groups.push(marked_record_reference(bytes, cursor)?);
-        cursor += MARKED_REFERENCE_LEN;
-    }
-    let flags_at = cursor;
-    let flags = bytes.get(flags_at..flags_at + 2)?;
-    if flags.iter().any(|flag| *flag > 1) {
-        return None;
-    }
-    cursor += 2;
-    let thickness_record_index = marked_record_reference(bytes, cursor)?;
-    cursor += MARKED_REFERENCE_LEN;
-    let operands = if table.first() == Some(&thickness_record_index) {
-        table.get(1..)?
-    } else if table.last() == Some(&thickness_record_index) {
-        table.get(..table.len() - 1)?
-    } else {
-        return None;
+    let Some(group_record_indices) =
+        materialize_thicken_references(ctx, frame.groups, frame.typed)?
+    else {
+        return Ok(None);
     };
-    if groups.first() != operands.first() || groups.is_empty() {
-        return None;
+    let Some(identity_record_indices) =
+        materialize_thicken_references(ctx, frame.identities, frame.typed)?
+    else {
+        return Ok(None);
+    };
+    let scalar = exact_fixed_scalar(bytes, records, frame.thickness_record_index);
+    if scalar.is_none() {
+        losses.push(crate::loss::F3dLossCode::ThickenThicknessUnresolved.note(format!(
+            "Thicken {} retains scalar reference {} as its unresolved signed thickness because its definition is missing, ambiguous or outside the scalar grammar.",
+            scope.id, frame.thickness_record_index
+        )));
     }
-    let mut remaining = operands.iter();
-    for group in &groups {
-        remaining.by_ref().find(|operand| *operand == group)?;
-    }
-    if View::u32_le_at(bytes, cursor)? == 0 {
-        cursor += U32_LEN;
-    }
-    if View::u32_le_at(bytes, cursor)? != 1 {
-        return None;
-    }
-    marked_record_reference(bytes, cursor + U32_LEN)?;
-    cursor += U32_LEN + MARKED_REFERENCE_LEN;
-    let guid_end = fixed_guid_end(bytes, zero_run_end(bytes, cursor, GUID_ZERO_RUN)?)?;
-    let table_at = zero_run_end(bytes, guid_end, TABLE_ZERO_RUN)?;
-    if u64::try_from(table_at).ok()? != scope.reference_count_offset() {
-        return None;
-    }
-    let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
-    if scalar.value.get() == 0.0 {
-        return None;
-    }
-    if let Some((at, 1)) = prologue_flag {
+    if let Some((at, 1)) = frame.prologue_flag {
         losses.push(crate::loss::F3dLossCode::FeatureThickenFlagsAssumed.note(format!(
-            "Thicken scope {} stores prologue flag byte 01 at byte {at}; the Thicken setting this flag selects is unresolved (DR-313), and the Thicken is projected from its symmetric flag and its signed thickness alone.",
+            "Thicken scope {} assumes prologue flag byte 01 at byte {at} preserves its decoded result, symmetry, tangent chain and signed thickness (DR-313).",
             scope.id
         )));
     }
-    Some(DesignThickenOperation {
-        signed_thickness: scalar.value,
+    Ok(Some(DesignThickenOperation {
+        signed_thickness: scalar.as_ref().map(|value| value.value),
+        thickness_record_index: frame.thickness_record_index,
+        thickness_offset: scalar.map(|value| value.value_offset),
+        symmetric: frame.flags[0] == 1,
+        tangent_chain: frame.flags[1] == 1,
+        group_record_indices,
+        identity_record_indices,
+        boolean: frame.boolean,
+    }))
+}
+
+fn thicken_frame<'a>(bytes: &'a [u8], scope: &DesignParameterScope) -> Option<ThickenFrame<'a>> {
+    use crate::records::feature::direct_face::{
+        DesignThickenBoolean, DesignThickenBooleanOperation,
+    };
+
+    if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Thicken) {
+        return None;
+    }
+    let prefix_end = usize::try_from(scope.reference_count_offset()).ok()?;
+    let bytes = bytes.get(..prefix_end)?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    zero_run_end(
+        bytes,
+        start.checked_add(thicken::ZERO_RUN_9)?,
+        thicken::PROLOGUE_MARKER - thicken::ZERO_RUN_9,
+    )?;
+    let prologue_end = match bytes.get(start.checked_add(thicken::PROLOGUE_MARKER)?)? {
+        0 => start.checked_add(thicken::LEN)?,
+        1 if View::u32_le_at(bytes, start.checked_add(thicken::LEN)?)? == 0 => {
+            start.checked_add(thicken::LEN)?.checked_add(U32_LEN)?
+        }
+        _ => return None,
+    };
+    let (operation_at, prologue_flag) = if matches!(View::u32_le_at(bytes, prologue_end)?, 1..=4) {
+        (prologue_end, None)
+    } else {
+        let flag = *bytes.get(prologue_end)?;
+        if flag > 1 {
+            return None;
+        }
+        (prologue_end.checked_add(1)?, Some((prologue_end, flag)))
+    };
+    let operation = View::u32_le_at(bytes, operation_at)?;
+    if !matches!(operation, 1..=4) {
+        return None;
+    }
+    let mut cursor = operation_at.checked_add(U32_LEN)?;
+    if View::u32_le_at(bytes, cursor)? == 0 {
+        return None;
+    }
+    let typed =
+        crate::bytes::typed_local_reference_target(bytes, cursor.checked_add(U32_LEN)?).is_some();
+    let width = thicken_reference_width(typed);
+    let groups = counted_thicken_references(bytes, &mut cursor, typed)?;
+    let flags_end = cursor.checked_add(2)?;
+    let flags = [*bytes.get(cursor)?, *bytes.get(cursor.checked_add(1)?)?];
+    if flags.iter().any(|flag| *flag > 1) {
+        return None;
+    }
+    let thickness_record_index = crate::bytes::local_reference_target(bytes, flags_end, typed)?;
+    cursor = flags_end.checked_add(width)?;
+    let members = scope.reference_members();
+    let scalar_first = members.values().next().copied() == Some(thickness_record_index);
+    if !scalar_first && members.values().last().copied() != Some(thickness_record_index) {
+        return None;
+    }
+    let operand_count = members.len().checked_sub(1)?;
+    let operands = || {
+        members
+            .values()
+            .skip(usize::from(scalar_first))
+            .take(operand_count)
+    };
+    let mut remaining = operands();
+    let first_group = crate::bytes::local_reference_target(groups, 0, typed)?;
+    if first_group == thickness_record_index || remaining.next().copied() != Some(first_group) {
+        return None;
+    }
+    for chunk in groups.chunks_exact(width).skip(1) {
+        let group = crate::bytes::local_reference_target(chunk, 0, typed)?;
+        if group == thickness_record_index {
+            return None;
+        }
+        remaining.by_ref().find(|reference| **reference == group)?;
+    }
+    let runs = [Some(cursor), cursor.checked_add(U32_LEN)]
+        .into_iter()
+        .flatten()
+        .filter(|at| *at == cursor || View::u32_le_at(bytes, cursor) == Some(0))
+        .find_map(|at| thicken_reference_runs(bytes, at, typed))?;
+    if !runs[1].is_empty() {
+        return None;
+    }
+    let boolean = match operation {
+        4 if runs[2].is_empty() => None,
+        1..=3 if runs[2].len() == width => {
+            let target = crate::bytes::local_reference_target(runs[2], 0, typed)?;
+            if target == thickness_record_index || !operands().any(|reference| *reference == target)
+            {
+                return None;
+            }
+            Some(DesignThickenBoolean {
+                operation: match operation {
+                    1 => DesignThickenBooleanOperation::Join,
+                    2 => DesignThickenBooleanOperation::Cut,
+                    _ => DesignThickenBooleanOperation::Intersect,
+                },
+                operation_offset: cadmpeg_core::decode::u64_from_index(operation_at),
+                target_group_record_index: target,
+            })
+        }
+        _ => return None,
+    };
+    Some(ThickenFrame {
+        groups,
+        identities: runs[0],
+        typed,
         thickness_record_index,
-        thickness_offset: scalar.value_offset,
-        symmetric: flags[0] == 1,
-        tangent_chain: flags[1] == 1,
+        flags,
+        boolean,
+        prologue_flag,
     })
+}
+
+fn thicken_reference_width(typed: bool) -> usize {
+    if typed {
+        crate::bytes::TYPED_LOCAL_REFERENCE_LEN
+    } else {
+        MARKED_REFERENCE_LEN
+    }
+}
+
+fn counted_thicken_references<'a>(
+    bytes: &'a [u8],
+    cursor: &mut usize,
+    typed: bool,
+) -> Option<&'a [u8]> {
+    let mut view = View::over_retained(bytes.get(*cursor..)?);
+    let count = view.u32_le()?;
+    let width = thicken_reference_width(typed);
+    let count = view.counted(u64::from(count), width)?.get();
+    let window = view.take(count.checked_mul(width)?)?;
+    if window
+        .chunks_exact(width)
+        .any(|chunk| crate::bytes::local_reference_target(chunk, 0, typed).is_none())
+    {
+        return None;
+    }
+    *cursor = cursor.checked_add(view.position())?;
+    Some(window)
+}
+
+fn thicken_reference_runs(bytes: &[u8], mut cursor: usize, typed: bool) -> Option<[&[u8]; 3]> {
+    let mut runs = [&[][..]; 3];
+    for run in &mut runs {
+        *run = counted_thicken_references(bytes, &mut cursor, typed)?;
+    }
+    let table_at = zero_run_end(bytes, fixed_guid_end(bytes, cursor)?, TABLE_ZERO_RUN)?;
+    (table_at == bytes.len()).then_some(runs)
+}
+
+fn materialize_thicken_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    typed: bool,
+) -> Result<Option<Vec<u32>>, cadmpeg_core::CodecError> {
+    let width = thicken_reference_width(typed);
+    if !bytes.len().is_multiple_of(width) {
+        return Ok(None);
+    }
+    let Some(count) = View::over_retained(bytes).counted(
+        cadmpeg_core::decode::u64_from_index(bytes.len() / width),
+        width,
+    ) else {
+        return Ok(None);
+    };
+    let mut values = ctx.alloc_filled(count.get(), 0u32, "F3D Thicken references")?;
+    for (value, chunk) in values.iter_mut().zip(bytes.chunks_exact(width)) {
+        let Some(reference) = crate::bytes::local_reference_target(chunk, 0, typed) else {
+            return Ok(None);
+        };
+        *value = reference;
+    }
+    Ok(Some(values))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

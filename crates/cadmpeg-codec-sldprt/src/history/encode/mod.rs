@@ -264,7 +264,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 faces,
                 thickness,
                 side,
-            }) => self.encode_thicken(faces, thickness.as_ref(), side.as_ref()),
+                result,
+                tangent_chain,
+            }) => self.encode_thicken(
+                faces,
+                thickness.as_ref(),
+                side.as_ref(),
+                result.is_some() || tangent_chain.is_some(),
+            ),
             FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, distance }) => {
                 self.encode_offset_surface(faces, distance.as_ref())
             }

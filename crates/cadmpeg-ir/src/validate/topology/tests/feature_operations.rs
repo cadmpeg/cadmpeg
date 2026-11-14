@@ -15,8 +15,27 @@ fn feature_operation_geometry_is_validated() {
                 crate::ids::SubdId::mint("synthetic:test:subd#missing").expect("valid identity")
             ],
         }),
+        FeatureDefinition::Operation(FeatureOperation::Thicken {
+            faces: crate::features::FaceSelection::Native("thicken:faces".into()),
+            thickness: None,
+            side: None,
+            result: Some(crate::features::SolidFeatureResult::Boolean {
+                operation: crate::features::BooleanKind::Cut,
+                targets: crate::features::BodySelection::Bodies(
+                    crate::features::DistinctMembers::try_from(vec![crate::ids::BodyId::mint(
+                        "synthetic:test:body#missing",
+                    )
+                    .unwrap()])
+                    .unwrap(),
+                ),
+            }),
+            tangent_chain: Some(false),
+        }),
     ];
-    let expected = ["references missing Form control cage `synthetic:test:subd#missing`"];
+    let expected = [
+        "references missing Form control cage `synthetic:test:subd#missing`",
+        "references missing selected body `synthetic:test:body#missing`",
+    ];
     let mut ir = unit_cube().expect("valid unit cube fixture");
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {

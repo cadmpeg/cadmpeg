@@ -296,9 +296,20 @@ pub(super) fn bind_face_selection(
         return;
     };
     if native == &scope.id {
-        if let Some(resolved) =
-            crate::design::feature_project::direct_face_selection(scope, operands)
-        {
+        let selected =
+            |operand: &&crate::records::topology::face::DesignFaceOperand| match scope.payload() {
+                crate::records::feature::scope::DesignScopePayload::Thicken(Some(operation)) => {
+                    operation.group_record_indices.is_empty()
+                        || operand
+                            .group_record_index()
+                            .is_none_or(|index| operation.group_record_indices.contains(&index))
+                }
+                _ => true,
+            };
+        if let Some(resolved) = crate::design::feature_project::direct_face_selection(
+            scope,
+            operands.iter().filter(selected),
+        ) {
             if !matches!(resolved, cadmpeg_ir::features::FaceSelection::Native(_)) {
                 *selection = resolved;
             }

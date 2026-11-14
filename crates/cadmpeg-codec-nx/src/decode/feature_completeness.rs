@@ -545,6 +545,7 @@ pub(super) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {
         faces,
         thickness,
         side,
+        ..
     }) = feature.evaluation.definition()
     else {
         return true;

@@ -1151,6 +1151,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             faces: FaceSelection::Unresolved,
             thickness: None,
             side: None,
+            ..
         })
     ));
     for kind in [

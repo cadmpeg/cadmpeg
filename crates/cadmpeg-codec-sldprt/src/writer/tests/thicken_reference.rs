@@ -16,6 +16,47 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
+fn thicken_writer_refuses_result_and_chain_settings_it_cannot_encode() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SolidFeatureResult};
+
+    for chain in [false, true] {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Thicken Name="Wall" Type="Thicken" id="15" Faces="face:4" BothSides="false" Reverse="true"><Dimension Name="Thickness">2mm</Dimension></Thicken></Keywords>"#));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut decoded = EditableDecodeResult::from(decoded);
+        decoded.ir_mut().model.features[0]
+            .evaluation
+            .edit(|definition, _| {
+                let FeatureDefinition::Operation(FeatureOperation::Thicken {
+                    result,
+                    tangent_chain,
+                    ..
+                }) = definition
+                else {
+                    panic!("Thicken");
+                };
+                if chain {
+                    *tangent_chain = Some(false);
+                } else {
+                    *result = Some(SolidFeatureResult::NewBody {});
+                }
+            });
+        let error = crate::test_support::plan_fixture_write_with_native_envelope(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&error, cadmpeg_core::CodecError::NotImplemented(detail) if detail.contains("unsupported thicken result or tangent-chain settings")),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_shell() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
@@ -100,8 +141,7 @@ fn semantic_writer_round_trips_typed_thicken() {
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: FaceSelection::Native(selection),
             thickness: Some(value),
-            side: Some(ThickenSide::Reverse),
-        }) if selection == "face:4" && (value.get() - 2.032).abs() < 1.0e-12
+            side: Some(ThickenSide::Reverse), .. }) if selection == "face:4" && (value.get() - 2.032).abs() < 1.0e-12
     ));
 
     {
@@ -111,6 +151,7 @@ fn semantic_writer_round_trips_typed_thicken() {
                 faces,
                 thickness,
                 side,
+                ..
             }) = definition
             else {
                 panic!("typed thicken feature");
@@ -175,8 +216,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: FaceSelection::Unresolved,
             thickness: Some(actual_thickness),
-            side: Some(ThickenSide::Forward),
-        }) if actual_thickness.get() == 6.0
+            side: Some(ThickenSide::Forward), .. }) if actual_thickness.get() == 6.0
     ));
     assert_eq!(
         decoded.ir().model.parameters[0].value,

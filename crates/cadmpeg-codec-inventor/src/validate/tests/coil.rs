@@ -116,8 +116,8 @@ fn coil_validation_keeps_ambiguous_labels_native_and_rejects_invented_parameters
 #[test]
 fn coil_validation_refuses_both_hands_for_each_neutral_extent() {
     use cadmpeg_ir::features::{
-        CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement,
-        FeatureUnitPlaneFrame,
+        CoilConstruction, CoilExtent, CoilPlacement, CoilSection, CoilSectionPlacement,
+        FeatureUnitPlaneFrame, SolidFeatureResult,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::scalar::{Angle, Length, NonZeroLength, PositiveLength, PositiveReal};
@@ -164,7 +164,7 @@ fn coil_validation_refuses_both_hands_for_each_neutral_extent() {
                         clockwise,
                         taper: Angle::ZERO,
                     },
-                    result: CoilResult::NewBody {},
+                    result: SolidFeatureResult::NewBody {},
                 },
             ));
             assert!(!definition_matches(

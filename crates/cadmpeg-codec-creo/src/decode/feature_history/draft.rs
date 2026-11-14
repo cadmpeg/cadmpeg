@@ -140,14 +140,11 @@ pub(super) fn thicken_feature_definition(
         }
         None => None,
     };
-    Ok(IrFeatureDefinition::Operation(
-        IrFeatureOperation::Thicken {
-            faces,
-            thickness: offset
-                .and_then(|(magnitude, _)| cadmpeg_ir::scalar::PositiveLength::new(magnitude)),
-            side: offset.map(|(_, side)| side),
-        },
-    ))
+    Ok(IrFeatureDefinition::Operation(IrFeatureOperation::thicken(
+        faces,
+        offset.and_then(|(magnitude, _)| cadmpeg_ir::scalar::PositiveLength::new(magnitude)),
+        offset.map(|(_, side)| side),
+    )))
 }
 
 fn hole_face_selection(

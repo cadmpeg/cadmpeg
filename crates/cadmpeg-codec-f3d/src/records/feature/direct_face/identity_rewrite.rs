@@ -5,7 +5,8 @@ use super::{
     DesignDraftFlags, DesignDraftOperation, DesignDraftTwoSided, DesignModifyOperation,
     DesignMoveForm, DesignMoveLeading, DesignMoveOperation, DesignMovePrefix, DesignMoveReference,
     DesignOffsetFacesOperation, DesignShellOperation, DesignShellOutsideWall,
-    DesignShellPrefixFlag, DesignShellWallSlots, DesignThickenOperation,
+    DesignShellPrefixFlag, DesignShellWallSlots, DesignThickenBoolean,
+    DesignThickenBooleanOperation, DesignThickenOperation,
 };
 
 rewrite_native_record!(DesignDraftOperation, []; {angle, angle_record_index, angle_offset, opposite_angle_record_index, opposite_angle_offset, opposite_angle, flags});
@@ -22,4 +23,6 @@ rewrite_native_record!(DesignShellOperation, []; {thickness, thickness_record_in
 rewrite_native_record!(DesignShellPrefixFlag, []; {value, offset});
 rewrite_native_record!(DesignShellOutsideWall, []; {thickness, thickness_record_index, thickness_offset});
 rewrite_native_record!(DesignShellWallSlots, []; {tangent_chain, rounded_corners, outside});
-rewrite_native_record!(DesignThickenOperation, []; {signed_thickness, symmetric, tangent_chain, thickness_record_index, thickness_offset});
+rewrite_native_record!(DesignThickenOperation, []; {signed_thickness, symmetric, tangent_chain, thickness_record_index, thickness_offset, group_record_indices, identity_record_indices, boolean});
+rewrite_native_record!(DesignThickenBoolean, []; {operation, operation_offset, target_group_record_index});
+rewrite_native_scalar!(DesignThickenBooleanOperation);

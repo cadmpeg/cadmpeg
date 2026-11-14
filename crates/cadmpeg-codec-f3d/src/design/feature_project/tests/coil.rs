@@ -11,7 +11,9 @@ use crate::records::{
     },
     parameters::DesignParameter,
 };
-use cadmpeg_ir::features::{CoilPlacement, CoilResult, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{
+    CoilPlacement, FeatureDefinition, FeatureOperation, SolidFeatureResult,
+};
 
 fn parameter(
     record_index: u32,
@@ -266,7 +268,7 @@ fn coil_join_projects_boolean_result() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Coil {
-            result: CoilResult::Boolean { .. },
+            result: SolidFeatureResult::Boolean { .. },
             ..
         })
     ));
@@ -309,7 +311,7 @@ fn ten_reference_coil_join_targets_its_role_four_group() {
         .unwrap()
         {
             Some(FeatureDefinition::Operation(FeatureOperation::Coil {
-                result: CoilResult::Boolean { targets, .. },
+                result: SolidFeatureResult::Boolean { targets, .. },
                 ..
             })) => Some(targets),
             _ => None,
@@ -367,7 +369,7 @@ fn ten_reference_coil_cut_targets_a_role_eight_group_at_ordinal_eight() {
         .unwrap()
         {
             Some(FeatureDefinition::Operation(FeatureOperation::Coil {
-                result: CoilResult::Boolean { targets, .. },
+                result: SolidFeatureResult::Boolean { targets, .. },
                 ..
             })) => Some(targets),
             _ => None,
@@ -407,7 +409,7 @@ fn coil_join_with_a_two_member_target_group_charges_the_member_assumption() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Coil {
-            result: CoilResult::Boolean { .. },
+            result: SolidFeatureResult::Boolean { .. },
             ..
         })
     ));

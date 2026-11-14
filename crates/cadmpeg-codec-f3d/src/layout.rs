@@ -973,7 +973,7 @@ pub(crate) mod fillet_set_compact_constant {
 /// Spec §3.1. Record length 21 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header. The prologue marker selects whether the prologue ends at offset 21, 25, or 26.
+/// Offsets are relative to the primary indexed header. The prologue marker and the optional flag byte place the result operation at offset 21, 22, 25, or 26.
 /// ```
 pub(crate) mod thicken_scope_prologue {
     /// Record length in bytes. Spec §3.1.

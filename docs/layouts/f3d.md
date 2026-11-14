@@ -826,7 +826,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 21 B
 
-Offsets are relative to the primary indexed header. The prologue marker selects whether the prologue ends at offset 21, 25, or 26.
+Offsets are relative to the primary indexed header. The prologue marker and the optional flag byte place the result operation at offset 21, 22, 25, or 26.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs`
@@ -836,6 +836,74 @@ Parsed by:
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | after the indexed header |
 | 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
 | 20 | 1 | `prologue_marker` | `u8` | little | spec | a prologue marker at offset 20 |
+
+## `thicken_compact_result_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Offsets are relative to the primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | after the indexed header |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 1 | `prologue_marker` | `u8` | little | spec | a prologue marker at offset 20 |
+| 21 | 4 | `result_operation` | `u32` | little | spec | stores `1` for join, `2` for cut, `3` for intersect, or `4` for a new body |
+
+## `thicken_compact_flagged_result_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+Offsets are relative to the primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | after the indexed header |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 1 | `prologue_marker` | `u8` | little | spec | a prologue marker at offset 20 |
+| 21 | 1 | `prologue_flag` | `u8` | little | spec | An optional prologue flag byte stores `0` or `1` |
+| 22 | 4 | `result_operation` | `u32` | little | spec | stores `1` for join, `2` for cut, `3` for intersect, or `4` for a new body |
+
+## `thicken_marked_result_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+Offsets are relative to the primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | after the indexed header |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 1 | `prologue_marker` | `u8` | little | spec | a prologue marker at offset 20 |
+| 21 | 4 | `marker_zero_word` | `u32` | little | spec | Marker `1` is followed by u32 zero |
+| 25 | 4 | `result_operation` | `u32` | little | spec | stores `1` for join, `2` for cut, `3` for intersect, or `4` for a new body |
+
+## `thicken_marked_flagged_result_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Offsets are relative to the primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | after the indexed header |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 1 | `prologue_marker` | `u8` | little | spec | a prologue marker at offset 20 |
+| 21 | 4 | `marker_zero_word` | `u32` | little | spec | Marker `1` is followed by u32 zero |
+| 25 | 1 | `prologue_flag` | `u8` | little | spec | An optional prologue flag byte stores `0` or `1` |
+| 26 | 4 | `result_operation` | `u32` | little | spec | stores `1` for join, `2` for cut, `3` for intersect, or `4` for a new body |
 
 ## `design_mirror_scope_class369_tail`
 
