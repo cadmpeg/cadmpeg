@@ -387,6 +387,47 @@ fn framed_move_face_refuses_conflicting_registration_and_actual_transform_ambigu
 }
 
 #[test]
+fn framed_move_face_admits_a_version_3_registration_in_its_longer_frame() {
+    for form in [0, 1, 2, 5] {
+        let mut fixture = MoveFaceFixture {
+            frames: vec![MoveFaceFrame {
+                form,
+                version_3_length: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        fixture.types[1] = (TRANSFORM_GUID, 3);
+        let result = project(&fixture);
+        assert_projected(&result, TRANSLATION, true);
+        for code in [
+            F3dLossCode::FeatureMoveFaceTypeConflict,
+            F3dLossCode::FeatureMoveFaceTypeAssumed,
+            F3dLossCode::FeatureMoveTransformAssumed,
+        ] {
+            assert!(
+                !result.losses.contains(&code.kind()),
+                "form {form}: {code:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn framed_move_face_keeps_a_version_3_matrix_in_a_version_2_frame_length() {
+    let mut fixture = MoveFaceFixture::default();
+    fixture.types[1] = (TRANSFORM_GUID, 3);
+    let result = project(&fixture);
+    assert_projected(&result, TRANSLATION, true);
+    assert!(result
+        .losses
+        .contains(&F3dLossCode::FeatureMoveTransformAssumed.kind()));
+    assert!(!result
+        .losses
+        .contains(&F3dLossCode::FeatureMoveFaceTypeConflict.kind()));
+}
+
+#[test]
 fn archive_move_face_keeps_the_selected_header_when_the_table_omits_its_transform() {
     let fixture = MoveFaceFixture {
         references: vec![50, 60],

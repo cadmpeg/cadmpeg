@@ -728,7 +728,7 @@ pub(crate) enum F3dLossCode {
     FeatureExtrudeTerminationMissing,
     /// A marker-one `Revolve` scope has a token-independent frame length outside its documented set.
     FeatureRevolveLayoutAssumed,
-    /// A marked `Move` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record.
+    /// A marked `Move`, `Modify`, or version-3 `MoveFace` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record.
     FeatureMoveTransformAssumed,
     /// A form-2 rigid-transform record stores four references whose effect on its stored motion is unresolved.
     FeatureMoveTransformReferencesAssumed,

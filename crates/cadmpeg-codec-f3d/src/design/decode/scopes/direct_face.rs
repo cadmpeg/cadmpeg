@@ -250,7 +250,7 @@ pub(super) fn exact_move_face_operation(
     let (transform_marker, group_marker) = move_face_operand_markers(bytes, scope, start)?;
     let transform_at = start.checked_add(transform_marker)?;
     let transform = marked_record_reference(bytes, transform_at)?;
-    let mut typed = None;
+    let mut typed: Option<(DesignMoveOperation, usize, usize)> = None;
     let mut unregistered = None;
     let mut typed_ambiguous = false;
     let mut unregistered_ambiguous = false;
@@ -269,11 +269,13 @@ pub(super) fn exact_move_face_operation(
         };
         let registration = class_types.get(&tag);
         if let Some(row) = registration.filter(|row| {
-            row.version != RIGID_TRANSFORM_TYPE_VERSION
-                || !row
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(RIGID_TRANSFORM_TYPE_GUID)
+            !matches!(
+                row.version,
+                RIGID_TRANSFORM_TYPE_VERSION | RIGID_TRANSFORM_TYPE_VERSION_3
+            ) || !row
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(RIGID_TRANSFORM_TYPE_GUID)
         }) {
             conflicting_registration = Some((tag, *row));
             continue;
@@ -282,14 +284,32 @@ pub(super) fn exact_move_face_operation(
             continue;
         };
         if registration.is_some() {
-            typed_ambiguous |= typed.replace(next).is_some();
+            typed_ambiguous |= typed.replace((next, frame_start, paired)).is_some();
         } else {
             unregistered_ambiguous |= unregistered.replace(next).is_some();
         }
     }
-    let mut operation = if let Some(operation) = typed {
+    let mut operation = if let Some((operation, frame_start, paired)) = typed {
         if typed_ambiguous {
             return None;
+        }
+        if rigid_transform_type_version(bytes, frame_start, class_types)
+            == Some(RIGID_TRANSFORM_TYPE_VERSION_3)
+        {
+            let breaks = rigid_transform_rule_breaks(
+                bytes,
+                frame_start,
+                paired,
+                operation.form,
+                class_types,
+            );
+            if !breaks.is_empty() {
+                losses.push(crate::loss::F3dLossCode::FeatureMoveTransformAssumed.note(format!(
+                    "MoveFace scope {} keeps the rigid matrix of its marked transform record {transform}, which has {} (DR-306).",
+                    scope.id,
+                    breaks.join(" and ")
+                )));
+            }
         }
         operation
     } else {
