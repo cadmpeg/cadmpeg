@@ -1142,6 +1142,30 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Draft and Revolve plane targets use the same selection member.
 
+### DR-401. MoveFace matrix interpretation and unclassified references
+
+**Question.** Which coordinate frame and composition order apply to the marked MoveFace matrix, how do unclassified references and prefix fields affect it, and which transform families occur when registration is unavailable?
+
+**Known.** `f3d.md` §3.1 defines the marked references and counted table. The decoder prefers a unique frame registered as rigid-transform GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`, version `2`. It excludes positively conflicting registrations and reports `feature.move-face-type-conflict` when they leave the marked record without an admitted candidate. With no admitted registered frame, a unique framed candidate whose registration is unavailable keeps its motion with `feature.move-face-type-assumed`. Two admitted candidates within the preferred category remain ambiguous. Nonzero scope prefix fields keep marked motion with `feature.move-face-prologue-assumed`. Each projected matrix carries `feature.move-face-matrix-assumed`: the row-major matrix maps input face points to output model coordinates, with its translation converted from centimetres to millimetres. The complete ordered table, transform coefficients, prefix references and source prologue remain retained. References outside a bound group/member run and the transform remain unclassified; an unresolved selection leaves the entire table unclassified. Each unresolved table and each bound table with surplus references carries `feature.move-face-scope-references-assumed`. Form-two construction references retain the separate assumption in DR-375, and other transform-prefix fields retain DR-306.
+
+**Need.** Controlled native saves that vary one pivot, construction point, selection, occurrence frame or move definition, joined through registered target identities, matrix coefficients and before/after geometry.
+
+**Conflict.** Public move API semantics permit arbitrary translation and orientation and use centimetres for database lengths. These facts leave the raw matrix frame, composition order and reference roles unresolved.
+
+**Note.** The most likely reading treats the matrix as evaluated face motion and the unclassified references as its construction history. Missing source and definition records preserve each decoded motion under the named assumptions. Historical face binding compares changed plane and cylinder rows under the complete projected motion, including small linear components retained by the transform law.
+
+### DR-402. MoveFace motion with an unresolved face group
+
+**Question.** Which face selection does a MoveFace scope name when its marked group cannot bind one complete ordered face-member run?
+
+**Known.** The decoder retains the marked motion with a scope-native face selection when the group mark, role, identity, ordinal or member run is unresolved, or the transform is missing or repeated in the ordered table. It reports `feature.move-face-selection-unresolved`. Repeated table values name one transform record. A bound group retains its native identity for the historical face-recipe rule in DR-222. Matrix interpretation and unclassified-reference assumptions in DR-401 also apply when the selection is unresolved.
+
+**Need.** A group grammar and membership proof for each unresolved native selection form.
+
+**Conflict.** None.
+
+**Note.** A table inconsistency leaves the independently decoded transform intact.
+
 ### DR-375. References of a form-2 rigid-transform record
 
 **Question.** What do the four marked references of a 293-byte form-2 rigid-transform record name, and do they change the motion that its matrix stores?
@@ -1283,6 +1307,30 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding. The public Voron Trident `z_mounts_front.f3d` has nine such scopes. Component context bindings identify their result owners. The source-body and source-frame joins require the derivation references independently of those owner bindings.
+
+### DR-552. Sphere placement flags and unresolved placement references
+
+**Question.** How do the inferred-axis and orientation flags change a sphere centre, and which placement supplies the centre when its reference is unresolved?
+
+**Known.** Reference-placed spheres retain a diameter owner, result operation, and placement reference. Placement constructions carry a solved matrix or an identity marker. Sphere axis rotation preserves its shape.
+
+**Need.** Controlled saves with nonzero placement flags and a changed sphere centre, and a reference-placed sphere with a resolvable external placement.
+
+**Conflict.** None.
+
+**Note.** The decoder uses the stored solved frame with `feature.sphere-placement-flags-assumed` when its flags are unresolved. It assumes an origin centre with `feature.sphere-placement-frame-assumed` when the referenced frame has no unique usable local definition.
+
+### DR-551. Sphere diameter references with incomplete ownership
+
+**Question.** Which diameter applies when the referenced scalar has incomplete scope ownership or parameter-source binding?
+
+**Known.** The sphere prefix identifies a diameter-owner record. Its evaluated scalar supplies the diameter in centimetres, and the owner names its scope and parameter source.
+
+**Need.** Controlled saves that distinguish a stale evaluated diameter from a live value after an ownership or source-reference failure.
+
+**Conflict.** None.
+
+**Note.** The decoder uses a unique positive referenced scalar with `feature.sphere-diameter-owner-assumed` when ownership is unresolved, and retains the evaluated diameter with `feature.sphere-diameter-source-assumed` when its parameter source has no unique local definition.
 
 ### DR-123. BoxPrimitive support frame and planar offset composition
 
@@ -1698,18 +1746,6 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 **Conflict.** None.
 
 **Note.** Scopes with decoded connector frames project a neutral relation that preserves their facing, angle, and offsets. Adjacent decoded motion supplies the motion when available; the relation is otherwise fixed. `assembly.motion-binding-assumed` records this binding assumption.
-
-### DR-246. Additional version-five Assemble owners and extended spans
-
-**Question.** Which version-five fields encode additional parameter owners and the form with 22 extra bytes?
-
-**Known.** The four-owner version-five grammar has explicit angle, Z, X, and Y references, two zero bytes after the angle reference, and six zero bytes after the owner run. Version-four scopes store connector frames consecutively, then the alignment references and a counted limit-owner run. Their four-owner form follows the version-four grammar in §3.1 of `f3d.md`.
-
-**Need.** Public version-five controlled files with five and six owners, and a controlled pair whose scopes differ by 22 bytes. Vary one joint limit or owner-producing setting at a time. Identify each added reference target, its scalar lane, the run count, and complete paired-header closure.
-
-**Conflict.** None.
-
-**Note.** Extended version-five scopes retain the opaque scope envelope and its uninterpreted-payload loss.
 
 ### DR-248. Legacy closing references and six-name placement bindings
 
@@ -2629,6 +2665,18 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** DR-290 tracks the scalar controls at settings offsets 94 and 124. Unavailable placement controls report `feature.path-pattern-settings-unresolved`.
 
+### DR-550. Captured component-position semantics and frame
+
+**Question.** Do Position version-six row matrices represent captured occurrence poses in each occurrence's assembly context? Does marker 1 select identity? How do nested contexts and occurrence identity lists affect the frame?
+
+**Known.** `f3d.md` §3.1 "A Position scope has type GUID" defines the counted rows, matrix omission marker, suffix, and typed locator backlinks. [Capture Position](https://help.autodesk.com/view/fusion360/ENU/?contextId=ASM-CAPTURE-POSITION) captures the positions of moved or rotated components. [Snapshots](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Snapshots.htm) creates snapshots when transforms are pending. [Occurrence.transform2](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_transform2.htm) gives orientation and position in the occurrence's assembly context. The decoder assumes these semantics and centimetre translations for the binary matrices and reports `feature.position-semantics-assumed`. It reports `feature.position-identity-assumed` for omitted matrices. It retains unresolved selectors and transforms and reports `feature.position-occurrence-unresolved`. Final assembly placement remains the stored placement.
+
+**Need.** Controlled saves with one translated occurrence, one rotated occurrence, two independent poses, nested occurrences, a repeated selector, and a return to identity. Compare the row matrices with API snapshots and `transform2` values at each timeline state. Vary an occurrence identity list independently.
+
+**Conflict.** None.
+
+**Note.** Native rows retain the source coefficients and selector references. Neutral rows retain source order, repeated selectors, and unresolved occurrences.
+
 ### DR-490. Operand containers of unqualified Assemble connectors
 
 **Question.** Which occurrence or document contains a connector when its scope retains the connector reference and frame but its operand qualifier does not decode?
@@ -2648,3 +2696,33 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Controlled public assemblies with independently varied source occurrences, containing components, and placement matrices, including a retained relation with an unresolved source document.
 
 **Note.** Each authored insertion scope with a decoded placement can produce one unresolved-prototype occurrence at the document root. The per-scope membership reading is assumed. `assembly.component-insert-container-assumed` records that container-frame reading. A feature with unresolved source membership uses its native selection in a neutral component insertion and reports `feature.component-insert-membership-assumed`. The native scope retains the relation reference, occurrence identity, and decoded placement.
+
+### DR-506. Motion roles of additional Assemble owners
+
+**Question.** How do additional rotation, translation, yaw, and roll owners select enabled motion axes, limits, and rest positions when the joint motion is unresolved or has multiple freedom lanes?
+
+**Known.** The counted owner run in §3.1 of `f3d.md` names additional owners in local order. Parameter source kinds identify rotation and translation minimum, maximum, and rest values, and yaw and roll values. A two-reference run can contain a minimum and a rest value. Angular evaluated values use radians and linear evaluated values use centimetres. A scope can retain these owners when its joint motion remains unresolved.
+
+**Need.** Controlled public saves that vary one enabled axis, one limit, or one rest position at a time and retain all joint and motion lanes. Distinguish the authored owner values from enabled solver limits for combined freedoms.
+
+**Note.** The neutral relation uses the decoded adjacent joint motion with a fixed relation fallback. `assembly.additional-owner-motion-assumed` names the assumption that the added owner-to-motion interpretation remains native. The feature retains each source parameter expression under `parameter:NAME` in its source properties. The native scope retains the counted references, owners, and evaluated values.
+
+### DR-507. Extended version-three Assemble tail reference
+
+**Question.** What constraint or solver role does the additional version-three tail reference select?
+
+**Known.** The extra nonnull reference follows the first tail reference and selects type `074F9459-89C2-4B7D-8AB4-DCE67AE944FE`, version 1. The tail consumes its complete bounded scope. Its two boolean state bytes and the adjacent joint retain their independent fields. The native alignment retains the extra target and marker offset.
+
+**Need.** Controlled public saves that vary the referenced object while preserving the joint, connectors, owner values, and motion record. Establish whether the target changes the joint's enabled constraints or solver membership.
+
+**Note.** The neutral relation uses the decoded joint motion with a fixed fallback. `assembly.extended-tail-assumed` names the assumption that the additional tail reference adds no further neutral constraint. Source parameter expressions remain under `parameter:NAME` in feature source properties. A JointOrigin coordinate system supplied by an extended-tail connector retains its source references and parameter expressions. The connector and origin share their stream, target index, transform, and transform location.
+
+### DR-508. Typed spelling of the extended Assemble tail
+
+**Question.** Does the extra typed tail reference impose a different relation role from its plain spelling?
+
+**Known.** A standard typed scope tail has three 51-byte references with inline type GUIDs. The extended tail adds a fourth reference after the first. A uniform 51-byte width shifts the previous-history word and each later field by 51 bytes. The additional target's inline GUID agrees with its registered type.
+
+**Need.** Controlled public saves that preserve the same extended-tail target and joint while changing the reference spelling. Establish the additional reference's type-directed relation role.
+
+**Note.** `assembly.extended-typed-tail-assumed` names the assumption that the added reference uses the common typed spelling and retains the plain spelling's role. `assembly.extended-tail-assumed` separately names the neutral constraint assumption. Both source forms retain their target, marker offset, and source expressions.

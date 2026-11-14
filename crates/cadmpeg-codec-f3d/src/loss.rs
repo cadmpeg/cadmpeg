@@ -55,6 +55,11 @@ pub(crate) enum F3dLossCode {
     WorkPlaneInferredAxisAssumed,
     /// A cylinder primitive has no unique checked solved placement.
     CylinderPlacementUnbound,
+    SpherePlacementFlagsAssumed,
+    SpherePlacementFrameAssumed,
+    SphereDiameterOwnerAssumed,
+    SphereDiameterSourceAssumed,
+
     /// A construction tracking path has no matching indexed type registration.
     ConstructionTrackingPathUntyped,
     ConstructionClosingFlagAssumed,
@@ -167,6 +172,9 @@ pub(crate) enum F3dLossCode {
     AssemblyJointSourceBindingAssumed,
     AssemblyConnectorOperandsAssumed,
     AssemblyMotionBindingAssumed,
+    AssemblyAdditionalOwnerMotionAssumed,
+    AssemblyExtendedTailAssumed,
+    AssemblyExtendedTypedTailAssumed,
     /// A joint operand path continues inside an unmerged inserted document; the
     /// remaining keys stay a nested occurrence path.
     AssemblyOperandNestedPathRetained,
@@ -532,9 +540,20 @@ pub(crate) enum F3dLossCode {
     /// A form-2 rigid-transform record stores four references whose effect on its stored motion is unresolved.
     FeatureMoveTransformReferencesAssumed,
     FeatureMoveScopeReferencesAssumed,
+    FeatureMoveFaceScopeReferencesAssumed,
+    FeatureMoveFaceSelectionUnresolved,
+    FeatureMoveFaceTypeAssumed,
+    FeatureMoveFaceTypeConflict,
+    FeatureMoveFacePrologueAssumed,
+    FeatureMoveFaceMatrixAssumed,
     FeatureMoveTransformModeAssumed,
     FeatureMoveTransformPrefixAssumed,
     FeatureMoveTransformIdentityAssumed,
+    PositionEnvelopeUnparsed,
+    PositionSemanticsAssumed,
+    PositionIdentityAssumed,
+    PositionOccurrenceUnresolved,
+    PositionTransformUnprojected,
     FeatureAlignMotionAssumed,
     FeatureAlignIdentityAssumed,
     FeatureAlignMotionUnprojected,
@@ -804,6 +823,10 @@ impl F3dLossCode {
         Self::WorkPlaneFrameUnbound,
         Self::WorkPlaneInferredAxisAssumed,
         Self::CylinderPlacementUnbound,
+        Self::SpherePlacementFlagsAssumed,
+        Self::SpherePlacementFrameAssumed,
+        Self::SphereDiameterOwnerAssumed,
+        Self::SphereDiameterSourceAssumed,
         Self::ConstructionTrackingPathUntyped,
         Self::ConstructionClosingFlagAssumed,
         Self::ChamferEdgeRoleAssumed,
@@ -857,6 +880,9 @@ impl F3dLossCode {
         Self::AssemblyJointSourceBindingAssumed,
         Self::AssemblyConnectorOperandsAssumed,
         Self::AssemblyMotionBindingAssumed,
+        Self::AssemblyAdditionalOwnerMotionAssumed,
+        Self::AssemblyExtendedTailAssumed,
+        Self::AssemblyExtendedTypedTailAssumed,
         Self::AssemblyOperandNestedPathRetained,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
@@ -1073,9 +1099,20 @@ impl F3dLossCode {
         Self::FeatureMoveTransformAssumed,
         Self::FeatureMoveTransformReferencesAssumed,
         Self::FeatureMoveScopeReferencesAssumed,
+        Self::FeatureMoveFaceScopeReferencesAssumed,
+        Self::FeatureMoveFaceSelectionUnresolved,
+        Self::FeatureMoveFaceTypeAssumed,
+        Self::FeatureMoveFaceTypeConflict,
+        Self::FeatureMoveFacePrologueAssumed,
+        Self::FeatureMoveFaceMatrixAssumed,
         Self::FeatureMoveTransformModeAssumed,
         Self::FeatureMoveTransformPrefixAssumed,
         Self::FeatureMoveTransformIdentityAssumed,
+        Self::PositionEnvelopeUnparsed,
+        Self::PositionSemanticsAssumed,
+        Self::PositionIdentityAssumed,
+        Self::PositionOccurrenceUnresolved,
+        Self::PositionTransformUnprojected,
         Self::FeatureAlignMotionAssumed,
         Self::FeatureAlignIdentityAssumed,
         Self::FeatureAlignMotionUnprojected,
@@ -1227,6 +1264,11 @@ impl F3dLossCode {
             Self::WorkPlaneFrameUnbound => "work-plane.frame-unbound",
             Self::WorkPlaneInferredAxisAssumed => "work-plane.inferred-axis-assumed",
             Self::CylinderPlacementUnbound => "feature.cylinder-placement-unbound",
+            Self::SpherePlacementFlagsAssumed => "feature.sphere-placement-flags-assumed",
+            Self::SpherePlacementFrameAssumed => "feature.sphere-placement-frame-assumed",
+            Self::SphereDiameterOwnerAssumed => "feature.sphere-diameter-owner-assumed",
+            Self::SphereDiameterSourceAssumed => "feature.sphere-diameter-source-assumed",
+
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConstructionClosingFlagAssumed => "feature.construction-closing-flag-assumed",
             Self::ChamferEdgeRoleAssumed => "feature.chamfer-edge-role-assumed",
@@ -1298,6 +1340,11 @@ impl F3dLossCode {
             Self::AssemblyJointSourceBindingAssumed => "assembly.joint-source-binding-assumed",
             Self::AssemblyConnectorOperandsAssumed => "assembly.connector-operands-assumed",
             Self::AssemblyMotionBindingAssumed => "assembly.motion-binding-assumed",
+            Self::AssemblyAdditionalOwnerMotionAssumed => {
+                "assembly.additional-owner-motion-assumed"
+            }
+            Self::AssemblyExtendedTailAssumed => "assembly.extended-tail-assumed",
+            Self::AssemblyExtendedTypedTailAssumed => "assembly.extended-typed-tail-assumed",
             Self::AssemblyOperandNestedPathRetained => "assembly.operand-nested-path-retained",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
@@ -1592,12 +1639,25 @@ impl F3dLossCode {
                 "feature.move-transform-references-assumed"
             }
             Self::FeatureMoveTransformIdentityAssumed => "feature.move-transform-identity-assumed",
+            Self::PositionEnvelopeUnparsed => "feature.position-envelope-unparsed",
+            Self::PositionSemanticsAssumed => "feature.position-semantics-assumed",
+            Self::PositionIdentityAssumed => "feature.position-identity-assumed",
+            Self::PositionOccurrenceUnresolved => "feature.position-occurrence-unresolved",
+            Self::PositionTransformUnprojected => "feature.position-transform-unprojected",
             Self::FeatureAlignMotionAssumed => "feature.align-motion-assumed",
             Self::FeatureAlignIdentityAssumed => "feature.align-identity-assumed",
             Self::FeatureAlignMotionUnprojected => "feature.align-motion-unprojected",
             Self::FeatureMoveTransformPrefixAssumed => "feature.move-transform-prefix-assumed",
             Self::FeatureMoveTransformModeAssumed => "feature.move-transform-mode-assumed",
             Self::FeatureMoveScopeReferencesAssumed => "feature.move-scope-references-assumed",
+            Self::FeatureMoveFaceScopeReferencesAssumed => {
+                "feature.move-face-scope-references-assumed"
+            }
+            Self::FeatureMoveFaceSelectionUnresolved => "feature.move-face-selection-unresolved",
+            Self::FeatureMoveFaceTypeAssumed => "feature.move-face-type-assumed",
+            Self::FeatureMoveFaceTypeConflict => "feature.move-face-type-conflict",
+            Self::FeatureMoveFacePrologueAssumed => "feature.move-face-prologue-assumed",
+            Self::FeatureMoveFaceMatrixAssumed => "feature.move-face-matrix-assumed",
             Self::FeatureModifyUnlistedGroupsAssumed => "feature.modify-unlisted-groups-assumed",
             Self::FeatureModifyTableAssumed => "feature.modify-table-assumed",
             Self::FeatureModifyStateAssumed => "feature.modify-state-assumed",
@@ -1814,6 +1874,10 @@ impl F3dLossCode {
             | Self::WorkPlaneFrameUnbound
             | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
+            | Self::SpherePlacementFlagsAssumed
+            | Self::SpherePlacementFrameAssumed
+            | Self::SphereDiameterOwnerAssumed
+            | Self::SphereDiameterSourceAssumed
             | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
             | Self::ConstructionClosingFlagAssumed
@@ -1866,6 +1930,9 @@ impl F3dLossCode {
             | Self::AssemblyJointSourceBindingAssumed
             | Self::AssemblyConnectorOperandsAssumed
             | Self::AssemblyMotionBindingAssumed
+            | Self::AssemblyAdditionalOwnerMotionAssumed
+            | Self::AssemblyExtendedTailAssumed
+            | Self::AssemblyExtendedTypedTailAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
@@ -2075,9 +2142,20 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureMoveTransformReferencesAssumed
             | Self::FeatureMoveScopeReferencesAssumed
+            | Self::FeatureMoveFaceScopeReferencesAssumed
+            | Self::FeatureMoveFaceSelectionUnresolved
+            | Self::FeatureMoveFaceTypeAssumed
+            | Self::FeatureMoveFaceTypeConflict
+            | Self::FeatureMoveFacePrologueAssumed
+            | Self::FeatureMoveFaceMatrixAssumed
             | Self::FeatureMoveTransformModeAssumed
             | Self::FeatureMoveTransformPrefixAssumed
             | Self::FeatureMoveTransformIdentityAssumed
+            | Self::PositionEnvelopeUnparsed
+            | Self::PositionSemanticsAssumed
+            | Self::PositionIdentityAssumed
+            | Self::PositionOccurrenceUnresolved
+            | Self::PositionTransformUnprojected
             | Self::FeatureAlignMotionAssumed
             | Self::FeatureAlignIdentityAssumed
             | Self::FeatureAlignMotionUnprojected
@@ -2328,6 +2406,10 @@ impl F3dLossCode {
             | Self::WorkPlaneFrameUnbound
             | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
+            | Self::SpherePlacementFlagsAssumed
+            | Self::SpherePlacementFrameAssumed
+            | Self::SphereDiameterOwnerAssumed
+            | Self::SphereDiameterSourceAssumed
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
             | Self::HoleReferenceDimensionsNative
@@ -2455,9 +2537,20 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureMoveTransformReferencesAssumed
             | Self::FeatureMoveScopeReferencesAssumed
+            | Self::FeatureMoveFaceScopeReferencesAssumed
+            | Self::FeatureMoveFaceSelectionUnresolved
+            | Self::FeatureMoveFaceTypeAssumed
+            | Self::FeatureMoveFaceTypeConflict
+            | Self::FeatureMoveFacePrologueAssumed
+            | Self::FeatureMoveFaceMatrixAssumed
             | Self::FeatureMoveTransformModeAssumed
             | Self::FeatureMoveTransformPrefixAssumed
             | Self::FeatureMoveTransformIdentityAssumed
+            | Self::PositionEnvelopeUnparsed
+            | Self::PositionSemanticsAssumed
+            | Self::PositionIdentityAssumed
+            | Self::PositionOccurrenceUnresolved
+            | Self::PositionTransformUnprojected
             | Self::FeatureAlignMotionAssumed
             | Self::FeatureAlignIdentityAssumed
             | Self::FeatureAlignMotionUnprojected
@@ -2514,6 +2607,9 @@ impl F3dLossCode {
             | Self::AssemblyJointSourceBindingAssumed
             | Self::AssemblyConnectorOperandsAssumed
             | Self::AssemblyMotionBindingAssumed
+            | Self::AssemblyAdditionalOwnerMotionAssumed
+            | Self::AssemblyExtendedTailAssumed
+            | Self::AssemblyExtendedTypedTailAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
@@ -2669,6 +2765,10 @@ mod tests {
                 "work-plane.frame-unbound",
                 "work-plane.inferred-axis-assumed",
                 "feature.cylinder-placement-unbound",
+                "feature.sphere-placement-flags-assumed",
+                "feature.sphere-placement-frame-assumed",
+                "feature.sphere-diameter-owner-assumed",
+                "feature.sphere-diameter-source-assumed",
                 "feature.tracking-path-untyped",
                 "feature.construction-closing-flag-assumed",
                 "feature.chamfer-edge-role-assumed",
@@ -2722,6 +2822,9 @@ mod tests {
                 "assembly.joint-source-binding-assumed",
                 "assembly.connector-operands-assumed",
                 "assembly.motion-binding-assumed",
+                "assembly.additional-owner-motion-assumed",
+                "assembly.extended-tail-assumed",
+                "assembly.extended-typed-tail-assumed",
                 "assembly.operand-nested-path-retained",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
@@ -2938,9 +3041,20 @@ mod tests {
                 "feature.move-transform-assumed",
                 "feature.move-transform-references-assumed",
                 "feature.move-scope-references-assumed",
+                "feature.move-face-scope-references-assumed",
+                "feature.move-face-selection-unresolved",
+                "feature.move-face-type-assumed",
+                "feature.move-face-type-conflict",
+                "feature.move-face-prologue-assumed",
+                "feature.move-face-matrix-assumed",
                 "feature.move-transform-mode-assumed",
                 "feature.move-transform-prefix-assumed",
                 "feature.move-transform-identity-assumed",
+                "feature.position-envelope-unparsed",
+                "feature.position-semantics-assumed",
+                "feature.position-identity-assumed",
+                "feature.position-occurrence-unresolved",
+                "feature.position-transform-unprojected",
                 "feature.align-motion-assumed",
                 "feature.align-identity-assumed",
                 "feature.align-motion-unprojected",

@@ -1105,6 +1105,10 @@ The transition that drills a Hole states its support faces. Every cylinder on a 
 
 `SpherePrimitive` and `TorusPrimitive` scopes store the result-operation u32 at primary-header offset 25 with the same `1 = join`, `2 = cut`, `3 = intersect`, and `4 = new body` values, followed by byte `0x01` at offset 29. A sphere scope is 462 bytes to its paired same-index header. Marked references begin at offsets 30, 41, and 52 for the placement, diameter, and result records; its row-major rigid placement matrix begins at offset 64. A torus scope is 486 bytes. Marked references begin at offsets 30, 41, 52, and 63 for the major diameter, placement, minor diameter, and result records; its matrix begins at offset 75. Matrix column 2 is the primitive axis and column 3 is its centre in centimetres. Each diameter reference names a 104-byte same-index paired scalar frame whose positive finite f64 at primary-record offset 40 is a diameter in centimetres. Sphere radius is half its diameter. Torus major radius and tube radius are half the major and minor diameters respectively.
 
+The reference-placed `SpherePrimitive` forms store three prefix references in placement, diameter-owner, and result order. These targets are the last three members of the ordered scope reference table. The compact prefix has operation offset 25, marker offset 29, and eleven-byte marked references at offsets 30, 41, and 52. The shifted prefix has operation offset 21, marker offset 25, and eleven-byte marked references at offsets 26, 37, and 48. The typed prefix has operation offset 20, marker offset 24, and 51-byte typed references at offsets 25, 76, and 127. Their type GUIDs are `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`, `D91D429C-1BB5-4640-B49F-69AF14F463E9`, and `B556C40D-B680-4BD8-9623-028CD43307EC`. The operation values are `1 = join`, `2 = cut`, `3 = intersect`, and `4 = new body`. Each marker is byte `0x01`.
+
+The diameter owner has local ordinal zero and retains its evaluated diameter in centimetres. Its parameter source can hold an expression. The referenced placement construction supplies the sphere local-to-model frame through its explicit matrix or identity marker. Matrix column 3 is the centre in centimetres. The sphere radius is half the evaluated diameter. A sphere is invariant under rotation of its placement axes.
+
 `BoxPrimitive` and the named `CylinderPrimitive` form use the named parameter-scope prologue. Bytes 11 through 19 are zero, the result-operation u32 is at primary-header offset 20 with values `1 = join`, `2 = cut`, `3 = intersect`, and `4 = new body`, byte 24 is zero, and byte 25 is `0x01`. Box scopes whose reference count is at offset 335, 339, 343, or 655 use the framed prefix layouts below. The ordered parameter owners are joined to the scope by native stream, scope record index, reference membership, and local ordinal. A box has five owners in ordinal order: `DistanceX`, `DistanceY`, `DistanceZ`, `OffsetDistanceX`, and `OffsetDistanceY`; the first three are positive lengths in centimetres and the last two are signed translations along the source x and y axes. A cylinder has two owners in ordinal order: `Height` and `Diameter`; both are positive centimetre lengths and the result is a full-turn cylinder. The box and named-cylinder result operation is the value at offset 20. A named cylinder references a version-8 or version-9 placement construction in the same Design stream. Exactly one referenced registered placement record supplies its solved frame. Its solved frame is a proper rigid transform with zero inferred-x, inferred-z, z-flip, and axis-flipped fields. Matrix column 3 is the cylinder origin in centimetres; column 2 is its positive axis and column 0 is its radial x direction. The local cylinder extends from zero to `Height` along its positive z-axis. The explicit matrix or an identity marker supplies the solved frame.
 
 The shifted `CylinderPrimitive` form is keyed by its primary and paired class tags and its frame length:
@@ -1740,7 +1744,7 @@ The compact prologue, with `P` 127, stores `1` at offset 20, a u32 zero at 21, u
 
 A `DeleteFace` scope with typed references has the same prologue fields, ordered references and operation, with every reference stored as a 51-byte typed reference. `P` is 163 after the legacy prologue and 167 after the compact prologue. The first `DeleteFace` code unit is at offset `P + 12 + 51R`, and a fixed tail of 196 bytes follows the kind and ends at the same-index paired header.
 
-`DéplacerFace` is the localized kind name of `MoveFace`. A `MoveFace` scope has at least three ordered references: its sole role-`0x0000001000000000` construction-operand group, that group's ordered, nonempty face members immediately after the group, and its rigid-transform record. The transform record is either the last reference or the first reference, which places the group at reference one. The marker-one prologue stores `1` at offset 20, a u32 zero at 21, and byte `1` at 25. The marked reference to the transform record is at 26, u32 one is at 37, the marked reference to the group is at 41, and the ordered-reference count is at 131. The marker-zero prologue stores `0` at offset 20, has no u32 zero, and places every later field four bytes earlier: byte `1` at 21, the transform reference at 22, u32 one at 33, the reference to the group at 37, and the ordered-reference count at 127. The transform record stores its form and matrix at the offsets of the rigid-transform frame of a `Move` scope. Its class tag and frame length are not constant: the transform reference selects the record. Its row-major model-space matrix in centimetres moves the selected faces.
+`DéplacerFace` is the localized kind name of `MoveFace`. Its prologue carries marked references to a transform record and a face group, followed by a counted ordered-reference table. A complete face-group run consists of a role-`0x0000001000000000` construction-operand group and its ordered, nonempty members immediately after the group. The group is at reference zero, or reference one when the transform is first. The transform reference can occur before or after additional ordered references outside that run. The registered rigid-transform family has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`, version `2`. The marker-one prologue stores `1` at offset 20, a u32 zero at 21, and byte `1` at 25. The marked reference to the transform record is at 26, u32 one is at 37, the marked reference to the group is at 41, and the ordered-reference count is at 131. The marker-zero prologue stores `0` at offset 20, has no u32 zero, and places every later field four bytes earlier: byte `1` at 21, the transform reference at 22, u32 one is at 33, the reference to the group is at 37, and the ordered-reference count is at 127. The nine bytes between the indexed header and the marker are prefix fields. The selected transform record uses the form and matrix byte grammar of a `Move` rigid-transform frame. Its marked record identity is independent of its ordinal in the ordered table. The fixed prologue layouts are `move_face_marker_zero_prologue` and `move_face_marker_one_prologue`.
 
 The transitions of a `MoveFace` or `OffsetFaces` feature state the feature's selection. A `MoveFace` translation can span more than one transition, and the input state is the scope's preceding state. The motion moves every selected face, and a face tangent to a selected face can move with it. A surface row follows a translation when its origin shifts by the translation and its normal, axis, and radius stay; this holds when the translation lies in the plane of the surface. A plane row follows an offset distance `d` when its normal stays and its origin shifts by `|d|` along that normal. A cylinder row follows `d` when its axis line stays and its radius changes by `|d|`. When the transitions from the input state delete no face, every face they update has one plane or cylinder row in the input and output states, and the updated faces whose rows follow the motion number exactly the distinct members of the role-`0x0000001000000000` group, those faces are the selection in the input state.
 
@@ -2098,6 +2102,16 @@ For each selector, an edge is an incidence match when, for every present clause 
 
 A suppressed edge-treatment scope resolves its recipes against the unique terminal topology of its ASM history. The terminal state is the feature's replay input state. An operand's terminal face context is the ordered, deduplicated union of its primary persistent-reference faces and each prefix reference's exact-selector faces, falling back to that reference's alternate-selector faces only when its exact set is empty. Incidence, boundary-count, and common-triplet proofs operate on the resulting terminal boundaries without transition-only changed-edge filters and must resolve to one common slot. More than one terminal state in a history, or matching terminal states in more than one history, does not select a topology. Deleted-edge, treatment-radius, changed-context, and scope-partition proofs require an executed transition and do not apply. When the terminal recipe graph has no complete group proof, every proven edge and every unresolved operand identity form a partial historical selection.
 
+#### Captured component positions
+
+A Position scope has type GUID `8EE00B00-76BB-49AB-8C25-E837FEC5BDA5`, version 6. Its stored kind can be `Position` or `Posición`. The inline prefix starts with the eleven-byte indexed header, eighteen zero bytes at offset 11, and a u32 row count at offset 29. Ordered rows start at offset 33. The count includes every row in source order; repeated targets remain separate rows. An empty row sequence has count zero.
+
+Each Position row starts with byte zero at offset 0, a marked same-segment reference at offset 1, and a matrix marker at offset 12. The reference stores marker 1, a u64 record index at offset 2, and a zero u16 at offset 10. The record index fits u32. Matrix marker 0 is followed by sixteen row-major finite f64 coefficients at offset 13; that row spans 141 bytes. Matrix marker 1 omits the coefficients; that row spans 13 bytes.
+
+The Position suffix spans 83 bytes between the rows and the normal ordered-reference count. It stores u32 zero at offset 0, u32 value 36 at offset 4, the UTF-16LE text `00000000-0000-0000-0000-000000000000` at offset 8, and three zero bytes at offset 80. The last row ends at the suffix start. The suffix ends at the scope's ordered-reference count.
+
+Each row target selects an operand-path locator of type `2E3AC990-483D-4A55-8662-C064B976A957`, version 5. The locator's backlink names the Position scope. Its ordered typed path records and wrapper use the assembly operand-path envelope.
+
 #### Assembly operands
 
 The four direct-construction 421-byte `As-built` generations use one exact class and offset map:
@@ -2133,9 +2147,13 @@ plain local references or 51 bytes for typed local references. A typed
 reference's inline GUID equals its target's registered type GUID.
 
 Four zero bytes precede four nonnull alignment-owner references in angle,
-Z-offset, X-offset, Y-offset order. Six zero bytes, u32 locator count `2`, two
+Z-offset, X-offset, Y-offset order. Two zero bytes and a u32 additional-owner
+count `K` follow. A positive count supplies `K` nonnull owner references and
+selects the extended tail below. These owners follow the four alignment
+owners in local-ordinal order and occur in the scope reference table.
+The zero-count form occupies six zero bytes. U32 locator count `2`, two
 nonnull locator references, and a nonnull joint reference follow. The joint
-reference selects a version-3 or version-4 record of type GUID
+reference selects a version-3, version-4, or version-5 record of type GUID
 `7F5A0426-1D2A-4DC4-9F06-58631F69D2F5`, including a joint shared by several
 scopes. A length-prefixed UTF-16 GUID with 36 code units and three zero bytes
 precede the counted scope-reference table. The table contains `R` nonnull
@@ -2156,6 +2174,18 @@ occurrence GUIDs traverse child occurrences within the selected insertion,
 including child occurrences that insert another document. The scope
 connector belongs to the innermost occurrence in that path.
 
+The extended version-three tail adds a nonnull reference immediately after
+the first tail reference and uses `S = 0`. Its target has type GUID
+`074F9459-89C2-4B7D-8AB4-DCE67AE944FE`, version 1. Its span is
+`190 + (R + K + 13) * W + 128 * M + 4 * E`. The native alignment retains
+this additional reference and its marker offset as `additional_tail_reference`.
+The plain-reference tail, from the feature ordinal through its final zero
+bytes, has the fixed fields in
+[the layout table](../layouts/f3d.md#assembly_version_three_extended_tail).
+The typed-reference extended tail has four 51-byte references with inline
+type GUIDs. Its previous-history word follows the added reference. Its fixed
+fields are in [the typed layout table](../layouts/f3d.md#assembly_version_three_typed_extended_tail).
+
 Version 5 uses the same type GUID and field order with these extensions.
 Its joint reference selects type version 6.
 Nine zero bytes follow the facing byte's two zero bytes. Each connector
@@ -2165,9 +2195,19 @@ Two zero bytes follow the angle-owner reference. An additional nonnull
 reference follows the first tail reference. This tail uses separator length
 `S = 0`. One zero byte separates its two boolean bytes from its last
 reference. Version 5 uses eleven-byte plain local references. Its span is
-`377 + (R + 12) * 11 + 128 * M + 4 * E`. The four explicit owner references
-select angle, Z, X, and Y lanes. The zero run after the four owner references
-is six bytes. This form stores four alignment owners. The version-five
+`377 + (R + K + 12) * 11 + 128 * M + 4 * E`. The four explicit owner references
+select angle, Z, X, and Y lanes.
+An additional-owner run follows the four explicit alignment references.
+It stores two zero bytes, a u32 count `K`, and `K` nonnull plain local
+references. These references name the scope's additional parameter owners
+in local-ordinal order, starting at ordinal four. Their targets also occur
+in the scope reference table. Each additional reference follows the count
+or the preceding reference without padding. The four alignment owners
+remain separate from this run.
+Additional owners carry rotation and translation limits and rest values,
+including `RotateMinimum`, `RotateMaximum`, `RotateRest`, `SlideMinimum`,
+`SlideMaximum`, `SlideRest`, `YawMinimum`, `YawMaximum`, `YawRest`, and `RollRest`.
+The version-five
 expanded two-matrix layout with `R = 16` spans 945 bytes; its complete field
 table is in [the layout table](../layouts/f3d.md#assembly_version_five_scope).
 
@@ -2178,7 +2218,7 @@ reference, six zero bytes, an identity byte, and its explicit matrix when
 the identity byte is zero. The second connector follows the first connector
 frame directly. Four zero bytes follow the second connector frame. No zero
 bytes follow the angle-owner reference. The tail stores u8 `1` before its
-two boolean bytes, and no zero byte follows them. Its span is `222 + (R + 12) * 11 + 128 * M + 4 * E`.
+two boolean bytes, and no zero byte follows them. Its span is `222 + (R + K + 12) * 11 + 128 * M + 4 * E`.
 
 The span formulas count the eight code units of the stored family name
 `Assemble`. A stored family name of `L` UTF-16 code units adds `2 * (L - 8)`

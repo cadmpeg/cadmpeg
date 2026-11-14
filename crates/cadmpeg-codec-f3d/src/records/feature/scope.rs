@@ -76,6 +76,12 @@ cadmpeg_core::named_optional_field!(
     "occurrence_transfer_intent"
 );
 
+cadmpeg_core::named_optional_field!(
+    deserialize_captured_positions,
+    super::position::DesignCapturedPositions,
+    "captured_positions"
+);
+
 cadmpeg_core::named_optional_field!(deserialize_source_kind, String, "source_kind");
 cadmpeg_core::named_optional_field!(
     deserialize_label,
@@ -795,6 +801,8 @@ pub(crate) struct DesignParameterScope {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) occurrence_transfer_intent:
         Option<super::occurrence_transfer::DesignOccurrenceTransferIntent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) captured_positions: Option<super::position::DesignCapturedPositions>,
     /// Family-specific construction records.
     payload: DesignScopePayload,
     /// Reference members whose records open a construction-operand group the
@@ -860,6 +868,12 @@ pub(crate) struct DesignParameterScopeDraft {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
 struct DesignParameterScopeSerde {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_captured_positions"
+    )]
+    captured_positions: Option<super::position::DesignCapturedPositions>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -2219,6 +2233,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 "history_state_id_offset disagrees with kind_offset".into(),
             ));
         }
+        let captured_positions = wire.captured_positions.take();
         let occurrence_transfer = wire.occurrence_transfer.take();
         let occurrence_transfer_intent = wire.occurrence_transfer_intent.take();
         let mut admitted = Self::try_new(DesignParameterScopeDraft {
@@ -2255,6 +2270,14 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 .map_err(DesignParameterScopePayloadError)?,
             paired_byte_offset: wire.paired_byte_offset,
         })?;
+        if captured_positions
+            .as_ref()
+            .is_some_and(|positions| !positions.valid_for_scope(&admitted))
+        {
+            return Err(DesignParameterScopePayloadError(
+                "captured_positions disagrees with scope".into(),
+            ));
+        }
         if occurrence_transfer
             .as_ref()
             .is_some_and(|value| !value.valid_for_scope(&admitted))
@@ -2289,6 +2312,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         }
         admitted.source_kind = wire.source_kind;
         admitted.display_name = wire.display_name;
+        admitted.captured_positions = captured_positions;
         admitted.occurrence_transfer = occurrence_transfer;
         admitted.occurrence_transfer_intent = occurrence_transfer_intent;
         Ok(admitted)
@@ -2302,6 +2326,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
         let history_state_id_offset = scope.history_state_id_offset();
         let (reference_members, reference_member_offsets) = scope.reference_members.into_wire();
         let mut wire = DesignParameterScopeSerde {
+            captured_positions: scope.captured_positions,
             occurrence_transfer: scope.occurrence_transfer,
             occurrence_transfer_intent: scope.occurrence_transfer_intent,
             id: scope.id,
@@ -2612,7 +2637,10 @@ impl DesignParameterScope {
         let tail_valid = if typed_canvas {
             true
         } else if typed {
-            tail == crate::layout::typed_reference_parameter_scope_tail::LEN
+            crate::design::decode::scopes::parameter_scope::typed_scope_previous_history_offset(
+                kind, tail,
+            )
+            .is_some()
         } else {
             crate::design::decode::scopes::parameter_scope::parameter_scope_tail_length_is_valid(
                 kind, tail,
@@ -2627,7 +2655,7 @@ impl DesignParameterScope {
                 let relatives = if typed_canvas {
                     Vec::new()
                 } else if typed {
-                    vec![crate::layout::typed_reference_parameter_scope_tail::PREVIOUS_HISTORY_STATE_ID]
+                    crate::design::decode::scopes::parameter_scope::typed_scope_previous_history_offset(kind, tail).into_iter().collect()
                 } else {
                     [false, true]
                         .into_iter()
@@ -2679,7 +2707,17 @@ impl DesignParameterScope {
         if !(draft.byte_offset < draft.reference_count_offset
             && draft.reference_count_offset < draft.kind_offset)
             || (draft.reference_members.is_empty()
-                && empty_table_at != Some(draft.reference_count_offset))
+                && empty_table_at != Some(draft.reference_count_offset)
+                && !(kind == "MoveFace"
+                    && [
+                        crate::layout::move_face_marker_zero_prologue::REFERENCE_COUNT,
+                        crate::layout::move_face_marker_one_prologue::REFERENCE_COUNT,
+                    ]
+                    .into_iter()
+                    .any(|offset| {
+                        draft.byte_offset.checked_add(u64_from_index(offset))
+                            == Some(draft.reference_count_offset)
+                    })))
         {
             return Err(fail("reference_count_offset/reference_members"));
         }
@@ -2734,6 +2772,7 @@ impl DesignParameterScope {
             previous_history_state_id_offset: draft.previous_history_state_id_offset,
             reference_count_offset: draft.reference_count_offset,
             reference_members: draft.reference_members,
+            captured_positions: None,
             occurrence_transfer: None,
             occurrence_transfer_intent: None,
             payload: draft.payload,
