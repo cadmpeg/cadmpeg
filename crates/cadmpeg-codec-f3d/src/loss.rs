@@ -592,7 +592,15 @@ pub(crate) enum F3dLossCode {
     /// A `SurfaceExtend` scope stores a nonpositive extension distance and stays native.
     FeatureSurfaceExtendDistanceNonpositive,
     FeatureSurfaceBoundaryFlagRecordAssumed,
-    /// `PathPattern` flip, orientation, or start settings have no curve-driven pattern field.
+    FeaturePathPatternFeatureSeedAssumed,
+    FeaturePathPatternReorderedSettingsAssumed,
+    FeaturePathPatternSeedUnresolved,
+    FeaturePathPatternPathUnresolved,
+    FeaturePathPatternDefinitionPartial,
+    FeaturePathPatternCountOutOfRange,
+    FeaturePathPatternDistanceNonpositive,
+    FeaturePathPatternStartUnresolved,
+    FeaturePathPatternSettingsUnresolved,
     FeaturePathPatternPlacementNotTransferred,
     /// A rectangular pattern's symmetric distribution or coincident direction has no linear pattern field.
     FeatureRectangularPatternPlacementNotTransferred,
@@ -1147,6 +1155,15 @@ impl F3dLossCode {
         Self::FeatureSurfaceExtendMethodUnresolved,
         Self::FeatureSurfaceExtendDistanceNonpositive,
         Self::FeatureSurfaceBoundaryFlagRecordAssumed,
+        Self::FeaturePathPatternFeatureSeedAssumed,
+        Self::FeaturePathPatternReorderedSettingsAssumed,
+        Self::FeaturePathPatternSeedUnresolved,
+        Self::FeaturePathPatternPathUnresolved,
+        Self::FeaturePathPatternDefinitionPartial,
+        Self::FeaturePathPatternCountOutOfRange,
+        Self::FeaturePathPatternDistanceNonpositive,
+        Self::FeaturePathPatternStartUnresolved,
+        Self::FeaturePathPatternSettingsUnresolved,
         Self::FeaturePathPatternPlacementNotTransferred,
         Self::FeatureRectangularPatternPlacementNotTransferred,
         Self::FeatureThickenFlagsAssumed,
@@ -1718,6 +1735,23 @@ impl F3dLossCode {
             Self::FeatureSurfaceBoundaryFlagRecordAssumed => {
                 "feature.surface-boundary-flag-record-assumed"
             }
+            Self::FeaturePathPatternFeatureSeedAssumed => {
+                "feature.path-pattern-feature-seed-assumed"
+            }
+            Self::FeaturePathPatternReorderedSettingsAssumed => {
+                "feature.path-pattern-reordered-settings-assumed"
+            }
+            Self::FeaturePathPatternSeedUnresolved => "feature.path-pattern-seed-unresolved",
+            Self::FeaturePathPatternPathUnresolved => "feature.path-pattern-path-unresolved",
+            Self::FeaturePathPatternDefinitionPartial => "feature.path-pattern-definition-partial",
+            Self::FeaturePathPatternCountOutOfRange => "feature.path-pattern-count-out-of-range",
+            Self::FeaturePathPatternDistanceNonpositive => {
+                "feature.path-pattern-distance-nonpositive"
+            }
+            Self::FeaturePathPatternStartUnresolved => "feature.path-pattern-start-unresolved",
+            Self::FeaturePathPatternSettingsUnresolved => {
+                "feature.path-pattern-settings-unresolved"
+            }
             Self::FeaturePathPatternPlacementNotTransferred => {
                 "feature.path-pattern-placement-not-transferred"
             }
@@ -2210,6 +2244,15 @@ impl F3dLossCode {
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSurfaceExtendDistanceNonpositive
             | Self::FeatureSurfaceBoundaryFlagRecordAssumed
+            | Self::FeaturePathPatternFeatureSeedAssumed
+            | Self::FeaturePathPatternReorderedSettingsAssumed
+            | Self::FeaturePathPatternSeedUnresolved
+            | Self::FeaturePathPatternPathUnresolved
+            | Self::FeaturePathPatternDefinitionPartial
+            | Self::FeaturePathPatternCountOutOfRange
+            | Self::FeaturePathPatternDistanceNonpositive
+            | Self::FeaturePathPatternStartUnresolved
+            | Self::FeaturePathPatternSettingsUnresolved
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
@@ -2610,6 +2653,15 @@ impl F3dLossCode {
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSurfaceExtendDistanceNonpositive
             | Self::FeatureSurfaceBoundaryFlagRecordAssumed
+            | Self::FeaturePathPatternFeatureSeedAssumed
+            | Self::FeaturePathPatternReorderedSettingsAssumed
+            | Self::FeaturePathPatternSeedUnresolved
+            | Self::FeaturePathPatternPathUnresolved
+            | Self::FeaturePathPatternDefinitionPartial
+            | Self::FeaturePathPatternCountOutOfRange
+            | Self::FeaturePathPatternDistanceNonpositive
+            | Self::FeaturePathPatternStartUnresolved
+            | Self::FeaturePathPatternSettingsUnresolved
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureRectangularPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
@@ -3119,6 +3171,15 @@ mod tests {
                 "feature.surface-extend-method-unresolved",
                 "feature.surface-extend-distance-nonpositive",
                 "feature.surface-boundary-flag-record-assumed",
+                "feature.path-pattern-feature-seed-assumed",
+                "feature.path-pattern-reordered-settings-assumed",
+                "feature.path-pattern-seed-unresolved",
+                "feature.path-pattern-path-unresolved",
+                "feature.path-pattern-definition-partial",
+                "feature.path-pattern-count-out-of-range",
+                "feature.path-pattern-distance-nonpositive",
+                "feature.path-pattern-start-unresolved",
+                "feature.path-pattern-settings-unresolved",
                 "feature.path-pattern-placement-not-transferred",
                 "feature.rectangular-pattern-placement-not-transferred",
                 "feature.thicken-flags-assumed",

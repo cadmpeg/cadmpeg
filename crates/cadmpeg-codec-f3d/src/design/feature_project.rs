@@ -1464,8 +1464,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     {
                         path_pattern::path_pattern_definition(
                             scope,
-                            construction_groups,
+                            inputs,
                             &parameters,
+                            &source_ordinals,
                             &mut projection_losses,
                         )?
                     } else if scope.kind()
@@ -1612,7 +1613,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 source_properties: if matches!(
                     &definition,
                     FeatureDefinition::Operation(FeatureOperation::Native { .. } | FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. })
-                ) || matches!(family, Some(DesignFeatureFamily::Hole))
+                ) || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CurveDrivenPartial { .. }))
+                    || matches!(family, Some(DesignFeatureFamily::Hole))
                     || matches!(family, Some(DesignFeatureFamily::Emboss))
                     || shell_has_independent_walls(scope)
                     || extended_joint_origin
@@ -2591,6 +2593,17 @@ fn scope_properties(
                 .ok_or_else(|| CodecError::malformed("reference property key is blank"))?,
             format!("{record_index}"),
         );
+        if scope.kind() == crate::records::feature::scope::DesignFeatureKind::PathPattern
+            && scope
+                .unclosed_construction_operand_groups
+                .contains(record_index)
+        {
+            properties.insert(
+                cadmpeg_core::text::NonBlankString::new(format!("unclosed-group:{ordinal}"))
+                    .ok_or_else(|| CodecError::malformed("unclosed group property key is blank"))?,
+                format!("{record_index}"),
+            );
+        }
     }
     if let Some(profile) = scope
         .extrude_profile()

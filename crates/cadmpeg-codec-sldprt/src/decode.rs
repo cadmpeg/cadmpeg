@@ -312,7 +312,9 @@ fn incomplete_pattern<C: cadmpeg_ir::features::patterns::CompositeStages>(
         PatternTransform::Linear { direction, .. }
         | PatternTransform::LinearOffsets { direction, .. } => direction.is_none(),
         PatternTransform::Circular { .. } | PatternTransform::Mirror { .. } => false,
-        PatternTransform::MirrorReference { .. } => true,
+        PatternTransform::MirrorReference { .. } | PatternTransform::CurveDrivenPartial { .. } => {
+            true
+        }
         PatternTransform::CircularAngles { .. } => false,
         PatternTransform::CurveDriven { path, .. } => path.as_ref().is_none_or(incomplete_path),
         PatternTransform::Scale { center, .. } => matches!(center, PatternScaleCenter::Native(_)),
@@ -1900,6 +1902,7 @@ pub(crate) fn append_design_losses(
                     seeds.is_empty()
                         || seeds.iter().any(|seed| match seed {
                             cadmpeg_ir::features::patterns::PatternSeed::Feature(_) => false,
+                            cadmpeg_ir::features::patterns::PatternSeed::Native(_) => true,
                             cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) => {
                                 incomplete_face_selection(faces)
                             }

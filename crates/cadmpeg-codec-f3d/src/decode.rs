@@ -1888,7 +1888,9 @@ fn design_projection_gaps(
                         PatternSeed::Bodies(bodies) => {
                             gaps.body_selections += native_body_selection_count(bodies);
                         }
-                        PatternSeed::Feature(_) | PatternSeed::Occurrences(..) => {}
+                        PatternSeed::Native(_)
+                        | PatternSeed::Feature(_)
+                        | PatternSeed::Occurrences(..) => {}
                     }
                 }
                 match pattern.definition() {
@@ -1896,6 +1898,14 @@ fn design_projection_gaps(
                     PatternTransform::CurveDriven {
                         path: Some(path), ..
                     } => gaps.path_selections += usize::from(!loft_path_is_resolved(path)),
+                    PatternTransform::CurveDrivenPartial { parameters } => {
+                        gaps.path_selections += usize::from(
+                            parameters
+                                .path
+                                .as_ref()
+                                .is_none_or(|path| !loft_path_is_resolved(path)),
+                        );
+                    }
                     _ => {}
                 }
             }
