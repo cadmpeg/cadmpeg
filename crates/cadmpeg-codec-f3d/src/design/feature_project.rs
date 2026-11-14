@@ -2208,19 +2208,32 @@ fn project_solid_primitive(
         crate::records::feature::scope::DesignScopePayload::SpherePrimitive(Some(
             crate::records::feature::primitives::DesignSpherePrimitive {
                 transform,
+                support_transform,
                 diameter,
                 operation: result,
                 ..
             },
-        )) => FeatureDefinition::Operation(FeatureOperation::Sphere {
-            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                transform[0][3] * 10.0,
-                transform[1][3] * 10.0,
-                transform[2][3] * 10.0,
-            ))?,
-            radius: cadmpeg_ir::scalar::PositiveLength::new(diameter.get() * 5.0)?,
-            op: operation(*result),
-        }),
+        )) => {
+            let local = [transform[0][3], transform[1][3], transform[2][3]];
+            let support = support_transform.map_or(
+                crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+                |support| support.value,
+            );
+            let center = [0, 1, 2].map(|axis| {
+                (support[axis][0] * local[0]
+                    + support[axis][1] * local[1]
+                    + support[axis][2] * local[2]
+                    + support[axis][3])
+                    * 10.0
+            });
+            FeatureDefinition::Operation(FeatureOperation::Sphere {
+                center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    center[0], center[1], center[2],
+                ))?,
+                radius: cadmpeg_ir::scalar::PositiveLength::new(diameter.get() * 5.0)?,
+                op: operation(*result),
+            })
+        }
         crate::records::feature::scope::DesignScopePayload::TorusPrimitive(Some(
             crate::records::feature::primitives::DesignTorusPrimitive {
                 transform,

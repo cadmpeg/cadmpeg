@@ -56,6 +56,8 @@ pub(crate) enum F3dLossCode {
     /// A cylinder primitive has no unique checked solved placement.
     CylinderPlacementUnbound,
     SpherePlacementFlagsAssumed,
+    SphereLocalMatrixFramingAssumed,
+    SphereLocalFrameAssumed,
     SpherePlacementFrameAssumed,
     SphereDiameterOwnerAssumed,
     SphereDiameterSourceAssumed,
@@ -816,6 +818,8 @@ impl F3dLossCode {
         Self::WorkPlaneInferredAxisAssumed,
         Self::CylinderPlacementUnbound,
         Self::SpherePlacementFlagsAssumed,
+        Self::SphereLocalMatrixFramingAssumed,
+        Self::SphereLocalFrameAssumed,
         Self::SpherePlacementFrameAssumed,
         Self::SphereDiameterOwnerAssumed,
         Self::SphereDiameterSourceAssumed,
@@ -1248,6 +1252,8 @@ impl F3dLossCode {
             Self::WorkPlaneInferredAxisAssumed => "work-plane.inferred-axis-assumed",
             Self::CylinderPlacementUnbound => "feature.cylinder-placement-unbound",
             Self::SpherePlacementFlagsAssumed => "feature.sphere-placement-flags-assumed",
+            Self::SphereLocalMatrixFramingAssumed => "feature.sphere-local-matrix-framing-assumed",
+            Self::SphereLocalFrameAssumed => "feature.sphere-local-frame-assumed",
             Self::SpherePlacementFrameAssumed => "feature.sphere-placement-frame-assumed",
             Self::SphereDiameterOwnerAssumed => "feature.sphere-diameter-owner-assumed",
             Self::SphereDiameterSourceAssumed => "feature.sphere-diameter-source-assumed",
@@ -1841,6 +1847,8 @@ impl F3dLossCode {
             | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
             | Self::SpherePlacementFlagsAssumed
+            | Self::SphereLocalMatrixFramingAssumed
+            | Self::SphereLocalFrameAssumed
             | Self::SpherePlacementFrameAssumed
             | Self::SphereDiameterOwnerAssumed
             | Self::SphereDiameterSourceAssumed
@@ -2364,6 +2372,8 @@ impl F3dLossCode {
             | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
             | Self::SpherePlacementFlagsAssumed
+            | Self::SphereLocalMatrixFramingAssumed
+            | Self::SphereLocalFrameAssumed
             | Self::SpherePlacementFrameAssumed
             | Self::SphereDiameterOwnerAssumed
             | Self::SphereDiameterSourceAssumed
@@ -2714,6 +2724,8 @@ mod tests {
                 "work-plane.inferred-axis-assumed",
                 "feature.cylinder-placement-unbound",
                 "feature.sphere-placement-flags-assumed",
+                "feature.sphere-local-matrix-framing-assumed",
+                "feature.sphere-local-frame-assumed",
                 "feature.sphere-placement-frame-assumed",
                 "feature.sphere-diameter-owner-assumed",
                 "feature.sphere-diameter-source-assumed",

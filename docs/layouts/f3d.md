@@ -11065,6 +11065,33 @@ Parsed by:
 | 8 | 72 | `identity` | `bytes[72]` | little | spec | The Position suffix spans 83 bytes |
 | 80 | 3 | `zero_tail` | `bytes[3]` | little | spec | The Position suffix spans 83 bytes · value `[0, 0, 0]` |
 
+## `unmarked_sphere_local_frame`
+
+Spec §3.1 · layout: byte offsets · size: 128 B
+
+Offsets are relative to the first byte after the third prefix reference. The marked matrix form has identity flag zero; flag one supplies identity and omits its matrix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 128 | `matrix` | `f64[16]` | little | spec | The unmarked local frame stores sixteen row-major f64 values at offset zero |
+
+## `marked_sphere_local_frame`
+
+Spec §3.1 · layout: byte offsets · size: 129 B
+
+Offsets are relative to the first byte after the third prefix reference. The marked matrix form has identity flag zero; flag one supplies identity and omits its matrix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `identity` | `u8` | little | spec | The marked local frame starts with a one-byte identity flag. |
+| 1 | 128 | `matrix` | `f64[16]` | little | spec | Flag `0` stores the same matrix at relative offset one |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

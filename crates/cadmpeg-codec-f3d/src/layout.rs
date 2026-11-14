@@ -9826,3 +9826,29 @@ pub(crate) mod captured_position_suffix {
     /// Stated value of `zero_tail` (`bytes[3]`). Spec §Captured component positions.
     pub(crate) const ZERO_TAIL_VALUE: [u8; 3] = [0x00, 0x00, 0x00];
 }
+
+/// Byte offsets for the `unmarked_sphere_local_frame` record.
+///
+/// Spec §3.1. Record length 128 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the third prefix reference. The marked matrix form has identity flag zero; flag one supplies identity and omits its matrix.
+/// ```
+pub(crate) mod unmarked_sphere_local_frame {
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 0;
+}
+
+/// Byte offsets for the `marked_sphere_local_frame` record.
+///
+/// Spec §3.1. Record length 129 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the third prefix reference. The marked matrix form has identity flag zero; flag one supplies identity and omits its matrix.
+/// ```
+pub(crate) mod marked_sphere_local_frame {
+    /// Offset of `identity` (`u8`). Spec §3.1.
+    pub(crate) const IDENTITY: usize = 0;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 1;
+}

@@ -1,6 +1,9 @@
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
-use crate::records::feature::scope::{DesignParameterScope, DesignScopePayloadMut};
+use crate::records::feature::primitives::DesignSphereLocalFrameAssumption;
+use crate::records::feature::scope::{
+    DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
+};
 use crate::records::placement_construction::DesignPlacementConstruction;
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use cadmpeg_ir::report::loss::LossNote;
@@ -11,6 +14,9 @@ pub(crate) fn bind(
 ) -> Vec<LossNote> {
     let mut losses = Vec::new();
     for scope in scopes {
+        if scope.kind() != DesignFeatureKind::SpherePrimitive {
+            continue;
+        }
         let stream = native_stream(&scope.id).map(str::to_owned);
         let id = scope.id.clone();
         let DesignScopePayloadMut::SpherePrimitive(Some(sphere)) = scope.payload_mut() else {
@@ -47,8 +53,7 @@ pub(crate) fn bind(
         });
         match frame {
             Some((frame, assumed)) => {
-                sphere.transform = frame.value;
-                sphere.transform_offset = Some(frame.offset);
+                sphere.support_transform = Some(frame);
                 if assumed {
                     losses.push(F3dLossCode::SpherePlacementFlagsAssumed.note(format!(
                         "Sphere {id} uses the stored solved placement despite unresolved placement flags (DR-552)."
@@ -56,12 +61,24 @@ pub(crate) fn bind(
                 }
             }
             None => {
-                sphere.transform = SketchPlacementMatrix::IDENTITY;
-                sphere.transform_offset = None;
+                sphere.support_transform = None;
                 losses.push(F3dLossCode::SpherePlacementFrameAssumed.note(format!(
-                    "Sphere {id} assumes an origin centre because placement {reference} has no unique usable same-stream solved frame (DR-552)."
+                    "Sphere {id} applies an identity support frame because placement {reference} has no unique usable same-stream solved frame (DR-552)."
                 )));
             }
+        }
+        if let Some(assumption) = sphere.local_frame_assumption {
+            let (code, reading) = match assumption {
+                DesignSphereLocalFrameAssumption::Framing => (
+                    F3dLossCode::SphereLocalMatrixFramingAssumed,
+                    "uses the rigid local matrix despite an unresolved matrix marker",
+                ),
+                DesignSphereLocalFrameAssumption::Identity => (
+                    F3dLossCode::SphereLocalFrameAssumed,
+                    "uses an identity local frame because its pose is unreadable or ambiguous",
+                ),
+            };
+            losses.push(code.note(format!("Sphere {id} {reading} (DR-552).")));
         }
         if sphere.diameter_owner_assumed {
             losses.push(F3dLossCode::SphereDiameterOwnerAssumed.note(format!(

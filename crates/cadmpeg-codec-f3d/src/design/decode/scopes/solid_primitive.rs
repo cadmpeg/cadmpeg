@@ -141,9 +141,14 @@ pub(super) fn exact_solid_primitive(
             let (transform, transform_offset) = matrix(64)?;
             Some(DesignSolidPrimitive::Sphere(
                 crate::records::feature::primitives::DesignSpherePrimitive {
-                    placement_record_index: None,
+                    placement_record_index: Some(marked_record_reference(
+                        bytes,
+                        start + crate::layout::sphere_compact_prefix::PLACEMENT,
+                    )?),
                     diameter_owner_assumed: false,
                     diameter_source_assumed: false,
+                    support_transform: None,
+                    local_frame_assumption: None,
                     transform,
                     transform_offset: Some(transform_offset),
                     diameter,

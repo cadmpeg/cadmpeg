@@ -1310,7 +1310,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 ### DR-552. Sphere placement flags and unresolved placement references
 
-**Question.** How do the inferred-axis and orientation flags change a sphere centre, and which placement supplies the centre when its reference is unresolved?
+**Question.** How do unresolved local-frame markers, inferred-axis flags, and orientation flags change a sphere centre, and which support frame applies when its reference is unresolved?
 
 **Known.** Reference-placed spheres retain a diameter owner, result operation, and placement reference. Placement constructions carry a solved matrix or an identity marker. Sphere axis rotation preserves its shape.
 
@@ -1318,7 +1318,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Conflict.** None.
 
-**Note.** The decoder uses the stored solved frame with `feature.sphere-placement-flags-assumed` when its flags are unresolved. It assumes an origin centre with `feature.sphere-placement-frame-assumed` when the referenced frame has no unique usable local definition.
+**Note.** The decoder uses the stored solved frame with `feature.sphere-placement-flags-assumed` when its flags are unresolved. It applies an identity support frame with `feature.sphere-placement-frame-assumed` when the referenced frame has no unique usable local definition. It preserves a rigid local matrix with `feature.sphere-local-matrix-framing-assumed` when its marker is unresolved, and applies identity with `feature.sphere-local-frame-assumed` when the local pose is unusable.
 
 ### DR-551. Sphere diameter references with incomplete ownership
 

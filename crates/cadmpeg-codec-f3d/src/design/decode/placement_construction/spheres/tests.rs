@@ -75,9 +75,14 @@ fn sphere_binds_solved_frame_and_projects_millimetres() {
     let DesignScopePayload::SpherePrimitive(Some(sphere)) = scope.payload() else {
         panic!()
     };
-    assert_eq!(sphere.transform[0][3], 0.1);
-    assert_eq!(sphere.transform[1][3], 0.2);
-    assert_eq!(sphere.transform[2][3], 0.3);
+    let support = sphere.support_transform.unwrap();
+    assert_eq!(support.value[0][3], 0.1);
+    assert_eq!(support.value[1][3], 0.2);
+    assert_eq!(support.value[2][3], 0.3);
+    assert_eq!(
+        sphere.transform,
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
+    );
     let restored: DesignParameterScope =
         serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
     assert_eq!(restored, scope);
@@ -140,5 +145,62 @@ fn sphere_keeps_stored_frame_with_unresolved_flags_and_names_scalar_assumptions(
     let DesignScopePayload::SpherePrimitive(Some(sphere)) = scope.payload() else {
         panic!()
     };
-    assert_eq!(sphere.transform[2][3], 0.3);
+    assert_eq!(sphere.support_transform.unwrap().value[2][3], 0.3);
+}
+
+#[test]
+fn sphere_local_pose_assumptions_have_distinct_loss_codes() {
+    use crate::records::feature::primitives::DesignSphereLocalFrameAssumption;
+    for (assumption, code) in [
+        (
+            DesignSphereLocalFrameAssumption::Framing,
+            crate::loss::F3dLossCode::SphereLocalMatrixFramingAssumed,
+        ),
+        (
+            DesignSphereLocalFrameAssumption::Identity,
+            crate::loss::F3dLossCode::SphereLocalFrameAssumed,
+        ),
+    ] {
+        let mut scope = scope();
+        if let crate::records::feature::scope::DesignScopePayloadMut::SpherePrimitive(Some(
+            sphere,
+        )) = scope.payload_mut()
+        {
+            sphere.local_frame_assumption = Some(assumption);
+        }
+        let losses = super::bind(std::slice::from_mut(&mut scope), &[placement()]);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code, code.kind());
+    }
+}
+
+#[test]
+fn sphere_preserves_local_center_when_support_is_missing() {
+    let mut scope = scope();
+    if let crate::records::feature::scope::DesignScopePayloadMut::SpherePrimitive(Some(sphere)) =
+        scope.payload_mut()
+    {
+        sphere.transform = crate::records::sketch_placement::SketchPlacementMatrix::try_from([
+            [1.0, 0.0, 0.0, 1.2],
+            [0.0, 1.0, 0.0, -2.3],
+            [0.0, 0.0, 1.0, 3.4],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .unwrap();
+        sphere.transform_offset = Some(64);
+    }
+    let losses = super::bind(std::slice::from_mut(&mut scope), &[]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SpherePlacementFrameAssumed.kind()
+    );
+    let DesignScopePayload::SpherePrimitive(Some(sphere)) = scope.payload() else {
+        panic!()
+    };
+    assert!((sphere.transform[0][3] - 1.2).abs() < 1.0e-12);
+    assert!((sphere.transform[1][3] + 2.3).abs() < 1.0e-12);
+    assert!((sphere.transform[2][3] - 3.4).abs() < 1.0e-12);
+    assert_eq!(sphere.transform_offset, Some(64));
+    assert_eq!(sphere.support_transform, None);
 }

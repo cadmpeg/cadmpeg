@@ -15,6 +15,16 @@ cadmpeg_core::named_optional_field!(
     u32,
     "placement_record_index"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_support_transform,
+    Located<SketchPlacementMatrix>,
+    "support_transform"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_local_frame_assumption,
+    DesignSphereLocalFrameAssumption,
+    "local_frame_assumption"
+);
 /// Exact construction data of a solid primitive scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "primitive")]
@@ -179,7 +189,13 @@ impl TryFrom<DesignCylinderPrimitiveWire> for DesignCylinderPrimitive {
     }
 }
 
-/// Exact `Sphere` primitive construction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignSphereLocalFrameAssumption {
+    Framing,
+    Identity,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSpherePrimitive {
     #[serde(
@@ -192,7 +208,18 @@ pub(crate) struct DesignSpherePrimitive {
     pub(crate) diameter_owner_assumed: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) diameter_source_assumed: bool,
-    /// Row-major local-to-model placement frame.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_support_transform"
+    )]
+    pub(crate) support_transform: Option<Located<SketchPlacementMatrix>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_local_frame_assumption"
+    )]
+    pub(crate) local_frame_assumption: Option<DesignSphereLocalFrameAssumption>,
     pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the placement matrix.
     #[serde(
@@ -331,6 +358,47 @@ mod tests {
         overflow["placement_record_index"] = serde_json::json!(4_294_967_296u64);
         let error = serde_json::from_value::<DesignSpherePrimitive>(overflow).unwrap_err();
         assert!(error.to_string().contains("placement_record_index"));
+    }
+
+    #[test]
+    fn native_sphere_optional_frames_use_absence_and_named_values() {
+        let wire = serde_json::json!({
+            "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
+            "diameter": 2.0, "diameter_record_index": 3, "diameter_offset": 4,
+            "operation": "join", "operation_offset": 5
+        });
+        let sphere = serde_json::from_value::<DesignSpherePrimitive>(wire.clone()).unwrap();
+        assert_eq!(sphere.support_transform, None);
+        assert_eq!(sphere.local_frame_assumption, None);
+        let encoded = serde_json::to_value(sphere).unwrap();
+        assert!(encoded.get("support_transform").is_none());
+        assert!(encoded.get("local_frame_assumption").is_none());
+        for (key, value) in [
+            (
+                "support_transform",
+                serde_json::json!({"value": wire["transform"], "offset": 10}),
+            ),
+            ("local_frame_assumption", serde_json::json!("framing")),
+            ("local_frame_assumption", serde_json::json!("identity")),
+        ] {
+            let mut stated = wire.clone();
+            stated[key] = value.clone();
+            let sphere = serde_json::from_value::<DesignSpherePrimitive>(stated.clone()).unwrap();
+            assert_eq!(serde_json::to_value(sphere).unwrap()[key], value);
+            for invalid in [
+                serde_json::Value::Null,
+                serde_json::json!(7),
+                serde_json::json!("invalid"),
+            ] {
+                stated[key] = invalid;
+                let error =
+                    serde_json::from_value::<DesignSpherePrimitive>(stated.clone()).unwrap_err();
+                assert!(error.to_string().contains(key));
+            }
+        }
+        let mut invalid_frame = wire;
+        invalid_frame["support_transform"] = serde_json::json!({"value": [[2.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]], "offset": 10});
+        assert!(serde_json::from_value::<DesignSpherePrimitive>(invalid_frame).is_err());
     }
 
     #[test]
