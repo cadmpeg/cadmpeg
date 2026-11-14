@@ -5249,7 +5249,7 @@ fn native_revolve_profile(
                         selection.sketch_scope_record_index,
                         &[selection],
                     )
-                    .contains(&placement)
+                    .contains(placement)
                         && selection.owner_text.parse::<u64>().ok()
                             == Some(placement.entity_id.suffix())
                 }
