@@ -5,6 +5,47 @@ use super::{
 use crate::features::FeatureOperation;
 
 #[test]
+fn face_group_operations_round_trip_partial_settings_and_rewrite_sources() {
+    use crate::features::FeatureOperation;
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+
+    for wire in [
+        serde_json::json!({"definition":"mesh_generate_face_groups", "source":{"feature":"test:model:feature#groups"}, "settings":{"boundary_tolerance":0.047, "minimum_area_fraction":0.17}}),
+        serde_json::json!({"definition":"mesh_combine_face_groups", "source":["test:mesh:tessellation#first"]}),
+        serde_json::json!({"definition":"mesh_combine_face_groups", "source":{"native":"native-mesh", "members":["second","first"]}}),
+    ] {
+        let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
+        crate::test_support::with_service_decode_context(|ctx| {
+            let mut map =
+                IdentityMap::new(|source: &str| Ok(source.replace("test:", "test:child/")));
+            let rewritten = operation.rewrite_identities(ctx, &mut map)?;
+            let rewritten = serde_json::to_value(rewritten).unwrap();
+            if let Some(feature) = wire["source"].get("feature") {
+                assert_eq!(
+                    rewritten["source"]["feature"],
+                    feature.as_str().unwrap().replace("test:", "test:child/")
+                );
+            } else if wire["source"].is_array() {
+                assert_eq!(rewritten["source"][0], "test:child/mesh:tessellation#first");
+            } else {
+                assert_eq!(rewritten, wire);
+            }
+            Ok(())
+        })
+        .unwrap();
+    }
+    for settings in [
+        serde_json::json!({"method":"other"}),
+        serde_json::json!({"boundary_tolerance":-0.5}),
+        serde_json::json!({"minimum_area_fraction":1.1}),
+        serde_json::json!({"angle_threshold":null}),
+    ] {
+        assert!(serde_json::from_value::<FeatureOperation>(serde_json::json!({"definition":"mesh_generate_face_groups", "source":{"native":"mesh"}, "settings":settings})).is_err());
+    }
+}
+
+#[test]
 fn resolved_mesh_selection_preserves_the_tessellation_array_wire_form() {
     let wire = serde_json::json!([
         "test:mesh:tessellation#first",
@@ -313,4 +354,119 @@ fn section_identity_rewrite_keeps_its_plane_and_linked_sketch() {
         map.finish()
     })
     .unwrap();
+}
+
+#[test]
+fn conversion_wire_preserves_ordered_source_contexts() {
+    let wire = serde_json::json!({
+        "definition":"mesh_convert",
+        "sources":[
+            {"native":"mesh:scope","members":["9", "3"]},
+            {"native":"mesh:scope","members":["9", "3"]},
+            {"feature":"test:model:feature#convert"}
+        ]
+    });
+    let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+    let FeatureOperation::MeshConvert(conversion) = &operation else {
+        panic!("mesh conversion");
+    };
+    assert_eq!(conversion.sources.len(), 3);
+    assert_eq!(conversion.sources[0], conversion.sources[1]);
+    assert_eq!(serde_json::to_value(operation).unwrap(), wire);
+    for method in ["faceted", "prismatic"] {
+        let mut known = wire.clone();
+        known["method"] = method.into();
+        let operation: FeatureOperation = serde_json::from_value(known.clone()).unwrap();
+        assert_eq!(serde_json::to_value(operation).unwrap(), known);
+    }
+    for method in [serde_json::Value::Null, serde_json::json!("unruled")] {
+        let mut invalid = wire.clone();
+        invalid["method"] = method;
+        assert!(serde_json::from_value::<FeatureOperation>(invalid).is_err());
+    }
+    for sources in [
+        serde_json::Value::Null,
+        serde_json::json!({"native":"mesh:scope"}),
+        serde_json::json!([{"native":"mesh:scope","members":[]}]),
+        serde_json::json!([{"feature":" "}]),
+    ] {
+        assert!(
+            serde_json::from_value::<FeatureOperation>(serde_json::json!({
+                "definition":"mesh_convert", "sources":sources
+            }))
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn conversion_rewrites_declared_native_and_typed_source_identities() {
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
+
+    let source_scope = "f3d:Design/BulkStream.dat:design-parameter-scope#7";
+    let target_scope = "f3d:xref/child/Design/BulkStream.dat:design-parameter-scope#7";
+    let replacements =
+        std::collections::BTreeMap::from([(source_scope.to_owned(), target_scope.to_owned())]);
+    let wire = serde_json::json!({
+        "definition":"mesh_convert",
+        "sources":[
+            {"native":source_scope,"members":["9", "3"]},
+            ["f3d:mesh:tessellation#source"],
+            {"feature":"f3d:model:feature#convert"}
+        ]
+    });
+    let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+    crate::test_support::with_service_decode_context(|ctx| {
+        let text = TextReplacements::build(replacements.iter())?;
+        let mut map = IdentityMap::new(|id: &str| {
+            Ok(format!(
+                "f3d:xref/child/{}",
+                id.strip_prefix("f3d:").unwrap()
+            ))
+        })
+        .with_text_replacements(&text);
+        let mut visited = Vec::new();
+        operation.visit_identity_references(ctx, &mut |id| {
+            visited.push(id.to_owned());
+            Ok(())
+        })?;
+        assert_eq!(
+            visited,
+            ["f3d:mesh:tessellation#source", "f3d:model:feature#convert"]
+        );
+        let rewritten = operation.rewrite_identities(ctx, &mut map)?;
+        let mut expected = wire.clone();
+        expected["sources"][0]["native"] = target_scope.into();
+        expected["sources"][1][0] = "f3d:xref/child/mesh:tessellation#source".into();
+        expected["sources"][2]["feature"] = "f3d:xref/child/model:feature#convert".into();
+        assert_eq!(serde_json::to_value(rewritten).unwrap(), expected);
+        map.finish()
+    })
+    .unwrap();
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn conversion_schema_exposes_sources_on_the_tagged_operation() {
+    fn find_conversion(value: &serde_json::Value) -> Option<&serde_json::Value> {
+        if value["properties"]["definition"]["const"] == "mesh_convert"
+            || value["properties"]["definition"]["enum"] == serde_json::json!(["mesh_convert"])
+        {
+            return Some(value);
+        }
+        match value {
+            serde_json::Value::Object(fields) => fields.values().find_map(find_conversion),
+            serde_json::Value::Array(values) => values.iter().find_map(find_conversion),
+            _ => None,
+        }
+    }
+    let schema = serde_json::to_value(schemars::schema_for!(FeatureOperation)).unwrap();
+    let conversion = find_conversion(&schema).unwrap();
+    assert_eq!(conversion["properties"]["sources"]["type"], "array");
+    assert!(conversion["required"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("sources")));
+    assert!(conversion["properties"]["method"].is_object());
+    assert_eq!(conversion["additionalProperties"], false);
 }

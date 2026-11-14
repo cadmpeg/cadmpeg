@@ -1108,6 +1108,11 @@ fn circle_arc_extremes(
     out
 }
 
+pub(crate) struct BoundFeatureOutputs {
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) sweep_kinds: crate::design::feature_project::sweep_fallback::OutputFacts,
+}
+
 pub(crate) fn bind_feature_outputs(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
@@ -1115,10 +1120,11 @@ pub(crate) fn bind_feature_outputs(
     active_bodies: &[cadmpeg_ir::topology::Body],
     scope_histories: &HashMap<String, String>,
     primary_brep: Option<&str>,
-) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
+) -> Result<BoundFeatureOutputs, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
+    let mut sweep_kinds = crate::design::feature_project::sweep_fallback::OutputFacts::default();
     let mut inferred_histories = Vec::new();
     let mut datum_plane_frames = HashMap::<
         cadmpeg_ir::features::FeatureId,
@@ -2025,10 +2031,12 @@ pub(crate) fn bind_feature_outputs(
                 saved_edges.join(","),
             );
         }
+        let complete_sweep_output = resolved.len() == outputs.len() && saved_edges.is_empty();
         feature.evaluation.set_outputs(
             cadmpeg_ir::features::DistinctMembers::try_from(resolved)
                 .map_err(cadmpeg_core::CodecError::from)?,
         );
+        sweep_kinds.record(feature, active_bodies, complete_sweep_output);
         if let Some(scope) = feature
             .native_ref
             .as_deref()
@@ -2054,7 +2062,10 @@ pub(crate) fn bind_feature_outputs(
             .and_then(|id| base_scopes.get(id).copied());
         stored_bodies::finalize_body_sets(feature, base_scope);
     }
-    Ok(losses)
+    Ok(BoundFeatureOutputs {
+        losses,
+        sweep_kinds,
+    })
 }
 
 fn combine_states_applied_operation(

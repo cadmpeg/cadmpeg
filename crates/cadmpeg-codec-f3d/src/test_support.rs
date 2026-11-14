@@ -16,6 +16,7 @@
 pub(crate) mod align;
 pub(crate) mod position;
 pub(crate) mod scene;
+pub(crate) mod shell_slots;
 
 use std::io::Write;
 

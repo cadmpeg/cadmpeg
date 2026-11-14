@@ -33,6 +33,9 @@ fn collect_pattern_paths<'a>(
         PatternTransform::CurveDriven {
             path: Some(path), ..
         } => paths.push(path),
+        PatternTransform::CurveDrivenPartial { parameters } => {
+            paths.extend(parameters.path.as_ref());
+        }
         PatternTransform::Composite { stages } => {
             for stage in stages {
                 collect_stage_pattern_paths(&stage.pattern, paths);
@@ -47,11 +50,14 @@ fn collect_stage_pattern_paths<'a>(
     pattern: &'a crate::features::patterns::StagePatternKind,
     paths: &mut Vec<&'a crate::features::PathRef>,
 ) {
-    if let PatternTransform::CurveDriven {
-        path: Some(path), ..
-    } = pattern.definition()
-    {
-        paths.push(path);
+    match pattern.definition() {
+        PatternTransform::CurveDriven {
+            path: Some(path), ..
+        } => paths.push(path),
+        PatternTransform::CurveDrivenPartial { parameters } => {
+            paths.extend(parameters.path.as_ref());
+        }
+        _ => {}
     }
 }
 use super::sketches::locus_entity;
@@ -3088,12 +3094,44 @@ fn check_feature_references(
             }
             FeatureOperation::SewBodies { bodies, .. } => body_selections.push(bodies),
             FeatureOperation::BaseFeature { bodies } => body_selections.push(bodies),
-            FeatureOperation::MeshImport {
-                tessellations: source,
+            FeatureOperation::MeshGenerateFaceGroups {
+                source: tessellations,
+                ..
             }
-            | FeatureOperation::MeshSection { source, .. }
-            | FeatureOperation::MeshModify { source, .. } => {
-                if let crate::features::mesh::MeshSelection::Tessellations(tessellations) = source {
+            | FeatureOperation::MeshCombineFaceGroups {
+                source: tessellations,
+            }
+            | FeatureOperation::MeshImport { tessellations }
+            | FeatureOperation::MeshSection {
+                source: tessellations,
+                ..
+            }
+            | FeatureOperation::MeshModify {
+                source: tessellations,
+                ..
+            } => {
+                if matches!(
+                    definition,
+                    FeatureOperation::MeshImport { .. }
+                        | FeatureOperation::MeshGenerateFaceGroups { .. }
+                        | FeatureOperation::MeshCombineFaceGroups { .. }
+                ) {
+                    if let crate::features::mesh::MeshSelection::Unresolved { feature: origin } =
+                        tessellations
+                    {
+                        if !features.contains(origin.as_str()) {
+                            ref_error(
+                                findings,
+                                feature.id.as_str(),
+                                "mesh source feature",
+                                origin.as_str(),
+                            );
+                        }
+                    }
+                }
+                if let crate::features::mesh::MeshSelection::Tessellations(tessellations) =
+                    tessellations
+                {
                     for tessellation in tessellations {
                         if ids
                             .tessellations(tessellation.as_str(), crate::index::StandardIndex)
@@ -3102,9 +3140,38 @@ fn check_feature_references(
                             ref_error(
                                 findings,
                                 feature.id.as_str(),
-                                "mesh source tessellation",
+                                if matches!(
+                                    definition,
+                                    FeatureOperation::MeshGenerateFaceGroups { .. }
+                                        | FeatureOperation::MeshCombineFaceGroups { .. }
+                                ) {
+                                    "mesh face-group tessellation"
+                                } else {
+                                    "mesh source tessellation"
+                                },
                                 tessellation.as_str(),
                             );
+                        }
+                    }
+                }
+            }
+            FeatureOperation::MeshConvert(conversion) => {
+                for source in &conversion.sources {
+                    if let crate::features::mesh::MeshSelection::Tessellations(tessellations) =
+                        source
+                    {
+                        for tessellation in tessellations {
+                            if ids
+                                .tessellations(tessellation.as_str(), crate::index::StandardIndex)
+                                .is_none()
+                            {
+                                ref_error(
+                                    findings,
+                                    feature.id.as_str(),
+                                    "mesh conversion source tessellation",
+                                    tessellation.as_str(),
+                                );
+                            }
                         }
                     }
                 }
@@ -3599,6 +3666,11 @@ fn check_feature_references(
                 collect_pattern_paths(pattern, &mut paths);
                 for seed in seeds {
                     match seed {
+                        PatternSeed::Native(native) => {
+                            if !non_blank_native_reference(native) {
+                                ref_error(findings, feature.id.as_str(), "native seed", native);
+                            }
+                        }
                         PatternSeed::Feature(seed) => match features.get(seed.as_str()) {
                             None => ref_error(
                                 findings,
@@ -4520,7 +4592,8 @@ fn regeneration_references(
         crate::features::FeatureOperation::Pattern { seeds, .. } => {
             for reference in seeds.iter().filter_map(|seed| match seed {
                 crate::features::patterns::PatternSeed::Feature(feature) => Some(feature),
-                crate::features::patterns::PatternSeed::Faces(_)
+                crate::features::patterns::PatternSeed::Native(_)
+                | crate::features::patterns::PatternSeed::Faces(_)
                 | crate::features::patterns::PatternSeed::Bodies(_)
                 | crate::features::patterns::PatternSeed::Occurrences(_) => None,
             }) {

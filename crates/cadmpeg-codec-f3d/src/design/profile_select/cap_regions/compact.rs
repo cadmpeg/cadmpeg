@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Certify compact loop selections against an analytic Cut transition.
+//! Certify compact loop selections against analytic extrusion transitions.
 
 use super::super::ResolvedProfileSelection;
 use super::{
@@ -224,54 +224,72 @@ pub(in crate::design::profile_select) fn selection_agrees(
     if witnessed.len() != selected.len() {
         return Ok(false);
     }
+    Ok(inserted_sides_agree(
+        after,
+        &transition.topology.faces.inserted,
+        &frame,
+        &outline,
+        far,
+        tolerance,
+    ))
+}
+
+fn inserted_sides_agree(
+    after: &AsmHistoricalTopology,
+    faces: &[i64],
+    frame: &PlaneFrame,
+    outline: &[Piece],
+    far: f64,
+    tolerance: f64,
+) -> bool {
     let mut side_count = 0;
-    for face in &transition.topology.faces.inserted {
+    for face in faces {
         let Some(binding) = after.face_surfaces.iter().find(|row| row.entity == *face) else {
-            return Ok(false);
+            return false;
         };
         if let ParallelPlane::At(point) = parallel_plane(after, *face, frame.normal) {
             let height = frame.height(point);
             if height < far.min(0.0) - tolerance || height > far.max(0.0) + tolerance {
-                return Ok(false);
+                return false;
             }
             continue;
         }
-        if !lateral_carrier_agrees(after, binding.carrier, &frame, &outline, tolerance) {
-            return Ok(false);
+        if !lateral_carrier_agrees(after, binding.carrier, frame, outline, tolerance) {
+            return false;
         }
         let Some(loops) = oriented_loops(after, *face) else {
-            return Ok(false);
+            return false;
         };
         for (edge, start, end) in loops.into_iter().flatten() {
-            if !edge_height_is_bounded(after, &frame, edge, start, end, tolerance)
+            if !edge_height_is_bounded(after, frame, edge, start, end, tolerance)
                 && !bounded_lateral_ellipse(
                     after,
                     binding.carrier,
                     edge,
-                    &frame,
-                    &outline,
+                    frame,
+                    outline,
                     far,
                     tolerance,
                 )
             {
-                return Ok(false);
+                return false;
             }
             for point in [start, end] {
                 if !outline
                     .iter()
                     .any(|piece| piece.distance(frame.project(point)) <= tolerance)
                 {
-                    return Ok(false);
+                    return false;
                 }
                 let height = frame.height(point);
                 if height < far.min(0.0) - tolerance || height > far.max(0.0) + tolerance {
-                    return Ok(false);
+                    return false;
                 }
             }
         }
         side_count += 1;
     }
-    Ok(side_count > 0)
+    side_count > 0
 }
 
 fn split_piece(piece: &Piece, points: &[cadmpeg_ir::math::Point2], tolerance: f64) -> Vec<Piece> {
@@ -435,10 +453,81 @@ pub(in crate::design::profile_select) fn removed_candidate(
     }
 }
 
+pub(in crate::design::profile_select) fn added_candidate(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    resolution: super::super::ScopedExtrudeProfileResolution<'_>,
+    state_ids: (i64, i64),
+    sweep: Sweep<'_>,
+) -> Result<Option<PlanarProfileRef>, CodecError> {
+    if !matches!(sweep.operation, BooleanOp::Join | BooleanOp::NewBody) {
+        return Ok(None);
+    }
+    let Some(far) = blind_length(&sweep) else {
+        return Ok(None);
+    };
+    let Some((after, state)) = unique_state(resolution.histories, state_ids.0) else {
+        return Ok(None);
+    };
+    let Some(transition) = state
+        .transition
+        .as_ref()
+        .filter(|transition| transition.previous_state_id == Some(state_ids.1))
+    else {
+        return Ok(None);
+    };
+    let Some(frame) = PlaneFrame::of_sketch(sketch) else {
+        return Ok(None);
+    };
+    let Some((height, caps)) = super::far_caps(
+        &frame,
+        after,
+        &transition.topology.faces.inserted,
+        resolution.linear_tolerance,
+    ) else {
+        return Ok(None);
+    };
+    if (height - far).abs() > resolution.linear_tolerance || caps.iter().any(Cap::assumed) {
+        return Ok(None);
+    }
+    let work = ProfileGeometryWork::new();
+    let scoped = super::super::ScopedExtrudeProfileResolution {
+        profile_work: &work,
+        ..resolution
+    };
+    let Some(ResolvedProfileSelection::Regions(regions)) =
+        super::cap_profile_selection(sketch, scoped, state_ids.0, state_ids.1, None)?
+    else {
+        return Ok(None);
+    };
+    if work.assumed_flags().into_iter().any(|assumed| assumed) {
+        return Ok(None);
+    }
+    let outline = caps
+        .iter()
+        .flat_map(|cap| cap.pieces.iter().cloned())
+        .collect::<Vec<_>>();
+    if !inserted_sides_agree(
+        after,
+        &transition.topology.faces.inserted,
+        &frame,
+        &outline,
+        far,
+        resolution.linear_tolerance,
+    ) {
+        return Ok(None);
+    }
+    Ok(PlanarProfileRef::sketch_regions(sketch.id.clone(), regions).ok())
+}
+
 fn signed_length(sweep: &Sweep<'_>) -> Option<f64> {
-    if !matches!(sweep.operation, BooleanOp::Cut)
-        || !matches!(sweep.start, ExtrudeStart::ProfilePlane {})
-    {
+    if !matches!(sweep.operation, BooleanOp::Cut) {
+        return None;
+    }
+    blind_length(sweep)
+}
+
+fn blind_length(sweep: &Sweep<'_>) -> Option<f64> {
+    if !matches!(sweep.start, ExtrudeStart::ProfilePlane {}) {
         return None;
     }
     let ExtrudeExtent::OneSided { side } = sweep.extent else {
