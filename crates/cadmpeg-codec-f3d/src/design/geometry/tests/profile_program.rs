@@ -223,6 +223,20 @@ fn member_selection(
     entities: &[SketchEntity],
     rings: &[Vec<(&SketchEntity, bool)>],
 ) -> Option<super::super::MemberRingRegions> {
+    member_selection_without(sketch, entities, rings, &[])
+}
+
+/// The selection of `rings` when no member list names a curve of `unnamed`.
+fn member_selection_without(
+    sketch: &Sketch,
+    entities: &[SketchEntity],
+    rings: &[Vec<(&SketchEntity, bool)>],
+    unnamed: &[&SketchEntity],
+) -> Option<super::super::MemberRingRegions> {
+    let unnamed = unnamed
+        .iter()
+        .map(|entity| entity.id().clone())
+        .collect::<std::collections::HashSet<_>>();
     let rings = rings
         .iter()
         .map(|ring| {
@@ -239,6 +253,7 @@ fn member_selection(
             sketch,
             entities,
             &rings,
+            &unnamed,
             PROFILE_PROGRAM_TOLERANCE,
             &ProfileGeometryWork::new(),
             ctx,
@@ -910,6 +925,7 @@ fn an_exhausted_member_ring_budget_selects_nothing_and_marks_the_cap() {
                 &sketch,
                 &entities,
                 &rings,
+                &std::collections::HashSet::new(),
                 PROFILE_PROGRAM_TOLERANCE,
                 &work,
                 ctx,
@@ -1506,4 +1522,67 @@ fn self_crossing_loop_over_the_candidate_limit_reports_the_cap() {
         crate::loss::F3dLossCode::FeatureProfileCrossingLoopCapped.kind()
     );
     assert!(loss.message.contains("MAX_CROSSING_LOOP_CANDIDATES (16)"));
+}
+
+/// A 10 x 5 rectangle whose bottom side lies on a longer line and on a
+/// duplicate of itself.
+fn bottom_shared_rectangle() -> (Sketch, Vec<SketchEntity>) {
+    let id = SketchId::mint("synthetic:test:id#unnamed-bottom").unwrap();
+    let entities = vec![
+        line_entity(&id, "top", (0.0, 5.0), (10.0, 5.0)),
+        line_entity(&id, "right", (10.0, 5.0), (10.0, 0.0)),
+        line_entity(&id, "left", (0.0, 0.0), (0.0, 5.0)),
+        line_entity(&id, "bottom", (10.0, 0.0), (0.0, 0.0)),
+        line_entity(&id, "long", (-5.0, 0.0), (15.0, 0.0)),
+        line_entity(&id, "twin", (0.0, 0.0), (10.0, 0.0)),
+    ];
+    let sketch = sketch_with_loops(
+        id,
+        &[&[
+            entities[0].clone(),
+            entities[1].clone(),
+            entities[2].clone(),
+            entities[3].clone(),
+        ]],
+    );
+    (sketch, entities)
+}
+
+#[test]
+fn an_unnamed_coincident_curve_leaves_the_member_list_matching_its_walk() {
+    let (sketch, entities) = bottom_shared_rectangle();
+    let [top, right, left, bottom, long] = [0, 1, 2, 3, 4].map(|index| &entities[index]);
+    let entities = &entities[..5];
+    let ring = vec![vec![
+        (top, true),
+        (right, true),
+        (left, true),
+        (bottom, true),
+    ]];
+    assert!(member_selection(&sketch, entities, &ring).is_none());
+    let selected = member_selection_without(&sketch, entities, &ring, &[long])
+        .expect("the walk matches without the unnamed curve");
+    assert_eq!(selected.regions.len(), 1);
+}
+
+#[test]
+fn an_edge_with_only_unnamed_curves_matches_no_member_list() {
+    let (sketch, entities) = bottom_shared_rectangle();
+    let [top, right, left, bottom, long] = [0, 1, 2, 3, 4].map(|index| &entities[index]);
+    let entities = &entities[..5];
+    let ring = vec![vec![(top, true), (right, true), (left, true)]];
+    assert!(member_selection_without(&sketch, entities, &ring, &[bottom, long]).is_none());
+}
+
+#[test]
+fn a_named_coincident_curve_that_a_list_omits_still_blocks_the_match() {
+    let (sketch, entities) = bottom_shared_rectangle();
+    let [top, right, left, bottom, long, _] = [0, 1, 2, 3, 4, 5].map(|index| &entities[index]);
+    let ring = vec![vec![
+        (top, true),
+        (right, true),
+        (left, true),
+        (bottom, true),
+    ]];
+    assert!(member_selection_without(&sketch, &entities, &ring, &[long]).is_none());
 }

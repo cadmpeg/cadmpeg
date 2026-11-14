@@ -4308,6 +4308,7 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                                 source,
                                 resolution.sketch_entities,
                                 &rings,
+                                &std::collections::HashSet::new(),
                                 scoped.linear_tolerance,
                                 scoped.profile_work,
                                 scoped.ctx,
