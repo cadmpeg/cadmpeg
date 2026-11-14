@@ -2987,6 +2987,16 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve.
 
+### SM-03. ContourFlange travel, thickness side and rule entries
+
+**Question.** Which controls select ContourFlange sidedness, thickness orientation, body or component result, and the rule's bend-radius entry?
+
+**Known.** The registered ContourFlange prefix carries a vector before the AlongDistance owner, an operation word, an unassigned control before the source carrier and an inline thickness copy. Signed distances and the linked rule's first expression/value, material scalar and explicit material-trailer thickness decode independently. The projection reads the vector as travel direction, a single distance as one-sided travel, the documented SideOne default as the left side of the ordered profile, operation word four as an independent body, the first rule value as inside bend radius and the material scalar as neutral-axis factor. Each reading carries its named `feature.contour-*` assumption loss. The explicit BendRadius parameter takes precedence over the rule entry. A missing rule uses the inline thickness copy with a separate assumption loss. A bounded unique rule reference before the exact settings owner tail is loss-coded when the versioned optional-slot grammar does not match. Missing definitions use a matching scoped owner's cached database-centimetre scalar with a named loss. When both owner and definition frames are absent, a unique registered parameter-owner reference following the vector supplies the AlongDistance role through a separate assumption loss. Missing carrier or settings links preserve independently decoded travel. Source-region selections retain the complete native profile program.
+
+**Need.** Controlled saves must vary extent, thickness side, result choice, radius expression and material factor independently, with the stored controls and resulting topology compared.
+
+**Note.** The API's SideOne default and per-side symmetric distance are described in [ContourFlange orientation](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_ContourFlangeInput_orientation.htm) and [Sheet Metal Features](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/SheetMetalFeatures_UM.htm). [Sheet Metal Rules](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/SheetMetalRules_UM.htm) distinguishes thickness, bend radius and neutral-axis factor.
+
 ### DR-562. Occurrence of a cross-component Combine tool body
 
 **Question.** Which occurrence of its component supplies the body that a cross-component `Combine` tool names?

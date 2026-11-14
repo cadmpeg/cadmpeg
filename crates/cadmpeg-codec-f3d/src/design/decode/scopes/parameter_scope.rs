@@ -812,6 +812,13 @@ pub(crate) fn decode_parameter_scopes(
 
             out.push(scope);
         }
+        super::contour::bind(
+            bytes,
+            &records,
+            &stream_types,
+            sources,
+            &mut out[stream_scope_start..],
+        );
         super::fold::bind(
             ctx,
             bytes,

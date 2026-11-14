@@ -67,6 +67,7 @@ pub(crate) enum DesignFeatureFamily {
     SheetMetalEdgeFlange,
     SheetMetalHem,
     SheetMetalBend,
+    SheetMetalContourFlange,
     SheetMetalUnfold,
     SheetMetalRefold,
 }
@@ -111,6 +112,7 @@ pub(crate) fn design_feature_family(
         Kind::EdgeFlange => Some(DesignFeatureFamily::SheetMetalEdgeFlange),
         Kind::Hem => Some(DesignFeatureFamily::SheetMetalHem),
         Kind::Bend => Some(DesignFeatureFamily::SheetMetalBend),
+        Kind::ContourFlange => Some(DesignFeatureFamily::SheetMetalContourFlange),
         Kind::Unfold => Some(DesignFeatureFamily::SheetMetalUnfold),
         Kind::Refold => Some(DesignFeatureFamily::SheetMetalRefold),
         Kind::SpherePrimitive
