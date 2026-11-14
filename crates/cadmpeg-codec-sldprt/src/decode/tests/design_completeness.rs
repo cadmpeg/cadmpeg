@@ -27,8 +27,8 @@ fn surface_untrim_requires_resolved_faces_loops_and_distance() {
     ]);
     let edge = EdgeSelection::Edges(vec![EdgeId::mint("synthetic:test:edge#1").unwrap()]);
     for (loops, extension, incomplete) in [
-        (UntrimLoops::Unresolved, Length::new(3.0), true),
-        (UntrimLoops::All, None, true),
+        (UntrimLoops::Unresolved {}, Length::new(3.0), true),
+        (UntrimLoops::All {}, None, true),
         (
             UntrimLoops::Selected {
                 edges: EdgeSelection::Native("native:loops".into()),

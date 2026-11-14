@@ -886,7 +886,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !face_selection_is_resolved(faces)
                 || extension.is_none()
                 || match loops {
-                    cadmpeg_ir::features::surfaces::UntrimLoops::Unresolved => true,
+                    cadmpeg_ir::features::surfaces::UntrimLoops::Unresolved {} => true,
                     cadmpeg_ir::features::surfaces::UntrimLoops::Selected { edges } => !edge_selection_is_resolved(edges),
                     _ => false,
                 }

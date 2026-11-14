@@ -16,17 +16,17 @@ fn surface_untrim_completeness_tracks_faces_loops_and_extension_independently() 
     for (faces, loops, extension, incomplete) in [
         (
             FaceSelection::Native("native:faces".into()),
-            UntrimLoops::All,
+            UntrimLoops::All {},
             cadmpeg_ir::scalar::Length::new(3.0),
             true,
         ),
         (
             faces.clone(),
-            UntrimLoops::Unresolved,
+            UntrimLoops::Unresolved {},
             cadmpeg_ir::scalar::Length::new(3.0),
             true,
         ),
-        (faces.clone(), UntrimLoops::All, None, true),
+        (faces.clone(), UntrimLoops::All {}, None, true),
         (
             faces.clone(),
             UntrimLoops::Selected {
@@ -37,7 +37,7 @@ fn surface_untrim_completeness_tracks_faces_loops_and_extension_independently() 
         ),
         (
             faces.clone(),
-            UntrimLoops::All,
+            UntrimLoops::All {},
             cadmpeg_ir::scalar::Length::new(0.0),
             false,
         ),

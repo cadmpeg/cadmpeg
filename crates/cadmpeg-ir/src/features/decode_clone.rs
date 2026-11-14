@@ -547,10 +547,10 @@ rewrite_enum!(SplitFaceTool, []; {
 });
 
 rewrite_enum!(UntrimLoops, []; {
-    Unresolved,
-    All,
-    Internal,
-    External,
+    Unresolved {},
+    All {},
+    Internal {},
+    External {},
     Selected { edges },
 });
 

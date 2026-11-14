@@ -13,13 +13,13 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub enum UntrimLoops {
     #[doc = "Loop choice is unresolved."]
-    Unresolved,
+    Unresolved {},
     #[doc = "Every trim loop of each selected face."]
-    All,
+    All {},
     #[doc = "The interior trim loops of each selected face."]
-    Internal,
+    Internal {},
     #[doc = "The exterior trim loop of each selected face."]
-    External,
+    External {},
     #[doc = "The selected trim loops."]
     Selected {
         #[doc = "Edges of the selected trim loops."]
@@ -32,7 +32,7 @@ impl FeatureOperation {
     pub fn untrim_surface(faces: FaceSelection) -> Self {
         Self::UntrimSurface {
             faces,
-            loops: UntrimLoops::Unresolved,
+            loops: UntrimLoops::Unresolved {},
             extension: None,
         }
     }

@@ -69,9 +69,9 @@ pub(super) fn project_surface_untrim(
         }
     };
     let loops = match operation.loops {
-        DesignSurfaceUntrimLoops::All => UntrimLoops::All,
-        DesignSurfaceUntrimLoops::Internal => UntrimLoops::Internal,
-        DesignSurfaceUntrimLoops::External => UntrimLoops::External,
+        DesignSurfaceUntrimLoops::All => UntrimLoops::All {},
+        DesignSurfaceUntrimLoops::Internal => UntrimLoops::Internal {},
+        DesignSurfaceUntrimLoops::External => UntrimLoops::External {},
         DesignSurfaceUntrimLoops::Manual => UntrimLoops::Selected {
             edges: match operation.loop_group_record_indices.as_slice() {
                 [loop_group] => scope_group(scope, construction_groups, *loop_group)

@@ -5,10 +5,10 @@ fn untrim_surface_preserves_loop_choices_and_signed_distances() {
     use crate::features::surfaces::UntrimLoops;
     use crate::features::{EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation};
     for loops in [
-        UntrimLoops::Unresolved,
-        UntrimLoops::All,
-        UntrimLoops::Internal,
-        UntrimLoops::External,
+        UntrimLoops::Unresolved {},
+        UntrimLoops::All {},
+        UntrimLoops::Internal {},
+        UntrimLoops::External {},
         UntrimLoops::Selected {
             edges: EdgeSelection::Native("native:loops".into()),
         },
@@ -36,5 +36,25 @@ fn untrim_surface_preserves_loop_choices_and_signed_distances() {
                 definition
             );
         }
+    }
+}
+
+#[test]
+fn untrim_loops_reject_unknown_fields() {
+    use crate::features::surfaces::UntrimLoops;
+
+    for mut wire in [
+        serde_json::json!({"kind": "unresolved"}),
+        serde_json::json!({"kind": "all"}),
+        serde_json::json!({"kind": "internal"}),
+        serde_json::json!({"kind": "external"}),
+        serde_json::json!({
+            "kind": "selected",
+            "edges": {"kind": "native", "value": "native:loops"}
+        }),
+    ] {
+        assert!(serde_json::from_value::<UntrimLoops>(wire.clone()).is_ok());
+        wire["unexpected"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<UntrimLoops>(wire).is_err());
     }
 }

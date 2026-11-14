@@ -96,7 +96,7 @@ fn an_all_loops_untrim_projects_its_face_group_and_extension_in_millimetres() {
         faces,
         FaceSelection::Native("f3d:Design/BulkStream.dat:group#44".into())
     );
-    assert_eq!(loops, UntrimLoops::All);
+    assert_eq!(loops, UntrimLoops::All {});
     assert!((extension.unwrap() - 3.0).abs() < 1e-12);
     assert!(losses.is_empty());
 }
@@ -104,8 +104,8 @@ fn an_all_loops_untrim_projects_its_face_group_and_extension_in_millimetres() {
 #[test]
 fn interior_and_exterior_loop_types_keep_the_settled_choice() {
     for (stored, expected) in [
-        (DesignSurfaceUntrimLoops::Internal, UntrimLoops::Internal),
-        (DesignSurfaceUntrimLoops::External, UntrimLoops::External),
+        (DesignSurfaceUntrimLoops::Internal, UntrimLoops::Internal {}),
+        (DesignSurfaceUntrimLoops::External, UntrimLoops::External {}),
     ] {
         let (_, loops, _, losses) = project(Some(operation(stored, &[])), &[group(44, 47)]);
         assert_eq!(loops, expected);
@@ -119,7 +119,7 @@ fn an_all_loops_untrim_with_a_stored_loop_group_charges_the_loop_type_assumption
         Some(operation(DesignSurfaceUntrimLoops::All, &[50])),
         &[group(44, 47), group(50, 53)],
     );
-    assert_eq!(loops, UntrimLoops::All);
+    assert_eq!(loops, UntrimLoops::All {});
     assert_eq!(
         count(&losses, F3dLossCode::SurfaceUntrimStoredLoopGroupsAssumed),
         1
@@ -206,7 +206,7 @@ fn duplicate_and_wrong_role_groups_preserve_the_scope_selection() {
         let (faces, loops, _, losses) =
             project(Some(operation(DesignSurfaceUntrimLoops::All, &[])), &groups);
         assert_eq!(faces, FaceSelection::Native(SCOPE_ID.into()));
-        assert_eq!(loops, UntrimLoops::All);
+        assert_eq!(loops, UntrimLoops::All {});
         assert_eq!(
             count(&losses, F3dLossCode::SurfaceUntrimGroupSelectionAssumed),
             1
@@ -256,7 +256,7 @@ fn signed_missing_and_overflowing_extensions_keep_the_other_settings() {
 fn an_unread_frame_keeps_the_untrim_with_unresolved_loops_and_extension() {
     let (faces, loops, extension, losses) = project(None, &[group(44, 47)]);
     assert_eq!(faces, FaceSelection::Native(SCOPE_ID.into()));
-    assert_eq!(loops, UntrimLoops::Unresolved);
+    assert_eq!(loops, UntrimLoops::Unresolved {});
     assert_eq!(extension, None);
     assert_eq!(count(&losses, F3dLossCode::SurfaceUntrimFrameAssumed), 1);
 }
