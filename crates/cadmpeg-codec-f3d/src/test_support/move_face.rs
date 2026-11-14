@@ -18,6 +18,7 @@ pub(crate) struct MoveFaceFrame {
     pub(crate) form: u32,
     pub(crate) malformed: bool,
     pub(crate) version_3_length: bool,
+    pub(crate) length: Option<usize>,
 }
 
 impl Default for MoveFaceFrame {
@@ -28,6 +29,7 @@ impl Default for MoveFaceFrame {
             form: 5,
             malformed: false,
             version_3_length: false,
+            length: None,
         }
     }
 }
@@ -124,7 +126,10 @@ impl MoveFaceFixture {
                 2 => 293,
                 _ => 253,
             };
-            bytes.resize(start + length + 3 * usize::from(frame.version_3_length), 0);
+            let length = frame
+                .length
+                .unwrap_or(length + 3 * usize::from(frame.version_3_length));
+            bytes.resize(start + length, 0);
             indexed_header(&mut bytes, *b"259", 71);
         }
         if let Some(role) = self.group_role {
