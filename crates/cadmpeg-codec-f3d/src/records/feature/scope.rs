@@ -125,6 +125,16 @@ cadmpeg_core::named_optional_field!(
     "combine_named_tail"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_named_scope_middle,
+    crate::records::identity::Located<u32>,
+    "middle"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_named_scope_closing,
+    crate::records::identity::Located<u32>,
+    "closing"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_component_insert_construction,
     DesignComponentInsertConstruction,
     "component_insert_construction"
@@ -437,9 +447,17 @@ impl ScopePayloadCompleteness for DesignCombineScope {
 pub(crate) struct DesignNamedScopeReferences {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) associated: Vec<crate::records::identity::Located<u32>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_named_scope_middle",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub(crate) middle: Option<crate::records::identity::Located<u32>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_named_scope_closing",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub(crate) closing: Option<crate::records::identity::Located<u32>>,
 }
 
