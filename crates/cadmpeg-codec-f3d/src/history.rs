@@ -2537,7 +2537,10 @@ pub(crate) fn bind_feature_body_selections(
                 break 'feature_edit;
             }
             if let FeatureDefinition::Operation(FeatureOperation::Coil {
-                result: cadmpeg_ir::features::CoilResult::Boolean { targets, .. },
+                result: cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. },
+                ..
+            } | FeatureOperation::Thicken {
+                result: Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }),
                 ..
             }) = definition
             {
@@ -3552,7 +3555,9 @@ pub(crate) fn bind_feature_face_selections(
                         operands,
                         &transition.topology.faces.updated,
                     );
-                    crate::design::feature_project::list_thicken_whole_bodies(faces, scope, groups);
+                    crate::design::feature_project::thicken::list_thicken_whole_bodies(
+                        faces, scope, groups,
+                    );
                     selection::bind_body_recipe_face_selection(
                         faces,
                         feature_id,
