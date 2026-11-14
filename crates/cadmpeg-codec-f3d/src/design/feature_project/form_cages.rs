@@ -1700,8 +1700,9 @@ fn form_serializer_entry(
     let Some(next) = next_indexed_record_offset(bytes, offset + 1) else {
         return Ok(None);
     };
-    if next != offset + form_serializer_frame_132::LEN
-        || (is_class_335 && bytes.get(next + 4..next + 7) != Some(b"331"))
+    if is_class_335
+        && (next != offset + form_serializer_frame_132::LEN
+            || bytes.get(next + 4..next + 7) != Some(b"331"))
     {
         return Ok(None);
     }
@@ -1736,17 +1737,20 @@ fn form_serializer_entry(
         || !std::path::Path::new(&entry_name)
             .extension()
             .is_some_and(|extension| extension.eq_ignore_ascii_case("tsm"))
-        || bytes.get(after_name) != Some(&1)
-        || bytes.get(after_name + 9..after_name + 11) != Some(&[0, 0])
     {
         return Ok(None);
     }
-    let Some(surface) = View::u64_le_at(bytes, after_name + 1) else {
+    let mut cursor = after_name;
+    let Some(surface) = bytes
+        .get(..next)
+        .and_then(|frame| crate::bytes::take_reference(frame, &mut cursor))
+        .and_then(|reference| reference.local().map(|(target, _)| target))
+    else {
         return Ok(None);
     };
     if is_class_335
         && (bytes
-            .get(after_name + 11..offset + form_serializer_frame_132::LEN)
+            .get(cursor..next)
             .is_none_or(|tail| tail.iter().any(|byte| *byte != 0))
             || !u32::try_from(surface).ok().is_some_and(|surface| {
                 records.offsets(surface).iter().any(|surface_offset| {
@@ -1756,7 +1760,7 @@ fn form_serializer_entry(
     {
         return Ok(None);
     }
-    if !is_class_335 && after_name + 11 != offset + form_serializer_frame_132::LEN {
+    if !is_class_335 && cursor != next {
         return Ok(None);
     }
     Ok(Some((surface, entry_name)))

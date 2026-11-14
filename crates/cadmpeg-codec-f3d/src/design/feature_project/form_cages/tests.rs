@@ -954,6 +954,66 @@ fn typed_form_serializer_joins_its_surface_under_any_class_tag() {
 }
 
 #[test]
+fn form_typed_serializers_consume_inline_surface_references_and_preserve_siblings() {
+    let plain = form_serializer_frame(299, 296, FIRST_CAGE_UUID);
+    let type_at = plain.len() - 2;
+    let mut inline = plain[..type_at].to_vec();
+    inline.extend_from_slice(&36u32.to_le_bytes());
+    inline.extend_from_slice(b"22709494-9149-4A70-A829-7D748A7B5DB1");
+    inline.extend_from_slice(&[0, 0]);
+    let cages = [
+        neutral_form_cage("f3d:model:subd#1", FIRST_CAGE_UUID),
+        neutral_form_cage("f3d:model:subd#2", SECOND_CAGE_UUID),
+    ];
+    let construction = |serializer| {
+        let bytes = [
+            serializer,
+            form_body_frame(300, 0, [201, 22, 296, 301], None),
+            form_serializer_frame(499, 496, SECOND_CAGE_UUID),
+            form_body_frame(500, 0, [201, 22, 496, 501], None),
+        ]
+        .concat();
+        body_construction(
+            &bytes,
+            &two_body_form_meta(),
+            &form_scope(201, vec![205]),
+            &cages,
+        )
+    };
+    for serializer in [plain, inline.clone()] {
+        let result = construction(serializer);
+        assert!(result.membership_is_complete());
+        assert_eq!(
+            result.committed_cages().collect::<Vec<_>>(),
+            [&cages[0].id, &cages[1].id]
+        );
+    }
+    let mut bad_guid = inline.clone();
+    bad_guid[type_at + 4] = b'z';
+    let mut bad_flags = inline.clone();
+    *bad_flags.last_mut().unwrap() = 1;
+    let mut extra_tail = inline.clone();
+    extra_tail.push(0);
+    let mut null = inline.clone();
+    null[type_at - 9] = 0;
+    for serializer in [
+        inline[..inline.len() - 5].to_vec(),
+        bad_guid,
+        bad_flags,
+        extra_tail,
+        null,
+    ] {
+        let result = construction(serializer);
+        assert!(!result.membership_is_complete());
+        assert_eq!(result.committed_cages().collect::<Vec<_>>(), [&cages[1].id]);
+        assert!(result
+            .observations()
+            .iter()
+            .any(|observation| matches!(observation.binding, FormCageBinding::Unresolved {})));
+    }
+}
+
+#[test]
 fn form_body_records_bind_the_owning_scope_cages_in_body_record_order() {
     let bytes = two_body_form_stream();
     let cages = [
