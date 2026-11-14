@@ -32,7 +32,7 @@ scope-relative maps). Parsing functions are not generated.
 
 Decoder code imports a record module by path or alias (`use crate::layout::block_frame_header as block;`). Never glob-import a layout module.
 
-The mapping from table to generated file is the explicit list `GENERATED_LAYOUT_RS` in `crates/cadmpeg/tests/layout_tables.rs`. `step` is not in that list: it has no byte-layout records.
+The mapping from table to generated root file is the explicit list `GENERATED_LAYOUT_RS` in `crates/cadmpeg/tests/layout_tables/generate.rs`. The F3D Base Feature compact and expanded record modules have generated files under `src/layout/`. The layout test regenerates and checks these files together with the root file. `step` is not in that list: it has no byte-layout records.
 
 ## What the validator enforces
 

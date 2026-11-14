@@ -1952,7 +1952,7 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
         record_index,
     );
     if let DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() {
-        *slot = Some(DesignComponentInsertConstruction {
+        slot.construction = Some(DesignComponentInsertConstruction {
             relation_record_index: record_index + 1,
             carrier_record_index: record_index + 2,
             occurrence_identity: None,

@@ -107,6 +107,7 @@ pub(crate) enum F3dLossCode {
     /// Unresolved `Component Insert` occurrences dropped because no authored timeline order tells
     /// top-level inserts from internal operands.
     ComponentInsertOrderUnknown,
+    ComponentInsertContainerAssumed,
     /// Component definitions stored as revised records that each bind a context
     /// UUID; the earliest record defines the component.
     ComponentDefinitionRevised,
@@ -210,6 +211,7 @@ pub(crate) enum F3dLossCode {
     /// A Base Feature has no complete unique body binding.
     FeatureStoredBodiesUnbound,
     FeatureDerivedInstanceComponentInsertAssumed,
+    FeatureComponentInsertMembershipAssumed,
     FeatureDerivedInstanceSourcesUnresolved,
     FeatureDerivedInstanceCarrierPlacementAssumed,
     FeatureDerivedInstanceScopePlacementAssumed,
@@ -799,6 +801,7 @@ impl F3dLossCode {
         Self::SketchGeometryGroupMemberUnbacklinked,
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
+        Self::ComponentInsertContainerAssumed,
         Self::ComponentDefinitionRevised,
         Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
@@ -850,6 +853,7 @@ impl F3dLossCode {
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureStoredBodiesUnbound,
         Self::FeatureDerivedInstanceComponentInsertAssumed,
+        Self::FeatureComponentInsertMembershipAssumed,
         Self::FeatureDerivedInstanceSourcesUnresolved,
         Self::FeatureDerivedInstanceCarrierPlacementAssumed,
         Self::FeatureDerivedInstanceScopePlacementAssumed,
@@ -1197,6 +1201,7 @@ impl F3dLossCode {
             }
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
+            Self::ComponentInsertContainerAssumed => "assembly.component-insert-container-assumed",
             Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
             Self::ComponentNamingSpaceUnbound => "assembly.component-naming-space-unbound",
             Self::RootInstanceDefinitionUnbound => "assembly.root-instance-definition-unbound",
@@ -1254,6 +1259,9 @@ impl F3dLossCode {
             Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
             Self::FeatureDerivedInstanceComponentInsertAssumed => {
                 "feature.derived-instance-component-insert-assumed"
+            }
+            Self::FeatureComponentInsertMembershipAssumed => {
+                "feature.component-insert-membership-assumed"
             }
             Self::FeatureDerivedInstanceSourcesUnresolved => {
                 "feature.derived-instance-sources-unresolved"
@@ -1728,6 +1736,7 @@ impl F3dLossCode {
             | Self::SketchGeometryGroupMemberUnbacklinked
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
+            | Self::ComponentInsertContainerAssumed
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceSourceUnregistered
@@ -1769,6 +1778,7 @@ impl F3dLossCode {
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
             | Self::FeatureDerivedInstanceComponentInsertAssumed
+            | Self::FeatureComponentInsertMembershipAssumed
             | Self::FeatureDerivedInstanceSourcesUnresolved
             | Self::FeatureDerivedInstanceCarrierPlacementAssumed
             | Self::FeatureDerivedInstanceScopePlacementAssumed
@@ -2118,6 +2128,7 @@ impl F3dLossCode {
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
             | Self::FeatureDerivedInstanceComponentInsertAssumed
+            | Self::FeatureComponentInsertMembershipAssumed
             | Self::FeatureDerivedInstanceSourcesUnresolved
             | Self::FeatureDerivedInstanceCarrierPlacementAssumed
             | Self::FeatureDerivedInstanceScopePlacementAssumed
@@ -2350,6 +2361,7 @@ impl F3dLossCode {
             | Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
+            | Self::ComponentInsertContainerAssumed
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceSourceUnregistered
@@ -2516,6 +2528,7 @@ mod tests {
                 "sketch.geometry-group-member-unbacklinked",
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
+                "assembly.component-insert-container-assumed",
                 "assembly.component-definition-revised",
                 "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
@@ -2567,6 +2580,7 @@ mod tests {
                 "feature.stored-bodies-recipe-absent",
                 "feature.stored-bodies-unbound",
                 "feature.derived-instance-component-insert-assumed",
+                "feature.component-insert-membership-assumed",
                 "feature.derived-instance-sources-unresolved",
                 "feature.derived-instance-carrier-placement-assumed",
                 "feature.derived-instance-scope-placement-assumed",

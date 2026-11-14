@@ -25793,6 +25793,77 @@ source = "spec"
 anchor = "Its LP-UTF16 null GUID starts at offset 178"
 
 [[record]]
+name = "component_insert_matrix_scope_404_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+size = 258
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "prologue"
+offset = 11
+type = "bytes[18]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 29
+type = "u64"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "zero_after_identity"
+offset = 37
+type = "bytes[4]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "relation_reference"
+offset = 41
+type = "bytes[5]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "zero_after_relation"
+offset = 46
+type = "bytes[6]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "matrix_markers"
+offset = 52
+type = "bytes[2]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "transform"
+offset = 54
+type = "f64[16]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record.field]]
+name = "null_guid"
+offset = 182
+type = "bytes[76]"
+source = "spec"
+anchor = "The 404-byte matrix scope uses the 276-byte prologue"
+
+[[record]]
 name = "component_insert_identity_scope_276_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs"
 kind = "byte"

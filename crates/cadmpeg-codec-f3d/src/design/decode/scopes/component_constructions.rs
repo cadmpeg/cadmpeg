@@ -94,7 +94,7 @@ pub(super) fn exact_component_insert_construction(
                 }
                 (400, _) => {
                     let (transform, transform_at, occurrence_identity) =
-                        exact_matrix_insert_scope(bytes, start, relation_record_index)?;
+                        exact_matrix_insert_scope(bytes, start, relation_record_index, false)?;
                     (transform, Some(transform_at), occurrence_identity)
                 }
                 (404, _)
@@ -713,21 +713,75 @@ fn exact_component_insert_scope_283_262_385(
 
 const NULL_COMPONENT_INSERT_GUID: &str = "00000000-0000-0000-0000-000000000000";
 
+pub(super) fn unresolved_component_insert_placement(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<assembly_features::DesignComponentInsertPlacement> {
+    if scope.kind() != scope::DesignFeatureKind::ComponentInsert
+        || scope.reference_members().len() != 1
+    {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let end = usize::try_from(scope.paired_byte_offset()).ok()?;
+    let bytes = bytes.get(..end)?;
+    let relation = *scope.reference_members().values().next()?;
+    let (occurrence_identity, matrix) = match scope.canonical_name_frame_length()? {
+        272 => (
+            exact_identity_insert_scope(bytes, start, relation, false)?,
+            None,
+        ),
+        276 => (
+            exact_identity_insert_scope(bytes, start, relation, true)?,
+            None,
+        ),
+        400 | 404 => {
+            let shifted = scope.canonical_name_frame_length()? == 404;
+            let (value, offset, identity) =
+                exact_matrix_insert_scope(bytes, start, relation, shifted)?;
+            (
+                identity,
+                Some(crate::records::identity::Located {
+                    value,
+                    offset: u64::try_from(offset).ok()?,
+                }),
+            )
+        }
+        _ => return None,
+    };
+    Some(assembly_features::DesignComponentInsertPlacement {
+        occurrence_identity,
+        matrix,
+    })
+}
+
 fn exact_matrix_insert_scope(
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
+    shifted: bool,
 ) -> Option<(
     crate::records::sketch_placement::SketchPlacementMatrix,
     usize,
     u64,
 )> {
+    let delta = if shifted { 4 } else { 0 };
+    let prefix: &[u8] = if shifted {
+        &[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+    } else {
+        &[0; 14]
+    };
+    if bytes.get(
+        start + matrix_insert::ZERO_PREFIX..start + matrix_insert::OCCURRENCE_IDENTITY + delta,
+    )? != prefix
+    {
+        return None;
+    }
+    let start = start + delta;
     let transform_at = start + matrix_insert::TRANSFORM;
-    if bytes.get(start + matrix_insert::ZERO_PREFIX..start + matrix_insert::OCCURRENCE_IDENTITY)?
-        != [0; 14]
-        || bytes.get(
-            start + matrix_insert::ZERO_AFTER_IDENTITY..start + matrix_insert::RELATION_REFERENCE,
-        )? != [0; 4]
+    if bytes.get(
+        start + matrix_insert::ZERO_AFTER_IDENTITY..start + matrix_insert::RELATION_REFERENCE,
+    )? != [0; 4]
         || bytes.get(start + matrix_insert::RELATION_REFERENCE) != Some(&1)
         || View::u32_le_at(bytes, start + matrix_insert::RELATION_REFERENCE + 1)?
             != relation_record_index
