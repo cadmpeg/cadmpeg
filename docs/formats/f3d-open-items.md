@@ -1048,15 +1048,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-121. Emboss controls and extended selections
 
-**Question.** What do the Emboss control words and native pairs mean, and which values select material effect, direction, placement, and contour membership?
+**Question.** What do the Emboss control words and native pairs select for profile direction, tangent chaining, auxiliary selections, and contour membership? How do the placement values map to the neutral Wrap operation?
 
-**Known.** The prefix has one or two control words, a counted run of native pairs, four scalar-owner links, two selection-group links, an auxiliary-group link, and the common ordered reference table. The table indices are in increasing order; prefix references bind by record identity. A sketch entity link identifies a Sketch but does not identify its selected contours.
+**Known.** The prefix has one or two control words, a counted run of native pairs, four scalar-owner links, two selection-group links, an auxiliary-group link, and the common ordered reference table. The table indices are in increasing order; prefix references bind by record identity. A sketch entity link identifies a Sketch but does not identify its selected contours. The native tool maps positive Depth to emboss and negative Depth to deboss ([Emboss reference](https://help.autodesk.com/cloudhelp/ENU/Fusion-Model/files/SLD-REF-EMBOSS.htm)).
 
-**Need.** Independent files that change one effect, direction, placement, or contour selection at a time; complete operand frames for the extended reference table.
+**Need.** Controlled exports that change profile direction, tangent chaining, auxiliary selection, contour membership, and each placement value independently; complete operand frames for the extended reference table.
 
 **Conflict.** None.
 
-**Note.** Keep controls and extended selections native. A neutral Wrap requires a proven effect, selected profile, target face, and placement. The existing Wrap operation has no independent horizontal, vertical, or rotation controls.
+**Note.** Project a neutral Wrap from each independently decoded scope. Prefer the parameter bound to the named scalar owner; a unique parameter with the corresponding source kind remains an independent reading when that association is unresolved, with a named scalar-owner assumption loss. Map a nonzero signed Depth to Emboss or Deboss by sign, with a named assumption loss while the control fields remain unassigned. Keep zero, missing, ambiguous, and invalid Depth values in an unresolved material mode. Interpret a missing or conflicting display-unit token through the scalar role's native centimetre or radian unit, with a named scalar-unit assumption loss. Retain unresolved profile and target links in native selections. Retain horizontal, vertical, and rotation parameters as native source properties and neutral parameters while their Wrap placement mapping remains unresolved.
 
 ### DR-120. Align operand roles and motion
 
@@ -1830,9 +1830,9 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-313. Prologue flag byte of the Thicken scope frame
 
-**Question.** Which Thicken setting does the prologue flag byte of the six-byte marker-one prologue of a `Thicken` scope select?
+**Question.** Which Thicken setting does the prologue flag byte of the optional-flag prologue of a `Thicken` scope select?
 
-**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the byte position and the two settled flag bytes. Saves that change the thickness sign, the symmetric direction, and tangent-chain selection store prologue flag byte `0`. The decoder records `feature.thicken-flags-assumed` when the byte is `1` and projects the Thicken from its symmetric flag and its thickness; the tangent-chain flag stays on the native record.
+**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the byte position and the two settled flag bytes. Saves that change the thickness sign, the symmetric direction, and tangent-chain selection store prologue flag byte `0`. The decoder records `feature.thicken-flags-assumed` when the byte is `1` and projects its decoded result, symmetric flag, tangent-chain flag and thickness.
 
 **Need.** Saves of one `Thicken` that change one further setting at a time and store prologue flag byte `1`.
 
@@ -1844,13 +1844,25 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** What does the u32 zero that can follow the marked scalar reference of a `Thicken` scope encode, and which scopes store it?
 
-**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the field and the u32 `1` before the marked auxiliary reference that places it. The decoder reads scopes with and without the field and keeps no value from it.
+**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the field and the three counted reference runs that follow it. The decoder reads scopes with and without the field and keeps no value from it.
 
 **Need.** `Thicken` scopes that store a nonzero value in the field, or saves of one `Thicken` from application versions whose frames differ in the field.
 
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-503. Thicken identity runs and incomplete construction references
+
+**Question.** Which entities do the first counted prefix run and unmatched Thicken prefixes identify, and how do incomplete group definitions select their operands?
+
+**Known.** Result words `1` through `4` select join, cut, intersect and new-body construction. The third counted run selects a Boolean body group. The first run retains its reference indices on the native Thicken record. The decoder projects an unmatched prefix with `feature.thicken-frame-assumed`. Missing or ambiguous scalar definitions retain the result, flags and groups with `feature.thicken-thickness-unresolved`. Incomplete input and target groups retain their scope expressions with `feature.thicken-face-selection-assumed` and `feature.thicken-target-selection-assumed`. Zero or overflowing converted thickness retains its source scalar with `feature.thicken-thickness-unrepresentable`.
+
+**Need.** Controlled saves that change the first-run identities and reference definitions independently, plus additional closed prefix forms.
+
+**Conflict.** None.
+
+**Note.** A retained group can bind to an earlier body recipe. A retained scope expression keeps the decoded construction available when that binding remains unresolved.
 
 ### DR-269. Marker-one Revolve frames of other lengths
 

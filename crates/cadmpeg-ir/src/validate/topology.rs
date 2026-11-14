@@ -3405,8 +3405,11 @@ fn check_feature_references(
                 body_selections.push(source);
                 face_selections.extend(plane_reference);
             }
-            FeatureOperation::Thicken { faces, .. } => {
+            FeatureOperation::Thicken { faces, result, .. } => {
                 face_selections.push(faces);
+                if let Some(crate::features::SolidFeatureResult::Boolean { targets, .. }) = result {
+                    body_selections.push(targets);
+                }
             }
             FeatureOperation::OffsetSurface { faces, .. } => {
                 face_selections.push(faces);
@@ -3709,8 +3712,8 @@ fn check_feature_references(
             FeatureOperation::Helix { .. } => {}
             FeatureOperation::HelixNativeAxis { .. } => {}
             FeatureOperation::Coil { result, .. } => {
-                use crate::features::CoilResult;
-                if let CoilResult::Boolean { targets, .. } = result {
+                use crate::features::SolidFeatureResult;
+                if let SolidFeatureResult::Boolean { targets, .. } = result {
                     body_selections.push(targets);
                 }
             }

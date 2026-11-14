@@ -3151,7 +3151,7 @@ pub enum FeatureOperation {
         /// Complete geometric and parametric construction definition.
         construction: CoilConstruction,
         /// Result-body semantics.
-        result: CoilResult,
+        result: SolidFeatureResult,
     },
     /// Solid sphere primitive.
     Sphere {
@@ -3615,6 +3615,20 @@ pub enum FeatureOperation {
             deserialize_with = "deserialize_side"
         )]
         side: Option<ThickenSide>,
+        #[doc = "Result-body creation or Boolean combination, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thicken_result"
+        )]
+        result: Option<SolidFeatureResult>,
+        #[doc = "Whether the face selection extends along tangent faces, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_tangent_chain"
+        )]
+        tangent_chain: Option<bool>,
     },
     /// Surface copied at a signed normal offset from selected support faces.
     OffsetSurface {
@@ -4193,6 +4207,21 @@ pub enum UnresolvedFamily {
 }
 
 impl FeatureOperation {
+    #[doc = "Construct a Thicken with unspecified result and tangent-chain settings."]
+    pub fn thicken(
+        faces: FaceSelection,
+        thickness: Option<PositiveLength>,
+        side: Option<ThickenSide>,
+    ) -> Self {
+        Self::Thicken {
+            faces,
+            thickness,
+            side,
+            result: None,
+            tangent_chain: None,
+        }
+    }
+
     #[doc = "Construct a component-transfer operation from its readable operands."]
     pub fn component_transfer(
         mode: ComponentTransferMode,
@@ -5692,6 +5721,16 @@ pub enum BodyRetentionMode {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum WrapMode {
+    #[doc = "Material effect with an independently retained signed depth."]
+    Unresolved {
+        #[doc = "Signed depth in millimetres when available."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_wrap_depth"
+        )]
+        depth: Option<Length>,
+    },
     /// Add material above the target face.
     Emboss {
         /// Positive normal offset above the target face.
@@ -8112,15 +8151,15 @@ pub enum CoilSectionPlacement {
     Outside,
 }
 
-/// Result semantics of a solid Coil primitive.
+#[doc = "Result semantics of a solid-producing feature."]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum CoilResult {
+pub enum SolidFeatureResult {
     /// Create an independent body.
     NewBody {},
-    /// Combine the swept volume with selected existing bodies.
+    #[doc = "Combine the produced volume with selected existing bodies."]
     Boolean {
         /// Join, cut, or intersection operation.
         operation: BooleanKind,
@@ -9853,6 +9892,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_rib_construction_side, RibSide, "side");
 cadmpeg_core::named_optional_field!(deserialize_offset, Length, "offset");
+cadmpeg_core::named_optional_field!(deserialize_wrap_depth, Length, "depth");
 cadmpeg_core::named_optional_field!(deserialize_draft, SlopeAngle, "draft");
 cadmpeg_core::named_optional_field!(deserialize_wall_thickness, PositiveLength, "wall_thickness");
 cadmpeg_core::named_optional_field!(deserialize_tolerance, PositiveReal, "tolerance");
@@ -9892,3 +9932,5 @@ cadmpeg_core::named_optional_field!(
 );
 
 cadmpeg_core::named_optional_field!(deserialize_plane_target_source, PlaneTargetSource, "source");
+cadmpeg_core::named_optional_field!(deserialize_thicken_result, SolidFeatureResult, "result");
+cadmpeg_core::named_optional_field!(deserialize_tangent_chain, bool, "tangent_chain");

@@ -441,7 +441,8 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_thicken_operation(bytes, &records, &scope, &mut losses);
+                let construction =
+                    exact_thicken_operation(ctx, bytes, &records, &scope, &mut losses)?;
                 if let scope::DesignScopePayloadMut::Thicken(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
