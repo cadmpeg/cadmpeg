@@ -2030,6 +2030,42 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder leaves unresolved construction settings unset and reports `feature.mesh-shell-controls-unresolved`.
 
+### DR-622. Mesh conversion controls
+
+**Question.** Which conversion control selects the organic method, and which construction settings do the wrapper control fields select?
+
+**Known.** Conversion control `1` selects the prismatic method and `3` selects the faceted method. An output wrapper stores a control byte before its body reference. The decoder retains the raw values in source properties and projects an ordered mesh-to-body conversion with its readable method.
+
+**Need.** Controlled saves with faceted, prismatic, and organic conversion methods and construction settings changed independently.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-conversion-method-assumed` for the control-to-method reading and `feature.mesh-conversion-method-unresolved` for an unruled control. A truncated scope reports `feature.mesh-conversion-scope-unparsed` or `feature.mesh-conversion-tail-partial` and retains readable controls and inputs.
+
+### DR-623. Mesh conversion output envelope
+
+**Question.** Which format discriminator selects the optional four-byte control before the output count?
+
+**Known.** The two output-list forms contain two or six control bytes after the fixed u32. The output list is followed by eight zero bytes and the counted scope GUID. The decoder reads the unique envelope with this following prefix and retains the optional word in source properties.
+
+**Need.** Controlled saves across the producing application versions and operation settings that select each envelope.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-conversion-envelope-assumed` for this envelope reading.
+
+### DR-624. Mesh conversion geometry identities
+
+**Question.** Which historical tessellation and neutral result body does each conversion wrapper identify?
+
+**Known.** Each input wrapper names one mesh operation group. Each output wrapper stores a body GUID and body-record reference. The decoder retains their order and references. Each input uses its declared scope as its native selection source. Source properties retain its wrapper context and readable group-member and body references, including references with unavailable definitions. A partial output wrapper retains its readable GUID and control.
+
+**Need.** A controlled conversion with known input tessellations and output body identities, joined through the wrapper records and historical geometry states.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-conversion-source-unresolved` and `feature.mesh-conversion-output-unresolved`. DR-504 tracks input member-tail selections.
+
 ### DR-373. Mesh body and collection-owner payload fields
 
 **Question.** What do the compact matrix flags, the further mesh-body reference slot, and the remaining mesh-body, mesh-wrapper, and collection-owner payload fields mean?
@@ -2152,13 +2188,37 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** What does an ordered reference of a compact, marked, or counted `Shell` scope name when it is neither the face group, the wall scalar, nor a member of the face group?
 
-**Known.** `f3d.md` §3.1 "A u32 one, a marked reference to the face group" states that in the compact, marked, and counted prefixes the remaining ordered references are the members of the face group. The decoder projects such a `Shell` from its wall slot and face group and reports `feature.shell-table-members-assumed` with the remaining references and the group members.
+**Known.** `f3d.md` §3.1 "A u32 group count, that many marked group references" states that in the compact, marked, and counted prefixes the remaining ordered references are the members of the face group. The decoder projects such a `Shell` from its wall slot and face group and reports `feature.shell-table-members-assumed` with the remaining references and the group members.
 
 **Need.** A `Shell` scope whose remaining ordered references differ from its face-group members, with the result body that shows whether those references change the walls.
 
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-622. Counted Shell prefix byte and partial envelopes
+
+**Question.** Which option does the counted Shell prefix byte select, and which fields preserve the wall-slot direction when that byte is nonzero or the envelope tail is incomplete?
+
+**Known.** The counted prefix has a byte between its fixed marked prefix and its aligned optional wall references. The references can join finite positive wall scalars independently of the prefix byte. The scalar owner and its source location remain available. The zero-byte form has inside-first slots.
+
+**Need.** Controlled saves varying that byte and the inside and outside walls separately, with complete prefix, auxiliary-reference, group and GUID runs.
+
+**Conflict.** None.
+
+**Note.** Partial Shell projection reports `feature.shell-counted-control-assumed` for reading the byte as a separate prefix field, `feature.shell-slot-direction-assumed` for the nonzero form's inside-first reading and `feature.shell-envelope-assumed` when a unique partial prefix supplies wall data. Unresolved values and selections remain in `shell:source` with their references and byte locations.
+
+### DR-623. Simultaneous Shell face and body groups
+
+**Question.** How do the removed-face group and the target-body group jointly select a Shell operation when its prefix names both groups?
+
+**Known.** A cornered prefix can name both a removed-face group with role `0x0000001000000000` and a body group with role `0x0000000400000000`. Each group retains its own members. The wall scalar and both cornered prefix Booleans remain independently readable.
+
+**Need.** Controlled saves changing the face selection and body selection separately, with the corresponding input and output bodies.
+
+**Conflict.** None.
+
+**Note.** Partial Shell projection retains both selections and reports `feature.shell-group-roles-assumed`. The wall-selection solver uses the admitted complete construction; partial wall assumptions remain separate from its geometry proof.
 
 ### DR-311. Extension method of a SurfaceExtend scope
 
