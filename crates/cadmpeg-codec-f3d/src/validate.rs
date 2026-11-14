@@ -5309,9 +5309,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         DesignOperandRole::BODIES_B | DesignOperandRole::ROLE_0X43
                     ) && group.extrude_role().is_none()
                 }
-                Some(_) => false,
-                None if scope.kind()
-                    == crate::records::feature::scope::DesignFeatureKind::Emboss =>
+                Some(design::DesignFeatureFamily::Emboss) =>
                 {
                     scope.emboss_operand_construction().is_some_and(|construction| {
                         (group.record_index == construction.profile_group.value
@@ -5320,6 +5318,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 && group.role() == DesignOperandRole::ROLE_0X10)
                     }) && group.extrude_role().is_none()
                 }
+                Some(_) => false,
                 None if matches!(
                     scope.kind(),
                     crate::records::feature::scope::DesignFeatureKind::RemoveBody
@@ -7773,8 +7772,7 @@ fn validate_face_operands<'a>(
                                             && identity.class_tag == operand.class_tag
                                     })
                             }
-                            None if scope.kind()
-                                == crate::records::feature::scope::DesignFeatureKind::Emboss =>
+                            Some(design::DesignFeatureFamily::Emboss) =>
                             {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X10
