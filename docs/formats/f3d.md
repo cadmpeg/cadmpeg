@@ -2130,6 +2130,11 @@ The span formulas count the eight code units of the stored family name
 `Assemble`. A stored family name of `L` UTF-16 code units adds `2 * (L - 8)`
 bytes to the span.
 
+Each connector reference identifies a construction in its Design stream.
+The operand path supplies the occurrence or document context that contains
+that construction. The connector frame and alignment values remain fields
+of the scope independently of the referenced occurrence's placement.
+
 The scope matrices are operand-local connector frames. Let `C0` and `C1` be
 these frames after composition with their operand poses. The mate equation
 is `C0 = C1 * T(X, Y, Z) * Rz(angle) * F`. Angle is in radians; offsets and
