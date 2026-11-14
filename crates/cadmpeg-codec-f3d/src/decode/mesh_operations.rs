@@ -29,6 +29,8 @@ use std::collections::HashMap;
 const MILLIMETRES_PER_DESIGN_LENGTH: f64 = 10.0;
 const PERCENT: f64 = 100.0;
 
+pub(super) mod convert;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct OwnerValue {
     value: f64,

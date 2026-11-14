@@ -31,6 +31,40 @@ pub enum MeshSelection {
     },
 }
 
+#[doc = "Construction used to convert mesh faces to a boundary representation."]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MeshConversionMethod {
+    #[doc = "Creates a boundary face for each source mesh face."]
+    Faceted,
+    #[doc = "Combines face groups into faces of inferred prismatic features."]
+    Prismatic,
+}
+
+#[doc = "Ordered inputs and construction method of a mesh-to-body conversion."]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct MeshConversion {
+    #[doc = "Input meshes in construction order."]
+    pub sources: Vec<MeshSelection>,
+    #[doc = "Conversion method, when resolved."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_conversion_method"
+    )]
+    pub method: Option<MeshConversionMethod>,
+}
+
+impl MeshConversion {
+    #[doc = "Build a conversion from ordered sources and an optional method."]
+    pub fn new(sources: Vec<MeshSelection>, method: Option<MeshConversionMethod>) -> Self {
+        Self { sources, method }
+    }
+}
+
 #[doc = "Distribution of the faces that a mesh operation produces."]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -240,6 +274,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_minimum_area_fraction,
     crate::scalar::Fraction,
     "minimum_area_fraction"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_conversion_method,
+    MeshConversionMethod,
+    "method"
 );
 cadmpeg_core::named_optional_field!(deserialize_mode, MeshRebuildMode, "mode");
 cadmpeg_core::named_optional_field!(deserialize_density, PositiveReal, "density");

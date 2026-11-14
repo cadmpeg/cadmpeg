@@ -2030,6 +2030,42 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder leaves unresolved construction settings unset and reports `feature.mesh-shell-controls-unresolved`.
 
+### DR-622. Mesh conversion controls
+
+**Question.** Which conversion control selects the organic method, and which construction settings do the wrapper control fields select?
+
+**Known.** Conversion control `1` selects the prismatic method and `3` selects the faceted method. An output wrapper stores a control byte before its body reference. The decoder retains the raw values in source properties and projects an ordered mesh-to-body conversion with its readable method.
+
+**Need.** Controlled saves with faceted, prismatic, and organic conversion methods and construction settings changed independently.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-conversion-method-assumed` for the control-to-method reading and `feature.mesh-conversion-method-unresolved` for an unruled control. A truncated scope reports `feature.mesh-conversion-scope-unparsed` or `feature.mesh-conversion-tail-partial` and retains readable controls and inputs.
+
+### DR-623. Mesh conversion output envelope
+
+**Question.** Which format discriminator selects the optional four-byte control before the output count?
+
+**Known.** The two output-list forms contain two or six control bytes after the fixed u32. The output list is followed by eight zero bytes and the counted scope GUID. The decoder reads the unique envelope with this following prefix and retains the optional word in source properties.
+
+**Need.** Controlled saves across the producing application versions and operation settings that select each envelope.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-conversion-envelope-assumed` for this envelope reading.
+
+### DR-624. Mesh conversion geometry identities
+
+**Question.** Which historical tessellation and neutral result body does each conversion wrapper identify?
+
+**Known.** Each input wrapper names one mesh operation group. Each output wrapper stores a body GUID and body-record reference. The decoder retains their order and references. Each input uses its declared scope as its native selection source. Source properties retain its wrapper context and readable group-member and body references, including references with unavailable definitions. A partial output wrapper retains its readable GUID and control.
+
+**Need.** A controlled conversion with known input tessellations and output body identities, joined through the wrapper records and historical geometry states.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-conversion-source-unresolved` and `feature.mesh-conversion-output-unresolved`. DR-504 tracks input member-tail selections.
+
 ### DR-373. Mesh body and collection-owner payload fields
 
 **Question.** What do the compact matrix flags, the further mesh-body reference slot, and the remaining mesh-body, mesh-wrapper, and collection-owner payload fields mean?

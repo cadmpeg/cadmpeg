@@ -2815,6 +2815,8 @@ pub enum FeatureOperation {
         #[doc = "Applied change."]
         modification: mesh::MeshModification,
     },
+    #[doc = "Conversion of meshes to solid or surface bodies."]
+    MeshConvert(mesh::MeshConversion),
     /// Independent bodies introduced by a copy-and-paste operation. The copies
     /// are the feature's outputs, so the selection carries only its native
     /// expression.
