@@ -78,6 +78,59 @@ Natives (one design per format except SolidWorks, which takes two distinct FTC c
 
 This document reproduces the disclaimer and usage terms of the publisher `README.txt` files.
 
+## Solid geometry twins
+
+The cross-codec integration tests in
+`crates/cadmpeg/src/integration_tests/nist_twins.rs` compare these design pairs.
+Paths are relative to this directory.
+
+| Native file | STEP file |
+| --- | --- |
+| `sldprt/nist_ftc_06_asme1_rd_sw1802.SLDPRT` | `step/nist_ftc_06_asme1_ap242-e2.stp` |
+| `nx/nist_ctc_03_asme1_nx1980_rc.prt` | `step/nist_ctc_03_asme1_ap242-e2.stp` |
+| `catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart` | `step/nist_ftc_07_asme1_ap242-e2.stp` |
+| `creo/nist_ctc_01_asme1_rd_cr10030.prt.5` | `step/nist_ctc_01_asme1_ap242-e1.stp` |
+| `inventor/INV_nist_ctc_01_asme1_2021.ipt` | `step/nist_ctc_01_asme1_ap242-e1.stp` |
+
+The tests use `cadmpeg measure`'s measurement library and `diff --geometry`'s
+comparator. They select solid bodies and compare design totals: closed-shell
+count, signed volume, area, area per canonical surface family, and the
+axis-aligned box. Every shell must close, its signed volume must agree with its
+outer or void role, and every face must have a consistent, confirmed orientation.
+Face partition sizes can differ between exporters. Auxiliary sheets fall outside
+the solid selection.
+
+Numeric comparisons add both numeric errors and both model uncertainties to
+`1e-9 × max(|a|, |b|, L^d)`, as in [Measurement](../../docs/measurement.md).
+`L` is the larger design box diagonal; `d` is the quantity's length dimension.
+Surface-family sums add the member areas and their error terms. The named
+relative floors use the existing geometry comparison allowance for arithmetic
+rounding. Closed-shell counts and complete orientation agreement use exact
+checks. An unavailable required quantity fails the test.
+
+Run the active checks with:
+
+```sh
+cargo test -q -p cadmpeg --bin cadmpeg nist_twin
+```
+
+Known disagreements and incomplete measurements use `#[ignore = "reason"]`,
+with the measured cause in the reason. SolidWorks FTC-06 has one unconfirmed
+face orientation, so its signed volume is unavailable. CATIA FTC-07 has
+inconsistent face orientations and `boundary.pcurve-curve-mismatch`; its solid
+area, volume and box are unavailable. Its torus family area differs from STEP.
+Creo CTC-01 has a 2 mm blind cut that
+changes the solid volume and area
+relative to its STEP design. The codec integration test
+`nist_ctc_01_closed_solid_volume_accounts_for_native_blind_cut` checks this
+source feature. Inventor CTC-01 has a different total area and its box is shifted
+by 400 mm in X and 225 mm in Y relative to STEP. Run all pairs and print
+quantities with:
+
+```sh
+cargo test -q -p cadmpeg --bin cadmpeg nist_twin -- --include-ignored --nocapture --test-threads=1
+```
+
 ## Manifest
 
 CAD files are listed in [`../manifest.toml`](../manifest.toml) with `license = "LicenseRef-NIST-PD"`, `author = "National Institute of Standards and Technology"`, the document-page `source_url`, and `acquisition_date = "2026-10-30"`. Dialect pins are derived by `UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test corpus_manifest`.
