@@ -11,21 +11,26 @@ use std::num::NonZeroU32;
 pub(crate) const OCCURRENCE_PLACEMENT_TYPE_GUID: &str = "CE2913AA-CFE0-4F04-9102-24424ED3BCFA";
 pub(crate) const DERIVED_INSTANCE_RELATION_TYPE_GUID: &str = "2D6E13A1-BBEF-4FB3-9277-00D99F634136";
 
-cadmpeg_core::named_optional_field!(
-    deserialize_derived_source_relation,
-    DesignDerivedInstanceRelation,
-    "relation"
-);
-cadmpeg_core::named_optional_field!(
-    deserialize_derived_relation_carrier,
-    DesignDerivedInstanceCarrier,
-    "carrier"
-);
-cadmpeg_core::named_optional_field!(
-    deserialize_derived_reference_type_guid,
-    DesignGuidText,
-    "type_guid"
-);
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct DesignComponentInsertScope {
+    pub(crate) construction: Option<DesignComponentInsertConstruction>,
+    pub(crate) unresolved_placement: Option<DesignComponentInsertPlacement>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignComponentInsertPlacement {
+    pub(crate) occurrence_identity: u64,
+    pub(crate) matrix: Option<Located<SketchPlacementMatrix>>,
+}
+
+impl DesignComponentInsertPlacement {
+    pub(crate) fn transform(&self) -> &SketchPlacementMatrix {
+        self.matrix
+            .as_ref()
+            .map_or(&SketchPlacementMatrix::IDENTITY, |matrix| &matrix.value)
+    }
+}
 
 cadmpeg_core::named_optional_field!(
     deserialize_carrier_transform_offset,
@@ -307,6 +312,22 @@ impl DesignDerivedInstanceConstruction {
             .then_some(first)
     }
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_derived_source_relation,
+    DesignDerivedInstanceRelation,
+    "relation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_derived_relation_carrier,
+    DesignDerivedInstanceCarrier,
+    "carrier"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_derived_reference_type_guid,
+    DesignGuidText,
+    "type_guid"
+);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignDerivedInstanceSource {

@@ -266,11 +266,12 @@ fn thicken_variants(first: f64, second: f64) -> Vec<DesignParameterScope> {
             };
             *slot = Some(
                 crate::records::feature::direct_face::DesignThickenOperation {
-                    signed_thickness: crate::test_support::real(thickness),
+                    signed_thickness: Some(crate::test_support::real(thickness)),
                     thickness_record_index: 74,
-                    thickness_offset: byte_offset + 40,
+                    thickness_offset: Some(byte_offset + 40),
                     symmetric: false,
                     tangent_chain: true,
+                    ..Default::default()
                 },
             );
             scope

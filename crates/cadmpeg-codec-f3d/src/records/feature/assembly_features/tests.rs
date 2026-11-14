@@ -6,64 +6,6 @@ use super::{
     COMPONENT_OCCURRENCE_CLONE_COUNT,
 };
 
-#[test]
-fn derived_instance_optional_keys_accept_omission_and_refuse_null() {
-    use super::{
-        DesignDerivedInstanceReference, DesignDerivedInstanceRelation, DesignDerivedInstanceSource,
-    };
-    use serde::{de::DeserializeOwned, Serialize};
-
-    fn check<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(record: &T, key: &str) {
-        let mut wire = serde_json::to_value(record).unwrap();
-        assert!(!wire.as_object().unwrap().contains_key(key));
-        assert_eq!(&serde_json::from_value::<T>(wire.clone()).unwrap(), record);
-        wire[key] = serde_json::Value::Null;
-        assert!(serde_json::from_value::<T>(wire).is_err());
-    }
-    let reference = DesignDerivedInstanceReference::plain(7);
-    check(&reference, "type_guid");
-    let relation = DesignDerivedInstanceRelation {
-        carrier_reference: reference.clone(),
-        middle_reference: DesignDerivedInstanceReference::plain(8),
-        scope_reference: DesignDerivedInstanceReference::plain(9),
-        carrier: None,
-    };
-    check(&relation, "carrier");
-    let source = DesignDerivedInstanceSource {
-        reference: reference.clone(),
-        relation: None,
-    };
-    check(&source, "relation");
-
-    let source = DesignDerivedInstanceSource {
-        reference,
-        relation: Some(relation),
-    };
-    assert_eq!(
-        serde_json::from_value::<DesignDerivedInstanceSource>(
-            serde_json::to_value(&source).unwrap()
-        )
-        .unwrap(),
-        source
-    );
-    let reference = DesignDerivedInstanceReference {
-        target: 7,
-        type_guid: Some(
-            serde_json::from_value(serde_json::json!(
-                super::DERIVED_INSTANCE_RELATION_TYPE_GUID
-            ))
-            .unwrap(),
-        ),
-    };
-    assert_eq!(
-        serde_json::from_value::<DesignDerivedInstanceReference>(
-            serde_json::to_value(&reference).unwrap()
-        )
-        .unwrap(),
-        reference
-    );
-}
-
 fn occurrence(explicit: bool) -> DesignComponentOccurrence {
     let placement = if explicit {
         r#","occurrence_ordinal":2,"transform":[[1.0,0.0,0.0,2.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],"transform_offset":219,"owner_entity":3,"owner_entity_offset":357"#
@@ -168,5 +110,73 @@ fn typed_component_occurrence_wire_retains_offsets_and_native_fields() {
         );
         wire["owner_entity_offset"] = (12 + owner_offset).into();
         assert!(serde_json::from_value::<DesignComponentOccurrence>(wire).is_err());
+    }
+}
+
+#[test]
+fn derived_instance_optional_keys_distinguish_omission_values_and_null() {
+    use super::{
+        DesignDerivedInstanceReference, DesignDerivedInstanceRelation, DesignDerivedInstanceSource,
+    };
+    let reference = serde_json::json!({"target": 7});
+    let mut relation = serde_json::json!({
+        "carrier_reference": {"target": 8},
+        "middle_reference": {"target": 9},
+        "scope_reference": {"target": 10}
+    });
+    let mut source = serde_json::json!({"reference": reference});
+    assert!(
+        serde_json::from_value::<DesignDerivedInstanceReference>(reference)
+            .unwrap()
+            .type_guid
+            .is_none()
+    );
+    assert!(
+        serde_json::from_value::<DesignDerivedInstanceRelation>(relation.clone())
+            .unwrap()
+            .carrier
+            .is_none()
+    );
+    assert!(
+        serde_json::from_value::<DesignDerivedInstanceSource>(source.clone())
+            .unwrap()
+            .relation
+            .is_none()
+    );
+    let typed =
+        serde_json::json!({"target": 7, "type_guid": "11111111-1111-1111-1111-111111111111"});
+    assert!(
+        serde_json::from_value::<DesignDerivedInstanceReference>(typed)
+            .unwrap()
+            .type_guid
+            .is_some()
+    );
+    source["relation"] = relation.clone();
+    assert!(
+        serde_json::from_value::<DesignDerivedInstanceSource>(source.clone())
+            .unwrap()
+            .relation
+            .is_some()
+    );
+    source["relation"] = serde_json::Value::Null;
+    relation["carrier"] = serde_json::Value::Null;
+    for (key, error) in [
+        (
+            "type_guid",
+            serde_json::from_value::<DesignDerivedInstanceReference>(
+                serde_json::json!({"target": 7, "type_guid": null}),
+            )
+            .unwrap_err(),
+        ),
+        (
+            "carrier",
+            serde_json::from_value::<DesignDerivedInstanceRelation>(relation).unwrap_err(),
+        ),
+        (
+            "relation",
+            serde_json::from_value::<DesignDerivedInstanceSource>(source).unwrap_err(),
+        ),
+    ] {
+        assert!(error.to_string().starts_with(&format!("{key}:")));
     }
 }
