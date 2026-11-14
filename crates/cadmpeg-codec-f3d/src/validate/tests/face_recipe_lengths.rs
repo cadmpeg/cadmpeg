@@ -488,3 +488,56 @@ fn sweep_profile_face_operand_requires_a_topology_recipe_member() {
     );
     assert_eq!(findings(None).len(), 1);
 }
+
+#[test]
+fn surface_untrim_face_groups_admit_both_face_envelopes_with_exact_ownership() {
+    use crate::records::feature::scope::DesignFeatureKind;
+    use crate::records::recipes::ConstructionRecipeKind;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+
+    for (kind, operand_length) in [
+        (ConstructionRecipeKind::Face, 16),
+        (ConstructionRecipeKind::BoundedFace, 24),
+    ] {
+        for ordinal in [0, 1] {
+            let admitted = operand_findings(
+                DesignFeatureKind::SurfaceUntrim,
+                kind,
+                operand_length,
+                1_047,
+                Some(DesignOperandRole::ROLE_0X9),
+                None,
+                ordinal,
+            );
+            assert!(admitted.is_empty(), "{admitted:#?}");
+        }
+        for role in [None, Some(DesignOperandRole::ROLE_0X10)] {
+            assert_eq!(
+                operand_findings(
+                    DesignFeatureKind::SurfaceUntrim,
+                    kind,
+                    operand_length,
+                    1_047,
+                    role,
+                    None,
+                    0,
+                )
+                .len(),
+                1
+            );
+        }
+        assert_eq!(
+            operand_findings(
+                DesignFeatureKind::SurfaceUntrim,
+                kind,
+                operand_length,
+                1_047,
+                Some(DesignOperandRole::ROLE_0X9),
+                Some(1_047 + operand_length + 7),
+                0,
+            )
+            .len(),
+            1
+        );
+    }
+}

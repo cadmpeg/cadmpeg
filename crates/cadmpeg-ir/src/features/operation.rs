@@ -1,26 +1,8 @@
-use super::{
-    ComponentTransferMode, FaceSelection, FeatureOperation, ThickenSide, UnresolvedFamily,
-};
+use super::{ComponentTransferMode, FeatureOperation, UnresolvedFamily};
 use crate::ids::{OccurrenceId, ProductDefinitionId};
-use crate::scalar::PositiveLength;
 use crate::transform::Transform;
 
 impl FeatureOperation {
-    #[doc = "Construct a Thicken with unspecified result and tangent-chain settings."]
-    pub fn thicken(
-        faces: FaceSelection,
-        thickness: Option<PositiveLength>,
-        side: Option<ThickenSide>,
-    ) -> Self {
-        Self::Thicken {
-            faces,
-            thickness,
-            side,
-            result: None,
-            tangent_chain: None,
-        }
-    }
-
     #[doc = "Construct a component-transfer operation from its readable operands."]
     pub fn component_transfer(
         mode: ComponentTransferMode,
@@ -92,6 +74,7 @@ impl FeatureOperation {
             Self::Loft { .. } => Some("loft"),
             Self::TrimSurface { .. } => Some("trim surface"),
             Self::ExtendSurface { .. } => Some("extend surface"),
+            Self::UntrimSurface { .. } => Some("untrim surface"),
             Self::RuledSurface { .. } => Some("ruled surface"),
             Self::Hole { .. } => Some("hole"),
             Self::Rib { .. } => Some("rib"),

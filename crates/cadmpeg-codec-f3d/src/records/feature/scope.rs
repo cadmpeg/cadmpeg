@@ -47,7 +47,7 @@ use super::sheet_metal::{
 use super::surface_ops::{
     DesignRuledSurfaceOperation, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
     DesignSurfacePatchBoundary, DesignSurfacePatchNormalState, DesignSurfacePatchScope,
-    DesignSurfacePatchSelection, DesignSurfaceStitchOperation,
+    DesignSurfacePatchSelection, DesignSurfaceStitchOperation, DesignSurfaceUntrimOperation,
 };
 use super::thread::DesignThreadConstruction;
 use super::work_geometry::{
@@ -322,6 +322,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_surface_extend_operation,
     DesignSurfaceExtendOperation,
     "surface_extend_operation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_surface_untrim_operation,
+    DesignSurfaceUntrimOperation,
+    "surface_untrim_operation"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_surface_offset_operation,
@@ -758,6 +763,7 @@ design_feature_kinds! {
         SurfacePatch => "SurfacePatch": DesignSurfacePatchScope,
         SurfaceExtend => "SurfaceExtend": Option<DesignSurfaceExtendOperation>,
         SurfaceOffset => "SurfaceOffset": Option<DesignSurfaceOffsetOperation>,
+        SurfaceUntrim => "SurfaceUntrim": Option<DesignSurfaceUntrimOperation>,
         Hole => "Hole": crate::records::feature::hole::DesignHoleScope,
         Scale => "Scale": Option<DesignScaleOperation>,
         Thread => "Thread": Option<DesignThreadConstruction>,
@@ -1130,6 +1136,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_surface_extend_operation"
     )]
     surface_extend_operation: Option<DesignSurfaceExtendOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_surface_untrim_operation"
+    )]
+    surface_untrim_operation: Option<DesignSurfaceUntrimOperation>,
     /// Exact distance and boundary records carried by a `SurfaceOffset` scope.
     #[serde(
         default,
@@ -1909,6 +1921,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.surface_extend_operation.is_some() {
             present.push("surface_extend_operation");
         }
+        if wire.surface_untrim_operation.is_some() {
+            present.push("surface_untrim_operation");
+        }
         if wire.surface_offset_operation.is_some() {
             present.push("surface_offset_operation");
         }
@@ -2153,6 +2168,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::SurfaceExtend => {
                 DesignScopePayload::SurfaceExtend(wire.surface_extend_operation.take())
             }
+            DesignFeatureKind::SurfaceUntrim => {
+                DesignScopePayload::SurfaceUntrim(wire.surface_untrim_operation.take())
+            }
             DesignFeatureKind::SurfaceOffset => {
                 DesignScopePayload::SurfaceOffset(wire.surface_offset_operation.take())
             }
@@ -2314,6 +2332,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.mesh_face_groups.is_some()
             || wire.surface_stitch_operation.is_some()
             || wire.surface_extend_operation.is_some()
+            || wire.surface_untrim_operation.is_some()
             || wire.surface_offset_operation.is_some()
             || wire.ruled_surface_operation.is_some()
             || !wire.surface_patch_boundaries.is_empty()
@@ -2485,6 +2504,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             mesh_face_groups: None,
             surface_stitch_operation: None,
             surface_extend_operation: None,
+            surface_untrim_operation: None,
             surface_offset_operation: None,
             ruled_surface_operation: None,
             base_flange: None,
@@ -2599,6 +2619,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::CombineFaceGroups(value) => wire.mesh_face_groups = value,
             DesignScopePayload::SurfaceStitch(value) => wire.surface_stitch_operation = Some(value),
             DesignScopePayload::SurfaceExtend(value) => wire.surface_extend_operation = value,
+            DesignScopePayload::SurfaceUntrim(value) => wire.surface_untrim_operation = value,
             DesignScopePayload::SurfaceOffset(value) => wire.surface_offset_operation = value,
             DesignScopePayload::SurfaceRuled(value) => wire.ruled_surface_operation = Some(value),
             DesignScopePayload::SurfacePatch(value) => {
@@ -3206,6 +3227,13 @@ impl DesignParameterScope {
     pub(crate) fn surface_extend_operation(&self) -> Option<&DesignSurfaceExtendOperation> {
         match &self.payload {
             DesignScopePayload::SurfaceExtend(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn surface_untrim_operation(&self) -> Option<&DesignSurfaceUntrimOperation> {
+        match &self.payload {
+            DesignScopePayload::SurfaceUntrim(value) => value.as_ref(),
             _ => None,
         }
     }

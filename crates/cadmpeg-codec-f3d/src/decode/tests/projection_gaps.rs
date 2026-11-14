@@ -6,6 +6,19 @@ use super::super::{
     unresolved_dimension_companion_count, DesignProjectionGaps, DimensionCompanionSources,
 };
 use crate::native::F3dNative;
+
+#[test]
+fn surface_untrim_gaps_count_both_face_and_manual_loop_selections() {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.features.push(serde_json::from_value(serde_json::json!({
+        "id": "synthetic:test:feature#untrim", "ordinal": 0, "suppressed": false,
+        "definition": {"definition": "untrim_surface", "faces": {"kind": "native", "value": "native:faces"}, "loops": {"kind": "selected", "edges": {"kind": "native", "value": "native:loops"}}, "extension": 3.0}
+    })).unwrap());
+    let gaps = design_projection_gaps(&ir, &F3dNative::default());
+    assert_eq!(gaps.face_selections, 1);
+    assert_eq!(gaps.native_edge_selections, 1);
+    assert_eq!(gaps.incomplete_features, 1);
+}
 use crate::records::{
     bodies::DesignBodyBinding,
     dimensions::{DesignDimensionLocusPair, DesignDimensionRecipeRecord},

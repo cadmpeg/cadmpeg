@@ -217,6 +217,10 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         DesignFeatureKind::SurfaceTrim,
     ),
     (
+        "4082E43B-D693-40D7-B44B-26800C9148DB",
+        DesignFeatureKind::SurfaceUntrim,
+    ),
+    (
         "FCBB1707-4450-46B3-9E65-0F61682EA8CA",
         DesignFeatureKind::Sweep,
     ),

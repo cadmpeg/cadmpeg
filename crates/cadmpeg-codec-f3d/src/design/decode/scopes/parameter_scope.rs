@@ -55,6 +55,7 @@ use super::surfaces::exact_ruled_surface_operation;
 use super::surfaces::exact_surface_extend_operation;
 use super::surfaces::exact_surface_offset_operation;
 use super::surfaces::exact_surface_stitch_operation;
+use super::surfaces::exact_surface_untrim_operation;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
 use super::work_geometry::exact_joint_origin_frame;
@@ -545,6 +546,13 @@ pub(crate) fn decode_parameter_scopes(
                     );
                 }
                 if let scope::DesignScopePayloadMut::SurfaceExtend(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction =
+                    exact_surface_untrim_operation(ctx, bytes, &records, &scope, &mut losses)?;
+                if let scope::DesignScopePayloadMut::SurfaceUntrim(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }

@@ -5406,6 +5406,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         DesignOperandRole::BODIES_B | DesignOperandRole::ROLE_0X43
                     ) && group.extrude_role().is_none()
                 }
+                None if scope.kind()
+                    == crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim =>
+                {
+                    group.role() == DesignOperandRole::ROLE_0X9 && group.extrude_role().is_none()
+                }
                 None => false,
             };
             role_is_valid
@@ -7779,6 +7784,16 @@ fn validate_face_operands<'a>(
                                     group.role() == DesignOperandRole::ROLE_0X10
                                 }) && operand.recipe_kind
                                     == records::recipes::ConstructionRecipeKind::BoundedFace
+                            }
+                            None if group.is_some_and(|group| {
+                                design::decode::operands::is_surface_untrim_face_group(scope, group)
+                            }) =>
+                            {
+                                matches!(
+                                    operand.recipe_kind,
+                                    records::recipes::ConstructionRecipeKind::Face
+                                        | records::recipes::ConstructionRecipeKind::BoundedFace
+                                )
                             }
                             None if matches!(
                                 scope.kind(),

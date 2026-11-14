@@ -3512,6 +3512,12 @@ fn check_feature_references(
             FeatureOperation::ExtendSurface { faces, .. } => {
                 face_selections.push(faces);
             }
+            FeatureOperation::UntrimSurface { faces, loops, .. } => {
+                face_selections.push(faces);
+                if let crate::features::surfaces::UntrimLoops::Selected { edges } = loops {
+                    edge_selections.push(edges);
+                }
+            }
             FeatureOperation::RuledSurface {
                 edges,
                 support_faces,
