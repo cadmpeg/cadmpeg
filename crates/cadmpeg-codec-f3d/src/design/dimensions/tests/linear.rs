@@ -1049,6 +1049,78 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             && second == spatial_entities[1].id())
     ));
 
+    // A point and a line locus measure the point's distance to the line carrier.
+    let point_line = |line_z: f64| {
+        let line_record = SketchCurveIdentity {
+            id: format!("{stream}:sketch-curve#43"),
+            record_index: 43,
+            owner_reference: Some(100),
+            geometry_group: None,
+            class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+                .unwrap(),
+            byte_offset: 0,
+            geometry_offset: 0,
+            entity_genesis: None,
+            primary_id: std::num::NonZeroU64::new(43).unwrap(),
+            secondary_id: 0,
+            geometry: None,
+            planar_z_noise: None,
+        };
+        let line_entity = cadmpeg_ir::sketches::SpatialSketchEntity::new(
+            cadmpeg_ir::sketches::SpatialSketchEntityId::mint("synthetic:test:id#spatial-line")
+                .unwrap(),
+            spatial_sketch.id.clone(),
+            cadmpeg_ir::sketches::SpatialSketchGeometry::try_from(
+                cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Line {
+                    start: Point3::new(-1.0, 0.0, line_z),
+                    end: Point3::new(1.0, 0.0, line_z),
+                },
+            )
+            .unwrap(),
+        )
+        .with_native_ref(Some(line_record.id.clone()));
+        let mut draft = pair.clone().into_draft();
+        draft.loci[1].geometry_record_index = std::num::NonZeroU32::new(43);
+        let point_line_pair = DesignDimensionLocusPair::try_new(draft).unwrap();
+        let entities = vec![spatial_entities[0].clone(), line_entity.clone()];
+        let constraints = project_spatial_dimension_constraints(
+            &crate::design::dimensions::DimensionConstraintInputs {
+                placements: std::slice::from_ref(&placement),
+                parameters: std::slice::from_ref(&parameter),
+                owners: std::slice::from_ref(&owner),
+                pairs: std::slice::from_ref(&point_line_pair),
+                groups: std::slice::from_ref(&group),
+                annotation_frames: &[],
+                null_pairs: &[],
+                companions: std::slice::from_ref(&companion),
+                recipe_records: &[],
+                points: &points[..1],
+                curves: std::slice::from_ref(&line_record),
+                entities: &[],
+            },
+            std::slice::from_ref(&spatial_sketch),
+            &entities,
+        );
+        (constraints, line_entity)
+    };
+    // The point (0, 0, 0) lies 2 mm from the line y = 0, z = 2, and 3 mm from
+    // the line y = 0, z = 3; the parameter is 2 mm.
+    let (constraints, line_entity) = point_line(2.0);
+    assert_eq!(constraints.len(), 1, "{constraints:#?}");
+    assert!(matches!(
+        constraints[0].definition.kind(),
+        SpatialSketchConstraintDefinitionInput::PointLineDistance { point, line, parameter: actual }
+            if point == spatial_entities[0].id()
+                && line == line_entity.id()
+                && actual == &neutral_parameter_id_parts(stream, 20)
+    ));
+    let (constraints, _) = point_line(3.0);
+    assert!(!constraints.is_empty());
+    assert!(constraints.iter().all(|constraint| matches!(
+        constraint.definition.kind(),
+        SpatialSketchConstraintDefinitionInput::Native { .. }
+    )));
+
     let axis_record = SketchCurveIdentity {
         id: format!("{stream}:sketch-curve#42"),
         record_index: 42,
