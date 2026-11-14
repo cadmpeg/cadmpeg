@@ -229,7 +229,11 @@ fn operand_ir(
         historical_support_contexts: Vec::new(),
         resolved_face_slots: Vec::new(),
         resolved_active_face: None,
-        next_record_index: 105,
+        next_record_index: if next_reference_at == Some(recipe_program_offset.saturating_add(8)) {
+            2
+        } else {
+            105
+        },
         next_byte_offset: recipe_program_offset.saturating_add(8),
     })
     .unwrap();
