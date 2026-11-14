@@ -9,7 +9,7 @@ use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::records::sketch_placement::DesignSketchPlacement;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::mesh::{
@@ -29,6 +29,7 @@ use std::collections::HashMap;
 const MILLIMETRES_PER_DESIGN_LENGTH: f64 = 10.0;
 const PERCENT: f64 = 100.0;
 
+pub(super) mod combine;
 pub(super) mod convert;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -431,10 +432,10 @@ fn section_binding(
 fn scope_bytes<'a>(
     scan: &ContainerScan<'a>,
     scope: &DesignParameterScope,
-) -> Option<(String, &'a [u8])> {
+) -> Option<(String, View<'a>)> {
     let stream = crate::ids::native_stream(&scope.id)?.strip_prefix("f3d:")?;
     let entry = crate::ids::decode_identity_key_component(stream)?;
-    let bytes = scan.entry_view(&entry)?.window();
+    let bytes = scan.entry_view(&entry)?;
     Some((entry, bytes))
 }
 
@@ -499,7 +500,7 @@ pub(super) fn bind_features(
                 .as_ref()
                 .ok_or(MeshOperationFraming("source metadata"))
                 .and_then(|records| records.validate_scope(kind, scope.record_index))
-                .and_then(|frame| read_scope(kind, frame));
+                .and_then(|frame| read_scope(kind, frame.window()));
             Some((scope, indexed.as_ref(), parsed))
         } else {
             None
