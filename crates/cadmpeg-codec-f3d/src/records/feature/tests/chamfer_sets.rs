@@ -39,7 +39,7 @@ fn chamfer_set_list_round_trips_and_refuses_empty_runs_and_unknown_keys() {
 }
 
 #[test]
-fn a_chamfer_set_list_takes_precedence_over_fixed_lanes() {
+fn a_chamfer_set_list_retains_available_fixed_lanes() {
     let list: DesignChamferSetList =
         serde_json::from_value(wire(1, &serde_json::json!([set()]))).unwrap();
     let fixed = || {
@@ -50,7 +50,9 @@ fn a_chamfer_set_list_takes_precedence_over_fixed_lanes() {
         .unwrap()
     };
     let both = DesignChamferScope::admit(Some(fixed()), Some(list.clone()));
-    assert!(both.fixed.is_none());
+    assert!(
+        matches!(both.fixed, Some(crate::records::feature::fixed_parameters::DesignFixedChamferParameters::EqualDistance { distance }) if (distance.value.get() - 0.2).abs() < 1e-12)
+    );
     assert_eq!(both.sets, Some(list));
     assert!(DesignChamferScope::admit(Some(fixed()), None)
         .fixed

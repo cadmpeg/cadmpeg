@@ -87,6 +87,16 @@ pub(crate) enum F3dLossCode {
     ConstructionClosingFlagAssumed,
     /// A Chamfer's non-face group is read as its edge group despite its role.
     ChamferEdgeRoleAssumed,
+    ChamferDefinitionUnresolved,
+    ChamferSelectionUnresolved,
+    ChamferReferenceFaceAssumed,
+    ChamferAngleReferenceAssumed,
+    ChamferCornerTreatmentUnresolved,
+    ChamferTangentChainAssumed,
+    ChamferParameterOwnerAssumed,
+    ChamferParameterValueAssumed,
+    ChamferParameterKindAssumed,
+    ChamferParameterUnitAssumed,
     /// A Coil's Boolean target group whose member count is not one is read as one body selection.
     CoilTargetMembersAssumed,
     /// Design configuration JSON members have no assigned neutral semantics.
@@ -278,6 +288,7 @@ pub(crate) enum F3dLossCode {
     FeatureOccurrenceTransferPlacementUnresolved,
     /// Several timeline objects name one owned scope; the lowest readable record owns it.
     FeatureTimelineOwnerCompeting,
+    FeatureTimelineNullSlotAssumed,
     /// A timeline owner has no same-index paired header; its copy form stays unread.
     FeatureTimelineOwnerUnpaired,
     /// A pasted copy is assumed to keep its source placement.
@@ -583,6 +594,7 @@ pub(crate) enum F3dLossCode {
     /// A Combine frame that matches the fixed fields of the operand-list
     /// prologue is read in the standard prologue.
     FeatureCombinePrologueAssumed,
+    FeatureCombineKeptToolsCutAssumed,
     /// A Combine whose lists name its operands, whose other fields contradict
     /// the operand-list prologue or cannot be checked, and which no prologue
     /// reads stays native.
@@ -906,6 +918,16 @@ impl F3dLossCode {
         Self::ConstructionTrackingPathUntyped,
         Self::ConstructionClosingFlagAssumed,
         Self::ChamferEdgeRoleAssumed,
+        Self::ChamferDefinitionUnresolved,
+        Self::ChamferSelectionUnresolved,
+        Self::ChamferReferenceFaceAssumed,
+        Self::ChamferAngleReferenceAssumed,
+        Self::ChamferCornerTreatmentUnresolved,
+        Self::ChamferTangentChainAssumed,
+        Self::ChamferParameterOwnerAssumed,
+        Self::ChamferParameterValueAssumed,
+        Self::ChamferParameterKindAssumed,
+        Self::ChamferParameterUnitAssumed,
         Self::CoilTargetMembersAssumed,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
@@ -1017,6 +1039,7 @@ impl F3dLossCode {
         Self::FeatureOccurrenceTransferOccurrenceUnresolved,
         Self::FeatureOccurrenceTransferPlacementUnresolved,
         Self::FeatureTimelineOwnerCompeting,
+        Self::FeatureTimelineNullSlotAssumed,
         Self::FeatureTimelineOwnerUnpaired,
         Self::FeaturePasteCopyPlacementAssumed,
         Self::FeatureMirrorPlaneWorkPlaneAssumed,
@@ -1205,6 +1228,7 @@ impl F3dLossCode {
         Self::FeatureCombineComponentDestinationAssumed,
         Self::FeatureCombineNamedTailPrologueAssumed,
         Self::FeatureCombinePrologueAssumed,
+        Self::FeatureCombineKeptToolsCutAssumed,
         Self::FeatureCombineOperandListRefused,
         Self::FeatureCombineToolConsumptionAssumed,
         Self::FeatureFixedFilletAssignmentNative,
@@ -1418,6 +1442,16 @@ impl F3dLossCode {
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConstructionClosingFlagAssumed => "feature.construction-closing-flag-assumed",
             Self::ChamferEdgeRoleAssumed => "feature.chamfer-edge-role-assumed",
+            Self::ChamferDefinitionUnresolved => "feature.chamfer-definition-unresolved",
+            Self::ChamferSelectionUnresolved => "feature.chamfer-selection-unresolved",
+            Self::ChamferReferenceFaceAssumed => "feature.chamfer-reference-face-assumed",
+            Self::ChamferAngleReferenceAssumed => "feature.chamfer-angle-reference-assumed",
+            Self::ChamferCornerTreatmentUnresolved => "feature.chamfer-corner-treatment-unresolved",
+            Self::ChamferTangentChainAssumed => "feature.chamfer-tangent-chain-assumed",
+            Self::ChamferParameterOwnerAssumed => "feature.chamfer-parameter-owner-assumed",
+            Self::ChamferParameterValueAssumed => "feature.chamfer-parameter-value-assumed",
+            Self::ChamferParameterKindAssumed => "feature.chamfer-parameter-kind-assumed",
+            Self::ChamferParameterUnitAssumed => "feature.chamfer-parameter-unit-assumed",
             Self::CoilTargetMembersAssumed => "feature.coil-target-members-assumed",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
@@ -1551,6 +1585,7 @@ impl F3dLossCode {
                 "feature.occurrence-transfer-placement-unresolved"
             }
             Self::FeatureTimelineOwnerCompeting => "feature.timeline-owner-competing",
+            Self::FeatureTimelineNullSlotAssumed => "feature.timeline-null-slot-assumed",
             Self::FeatureTimelineOwnerUnpaired => "feature.timeline-owner-unpaired",
             Self::FeaturePasteCopyPlacementAssumed => "feature.paste-copy-placement-assumed",
             Self::FeatureMirrorPlaneWorkPlaneAssumed => "feature.mirror-plane-work-plane-assumed",
@@ -1843,6 +1878,7 @@ impl F3dLossCode {
                 "feature.combine-named-tail-prologue-assumed"
             }
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
+            Self::FeatureCombineKeptToolsCutAssumed => "feature.combine-kept-tools-cut-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
             Self::FeatureCombineToolConsumptionAssumed => {
                 "feature.combine-tool-consumption-assumed"
@@ -2128,6 +2164,16 @@ impl F3dLossCode {
             | Self::ConstructionTrackingPathUntyped
             | Self::ConstructionClosingFlagAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::ChamferDefinitionUnresolved
+            | Self::ChamferSelectionUnresolved
+            | Self::ChamferReferenceFaceAssumed
+            | Self::ChamferAngleReferenceAssumed
+            | Self::ChamferCornerTreatmentUnresolved
+            | Self::ChamferTangentChainAssumed
+            | Self::ChamferParameterOwnerAssumed
+            | Self::ChamferParameterValueAssumed
+            | Self::ChamferParameterKindAssumed
+            | Self::ChamferParameterUnitAssumed
             | Self::CoilTargetMembersAssumed
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
@@ -2212,6 +2258,7 @@ impl F3dLossCode {
             | Self::FeatureOccurrenceTransferOccurrenceUnresolved
             | Self::FeatureOccurrenceTransferPlacementUnresolved
             | Self::FeatureTimelineOwnerCompeting
+            | Self::FeatureTimelineNullSlotAssumed
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureMirrorPlaneWorkPlaneAssumed
@@ -2418,6 +2465,7 @@ impl F3dLossCode {
             | Self::FeatureCombineComponentDestinationAssumed
             | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombinePrologueAssumed
+            | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
@@ -2591,6 +2639,16 @@ impl F3dLossCode {
             Self::ScopeOwnerUnresolved
             | Self::ConstructionClosingFlagAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::ChamferDefinitionUnresolved
+            | Self::ChamferSelectionUnresolved
+            | Self::ChamferReferenceFaceAssumed
+            | Self::ChamferAngleReferenceAssumed
+            | Self::ChamferCornerTreatmentUnresolved
+            | Self::ChamferTangentChainAssumed
+            | Self::ChamferParameterOwnerAssumed
+            | Self::ChamferParameterValueAssumed
+            | Self::ChamferParameterKindAssumed
+            | Self::ChamferParameterUnitAssumed
             | Self::CoilTargetMembersAssumed
             | Self::OperationPoseApplied
             | Self::OperationPoseDisagrees
@@ -2666,6 +2724,7 @@ impl F3dLossCode {
             | Self::FeatureOccurrenceTransferOccurrenceUnresolved
             | Self::FeatureOccurrenceTransferPlacementUnresolved
             | Self::FeatureTimelineOwnerCompeting
+            | Self::FeatureTimelineNullSlotAssumed
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureMirrorPlaneWorkPlaneAssumed
@@ -2878,6 +2937,7 @@ impl F3dLossCode {
             | Self::FeatureCombineComponentDestinationAssumed
             | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombinePrologueAssumed
+            | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
@@ -3136,6 +3196,16 @@ mod tests {
                 "feature.tracking-path-untyped",
                 "feature.construction-closing-flag-assumed",
                 "feature.chamfer-edge-role-assumed",
+                "feature.chamfer-definition-unresolved",
+                "feature.chamfer-selection-unresolved",
+                "feature.chamfer-reference-face-assumed",
+                "feature.chamfer-angle-reference-assumed",
+                "feature.chamfer-corner-treatment-unresolved",
+                "feature.chamfer-tangent-chain-assumed",
+                "feature.chamfer-parameter-owner-assumed",
+                "feature.chamfer-parameter-value-assumed",
+                "feature.chamfer-parameter-kind-assumed",
+                "feature.chamfer-parameter-unit-assumed",
                 "feature.coil-target-members-assumed",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
@@ -3247,6 +3317,7 @@ mod tests {
                 "feature.occurrence-transfer-occurrence-unresolved",
                 "feature.occurrence-transfer-placement-unresolved",
                 "feature.timeline-owner-competing",
+                "feature.timeline-null-slot-assumed",
                 "feature.timeline-owner-unpaired",
                 "feature.paste-copy-placement-assumed",
                 "feature.mirror-plane-work-plane-assumed",
@@ -3435,6 +3506,7 @@ mod tests {
                 "feature.combine-component-destination-assumed",
                 "feature.combine-named-tail-prologue-assumed",
                 "feature.combine-prologue-assumed",
+                "feature.combine-kept-tools-cut-assumed",
                 "feature.combine-operand-list-refused",
                 "feature.combine-tool-consumption-assumed",
                 "feature.fixed-fillet-assignment-native",
