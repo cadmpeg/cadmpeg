@@ -1188,6 +1188,24 @@ pub(crate) mod paramesh_operation_member_prefix {
     pub(crate) const BODY_REFERENCE: usize = 21;
 }
 
+/// Byte offsets for the `mesh_operation_scope_prefix` record.
+///
+/// Spec §3.1. Record length 21 B.
+pub(crate) mod mesh_operation_scope_prefix {
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 20;
+}
+
+/// Byte offsets for the `mesh_operation_group_prefix` record.
+///
+/// Spec §3.1. Record length 25 B.
+pub(crate) mod mesh_operation_group_prefix {
+    /// Offset of `member_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MEMBER_COUNT: usize = 21;
+}
+
 /// Byte offsets for the `paramesh_guid_join_prefix` record.
 ///
 /// Spec §3.1. Record length 83 B.
