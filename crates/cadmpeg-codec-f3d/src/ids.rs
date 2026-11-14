@@ -247,6 +247,18 @@ pub(crate) fn neutral_component_id(
     )
 }
 
+pub(crate) fn neutral_component_record_id(
+    stream: &str,
+    record_index: u64,
+) -> cadmpeg_ir::ids::ProductDefinitionId {
+    cadmpeg_ir::ids::ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "component"),
+        cadmpeg_ir::identity_key!("stream")
+            .with_hex_bytes(stream.as_bytes())
+            .colon(cadmpeg_ir::ids::IdentityKey::from(record_index)),
+    )
+}
+
 /// Neutral local occurrence projected from its stable Design occurrence key.
 pub(crate) fn neutral_component_occurrence_id(
     guid: &impl crate::records::mesh::OccurrenceIdentity,
