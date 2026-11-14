@@ -27,6 +27,21 @@ pub(crate) enum F3dLossCode {
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
     UnfoldAllBendsFlagAssumed,
+    EdgeReferenceEnvelopeUnresolved,
+    EdgeParameterOwnerBacklinkAssumed,
+    EdgeCachedParameterAssumed,
+    EdgeParameterUnitAssumed,
+    EdgeParameterUnresolved,
+    EdgeStoredRadiusInsideAssumed,
+    EdgeRadiusUnresolved,
+    EdgeSelectionNative,
+    EdgeBoundaryReferenceNative,
+    EdgeBoundaryScopeReferenceAssumed,
+    EdgeFullWidthAssumed,
+    EdgeSignedOffsetsAssumed,
+    EdgeDatumUnresolved,
+    EdgePositionUnresolved,
+    EdgeWidthUnresolved,
     UnfoldControlUnresolved,
     UnfoldSelectionSlotsAssumed,
     UnfoldSelectionNative,
@@ -923,6 +938,21 @@ impl F3dLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
+        Self::EdgeReferenceEnvelopeUnresolved,
+        Self::EdgeParameterOwnerBacklinkAssumed,
+        Self::EdgeCachedParameterAssumed,
+        Self::EdgeParameterUnitAssumed,
+        Self::EdgeParameterUnresolved,
+        Self::EdgeStoredRadiusInsideAssumed,
+        Self::EdgeRadiusUnresolved,
+        Self::EdgeSelectionNative,
+        Self::EdgeBoundaryReferenceNative,
+        Self::EdgeBoundaryScopeReferenceAssumed,
+        Self::EdgeFullWidthAssumed,
+        Self::EdgeSignedOffsetsAssumed,
+        Self::EdgeDatumUnresolved,
+        Self::EdgePositionUnresolved,
+        Self::EdgeWidthUnresolved,
         Self::SceneOverrideRefused,
         Self::SceneOverrideAmbiguous,
         Self::SceneOverrideUnbound,
@@ -1475,6 +1505,29 @@ impl F3dLossCode {
             Self::BendRuleRadiusUnresolved => "feature.bend-rule-radius-unresolved",
             Self::BendAngleOwnerBacklinkAssumed => "feature.bend-angle-owner-backlink-assumed",
             Self::BendCachedOwnerAngleAssumed => "feature.bend-cached-owner-angle-assumed",
+            Self::EdgeReferenceEnvelopeUnresolved => {
+                "feature.edge-flange-reference-envelope-unresolved"
+            }
+            Self::EdgeParameterOwnerBacklinkAssumed => {
+                "feature.edge-flange-parameter-owner-backlink-assumed"
+            }
+            Self::EdgeCachedParameterAssumed => "feature.edge-flange-cached-parameter-assumed",
+            Self::EdgeParameterUnitAssumed => "feature.edge-flange-parameter-unit-assumed",
+            Self::EdgeParameterUnresolved => "feature.edge-flange-parameter-unresolved",
+            Self::EdgeStoredRadiusInsideAssumed => {
+                "feature.edge-flange-stored-radius-inside-assumed"
+            }
+            Self::EdgeRadiusUnresolved => "feature.edge-flange-radius-unresolved",
+            Self::EdgeSelectionNative => "feature.edge-flange-selection-native",
+            Self::EdgeBoundaryReferenceNative => "feature.edge-flange-boundary-reference-native",
+            Self::EdgeBoundaryScopeReferenceAssumed => {
+                "feature.edge-flange-boundary-scope-reference-assumed"
+            }
+            Self::EdgeFullWidthAssumed => "feature.edge-flange-full-width-assumed",
+            Self::EdgeSignedOffsetsAssumed => "feature.edge-flange-signed-offsets-assumed",
+            Self::EdgeDatumUnresolved => "feature.edge-flange-datum-unresolved",
+            Self::EdgePositionUnresolved => "feature.edge-flange-position-unresolved",
+            Self::EdgeWidthUnresolved => "feature.edge-flange-width-unresolved",
             Self::SceneOverrideAmbiguous => "scene.override-ambiguous",
             Self::SceneOverrideUnbound => "scene.override-unbound",
             Self::ScopeOwnerUnresolved => "scope.owner-unresolved",
@@ -2202,6 +2255,21 @@ impl F3dLossCode {
             | Self::BendRuleRadiusUnresolved
             | Self::BendAngleOwnerBacklinkAssumed
             | Self::BendCachedOwnerAngleAssumed
+            | Self::EdgeReferenceEnvelopeUnresolved
+            | Self::EdgeParameterOwnerBacklinkAssumed
+            | Self::EdgeCachedParameterAssumed
+            | Self::EdgeParameterUnitAssumed
+            | Self::EdgeParameterUnresolved
+            | Self::EdgeStoredRadiusInsideAssumed
+            | Self::EdgeRadiusUnresolved
+            | Self::EdgeSelectionNative
+            | Self::EdgeBoundaryReferenceNative
+            | Self::EdgeBoundaryScopeReferenceAssumed
+            | Self::EdgeFullWidthAssumed
+            | Self::EdgeSignedOffsetsAssumed
+            | Self::EdgeDatumUnresolved
+            | Self::EdgePositionUnresolved
+            | Self::EdgeWidthUnresolved
             | Self::UnfoldAllBendsFlagAssumed
             | Self::UnfoldControlUnresolved
             | Self::UnfoldSelectionSlotsAssumed
@@ -2747,6 +2815,21 @@ impl F3dLossCode {
             | Self::BendRuleRadiusUnresolved
             | Self::BendAngleOwnerBacklinkAssumed
             | Self::BendCachedOwnerAngleAssumed
+            | Self::EdgeReferenceEnvelopeUnresolved
+            | Self::EdgeParameterOwnerBacklinkAssumed
+            | Self::EdgeCachedParameterAssumed
+            | Self::EdgeParameterUnitAssumed
+            | Self::EdgeParameterUnresolved
+            | Self::EdgeStoredRadiusInsideAssumed
+            | Self::EdgeRadiusUnresolved
+            | Self::EdgeSelectionNative
+            | Self::EdgeBoundaryReferenceNative
+            | Self::EdgeBoundaryScopeReferenceAssumed
+            | Self::EdgeFullWidthAssumed
+            | Self::EdgeSignedOffsetsAssumed
+            | Self::EdgeDatumUnresolved
+            | Self::EdgePositionUnresolved
+            | Self::EdgeWidthUnresolved
             | Self::UnfoldAllBendsFlagAssumed
             | Self::UnfoldControlUnresolved
             | Self::UnfoldSelectionSlotsAssumed
@@ -3332,6 +3415,21 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "feature.edge-flange-reference-envelope-unresolved",
+                "feature.edge-flange-parameter-owner-backlink-assumed",
+                "feature.edge-flange-cached-parameter-assumed",
+                "feature.edge-flange-parameter-unit-assumed",
+                "feature.edge-flange-parameter-unresolved",
+                "feature.edge-flange-stored-radius-inside-assumed",
+                "feature.edge-flange-radius-unresolved",
+                "feature.edge-flange-selection-native",
+                "feature.edge-flange-boundary-reference-native",
+                "feature.edge-flange-boundary-scope-reference-assumed",
+                "feature.edge-flange-full-width-assumed",
+                "feature.edge-flange-signed-offsets-assumed",
+                "feature.edge-flange-datum-unresolved",
+                "feature.edge-flange-position-unresolved",
+                "feature.edge-flange-width-unresolved",
                 "scene.override-refused",
                 "scene.override-ambiguous",
                 "scene.override-unbound",

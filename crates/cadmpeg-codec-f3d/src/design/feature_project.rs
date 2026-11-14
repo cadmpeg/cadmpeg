@@ -88,6 +88,7 @@ macro_rules! or_none {
 mod bend_lines;
 mod chamfer;
 mod delete_face;
+mod edge_flange;
 mod extrude;
 mod fold;
 
@@ -1275,8 +1276,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         },
                     )?,
                 Some(DesignFeatureFamily::SheetMetalEdgeFlange) => {
-                    project_edge_flange(scope, inputs, ctx)?
-                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                    edge_flange::project(scope, inputs, ctx, &mut projection_losses)?
                 }
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs, ctx)?
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
@@ -4966,8 +4966,6 @@ fn project_edge_flange(
         SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
         SheetMetalHeightDatum,
     };
-    use cadmpeg_ir::scalar::PositiveLength;
-
     let ProjectInputs {
         native: parameters,
         owners,
@@ -5101,34 +5099,53 @@ fn project_edge_flange(
                     edges,
                     source,
                 } => {
-                    let (first_kind, second_kind) = match source {
-                        DesignEdgeFlangeWidthParameterSource::EdgeWidth => {
-                            ("EdgeWidth_1", "EdgeWidth_2")
+                    if *source == DesignEdgeFlangeWidthParameterSource::EdgeOffset {
+                        let mut offsets = Vec::new();
+                        for row in edges {
+                            let mut offset =
+                                cadmpeg_ir::features::sheet_metal::SheetMetalFlangeOffset::default(
+                                );
+                            offset.first = Some(or_none!(design_length(or_none!(parameter(
+                                row.owners[0],
+                                "EdgeOffset_1"
+                            )))));
+                            offset.second = Some(or_none!(design_length(or_none!(parameter(
+                                row.owners[1],
+                                "EdgeOffset_2"
+                            )))));
+                            offset.first_reference =
+                                cadmpeg_ir::features::SelectionReference::new(scope.id.clone())
+                                    .ok();
+                            offset.second_reference =
+                                cadmpeg_ir::features::SelectionReference::new(scope.id.clone())
+                                    .ok();
+                            offsets.push(offset);
                         }
-                        DesignEdgeFlangeWidthParameterSource::EdgeOffset => {
-                            ("EdgeOffset_1", "EdgeOffset_2")
+                        SheetMetalFlangeWidth::TwoOffsetsPerEdge {
+                            offsets: or_none!(cadmpeg_ir::features::NonEmptyMembers::try_from(
+                                offsets
+                            )
+                            .ok()),
                         }
-                    };
-                    let width_length = |owner, kind| {
-                        let length = design_length(parameter(owner, kind)?)?;
-                        PositiveLength::new(match source {
-                            DesignEdgeFlangeWidthParameterSource::EdgeWidth => length.get(),
-                            DesignEdgeFlangeWidthParameterSource::EdgeOffset => length.get().abs(),
-                        })
-                    };
-                    let mut widths = Vec::new();
-                    for row in edges {
-                        let width = SheetMetalFlangeTwoSidedWidth {
-                            first: or_none!(width_length(row.owners[0], first_kind)),
-                            second: or_none!(width_length(row.owners[1], second_kind)),
-                        };
-                        widths.push(width);
-                    }
-                    SheetMetalFlangeWidth::TwoSidesPerEdge {
-                        widths: or_none!(cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(
-                            widths
-                        )
-                        .ok()),
+                    } else {
+                        let mut widths = Vec::new();
+                        for row in edges {
+                            widths.push(SheetMetalFlangeTwoSidedWidth {
+                                first: or_none!(design_positive_length(or_none!(parameter(
+                                    row.owners[0],
+                                    "EdgeWidth_1"
+                                )))),
+                                second: or_none!(design_positive_length(or_none!(parameter(
+                                    row.owners[1],
+                                    "EdgeWidth_2"
+                                )))),
+                            });
+                        }
+                        SheetMetalFlangeWidth::TwoSidesPerEdge {
+                            widths: or_none!(
+                                cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(widths).ok()
+                            ),
+                        }
                     }
                 }
                 crate::records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSides {

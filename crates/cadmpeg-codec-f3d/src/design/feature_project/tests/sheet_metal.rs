@@ -60,7 +60,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
                 404,
             )
             .unwrap(),
-        });
+        })
+        .into();
     }
 
     let owner = |record_index: u32, parameter_record_index: u32| {
@@ -258,7 +259,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     if let crate::records::feature::scope::DesignScopePayloadMut::EdgeFlange(slot) =
         offset_scope.payload_mut()
     {
-        *slot = Some(offset_operation);
+        *slot = Some(offset_operation).into();
     }
     let mut offset_parameters = parameters.clone();
     offset_parameters[0]
@@ -306,17 +307,16 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     else {
         panic!("expected a sheet-metal edge flange");
     };
+    let SheetMetalFlangeWidth::TwoOffsetsPerEdge { offsets } = width else {
+        panic!("signed offsets");
+    };
     assert_eq!(
-        width,
-        SheetMetalFlangeWidth::TwoSidesPerEdge {
-            widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(vec![
-                SheetMetalFlangeTwoSidedWidth {
-                    first: cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap(),
-                    second: cadmpeg_ir::scalar::PositiveLength::new(15.0).unwrap(),
-                }
-            ])
-            .unwrap(),
-        }
+        offsets.as_slice()[0].first.expect("first offset").get(),
+        -30.0
+    );
+    assert_eq!(
+        offsets.as_slice()[0].second.expect("second offset").get(),
+        -15.0
     );
 
     let mut multi_scope = scope.clone();
@@ -343,7 +343,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     if let crate::records::feature::scope::DesignScopePayloadMut::EdgeFlange(slot) =
         multi_scope.payload_mut()
     {
-        *slot = Some(multi_operation.clone());
+        *slot = Some(multi_operation.clone()).into();
     }
     let mut second_group = group.clone();
     second_group.id = format!("{stream}:design-construction-operand-group#415");
@@ -428,7 +428,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     if let crate::records::feature::scope::DesignScopePayloadMut::EdgeFlange(slot) =
         multi_scope.payload_mut()
     {
-        *slot = Some(per_edge_operation);
+        *slot = Some(per_edge_operation).into();
     }
     let per_edge_inputs = crate::design::feature_project::ProjectInputs {
         native: &per_edge_parameters,
@@ -510,7 +510,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     if let crate::records::feature::scope::DesignScopePayloadMut::EdgeFlange(slot) =
         multi_scope.payload_mut()
     {
-        *slot = Some(two_sided_per_edge_operation);
+        *slot = Some(two_sided_per_edge_operation).into();
     }
     let mut two_sided_owners = owners.to_vec();
     two_sided_owners.push(owner(414, 413));
@@ -627,7 +627,7 @@ fn edge_flange_to_object_fixture(
                 404,
             )
             .unwrap(),
-        });
+        }).into();
     }
 
     let owner = |record_index: u32, parameter_record_index: u32| {
@@ -968,7 +968,8 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
                 336,
             )
             .unwrap(),
-        });
+        })
+        .into();
     }
 
     let inputs = crate::design::feature_project::ProjectInputs {
