@@ -1638,6 +1638,16 @@ pub(crate) fn append_design_losses(
                 FeatureOperation::SheetMetalBend { attachment, .. } => {
                     incomplete_edge_selection(attachment)
                 }
+                FeatureOperation::SheetMetalUnfold { construction } => {
+                    construction.stationary.as_ref().is_none_or(incomplete_face_selection)
+                        || construction.all_bends.is_none()
+                        || (construction.all_bends != Some(true)
+                            && construction.bends.as_ref().is_none_or(incomplete_face_selection))
+                        || construction.neutral_factor.is_none()
+                }
+                FeatureOperation::SheetMetalRefold { construction } => {
+                    construction.unfold.is_none()
+                }
                 FeatureOperation::SheetMetalBendLines { construction } => {
                     construction.bends.is_empty()
                         || construction.bends.iter().any(|bend| {
