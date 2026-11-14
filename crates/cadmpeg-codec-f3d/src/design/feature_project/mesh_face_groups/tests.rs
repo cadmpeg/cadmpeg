@@ -376,7 +376,7 @@ fn related_mesh_registration_requires_one_matching_local_mesh_guid_type() {
                 } else {
                     "98542EB9-A4F2-4137-A808-DBB5B3CD6159"
                 },
-                if case == "version" { 0 } else { 1 },
+                u32::from(case != "version"),
                 if case == "module" {
                     "Fusion"
                 } else {
