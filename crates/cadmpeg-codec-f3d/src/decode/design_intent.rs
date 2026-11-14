@@ -700,6 +700,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         geometry.mesh_projection,
         &mut losses,
     )?;
+
     crate::design::feature_project::form_cages::bind_form_cages(
         ctx,
         scan,
@@ -1023,6 +1024,19 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_sketch_placements,
         &model.sketches,
         &model.spatial_sketches,
+    )?;
+    super::mesh_operations::bind_features(
+        ctx,
+        scan,
+        &mut model.features,
+        super::mesh_operations::MeshOperationInputs {
+            scopes: &design.design_parameter_scopes,
+            owners: &prereqs.design_parameter_owners,
+            parameters: &prereqs.design_parameters,
+            placements: &design.design_sketch_placements,
+            sketches: &model.sketches,
+        },
+        &mut losses,
     )?;
     losses.extend(crate::design::sketch_names::bind_sketch_names(
         &model.features,
