@@ -263,7 +263,7 @@ macro_rules! impl_entity_schema {
     };
 }
 
-impl_entity_schema!(crate::topology::Body, Body, id; id, kind, regions, transform, name, color, visible);
+impl_entity_schema!(crate::topology::Body, Body, id; id, kind, regions, transform, name, color, visible, removed_by);
 impl_entity_schema!(crate::topology::Region, Region, id; id, body, shells);
 impl EntitySchema for crate::topology::Shell {
     const KIND: EntityKind = EntityKind::Shell;

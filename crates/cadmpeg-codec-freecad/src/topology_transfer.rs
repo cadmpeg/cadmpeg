@@ -606,6 +606,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             return Ok(());
         }
         ir.model.bodies.push(Body {
+            removed_by: None,
             id: body_id.clone(),
             kind,
             regions,

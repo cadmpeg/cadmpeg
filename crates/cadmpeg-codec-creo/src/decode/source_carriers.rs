@@ -1129,6 +1129,7 @@ mod tests {
             carriers.admit_body(
                 &mut ir,
                 Body {
+                    removed_by: None,
                     id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0")
                         .expect("identity grammar"),
                     kind: BodyKind::Solid,

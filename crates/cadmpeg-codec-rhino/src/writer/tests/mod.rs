@@ -148,6 +148,7 @@ fn polygon_sheet(points: &[Point3]) -> CadIr {
         })
         .collect::<Vec<_>>();
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body.clone(),
         kind: BodyKind::Sheet,
         regions: vec![region.clone()],
@@ -430,6 +431,7 @@ fn adjacent_quad_sheet() -> CadIr {
         })
         .collect::<Vec<_>>();
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body.clone(),
         kind: BodyKind::Sheet,
         regions: vec![region.clone()],
@@ -648,6 +650,7 @@ fn planar_tetrahedron() -> CadIr {
         })
         .collect::<Vec<_>>();
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body.clone(),
         kind: BodyKind::Solid,
         regions: vec![region.clone()],

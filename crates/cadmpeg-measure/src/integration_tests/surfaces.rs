@@ -143,6 +143,7 @@ fn shared_by_two_placements() -> (CadIr, SurfaceId) {
         shells: vec![shell],
     });
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body,
         kind: BodyKind::Sheet,
         regions: vec![region],

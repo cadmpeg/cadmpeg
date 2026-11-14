@@ -138,6 +138,7 @@ fn insert_free_vertex_shell(
         .unwrap();
     draft
         .insert(Body {
+            removed_by: None,
             id: BodyId::mint(body_id).expect("valid identity"),
             kind: BodyKind::Wire,
             regions: vec![RegionId::mint(region_id).expect("valid identity")],

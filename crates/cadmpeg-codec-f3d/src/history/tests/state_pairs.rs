@@ -1275,6 +1275,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     let id = |slot| format!("f3d:brep:entity#{slot}");
     let mut brep = cadmpeg_asm::brep::AsmBrep::default();
     brep.bodies.push(Body {
+        removed_by: None,
         id: BodyId::mint(id(1)).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint(id(2)).expect("identity grammar")],

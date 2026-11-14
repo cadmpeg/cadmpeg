@@ -581,6 +581,7 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     )
     .unwrap();
     let body = |id: &str, region: &str, visible| Body {
+        removed_by: None,
         id: BodyId::mint(id).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint(region).expect("identity grammar")],
@@ -992,6 +993,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     )
     .unwrap();
     let body = Body {
+        removed_by: None,
         id: BodyId::mint("f3d:brep:body#1").expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("test:model:region#1").expect("identity grammar")],

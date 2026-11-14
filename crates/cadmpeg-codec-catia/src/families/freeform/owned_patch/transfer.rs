@@ -764,6 +764,7 @@ fn append_component(
         shells: vec![shell],
     });
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body_id,
         kind: BodyKind::Sheet,
         regions: vec![region],

@@ -969,6 +969,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         source_carriers.admit_body(
             ir,
             Body {
+                removed_by: None,
                 id: body_id,
                 kind: BodyKind::Solid,
                 regions: vec![region_id],

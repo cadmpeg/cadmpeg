@@ -263,6 +263,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         }
         let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
         model.bodies.push(Body {
+            removed_by: None,
             id: body.clone(),
             kind: BodyKind::Solid,
             regions: vec![RegionId::mint("test:model:entity#region").expect("identity grammar")],
@@ -663,6 +664,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 .edit_topology(|faces, _, _| faces.pop())
                 .unwrap();
             distinct.model.bodies.push(Body {
+                removed_by: None,
                 id: BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
                 kind: BodyKind::Solid,
                 regions: vec![

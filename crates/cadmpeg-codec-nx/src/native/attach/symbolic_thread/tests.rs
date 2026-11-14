@@ -112,6 +112,7 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
                 shells: vec![shell],
             });
             ir.model.bodies.push(Body {
+                removed_by: None,
                 id: body,
                 kind: BodyKind::Sheet,
                 regions: vec![region],

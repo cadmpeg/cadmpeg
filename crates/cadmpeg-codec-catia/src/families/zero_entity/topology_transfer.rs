@@ -975,6 +975,7 @@ pub(super) fn transfer_closed_face_topology(
         }
         let regions = vec![copied_id!(region_id, RegionId)];
         let body = Body {
+            removed_by: None,
             id: copied_id!(body_id, BodyId),
             kind: BodyKind::Solid,
             regions,

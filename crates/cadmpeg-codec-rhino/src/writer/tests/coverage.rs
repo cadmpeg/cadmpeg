@@ -23,6 +23,7 @@ fn placed_point_product() -> CadIr {
     let vertex = cadmpeg_ir::ids::VertexId::mint("cadir:model:vertex#pin").expect("identity");
     let point = cadmpeg_ir::ids::PointId::mint("cadir:model:point#pin").expect("identity");
     ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        removed_by: None,
         id: body.clone(),
         kind: cadmpeg_ir::topology::BodyKind::General,
         regions: vec![region.clone()],

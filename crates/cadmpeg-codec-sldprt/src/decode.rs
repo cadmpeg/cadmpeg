@@ -5920,6 +5920,7 @@ mod digest_tests {
     fn named_body_document() -> CadIr {
         let mut ir = CadIr::empty();
         ir.model.bodies.push(Body {
+            removed_by: None,
             id: BodyId::mint("synthetic:test:id#digest-body").unwrap(),
             kind: BodyKind::default(),
             regions: Vec::new(),

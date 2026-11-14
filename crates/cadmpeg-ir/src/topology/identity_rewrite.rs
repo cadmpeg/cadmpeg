@@ -8,7 +8,7 @@ use super::{
 };
 
 rewrite_record!(AnchoredVertexUse, []; {vertex, after, pcurves});
-rewrite_record!(Body, []; {id, kind, regions, transform, name, color, visible});
+rewrite_record!(Body, []; {id, kind, regions, transform, name, color, visible, removed_by});
 rewrite_scalar!(BodyKind);
 rewrite_record!(Coedge, []; {id, owner_loop, edge, radial_next, sense, pcurves, use_curve});
 rewrite_record!(CoedgeUseCurve, []; {curve, parameter_range});

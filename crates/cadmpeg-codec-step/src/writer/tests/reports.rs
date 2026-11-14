@@ -122,6 +122,7 @@ pub(super) fn edgeless_doc() -> CadIr {
         shells: vec![ShellId::mint("test:model:shell#sh0").expect("identity grammar")],
     });
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: BodyId::mint("test:model:body#b0").expect("identity grammar"),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
         regions: vec![RegionId::mint("test:model:region#l0").expect("identity grammar")],

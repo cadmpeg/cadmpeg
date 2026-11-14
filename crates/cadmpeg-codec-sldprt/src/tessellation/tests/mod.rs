@@ -588,6 +588,7 @@ fn add_cylindrical_patch_face(
 fn model_with_body() -> cadmpeg_ir::document::Model {
     let mut model = cadmpeg_ir::document::Model::default();
     model.bodies = vec![Body {
+        removed_by: None,
         id: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("synthetic:test:region#region").expect("identity grammar")],

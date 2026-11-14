@@ -3394,6 +3394,7 @@ pub(in super::super) fn transfer_native_brep(
         source_carriers.admit_body(
             ir,
             Body {
+                removed_by: None,
                 id: crate::identity::copy_checked_id(body_id.as_str())?,
                 kind: if !wire_curves.is_empty() {
                     BodyKind::General

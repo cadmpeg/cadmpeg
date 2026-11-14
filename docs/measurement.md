@@ -853,7 +853,8 @@ The source error is a nonnegative bound in the quantity's units. A centroid
 uses Euclidean distance and adds the same distance bound in millimetres. An
 absent source error contributes zero. A finding includes the declaration's
 label when it has one. A part's solid quantities cover its visible solid bodies; sheet
-quantities cover its visible sheet bodies. Volumes and areas add. Centroids
+quantities cover its visible sheet bodies. A body that a feature removes from the
+final model counts in neither. Volumes and areas add. Centroids
 use volume or area weights. Geometry-level targets use their listed bodies,
 including hidden bodies. Each body identity is counted once. Target selection
 does not use numerical agreement with the stated value.

@@ -204,6 +204,7 @@ pub(crate) fn implicit_outer_sheet(support: SolvedSurfaceGeometry, sense: Sense)
         shells: vec![id(ShellId::mint, "shell", "sheet")],
     });
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: id(BodyId::mint, "body", "sheet"),
         kind: BodyKind::Sheet,
         regions: vec![id(RegionId::mint, "region", "sheet")],

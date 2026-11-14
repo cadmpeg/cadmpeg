@@ -4219,6 +4219,7 @@ fn stage_extrusion_caps(
         return Err("extrusion cap staging: no enabled caps".to_string().into());
     }
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body_id.clone(),
         kind: BodyKind::Sheet,
         regions: region_ids,
@@ -4999,6 +5000,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     }
 
     staged.draft.model_mut().bodies.push(Body {
+        removed_by: None,
         id: body_id.clone(),
         kind: match body_kind {
             crate::brep::BrepBodyKind::Solid => BodyKind::Solid,
@@ -6302,6 +6304,7 @@ fn body(
     association: &SourceObjectAssociation,
 ) -> Body {
     Body {
+        removed_by: None,
         id,
         kind: BodyKind::General,
         regions,

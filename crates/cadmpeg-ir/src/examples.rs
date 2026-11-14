@@ -298,6 +298,7 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         name: Some("unit cube".into()),
         color: None,
         visible: None,
+        removed_by: None,
     });
 
     ir.finalize();

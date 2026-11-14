@@ -3166,6 +3166,7 @@ pub(super) fn project(
         let body_regions = vec![region_id];
         ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.model_mut().bodies.push(Body {
+            removed_by: None,
             id: body_id,
             kind: BodyKind::Sheet,
             regions: body_regions,

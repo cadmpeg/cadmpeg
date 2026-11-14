@@ -1062,6 +1062,7 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     let body_id = BodyId::mint(id(FORMAT, 1).into_string()).expect("identity grammar");
     let mut brep = AsmBrep {
         bodies: vec![Body {
+            removed_by: None,
             id: body_id.clone(),
             kind: BodyKind::Sheet,
             regions: vec![RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar")],
@@ -1595,6 +1596,7 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
     // One full torus face: no loops, so no edges to count.
     let mut brep = AsmBrep {
         bodies: vec![Body {
+            removed_by: None,
             id: body_id.clone(),
             kind: BodyKind::Sheet,
             regions: vec![region_id.clone()],

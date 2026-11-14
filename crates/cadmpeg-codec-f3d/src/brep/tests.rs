@@ -154,6 +154,7 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
     let mut brep = Brep {
         asm: AsmBrep {
             bodies: vec![Body {
+                removed_by: None,
                 id: body.clone(),
                 kind: BodyKind::default(),
                 regions: vec![region.clone()],
@@ -215,6 +216,7 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
 #[test]
 fn body_key_retention_keeps_only_the_selected_connected_graph() {
     let body = |index, region| Body {
+        removed_by: None,
         id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
         kind: BodyKind::default(),
         regions: vec![
@@ -284,6 +286,7 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
 #[test]
 fn body_key_retention_preserves_derived_links_for_reachable_targets() {
     let body = |index| Body {
+        removed_by: None,
         id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
         kind: BodyKind::default(),
         regions: Vec::new(),
@@ -407,6 +410,7 @@ fn body_key_retention_preserves_selectorless_neutral_roots() {
         asm: AsmBrep {
             bodies: vec![
                 Body {
+                    removed_by: None,
                     id: native_body.clone(),
                     kind: BodyKind::Solid,
                     regions: Vec::new(),
@@ -416,6 +420,7 @@ fn body_key_retention_preserves_selectorless_neutral_roots() {
                     visible: None,
                 },
                 Body {
+                    removed_by: None,
                     id: projected_body.clone(),
                     kind: BodyKind::Wire,
                     regions: Vec::new(),

@@ -48,6 +48,7 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
     let mut ir = CadIr::empty();
     ir.model.bodies.extend([
         Body {
+            removed_by: None,
             id: first.clone(),
             kind: BodyKind::Solid,
             regions: Vec::new(),
@@ -57,6 +58,7 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
             visible: None,
         },
         Body {
+            removed_by: None,
             id: second.clone(),
             kind: BodyKind::Solid,
             regions: Vec::new(),

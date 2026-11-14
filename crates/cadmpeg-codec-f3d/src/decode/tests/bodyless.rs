@@ -156,6 +156,7 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
     ]
     .into_iter()
     .map(|(id, kind)| Body {
+        removed_by: None,
         id: BodyId::mint(id).unwrap(),
         kind,
         regions: Vec::new(),

@@ -443,6 +443,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         source_carriers.admit_body(
             ir,
             Body {
+                removed_by: None,
                 id: body_id,
                 kind: BodyKind::Solid,
                 regions: circular_item(region_id),

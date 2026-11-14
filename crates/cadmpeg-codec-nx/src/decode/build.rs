@@ -2163,6 +2163,7 @@ fn finalize_point_topology(
 
     let body_regions = vec![region_id];
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body_id,
         kind: BodyKind::General,
         regions: body_regions,

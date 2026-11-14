@@ -2582,6 +2582,34 @@ fn check_feature_references(
             add(identity, value);
         }
     });
+    for body in &ir.model.bodies {
+        let Some(removed_by) = &body.removed_by else {
+            continue;
+        };
+        if features.get(removed_by.as_str()).is_none() {
+            ref_error(
+                findings,
+                body.id.as_str(),
+                "removing feature",
+                removed_by.as_str(),
+            );
+        } else if ir
+            .model
+            .features
+            .iter()
+            .any(|feature| feature.id == *removed_by && feature.suppressed == Some(true))
+        {
+            // A suppressed feature has no outputs, so it removes nothing.
+            super::record_related_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                Severity::Error,
+                body.id.as_str(),
+                &[removed_by.as_str()],
+                format_args!("removing feature `{removed_by}` is suppressed"),
+            );
+        }
+    }
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
         if !configuration_ordinals.insert(configuration.ordinal) {

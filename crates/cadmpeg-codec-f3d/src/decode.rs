@@ -3333,6 +3333,7 @@ impl<'a> F3dDecodeSession<'a> {
         } = design;
         self.report.losses.extend(losses);
         model.store(&mut self.ir.model);
+        removed_bodies::mark(&mut self.ir.model);
         native
     }
 
@@ -6118,6 +6119,7 @@ mod geometry_admission;
 mod mesh_import;
 mod mesh_operations;
 mod prereqs;
+mod removed_bodies;
 
 #[cfg(test)]
 mod tests;

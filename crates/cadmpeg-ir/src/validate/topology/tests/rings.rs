@@ -293,3 +293,57 @@ fn spring_support_reference_findings_name_the_construction() {
             && finding.message == format!("references missing surface `{missing}`")
     }));
 }
+
+#[test]
+fn a_body_removed_by_a_missing_feature_is_flagged() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.model.bodies[0].removed_by = Some(
+        crate::features::FeatureId::mint("test:model:feature#missing").expect("valid identity"),
+    );
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.entity.as_deref() == Some(ir.model.bodies[0].id.as_str())
+            && finding.message.contains("removing feature")
+    }));
+}
+
+#[test]
+fn a_body_removed_by_a_suppressed_feature_is_flagged() {
+    use crate::features::{
+        Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    };
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let feature_id = FeatureId::mint("test:model:feature#remove").expect("valid identity");
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(true),
+        dependencies: crate::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::StoredGeometry {},
+        )),
+        native_ref: None,
+    });
+    ir.model.bodies[0].removed_by = Some(feature_id);
+    let flagged = |ir: &crate::document::CadIr| {
+        validate_neutral(ir, Vec::new())
+            .expect("validate the neutral model")
+            .findings
+            .iter()
+            .any(|finding| {
+                finding.check == Check::ReferentialIntegrity
+                    && finding.entity.as_deref() == Some(ir.model.bodies[0].id.as_str())
+                    && finding.message.contains("is suppressed")
+            })
+    };
+    assert!(flagged(&ir));
+    ir.model.features[0].suppressed = Some(false);
+    assert!(!flagged(&ir));
+}

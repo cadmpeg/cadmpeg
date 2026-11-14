@@ -1695,6 +1695,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
     ];
 
     source_less.model.bodies.push(Body {
+        removed_by: None,
         id: body.clone(),
         kind: BodyKind::Sheet,
         regions: vec![region.clone()],

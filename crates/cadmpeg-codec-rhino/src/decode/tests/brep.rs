@@ -65,6 +65,7 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         source_object: None,
     });
     staged.draft.model_mut().bodies.push(Body {
+        removed_by: None,
         id: "rhino:object:body#x".try_into().expect("valid identity"),
         kind: BodyKind::Sheet,
         regions: Vec::new(),

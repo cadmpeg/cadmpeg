@@ -244,6 +244,7 @@ impl Builder {
             shells: vec![id(ShellId::mint, "shell", "wedge")],
         });
         self.ir.model.bodies.push(Body {
+            removed_by: None,
             id: id(BodyId::mint, "body", "wedge"),
             kind: BodyKind::Solid,
             regions: vec![id(RegionId::mint, "region", "wedge")],

@@ -209,6 +209,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     });
     let body = BodyId::mint("test:model:entity#blind-body").expect("identity grammar");
     model.bodies.push(Body {
+        removed_by: None,
         id: body.clone(),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("test:model:entity#blind-region").expect("identity grammar")],
@@ -575,6 +576,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
 
         let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
         model.bodies.push(Body {
+            removed_by: None,
             id: body.clone(),
             kind: BodyKind::Solid,
             regions: vec![RegionId::mint("test:model:entity#region").expect("identity grammar")],

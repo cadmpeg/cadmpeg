@@ -160,6 +160,7 @@ pub fn polyhedron(corners: &[[f64; 3]], faces: &[&[usize]]) -> Result<CadIr, Exa
         shells: vec![polyhedron_id!(ShellId, "shell", 0_usize)],
     });
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body,
         kind: BodyKind::Solid,
         regions: vec![region],

@@ -2599,6 +2599,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
         ir.model.bodies.push(Body {
+            removed_by: None,
             id: body.clone(),
             kind: BodyKind::Wire,
             regions: body_regions,

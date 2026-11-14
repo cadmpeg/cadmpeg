@@ -2138,6 +2138,7 @@ fn append_legacy_brep(
         shells: vec![shell_id],
     });
     model.bodies.push(Body {
+        removed_by: None,
         id: body_id,
         kind: BodyKind::General,
         regions: vec![region_id],
@@ -2690,6 +2691,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 shells: vec![shell_id],
             });
             ir.model.bodies.push(Body {
+                removed_by: None,
                 id: body_id,
                 kind: BodyKind::General,
                 regions: vec![region_id],
@@ -2864,6 +2866,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             shells: vec![shell_id],
                         });
                         ir.model.bodies.push(Body {
+                            removed_by: None,
                             id: body_id,
                             kind: BodyKind::General,
                             regions: vec![region_id],

@@ -87,6 +87,7 @@ fn exact_curve(offset: f64) -> CadIr {
     let region = cadmpeg_ir::ids::RegionId::mint("test:brep:region#0").unwrap();
     let shell = cadmpeg_ir::ids::ShellId::mint("test:brep:shell#0").unwrap();
     ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        removed_by: None,
         id: body.clone(),
         kind: cadmpeg_ir::topology::BodyKind::Wire,
         regions: vec![region.clone()],

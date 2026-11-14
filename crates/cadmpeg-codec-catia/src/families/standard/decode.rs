@@ -1166,6 +1166,7 @@ fn attach_free_vertices(
     let body_id_copy = body_id.clone();
     let body_regions = vec![region_id.clone()];
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body_id_copy,
         kind: BodyKind::Wire,
         regions: body_regions,
@@ -3849,6 +3850,7 @@ fn attach_standard_faces(
     let body_regions = vec![region_id.clone()];
     admission.charge()?;
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body_id.clone(),
         kind: BodyKind::Sheet,
         regions: body_regions,

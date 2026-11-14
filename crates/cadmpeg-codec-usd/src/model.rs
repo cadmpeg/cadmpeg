@@ -777,6 +777,7 @@ impl Builder<'_, '_, '_, '_> {
     ) {
         let color = self.display_color(prim);
         self.ir.model.bodies.push(Body {
+            removed_by: None,
             id: crate::ids::body(key),
             kind,
             regions,

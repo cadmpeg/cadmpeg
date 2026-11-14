@@ -1034,6 +1034,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let body = BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar");
         ir.model.bodies.push(Body {
+            removed_by: None,
             id: body.clone(),
             kind: BodyKind::Solid,
             regions: Vec::new(),
@@ -1226,6 +1227,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         let body = cadmpeg_ir::topology::Body {
+            removed_by: None,
             id: BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
             kind: cadmpeg_ir::topology::BodyKind::Solid,
             regions: Vec::new(),
@@ -1297,6 +1299,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         let body = cadmpeg_ir::topology::Body {
+            removed_by: None,
             id: BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
             kind: cadmpeg_ir::topology::BodyKind::Solid,
             regions: Vec::new(),

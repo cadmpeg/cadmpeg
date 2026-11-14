@@ -5112,6 +5112,7 @@ pub fn emit_containers(
                     }
                 }
                 out.bodies.push(Body {
+                    removed_by: None,
                     id: body_id,
                     kind: cadmpeg_ir::topology::BodyKind::Solid,
                     regions,
@@ -5130,6 +5131,7 @@ pub fn emit_containers(
         let region_id = brep_id!(format, RegionId, "saved-edge-region", edge);
         let shell_id = brep_id!(format, ShellId, "saved-edge-shell", edge);
         out.bodies.push(Body {
+            removed_by: None,
             id: body_id.clone(),
             kind: cadmpeg_ir::topology::BodyKind::Wire,
             regions: vec![region_id.clone()],

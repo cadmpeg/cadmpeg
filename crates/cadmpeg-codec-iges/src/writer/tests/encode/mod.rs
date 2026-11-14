@@ -1053,6 +1053,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         shells: vec![shell_id],
     });
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body_id,
         kind: BodyKind::Sheet,
         regions: vec![RegionId::mint("test:model:region#sheet").expect("identity grammar")],

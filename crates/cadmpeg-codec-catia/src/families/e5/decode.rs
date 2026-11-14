@@ -1039,6 +1039,7 @@ fn attach_e5_free_vertices(
         .collect::<Vec<_>>();
     admission.charge()?;
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body_id.clone(),
         kind: BodyKind::Wire,
         regions,
@@ -2110,6 +2111,7 @@ fn emit_e5_bodies(
         annotations.derived(&body_id, "regions")?;
         admission.charge()?;
         ir.model.bodies.push(Body {
+            removed_by: None,
             id: body_id.clone(),
             kind: plan.kind,
             regions: region_ids.clone(),
