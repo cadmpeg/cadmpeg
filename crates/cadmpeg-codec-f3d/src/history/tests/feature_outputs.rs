@@ -171,7 +171,8 @@ fn split_outputs_bind_across_complete_transition_chains() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(complete.evaluation.outputs(), &[body.id.clone()]);
     assert!(!losses
         .iter()
@@ -186,7 +187,8 @@ fn split_outputs_bind_across_complete_transition_chains() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(feature.evaluation.outputs().is_empty());
     assert!(losses
         .iter()
@@ -199,7 +201,8 @@ fn split_outputs_bind_across_complete_transition_chains() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(feature.evaluation.outputs().is_empty());
     assert!(losses
         .iter()
@@ -1130,7 +1133,8 @@ fn historical_partial_and_native_edge_selections_test() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
 
     // Verify midpoints emitted for the proven edge
     assert_eq!(
@@ -1156,7 +1160,8 @@ fn historical_partial_and_native_edge_selections_test() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
 
     assert_eq!(
         feature_native
@@ -1261,7 +1266,8 @@ fn historical_body_bounds_unresolved_test() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
 
     assert!(losses
         .iter()
@@ -1309,7 +1315,8 @@ fn body_measurement_covers_only_the_states_feature_outputs_read() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
 
     let mut measured = losses
         .iter()
@@ -1706,7 +1713,8 @@ fn feature_outputs_include_bodies_changed_before_the_terminal_scope_state() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(feature.evaluation.outputs().as_slice(), [body.id]);
     assert!(!losses.iter().any(|loss| {
         loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()
@@ -1736,7 +1744,8 @@ fn feature_output_interval_refusal_has_a_loss() {
             &Default::default(),
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert!(feature.evaluation.outputs().is_empty());
         assert!(losses.iter().any(|loss| {
             loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()
@@ -1783,7 +1792,8 @@ fn feature_outputs_follow_bound_history_when_numeric_states_repeat() {
                 &bindings,
                 None,
             )
-            .unwrap();
+            .unwrap()
+            .losses;
             assert_eq!(feature.evaluation.outputs(), &[expected.id.clone()]);
             assert!(!losses.iter().any(|loss| {
                 loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()
@@ -1805,7 +1815,8 @@ fn feature_output_body_namespace_refusal_has_a_loss() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(feature.evaluation.outputs().is_empty());
     assert!(losses
         .iter()

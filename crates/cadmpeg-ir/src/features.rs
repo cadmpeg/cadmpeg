@@ -122,8 +122,7 @@ impl FinitePoint3 {
         z: 0.0,
     });
 
-    /// The point with three finite coordinates. Every coordinate is finite,
-    /// so the point is admitted without a check.
+    /// The point with three finite coordinates. Every coordinate is finite, so the point is admitted without a check.
     #[must_use]
     pub const fn from_coordinates(x: FiniteReal, y: FiniteReal, z: FiniteReal) -> Self {
         Self(Point3 {
@@ -133,8 +132,7 @@ impl FinitePoint3 {
         })
     }
 
-    /// Reflect through the model origin. Negation keeps every coordinate
-    /// finite, so the result stays admitted.
+    /// Reflect through the model origin. Negation keeps every coordinate finite, so the result stays admitted.
     #[must_use]
     pub fn negated(self) -> Self {
         Self(Point3::new(-self.0.x, -self.0.y, -self.0.z))
@@ -189,8 +187,7 @@ impl FiniteVector3 {
         z: 0.0,
     });
 
-    /// The vector with three finite components. Every component is finite,
-    /// so the vector is admitted without a check.
+    /// The vector with three finite components. Every component is finite, so the vector is admitted without a check.
     #[must_use]
     pub const fn from_components(x: FiniteReal, y: FiniteReal, z: FiniteReal) -> Self {
         Self(Vector3 {
@@ -240,8 +237,7 @@ checked_feature_geometry!(
 );
 
 impl From<UnitVector3> for FiniteVector3 {
-    /// Carry an admitted unit direction as a finite displacement. Its
-    /// components are finite, so no admission can refuse it.
+    /// Carry an admitted unit direction as a finite displacement. Its components are finite, so no admission can refuse it.
     fn from(value: UnitVector3) -> Self {
         Self(*value.as_raw())
     }
@@ -890,8 +886,7 @@ impl FeatureCircularArc {
         ))
     }
 
-    /// Build an arc from checked parts. The argument types state the whole
-    /// arc contract, so nothing is checked again.
+    /// Build an arc from checked parts. The argument types state the whole arc contract, so nothing is checked again.
     #[must_use]
     pub const fn from_parts(
         center: FinitePoint3,
@@ -2453,35 +2448,11 @@ impl Default for LoftGuidance {
     }
 }
 
-fn known_body_count(selection: &BodySelection) -> Option<usize> {
-    match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-            Some(bodies.len())
-        }
-        BodySelection::Local { bodies, .. } => Some(bodies.len()),
-        BodySelection::ResolvedSet { members } => Some(members.count()),
-        BodySelection::Historical { bodies, .. } => Some(bodies.len()),
-        BodySelection::HistoricalSet { members, .. } => Some(members.count()),
-        BodySelection::Generated { bodies, .. } => Some(bodies.len()),
-        BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => None,
-    }
-}
-
 /// A body selection with at least two members when membership is resolved.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct SewBodySelection(BodySelection);
-
-impl TryFrom<BodySelection> for SewBodySelection {
-    type Error = &'static str;
-    fn try_from(bodies: BodySelection) -> Result<Self, Self::Error> {
-        if known_body_count(&bodies).is_some_and(|count| count < 2) {
-            return Err("bodies must select at least two bodies for sewing");
-        }
-        Ok(Self(bodies))
-    }
-}
 
 impl std::ops::Deref for SewBodySelection {
     type Target = BodySelection;
@@ -2604,7 +2575,7 @@ selection_operands!(
     BodySelection,
     target,
     tools,
-    |first| known_body_count(first).is_none_or(|count| count == 1),
+    |first| body_selection::known_body_count(first).is_none_or(|count| count == 1),
     body_selections_overlap,
     try_edit
 );
@@ -2728,8 +2699,57 @@ pub enum ComponentTransferMode {
     Reparent,
 }
 
-/// A feature operation: neutral construction semantics with an explicit native
-/// escape hatch, and no post-processing layer of its own.
+cadmpeg_core::named_optional_field!(deserialize_captured_occurrence, OccurrenceId, "occurrence");
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[doc = "A canonical affine pose or the ordinal of its retained native matrix."]
+pub enum CapturedPositionTransform {
+    #[doc = "Finite affine pose with translation in canonical millimetres."]
+    Affine {
+        #[doc = "Captured pose in the occurrence assembly context."]
+        transform: Transform,
+    },
+    #[doc = "Matrix retained in the named native scope's ordered captured rows."]
+    Native {
+        #[doc = "Native scope retaining the source coefficients."]
+        scope: crate::ids::NativeId,
+        #[doc = "Zero-based ordinal of the source matrix row."]
+        row: usize,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = "One retained occurrence selector and its captured pose."]
+pub struct CapturedComponentPosition {
+    #[doc = "Native selector retained independently of occurrence resolution."]
+    pub selector: crate::ids::NativeId,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_captured_occurrence"
+    )]
+    #[doc = "Expanded occurrence when the complete selector resolves uniquely."]
+    pub occurrence: Option<OccurrenceId>,
+    #[doc = "Captured pose in the occurrence assembly context."]
+    pub transform: CapturedPositionTransform,
+}
+
+impl CapturedComponentPosition {
+    #[doc = "Construct an unresolved captured pose while preserving its native selector."]
+    pub fn new(selector: crate::ids::NativeId, transform: Transform) -> Self {
+        Self {
+            selector,
+            occurrence: None,
+            transform: CapturedPositionTransform::Affine { transform },
+        }
+    }
+}
+
+/// A feature operation: neutral construction semantics with an explicit native escape hatch, and no post-processing layer of its own.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "definition", rename_all = "snake_case", deny_unknown_fields)]
@@ -2752,6 +2772,21 @@ pub enum FeatureOperation {
         #[doc = "Resolved tessellations or a retained mesh source."]
         #[serde(deserialize_with = "deserialize_local_tessellations")]
         tessellations: mesh::MeshSelection,
+    },
+    #[doc = "Generate a mesh face-group partition from independently retained controls."]
+    MeshGenerateFaceGroups {
+        #[doc = "Mesh and optional group selection in its source history state."]
+        #[serde(deserialize_with = "deserialize_mesh_source")]
+        source: mesh::MeshSelection,
+        #[doc = "Decoded controls, including stored inactive values."]
+        #[serde(default)]
+        settings: mesh::MeshFaceGroupGenerationSettings,
+    },
+    #[doc = "Combine selected groups of a mesh face-group partition."]
+    MeshCombineFaceGroups {
+        #[doc = "Mesh and ordered groups in their source history state."]
+        #[serde(deserialize_with = "deserialize_mesh_source")]
+        source: mesh::MeshSelection,
     },
     #[doc = "Planar section of a mesh whose curves belong to a sketch."]
     MeshSection {
@@ -2842,6 +2877,11 @@ pub enum FeatureOperation {
             deserialize_with = "deserialize_transfer_target_transform"
         )]
         target_transform: Option<Transform>,
+    },
+    #[doc = "Independent captured occurrence poses in source order, including repeated selectors."]
+    CapturedComponentPositions {
+        #[doc = "Exactly the captured rows, with an empty capture represented by an empty sequence."]
+        positions: Vec<CapturedComponentPosition>,
     },
     /// Assembly constraint introduced into the product structure.
     AssemblyJoint {
@@ -6399,6 +6439,7 @@ selection_field_deserializer!(deserialize_selection_selections, "selections");
 selection_field_deserializer!(deserialize_selection_curves, "curves");
 selection_field_deserializer!(deserialize_profile_parameter_range, "parameter_range");
 selection_field_deserializer!(deserialize_local_tessellations, "tessellations");
+selection_field_deserializer!(deserialize_mesh_source, "source");
 selection_field_deserializer!(deserialize_local_segments, "segments");
 selection_field_deserializer!(deserialize_local_axis_native_ref, "axis_native_ref");
 selection_field_deserializer!(deserialize_local_groups, "groups");

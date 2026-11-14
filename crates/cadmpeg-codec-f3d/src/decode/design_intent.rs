@@ -525,6 +525,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.design_placement_constructions,
         ),
     );
+    losses.extend(
+        crate::design::decode::placement_construction::spheres::bind(
+            &mut design.design_parameter_scopes,
+            &design.design_placement_constructions,
+        ),
+    );
     crate::design::decode::operands::bind_work_point_input_carriers(
         scan,
         &mut design.design_parameter_scopes,
@@ -794,15 +800,31 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_edge_operands,
         &scope_histories,
     );
-    losses.extend(crate::history::bind_feature_outputs(
+    let bound_outputs = crate::history::bind_feature_outputs(
         &mut model.features,
         &design.design_parameter_scopes,
         &mut design.asm_histories,
         geometry.bodies,
         &scope_histories,
         geometry.primary_brep,
-    )?);
+    )?;
+    losses.extend(bound_outputs.losses);
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
+    losses.extend(crate::design::feature_project::sweep_fallback::project(
+        &mut model.features,
+        &crate::design::feature_project::sweep_fallback::Inputs {
+            scan: inputs.scan,
+            ctx,
+            scopes: &design.design_parameter_scopes,
+            groups: &design.design_construction_operand_groups,
+            owners: &prereqs.design_parameter_owners,
+            parameters: &prereqs.design_parameters,
+            edges: &design.design_edge_operands,
+            edge_identities: &design.design_edge_identity_operands,
+            faces: &design.design_face_operands,
+        },
+        &bound_outputs.sweep_kinds,
+    )?);
     losses.extend(crate::history::pipe_section::projection::project(
         scan,
         &prereqs.design_types,
@@ -1227,6 +1249,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         products.occurrences,
         &design.design_parameter_scopes,
     );
+    losses.extend(crate::design::position::bind_occurrences(
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &occurrence_paths,
+    ));
     losses.extend(crate::design::components::paths::bind_feature_paths(
         &mut model.features,
         &occurrence_paths,
@@ -1358,7 +1385,7 @@ pub(super) fn scope_related_indices(
             .chain(
                 scope
                     .path_pattern_settings()
-                    .map(|settings| settings.settings_record_index),
+                    .and_then(|settings| settings.settings_record_index),
             )
             .chain(
                 scope

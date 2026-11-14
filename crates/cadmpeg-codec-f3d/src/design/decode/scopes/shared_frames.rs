@@ -40,16 +40,16 @@ pub(in crate::design::decode) fn rigid_transform_at(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct FixedScalarFrame<T = FiniteReal> {
-    pub(super) start: u64,
-    pub(super) end: u64,
-    pub(super) owner_record_index: Option<u32>,
-    pub(super) ordinal: u8,
-    pub(super) value: T,
-    pub(super) value_offset: u64,
+pub(in crate::design) struct FixedScalarFrame<T = FiniteReal> {
+    pub(in crate::design) start: u64,
+    pub(in crate::design) end: u64,
+    pub(in crate::design) owner_record_index: Option<u32>,
+    pub(in crate::design) ordinal: u8,
+    pub(in crate::design) value: T,
+    pub(in crate::design) value_offset: u64,
 }
 
-pub(super) fn exact_fixed_scalar(
+pub(in crate::design) fn exact_fixed_scalar(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
@@ -157,7 +157,10 @@ pub(in crate::design::decode) fn marked_record_reference(bytes: &[u8], at: usize
     View::u32_le_at(bytes, at + 1)
 }
 
-pub(super) fn extrude_operation_at(bytes: &[u8], offset: usize) -> Option<DesignExtrudeOperation> {
+pub(in crate::design) fn extrude_operation_at(
+    bytes: &[u8],
+    offset: usize,
+) -> Option<DesignExtrudeOperation> {
     match View::u32_le_at(bytes, offset)? {
         1 => Some(DesignExtrudeOperation::Join),
         2 => Some(DesignExtrudeOperation::Cut),

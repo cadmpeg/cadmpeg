@@ -20,6 +20,7 @@ mod measured_geometry;
 mod optional_payloads;
 mod pcurve_uv_offset;
 mod placement_history;
+mod position;
 mod procedural_support;
 mod product_owners;
 mod profile_region_selection;

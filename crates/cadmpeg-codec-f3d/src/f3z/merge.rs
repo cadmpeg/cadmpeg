@@ -439,6 +439,7 @@ impl MergeSession<'_, '_> {
                 let definition = define_member(self.ctx, &mut component_ir.model, label)?;
                 append_feature_history(&parent_ir.model, &mut component_ir.model)?;
                 let targets = native_record_targets(&component_ir.native, &occurrence);
+                rescope_partial_pattern_sources(&mut component_ir.model, &occurrence);
                 let native_text = TextReplacements::build(targets.iter())?;
                 let mut scope = OccurrenceScope {
                     native_text: &native_text,
@@ -2090,6 +2091,40 @@ fn native_record_targets(
             rescope(record.id(), occurrence).map(|target| (record.id().to_owned(), target))
         })
         .collect()
+}
+
+fn rescope_partial_pattern_sources(model: &mut Model, occurrence: &str) {
+    use cadmpeg_ir::features::{
+        patterns::{PatternSeed, PatternTransform},
+        FeatureDefinition, FeatureOperation, PathRef,
+    };
+    for feature in &mut model.features {
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+                definition
+            else {
+                return;
+            };
+            if !matches!(
+                pattern.definition(),
+                PatternTransform::CurveDrivenPartial { .. }
+            ) {
+                return;
+            }
+            if let Some(Some(PathRef::Native(path))) = pattern.curve_path_mut() {
+                if let Some(target) = rescope(path, occurrence) {
+                    *path = target;
+                }
+            }
+            for seed in seeds {
+                if let PatternSeed::Native(source) = seed {
+                    if let Some(target) = rescope(source, occurrence) {
+                        *source = target;
+                    }
+                }
+            }
+        });
+    }
 }
 
 /// Rewrites every `f3d:` identity in one model entity into occurrence scope.

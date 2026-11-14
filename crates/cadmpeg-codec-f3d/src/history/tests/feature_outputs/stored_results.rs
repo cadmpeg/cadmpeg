@@ -29,7 +29,8 @@ fn feature_outputs_keep_complete_stored_body_selection() {
             &Default::default(),
             Some("BREP.selected.smbh"),
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert_eq!(feature.evaluation.outputs().as_slice(), [body.id]);
         assert_eq!(
             losses

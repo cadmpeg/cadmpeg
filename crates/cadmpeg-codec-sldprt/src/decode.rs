@@ -312,7 +312,9 @@ fn incomplete_pattern<C: cadmpeg_ir::features::patterns::CompositeStages>(
         PatternTransform::Linear { direction, .. }
         | PatternTransform::LinearOffsets { direction, .. } => direction.is_none(),
         PatternTransform::Circular { .. } | PatternTransform::Mirror { .. } => false,
-        PatternTransform::MirrorReference { .. } => true,
+        PatternTransform::MirrorReference { .. } | PatternTransform::CurveDrivenPartial { .. } => {
+            true
+        }
         PatternTransform::CircularAngles { .. } => false,
         PatternTransform::CurveDriven { path, .. } => path.as_ref().is_none_or(incomplete_path),
         PatternTransform::Scale { center, .. } => matches!(center, PatternScaleCenter::Native(_)),
@@ -1306,6 +1308,8 @@ pub(crate) fn append_design_losses(
                 | FeatureOperation::Helix { .. } => false,
                 FeatureOperation::BaseFeature { bodies } => incomplete_body_selection(bodies),
                 FeatureOperation::InsertBodies { bodies } => !bodies.is_resolved(),
+                FeatureOperation::MeshGenerateFaceGroups { .. }
+                | FeatureOperation::MeshCombineFaceGroups { .. } => true,
                 FeatureOperation::MeshImport { .. }
                 | FeatureOperation::MeshSection { .. }
                 | FeatureOperation::MeshModify { .. } => false,
@@ -1322,6 +1326,19 @@ pub(crate) fn append_design_losses(
                                 .iter()
                                 .any(|candidate| candidate.id == *occurrence)
                         })
+                }
+                FeatureOperation::CapturedComponentPositions { positions } => {
+                    positions.iter().any(|position| {
+                        position.occurrence.as_ref().is_none_or(|occurrence| {
+                            !ir.model
+                                .occurrences
+                                .iter()
+                                .any(|candidate| candidate.id == *occurrence)
+                        }) || matches!(
+                            position.transform,
+                            cadmpeg_ir::features::CapturedPositionTransform::Native { .. }
+                        )
+                    })
                 }
                 FeatureOperation::ComponentTransfer {
                     occurrence,
@@ -1885,6 +1902,7 @@ pub(crate) fn append_design_losses(
                     seeds.is_empty()
                         || seeds.iter().any(|seed| match seed {
                             cadmpeg_ir::features::patterns::PatternSeed::Feature(_) => false,
+                            cadmpeg_ir::features::patterns::PatternSeed::Native(_) => true,
                             cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) => {
                                 incomplete_face_selection(faces)
                             }
