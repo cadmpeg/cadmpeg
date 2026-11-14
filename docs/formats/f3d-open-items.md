@@ -1578,7 +1578,7 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Conflict.** None.
 
-**Note.** None.
+**Note.** For a non-operand-list Combine stored as Join with kept tools and no deleted bodies, the history binding assumes Cut and reports `feature.combine-kept-tools-cut-assumed`. The native operation remains stored in the scope.
 
 ### DR-561. Destination of a Combine new-component result
 
@@ -2904,6 +2904,18 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The unresolved members retain their native identities and report `history.edge-midpoints-unresolved`. DR-164 tracks selectors over populated lanes; DR-224 tracks incomplete transition proofs.
+
+### DR-554. Interior null timeline items
+
+**Question.** Does a null item before a non-null reference occupy a timeline position?
+
+**Known.** A counted feature-timeline run can contain a one-byte null before another local reference. The local references retain their serialized order.
+
+**Need.** Controlled saves with a removed or suppressed timeline item and a visible timeline, including a save with a null between two readable references.
+
+**Conflict.** None.
+
+**Note.** The decoder assumes the null names no item and reports `feature.timeline-null-slot-assumed`.
 
 ### DR-530. Body frame of object-prelude occurrence snapshots
 
