@@ -9848,12 +9848,12 @@ pub(crate) mod sphere_shifted_prefix {
 
 /// Byte offsets for the `sphere_typed_prefix` record.
 ///
-/// Spec §3.1. Record length 178 B.
+/// Spec §3.1. Record length 179 B.
 pub(crate) mod sphere_typed_prefix {
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const OPERATION: usize = 20;
+    pub(crate) const OPERATION: usize = 21;
     /// Offset of `placement` (`bytes[51]`). Spec §3.1.
-    pub(crate) const PLACEMENT: usize = 25;
+    pub(crate) const PLACEMENT: usize = 26;
 }
 
 /// Byte offsets for the `captured_position_prefix` record.
@@ -9923,4 +9923,30 @@ pub(crate) mod captured_position_suffix {
     pub(crate) const IDENTITY_LENGTH_VALUE: u32 = 0x0000_0024;
     /// Stated value of `zero_tail` (`bytes[3]`). Spec §Captured component positions.
     pub(crate) const ZERO_TAIL_VALUE: [u8; 3] = [0x00, 0x00, 0x00];
+}
+
+/// Byte offsets for the `unmarked_sphere_local_frame` record.
+///
+/// Spec §3.1. Record length 128 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the third prefix reference. The marked matrix form has identity flag zero; flag one supplies identity and omits its matrix.
+/// ```
+pub(crate) mod unmarked_sphere_local_frame {
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 0;
+}
+
+/// Byte offsets for the `marked_sphere_local_frame` record.
+///
+/// Spec §3.1. Record length 129 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the third prefix reference. The marked matrix form has identity flag zero; flag one supplies identity and omits its matrix.
+/// ```
+pub(crate) mod marked_sphere_local_frame {
+    /// Offset of `identity` (`u8`). Spec §3.1.
+    pub(crate) const IDENTITY: usize = 0;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 1;
 }
