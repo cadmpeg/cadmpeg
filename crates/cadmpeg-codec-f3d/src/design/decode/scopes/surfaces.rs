@@ -131,13 +131,13 @@ pub(super) fn exact_surface_untrim_operation(
         operation.extension_offset = Some(offset);
     } else {
         losses.push(crate::loss::F3dLossCode::SurfaceUntrimExtensionUnresolved.note(format!(
-            "SurfaceUntrim {} retains extension reference {} because its numeric owner is missing, ambiguous or inconsistent (DR-505).",
+            "SurfaceUntrim {} retains extension reference {} because its numeric owner is missing, ambiguous or inconsistent (DR-601).",
             scope.id, frame.extension_record_index
         )));
     }
     if !frame.padded {
         losses.push(crate::loss::F3dLossCode::SurfaceUntrimPaddingAssumed.note(format!(
-            "SurfaceUntrim {} reads the uniquely closed unpadded reference runs as the same loop-removal frame (DR-504).", scope.id
+            "SurfaceUntrim {} reads the uniquely closed unpadded reference runs as the same loop-removal frame (DR-600).", scope.id
         )));
     }
     let Some((identity, _)) = fixed_relaxed_guid_text(bytes, frame.identity_at)? else {
@@ -145,7 +145,7 @@ pub(super) fn exact_surface_untrim_operation(
     };
     if identity.as_str() != "00000000-0000-0000-0000-000000000000" {
         losses.push(crate::loss::F3dLossCode::SurfaceUntrimTrailingIdentityAssumed.note(format!(
-            "SurfaceUntrim {} treats trailing identifier {} as auxiliary metadata while retaining its decoded loop and extension settings (DR-504).", scope.id, identity.as_str()
+            "SurfaceUntrim {} treats trailing identifier {} as auxiliary metadata while retaining its decoded loop and extension settings (DR-600).", scope.id, identity.as_str()
         )));
         operation.trailing_identity = Some(identity);
     }

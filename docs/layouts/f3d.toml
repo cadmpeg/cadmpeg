@@ -4629,6 +4629,319 @@ source = "spec"
 anchor = "a marked same-segment mesh-body reference at offset 21"
 
 [[record]]
+name = "mesh_operation_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its indexed header is followed by nine zero bytes and a flag byte at offset 20."
+size = 21
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "Indexed header."
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes and a flag byte at offset 20"
+
+[[record.field]]
+name = "flag"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "a flag byte at offset 20"
+
+[[record]]
+name = "mesh_operation_geometry_tail"
+kind = "byte"
+section = "3.1"
+anchor = "The fixed fields of the scope end with the 38-byte geometry tail"
+size = 38
+note = "Offsets are relative to the tail start. A null output-geometry reference is one byte and moves the later fields ten bytes lower."
+
+[[record.field]]
+name = "output_geometry"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the output-geometry reference, the input-geometry reference, a u32 `0`, the source-group reference, and a zero byte"
+
+[[record.field]]
+name = "input_geometry"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "the output-geometry reference, the input-geometry reference, a u32 `0`, the source-group reference, and a zero byte"
+
+[[record.field]]
+name = "zero_word"
+offset = 22
+type = "u32"
+value = 0
+source = "spec"
+anchor = "the output-geometry reference, the input-geometry reference, a u32 `0`, the source-group reference, and a zero byte"
+
+[[record.field]]
+name = "source_group"
+offset = 26
+type = "bytes[11]"
+source = "spec"
+anchor = "the output-geometry reference, the input-geometry reference, a u32 `0`, the source-group reference, and a zero byte"
+
+[[record.field]]
+name = "zero_byte"
+offset = 37
+type = "u8"
+value = 0
+source = "spec"
+anchor = "the output-geometry reference, the input-geometry reference, a u32 `0`, the source-group reference, and a zero byte"
+
+[[record]]
+name = "mesh_operation_group_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its indexed header is followed by ten zero bytes, a u32 member count at offset 21"
+size = 25
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "Indexed header."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes, a u32 member count at offset 21"
+
+[[record.field]]
+name = "member_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a u32 member count at offset 21"
+
+[[record]]
+name = "mesh_smooth_scope_fields"
+kind = "byte"
+section = "3.1"
+anchor = "A `MeshSmooth` scope stores the smoothness owner reference at offset 21 and its geometry tail at offset 32"
+size = 32
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "Mesh operation scope prefix."
+
+[[record.field]]
+name = "smoothness_owner"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "A `MeshSmooth` scope stores the smoothness owner reference at offset 21 and its geometry tail at offset 32"
+
+[[record]]
+name = "mesh_shell_scope_fields"
+kind = "byte"
+section = "3.1"
+anchor = "A `MeshShell` scope stores the thickness owner reference at offset 21 and its geometry tail at offset 32"
+size = 32
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "Mesh operation scope prefix."
+
+[[record.field]]
+name = "thickness_owner"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "A `MeshShell` scope stores the thickness owner reference at offset 21 and its geometry tail at offset 32"
+
+[[record]]
+name = "mesh_reduce_scope_fields"
+kind = "byte"
+section = "3.1"
+anchor = "A `MeshReduce` scope stores the tolerance owner reference at offset 21"
+size = 63
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "Mesh operation scope prefix."
+
+[[record.field]]
+name = "tolerance_owner"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "A `MeshReduce` scope stores the tolerance owner reference at offset 21"
+
+[[record.field]]
+name = "distribution"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "a u32 distribution selector at offset 32"
+
+[[record.field]]
+name = "zero_byte"
+offset = 36
+type = "u8"
+value = 0
+source = "spec"
+anchor = "a zero byte at offset 36"
+
+[[record.field]]
+name = "proportion_owner"
+offset = 37
+type = "bytes[11]"
+source = "spec"
+anchor = "the proportion owner reference at offset 37"
+
+[[record.field]]
+name = "target"
+offset = 48
+type = "u32"
+source = "spec"
+anchor = "a u32 target selector at offset 48"
+
+[[record.field]]
+name = "face_count_owner"
+offset = 52
+type = "bytes[11]"
+source = "spec"
+anchor = "the face-count owner reference at offset 52"
+
+[[record]]
+name = "mesh_repair_scope_fields"
+kind = "byte"
+section = "3.1"
+anchor = "A `MeshRepair` scope stores the density owner reference at offset 21"
+size = 51
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "Mesh operation scope prefix."
+
+[[record.field]]
+name = "density_owner"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "A `MeshRepair` scope stores the density owner reference at offset 21"
+
+[[record.field]]
+name = "offset_owner"
+offset = 32
+type = "bytes[11]"
+source = "spec"
+anchor = "the offset owner reference at offset 32"
+
+[[record.field]]
+name = "rebuild_mode"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "a u32 rebuild selector at offset 43"
+
+[[record.field]]
+name = "method"
+offset = 47
+type = "u32"
+source = "spec"
+anchor = "a u32 method selector at offset 47"
+
+[[record]]
+name = "mesh_remesh_scope_fields"
+kind = "byte"
+section = "3.1"
+anchor = "A `MeshRemesh` scope stores two zero bytes at offset 21"
+size = 54
+note = "Offsets are those of the form with a non-null shape-preservation reference."
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "Mesh operation scope prefix."
+
+[[record.field]]
+name = "zero_run_2"
+offset = 21
+type = "bytes[2]"
+source = "spec"
+anchor = "A `MeshRemesh` scope stores two zero bytes at offset 21"
+
+[[record.field]]
+name = "distribution"
+offset = 23
+type = "u32"
+source = "spec"
+anchor = "a u32 distribution selector at offset 23"
+
+[[record.field]]
+name = "shape_preservation_owner"
+offset = 27
+type = "bytes[11]"
+source = "spec"
+anchor = "the shape-preservation owner reference at offset 27"
+
+[[record.field]]
+name = "zero_byte"
+offset = 38
+type = "u8"
+value = 0
+source = "spec"
+anchor = "a zero byte at offset 38"
+
+[[record.field]]
+name = "edge_length_owner"
+offset = 39
+type = "bytes[11]"
+source = "spec"
+anchor = "the edge-length owner reference at offset 39"
+
+[[record.field]]
+name = "one_word"
+offset = 50
+type = "u32"
+value = 1
+source = "spec"
+anchor = "a u32 `1` at offset 50"
+
+[[record]]
+name = "mesh_section_scope_fields"
+kind = "byte"
+section = "3.1"
+anchor = "A `MeshSection` scope stores the section-group reference at offset 21"
+size = 43
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "Mesh operation scope prefix."
+
+[[record.field]]
+name = "section_group"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "A `MeshSection` scope stores the section-group reference at offset 21"
+
+[[record.field]]
+name = "sketch_scope"
+offset = 32
+type = "bytes[11]"
+source = "spec"
+anchor = "the reference to the `Sketch` scope that receives the section curves at offset 32"
+
+[[record]]
 name = "paramesh_guid_join_prefix"
 kind = "byte"
 section = "3.1"
@@ -21400,7 +21713,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The body follows the flag or the matrix"
 size = 180
-note = "Offsets are relative to the end of the 51-byte prefix or of the first matrix. A matrix frame repeats the matrix after the body; the 20-byte identity tail closes the frame."
+note = "Offsets are relative to the end of the 51-byte prefix or of the first matrix. The local-placement flag selects the optional matrix after the body; the 20-byte identity tail closes the frame."
 
 [[record.field]]
 name = "carrier_guid"
@@ -21466,7 +21779,7 @@ name = "identity_flag_repeat"
 offset = 179
 type = "u8"
 source = "spec"
-anchor = "a copy of the identity flag"
+anchor = "the local-placement identity flag"
 
 [[record]]
 name = "root_instance_prefix"
@@ -36290,3 +36603,34 @@ anchor = "the reference count at offset 343"
 offset = 237
 size = 27
 note = "Bytes between the matrix and null GUID."
+
+
+[[record]]
+name = "legacy_external_leading_placement_prefix"
+kind = "byte"
+section = "1.4"
+anchor = "The empty-attribute generation can insert a source-placement flag"
+size = 7
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets start at the member sequence after the empty attribute block. The optional source matrix and UUIDs follow this prefix."
+
+[[record.field]]
+name = "control"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "The empty-attribute generation can insert a source-placement flag"
+
+[[record.field]]
+name = "ordinal"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "after the positive ordinal and before the two UUIDs"
+
+[[record.field]]
+name = "source_identity_flag"
+offset = 6
+type = "u8"
+source = "spec"
+anchor = "Flag `1` stores source identity"

@@ -597,9 +597,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(
             FeatureOperation::ReferenceImage { .. } | FeatureOperation::DatumPrincipalPlane { .. },
         ) => false,
-        FeatureDefinition::Operation(FeatureOperation::MeshImport { tessellations }) => {
-            !matches!(tessellations, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
-        }
+        FeatureDefinition::Operation(
+            FeatureOperation::MeshImport {
+                tessellations: source,
+            }
+            | FeatureOperation::MeshSection { source, .. }
+            | FeatureOperation::MeshModify { source, .. },
+        ) => !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_)),
         FeatureDefinition::Operation(FeatureOperation::Decal { faces, .. }) => {
             !face_selection_is_resolved(faces)
         }
@@ -2470,7 +2474,7 @@ fn report_design_projection_gaps(
         }
         let (code, reason) = if scope.emboss_construction().is_some() {
             (F3dLossCode::EmbossControlsNative,
-             "control words, native pairs, scalar-owner links, selection links, contour membership, and placement have no neutral Wrap mapping")
+             "control words, native pairs, selection links, contour membership, and placement retain their native interpretation; scalar-owner links also expose independent Wrap parameters")
         } else {
             (
                 F3dLossCode::EmbossPrefixUnparsed,
@@ -6097,6 +6101,7 @@ pub(crate) fn apply_body_presentation_names(
 pub(crate) mod design_intent;
 mod geometry_admission;
 mod mesh_import;
+mod mesh_operations;
 mod prereqs;
 
 #[cfg(test)]

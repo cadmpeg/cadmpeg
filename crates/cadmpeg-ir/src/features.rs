@@ -2753,6 +2753,32 @@ pub enum FeatureOperation {
         #[serde(deserialize_with = "deserialize_local_tessellations")]
         tessellations: mesh::MeshSelection,
     },
+    #[doc = "Planar section of a mesh whose curves belong to a sketch."]
+    MeshSection {
+        #[doc = "Sectioned mesh."]
+        source: mesh::MeshSelection,
+        #[doc = "Model-space section plane, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_section_plane"
+        )]
+        plane: Option<FeatureSupportPlaneFrame>,
+        #[doc = "Sketch feature that receives the section curves, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_section_sketch"
+        )]
+        sketch: Option<FeatureId>,
+    },
+    #[doc = "Change applied to mesh geometry."]
+    MeshModify {
+        #[doc = "Mesh that the operation changes."]
+        source: mesh::MeshSelection,
+        #[doc = "Applied change."]
+        modification: mesh::MeshModification,
+    },
     /// Independent bodies introduced by a copy-and-paste operation. The copies
     /// are the feature's outputs, so the selection carries only its native
     /// expression.
@@ -5726,6 +5752,16 @@ pub enum BodyRetentionMode {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum WrapMode {
+    #[doc = "Material effect with an independently retained signed depth."]
+    Unresolved {
+        #[doc = "Signed depth in millimetres when available."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_wrap_depth"
+        )]
+        depth: Option<Length>,
+    },
     /// Add material above the target face.
     Emboss {
         /// Positive normal offset above the target face.
@@ -9698,6 +9734,8 @@ mod tests;
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_plane, FeatureId, "plane");
+cadmpeg_core::named_optional_field!(deserialize_section_sketch, FeatureId, "sketch");
+cadmpeg_core::named_optional_field!(deserialize_section_plane, FeatureSupportPlaneFrame, "plane");
 cadmpeg_core::named_optional_field!(deserialize_pull, DraftPull, "pull");
 cadmpeg_core::named_optional_field!(deserialize_frame, FeatureSupportPlaneFrame, "frame");
 cadmpeg_core::named_optional_field!(
@@ -9907,6 +9945,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_rib_construction_side, RibSide, "side");
 cadmpeg_core::named_optional_field!(deserialize_offset, Length, "offset");
+cadmpeg_core::named_optional_field!(deserialize_wrap_depth, Length, "depth");
 cadmpeg_core::named_optional_field!(deserialize_draft, SlopeAngle, "draft");
 cadmpeg_core::named_optional_field!(deserialize_wall_thickness, PositiveLength, "wall_thickness");
 cadmpeg_core::named_optional_field!(deserialize_tolerance, PositiveReal, "tolerance");
