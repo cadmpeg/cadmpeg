@@ -9,6 +9,8 @@ use crate::layout::paramesh_operation_member_prefix as member;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+pub(crate) mod convert;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MeshOperationKind {
     Section,
@@ -18,6 +20,7 @@ pub(crate) enum MeshOperationKind {
     Smooth,
     Shell,
     ReverseNormals,
+    Remove,
 }
 
 impl MeshOperationKind {
@@ -30,6 +33,7 @@ impl MeshOperationKind {
             "MeshSmooth" => Self::Smooth,
             "MeshShell" => Self::Shell,
             "MeshReverseNormals" => Self::ReverseNormals,
+            "MeshRemove" => Self::Remove,
             _ => return None,
         })
     }
@@ -66,6 +70,7 @@ pub(crate) enum MeshOperationFields {
         thickness_owner: u32,
     },
     ReverseNormals,
+    Remove,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +86,13 @@ pub(crate) struct MeshOperationScope {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct MeshOperationFraming(pub(crate) &'static str);
+
+pub(crate) struct MeshOperationBodyReferences {
+    pub(crate) declared_count: Option<u32>,
+    pub(crate) member_references: Vec<u32>,
+    pub(crate) references: Vec<u32>,
+    pub(crate) framing: Option<MeshOperationFraming>,
+}
 
 impl std::fmt::Display for MeshOperationFraming {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -241,11 +253,16 @@ pub(crate) fn read_scope(
                 .unwrap_or(0),
         },
         MeshOperationKind::ReverseNormals => MeshOperationFields::ReverseNormals,
+        MeshOperationKind::Remove => MeshOperationFields::Remove,
     };
     let mut output_geometry = None;
     let mut input_geometry = 0;
     let mut source_group = 0;
     let tail_error = (|| {
+        if matches!(fields, MeshOperationFields::Remove) {
+            source_group = cursor.reference("source group reference")?;
+            return Ok(());
+        }
         output_geometry = cursor.optional_reference("output geometry reference")?;
         input_geometry = cursor.reference("input geometry reference")?;
         cursor.expect_u32("tail-word-after-input-geometry", 0)?;
@@ -323,12 +340,18 @@ impl<'a> MeshOperationRecords<'a> {
             MeshOperationKind::Smooth => ("F84CD988-9696-458D-8AF3-795D12E6B9EF", 2),
             MeshOperationKind::Shell => ("1514CDB8-BB81-4895-A953-7B12F4504F99", 2),
             MeshOperationKind::ReverseNormals => ("4AB7A6BD-C40C-4C44-B7CA-0D415B6E4412", 0),
+            MeshOperationKind::Remove => ("57A2E341-A23A-469D-B41D-59B57A9AD8B8", 0),
+        };
+        let base = if matches!(kind, MeshOperationKind::Remove) {
+            "63A5A106-D239-4D6B-A96B-319CA9B9BA6A"
+        } else {
+            "90B8D2C6-05BB-4D0F-89EF-83AAC46CA1FF"
         };
         self.record(
             scope_index,
             "operation scope record",
             guid,
-            "90B8D2C6-05BB-4D0F-89EF-83AAC46CA1FF",
+            base,
             "Fusion",
             Some(version),
         )
@@ -414,69 +437,109 @@ impl<'a> MeshOperationRecords<'a> {
         ctx: &DecodeContext<'_>,
         group: u32,
     ) -> Result<Result<Vec<u32>, MeshOperationFraming>, CodecError> {
-        let record = match self.source_record(
-            group,
-            "source group record",
-            "22975A91-16AD-4CC9-A5E4-B4F8B4C27881",
-            "2CA5A1CD-C99B-4C9B-91AF-57989148E841",
-        ) {
-            Ok(record) => record,
-            Err(error) => return Ok(Err(error)),
+        let captured = self.group_body_references(ctx, group)?;
+        Ok(match captured.framing {
+            Some(error) => Err(error),
+            None => Ok(captured.references),
+        })
+    }
+
+    pub(crate) fn group_body_references(
+        &self,
+        ctx: &DecodeContext<'_>,
+        group: u32,
+    ) -> Result<MeshOperationBodyReferences, CodecError> {
+        let mut captured = MeshOperationBodyReferences {
+            declared_count: None,
+            member_references: Vec::new(),
+            references: Vec::new(),
+            framing: None,
         };
-        let mut cursor = Cursor {
-            bytes: record,
-            at: group::MEMBER_COUNT,
-            deviations: Vec::new(),
-        };
-        let declared = match cursor.u32("source group member count") {
-            Ok(declared) => declared,
-            Err(error) => return Ok(Err(error)),
-        };
-        let Some(count) = cadmpeg_core::decode::bounded_len(
-            u64::from(declared),
-            header::LEN,
-            record.len() - cursor.at,
-        )
-        .filter(|count| *count != 0) else {
-            return Ok(Err(MeshOperationFraming("source group member count")));
-        };
-        let mut bodies = ctx.alloc_filled(count, 0, "F3D mesh operation source bodies")?;
-        for body in &mut bodies {
-            let read = cursor
-                .reference("source group member reference")
-                .and_then(|index| {
-                    self.source_record(
+        let result = (|| -> Result<Result<(), MeshOperationFraming>, CodecError> {
+            let record = match self.source_record(
+                group,
+                "source group record",
+                "22975A91-16AD-4CC9-A5E4-B4F8B4C27881",
+                "2CA5A1CD-C99B-4C9B-91AF-57989148E841",
+            ) {
+                Ok(record) => record,
+                Err(error) => return Ok(Err(error)),
+            };
+            let mut cursor = Cursor {
+                bytes: record,
+                at: group::MEMBER_COUNT,
+                deviations: Vec::new(),
+            };
+            let declared = match cursor.u32("source group member count") {
+                Ok(declared) => declared,
+                Err(error) => return Ok(Err(error)),
+            };
+            captured.declared_count = Some(declared);
+            let Some(count) = cadmpeg_core::decode::bounded_len(
+                u64::from(declared),
+                header::LEN,
+                record.len() - cursor.at,
+            )
+            .filter(|count| *count != 0) else {
+                return Ok(Err(MeshOperationFraming("source group member count")));
+            };
+            captured.references = ctx.alloc_filled(count, 0, "F3D mesh operation source bodies")?;
+            captured.member_references =
+                ctx.alloc_filled(count, 0, "F3D mesh operation source member references")?;
+            let mut failure = None;
+            for (member, body) in captured
+                .member_references
+                .iter_mut()
+                .zip(&mut captured.references)
+            {
+                let index = match cursor.reference("source group member reference") {
+                    Ok(index) => index,
+                    Err(error) => {
+                        failure.get_or_insert(error);
+                        break;
+                    }
+                };
+                *member = index;
+                let read = (|| {
+                    let record = self.source_record(
                         index,
                         "source member record",
                         "1AA9CC7B-5C34-45DA-AE14-0444E7F966F2",
                         "6144EA59-3ACA-4172-9F14-A6531E94D69B",
-                    )
-                })
-                .and_then(|record| {
+                    )?;
                     Cursor {
                         bytes: record,
                         at: member::BODY_REFERENCE,
                         deviations: Vec::new(),
                     }
                     .reference("source member body reference")
-                })
-                .and_then(|body| {
-                    self.record(
-                        body,
-                        "source body record",
-                        "EA90DA22-556C-4C61-89BB-20C2681B7A9D",
-                        "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
-                        "ParaMesh",
-                        None,
-                    )?;
-                    Ok(body)
-                });
-            match read {
-                Ok(index) => *body = index,
-                Err(error) => return Ok(Err(error)),
+                })();
+                match read {
+                    Ok(index) => {
+                        *body = index;
+                        if let Err(error) = self.record(
+                            index,
+                            "source body record",
+                            "EA90DA22-556C-4C61-89BB-20C2681B7A9D",
+                            "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
+                            "ParaMesh",
+                            None,
+                        ) {
+                            failure.get_or_insert(error);
+                        }
+                    }
+                    Err(error) => {
+                        failure.get_or_insert(error);
+                    }
+                }
             }
-        }
-        Ok(Ok(bodies))
+            Ok(match failure {
+                Some(error) => Err(error),
+                None => Ok(()),
+            })
+        })()?;
+        captured.framing = result.err();
+        Ok(captured)
     }
 }
 

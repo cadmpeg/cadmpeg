@@ -12,19 +12,11 @@ pub(crate) struct DesignChamferScope {
 }
 
 impl DesignChamferScope {
-    /// The payload of one decoded `Chamfer` scope; a set list takes precedence
-    /// over fixed scalar lanes.
     pub(crate) fn admit(
         fixed: Option<DesignFixedChamferParameters>,
         sets: Option<DesignChamferSetList>,
     ) -> Self {
-        match sets {
-            Some(sets) => Self {
-                fixed: None,
-                sets: Some(sets),
-            },
-            None => Self { fixed, sets: None },
-        }
+        Self { fixed, sets }
     }
 }
 

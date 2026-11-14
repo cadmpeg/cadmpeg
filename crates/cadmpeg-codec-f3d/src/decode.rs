@@ -605,6 +605,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             | FeatureOperation::MeshSection { source, .. }
             | FeatureOperation::MeshModify { source, .. },
         ) => !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_)),
+        FeatureDefinition::Operation(FeatureOperation::MeshConvert(conversion)) => {
+            conversion.method.is_none()
+                || conversion.sources.is_empty()
+                || conversion.sources.iter().any(|source| {
+                    !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
+                })
+        }
         FeatureDefinition::Operation(FeatureOperation::Decal { faces, .. }) => {
             !face_selection_is_resolved(faces)
         }
@@ -631,6 +638,14 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || pitch.is_none()
                 || modeled.is_none()
                 || extent.is_none()
+        }
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalBendLines { construction }) => {
+            construction.bends.is_empty()
+                || construction.bends.iter().any(|bend| {
+                    bend.angle.is_none() || bend.line.as_ref().is_none_or(|line| !loft_path_is_resolved(line))
+                })
+                || construction.stationary.as_ref().is_none_or(|face| !face_selection_is_resolved(face))
+                || construction.inside_radius.is_none()
         }
         FeatureDefinition::Operation(FeatureOperation::Unresolved { .. }) => true,
         FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
@@ -1109,10 +1124,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                         )
                 })
         }
-        FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) => {
+        FeatureDefinition::Operation(FeatureOperation::Combine { operands, destination, .. }) => {
             let target = operands.target();
             let tools = operands.tools();
             !body_selection_is_resolved(target) || !body_selection_is_resolved(tools)
+                || matches!(destination, cadmpeg_ir::features::CombineDestination::NewComponent)
         }
         // A typed family is not replayable until this match states and checks
         // its complete construction invariants.
@@ -3123,6 +3139,9 @@ impl<'a> F3dDecodeSession<'a> {
         self.report
             .losses
             .extend(prereqs.design_parameter_scope_losses.iter().cloned());
+        self.report
+            .losses
+            .extend(prereqs.design_feature_timeline_losses.iter().cloned());
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
         report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
         report_parameter_null_owners(&mut self.report, &prereqs.design_parameter_null_owners);

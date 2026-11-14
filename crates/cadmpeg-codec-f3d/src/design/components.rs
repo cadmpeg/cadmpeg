@@ -42,7 +42,7 @@ pub(crate) struct LocalComponentSources<'a> {
     pub(crate) scopes: &'a [DesignParameterScope],
     /// Local component-occurrence carriers.
     pub(crate) occurrences: &'a [DesignComponentOccurrence],
-    /// Component-path carriers that give world poses to nested occurrences.
+    /// Component-path carriers that give world poses to local occurrences.
     pub(crate) paths: &'a [DesignComponentPath],
     /// Component definitions and root component of each Design stream.
     pub(crate) components: &'a BTreeMap<String, StreamComponents>,
@@ -172,6 +172,7 @@ pub(crate) fn project_local_components_with_types(
     projector.attach_root_occurrences();
     projector.expand_nested_carriers()?;
     projector.apply_path_poses()?;
+    projector.reject_unproven_object_poses();
     projector.retain_unplaced_definitions();
     projector.finish()
 }
@@ -188,11 +189,13 @@ enum Unplaced {
     OwnerUninstanced,
     BodyOutsideComponents,
     BodiesPending,
+    ObjectPoseUnresolved,
 }
 
 impl Unplaced {
     fn reason(self) -> &'static str {
         match self {
+            Self::ObjectPoseUnresolved => "the object-prelude placement has no independent component-path proof of its body frame",
             Self::RepeatedGuid => "the occurrence GUID repeats in its Design stream",
             Self::NoRootComponent => {
                 "the Design stream has no unique root instance bound to a component naming space"
@@ -240,7 +243,7 @@ struct Projector<'a> {
     rejected: BTreeSet<&'a str>,
     /// Root-contained carriers placed at their component-path pose.
     current_poses: usize,
-    /// Nested occurrences placed at their component-path pose.
+    /// Local occurrences placed at their component-path pose.
     path_poses: PathPoseOutcome,
     derived: DerivedProjectionLosses,
 }
@@ -342,9 +345,11 @@ struct PathPoseOutcome {
     inferred_groups: usize,
     /// Carriers of the occurrences that took a path pose.
     applied_carriers: BTreeSet<String>,
+    /// Expanded instances with an independently resolved world pose.
+    applied_instances: BTreeSet<String>,
 }
 
-/// One expanded nested occurrence, for path resolution.
+/// One expanded local occurrence, for path resolution.
 struct PathInstance {
     key: String,
     stream: String,
@@ -748,6 +753,11 @@ impl<'a> Projector<'a> {
                 &carrier.occurrence_guid,
                 transform,
             )?;
+            if carrier.current_pose.is_some() {
+                self.path_poses
+                    .applied_instances
+                    .insert(occurrence_id.as_str().to_owned());
+            }
         }
         Ok(())
     }
@@ -1054,7 +1064,7 @@ impl<'a> Projector<'a> {
         )
     }
 
-    /// Give each nested occurrence that one component-path carrier names the
+    /// Give each local occurrence that one component-path carrier names the
     /// carrier's world pose, outermost occurrence first, as
     /// `inverse(parent world) * pose`. A carrier names an occurrence by its
     /// component, its own record and its innermost containing records; it
@@ -1075,16 +1085,9 @@ impl<'a> Projector<'a> {
             let Some(carrier) = carrier else {
                 continue;
             };
-            let Some((stream, components)) = self.stream_components(carrier) else {
+            let Some((stream, _)) = self.stream_components(carrier) else {
                 continue;
             };
-            let nested = components
-                .root_component
-                .and_then(|record| components.roots.get(&record))
-                .is_some_and(|root| root.root_entity != carrier.owner_entity);
-            if !nested {
-                continue;
-            }
             let mut ancestors = Vec::new();
             let mut parent = &occurrence.parent;
             for _ in 0..=self.occurrences.len() {
@@ -1119,6 +1122,11 @@ impl<'a> Projector<'a> {
                     .collect::<Vec<_>>()
             };
             let (components, occurrences) = (of_kind(Kind::Component), of_kind(Kind::Occurrence));
+            let root_instances = self
+                .sources
+                .components
+                .get(stream)
+                .map(|components| &components.root_instances);
             let distinct = path
                 .elements
                 .iter()
@@ -1126,10 +1134,10 @@ impl<'a> Projector<'a> {
                 .collect::<BTreeSet<_>>()
                 .len()
                 == path.elements.len()
-                && path
-                    .elements
-                    .iter()
-                    .all(|element| element.kind != Kind::Other);
+                && path.elements.iter().all(|element| {
+                    element.kind != Kind::Other
+                        || root_instances.is_some_and(|roots| roots.contains(&element.record_index))
+                });
             let target = occurrences
                 .iter()
                 .copied()
@@ -1143,8 +1151,6 @@ impl<'a> Projector<'a> {
                 self.path_poses.unresolved += 1;
                 continue;
             };
-            // A root-contained target takes its pose through the carrier's
-            // current pose, not through an expanded instance.
             let root_contained = carriers.get(&(stream, *target)).is_some_and(|carrier| {
                 self.stream_components(carrier)
                     .and_then(|(_, stream_components)| {
@@ -1154,7 +1160,11 @@ impl<'a> Projector<'a> {
                     })
                     .is_some_and(|root| root.root_entity == carrier.owner_entity)
             });
-            if root_contained {
+            if root_contained
+                && carriers
+                    .get(&(stream, *target))
+                    .is_some_and(|carrier| carrier.current_pose.is_some())
+            {
                 continue;
             }
             let named = occurrences
@@ -1303,6 +1313,7 @@ impl<'a> Projector<'a> {
         if let Some(carrier) = carrier {
             self.path_poses.applied_carriers.insert(carrier.id.clone());
         }
+        self.path_poses.applied_instances.insert(key.to_owned());
         occurrence.transform = local;
     }
 
@@ -1362,6 +1373,53 @@ impl<'a> Projector<'a> {
         Ok(())
     }
 
+    /// Keep object snapshots with unresolved body frames in their stored frame.
+    fn reject_unproven_object_poses(&mut self) {
+        let mut rejected = self
+            .occurrences
+            .iter()
+            .filter_map(|(key, (_, carrier))| {
+                carrier
+                    .filter(|carrier| {
+                        carrier.has_object_prelude()
+                            && carrier.transform().is_some()
+                            && !self.path_poses.applied_instances.contains(key)
+                    })
+                    .map(|_| key.clone())
+            })
+            .collect::<BTreeSet<_>>();
+        loop {
+            let descendants = self
+                .occurrences
+                .iter()
+                .filter_map(|(key, (occurrence, _))| match &occurrence.parent {
+                    OccurrenceParent::Occurrence { occurrence }
+                        if rejected.contains(occurrence.as_str()) =>
+                    {
+                        Some(key.clone())
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let before = rejected.len();
+            rejected.extend(descendants);
+            if rejected.len() == before {
+                break;
+            }
+        }
+        for key in rejected {
+            if let Some((_, carrier)) = self.occurrences.remove(&key) {
+                if let Some(carrier) = carrier {
+                    self.rejected.insert(carrier.id.as_str());
+                }
+                *self
+                    .unplaced
+                    .entry(Unplaced::ObjectPoseUnresolved)
+                    .or_default() += 1;
+            }
+        }
+    }
+
     fn retain_unplaced_definitions(&mut self) {
         for (stream, components) in self.sources.components {
             if components.roots.len() == 1 {
@@ -1373,7 +1431,7 @@ impl<'a> Projector<'a> {
         }
     }
 
-    fn finish(self) -> Result<LocalComponentProjection, cadmpeg_core::CodecError> {
+    fn finish(mut self) -> Result<LocalComponentProjection, cadmpeg_core::CodecError> {
         let overflow =
             || cadmpeg_core::CodecError::malformed("Fusion Design occurrence ordinal exceeds u32");
         let mut component_definitions_by_record = self.component_definitions_by_record;
@@ -1409,6 +1467,78 @@ impl<'a> Projector<'a> {
                     component_definitions_by_record.insert(key, definition.clone());
                 }
             }
+        }
+        let fallback_bodies = self
+            .sources
+            .body_bindings
+            .iter()
+            .filter(|binding| binding.component_owner.is_none())
+            .filter_map(|binding| binding.body.as_ref())
+            .collect::<BTreeSet<_>>();
+        let instanced_definitions = self
+            .occurrences
+            .values()
+            .filter_map(|(occurrence, _)| match &occurrence.prototype {
+                PrototypeReference::Local { definition } => Some(definition.as_str()),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        let mut stored_definitions = Vec::new();
+        for definition in self.definitions.values_mut() {
+            if !instanced_definitions.contains(definition.id.as_str()) {
+                continue;
+            }
+            let mut stored_bodies = Vec::new();
+            definition.bodies.retain(|body| {
+                if fallback_bodies.contains(body) {
+                    stored_bodies.push(body.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+            if !stored_bodies.is_empty() {
+                let id = ProductDefinitionId::mint(format!("{}/stored-frame", definition.id))
+                    .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+                let mut stored = component_definition(id, stored_bodies);
+                stored.source_name.clone_from(&definition.source_name);
+                stored_definitions.push(stored);
+            }
+        }
+        for definition in stored_definitions {
+            self.definitions
+                .insert(definition.id.as_str().to_owned(), definition);
+        }
+        let owned_bodies = self
+            .definitions
+            .values()
+            .flat_map(|definition| &definition.bodies)
+            .collect::<BTreeSet<_>>();
+        let mut unbound = BTreeMap::<&str, BTreeSet<BodyId>>::new();
+        for binding in self.sources.body_bindings {
+            let Some(body) = binding.body.as_ref() else {
+                continue;
+            };
+            let Some(stream) = crate::ids::native_stream(binding.id()) else {
+                continue;
+            };
+            if binding.component_owner.is_none()
+                && self
+                    .sources
+                    .bodies
+                    .is_some_and(|bodies| bodies.contains(body))
+                && !owned_bodies.contains(body)
+                && self.sources.components.contains_key(stream)
+            {
+                unbound.entry(stream).or_default().insert(body.clone());
+            }
+        }
+        for (stream, bodies) in unbound {
+            let id = ProductDefinitionId::mint(format!("{stream}:product-definition#stored-frame"))
+                .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+            let definition = component_definition(id, bodies.into_iter().collect());
+            self.definitions
+                .insert(definition.id.as_str().to_owned(), definition);
         }
         let mut occurrences = self.occurrences.into_values().collect::<Vec<_>>();
         occurrences.sort_by(|(left, left_carrier), (right, right_carrier)| {
@@ -1512,7 +1642,7 @@ impl<'a> Projector<'a> {
         }
         if self.path_poses.changed != 0 {
             losses.push(F3dLossCode::LocalOccurrencePathPose.note(format!(
-                "{} nested local occurrence(s) take the world pose of their component-path carrier in place of their stored placement; the largest translation change is {:.3} mm",
+                "{} local occurrence(s) take the world pose of their component-path carrier in place of their stored placement; the largest translation change is {:.3} mm",
                 self.path_poses.changed, self.path_poses.largest_shift_mm
             )));
         }
@@ -1543,7 +1673,7 @@ impl<'a> Projector<'a> {
         }
         if fallback_owners != 0 {
             losses.push(F3dLossCode::ComponentBodyOwnerFallback.note(format!(
-                "{fallback_owners} solved body binding(s) use entity-cluster component ownership because no admitted Body-container component membership names them."
+                "{fallback_owners} solved body binding(s) keep their stored frames in uninstanced definitions because their Body-container component ownership is unadmitted."
             )));
         }
         if native_poses != 0 {
@@ -1873,7 +2003,11 @@ pub(crate) fn project_copy_paste_transfer_features(
         ) {
             continue;
         }
-        if let Some(transfer) = scope.occurrence_transfer.as_ref() {
+        if let Some(transfer) = scope
+            .occurrence_transfer
+            .as_ref()
+            .filter(|_| scope.occurrence_transfer_intent.is_none())
+        {
             if matches!(
                 &transfer.source,
                 DesignOccurrenceTransferSource::Copy { .. }
@@ -2785,17 +2919,19 @@ mod tests {
     }
 
     #[test]
-    fn missing_component_membership_uses_entity_cluster_and_reports_it() {
+    fn missing_component_membership_keeps_stored_frame_and_reports_it() {
         let components = two_component_stream(Some(276));
         let body = BodyId::mint(COMPONENT_BODY).unwrap();
         let bodies = BTreeSet::from([body]);
         let mut binding = binding(1000, 194, COMPONENT_BODY);
         binding.component_owner = None;
         let bindings = [binding];
+        let mut transform = super::IDENTITY;
+        transform[0][3] = 20.0;
         let carriers = [carrier(
             100,
             "00000000-0000-4000-8000-000000000001",
-            DesignComponentOccurrencePlacement::Base,
+            placed(1, transform),
             DOCUMENT_ROOT,
         )];
         let projection = super::project_local_components(&super::LocalComponentSources {
@@ -2823,6 +2959,22 @@ mod tests {
                 .count(),
             1
         );
+        let stored = projection
+            .definitions
+            .iter()
+            .find(|definition| {
+                definition
+                    .bodies
+                    .iter()
+                    .any(|body| body.as_str() == COMPONENT_BODY)
+            })
+            .unwrap();
+        assert!(projection.occurrences.iter().all(|occurrence| {
+            occurrence.prototype
+                != PrototypeReference::Local {
+                    definition: stored.id.clone(),
+                }
+        }));
         assert!(projection
             .losses
             .iter()

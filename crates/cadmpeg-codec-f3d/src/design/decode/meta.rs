@@ -941,7 +941,7 @@ fn parse_feature_timeline_record(
     expected: (&str, u64),
     source_ordinal: u32,
     type_guids_by_entity: &HashMap<u64, Vec<&str>>,
-) -> Option<DesignFeatureTimeline> {
+) -> Option<(DesignFeatureTimeline, bool)> {
     let (expected_class_tag, expected_entity_id) = expected;
     let (
         class_tag,
@@ -992,6 +992,7 @@ fn parse_feature_timeline_record(
 
     let mut items = Vec::new();
     let mut null_items = 0_usize;
+    let mut interior_null = false;
     for _ in 0..count {
         let target_offset = at.checked_add(1)?;
         let reference = take_reference(bytes, &mut at)?;
@@ -1000,7 +1001,7 @@ fn parse_feature_timeline_record(
             continue;
         }
         if null_items > 0 {
-            return None;
+            interior_null = true;
         }
         let target = local_reference(&reference, type_guids_by_entity)?;
         let target_offset = u64::try_from(target_offset).ok()?;
@@ -1042,13 +1043,16 @@ fn parse_feature_timeline_record(
         context_record_index,
     )
     .ok()
+    .map(|timeline| (timeline, interior_null))
 }
 
 /// Decode the exact counted scope list that carries authored feature order.
 pub(crate) fn decode_feature_timelines(
     scan: &ContainerScan,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<DesignFeatureTimeline>, CodecError> {
     let mut out = Vec::new();
+    let mut pending_losses = Vec::new();
     for entry in scan.entries.iter().filter(|entry| {
         super::sheet_metal_settings::is_settings_stream(scan, entry, ContainerRole::Metastream)
     }) {
@@ -1165,7 +1169,7 @@ pub(crate) fn decode_feature_timelines(
                         "Design feature-timeline record extent is outside its BulkStream".into(),
                     ));
                 }
-                let timeline = parse_feature_timeline_record(
+                let (timeline, interior_null) = parse_feature_timeline_record(
                     bytes,
                     bulk_name,
                     start..end,
@@ -1179,10 +1183,17 @@ pub(crate) fn decode_feature_timelines(
                     )
                 })?;
 
+                if interior_null {
+                    pending_losses.push(crate::loss::F3dLossCode::FeatureTimelineNullSlotAssumed.note(
+                        format!("Timeline {} contains a null slot before a readable item; the slot is assumed to name no item and the readable references retain their order.", timeline.id()),
+                    ));
+                }
+
                 out.push(timeline);
             }
         }
     }
+    losses.extend(pending_losses);
     Ok(out)
 }
 

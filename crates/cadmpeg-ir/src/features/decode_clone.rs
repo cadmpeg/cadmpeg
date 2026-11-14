@@ -4,9 +4,9 @@
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
     BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
-    CoilConstruction, CoilPlacement, CombineOperands, ComponentTransferMode, DatumPlaneReference,
-    DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull, DraftSecondSide,
-    EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+    CoilConstruction, CoilPlacement, CombineDestination, CombineOperands, ComponentTransferMode,
+    DatumPlaneReference, DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull,
+    DraftSecondSide, EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
     ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion, FaceSelection,
     FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
     FilledSurfaceContinuity, FilledSurfaceContinuityState, GeneratedBodyRef, GeneratedCurveRef,
@@ -94,6 +94,8 @@ Reparent,
 });
 
 rewrite_record!(CombineOperands, []; { target, tools });
+
+rewrite_enum!(CombineDestination, []; { TargetComponent, NewComponent });
 
 rewrite_enum!(DatumPlaneReference, []; {
     Feature { feature },
@@ -208,6 +210,7 @@ rewrite_enum!(FeatureOperation, []; {
     MeshCombineFaceGroups { source },
     MeshSection { source, plane, sketch },
     MeshModify { source, modification },
+    MeshConvert(field0),
     InsertBodies { bodies },
     InsertComponent { occurrence },
     InsertComponents { components },
@@ -262,6 +265,7 @@ rewrite_enum!(FeatureOperation, []; {
     SheetMetalAttachedPlate { profile, thickness, side, attachment },
     SheetMetalBend { plate, attachment, inside_radius, relief, transition },
     SheetMetalCorner { bend, effect },
+    SheetMetalBendLines { construction },
     SheetMetalEdgeFlange { edges, height, angle, height_datum, bend_position, width, bend_radius },
     SheetMetalHem { edges, bend_position, form, direction, bend_radius },
     Fillet { groups },
@@ -286,7 +290,7 @@ Thicken { faces, thickness, side, result, tangent_chain },
     ExtendSurface { faces, distance, method },
     RuledSurface { edges, support_faces, mode, angle, alternate_face, corner },
     Draft { faces, anchor, angle, outward, second_side },
-    Combine { operands, op, keep_tools },
+    Combine { operands, op, keep_tools, destination },
     BoundaryFill { tools, cells },
     CutWithSurface { targets, tools, reverse },
     TrimBodies { operands, keep },
@@ -601,3 +605,6 @@ rewrite_record!(super::Feature, []; { id, product_definition, ordinal, name, sup
 rewrite_record!(super::FeatureContent, []; (field0));
 rewrite_enum!(super::FeatureSourceContent, []; { Text(value), Parameter(value), Feature(value) });
 rewrite_enum!(super::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });
+
+rewrite_record!(super::sheet_metal::SheetMetalBendLinesConstruction, []; { bends, stationary, inside_radius });
+rewrite_record!(super::sheet_metal::SheetMetalLineBend, []; { line, angle });

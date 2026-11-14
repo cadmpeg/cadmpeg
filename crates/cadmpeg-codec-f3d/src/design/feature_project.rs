@@ -53,6 +53,7 @@ mod path_pattern;
 mod pattern_seeds;
 mod reverse_normal;
 mod revolve_target;
+pub(crate) mod shell_fallback;
 mod surface_offset;
 mod surface_patch;
 pub(crate) mod sweep_fallback;
@@ -83,6 +84,8 @@ macro_rules! or_none {
     };
 }
 
+mod bend_lines;
+mod chamfer;
 mod delete_face;
 mod extrude;
 
@@ -743,6 +746,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
             }
             let family = design_feature_family(&scope.kind());
+            let mut retain_chamfer_records = false;
             let mut inserted_bodies: Vec<cadmpeg_ir::ids::BodyId> = Vec::new();
             let definition = match family {
                 Some(DesignFeatureFamily::Sketch) => {
@@ -782,35 +786,27 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     &mut projection_losses,
                 )?,
                 Some(DesignFeatureFamily::Chamfer) => {
-                    let mut chamfer = if parameters.is_empty() {
-                        project_fixed_chamfer(
-                            scope,
-                            construction_groups,
-                            edge_operands,
-                            edge_identity_operands,
-                            edge_treatment_vertex_operands,
-                            histories,
-                            (ctx, &mut projection_losses),
-                        )?
-                    } else {
-                        None
-                    };
-                    if chamfer.is_none() {
-                        chamfer = project_chamfer(
-                            scope,
-                            &parameters,
-                            inputs,
-                            ctx,
-                            &mut projection_losses,
-                        )?;
+                    let projection = chamfer::prepare(scope, inputs);
+                    let mut definition = if projection.legacy_compatible() && parameters.is_empty() {
+                        project_fixed_chamfer(scope, construction_groups, edge_operands,
+                            edge_identity_operands, edge_treatment_vertex_operands, histories,
+                            (ctx, &mut projection_losses))?
+                    } else { None };
+                    if definition.is_none() && projection.legacy_compatible() {
+                        definition = project_chamfer(scope, &parameters, inputs, ctx, &mut projection_losses)?;
                     }
-                    chamfer.map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                    definition.map_or_else(|| {
+                        retain_chamfer_records = true;
+                        projection.project(&parameters, ctx, &mut projection_losses)
+                    }, Ok)?
                 }
                 Some(DesignFeatureFamily::Combine) => project_combine(scope, native_scope)
                     .unwrap_or_else(|| {
-                        FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: scope.kind_name().into(),
-                            parameters: BTreeMap::new(),
+                        projection_losses.push(crate::loss::F3dLossCode::FeatureCombineDefinitionUnresolved.note(
+                            format!("{}: the Combine operation or its operand construction is unresolved; the feature family is retained without a fabricated Boolean operation", scope.id),
+                        ));
+                        FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                            family: UnresolvedFamily::Combine,
                         })
                     }),
                 Some(DesignFeatureFamily::Draft) => {
@@ -1282,6 +1278,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs, ctx)?
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                Some(DesignFeatureFamily::SheetMetalBend) => {
+                    bend_lines::project(scope, &parameters, inputs, &mut projection_losses)?
+                }
                 None => {
                     if let Some(definition) = super::position::project(scope, &mut projection_losses) {
                         definition
@@ -1619,10 +1618,25 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 ) || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CurveDrivenPartial { .. }))
                     || matches!(family, Some(DesignFeatureFamily::Hole))
                     || matches!(family, Some(DesignFeatureFamily::Emboss))
+                    || retain_chamfer_records
                     || shell_has_independent_walls(scope)
                     || extended_joint_origin
                 {
                     let mut properties = scope_properties(scope, native_scope, placements, &parameters)?;
+                    if retain_chamfer_records {
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("chamfer:parameters"),
+                            serde_json::to_string(&chamfer::retained_parameters(scope, inputs))
+                                .map_err(CodecError::malformed)?,
+                        );
+                        if let Some(sets) = scope.chamfer_sets() {
+                            properties.insert(
+                                cadmpeg_core::nonblank_literal!("chamfer:sets"),
+                                serde_json::to_string(sets).map_err(CodecError::malformed)?,
+                            );
+                        }
+                    }
+
                     if shell_has_independent_walls(scope)
                         && matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Shell { .. }))
                     {
@@ -2216,19 +2230,32 @@ fn project_solid_primitive(
         crate::records::feature::scope::DesignScopePayload::SpherePrimitive(Some(
             crate::records::feature::primitives::DesignSpherePrimitive {
                 transform,
+                support_transform,
                 diameter,
                 operation: result,
                 ..
             },
-        )) => FeatureDefinition::Operation(FeatureOperation::Sphere {
-            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                transform[0][3] * 10.0,
-                transform[1][3] * 10.0,
-                transform[2][3] * 10.0,
-            ))?,
-            radius: cadmpeg_ir::scalar::PositiveLength::new(diameter.get() * 5.0)?,
-            op: operation(*result),
-        }),
+        )) => {
+            let local = [transform[0][3], transform[1][3], transform[2][3]];
+            let support = support_transform.map_or(
+                crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+                |support| support.value,
+            );
+            let center = [0, 1, 2].map(|axis| {
+                (support[axis][0] * local[0]
+                    + support[axis][1] * local[1]
+                    + support[axis][2] * local[2]
+                    + support[axis][3])
+                    * 10.0
+            });
+            FeatureDefinition::Operation(FeatureOperation::Sphere {
+                center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    center[0], center[1], center[2],
+                ))?,
+                radius: cadmpeg_ir::scalar::PositiveLength::new(diameter.get() * 5.0)?,
+                op: operation(*result),
+            })
+        }
         crate::records::feature::scope::DesignScopePayload::TorusPrimitive(Some(
             crate::records::feature::primitives::DesignTorusPrimitive {
                 transform,
@@ -2534,7 +2561,10 @@ pub(super) fn project_combine(
     scope: &DesignParameterScope,
     native_scope: &str,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use crate::records::feature::combine::DesignCombineDestination;
+    use cadmpeg_ir::features::{
+        BodySelection, CombineDestination, FeatureDefinition, FeatureOperation,
+    };
 
     let operation = scope.combine_operation()?;
     let selection = |record_index| {
@@ -2560,6 +2590,11 @@ pub(super) fn project_combine(
         operands,
         op: operation.operation,
         keep_tools: operation.keep_tools,
+
+        destination: match operation.destination {
+            DesignCombineDestination::TargetComponent => CombineDestination::TargetComponent,
+            DesignCombineDestination::NewComponent { .. } => CombineDestination::NewComponent,
+        },
     }))
 }
 
@@ -6331,7 +6366,7 @@ fn project_chamfer(
     let group_count = if shared_specification {
         1
     } else {
-        edge_groups.len()
+        edge_groups.len().max(1)
     };
     // The specification is shared with one edge-role group. Any other role
     // keeps that reading and says so.
@@ -6422,6 +6457,12 @@ fn project_chamfer(
         candidates.push(spec);
     }
     let mut groups = Vec::new();
+    if edge_groups.is_empty() {
+        groups.push(ChamferGroup {
+            edges: chamfer::unresolved_selection(scope, None, losses),
+            spec: candidates[0],
+        });
+    }
     for (ordinal, group) in edge_groups.into_iter().enumerate() {
         let spec = *or_none!(candidates.get(if group_count == 1 { 0 } else { ordinal }));
         let group = ChamferGroup {
@@ -6478,12 +6519,9 @@ fn project_fixed_chamfer(
 
     let fixed = or_none!(scope.fixed_chamfer_parameters());
     let stream = or_none!(native_stream(&scope.id));
-    let group = or_none!(unique_feature_match(construction_groups.iter().filter(
-        |group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-        }
-    )));
+    let group = unique_feature_match(construction_groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
+    }));
     let spec = match fixed {
         crate::records::feature::fixed_parameters::DesignFixedChamferParameters::EqualDistance { distance } => {
             ChamferSpec::Distance {
@@ -6500,21 +6538,24 @@ fn project_fixed_chamfer(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Chamfer {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
-                edges: resolved_edge_treatment_group_with_corners(
-                    group,
-                    crate::design::edge_resolve::EdgeTreatmentInputs {
-                        groups: construction_groups,
-                        operands: edge_operands,
-                        identity_operands: edge_identity_operands,
-                        vertex_operands: edge_treatment_vertex_operands,
-                        histories,
-                        previous_state_id: scope.previous_history_state_id(),
-                        feature_id: &crate::ids::neutral_feature_id(scope),
-                        treatment_radius: None,
-                    },
-                    ctx,
-                    losses,
-                )?,
+                edges: match group {
+                    None => chamfer::unresolved_selection(scope, None, losses),
+                    Some(group) => resolved_edge_treatment_group_with_corners(
+                        group,
+                        crate::design::edge_resolve::EdgeTreatmentInputs {
+                            groups: construction_groups,
+                            operands: edge_operands,
+                            identity_operands: edge_identity_operands,
+                            vertex_operands: edge_treatment_vertex_operands,
+                            histories,
+                            previous_state_id: scope.previous_history_state_id(),
+                            feature_id: &crate::ids::neutral_feature_id(scope),
+                            treatment_radius: None,
+                        },
+                        ctx,
+                        losses,
+                    )?,
+                },
                 spec,
             }),
             flip_direction: false,
