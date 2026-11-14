@@ -2960,3 +2960,27 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Controlled saves must vary extent, thickness side, result choice, radius expression and material factor independently, with the stored controls and resulting topology compared.
 
 **Note.** The API's SideOne default and per-side symmetric distance are described in [ContourFlange orientation](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_ContourFlangeInput_orientation.htm) and [Sheet Metal Features](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/SheetMetalFeatures_UM.htm). [Sheet Metal Rules](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/SheetMetalRules_UM.htm) distinguishes thickness, bend radius and neutral-axis factor. API enumeration values do not assign meaning to the stored unassigned control.
+
+### DR-562. Occurrence of a cross-component Combine tool body
+
+**Question.** Which occurrence of its component supplies the body that a cross-component `Combine` tool names?
+
+**Known.** The browser node of a tool names the body entity suffix and the creating scope. The history-only body-map pair of that suffix names the BREP blob and body selector. The operand-list body-selection record stores an occurrence list before the body-node list.
+
+**Need.** A design that places one component more than once and combines the body of one placement, with the occurrence-list entries of the tool decoded against the component instance records.
+
+**Conflict.** None.
+
+**Note.** A generated tool identifies its generating feature and body-map pair only.
+
+### DR-563. Derived Base Feature creators of Combine tools
+
+**Question.** Which timeline feature regenerates a `Combine` tool body whose creating scope is a `Derived Base Feature` scope?
+
+**Known.** The `Derived Base Feature` scope is not a timeline item. Its record references the tool body entity. The `DerivedInstance` scope of the derived component references a class-407 record, and that record references a component-instance record listed under `ComponentInstancesRoot` and the `DerivedInstance` scope. No record found references both the `Derived Base Feature` scope and the `DerivedInstance` scope or its class-407 record.
+
+**Need.** A stored reference that joins the `Derived Base Feature` scope or its body to a timeline feature.
+
+**Conflict.** None.
+
+**Note.** The tool stays native and reports `feature.combine-tool-body-unbound`. Proven tools of the same `Combine` still add their generating features as dependencies.
