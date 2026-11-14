@@ -4779,6 +4779,10 @@ fn project_move(
     let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
     let definition = move_body(operation, BodySelection::Native(group.id.clone()))?;
     let parameters = move_parameter_owners(scope, operation, owners);
+    let classified = parameters
+        .as_ref()
+        .filter(|(_, agrees)| *agrees)
+        .map_or(&[][..], |(indices, _)| indices.as_slice());
     let auxiliary = scope
         .reference_members()
         .values()
@@ -4787,36 +4791,45 @@ fn project_move(
             *index != group.record_index
                 && *index != operation.transform_record_index
                 && !group.members().iter().any(|member| member.value == *index)
-                && !parameters.contains(index)
+                && !classified.contains(index)
         })
         .collect::<Vec<_>>();
     if !auxiliary.is_empty() {
+        let disagreement = match &parameters {
+            Some((indices, false)) => {
+                format!("; its parameter owners {indices:?} disagree with the stored matrix")
+            }
+            _ => String::new(),
+        };
         losses.push(crate::loss::F3dLossCode::FeatureMoveScopeReferencesAssumed.note(format!(
-            "Move scope {} applies its stored matrix to body group {}; auxiliary scope references {auxiliary:?} are assumed to leave that motion unchanged (DR-126).",
+            "Move scope {} applies its stored matrix to body group {}; auxiliary scope references {auxiliary:?} are assumed to leave that motion unchanged{disagreement} (DR-126).",
             scope.id, group.record_index
         )));
     }
     Some(definition)
 }
 
-/// Record indices of the `Move` parameter owners whose values agree with the
-/// stored matrix: the X, Y and Z distances of a translation, or the angle of a
-/// rotation.
+/// The translation-distance or rotation-angle owners of a `Move` scope, and
+/// whether their values agree with the stored matrix. `None` when the scope
+/// references no such owner set or its direction code words have no
+/// agreement rule.
 fn move_parameter_owners(
     scope: &DesignParameterScope,
     operation: &crate::records::feature::direct_face::DesignMoveOperation,
     owners: &[DesignParameterOwner],
-) -> Vec<u32> {
+) -> Option<(Vec<u32>, bool)> {
     use crate::records::feature::direct_face::DesignMoveForm;
 
-    let Some(stream) = native_stream(&scope.id) else {
-        return Vec::new();
-    };
+    let stream = native_stream(&scope.id)?;
     let mut values = owners
         .iter()
         .filter(|owner| {
             native_stream(owner.id()) == Some(stream)
                 && owner.scope_record_index() == scope.record_index
+                && scope
+                    .reference_members()
+                    .values()
+                    .any(|index| *index == owner.record_index())
         })
         .map(|owner| {
             (
@@ -4831,37 +4844,47 @@ fn move_parameter_owners(
     let agrees = match (operation.form, values.as_slice()) {
         (DesignMoveForm::Form0, [(0, _, x), (1, _, y), (2, _, z)]) => {
             let translation = [transform[0][3], transform[1][3], transform[2][3]];
-            let world = operation
-                .prefix
-                .as_ref()
-                .is_some_and(|prefix| prefix.codes == [0, 1]);
-            if world {
-                let length =
-                    |vector: [f64; 3]| vector.iter().map(|value| value * value).sum::<f64>().sqrt();
-                (length([*x, *y, *z]) - length(translation)).abs() <= EPS_MOVE_PARAMETER_AGREEMENT
-            } else {
-                [*x, *y, *z]
-                    .iter()
-                    .zip(translation)
-                    .all(|(value, component)| {
-                        (value - component).abs() <= EPS_MOVE_PARAMETER_AGREEMENT
-                    })
+            match operation.prefix.as_ref().map(|prefix| prefix.codes) {
+                None | Some([0, 0]) => {
+                    [*x, *y, *z]
+                        .iter()
+                        .zip(translation)
+                        .all(|(value, component)| {
+                            (value - component).abs() <= EPS_MOVE_PARAMETER_AGREEMENT
+                        })
+                }
+                Some([0, 1]) => {
+                    (length_of([*x, *y, *z]) - length_of(translation)).abs()
+                        <= EPS_MOVE_PARAMETER_AGREEMENT
+                }
+                Some(_) => return None,
             }
         }
         (DesignMoveForm::Form1, [(0, _, angle)]) => {
-            let cosine = (transform[0][0] + transform[1][1] + transform[2][2] - 1.0) / 2.0;
-            (angle.cos() - cosine).abs() <= EPS_MOVE_PARAMETER_AGREEMENT
+            let skew = [
+                transform[2][1] - transform[1][2],
+                transform[0][2] - transform[2][0],
+                transform[1][0] - transform[0][1],
+            ];
+            let rotation = (length_of(skew) / 2.0)
+                .atan2((transform[0][0] + transform[1][1] + transform[2][2] - 1.0) / 2.0);
+            let turned = angle.rem_euclid(std::f64::consts::TAU);
+            (turned - rotation).abs() <= EPS_MOVE_PARAMETER_AGREEMENT
+                || (std::f64::consts::TAU - turned - rotation).abs() <= EPS_MOVE_PARAMETER_AGREEMENT
         }
-        _ => false,
+        _ => return None,
     };
-    if agrees {
+    Some((
         values
             .iter()
             .map(|&(_, record_index, _)| record_index)
-            .collect()
-    } else {
-        Vec::new()
-    }
+            .collect(),
+        agrees,
+    ))
+}
+
+fn length_of(vector: [f64; 3]) -> f64 {
+    vector.iter().map(|value| value * value).sum::<f64>().sqrt()
 }
 
 fn move_body(

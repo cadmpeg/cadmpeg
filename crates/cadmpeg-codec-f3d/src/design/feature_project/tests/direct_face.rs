@@ -989,13 +989,23 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
 }
 
 fn move_owner(record_index: u32, local_ordinal: u32, value: f64) -> DesignParameterOwner {
+    owner_in("f3d:test", 12, record_index, local_ordinal, value)
+}
+
+fn owner_in(
+    stream: &str,
+    scope_record_index: u32,
+    record_index: u32,
+    local_ordinal: u32,
+    value: f64,
+) -> DesignParameterOwner {
     serde_json::from_value(serde_json::json!({
-        "id": format!("f3d:test:design-parameter-owner#{record_index}"),
+        "id": format!("{stream}:design-parameter-owner#{record_index}"),
         "byte_offset": 2000 + record_index,
         "frame_length": 104,
         "class_tag": "351",
         "record_index": record_index,
-        "scope_record_index": 12,
+        "scope_record_index": scope_record_index,
         "local_ordinal": local_ordinal,
         "evaluated_value": value,
         "evaluated_value_offset": 2040 + record_index,
@@ -1138,6 +1148,16 @@ fn translation_owners_that_disagree_with_the_matrix_stay_auxiliary() {
             .unwrap()
             .contains("[900, 901, 902]"));
     }
+    let disagreeing = [
+        move_owner(900, 0, 0.7),
+        move_owner(901, 1, -0.3),
+        move_owner(902, 2, 0.5),
+    ];
+    let message = move_scope_reference_loss(&scope, &disagreeing).unwrap();
+    assert!(
+        message.contains("parameter owners [900, 901, 902] disagree"),
+        "{message}"
+    );
     let rotation = move_scope(DesignMoveForm::Form1, MOVE_TRANSLATION, None);
     let owners = [
         move_owner(900, 0, 0.7),
@@ -1147,6 +1167,87 @@ fn translation_owners_that_disagree_with_the_matrix_stay_auxiliary() {
     assert!(move_scope_reference_loss(&rotation, &owners)
         .unwrap()
         .contains("[900, 901, 902]"));
+}
+
+#[test]
+fn world_distances_of_a_rotated_component_agree_with_the_component_translation() {
+    use crate::records::feature::direct_face::DesignMoveForm;
+    let component = [
+        [1., 0., 0., 0.],
+        [0., 1., 0., 0.],
+        [0., 0., 1., 0.5],
+        [0., 0., 0., 1.],
+    ];
+    let owners = [
+        move_owner(900, 0, 0.3),
+        move_owner(901, 1, 0.4),
+        move_owner(902, 2, 0.),
+    ];
+    let world = move_scope(DesignMoveForm::Form0, component, Some([0, 1]));
+    assert_eq!(move_scope_reference_loss(&world, &owners), None);
+}
+
+#[test]
+fn translation_owners_with_unknown_codes_or_outside_the_scope_stay_auxiliary() {
+    use crate::records::feature::direct_face::DesignMoveForm;
+    let unknown = move_scope(DesignMoveForm::Form0, MOVE_TRANSLATION, Some([0, 2]));
+    let owners = [
+        move_owner(900, 0, 0.7),
+        move_owner(901, 1, -0.3),
+        move_owner(902, 2, 0.2),
+    ];
+    let message = move_scope_reference_loss(&unknown, &owners).unwrap();
+    assert!(message.contains("[900, 901, 902]") && !message.contains("disagree"));
+    let scope = move_scope(DesignMoveForm::Form0, MOVE_TRANSLATION, None);
+    for third in [
+        owner_in("f3d:other", 12, 902, 2, 0.2),
+        owner_in("f3d:test", 13, 902, 2, 0.2),
+        move_owner(950, 2, 0.2),
+        move_owner(902, 1, 0.2),
+    ] {
+        let owners = [move_owner(900, 0, 0.7), move_owner(901, 1, -0.3), third];
+        let message = move_scope_reference_loss(&scope, &owners).unwrap();
+        assert!(message.contains("[900, 901, 902]"), "{message}");
+    }
+}
+
+#[test]
+fn a_rotation_angle_owner_is_compared_in_radians_modulo_a_full_turn() {
+    use crate::records::feature::direct_face::DesignMoveForm;
+    let (sine, cosine) = std::f64::consts::FRAC_PI_4.sin_cos();
+    let rotation = [
+        [cosine, -sine, 0., 0.],
+        [sine, cosine, 0., 0.],
+        [0., 0., 1., 0.],
+        [0., 0., 0., 1.],
+    ];
+    let scope = move_scope(DesignMoveForm::Form1, rotation, None);
+    for angle in [
+        -std::f64::consts::FRAC_PI_4,
+        std::f64::consts::TAU - std::f64::consts::FRAC_PI_4,
+        std::f64::consts::TAU + std::f64::consts::FRAC_PI_4,
+    ] {
+        assert!(
+            move_scope_reference_loss(&scope, &[move_owner(900, 0, angle)])
+                .unwrap()
+                .contains("[901, 902]")
+        );
+    }
+    let identity = move_scope(
+        DesignMoveForm::Form1,
+        [
+            [1., 0., 0., 0.],
+            [0., 1., 0., 0.],
+            [0., 0., 1., 0.],
+            [0., 0., 0., 1.],
+        ],
+        None,
+    );
+    assert!(
+        move_scope_reference_loss(&identity, &[move_owner(900, 0, 4.0e-5)])
+            .unwrap()
+            .contains("parameter owners [900] disagree")
+    );
 }
 
 #[test]
