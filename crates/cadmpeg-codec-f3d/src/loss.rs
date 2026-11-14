@@ -290,6 +290,8 @@ pub(crate) enum F3dLossCode {
     HoleParametersIndependentAssumed,
     HoleShapePartialAssumed,
     HoleExtentLeadingWordAssumed,
+    /// A tapped Hole keeps its stored diameter instead of the bore of its thread size.
+    HoleTappedDiameterStored,
     HoleStandardSizingAssumed,
     HoleCarrierAxisAssumed,
     /// Align operand roles and motion have no neutral binding.
@@ -904,6 +906,7 @@ impl F3dLossCode {
         Self::HoleParametersIndependentAssumed,
         Self::HoleShapePartialAssumed,
         Self::HoleExtentLeadingWordAssumed,
+        Self::HoleTappedDiameterStored,
         Self::HoleStandardSizingAssumed,
         Self::HoleCarrierAxisAssumed,
         Self::AlignOperandsUnresolved,
@@ -1356,6 +1359,7 @@ impl F3dLossCode {
             Self::HoleParametersIndependentAssumed => "feature.hole-parameters-independent-assumed",
             Self::HoleShapePartialAssumed => "feature.hole-shape-partial-assumed",
             Self::HoleExtentLeadingWordAssumed => "feature.hole-extent-leading-word-assumed",
+            Self::HoleTappedDiameterStored => "feature.hole-tapped-diameter-stored",
             Self::HoleStandardSizingAssumed => "feature.hole-standard-sizing-assumed",
             Self::HoleCarrierAxisAssumed => "feature.hole-carrier-axis-assumed",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
@@ -1820,6 +1824,7 @@ impl F3dLossCode {
             | Self::HoleParametersIndependentAssumed
             | Self::HoleShapePartialAssumed
             | Self::HoleExtentLeadingWordAssumed
+            | Self::HoleTappedDiameterStored
             | Self::HoleStandardSizingAssumed
             | Self::HoleCarrierAxisAssumed
             | Self::FeatureScopeUnprojected
@@ -2172,6 +2177,7 @@ impl F3dLossCode {
             | Self::HoleParametersIndependentAssumed
             | Self::HoleShapePartialAssumed
             | Self::HoleExtentLeadingWordAssumed
+            | Self::HoleTappedDiameterStored
             | Self::HoleStandardSizingAssumed
             | Self::HoleCarrierAxisAssumed
             | Self::FeatureScopeUnprojected
@@ -2617,6 +2623,7 @@ mod tests {
                 "feature.hole-parameters-independent-assumed",
                 "feature.hole-shape-partial-assumed",
                 "feature.hole-extent-leading-word-assumed",
+                "feature.hole-tapped-diameter-stored",
                 "feature.hole-standard-sizing-assumed",
                 "feature.hole-carrier-axis-assumed",
                 "feature.align-operands-unresolved",

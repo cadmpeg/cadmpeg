@@ -1155,7 +1155,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 4 B
 
-Offsets are relative to the end of the Hole property block, or to the end of the u32 word that type versions 5 and 7 store after it. Type version 3 stores only the two-byte prefix.
+Offsets are relative to the end of the Hole property block, or to the end of the u32 tap type that type versions 5 and 7 store after it. Type version 3 stores only the two-byte prefix.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/hole.rs`
