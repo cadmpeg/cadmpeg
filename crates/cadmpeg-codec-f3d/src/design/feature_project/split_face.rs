@@ -100,7 +100,7 @@ pub(super) fn project_split_face(
                     .collect::<Vec<_>>();
                 losses.push(crate::loss::F3dLossCode::FeatureSplitFaceDirectionUnresolved.note(
                     format!(
-                        "{}: the decoded vector {:?} and native carrier {:?} with selector records {:?} are retained (input run complete: {}); no neutral direction source is resolved (DR-501).",
+                        "{}: the decoded vector {:?} and native carrier {:?} with selector records {:?} are retained (input run complete: {}); no neutral direction source is resolved (DR-571).",
                         scope.id, direction, native_carrier, native_inputs, operation.inputs_complete
                     ),
                 ));
@@ -115,7 +115,7 @@ pub(super) fn project_split_face(
             DesignSplitFaceMethod::Unresolved => {
                 losses.push(
                     crate::loss::F3dLossCode::FeatureSplitFaceMethodUnresolved.note(format!(
-                        "{}: method control {:?} remains unresolved (DR-500).",
+                        "{}: method control {:?} remains unresolved (DR-570).",
                         scope.id, operation.control
                     )),
                 );
@@ -125,7 +125,7 @@ pub(super) fn project_split_face(
         None => {
             losses.push(
                 crate::loss::F3dLossCode::FeatureSplitFaceMethodUnresolved.note(format!(
-                    "{}: method control is unavailable (DR-500).",
+                    "{}: method control is unavailable (DR-570).",
                     scope.id
                 )),
             );
@@ -227,7 +227,7 @@ pub(super) fn project_split_face(
     if !complete_partition {
         losses.push(crate::loss::F3dLossCode::FeatureSplitFaceGroupsUnresolved.note(
             format!(
-                "{}: the available tool, target, and direction references do not prove a complete ordered partition (DR-502).",
+                "{}: the available tool, target, and direction references do not prove a complete ordered partition (DR-572).",
                 scope.id
             ),
         ));
@@ -298,7 +298,7 @@ pub(super) fn project_split_face(
     for (record_index, error) in face_errors {
         losses.push(
             crate::loss::F3dLossCode::FeatureSplitFaceSelectionProjectionFailed.note(format!(
-                "{}: initial projection of face group {record_index} failed: {error} (DR-504).",
+                "{}: initial projection of face group {record_index} failed: {error} (DR-574).",
                 scope.id
             )),
         );

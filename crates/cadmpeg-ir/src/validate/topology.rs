@@ -3155,6 +3155,27 @@ fn check_feature_references(
                     }
                 }
             }
+            FeatureOperation::MeshConvert(conversion) => {
+                for source in &conversion.sources {
+                    if let crate::features::mesh::MeshSelection::Tessellations(tessellations) =
+                        source
+                    {
+                        for tessellation in tessellations {
+                            if ids
+                                .tessellations(tessellation.as_str(), crate::index::StandardIndex)
+                                .is_none()
+                            {
+                                ref_error(
+                                    findings,
+                                    feature.id.as_str(),
+                                    "mesh conversion source tessellation",
+                                    tessellation.as_str(),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
             FeatureOperation::InsertBodies { .. } => {}
             FeatureOperation::InsertComponent { occurrence } => {
                 if !occurrence_ids.contains(occurrence.as_str()) {

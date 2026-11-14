@@ -220,6 +220,13 @@ pub(crate) enum F3dLossCode {
     FeatureMeshOperationParameterUnbound,
     FeatureMeshOperationFieldsUninterpreted,
     FeatureMeshSectionCurvesUnresolved,
+    FeatureMeshConversionScopeUnparsed,
+    FeatureMeshConversionTailPartial,
+    FeatureMeshConversionMethodUnresolved,
+    FeatureMeshConversionMethodAssumed,
+    FeatureMeshConversionEnvelopeAssumed,
+    FeatureMeshConversionSourceUnresolved,
+    FeatureMeshConversionOutputUnresolved,
     /// A historical Thread selection has no complete proof of its live faces.
     ThreadLiveFaceUnproven,
     /// A stored-body operation has an empty proven body set.
@@ -639,6 +646,14 @@ pub(crate) enum F3dLossCode {
     ThickenFaceSelectionAssumed,
     /// A `Shell` reference table stores references outside its face-group members.
     FeatureShellTableMembersAssumed,
+    FeatureShellSourceUnavailable,
+    FeatureShellEnvelopeAssumed,
+    FeatureShellCountedControlAssumed,
+    FeatureShellSlotDirectionAssumed,
+    FeatureShellSelectionUnresolved,
+    FeatureShellWallValueUnresolved,
+    FeatureShellGroupRolesAssumed,
+    FeatureShellControlsUninterpreted,
     FeatureShellIndependentWallsNative,
     /// A compact, marked, or counted `Shell` prefix stores an offset-21 Boolean whose Shell option is unresolved.
     FeatureShellPrefixFlagAssumed,
@@ -954,6 +969,13 @@ impl F3dLossCode {
         Self::FeatureMeshOperationParameterUnbound,
         Self::FeatureMeshOperationFieldsUninterpreted,
         Self::FeatureMeshSectionCurvesUnresolved,
+        Self::FeatureMeshConversionScopeUnparsed,
+        Self::FeatureMeshConversionTailPartial,
+        Self::FeatureMeshConversionMethodUnresolved,
+        Self::FeatureMeshConversionMethodAssumed,
+        Self::FeatureMeshConversionEnvelopeAssumed,
+        Self::FeatureMeshConversionSourceUnresolved,
+        Self::FeatureMeshConversionOutputUnresolved,
         Self::ThreadLiveFaceUnproven,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
@@ -1220,6 +1242,14 @@ impl F3dLossCode {
         Self::ThickenThicknessUnrepresentable,
         Self::ThickenFaceSelectionAssumed,
         Self::FeatureShellTableMembersAssumed,
+        Self::FeatureShellSourceUnavailable,
+        Self::FeatureShellEnvelopeAssumed,
+        Self::FeatureShellCountedControlAssumed,
+        Self::FeatureShellSlotDirectionAssumed,
+        Self::FeatureShellSelectionUnresolved,
+        Self::FeatureShellWallValueUnresolved,
+        Self::FeatureShellGroupRolesAssumed,
+        Self::FeatureShellControlsUninterpreted,
         Self::FeatureShellIndependentWallsNative,
         Self::FeatureShellPrefixFlagAssumed,
         Self::FeatureFaceOperandUnresolved,
@@ -1558,6 +1588,21 @@ impl F3dLossCode {
                 "feature.mesh-operation-fields-uninterpreted"
             }
             Self::FeatureMeshSectionCurvesUnresolved => "feature.mesh-section-curves-unresolved",
+            Self::FeatureMeshConversionScopeUnparsed => "feature.mesh-conversion-scope-unparsed",
+            Self::FeatureMeshConversionTailPartial => "feature.mesh-conversion-tail-partial",
+            Self::FeatureMeshConversionMethodUnresolved => {
+                "feature.mesh-conversion-method-unresolved"
+            }
+            Self::FeatureMeshConversionMethodAssumed => "feature.mesh-conversion-method-assumed",
+            Self::FeatureMeshConversionEnvelopeAssumed => {
+                "feature.mesh-conversion-envelope-assumed"
+            }
+            Self::FeatureMeshConversionSourceUnresolved => {
+                "feature.mesh-conversion-source-unresolved"
+            }
+            Self::FeatureMeshConversionOutputUnresolved => {
+                "feature.mesh-conversion-output-unresolved"
+            }
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
@@ -1841,6 +1886,14 @@ impl F3dLossCode {
             Self::ThickenThicknessUnrepresentable => "feature.thicken-thickness-unrepresentable",
             Self::ThickenFaceSelectionAssumed => "feature.thicken-face-selection-assumed",
             Self::FeatureShellTableMembersAssumed => "feature.shell-table-members-assumed",
+            Self::FeatureShellSourceUnavailable => "feature.shell-source-unavailable",
+            Self::FeatureShellEnvelopeAssumed => "feature.shell-envelope-assumed",
+            Self::FeatureShellCountedControlAssumed => "feature.shell-counted-control-assumed",
+            Self::FeatureShellSlotDirectionAssumed => "feature.shell-slot-direction-assumed",
+            Self::FeatureShellSelectionUnresolved => "feature.shell-selection-unresolved",
+            Self::FeatureShellWallValueUnresolved => "feature.shell-wall-value-unresolved",
+            Self::FeatureShellGroupRolesAssumed => "feature.shell-group-roles-assumed",
+            Self::FeatureShellControlsUninterpreted => "feature.shell-controls-uninterpreted",
             Self::FeatureShellIndependentWallsNative => "feature.shell-independent-walls-native",
             Self::FeatureShellPrefixFlagAssumed => "feature.shell-prefix-flag-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
@@ -2158,6 +2211,13 @@ impl F3dLossCode {
             | Self::FeatureMeshOperationParameterUnbound
             | Self::FeatureMeshOperationFieldsUninterpreted
             | Self::FeatureMeshSectionCurvesUnresolved
+            | Self::FeatureMeshConversionScopeUnparsed
+            | Self::FeatureMeshConversionTailPartial
+            | Self::FeatureMeshConversionMethodUnresolved
+            | Self::FeatureMeshConversionMethodAssumed
+            | Self::FeatureMeshConversionEnvelopeAssumed
+            | Self::FeatureMeshConversionSourceUnresolved
+            | Self::FeatureMeshConversionOutputUnresolved
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
@@ -2359,6 +2419,14 @@ impl F3dLossCode {
             | Self::ThickenFrameAssumed
             | Self::ThickenFaceSelectionAssumed
             | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellSourceUnavailable
+            | Self::FeatureShellEnvelopeAssumed
+            | Self::FeatureShellCountedControlAssumed
+            | Self::FeatureShellSlotDirectionAssumed
+            | Self::FeatureShellSelectionUnresolved
+            | Self::FeatureShellWallValueUnresolved
+            | Self::FeatureShellGroupRolesAssumed
+            | Self::FeatureShellControlsUninterpreted
             | Self::FeatureShellIndependentWallsNative
             | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
@@ -2585,6 +2653,13 @@ impl F3dLossCode {
             | Self::FeatureMeshOperationParameterUnbound
             | Self::FeatureMeshOperationFieldsUninterpreted
             | Self::FeatureMeshSectionCurvesUnresolved
+            | Self::FeatureMeshConversionScopeUnparsed
+            | Self::FeatureMeshConversionTailPartial
+            | Self::FeatureMeshConversionMethodUnresolved
+            | Self::FeatureMeshConversionMethodAssumed
+            | Self::FeatureMeshConversionEnvelopeAssumed
+            | Self::FeatureMeshConversionSourceUnresolved
+            | Self::FeatureMeshConversionOutputUnresolved
             | Self::ThreadLiveFaceUnproven
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound
@@ -2789,6 +2864,14 @@ impl F3dLossCode {
             | Self::ThickenFrameAssumed
             | Self::ThickenFaceSelectionAssumed
             | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellSourceUnavailable
+            | Self::FeatureShellEnvelopeAssumed
+            | Self::FeatureShellCountedControlAssumed
+            | Self::FeatureShellSlotDirectionAssumed
+            | Self::FeatureShellSelectionUnresolved
+            | Self::FeatureShellWallValueUnresolved
+            | Self::FeatureShellGroupRolesAssumed
+            | Self::FeatureShellControlsUninterpreted
             | Self::FeatureShellIndependentWallsNative
             | Self::FeatureShellPrefixFlagAssumed
             | Self::FeatureFaceOperandUnresolved
@@ -3062,6 +3145,13 @@ mod tests {
                 "feature.mesh-operation-parameter-unbound",
                 "feature.mesh-operation-fields-uninterpreted",
                 "feature.mesh-section-curves-unresolved",
+                "feature.mesh-conversion-scope-unparsed",
+                "feature.mesh-conversion-tail-partial",
+                "feature.mesh-conversion-method-unresolved",
+                "feature.mesh-conversion-method-assumed",
+                "feature.mesh-conversion-envelope-assumed",
+                "feature.mesh-conversion-source-unresolved",
+                "feature.mesh-conversion-output-unresolved",
                 "feature.thread-live-face-unproven",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
@@ -3328,6 +3418,14 @@ mod tests {
                 "feature.thicken-thickness-unrepresentable",
                 "feature.thicken-face-selection-assumed",
                 "feature.shell-table-members-assumed",
+                "feature.shell-source-unavailable",
+                "feature.shell-envelope-assumed",
+                "feature.shell-counted-control-assumed",
+                "feature.shell-slot-direction-assumed",
+                "feature.shell-selection-unresolved",
+                "feature.shell-wall-value-unresolved",
+                "feature.shell-group-roles-assumed",
+                "feature.shell-controls-uninterpreted",
                 "feature.shell-independent-walls-native",
                 "feature.shell-prefix-flag-assumed",
                 "feature.face-operand-unresolved",

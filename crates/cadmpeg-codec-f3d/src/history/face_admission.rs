@@ -405,7 +405,7 @@ impl FaceAdmission<'_, '_> {
             if unresolved_faces(targets) {
                 losses.push(
                     crate::loss::F3dLossCode::FeatureSplitFaceSelectionUnresolved.note(format!(
-                        "{id}: target face selection remains unresolved (DR-503)."
+                        "{id}: target face selection remains unresolved (DR-573)."
                     )),
                 );
             }
@@ -418,7 +418,7 @@ impl FaceAdmission<'_, '_> {
             if unresolved_tool {
                 losses.push(
                     crate::loss::F3dLossCode::FeatureSplitFaceSelectionUnresolved.note(format!(
-                        "{id}: splitting-tool selection remains unresolved (DR-503)."
+                        "{id}: splitting-tool selection remains unresolved (DR-573)."
                     )),
                 );
             }
