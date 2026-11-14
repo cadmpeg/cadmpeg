@@ -8,7 +8,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::layout::consolidated_wide_face_roster_prefix as prefix;
-use crate::wire::bytes::{allocation_reference, compact_int, AllocationReferenceEncoding};
+use crate::wire::bytes::{allocation_reference, compact_int};
 use crate::wire::records::{
     parse_consolidated_record, records_are_contiguous, ConsolidatedFamily as Family,
     ConsolidatedFrameFlag as Flag, ConsolidatedRecord, SourceExtent,
@@ -61,33 +61,25 @@ pub(super) fn wide_roster(bytes: &[u8], flags: u8) -> Option<(Vec<usize>, &[u8])
     Some((refs, roster_bits(view, count, flags)?))
 }
 
-pub(super) fn backward_roster(bytes: &[u8]) -> Option<(Vec<usize>, &[u8])> {
-    if *bytes.get(prefix::MARKER)? != 0x18 {
-        return None;
-    }
-    let count = usize::from(View::u16_le_at(bytes, prefix::FACE_COUNT)?);
-    let payload = bytes.get(prefix::LEN..)?;
-    let view = View::over_retained(payload);
+pub(super) fn sheet_references(
+    bytes: &[u8],
+    family: Family,
+) -> Option<(Vec<crate::wire::bytes::AllocationReference>, &[u8])> {
+    let (count, mut at) = match (*bytes.first()?, family) {
+        (0x18, Family::A) => (usize::from(View::u16_le_at(bytes, 1)?), 3),
+        (0x08, Family::A) => (usize::from(*bytes.get(1)?), 2),
+        (lead, _) => (usize::from(lead.checked_sub(0x80)?), 1),
+    };
     if count == 0 {
         return None;
     }
-    view.counted(u64::try_from(count).ok()?, 2)?;
-    let mut at = 0;
-    let mut refs = Vec::new();
-    for _ in 0..count {
-        let reference = allocation_reference(payload, &mut at)?;
-        if !matches!(
-            reference.encoding,
-            AllocationReferenceEncoding::BackwardDistance | AllocationReferenceEncoding::WidthCoded
-        ) || reference.value == 0
-        {
-            return None;
-        }
-        refs.push(usize::try_from(reference.value).ok()?);
-    }
+    View::over_retained(bytes.get(at..)?).counted(u64::try_from(count).ok()?, 1)?;
+    let references = (0..count)
+        .map(|_| allocation_reference(bytes, &mut at))
+        .collect::<Option<Vec<_>>>()?;
     Some((
-        refs,
-        roster_bits(View::over_retained(payload.get(at..)?), count, 3)?,
+        references,
+        roster_bits(View::over_retained(bytes.get(at..)?), count, 3)?,
     ))
 }
 

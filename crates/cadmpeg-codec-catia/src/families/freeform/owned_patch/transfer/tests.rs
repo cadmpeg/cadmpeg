@@ -398,3 +398,30 @@ fn planar_transfer_preserves_pcurves_with_native_accuracy() {
         Some(0.02 + GAP_MM)
     );
 }
+
+#[test]
+fn reused_native_faces_keep_distinct_owner_occurrences() {
+    let mut patches = two_face_sheet();
+    let mut reused = two_face_sheet();
+    for patch in &mut reused {
+        patch.body = (0, 11);
+    }
+    patches.extend(reused);
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(|ctx| {
+        append(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            patches,
+            &mut LaneRefusals::new(),
+            &mut FamilyEntityAdmission::new(ctx),
+        )
+    })
+    .expect("transfer shared native faces");
+    ir.finalize();
+    assert_eq!(ir.model.bodies.len(), 2);
+    assert_eq!(ir.model.faces.len(), 4);
+    assert_eq!(ir.model.edges.len(), 14);
+    let validation = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate owner occurrences");
+    assert!(validation.is_ok(), "{:?}", validation.findings);
+}
