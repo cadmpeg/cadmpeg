@@ -123,6 +123,9 @@ pub(crate) enum F3dLossCode {
     ComponentBodyOwnerUnresolved,
     /// A body without explicit membership uses entity-cluster component ownership.
     ComponentBodyOwnerFallback,
+    /// A body-owning definition with no placed occurrence is placed once below
+    /// the document root at its stored body frames.
+    StoredFrameOccurrence,
     /// The component owner graph contains a cycle.
     LocalOccurrenceOwnerCycle,
     /// Repeated local instance trees exceed the decode limits.
@@ -955,6 +958,7 @@ impl F3dLossCode {
         Self::LocalOccurrenceOwnerUnbound,
         Self::ComponentBodyOwnerUnresolved,
         Self::ComponentBodyOwnerFallback,
+        Self::StoredFrameOccurrence,
         Self::LocalOccurrenceOwnerCycle,
         Self::LocalOccurrenceExpansionLimit,
         Self::FeatureOccurrencePathUnresolved,
@@ -1496,6 +1500,7 @@ impl F3dLossCode {
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
             Self::LocalOccurrenceOwnerUnbound => "assembly.local-occurrence-owner-unbound",
             Self::ComponentBodyOwnerFallback => "assembly.component-body-owner-fallback",
+            Self::StoredFrameOccurrence => "assembly.stored-frame-occurrence",
             Self::ComponentBodyOwnerUnresolved => "assembly.component-body-owner-unresolved",
             Self::LocalOccurrenceOwnerCycle => "assembly.local-occurrence-owner-cycle",
             Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
@@ -2237,6 +2242,7 @@ impl F3dLossCode {
             | Self::ActComponentLinkUnresolved
             | Self::ComponentBodyOwnerUnresolved
             | Self::ComponentBodyOwnerFallback
+            | Self::StoredFrameOccurrence
             | Self::LocalOccurrenceOwnerUnbound
             | Self::LocalOccurrenceOwnerCycle
             | Self::LocalOccurrenceExpansionLimit
@@ -3113,6 +3119,7 @@ impl F3dLossCode {
             Self::XrefOwnerUnresolved
             | Self::ComponentBodyOwnerUnresolved
             | Self::ComponentBodyOwnerFallback
+            | Self::StoredFrameOccurrence
             | Self::LocalOccurrenceOwnerUnbound
             | Self::LocalOccurrenceOwnerCycle
             | Self::LocalOccurrenceExpansionLimit
@@ -3294,6 +3301,7 @@ mod tests {
                 "assembly.local-occurrence-owner-unbound",
                 "assembly.component-body-owner-unresolved",
                 "assembly.component-body-owner-fallback",
+                "assembly.stored-frame-occurrence",
                 "assembly.local-occurrence-owner-cycle",
                 "assembly.local-occurrence-expansion-limit",
                 "feature.occurrence-path-unresolved",
