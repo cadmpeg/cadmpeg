@@ -944,6 +944,7 @@ pub(crate) fn decode_face_operands(
             crate::records::feature::scope::DesignFeatureKind::MoveFace
                 | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                 | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
+                | crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim
                 | crate::records::feature::scope::DesignFeatureKind::UnStitch
         );
         let is_emboss_face = scope.kind()
