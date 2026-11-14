@@ -54,12 +54,16 @@ fn feature_operation_geometry_is_validated() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let definitions = vec![
-        FeatureDefinition::Operation(FeatureOperation::Form { cages: Vec::new() }),
-        FeatureDefinition::Operation(FeatureOperation::Form {
-            cages: vec![
-                crate::ids::SubdId::mint("synthetic:test:subd#missing").expect("valid identity")
-            ],
-        }),
+        FeatureDefinition::Operation(FeatureOperation::Form(
+            crate::features::form::FormConstruction::complete(Vec::new()).unwrap(),
+        )),
+        FeatureDefinition::Operation(FeatureOperation::Form(
+            crate::features::form::FormConstruction::complete(vec![crate::ids::SubdId::mint(
+                "synthetic:test:subd#missing",
+            )
+            .expect("valid identity")])
+            .unwrap(),
+        )),
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: crate::features::FaceSelection::Native("thicken:faces".into()),
             thickness: None,
@@ -595,4 +599,20 @@ fn captured_component_positions_validate_resolved_occurrences() {
     let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
     assert!(findings.iter().any(|finding| finding.message
         == "references missing captured component occurrence `synthetic:test:occurrence#missing`"));
+}
+
+#[test]
+fn form_candidate_cages_participate_in_referential_validation() {
+    let mut ir = unit_cube().unwrap();
+    ir.model.features.push(serde_json::from_value(serde_json::json!({
+        "id":"test:model:feature#form-candidate", "ordinal":0, "suppressed":null,
+        "definition":{"definition":"form","cages":{
+            "observations":[{"paths":[],"binding":{"state":"decoded","cage":"test:model:subd#candidate"}}],
+            "membership":{"state":"partial","order":"unknown","members":[]}
+        }}
+    })).unwrap());
+    let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+    assert!(findings.iter().any(|finding| finding.entity.as_deref()
+        == Some("test:model:feature#form-candidate")
+        && finding.check == crate::report::check::Check::ReferentialIntegrity));
 }

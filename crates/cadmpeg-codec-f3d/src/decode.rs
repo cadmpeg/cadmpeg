@@ -842,7 +842,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance { block, .. }) => {
             block.is_none()
         }
-        FeatureDefinition::Operation(FeatureOperation::Form { cages }) => cages.is_empty(),
+        FeatureDefinition::Operation(FeatureOperation::Form(construction)) => !construction.membership_is_complete() || construction.committed_cages().next().is_none(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies }) => {
             !base_feature_body_selection_is_resolved(bodies)
         }

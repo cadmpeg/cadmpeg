@@ -1292,7 +1292,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
-            crate::design::feature_project::form_cages::bind_form_cages(
+            crate::design::feature_project::form_cages::project_forms(
                 ctx,
                 scan,
                 std::slice::from_ref(&scope),
@@ -1303,15 +1303,14 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         })
     })
     .expect("retained Form result owner");
-    assert_eq!(
-        *features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Native {
-                kind: "Form".into(),
-                parameters: Default::default(),
-            }
-        )
-    );
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Form(construction),
+    ) = features[0].evaluation.definition()
+    else {
+        panic!("neutral Form");
+    };
+    assert!(!construction.membership_is_complete());
+    assert_eq!(construction.inputs().references.len(), 1);
 }
 
 #[test]
@@ -1436,7 +1435,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
 
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
-                crate::design::feature_project::form_cages::bind_form_cages(
+                crate::design::feature_project::form_cages::project_forms(
                     ctx,
                     scan,
                     std::slice::from_ref(&scope),
@@ -1447,15 +1446,14 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             })
         })
         .expect("long Form cage binding");
-        assert_eq!(
-            *features[0].evaluation.definition(),
-            cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Native {
-                    kind: "Form".into(),
-                    parameters: Default::default(),
-                }
-            )
-        );
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Form(construction),
+        ) = features[0].evaluation.definition()
+        else {
+            panic!("neutral Form");
+        };
+        assert!(!construction.membership_is_complete());
+        assert_eq!(construction.inputs().references.len(), 1);
     }
 }
 

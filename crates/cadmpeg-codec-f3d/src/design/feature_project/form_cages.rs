@@ -14,315 +14,910 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
 
-fn distinct_form_cage_ids<T: Eq + Hash>(ids: &[T]) -> bool {
-    let mut distinct = HashSet::new();
-    for id in ids {
-        if distinct.contains(id) {
-            return false;
-        }
+use crate::loss::F3dLossCode;
+use cadmpeg_ir::features::form::{
+    FormCageBinding, FormCageObservation, FormConstruction, FormInputPath, FormInputs,
+    FormKnownOrder, FormListRole, FormMember, FormMembership, FormNativeList, FormNativeMember,
+    FormObservationIndex, FormOrder, FormResource, FormResourceAvailability,
+};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, NonEmptyMembers};
+use cadmpeg_ir::ids::NativeId;
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::subd::SubdSurface;
 
-        // discarded-value: the duplicate case returned above.
-        let _ = distinct.insert(id);
+pub(super) fn unresolved(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &crate::records::parameters::DesignParameter)],
+) -> Result<FeatureDefinition, CodecError> {
+    let mut inputs = form_inputs(scope)?;
+    inputs.parameters = super::scope_parameter_expressions(scope, parameters)?;
+    FormConstruction::try_new(
+        inputs,
+        Vec::new(),
+        FormConstruction::default().membership().clone(),
+    )
+    .map(|construction| FeatureDefinition::Operation(FeatureOperation::Form(construction)))
+    .map_err(CodecError::malformed)
+}
+
+fn record_id(
+    scope: &DesignParameterScope,
+    record: impl std::fmt::Display,
+) -> Result<NativeId, CodecError> {
+    let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+    NativeId::mint(format!("{stream}:design-record#{record}")).map_err(CodecError::malformed)
+}
+
+fn input_path<T: Copy + std::fmt::Display>(
+    scope: &DesignParameterScope,
+    records: &[T],
+) -> Result<FormInputPath, CodecError> {
+    let references =
+        std::iter::once(NativeId::mint(scope.id.clone()).map_err(CodecError::malformed))
+            .chain(records.iter().map(|&record| record_id(scope, record)))
+            .collect::<Result<Vec<_>, _>>()?;
+    Ok(FormInputPath {
+        references: NonEmptyMembers::try_from(references).map_err(CodecError::malformed)?,
+    })
+}
+
+fn form_inputs(scope: &DesignParameterScope) -> Result<FormInputs, CodecError> {
+    if NativeId::mint(scope.id.clone()).is_err() {
+        return Ok(FormInputs::default());
     }
-    true
+    Ok(FormInputs {
+        references: scope
+            .reference_members()
+            .values()
+            .map(|&record| record_id(scope, record))
+            .collect::<Result<_, _>>()?,
+        ..FormInputs::default()
+    })
 }
 
-fn push_form_cage_id(ids: &mut Vec<cadmpeg_ir::ids::SubdId>, id: &cadmpeg_ir::ids::SubdId) {
-    ids.push(id.clone());
+fn note(losses: &mut Vec<LossNote>, code: F3dLossCode, scope: &str, reason: &str) {
+    let note = code.note(format!("Form {scope}: {reason}."));
+    if !losses.contains(&note) {
+        losses.push(note);
+    }
 }
 
-/// Replace a resolved Form scope's native definition with its committed cages.
-///
-/// The Form's cage-list record owns ordered cage-object references. Each object
-/// reaches a surface record, and the serializer naming that surface supplies
-/// the archive entry identity of the neutral cage.
-pub(crate) fn bind_form_cages(
+pub(crate) fn project_forms(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
-    features: &mut [cadmpeg_ir::features::Feature],
-    cages: &[cadmpeg_ir::subd::SubdSurface],
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    features: &mut [Feature],
+    cages: &[SubdSurface],
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    for scope in scopes
-        .iter()
-        .filter(|scope| scope.kind() == crate::records::feature::scope::DesignFeatureKind::Form)
-    {
-        let Some(stream) =
-            native_stream(&scope.id).and_then(|stream| stream.strip_prefix(ids::SCHEME_PREFIX))
-        else {
-            continue;
-        };
-        let bytes = scan.entry_bytes(stream)?;
-        let records = IndexedRecordOffsets::build(bytes);
-        let cage_lists = form_cage_lists(
-            bytes,
-            &records,
-            scope.reference_members().values().copied(),
-            scope.record_index,
-        );
-        if scope.class_tag.as_str() == "325" {
-            if let Some(cage_objects) = form_class_325_cage_objects(
-                bytes,
-                &records,
-                scope.record_index,
-                scope.reference_members().values().copied(),
-            )? {
-                let serializers = form_cage_serializers(ctx, bytes, &records)?;
-                let mut resolved = Vec::new();
-                let mut valid = true;
-                for object in cage_objects {
-                    let Some(surface) = form_class_325_cage_surface(bytes, &records, object) else {
-                        valid = false;
-                        break;
-                    };
-                    let Some(entry_name) = serializers.entry_name(surface) else {
-                        valid = false;
-                        break;
-                    };
-                    let mut matches = cages.iter().filter(|cage| {
-                        cage.source_object
-                            .as_ref()
-                            .and_then(|source| source.object_id.as_str().rsplit('/').next())
-                            == Some(entry_name)
-                    });
-                    let Some(cage) = matches.next() else {
-                        continue;
-                    };
-                    if matches.next().is_some() {
-                        valid = false;
-                        break;
-                    }
-                    push_form_cage_id(&mut resolved, &cage.id);
-                }
-                if valid && !resolved.is_empty() && distinct_form_cage_ids(&resolved) {
-                    let feature_id = crate::ids::neutral_feature_id(scope);
-                    if let Some(feature) =
-                        features.iter_mut().find(|feature| feature.id == feature_id)
-                    {
-                        if matches!(
-                            feature.evaluation.definition(),
-                            cadmpeg_ir::features::FeatureDefinition::Operation(
-                                cadmpeg_ir::features::FeatureOperation::Native { .. }
-                            )
-                        ) {
-                            feature.evaluation.set_definition(
-                                cadmpeg_ir::features::FeatureDefinition::Operation(
-                                    cadmpeg_ir::features::FeatureOperation::Form {
-                                        cages: resolved,
-                                    },
-                                ),
-                            );
-                        }
-                    }
-                }
-                continue;
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(limit));
+    }
+    let mut indices = HashMap::new();
+    for feature in features {
+        let mut retained = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Form(construction)) => {
+                construction.clone()
             }
-        }
-        if scope.class_tag.as_str() == "328"
-            && scopes
-                .iter()
-                .filter(|candidate| {
-                    candidate.kind() == crate::records::feature::scope::DesignFeatureKind::Form
-                })
-                .count()
-                == 1
-            && form_class_328_envelope(bytes, &records, scope)
-        {
-            let serializers = form_cage_serializers(ctx, bytes, &records)?;
-            let mut resolved = Vec::new();
-            let mut valid = true;
-            for surface in &serializers.ordered {
-                let Some(entry_name) = serializers.entry_name(*surface) else {
-                    valid = false;
-                    break;
-                };
-                let mut matches = cages.iter().filter(|cage| {
-                    cage.source_object
-                        .as_ref()
-                        .and_then(|source| source.object_id.as_str().rsplit('/').next())
-                        == Some(entry_name)
-                });
-                let Some(cage) = matches.next() else {
-                    continue;
-                };
-                if matches.next().is_some() {
-                    valid = false;
-                    break;
-                }
-                push_form_cage_id(&mut resolved, &cage.id);
-            }
-            if valid
-                && !resolved.is_empty()
-                && resolved.len() == cages.len()
-                && distinct_form_cage_ids(&resolved)
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters })
+                if kind.as_str() == "Form" =>
             {
-                let feature_id = crate::ids::neutral_feature_id(scope);
-                if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id)
-                {
-                    if matches!(
-                        feature.evaluation.definition(),
-                        cadmpeg_ir::features::FeatureDefinition::Operation(
-                            cadmpeg_ir::features::FeatureOperation::Native { .. }
-                        )
-                    ) {
-                        feature.evaluation.set_definition(
-                            cadmpeg_ir::features::FeatureDefinition::Operation(
-                                cadmpeg_ir::features::FeatureOperation::Form { cages: resolved },
-                            ),
-                        );
-                    }
-                }
+                FormConstruction::try_new(
+                    FormInputs {
+                        parameters: parameters.clone(),
+                        ..FormInputs::default()
+                    },
+                    Vec::new(),
+                    FormConstruction::default().membership().clone(),
+                )
+                .map_err(CodecError::malformed)?
             }
-            continue;
-        }
-        let resolved = match form_cage_list_cages(ctx, bytes, &records, scope, &cage_lists, cages)?
-        {
-            Some(resolved) => resolved,
-            None => {
-                let Some(meta) =
-                    crate::design::decode::meta::metadata_for_bulk_stream(scan, stream)?
-                else {
-                    continue;
-                };
-                let Some(resolved) =
-                    form_body_record_cages(ctx, bytes, &records, &meta, scope, cages)?
-                else {
-                    continue;
-                };
-                if resolved.len() > 1 && native_form_feature(features, scope).is_some() {
-                    losses.push(crate::loss::F3dLossCode::FeatureFormCageOrderAssumed.note(
-                        format!(
-                            "Form scope {} orders its {} cages by body-record index.",
-                            scope.id,
-                            resolved.len()
-                        ),
-                    ));
-                }
-                if resolved.is_empty() && native_form_feature(features, scope).is_some() {
-                    losses.push(crate::loss::F3dLossCode::FeatureFormEmptyCagesAssumed.note(
-                        format!(
-                            "Form scope {} has an empty selection and no body records.",
-                            scope.id
-                        ),
-                    ));
-                }
-                resolved
-            }
+            _ => continue,
         };
-        if let Some(feature) = native_form_feature(features, scope) {
-            feature
-                .evaluation
-                .set_definition(cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::Form { cages: resolved },
-                ));
+        let scope = scopes.iter().find(|scope| {
+            NativeId::mint(scope.id.clone()).is_ok()
+                && scope.kind() == crate::records::feature::scope::DesignFeatureKind::Form
+                && match feature.native_ref.as_deref() {
+                    Some(native_ref) => native_ref == scope.id.as_str(),
+                    None => feature.id == crate::ids::neutral_feature_id(scope),
+                }
+        });
+        if let Some(scope) = scope {
+            let mut inputs = retained.inputs().clone();
+            if inputs.references.is_empty() {
+                inputs.references = form_inputs(scope)?.references;
+            }
+            retained = FormConstruction::try_new(
+                inputs,
+                retained.observations().to_vec(),
+                retained.membership().clone(),
+            )
+            .map_err(CodecError::malformed)?;
         }
+        let entry = scope
+            .and_then(|scope| native_stream(&scope.id))
+            .and_then(|stream| {
+                scan.design_stream_entry_for_scope(
+                    cadmpeg_core::container::ContainerRole::Bulkstream,
+                    stream,
+                )
+            });
+        if let (Some(scope), Some(entry), Some(bytes)) = (
+            scope,
+            entry,
+            entry.and_then(|entry| scan.entry_view(&entry.name)),
+        ) {
+            let records = indices
+                .entry(entry.name.as_str())
+                .or_insert_with(|| IndexedRecordOffsets::build(bytes.window()));
+            let mut inputs = form_inputs(scope)?;
+            inputs.parameters = retained.inputs().parameters.clone();
+            let mut facts = FormFacts {
+                inputs,
+                observations: Vec::new(),
+            };
+            let source = FormSource {
+                bytes: bytes.window(),
+                records,
+                scope,
+                cages,
+                stream: &entry.name,
+            };
+            let membership = collect_membership(ctx, scan, source, scopes, &mut facts, losses)?;
+            let construction =
+                FormConstruction::try_new(facts.inputs, facts.observations, membership)
+                    .map_err(CodecError::malformed)?;
+            retained = retain_knowledge(retained, construction)?;
+            if !retained.membership_is_complete() {
+                note(
+                    losses,
+                    F3dLossCode::FeatureFormMembershipUnresolved,
+                    &scope.id,
+                    "cage membership or identity joins remain incomplete",
+                );
+            }
+        } else {
+            note(
+                losses,
+                F3dLossCode::FeatureFormSourceUnavailable,
+                feature.id.as_str(),
+                "source scope or Design payload is unavailable",
+            );
+        }
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::Form(
+                retained,
+            )));
     }
     Ok(())
 }
 
-fn native_form_feature<'a>(
-    features: &'a mut [cadmpeg_ir::features::Feature],
-    scope: &DesignParameterScope,
-) -> Option<&'a mut cadmpeg_ir::features::Feature> {
-    let feature_id = crate::ids::neutral_feature_id(scope);
-    features.iter_mut().find(|feature| {
-        feature.id == feature_id
-            && matches!(
-                feature.evaluation.definition(),
-                cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::Native { .. }
+fn retain_knowledge(
+    old: FormConstruction,
+    new: FormConstruction,
+) -> Result<FormConstruction, CodecError> {
+    let old_members = match old.membership() {
+        FormMembership::Complete { members, .. } => members.len(),
+        FormMembership::Partial { members, .. } => members.len(),
+    };
+    let new_members = match new.membership() {
+        FormMembership::Complete { members, .. } => members.len(),
+        FormMembership::Partial { members, .. } => members.len(),
+    };
+    let keep_old = !new.membership_is_complete()
+        && (old.membership_is_complete() || old_members > new_members);
+    let (base, extra) = if keep_old { (old, new) } else { (new, old) };
+    let mut facts = FormFacts {
+        inputs: base.inputs().clone(),
+        observations: base.observations().to_vec(),
+    };
+    if facts.inputs.parameters.is_empty() {
+        facts.inputs.parameters = extra.inputs().parameters.clone();
+    }
+    if facts.inputs.references.is_empty() {
+        facts
+            .inputs
+            .references
+            .clone_from(&extra.inputs().references);
+    }
+    for list in &extra.inputs().lists {
+        if !facts.inputs.lists.contains(list) {
+            facts.inputs.lists.push(list.clone());
+        }
+    }
+    for observation in extra.observations() {
+        facts.observe(observation.clone());
+    }
+    FormConstruction::try_new(facts.inputs, facts.observations, base.membership().clone())
+        .map_err(CodecError::malformed)
+}
+
+struct FormFacts {
+    inputs: FormInputs,
+    observations: Vec<FormCageObservation>,
+}
+impl FormFacts {
+    fn observe(&mut self, observation: FormCageObservation) -> FormObservationIndex {
+        if let Some(index) =
+            self.observations
+                .iter()
+                .position(|old| match (&old.binding, &observation.binding) {
+                    (
+                        FormCageBinding::Decoded { cage: a, .. },
+                        FormCageBinding::Decoded { cage: b, .. },
+                    ) => a == b,
+                    (FormCageBinding::Unresolved {}, FormCageBinding::Unresolved {}) => {
+                        old.paths == observation.paths
+                    }
+                    _ => old.binding == observation.binding,
+                })
+        {
+            if let (
+                FormCageBinding::Decoded { resource: old, .. },
+                FormCageBinding::Decoded { resource: new, .. },
+            ) = (&mut self.observations[index].binding, &observation.binding)
+            {
+                if old.is_none() {
+                    old.clone_from(new);
+                }
+            }
+            for path in observation.paths {
+                if !self.observations[index].paths.contains(&path) {
+                    self.observations[index].paths.push(path);
+                }
+            }
+            return FormObservationIndex(index);
+        }
+        let index = self.observations.len();
+        self.observations.push(observation);
+        FormObservationIndex(index)
+    }
+    fn list(
+        &mut self,
+        scope: &DesignParameterScope,
+        source: u32,
+        role: FormListRole,
+        members: &[Option<u64>],
+    ) -> Result<(), CodecError> {
+        let list = FormNativeList {
+            source: input_path(scope, &[source])?,
+            role,
+            declared_count: u32::try_from(members.len()).map_err(CodecError::malformed)?,
+            members: members
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, &record)| record.map(|record| (ordinal, record)))
+                .map(|(ordinal, record)| {
+                    Ok(FormNativeMember {
+                        ordinal: u32::try_from(ordinal).map_err(CodecError::malformed)?,
+                        reference: record_id(scope, record)?,
+                    })
+                })
+                .collect::<Result<_, CodecError>>()?,
+        };
+        if !self.inputs.lists.contains(&list) {
+            self.inputs.lists.push(list);
+        }
+        Ok(())
+    }
+    fn tracking(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        source: FormSource<'_>,
+        types: &FormRecordTypes,
+    ) -> Result<(), CodecError> {
+        for &group in source.scope.reference_members().values() {
+            if types.selection_groups.get(&group) != Some(&0) {
+                continue;
+            }
+            if let Some(members) = form_tracking_members(
+                ctx,
+                source.bytes,
+                source.records,
+                group,
+                source.scope.record_index,
+            )? {
+                self.list(
+                    source.scope,
+                    group,
+                    FormListRole::TrackingSelection,
+                    &members,
+                )?;
+            }
+        }
+        Ok(())
+    }
+    fn surface(
+        &mut self,
+        scan: &ContainerScan,
+        source: FormSource<'_>,
+        path: FormInputPath,
+        surface: Option<u64>,
+        serializers: &FormCageSerializers,
+        losses: &mut Vec<LossNote>,
+    ) -> Result<Vec<FormObservationIndex>, CodecError> {
+        let FormSource { scope, cages, .. } = source;
+        let entries = surface.and_then(|surface| serializers.entries.get(&surface));
+        let Some(entries) = entries else {
+            return Ok(vec![self.observe(FormCageObservation {
+                paths: vec![path],
+                binding: FormCageBinding::Unresolved {},
+            })]);
+        };
+        if entries.len() > 1 {
+            note(
+                losses,
+                F3dLossCode::FeatureFormCageBindingAmbiguous,
+                &scope.id,
+                "surface has multiple serializers",
+            );
+        }
+        let mut alternatives = Vec::new();
+        for serializer in entries {
+            let mut path = path.clone();
+            path.references.push(record_id(scope, serializer.record)?);
+            let entry = scan
+                .design_asset_folder()
+                .map(|folder| format!("{folder}/TSplines.BlobParts/{}", serializer.name));
+            let resource = FormResource {
+                source: record_id(scope, serializer.record)?,
+                entry: cadmpeg_core::text::NonBlankString::new(
+                    entry.as_ref().unwrap_or(&serializer.name).clone(),
                 )
-            )
-    })
-}
-
-fn unique_neutral_cage<'a>(
-    cages: &'a [cadmpeg_ir::subd::SubdSurface],
-    entry_name: &str,
-) -> Option<&'a cadmpeg_ir::ids::SubdId> {
-    let mut matches = cages.iter().filter(|cage| {
-        cage.source_object
-            .as_ref()
-            .and_then(|source| source.object_id.as_str().rsplit('/').next())
-            == Some(entry_name)
-    });
-    match (matches.next(), matches.next()) {
-        (Some(cage), None) => Some(&cage.id),
-        _ => None,
+                .ok_or_else(|| CodecError::malformed("Form serializer entry is blank"))?,
+            };
+            let matches = cages
+                .iter()
+                .filter(|cage| {
+                    entry.as_ref().is_some_and(|entry| {
+                        scan.has_entry(entry)
+                            && cage.source_object.as_ref().is_some_and(|source| {
+                                source.format == cadmpeg_ir::CodecFormat::F3d
+                                    && source.object_id.as_str() == entry
+                            })
+                    })
+                })
+                .collect::<Vec<_>>();
+            if matches.len() == 1 {
+                alternatives.push(self.observe(FormCageObservation {
+                    paths: vec![path.clone()],
+                    binding: FormCageBinding::Decoded {
+                        cage: matches[0].id.clone(),
+                        resource: Some(resource),
+                    },
+                }));
+            } else {
+                if matches.len() > 1 {
+                    note(
+                        losses,
+                        F3dLossCode::FeatureFormCageBindingAmbiguous,
+                        &scope.id,
+                        "resource has multiple neutral cage associations",
+                    );
+                }
+                let availability = match entry {
+                    None => FormResourceAvailability::Unknown,
+                    Some(_) if matches.len() > 1 => FormResourceAvailability::Ambiguous,
+                    Some(entry) if scan.has_entry(&entry) => {
+                        FormResourceAvailability::ActiveUndecoded
+                    }
+                    Some(_) => FormResourceAvailability::Inactive,
+                };
+                alternatives.push(self.observe(FormCageObservation {
+                    paths: vec![path.clone()],
+                    binding: FormCageBinding::Undecoded {
+                        resource,
+                        availability,
+                    },
+                }));
+                for cage in matches {
+                    self.observe(FormCageObservation {
+                        paths: vec![path.clone()],
+                        binding: FormCageBinding::Decoded {
+                            cage: cage.id.clone(),
+                            resource: None,
+                        },
+                    });
+                }
+            }
+        }
+        Ok(alternatives)
+    }
+    fn membership(
+        &self,
+        slots: Vec<Vec<FormObservationIndex>>,
+        cardinality: Option<u32>,
+        order: FormOrder,
+        certainty: FormKnownOrder,
+        closed: bool,
+    ) -> Result<FormMembership, CodecError> {
+        let mut members = Vec::new();
+        let mut seen = HashSet::new();
+        let mut complete = closed && (cardinality == Some(0) || !slots.is_empty());
+        for (ordinal, alternatives) in slots.into_iter().enumerate() {
+            let [observation] = alternatives.as_slice() else {
+                complete = false;
+                continue;
+            };
+            if matches!(
+                self.observations[observation.0].binding,
+                FormCageBinding::Undecoded {
+                    availability: FormResourceAvailability::Inactive,
+                    ..
+                }
+            ) {
+                complete = false;
+                continue;
+            }
+            if !seen.insert(*observation) {
+                complete = false;
+                continue;
+            }
+            complete &= matches!(
+                self.observations[observation.0].binding,
+                FormCageBinding::Decoded { .. }
+            );
+            members.push(FormMember {
+                observation: *observation,
+                ordinal: if cardinality.is_some() {
+                    Some(u32::try_from(ordinal).map_err(CodecError::malformed)?)
+                } else {
+                    None
+                },
+            });
+        }
+        if complete && order != FormOrder::Unknown {
+            Ok(FormMembership::Complete {
+                members: members
+                    .into_iter()
+                    .map(|member| member.observation)
+                    .collect(),
+                order: if order == FormOrder::Source {
+                    FormKnownOrder::Source
+                } else {
+                    FormKnownOrder::Assumed
+                },
+                certainty,
+            })
+        } else {
+            Ok(FormMembership::Partial {
+                cardinality,
+                order,
+                members,
+            })
+        }
     }
 }
 
-fn form_cage_list_cages(
+fn active_slots(
+    facts: &FormFacts,
+    slots: Vec<Vec<FormObservationIndex>>,
+) -> Vec<Vec<FormObservationIndex>> {
+    slots
+        .into_iter()
+        .filter(|slots| {
+            !slots.iter().all(|index| {
+                matches!(
+                    facts.observations[index.0].binding,
+                    FormCageBinding::Undecoded {
+                        availability: FormResourceAvailability::Inactive,
+                        ..
+                    }
+                )
+            })
+        })
+        .collect()
+}
+
+#[derive(Clone, Copy)]
+struct FormSource<'a> {
+    bytes: &'a [u8],
+    records: &'a IndexedRecordOffsets,
+    scope: &'a DesignParameterScope,
+    cages: &'a [SubdSurface],
+    stream: &'a str,
+}
+
+fn collect_membership(
     ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    scope: &DesignParameterScope,
-    cage_lists: &[Vec<u32>],
-    cages: &[cadmpeg_ir::subd::SubdSurface],
-) -> Result<Option<Vec<cadmpeg_ir::ids::SubdId>>, CodecError> {
-    let [cage_objects] = cage_lists else {
-        return Ok(None);
-    };
-    let Some(surfaces) = form_cage_surfaces(bytes, records, cage_objects, scope.record_index)
-    else {
-        return Ok(None);
-    };
+    scan: &ContainerScan,
+    source: FormSource<'_>,
+    scopes: &[DesignParameterScope],
+    facts: &mut FormFacts,
+    losses: &mut Vec<LossNote>,
+) -> Result<FormMembership, CodecError> {
+    let FormSource {
+        bytes,
+        records,
+        scope,
+        stream,
+        ..
+    } = source;
     let serializers = form_cage_serializers(ctx, bytes, records)?;
-    Ok(resolve_form_cage_surfaces(&serializers, &surfaces, cages))
-}
-
-fn resolve_form_cage_surfaces(
-    serializers: &FormCageSerializers,
-    surfaces: &[u32],
-    cages: &[cadmpeg_ir::subd::SubdSurface],
-) -> Option<Vec<cadmpeg_ir::ids::SubdId>> {
-    let mut resolved = Vec::new();
-    for surface in surfaces {
-        let cage = unique_neutral_cage(cages, serializers.entry_name(*surface)?)?;
-        push_form_cage_id(&mut resolved, cage);
+    let types = match crate::design::decode::meta::metadata_for_bulk_stream(scan, stream) {
+        Ok(Some(meta)) => Some(FormRecordTypes::of(&meta)),
+        Ok(None) | Err(CodecError::Malformed(_)) => None,
+        Err(error) => return Err(error),
+    };
+    if let Some(types) = &types {
+        facts.tracking(ctx, source, types)?;
     }
-    distinct_form_cage_ids(&resolved).then_some(resolved)
+    if scope.class_tag.as_str() == "325" {
+        if let Some(objects) = form_class_325_cage_objects(
+            bytes,
+            records,
+            scope.record_index,
+            scope.reference_members().values().copied(),
+        )? {
+            facts.list(
+                scope,
+                scope.record_index,
+                FormListRole::CageCatalog,
+                &objects
+                    .iter()
+                    .map(|&(object, _)| Some(u64::from(object)))
+                    .collect::<Vec<_>>(),
+            )?;
+            let slots = objects
+                .into_iter()
+                .map(|(object, companion)| {
+                    let surface = form_class_325_cage_surface(bytes, records, object);
+                    let mut path = vec![object];
+                    path.extend(surface);
+                    let alternatives = facts.surface(
+                        scan,
+                        source,
+                        input_path(scope, &path)?,
+                        surface.map(u64::from),
+                        &serializers,
+                        losses,
+                    )?;
+                    let companion_path = input_path(scope, &[companion])?;
+                    for index in &alternatives {
+                        if !facts.observations[index.0].paths.contains(&companion_path) {
+                            facts.observations[index.0]
+                                .paths
+                                .push(companion_path.clone());
+                        }
+                    }
+                    Ok::<_, CodecError>(alternatives)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let slots = active_slots(facts, slots);
+            return facts.membership(slots, None, FormOrder::Source, FormKnownOrder::Source, true);
+        }
+    }
+    if scope.class_tag.as_str() == "328"
+        && scopes
+            .iter()
+            .filter(|scope| scope.kind() == crate::records::feature::scope::DesignFeatureKind::Form)
+            .count()
+            == 1
+        && form_class_328_envelope(bytes, records, scope)
+    {
+        let slots = serializers
+            .ordered
+            .iter()
+            .map(|&surface| {
+                facts.surface(
+                    scan,
+                    source,
+                    input_path(scope, &[surface])?,
+                    Some(surface),
+                    &serializers,
+                    losses,
+                )
+            })
+            .collect::<Result<_, _>>()?;
+        let slots = active_slots(facts, slots);
+        note(
+            losses,
+            F3dLossCode::FeatureFormLegacySerializerMembershipAssumed,
+            &scope.id,
+            "sole-scope serializers establish cage membership",
+        );
+        note(
+            losses,
+            F3dLossCode::FeatureFormLegacySerializerOrderAssumed,
+            &scope.id,
+            "serializer frame order establishes cage order",
+        );
+        return facts.membership(
+            slots,
+            None,
+            FormOrder::Assumed,
+            FormKnownOrder::Assumed,
+            true,
+        );
+    }
+    let lists = form_cage_lists(
+        ctx,
+        bytes,
+        records,
+        scope
+            .reference_members()
+            .values()
+            .copied()
+            .filter(|record| {
+                types
+                    .as_ref()
+                    .is_none_or(|types| !types.selection_groups.contains_key(record))
+            }),
+        scope.record_index,
+    )?;
+    let mut ordinary = None;
+    for list in &lists {
+        let objects = &list.objects;
+        facts.list(scope, list.record, FormListRole::CageObjects, objects)?;
+        let slots = objects
+            .iter()
+            .map(|&object| {
+                let Some(object) = object else {
+                    return Ok(Vec::new());
+                };
+                let mut path = vec![u64::from(list.record), object];
+                let joined = u32::try_from(object)
+                    .ok()
+                    .and_then(|object| form_cage_surface(bytes, records, object, &mut path));
+                let surface = joined.map(|(_, surface)| surface);
+                let alternatives = facts.surface(
+                    scan,
+                    source,
+                    input_path(scope, &path)?,
+                    surface,
+                    &serializers,
+                    losses,
+                )?;
+                if let Some((owner, _)) = joined {
+                    let mut branch = path[..path.len() - 1].to_vec();
+                    branch.push(owner);
+                    let owner_path = input_path(scope, &branch)?;
+                    for index in &alternatives {
+                        if !facts.observations[index.0].paths.contains(&owner_path) {
+                            facts.observations[index.0].paths.push(owner_path.clone());
+                        }
+                    }
+                    if owner != u64::from(scope.record_index) {
+                        return Ok(Vec::new());
+                    }
+                }
+                Ok::<_, CodecError>(alternatives)
+            })
+            .collect::<Result<_, _>>()?;
+        let membership = facts.membership(
+            slots,
+            Some(u32::try_from(objects.len()).map_err(CodecError::malformed)?),
+            FormOrder::Source,
+            FormKnownOrder::Source,
+            lists.len() == 1,
+        )?;
+        if matches!(membership, FormMembership::Complete { .. }) {
+            return Ok(membership);
+        }
+        if lists.len() == 1 {
+            ordinary = Some(membership);
+        }
+    }
+    let Some(types) = types else {
+        note(
+            losses,
+            F3dLossCode::FeatureFormDefinitionUnavailable,
+            &scope.id,
+            "construction metadata is unavailable",
+        );
+        return Ok(ordinary.unwrap_or_else(|| FormConstruction::default().membership().clone()));
+    };
+    body_membership(ctx, scan, source, &types, facts, ordinary, losses)
 }
 
-fn form_body_record_cages(
+fn body_membership(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    source: FormSource<'_>,
+    types: &FormRecordTypes,
+    facts: &mut FormFacts,
+    ordinary: Option<FormMembership>,
+    losses: &mut Vec<LossNote>,
+) -> Result<FormMembership, CodecError> {
+    let FormSource {
+        bytes,
+        records,
+        scope,
+        ..
+    } = source;
+    let serializers = form_typed_serializers(ctx, bytes, records, types)?;
+    let mut slots = Vec::new();
+    let mut closed = !types.unsupported_bodies;
+    if types.unsupported_bodies {
+        note(
+            losses,
+            F3dLossCode::FeatureFormBodyRegistrationUnsupported,
+            &scope.id,
+            "a body registration or indexed identity is unsupported",
+        );
+    }
+    for &body in &types.bodies {
+        let alternatives = form_body_references(bytes, records, body);
+        if alternatives.is_empty() {
+            closed = false;
+            continue;
+        }
+        let owned = alternatives
+            .iter()
+            .any(|references| references[0] == Some(u64::from(scope.record_index)));
+        let body_id = record_id(scope, body)?;
+        let linked = facts.observations.iter().any(|observation| {
+            observation
+                .paths
+                .iter()
+                .any(|path| path.references.contains(&body_id))
+        });
+        if !owned && !linked {
+            if alternatives
+                .iter()
+                .any(|references| references[0].is_none())
+            {
+                closed = false;
+            }
+            continue;
+        }
+        let unique = alternatives.len() == 1;
+        if !unique {
+            note(
+                losses,
+                F3dLossCode::FeatureFormCageBindingAmbiguous,
+                &scope.id,
+                "body has multiple reference runs",
+            );
+            closed = false;
+        }
+        let mut selected = Vec::new();
+        for references in alternatives {
+            if references.iter().any(Option::is_none) {
+                note(
+                    losses,
+                    F3dLossCode::FeatureFormBodyReferencesPartialAssumed,
+                    &scope.id,
+                    "retains local references from an incomplete body envelope",
+                );
+            }
+            let mut path = vec![u64::from(body)];
+            path.extend(references[2]);
+            let observed = facts.surface(
+                scan,
+                source,
+                input_path(scope, &path)?,
+                references[2],
+                &serializers,
+                losses,
+            )?;
+            for index in &observed {
+                for target in references
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(ordinal, &target)| (ordinal != 2).then_some(target).flatten())
+                {
+                    let path = input_path(scope, &[u64::from(body), target])?;
+                    if !facts.observations[index.0].paths.contains(&path) {
+                        facts.observations[index.0].paths.push(path);
+                    }
+                }
+            }
+            let valid = references[0] == Some(u64::from(scope.record_index))
+                && references[1].is_some_and(|target| types.body_containers.contains(&target))
+                && references[2].is_some_and(|target| types.surfaces.contains(&target))
+                && references[3].is_some_and(|target| types.scene_nodes.contains(&target));
+            if unique && valid {
+                selected = observed;
+            } else {
+                closed = false;
+            }
+        }
+        slots.push(selected);
+    }
+    if slots.is_empty() {
+        return Ok(ordinary.unwrap_or_else(|| FormConstruction::default().membership().clone()));
+    }
+    if slots.len() > 1 {
+        note(
+            losses,
+            F3dLossCode::FeatureFormCageOrderAssumed,
+            &scope.id,
+            "body-record index establishes cage order",
+        );
+    }
+    let cardinality = if closed {
+        Some(u32::try_from(slots.len()).map_err(CodecError::malformed)?)
+    } else {
+        None
+    };
+    let order = if slots.len() > 1 {
+        FormOrder::Assumed
+    } else if closed {
+        FormOrder::Source
+    } else {
+        FormOrder::Unknown
+    };
+    facts.membership(slots, cardinality, order, FormKnownOrder::Source, closed)
+}
+
+fn form_tracking_members(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-    meta: &crate::metastream::MetaStream,
-    scope: &DesignParameterScope,
-    cages: &[cadmpeg_ir::subd::SubdSurface],
-) -> Result<Option<Vec<cadmpeg_ir::ids::SubdId>>, CodecError> {
-    let types = FormRecordTypes::of(meta);
-    let Some(surfaces) = form_body_cage_surfaces(bytes, records, &types, scope.record_index) else {
+    group: u32,
+    owner: u32,
+) -> Result<Option<Vec<Option<u64>>>, CodecError> {
+    let parsed = (|| {
+        let (start, paired) = one_indexed_frame(records, group)?;
+        let frame = bytes.get(start..paired)?;
+        if frame.get(selection_prefix::ZERO_RUN_10..selection_prefix::OWNER_MARKER)
+            != Some(&[0; 10])
+        {
+            return None;
+        }
+        let short_owner = frame.get(selection_prefix::OWNER_MARKER)
+            == Some(&selection_prefix::OWNER_MARKER_VALUE)
+            && View::u64_le_at(frame, selection_prefix::OWNER_SCOPE_RECORD_INDEX)
+                == Some(u64::from(owner))
+            && frame.get(selection_prefix::OWNER_ZERO_TAIL..selection_prefix::MEMBER_COUNT)
+                == Some(&[0; 2]);
+        let mut at = selection_prefix::MEMBER_COUNT;
+        if !short_owner {
+            at = selection_prefix::OWNER_MARKER;
+            if crate::bytes::take_reference(frame, &mut at)?.local()?.0 != u64::from(owner) {
+                return None;
+            }
+        }
+        let count = View::u32_le_at(frame, at)?;
+        at = at.checked_add(4)?;
+        let count_usize = bounded_len(u64::from(count), 11, frame.len().checked_sub(at)?)?;
+        let fixed_slots = frame
+            .len()
+            .checked_sub(at + 11 * count_usize)
+            .is_some_and(|tail| matches!(tail, 52 | 53));
+        Some((frame, count_usize, at, fixed_slots))
+    })();
+    let Some((frame, count_usize, mut at, fixed_slots)) = parsed else {
         return Ok(None);
     };
-    if surfaces.is_empty() {
-        return Ok(form_selection_group_is_empty(bytes, records, &types, scope).then(Vec::new));
+    let mut members = ctx.alloc_filled(count_usize, None, "Form tracking members")?;
+    for member in &mut members {
+        if fixed_slots {
+            let end = at + 11;
+            let mut cursor = at;
+            *member = crate::bytes::take_reference(&frame[..end], &mut cursor)
+                .filter(|_| cursor == end)
+                .and_then(|reference| reference.local().map(|(target, _)| target));
+            at = end;
+            continue;
+        }
+        let Some(reference) = crate::bytes::take_reference(frame, &mut at) else {
+            break;
+        };
+        *member = reference.local().map(|(target, _)| target);
     }
-    let serializers = form_typed_serializers(ctx, bytes, records, &types)?;
-    Ok(resolve_form_cage_surfaces(&serializers, &surfaces, cages))
+    Ok(Some(members))
 }
 
 const FORM_BODY_TYPE_GUID: &str = "FA1F0081-C9A1-4E14-8F25-D12DD868ED90";
-const FORM_BODY_TYPE_VERSIONS: [u32; 2] = [10, 11];
+const FORM_BODY_TYPE_VERSIONS: [u32; 3] = [9, 10, 11];
 const FORM_SERIALIZER_TYPE_GUID: &str = "830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06571";
 const FORM_SURFACE_TYPE_GUID: &str = "22709494-9149-4A70-A829-7D748A7B5DB1";
 const FORM_SELECTION_GROUP_TYPE_GUID: &str = "E079B079-016A-43C2-ACC7-9627B32A8960";
 const FORM_BODY_REFERENCE_COUNT: usize = 4;
-const FORM_BODY_TOKEN_MAX_UNITS: u32 = 256;
 
 #[derive(Default)]
 struct FormRecordTypes {
     bodies: Vec<u32>,
     unsupported_bodies: bool,
     serializers: Vec<u32>,
-    surfaces: HashSet<u32>,
-    selection_groups: HashSet<u32>,
-    body_containers: HashSet<u32>,
-    scene_nodes: HashSet<u32>,
+    surfaces: HashSet<u64>,
+    selection_groups: HashMap<u32, u32>,
+    body_containers: HashSet<u64>,
+    scene_nodes: HashSet<u64>,
 }
 
 impl FormRecordTypes {
@@ -332,22 +927,38 @@ impl FormRecordTypes {
         for design_type in &meta.types {
             let guid = design_type.type_guid.as_str();
             let version = design_type.version;
-            let entities = design_type
-                .entities
-                .values()
-                .filter_map(|entity| u32::try_from(*entity).ok());
+            let entities = design_type.entities.values().copied();
             if guid.eq_ignore_ascii_case(FORM_BODY_TYPE_GUID) {
-                if FORM_BODY_TYPE_VERSIONS.contains(&version) {
-                    types.bodies.extend(entities);
+                if FORM_BODY_TYPE_VERSIONS.contains(&version)
+                    && design_type.module == crate::records::entity_header::DESIGN_MODULE_FUSION
+                    && design_type.base_type_guid.value().is_some_and(|base| {
+                        base.as_str()
+                            .eq_ignore_ascii_case("CB844AB6-240D-4FC9-9C9F-3679DC896D6F")
+                    })
+                {
+                    for entity in entities {
+                        match u32::try_from(entity) {
+                            Ok(entity) => types.bodies.push(entity),
+                            Err(_) => types.unsupported_bodies = true,
+                        }
+                    }
                 } else if entities.count() != 0 {
                     types.unsupported_bodies = true;
                 }
             } else if guid.eq_ignore_ascii_case(FORM_SERIALIZER_TYPE_GUID) && version == 0 {
-                types.serializers.extend(entities);
+                types
+                    .serializers
+                    .extend(entities.filter_map(|entity| u32::try_from(entity).ok()));
             } else if guid.eq_ignore_ascii_case(FORM_SURFACE_TYPE_GUID) {
                 types.surfaces.extend(entities);
-            } else if guid.eq_ignore_ascii_case(FORM_SELECTION_GROUP_TYPE_GUID) && version == 0 {
-                types.selection_groups.extend(entities);
+            } else if guid.eq_ignore_ascii_case(FORM_SELECTION_GROUP_TYPE_GUID) {
+                for entity in entities.filter_map(|entity| u32::try_from(entity).ok()) {
+                    types
+                        .selection_groups
+                        .entry(entity)
+                        .and_modify(|observed| *observed = (*observed).max(version))
+                        .or_insert(version);
+                }
             } else if guid.eq_ignore_ascii_case(BREP_CONTAINER_TYPE_GUID) {
                 types.body_containers.extend(entities);
             } else if guid.eq_ignore_ascii_case(BODY_SCENE_NODE_TYPE_GUID) {
@@ -355,126 +966,50 @@ impl FormRecordTypes {
             }
         }
         types.bodies.sort_unstable();
+        types.bodies.dedup();
         types.serializers.sort_unstable();
+        types.serializers.dedup();
         types
     }
-}
-
-fn form_body_cage_surfaces(
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    types: &FormRecordTypes,
-    scope_record_index: u32,
-) -> Option<Vec<u32>> {
-    if types.unsupported_bodies {
-        return None;
-    }
-    let mut surfaces = Vec::new();
-    for body in &types.bodies {
-        let [owner, container, surface, scene] = form_body_references(bytes, records, *body)?;
-        if !types.body_containers.contains(&container)
-            || !types.surfaces.contains(&surface)
-            || !types.scene_nodes.contains(&scene)
-        {
-            return None;
-        }
-        if owner == scope_record_index {
-            surfaces.push(surface);
-        }
-    }
-    Some(surfaces)
 }
 
 fn form_body_references(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     body: u32,
-) -> Option<[u32; FORM_BODY_REFERENCE_COUNT]> {
-    let (start, paired) = one_indexed_frame(records, body)?;
-    let frame = bytes.get(start..paired)?;
-    let mut library = Vec::new();
-    library.extend_from_slice(
-        &u32::try_from(crate::design::presentation::PHYSICAL_MATERIAL_LIBRARY_ID.len())
-            .ok()?
-            .to_le_bytes(),
-    );
-    for unit in crate::design::presentation::PHYSICAL_MATERIAL_LIBRARY_ID.encode_utf16() {
-        library.extend_from_slice(&unit.to_le_bytes());
-    }
-    let mut found = None;
-    for library_at in memchr::memmem::find_iter(frame, &library) {
-        let Some(references) = form_body_envelope_references(frame, library_at + library.len())
+) -> Vec<[Option<u64>; FORM_BODY_REFERENCE_COUNT]> {
+    let Some((start, paired)) = one_indexed_frame(records, body) else {
+        return Vec::new();
+    };
+    let Some(frame) = bytes.get(start..paired) else {
+        return Vec::new();
+    };
+    let mut full = Vec::new();
+    let mut partial = Vec::new();
+    for at in 0..frame.len() {
+        let Some(mut cursor) =
+            crate::design::presentation::physical_material_envelope_end(frame, at)
         else {
             continue;
         };
-        if found.replace(references).is_some() {
-            return None;
+        let mut references = [None; FORM_BODY_REFERENCE_COUNT];
+        for reference in &mut references {
+            let Some(parsed) = crate::bytes::take_reference(frame, &mut cursor) else {
+                break;
+            };
+            *reference = parsed.local().map(|(target, _)| target);
+        }
+        if references.iter().all(Option::is_some) {
+            full.push(references);
+        } else if references.iter().any(Option::is_some) {
+            partial.push(references);
         }
     }
-    found
-}
-
-fn form_body_envelope_references(
-    frame: &[u8],
-    after_library: usize,
-) -> Option<[u32; FORM_BODY_REFERENCE_COUNT]> {
-    if View::u32_le_at(frame, after_library)? != 0 {
-        return None;
+    if full.is_empty() {
+        partial
+    } else {
+        full
     }
-    let token_units = View::u32_le_at(frame, after_library.checked_add(4)?)?;
-    if !(1..=FORM_BODY_TOKEN_MAX_UNITS).contains(&token_units) {
-        return None;
-    }
-    let mut cursor = after_library
-        .checked_add(8)?
-        .checked_add(usize::try_from(token_units).ok()?.checked_mul(2)?)?;
-    let mut references = [0; FORM_BODY_REFERENCE_COUNT];
-    for reference in &mut references {
-        if frame.get(cursor) != Some(&form_class_328_reference_entry::MARKER_VALUE)
-            || frame.get(
-                cursor + form_class_328_reference_entry::ZERO_TAIL
-                    ..cursor + form_class_328_reference_entry::LEN,
-            ) != Some(&[0; 2])
-        {
-            return None;
-        }
-        *reference = u32::try_from(View::u64_le_at(
-            frame,
-            cursor + form_class_328_reference_entry::RECORD_INDEX,
-        )?)
-        .ok()?;
-        cursor = cursor.checked_add(form_class_328_reference_entry::LEN)?;
-    }
-    Some(references)
-}
-
-fn form_selection_group_is_empty(
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    types: &FormRecordTypes,
-    scope: &DesignParameterScope,
-) -> bool {
-    let mut groups = scope
-        .reference_members()
-        .values()
-        .copied()
-        .filter(|member| types.selection_groups.contains(member));
-    let (Some(group), None) = (groups.next(), groups.next()) else {
-        return false;
-    };
-    let Some((start, paired)) = one_indexed_frame(records, group) else {
-        return false;
-    };
-    let Some(frame) = bytes.get(start..paired) else {
-        return false;
-    };
-    frame.get(selection_prefix::ZERO_RUN_10..selection_prefix::OWNER_MARKER) == Some(&[0; 10])
-        && frame.get(selection_prefix::OWNER_MARKER) == Some(&selection_prefix::OWNER_MARKER_VALUE)
-        && View::u64_le_at(frame, selection_prefix::OWNER_SCOPE_RECORD_INDEX)
-            == Some(u64::from(scope.record_index))
-        && frame.get(selection_prefix::OWNER_ZERO_TAIL..selection_prefix::MEMBER_COUNT)
-            == Some(&[0; 2])
-        && View::u32_le_at(frame, selection_prefix::MEMBER_COUNT) == Some(0)
 }
 
 fn form_class_328_envelope(
@@ -779,7 +1314,7 @@ fn form_class_325_cage_objects(
     records: &IndexedRecordOffsets,
     scope_record_index: u32,
     mut owner_record_indices: impl Iterator<Item = u32>,
-) -> Result<Option<Vec<u32>>, CodecError> {
+) -> Result<Option<Vec<(u32, u32)>>, CodecError> {
     let parsed = (|| {
         const CAGE_COUNT: usize = 32;
         const TYPE_DISCRIMINATOR_FIRST: u32 = 307;
@@ -888,7 +1423,7 @@ fn form_class_325_cage_objects(
             {
                 return None;
             }
-            objects.push(object);
+            objects.push((object, companion));
         }
         Some(Ok(objects))
     })();
@@ -929,11 +1464,12 @@ fn form_class_325_cage_surface(
 }
 
 fn form_cage_objects(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     scope_record_index: u32,
-) -> Option<Vec<u32>> {
+) -> Result<Option<Vec<Option<u64>>>, CodecError> {
     let parsed = (|| -> Option<(usize, usize)> {
         let mut frames = records.frames(record_index).filter(|(_, paired)| {
             matches!(bytes.get(paired + 4..paired + 7), Some(b"258" | b"264"))
@@ -956,45 +1492,46 @@ fn form_cage_objects(
         }
         Some((count, offset.checked_add(36)?))
     })();
-    let (count, mut cursor) = parsed?;
-
-    let mut objects = Vec::new();
-
-    for _ in 0..count {
-        if bytes.get(cursor) != Some(&1) {
-            return None;
+    let Some((count, mut cursor)) = parsed else {
+        return Ok(None);
+    };
+    let mut objects = ctx.alloc_filled(count, None, "Form cage-list slots")?;
+    for object in &mut objects {
+        if bytes.get(cursor) == Some(&1) && bytes.get(cursor + 9..cursor + 11) == Some(&[0, 0]) {
+            *object = View::u64_le_at(bytes, cursor + 1);
         }
-        let object =
-            View::u64_le_at(bytes, cursor + 1).and_then(|value| u32::try_from(value).ok())?;
-        objects.push(object);
-        if bytes.get(cursor + 9..cursor + 11) != Some(&[0, 0][..]) {
-            return None;
-        }
-        let next = cursor.checked_add(11)?;
-        cursor = next;
+        cursor += 11;
     }
-    Some(objects)
+    Ok(Some(objects))
+}
+
+struct FormCageList {
+    record: u32,
+    objects: Vec<Option<u64>>,
 }
 
 fn form_cage_lists(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     references: impl Iterator<Item = u32>,
     scope_record_index: u32,
-) -> Vec<Vec<u32>> {
-    references
-        .filter_map(|record_index| {
-            form_cage_objects(bytes, records, record_index, scope_record_index)
-        })
-        .collect()
+) -> Result<Vec<FormCageList>, CodecError> {
+    let mut lists = Vec::new();
+    for record in references {
+        if let Some(objects) = form_cage_objects(ctx, bytes, records, record, scope_record_index)? {
+            lists.push(FormCageList { record, objects });
+        }
+    }
+    Ok(lists)
 }
 
 fn form_cage_surface(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     object_record: u32,
-    scope_record: u32,
-) -> Option<u32> {
+    path: &mut Vec<u64>,
+) -> Option<(u64, u64)> {
     let [object_at] = records.offsets(object_record) else {
         return None;
     };
@@ -1004,8 +1541,9 @@ fn form_cage_surface(
     {
         return None;
     }
-    let first_wrapper = u32::try_from(View::u64_le_at(bytes, object_at + 190)?).ok()?;
-    let [first_at] = records.offsets(first_wrapper) else {
+    let first_wrapper = View::u64_le_at(bytes, object_at + 190)?;
+    path.push(first_wrapper);
+    let [first_at] = records.offsets(u32::try_from(first_wrapper).ok()?) else {
         return None;
     };
     if bytes.get(first_at + 4..first_at + 7) != Some(b"373")
@@ -1016,8 +1554,9 @@ fn form_cage_surface(
     {
         return None;
     }
-    let second_wrapper = u32::try_from(View::u64_le_at(bytes, first_at + 22)?).ok()?;
-    let [second_at] = records.offsets(second_wrapper) else {
+    let second_wrapper = View::u64_le_at(bytes, first_at + 22)?;
+    path.push(second_wrapper);
+    let [second_at] = records.offsets(u32::try_from(second_wrapper).ok()?) else {
         return None;
     };
     if bytes.get(second_at + 4..second_at + 7) != Some(b"362")
@@ -1026,8 +1565,9 @@ fn form_cage_surface(
     {
         return None;
     }
-    let carrier = u32::try_from(View::u64_le_at(bytes, second_at + 21)?).ok()?;
-    let mut carrier_frames = records.frames(carrier);
+    let carrier = View::u64_le_at(bytes, second_at + 21)?;
+    path.push(carrier);
+    let mut carrier_frames = records.frames(u32::try_from(carrier).ok()?);
     let (carrier_at, carrier_paired) = carrier_frames.next()?;
     if carrier_frames.next().is_some() {
         return None;
@@ -1036,44 +1576,29 @@ fn form_cage_surface(
         || bytes.get(carrier_at + 4..carrier_at + 7) != Some(b"457")
         || bytes.get(carrier_paired + 4..carrier_paired + 7) != Some(b"264")
         || bytes.get(carrier_at + 317) != Some(&1)
-        || View::u64_le_at(bytes, carrier_at + 318)? != u64::from(scope_record)
         || bytes.get(carrier_at + 339) != Some(&1)
     {
         return None;
     }
-    u32::try_from(View::u64_le_at(bytes, carrier_at + 340)?).ok()
+    let surface = View::u64_le_at(bytes, carrier_at + 340)?;
+    path.push(surface);
+    Some((View::u64_le_at(bytes, carrier_at + 318)?, surface))
 }
 
-fn form_cage_surfaces(
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    objects: &[u32],
-    scope_record_index: u32,
-) -> Option<Vec<u32>> {
-    let mut surfaces = Vec::new();
-    for object in objects {
-        let surface = form_cage_surface(bytes, records, *object, scope_record_index)?;
-        surfaces.push(surface);
-    }
-    Some(surfaces)
+struct FormSerializer {
+    record: u32,
+    name: String,
 }
-
 struct FormCageSerializers {
-    ordered: Vec<u32>,
-    entries: HashMap<u32, FormCageEntry>,
-}
-
-enum FormCageEntry {
-    Unique(String),
-    Duplicate,
+    ordered: Vec<u64>,
+    entries: HashMap<u64, Vec<FormSerializer>>,
 }
 
 impl FormCageSerializers {
-    fn entry_name(&self, surface: u32) -> Option<&str> {
-        match self.entries.get(&surface)? {
-            FormCageEntry::Unique(name) => Some(name),
-            FormCageEntry::Duplicate => None,
-        }
+    #[cfg(test)]
+    fn entry_name(&self, surface: u64) -> Option<&str> {
+        let entries = self.entries.get(&surface)?;
+        (entries.len() == 1).then(|| entries[0].name.as_str())
     }
 }
 
@@ -1136,19 +1661,23 @@ fn collect_form_cage_serializers(
     frames: impl IntoIterator<Item = (usize, FormSerializerFrame)>,
 ) -> Result<FormCageSerializers, CodecError> {
     let mut ordered = Vec::new();
-    let mut entries = HashMap::new();
+    let mut entries: HashMap<u64, Vec<FormSerializer>> = HashMap::new();
     for (offset, frame) in frames {
         let Some((surface, entry_name)) =
             form_serializer_entry(ctx, bytes, records, offset, frame)?
         else {
             continue;
         };
-        if let Some(entry) = entries.get_mut(&surface) {
-            *entry = FormCageEntry::Duplicate;
-        } else {
-            entries.insert(surface, FormCageEntry::Unique(entry_name));
+        let Some(record) = View::u32_le_at(bytes, offset + 7) else {
+            continue;
+        };
+        if !entries.contains_key(&surface) {
             ordered.push(surface);
         }
+        entries.entry(surface).or_default().push(FormSerializer {
+            record,
+            name: entry_name,
+        });
     }
     Ok(FormCageSerializers { ordered, entries })
 }
@@ -1159,7 +1688,7 @@ fn form_serializer_entry(
     records: &IndexedRecordOffsets,
     offset: usize,
     frame: FormSerializerFrame,
-) -> Result<Option<(u32, String)>, CodecError> {
+) -> Result<Option<(u64, String)>, CodecError> {
     let is_class_335 = frame == FormSerializerFrame::PairedClass331;
     if bytes.get(
         offset + form_serializer_frame_132::ZERO_RUN_10
@@ -1212,17 +1741,17 @@ fn form_serializer_entry(
     {
         return Ok(None);
     }
-    let Some(surface) =
-        View::u64_le_at(bytes, after_name + 1).and_then(|surface| u32::try_from(surface).ok())
-    else {
+    let Some(surface) = View::u64_le_at(bytes, after_name + 1) else {
         return Ok(None);
     };
     if is_class_335
         && (bytes
             .get(after_name + 11..offset + form_serializer_frame_132::LEN)
             .is_none_or(|tail| tail.iter().any(|byte| *byte != 0))
-            || !records.offsets(surface).iter().any(|surface_offset| {
-                bytes.get(*surface_offset + 4..*surface_offset + 7) == Some(b"358")
+            || !u32::try_from(surface).ok().is_some_and(|surface| {
+                records.offsets(surface).iter().any(|surface_offset| {
+                    bytes.get(*surface_offset + 4..*surface_offset + 7) == Some(b"358")
+                })
             }))
     {
         return Ok(None);

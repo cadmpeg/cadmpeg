@@ -968,11 +968,23 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** None.
 
+### DR-622. Legacy sole-scope serializer membership and order
+
+**Question.** Which native relations establish complete cage membership and order in the sole-scope legacy Form envelope?
+
+**Known.** `f3d.md` §1.1.1 defines the legacy scope, cage group, metadata group, and serializer frames. An active serializer entry establishes its cage identity. The decoder assigns the active serializer set to the sole Form with `feature.form-legacy-serializer-membership-assumed` and reads serializer frame order with `feature.form-legacy-serializer-order-assumed`. Present resources without neutral cages retain incomplete membership.
+
+**Need.** Controlled saves that vary session membership and cage order while retaining stale serializer records.
+
+**Conflict.** None.
+
+**Note.** Membership certainty and order certainty remain independent.
+
 ### DR-325. Empty Form selection group
 
 **Question.** What does a zero member count in a Form selection group mean for the cages committed by its scope?
 
-**Known.** A Form scope can have a selection group with zero members and no Form body record that names the scope. The decoder projects an empty cage list for that combination and reports `feature.form-empty-cages-assumed`.
+**Known.** A Form scope can have a selection group with zero members and no Form body record that names the scope. The neutral Form retains the zero tracking count with unknown cage cardinality and reports `feature.form-membership-unresolved`. An explicitly counted owned cage list establishes an empty cage sequence.
 
 **Need.** Controlled saves of empty and edited Form sessions that compare the selection group, body records, and committed cages.
 

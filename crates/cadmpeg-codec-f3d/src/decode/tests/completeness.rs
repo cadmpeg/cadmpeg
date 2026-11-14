@@ -4,6 +4,40 @@
 use super::super::feature_definition_is_incomplete;
 
 #[test]
+fn form_completeness_requires_complete_membership_with_a_committed_cage() {
+    let definition = |value| {
+        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+            .expect("Form definition")
+    };
+    assert!(feature_definition_is_incomplete(
+        &cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Form(
+                cadmpeg_ir::features::form::FormConstruction::default()
+            ),
+        )
+    ));
+    for members in [
+        serde_json::json!([]),
+        serde_json::json!([{"observation":0,"ordinal":0}]),
+    ] {
+        assert!(feature_definition_is_incomplete(&definition(
+            serde_json::json!({
+                "definition":"form", "cages": {
+                    "observations":[{"paths":[],"binding":{"state":"decoded","cage":"test:model:subd#1"}}],
+                    "membership":{"state":"partial","cardinality":2,"order":"unknown","members":members}
+                }
+            })
+        )));
+    }
+    assert!(!feature_definition_is_incomplete(&definition(
+        serde_json::json!({
+            "definition":"form","cages":["test:model:subd#1"],
+            "cage_inputs":{"observations":[{"paths":[],"binding":{"state":"decoded","cage":"test:model:subd#1"}}],"membership":{"state":"complete","members":[0],"order":"assumed","certainty":"assumed"}}
+        })
+    )));
+}
+
+#[test]
 fn position_completeness_requires_affine_pose_and_resolved_occurrence() {
     use cadmpeg_ir::features::{
         CapturedComponentPosition, CapturedPositionTransform, FeatureDefinition, FeatureOperation,

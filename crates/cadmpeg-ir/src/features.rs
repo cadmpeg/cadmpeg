@@ -7,7 +7,7 @@ use crate::assets::AssetId;
 use crate::ids::ProductDefinitionId;
 use crate::ids::{
     BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, FeatureResultTopologyId,
-    HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId, HistoricalVertexId, OccurrenceId, SubdId,
+    HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId, HistoricalVertexId, OccurrenceId,
     VertexId,
 };
 use crate::math::{Point2, Point3, Vector3};
@@ -43,6 +43,9 @@ mod selection_overlap;
 
 pub mod edge_treatments;
 use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
+
+#[doc(hidden)]
+pub mod form;
 
 pub mod holes;
 use holes::{HoleBottom, HolePlacement, HoleProfileFilter, HoleShape};
@@ -2889,10 +2892,7 @@ pub enum FeatureOperation {
         joint: JointId,
     },
     /// Freeform modeling session represented by its final subdivision cages.
-    Form {
-        /// Ordered control cages committed by the session.
-        cages: Vec<SubdId>,
-    },
+    Form(form::FormConstruction),
     /// Thread attached to a cylindrical face.
     ///
     /// The source may also model the helical form in the body geometry;
