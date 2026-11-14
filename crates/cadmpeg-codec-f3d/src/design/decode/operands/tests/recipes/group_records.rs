@@ -523,10 +523,10 @@ fn surface_untrim_groups_retain_face_recipe_members() {
             let operands = crate::design::decode::operands::decode_face_operands(
                 ctx,
                 scan,
-                &[scope],
-                &[selection],
-                &[header],
-                &[recipe],
+                std::slice::from_ref(&scope),
+                std::slice::from_ref(&selection),
+                std::slice::from_ref(&header),
+                std::slice::from_ref(&recipe),
                 &[],
             )
             .unwrap();
@@ -537,6 +537,92 @@ fn surface_untrim_groups_retain_face_recipe_members() {
             assert_eq!(operands[0].group_record_index(), Some(90));
             assert_eq!(operands[0].group_member_ordinal(), Some(0));
             assert_eq!(operands[0].recipe_kind, ConstructionRecipeKind::Face);
+            selection.operand_role =
+                DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X10);
+            let unrelated = crate::design::decode::operands::decode_face_operands(
+                ctx,
+                scan,
+                std::slice::from_ref(&scope),
+                std::slice::from_ref(&selection),
+                std::slice::from_ref(&header),
+                std::slice::from_ref(&recipe),
+                &[],
+            )
+            .unwrap();
+            assert!(unrelated.is_empty());
+        });
+    });
+}
+
+#[test]
+fn surface_untrim_loop_groups_retain_exact_edge_recipe_members() {
+    use crate::records::identity::{Located, ReferenceRun};
+    use crate::records::topology::construction::DesignConstructionOperandRole;
+
+    let mut bytes = Vec::new();
+    for index in [100, 100, 101, 102, 103] {
+        indexed_header(&mut bytes, *b"777", index);
+    }
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    let recipe_at = bytes.len();
+    bytes.extend_from_slice(b"edge_recipe_data");
+    for value in [-1i32, -1, 2, 0, -1, 1, -1, 7] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    indexed_header(&mut bytes, *b"777", 104);
+    let mut scope = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#50"),
+        DesignFeatureKind::SurfaceUntrim,
+        50,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = ReferenceRun::unlocated(vec![70, 90, 100]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut selection = group(50, 90);
+    selection.scope_reference_ordinal = 1;
+    selection.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X9);
+    selection
+        .try_set_members(vec![Located {
+            value: 100,
+            offset: 1026,
+        }])
+        .unwrap();
+    let header = DesignRecordHeader {
+        id: format!("{STREAM}:design-record-header#0"),
+        record_index: 100,
+        class_tag: "777".to_owned().try_into().unwrap(),
+        byte_offset: 0,
+    };
+    let recipe = ConstructionRecipe {
+        id: format!("{STREAM}:construction-recipe#{recipe_at}"),
+        byte_offset: u64::try_from(recipe_at).unwrap(),
+        kind: ConstructionRecipeKind::Edge,
+        design: None,
+        recipe_index: 0,
+        record_index: None,
+    };
+    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &[]);
+    crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let operands = crate::design::decode::operands::decode_edge_operands(
+                ctx,
+                scan,
+                &[scope],
+                &[selection],
+                &[header],
+                &[recipe],
+            )
+            .unwrap();
+            assert_eq!(operands.len(), 1);
+            assert_eq!(operands[0].record_index(), 100);
+            assert_eq!(operands[0].scope_record_index, 50);
+            assert_eq!(operands[0].scope_reference_ordinal, 2);
+            assert_eq!(operands[0].next_record_index, 104);
+            assert_eq!(operands[0].recipe_program, [-1, -1, 2, 0, -1, 1, -1, 7]);
         });
     });
 }

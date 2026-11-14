@@ -745,7 +745,18 @@ pub(crate) fn has_edge_recipe_operands(
                 | DesignFeatureFamily::SurfaceOffset
                 | DesignFeatureFamily::SurfaceRuled
         )
-    ) || matches!(kind, Kind::EdgeFlange | Kind::Hem | Kind::WorkPoint)
+    ) || matches!(
+        kind,
+        Kind::EdgeFlange | Kind::Hem | Kind::WorkPoint | Kind::SurfaceUntrim
+    )
+}
+
+pub(crate) fn is_surface_untrim_face_group(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+) -> bool {
+    scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim
+        && group.role() == DesignOperandRole::ROLE_0X9
 }
 
 /// Indexed-record distance from an edge-recipe primary record to its terminal
@@ -944,7 +955,6 @@ pub(crate) fn decode_face_operands(
             crate::records::feature::scope::DesignFeatureKind::MoveFace
                 | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                 | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
-                | crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim
                 | crate::records::feature::scope::DesignFeatureKind::UnStitch
         );
         let is_emboss_face = scope.kind()
@@ -991,6 +1001,7 @@ pub(crate) fn decode_face_operands(
             && !is_pattern_face_seed
             && !is_split_face_operand
             && !is_delete_face_operand
+            && !is_surface_untrim_face_group(scope, group)
             && !is_emboss_face
             && !is_thread_face
             && !is_hole_face

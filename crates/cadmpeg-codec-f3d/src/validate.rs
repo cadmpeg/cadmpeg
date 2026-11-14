@@ -7779,6 +7779,16 @@ fn validate_face_operands<'a>(
                                 }) && operand.recipe_kind
                                     == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
+                            None if group.is_some_and(|group| {
+                                design::decode::operands::is_surface_untrim_face_group(scope, group)
+                            }) =>
+                            {
+                                matches!(
+                                    operand.recipe_kind,
+                                    records::recipes::ConstructionRecipeKind::Face
+                                        | records::recipes::ConstructionRecipeKind::BoundedFace
+                                )
+                            }
                             None if matches!(
                                 scope.kind(),
                                 crate::records::feature::scope::DesignFeatureKind::MoveFace
