@@ -36356,6 +36356,210 @@ source = "spec"
 anchor = "reference, six zero bytes, an identity byte"
 
 [[record]]
+name = "assembly_version_three_extended_tail"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The extended version-three tail adds a nonnull reference"
+size = 87
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_v3.rs"
+note = "Offsets start at the feature ordinal of the plain-reference extended version-three tail."
+
+[[record.field]]
+name = "ordinal"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The extended version-three tail adds a nonnull reference"
+
+[[record.field]]
+name = "prefix_zeros"
+offset = 4
+type = "bytes[15]"
+source = "spec"
+anchor = "The extended version-three tail adds a nonnull reference"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_reference"
+offset = 19
+type = "bytes[11]"
+source = "spec"
+anchor = "The extended version-three tail adds a nonnull reference"
+
+[[record.field]]
+name = "additional_reference"
+offset = 30
+type = "bytes[11]"
+source = "spec"
+anchor = "The extended version-three tail adds a nonnull reference"
+
+[[record.field]]
+name = "previous_history"
+offset = 41
+type = "u32"
+source = "spec"
+anchor = "The extended version-three tail adds a nonnull reference"
+
+[[record.field]]
+name = "word_a"
+offset = 45
+type = "u32"
+source = "spec"
+anchor = "The extended version-three tail adds a nonnull reference"
+
+[[record.field]]
+name = "scalar"
+offset = 49
+type = "f64"
+source = "spec"
+anchor = "The extended version-three tail adds a nonnull reference"
+
+[[record.field]]
+name = "word_b"
+offset = 57
+type = "u32"
+source = "spec"
+anchor = "The extended version-three tail adds a nonnull reference"
+
+[[record.field]]
+name = "middle_reference"
+offset = 61
+type = "bytes[11]"
+source = "spec"
+anchor = "The extended version-three tail adds a nonnull reference"
+
+[[record.field]]
+name = "first_boolean"
+offset = 72
+type = "u8"
+source = "spec"
+anchor = "The extended version-three tail adds a nonnull reference"
+
+[[record.field]]
+name = "second_boolean"
+offset = 73
+type = "u8"
+source = "spec"
+anchor = "The extended version-three tail adds a nonnull reference"
+
+[[record.field]]
+name = "last_reference"
+offset = 74
+type = "bytes[11]"
+source = "spec"
+anchor = "The extended version-three tail adds a nonnull reference"
+
+[[record.field]]
+name = "tail_zeros"
+offset = 85
+type = "bytes[2]"
+source = "spec"
+anchor = "The extended version-three tail adds a nonnull reference"
+value = [0, 0]
+
+[[record]]
+name = "assembly_version_three_typed_extended_tail"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The typed-reference extended tail has four 51-byte references"
+size = 247
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs"
+note = "Offsets start at the feature ordinal of the typed-reference extended version-three tail."
+
+[[record.field]]
+name = "ordinal"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The typed-reference extended tail has four 51-byte references"
+
+[[record.field]]
+name = "prefix_zeros"
+offset = 4
+type = "bytes[15]"
+source = "spec"
+anchor = "The typed-reference extended tail has four 51-byte references"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_reference"
+offset = 19
+type = "bytes[51]"
+source = "spec"
+anchor = "The typed-reference extended tail has four 51-byte references"
+
+[[record.field]]
+name = "additional_reference"
+offset = 70
+type = "bytes[51]"
+source = "spec"
+anchor = "The typed-reference extended tail has four 51-byte references"
+
+[[record.field]]
+name = "previous_history"
+offset = 121
+type = "u32"
+source = "spec"
+anchor = "The typed-reference extended tail has four 51-byte references"
+
+[[record.field]]
+name = "word_a"
+offset = 125
+type = "u32"
+source = "spec"
+anchor = "The typed-reference extended tail has four 51-byte references"
+
+[[record.field]]
+name = "scalar"
+offset = 129
+type = "f64"
+source = "spec"
+anchor = "The typed-reference extended tail has four 51-byte references"
+
+[[record.field]]
+name = "word_b"
+offset = 137
+type = "u32"
+source = "spec"
+anchor = "The typed-reference extended tail has four 51-byte references"
+
+[[record.field]]
+name = "middle_reference"
+offset = 141
+type = "bytes[51]"
+source = "spec"
+anchor = "The typed-reference extended tail has four 51-byte references"
+
+[[record.field]]
+name = "first_boolean"
+offset = 192
+type = "u8"
+source = "spec"
+anchor = "The typed-reference extended tail has four 51-byte references"
+
+[[record.field]]
+name = "second_boolean"
+offset = 193
+type = "u8"
+source = "spec"
+anchor = "The typed-reference extended tail has four 51-byte references"
+
+[[record.field]]
+name = "last_reference"
+offset = 194
+type = "bytes[51]"
+source = "spec"
+anchor = "The typed-reference extended tail has four 51-byte references"
+
+[[record.field]]
+name = "tail_zeros"
+offset = 245
+type = "bytes[2]"
+source = "spec"
+anchor = "The typed-reference extended tail has four 51-byte references"
+value = [0, 0]
+
+[[record]]
 name = "marked_reference_box_prefix"
 kind = "byte"
 section = "3.1"

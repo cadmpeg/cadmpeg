@@ -2143,9 +2143,13 @@ plain local references or 51 bytes for typed local references. A typed
 reference's inline GUID equals its target's registered type GUID.
 
 Four zero bytes precede four nonnull alignment-owner references in angle,
-Z-offset, X-offset, Y-offset order. Six zero bytes, u32 locator count `2`, two
+Z-offset, X-offset, Y-offset order. Two zero bytes and a u32 additional-owner
+count `K` follow. A positive count supplies `K` nonnull owner references and
+selects the extended tail below. These owners follow the four alignment
+owners in local-ordinal order and occur in the scope reference table.
+The zero-count form occupies six zero bytes. U32 locator count `2`, two
 nonnull locator references, and a nonnull joint reference follow. The joint
-reference selects a version-3 or version-4 record of type GUID
+reference selects a version-3, version-4, or version-5 record of type GUID
 `7F5A0426-1D2A-4DC4-9F06-58631F69D2F5`, including a joint shared by several
 scopes. A length-prefixed UTF-16 GUID with 36 code units and three zero bytes
 precede the counted scope-reference table. The table contains `R` nonnull
@@ -2165,6 +2169,18 @@ paths of type GUID `96CBEA21-17E0-4BCB-BA77-04EA87B47934`. The ordered
 occurrence GUIDs traverse child occurrences within the selected insertion,
 including child occurrences that insert another document. The scope
 connector belongs to the innermost occurrence in that path.
+
+The extended version-three tail adds a nonnull reference immediately after
+the first tail reference and uses `S = 0`. Its target has type GUID
+`074F9459-89C2-4B7D-8AB4-DCE67AE944FE`, version 1. Its span is
+`190 + (R + K + 13) * W + 128 * M + 4 * E`. The native alignment retains
+this additional reference and its marker offset as `additional_tail_reference`.
+The plain-reference tail, from the feature ordinal through its final zero
+bytes, has the fixed fields in
+[the layout table](../layouts/f3d.md#assembly_version_three_extended_tail).
+The typed-reference extended tail has four 51-byte references with inline
+type GUIDs. Its previous-history word follows the added reference. Its fixed
+fields are in [the typed layout table](../layouts/f3d.md#assembly_version_three_typed_extended_tail).
 
 Version 5 uses the same type GUID and field order with these extensions.
 Its joint reference selects type version 6.

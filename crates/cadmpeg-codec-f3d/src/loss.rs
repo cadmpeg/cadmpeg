@@ -168,6 +168,8 @@ pub(crate) enum F3dLossCode {
     AssemblyConnectorOperandsAssumed,
     AssemblyMotionBindingAssumed,
     AssemblyAdditionalOwnerMotionAssumed,
+    AssemblyExtendedTailAssumed,
+    AssemblyExtendedTypedTailAssumed,
     /// A joint operand path continues inside an unmerged inserted document; the
     /// remaining keys stay a nested occurrence path.
     AssemblyOperandNestedPathRetained,
@@ -862,6 +864,8 @@ impl F3dLossCode {
         Self::AssemblyConnectorOperandsAssumed,
         Self::AssemblyMotionBindingAssumed,
         Self::AssemblyAdditionalOwnerMotionAssumed,
+        Self::AssemblyExtendedTailAssumed,
+        Self::AssemblyExtendedTypedTailAssumed,
         Self::AssemblyOperandNestedPathRetained,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
@@ -1308,6 +1312,8 @@ impl F3dLossCode {
             Self::AssemblyAdditionalOwnerMotionAssumed => {
                 "assembly.additional-owner-motion-assumed"
             }
+            Self::AssemblyExtendedTailAssumed => "assembly.extended-tail-assumed",
+            Self::AssemblyExtendedTypedTailAssumed => "assembly.extended-typed-tail-assumed",
             Self::AssemblyOperandNestedPathRetained => "assembly.operand-nested-path-retained",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
@@ -1873,6 +1879,8 @@ impl F3dLossCode {
             | Self::AssemblyConnectorOperandsAssumed
             | Self::AssemblyMotionBindingAssumed
             | Self::AssemblyAdditionalOwnerMotionAssumed
+            | Self::AssemblyExtendedTailAssumed
+            | Self::AssemblyExtendedTypedTailAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
@@ -2526,6 +2534,8 @@ impl F3dLossCode {
             | Self::AssemblyConnectorOperandsAssumed
             | Self::AssemblyMotionBindingAssumed
             | Self::AssemblyAdditionalOwnerMotionAssumed
+            | Self::AssemblyExtendedTailAssumed
+            | Self::AssemblyExtendedTypedTailAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
@@ -2735,6 +2745,8 @@ mod tests {
                 "assembly.connector-operands-assumed",
                 "assembly.motion-binding-assumed",
                 "assembly.additional-owner-motion-assumed",
+                "assembly.extended-tail-assumed",
+                "assembly.extended-typed-tail-assumed",
                 "assembly.operand-nested-path-retained",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
