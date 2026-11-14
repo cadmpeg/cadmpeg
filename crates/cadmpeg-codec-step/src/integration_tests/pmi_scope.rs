@@ -165,3 +165,76 @@ fn all_around_scope_reports_an_insufficient_component_graph() {
         .expect("STEP text")
         .contains("ALL_AROUND_SHAPE_ASPECT("));
 }
+
+#[test]
+fn independent_size_dimensions_keep_disjoint_geometric_targets() {
+    use cadmpeg_ir::pmi::{DimensionKind, PmiDimension};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    ir.model.pmi = ["first", "second"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, name)| PmiAnnotation {
+            id: PmiId::mint(format!("test:dimension:pmi#{name}")).unwrap(),
+            name: Some(name.into()),
+            visible: None,
+            targets: vec![PmiTarget::Face {
+                face: ir.model.faces[index].id.clone(),
+            }],
+            definition: PmiDefinition::Dimension(
+                PmiDimension::new(
+                    DimensionKind::Size,
+                    Some(PmiValue::new(1.0, PmiQuantity::Length).unwrap()),
+                    None,
+                )
+                .unwrap(),
+            ),
+        })
+        .collect();
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::PmiAnnotationNotWritten.kind()));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    let targets = |name: &str| {
+        decoded
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some(name))
+            .unwrap()
+            .targets
+            .iter()
+            .filter_map(|target| match target {
+                PmiTarget::Face { face } => Some(face.clone()),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>()
+    };
+    let first = targets("first");
+    let second = targets("second");
+    assert_eq!(first.len(), 1);
+    assert_eq!(second.len(), 1);
+    assert!(first.is_disjoint(&second));
+    for (index, targets) in [first, second].into_iter().enumerate() {
+        let face = decoded
+            .ir()
+            .model
+            .faces
+            .iter()
+            .find(|face| targets.contains(&face.id))
+            .unwrap();
+        assert_eq!(face.name, ir.model.faces[index].name);
+    }
+}

@@ -4783,8 +4783,10 @@ impl<'a> Builder<'a> {
         let mut all_around_annotations = HashSet::new();
         let mut unsupported_all_around = HashSet::new();
         for annotation in &annotations {
-            let PmiDefinition::GeometricTolerance { modifiers, .. } = &annotation.definition else {
-                continue;
+            let modifiers = match &annotation.definition {
+                PmiDefinition::GeometricTolerance { modifiers, .. } => modifiers.as_slice(),
+                PmiDefinition::Dimension(_) => &[],
+                _ => continue,
             };
             let mut components = Vec::new();
             let mut seen = HashSet::new();
