@@ -1691,17 +1691,17 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Note.** One public frame states `91.675 mm`, its two points are 91.675 mm apart, and its first following owner is a 5.175 mm parameter that a second frame also selects.
 
-### DR-241. Byte 29 of a 262-byte zero-body Base Feature frame
+### DR-241. Flag byte of the Base Feature marked null reference
 
-**Question.** What does byte 29 state in a 262-byte `Base Feature` frame whose layout otherwise matches the 262-byte zero-body form?
+**Question.** What does the flag byte of the marked null reference in a `Base Feature` result-body envelope state?
 
-**Known.** Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 as zero. One public frame stores `1` at offset 29 and zero in the rest of that run. Its current and preceding history states are equal. The decoder retains it as an unbound stored-body scope. Two controlled one-body `Base Feature` saves from the current Fusion release store `1` in the matching byte: a 331-byte class-260/258 frame whose body is built in place, and a 316-byte class-368/258 frame whose body is a copy of a body in a referenced design. In each frame the run `u8 1`, eight zero bytes, this byte, and `u8 0` precedes a u32 body count `1`; the byte is at offset 63 in the first frame and at offset 48 in the second. Neither frame length is a form in `f3d.md` §3.1.
+**Known.** `f3d.md` §3.1 "The marked null reference is" gives the field. Two public 262-byte wide zero-body frames store `0`; one public 262-byte wide zero-body frame stores `1`, and its current and preceding history states are equal. A public 318-byte ordinary frame stores `1`. Controlled one-body `Base Feature` saves from the current Fusion release store `1`: six 331-byte ordinary frames whose body is built in place, a 275-byte wide zero-body frame that holds a mesh body, and a 316-byte class-368/258 frame whose body is a copy of a body in a referenced design. The 316-byte frame stores u32 `N` at offset 20 in place of `2N`, one run of `N` body-suffix entries, the marked null reference at offset 39, u32 `N`, and a repeated run of body suffixes; its kind starts at offset `169 + 37N`. The decoder reads the result runs of a flagged ordinary or wide zero-body frame as the ordinary result set and reports `feature.base-feature-null-flag-assumed`. The 316-byte form keeps its payload uninterpreted.
 
 **Need.** Saves of one design that differ only in this byte, for example across Fusion releases or design options.
 
 **Conflict.** None.
 
-**Note.** Two other public frames of this form store zero at offset 29. Unbound result references remain a native body selection of a neutral Base Feature and report `feature.stored-bodies-unbound`.
+**Note.** DR-483 tracks a marked null reference whose second trailing byte is `1`. Unbound result references remain a native body selection of a neutral Base Feature and report `feature.stored-bodies-unbound`.
 
 ### DR-251. Compact null-owner parameters: owner and trailer byte 3
 
@@ -2866,7 +2866,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** What does the terminal byte of the marked null field mean when it is `1` before the repeated-reference count in a Base Feature envelope?
 
-**Known.** Mini AfterSherpa Orbiter V2 Test v2 has Base Feature scope record `213` at Design offset `107014`, class pair `329/264`, frame length `318`, and history transition `365` to `404`. Its first two marked fifteen-byte entries name `219` and `225`. Both targets have Body presentation-owner type `D3937028-C20C-4E65-B010-94AD418A5C20`. The eleven-byte field after those entries starts with `1`, has nine zero bytes, and ends with `1`. A u32 count `1` follows, then a marked reference to `219`, shared metadata record `217`, and result record `227`. The ordinary result-body reader requires ten zero bytes after the first marker and stops at the final byte. The history transition binds body `f3d:brep:entity#1` and supplies the resolved Base Feature result set.
+**Known.** Mini AfterSherpa Orbiter V2 Test v2 has Base Feature scope record `213` at Design offset `107014`, class pair `329/264`, frame length `318`, and history transition `365` to `404`. Its first two marked fifteen-byte entries name `219` and `225`. Both targets have Body presentation-owner type `D3937028-C20C-4E65-B010-94AD418A5C20`. The eleven-byte field after those entries starts with `1`, has nine zero bytes, and ends with `1`. A u32 count `1` follows, then a marked reference to `219`, shared metadata record `217`, and result record `227`. The ordinary result-body reader requires a zero second trailing byte and stops at the final byte. The history transition binds body `f3d:brep:entity#1` and supplies the resolved Base Feature result set.
 
 **Need.** A rule for the terminal marker and the roles of the two initial reference runs. Compare a controlled capture, paste, and body-to-component operation with equal geometry, including their referenced Body records and preceding ASM state. Confirm the role rule in a second independent design before selecting a source or construction operation.
 

@@ -3112,8 +3112,8 @@ pub(crate) mod base_feature_wide_zero_body {
     pub(crate) const ZERO_RUN_9: usize = 11;
     /// Offset of `zero_body_marker` (`u8`). Spec §3.1.
     pub(crate) const ZERO_BODY_MARKER: usize = 20;
-    /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_15: usize = 21;
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5: usize = 31;
     /// Offset of `shared_metadata_marker` (`u8`). Spec §3.1.
     pub(crate) const SHARED_METADATA_MARKER: usize = 36;
     /// Offset of `shared_metadata_record` (`u64`, little-endian). Spec §3.1.
@@ -3138,8 +3138,8 @@ pub(crate) mod base_feature_wide_shifted_zero_body {
     pub(crate) const ZERO_RUN_9: usize = 11;
     /// Offset of `zero_body_marker` (`u8`). Spec §3.1.
     pub(crate) const ZERO_BODY_MARKER: usize = 20;
-    /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_15: usize = 21;
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5: usize = 31;
     /// Offset of `shared_metadata_marker` (`u8`). Spec §3.1.
     pub(crate) const SHARED_METADATA_MARKER: usize = 36;
     /// Offset of `shared_metadata_record` (`u64`, little-endian). Spec §3.1.
@@ -3184,6 +3184,28 @@ pub(crate) mod base_feature_result_body_entry {
     pub(crate) const REFERENCE_VALUE: usize = 1;
     /// Offset of `reference_field` (`bytes[6]`). Spec §3.1.
     pub(crate) const REFERENCE_FIELD: usize = 9;
+}
+
+/// Byte offsets for the `base_feature_null_reference_count` record.
+///
+/// Spec §3.1. Record length 15 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the two parallel 15-byte body-entry runs of the ordinary form.
+/// ```
+pub(crate) mod base_feature_null_reference_count {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 15;
+    /// Offset of `null_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE_MARKER: usize = 0;
+    /// Offset of `null_reference` (`bytes[8]`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE: usize = 1;
+    /// Offset of `null_reference_flag` (`u8`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE_FLAG: usize = 9;
+    /// Offset of `null_reference_zero` (`u8`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE_ZERO: usize = 10;
+    /// Offset of `body_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_COUNT: usize = 11;
 }
 
 /// Byte offsets for the `base_feature_compact_result_body_count` record.

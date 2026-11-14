@@ -797,13 +797,109 @@ fn wide_zero_body_frame_reads_its_metadata_at_offset_37() {
     let (bytes, scope) = zero_body_frame(262, 36, ("284", "259"));
     assert_eq!(zero_body_metadata(&bytes, &scope), Some((0, 77)));
 
-    let mut flagged = bytes.clone();
-    flagged[29] = 1;
-    assert_eq!(zero_body_metadata(&flagged, &scope), None);
-
     let mut unmarked = bytes;
     unmarked[36] = 0;
     assert_eq!(zero_body_metadata(&unmarked, &scope), None);
+}
+
+fn null_reference_flag(bytes: &[u8], scope: &DesignParameterScope) -> Option<Option<u64>> {
+    exact_base_feature_construction(bytes, scope)
+        .unwrap()
+        .map(|construction| construction.null_reference_flag_offset())
+}
+
+#[test]
+fn a_wide_zero_body_frame_reads_the_flag_of_its_marked_null_reference() {
+    let (bytes, scope) = zero_body_frame(262, 36, ("304", "258"));
+    assert_eq!(null_reference_flag(&bytes, &scope), Some(None));
+    for (offset, value, expected) in [(29, 1, Some(Some(29))), (29, 2, None), (30, 1, None)] {
+        let mut flagged = bytes.clone();
+        flagged[offset] = value;
+        assert_eq!(
+            null_reference_flag(&flagged, &scope),
+            expected,
+            "byte {offset} = {value}"
+        );
+        if expected.is_some() {
+            assert_eq!(zero_body_metadata(&flagged, &scope), Some((0, 77)));
+        }
+    }
+}
+
+/// One-body ordinary form: entity and passive-reference runs, the marked null
+/// reference at offset 54, the repeated run, the metadata record with a
+/// six-byte field, and the result run; the kind starts at `169 + 52`.
+fn ordinary_one_body_frame() -> (Vec<u8>, DesignParameterScope) {
+    let kind_offset = 169 + 52;
+    let frame_length = kind_offset + 110;
+    let mut bytes = vec![0u8; frame_length];
+    bytes[19] = 1;
+    bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
+    bytes[24] = 1;
+    bytes[25..33].copy_from_slice(&209u64.to_le_bytes());
+    bytes[39] = 1;
+    bytes[40..48].copy_from_slice(&215u64.to_le_bytes());
+    bytes[54] = 1;
+    bytes[65..69].copy_from_slice(&1u32.to_le_bytes());
+    bytes[69] = 1;
+    bytes[70..74].copy_from_slice(&215u32.to_le_bytes());
+    bytes[81] = 1;
+    bytes[82..90].copy_from_slice(&206u64.to_le_bytes());
+    bytes[96..100].copy_from_slice(&1u32.to_le_bytes());
+    bytes[100] = 1;
+    bytes[101..105].copy_from_slice(&220u32.to_le_bytes());
+    bytes[kind_offset - 102..kind_offset - 98].copy_from_slice(&36u32.to_le_bytes());
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-ordinary",
+        DesignFeatureKind::BaseFeature,
+        202,
+    );
+    scope.class_tag = DesignClassTag::try_from("324".to_owned()).unwrap();
+    scope.paired_class_tag = DesignClassTag::try_from("258".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = u64_from_index(frame_length);
+            draft.kind_offset = u64_from_index(kind_offset);
+            draft.paired_byte_offset = u64_from_index(frame_length);
+            draft.reference_members = ReferenceRun::unlocated(vec![206]);
+            draft.reference_count_offset =
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    (bytes, scope)
+}
+
+#[test]
+fn an_ordinary_frame_reads_the_flag_of_its_marked_null_reference() {
+    let (bytes, scope) = ordinary_one_body_frame();
+    assert_eq!(null_reference_flag(&bytes, &scope), Some(None));
+    for (offset, value, expected) in [(63, 1, Some(Some(63))), (63, 2, None), (64, 1, None)] {
+        let mut flagged = bytes.clone();
+        flagged[offset] = value;
+        assert_eq!(
+            null_reference_flag(&flagged, &scope),
+            expected,
+            "byte {offset} = {value}"
+        );
+        if expected.is_some() {
+            let Some(DesignBaseFeatureConstruction::ResultBodies {
+                bodies,
+                metadata_record,
+                ..
+            }) = exact_base_feature_construction(&flagged, &scope).unwrap()
+            else {
+                panic!("flagged ordinary frame reads its result bodies");
+            };
+            let body = bodies.iter().next().unwrap();
+            assert_eq!(
+                (body.entity.value, body.reference.value, body.result.value),
+                (209, 215, 220)
+            );
+            assert_eq!(metadata_record, 206);
+        }
+    }
 }
 
 #[test]

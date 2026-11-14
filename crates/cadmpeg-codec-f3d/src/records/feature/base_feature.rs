@@ -100,6 +100,9 @@ pub(crate) enum DesignBaseFeatureConstruction {
         metadata_record_offset: u64,
         /// Variant-width source field following the metadata record.
         metadata_field: NativeBytes<Vec<u8>>,
+        /// Byte offset of the first trailing-field byte of the marked null
+        /// reference when that byte is `1`.
+        null_reference_flag_offset: Option<u64>,
     },
     /// Direct-modeling body-reference envelope used by the class-365/class-262 and
     /// class-377/class-259 forms.
@@ -194,11 +197,13 @@ impl Clone for DesignBaseFeatureConstruction {
                 metadata_record,
                 metadata_record_offset,
                 metadata_field,
+                null_reference_flag_offset,
             } => Self::ResultBodies {
                 bodies: bodies.clone(),
                 metadata_record: *metadata_record,
                 metadata_record_offset: *metadata_record_offset,
                 metadata_field: metadata_field.clone(),
+                null_reference_flag_offset: *null_reference_flag_offset,
             },
             Self::BodyBasedOnFaces {
                 body,
@@ -315,6 +320,8 @@ impl Serialize for DesignBaseFeatureConstruction {
                 result_records: ResultBodyColumn<'a, u32>,
                 result_record_offsets: ResultBodyColumn<'a, u64>,
                 result_fields: ResultBodyColumn<'a, NativeBytes<[u8; 6]>>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                null_reference_flag_offset: Option<u64>,
             },
             BodyBasedOnFaces {
                 body_entity_suffixes: [u64; 1],
@@ -388,6 +395,7 @@ impl Serialize for DesignBaseFeatureConstruction {
                 metadata_record,
                 metadata_record_offset,
                 metadata_field,
+                null_reference_flag_offset,
             } => BorrowedWire::ResultBodies {
                 body_entity_suffixes: ResultBodyColumn {
                     bodies,
@@ -429,6 +437,7 @@ impl Serialize for DesignBaseFeatureConstruction {
                     bodies,
                     value: |row| row.result.field.into(),
                 },
+                null_reference_flag_offset: *null_reference_flag_offset,
             },
             Self::BodyBasedOnFaces {
                 body,
@@ -633,6 +642,14 @@ enum DesignBaseFeatureConstructionWire {
         result_record_offsets: Vec<u64>,
         /// Six-byte source fields parallel to `result_records`.
         result_fields: Vec<NativeBytes<[u8; 6]>>,
+        /// Byte offset of the first trailing-field byte of the marked null
+        /// reference when that byte is `1`.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_null_reference_flag_offset"
+        )]
+        null_reference_flag_offset: Option<u64>,
     },
     /// Direct-modeling body-reference envelope used by the class-365/class-262 and
     /// class-377/class-259 forms.
@@ -752,6 +769,12 @@ enum DesignBaseFeatureConstructionWire {
     },
 }
 
+cadmpeg_core::named_optional_field!(
+    deserialize_null_reference_flag_offset,
+    u64,
+    "null_reference_flag_offset"
+);
+
 /// Join one column-wise run of 15-byte Base Feature references.
 fn entry_rows(
     values: Vec<u64>,
@@ -793,6 +816,7 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                 result_records,
                 result_record_offsets,
                 result_fields,
+                null_reference_flag_offset,
             } => {
                 let count = body_entity_suffixes.len();
                 for (field, len) in [
@@ -865,6 +889,7 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                     metadata_record,
                     metadata_record_offset,
                     metadata_field,
+                    null_reference_flag_offset,
                 }
             }
             DesignBaseFeatureConstructionWire::BodyBasedOnFaces {
@@ -1104,6 +1129,7 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                 metadata_record,
                 metadata_record_offset,
                 metadata_field,
+                null_reference_flag_offset,
             } => {
                 let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect();
                 let body_entity_suffix_offsets =
@@ -1149,6 +1175,7 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                     result_records,
                     result_record_offsets,
                     result_fields,
+                    null_reference_flag_offset,
                 }
             }
             DesignBaseFeatureConstruction::BodyBasedOnFaces {
@@ -1319,6 +1346,17 @@ impl DesignBaseFeatureConstruction {
             _ => &[],
         };
         sources.iter().map(|source| source.entity_suffix)
+    }
+
+    /// Byte offset of a marked null reference flag that stores `1`.
+    pub(crate) fn null_reference_flag_offset(&self) -> Option<u64> {
+        match self {
+            Self::ResultBodies {
+                null_reference_flag_offset,
+                ..
+            } => *null_reference_flag_offset,
+            _ => None,
+        }
     }
 
     /// Return the body suffixes in source order for any Base Feature form.

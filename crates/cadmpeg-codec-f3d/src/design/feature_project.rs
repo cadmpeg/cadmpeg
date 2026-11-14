@@ -1582,6 +1582,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             inserted_bodies.extend(copies);
                             definition
                         } else if let Some(construction) = scope.base_feature_construction() {
+                            if let Some(offset) = construction.null_reference_flag_offset() {
+                                projection_losses.push(crate::loss::F3dLossCode::FeatureBaseFeatureNullFlagAssumed.note(format!(
+                                    "Base Feature {} stores flag 1 at Design offset {offset} in its marked null reference; its result runs are read as the ordinary result set (DR-241).",
+                                    scope.id
+                                )));
+                            }
                             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                                 bodies: design_body_selection(
                                     scope,

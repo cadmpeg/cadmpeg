@@ -933,6 +933,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         base_feature.payload_mut()
     {
         *slot = Some(DesignBaseFeatureConstruction::ResultBodies {
+            null_reference_flag_offset: None,
             bodies: crate::records::feature::base_feature::DesignBaseFeatureResults::WithoutRepeatedFields(vec![
                 crate::records::feature::base_feature::DesignBaseFeatureResultBody {
                     entity: crate::records::feature::base_feature::DesignBaseFeatureEntry {

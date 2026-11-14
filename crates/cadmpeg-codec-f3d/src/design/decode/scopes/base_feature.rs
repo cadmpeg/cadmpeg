@@ -674,6 +674,7 @@ use crate::layout::base_feature_compact_repeated_body_entry as compact_entry;
 use crate::layout::base_feature_compact_result_body_count as compact_count;
 use crate::layout::base_feature_legacy_444_zero_body as legacy_444_zero_body;
 use crate::layout::base_feature_legacy_zero_body as legacy_zero_body;
+use crate::layout::base_feature_null_reference_count as null_count;
 use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
 use crate::layout::base_feature_typed_reference_zero_body as typed_zero_body;
@@ -702,6 +703,24 @@ fn read_base_feature_entry_at(
     };
     *cursor = at.checked_add(result_body_entry::LEN)?;
     Some(entry)
+}
+
+/// Reads the marked null reference at `at` and returns the offset of its flag
+/// byte when the flag is `1`.
+fn marked_null_reference_flag(bytes: &[u8], at: usize) -> Option<Option<u64>> {
+    if bytes.get(at + null_count::NULL_REFERENCE_MARKER) != Some(&1)
+        || bytes.get(at + null_count::NULL_REFERENCE..at + null_count::NULL_REFERENCE_FLAG)
+            != Some(&[0; 8])
+        || bytes.get(at + null_count::NULL_REFERENCE_ZERO) != Some(&0)
+    {
+        return None;
+    }
+    let flag_at = at + null_count::NULL_REFERENCE_FLAG;
+    match bytes.get(flag_at)? {
+        0 => Some(None),
+        1 => Some(Some(u64::try_from(flag_at).ok()?)),
+        _ => None,
+    }
 }
 
 /// Repeated-run form selected by the count field of a result-body envelope
@@ -779,6 +798,7 @@ fn exact_typed_zero_body_base_feature(
         return None;
     }
     Some(DesignBaseFeatureConstruction::ResultBodies {
+        null_reference_flag_offset: None,
         bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
         metadata_record,
         metadata_record_offset: scope.byte_offset()
@@ -1089,14 +1109,15 @@ fn exact_wide_zero_body_base_feature(
     start: usize,
 ) -> Option<DesignBaseFeatureConstruction> {
     use crate::records::feature::base_feature::DesignBaseFeatureResults;
+    let null_reference_flag_offset =
+        marked_null_reference_flag(bytes, start + wide_zero_body::ZERO_BODY_MARKER)?;
     if scope.byte_offset().checked_add(scope.frame_length()) != Some(scope.paired_byte_offset())
         || bytes
             .get(start + wide_zero_body::ZERO_RUN_9..start + wide_zero_body::ZERO_BODY_MARKER)?
             != [0; 9]
-        || bytes.get(start + wide_zero_body::ZERO_BODY_MARKER) != Some(&1)
         || bytes.get(
-            start + wide_zero_body::ZERO_RUN_15..start + wide_zero_body::SHARED_METADATA_MARKER,
-        )? != [0; 15]
+            start + wide_zero_body::ZERO_RUN_5..start + wide_zero_body::SHARED_METADATA_MARKER,
+        )? != [0; 5]
         || bytes.get(start + wide_zero_body::SHARED_METADATA_MARKER) != Some(&1)
         || bytes.get(
             start + wide_zero_body::ZERO_PADDING_8..start + wide_zero_body::GUID_CODE_UNIT_COUNT,
@@ -1119,6 +1140,7 @@ fn exact_wide_zero_body_base_feature(
         return None;
     }
     Some(DesignBaseFeatureConstruction::ResultBodies {
+        null_reference_flag_offset,
         bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
         metadata_record,
         metadata_record_offset: scope.byte_offset()
@@ -1139,15 +1161,16 @@ fn exact_wide_shifted_zero_body_base_feature(
     start: usize,
 ) -> Option<DesignBaseFeatureConstruction> {
     use crate::records::feature::base_feature::DesignBaseFeatureResults;
+    let null_reference_flag_offset =
+        marked_null_reference_flag(bytes, start + shifted_zero_body::ZERO_BODY_MARKER)?;
     if scope.byte_offset().checked_add(scope.frame_length()) != Some(scope.paired_byte_offset())
         || bytes.get(
             start + shifted_zero_body::ZERO_RUN_9..start + shifted_zero_body::ZERO_BODY_MARKER,
         )? != [0; 9]
-        || bytes.get(start + shifted_zero_body::ZERO_BODY_MARKER) != Some(&1)
         || bytes.get(
-            start + shifted_zero_body::ZERO_RUN_15
+            start + shifted_zero_body::ZERO_RUN_5
                 ..start + shifted_zero_body::SHARED_METADATA_MARKER,
-        )? != [0; 15]
+        )? != [0; 5]
         || bytes.get(start + shifted_zero_body::SHARED_METADATA_MARKER) != Some(&1)
         || bytes.get(
             start + shifted_zero_body::ZERO_PADDING_12
@@ -1200,6 +1223,7 @@ fn exact_wide_shifted_zero_body_base_feature(
         return None;
     }
     Some(DesignBaseFeatureConstruction::ResultBodies {
+        null_reference_flag_offset,
         bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
         metadata_record,
         metadata_record_offset: scope.byte_offset()
@@ -1240,6 +1264,7 @@ pub(super) fn exact_base_feature_construction(
         }
         if scope.frame_length() == 267 {
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
+                null_reference_flag_offset: None,
                 bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
                 metadata_record: View::u32_le_at(
                     bytes,
@@ -1297,6 +1322,7 @@ pub(super) fn exact_base_feature_construction(
                 return None;
             }
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
+                null_reference_flag_offset: None,
                 bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
                 metadata_record,
                 metadata_record_offset: scope.byte_offset()
@@ -1384,6 +1410,7 @@ pub(super) fn exact_base_feature_construction(
                 return None;
             }
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
+                null_reference_flag_offset: None,
                 bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
                 metadata_record,
                 metadata_record_offset: scope.byte_offset()
@@ -1477,6 +1504,7 @@ pub(super) fn exact_base_feature_construction(
             entities.push(read_base_feature_entry_at(bytes, &mut cursor)?);
         }
         let mut references = Vec::new();
+        let mut null_reference_flag_offset = None;
         for _ in 0..body_count {
             let entry = read_base_feature_entry_at(bytes, &mut cursor)?;
             references.push(DesignBaseFeatureEntry {
@@ -1520,15 +1548,13 @@ pub(super) fn exact_base_feature_construction(
             }
             cursor += compact_count::LEN;
         } else {
-            if bytes.get(cursor) != Some(&1) || bytes.get(cursor + 1..cursor + 11) != Some(&[0; 10])
+            null_reference_flag_offset = marked_null_reference_flag(bytes, cursor)?;
+            if usize::try_from(View::u32_le_at(bytes, cursor + null_count::BODY_COUNT)?).ok()?
+                != body_count
             {
                 return None;
             }
-            cursor += 11;
-            if usize::try_from(View::u32_le_at(bytes, cursor)?).ok()? != body_count {
-                return None;
-            }
-            cursor += 4;
+            cursor += null_count::LEN;
         }
         let mut repeated_reference_fields = Vec::new();
         for ordinal in 0..body_count {
@@ -1607,6 +1633,7 @@ pub(super) fn exact_base_feature_construction(
                 .is_some_and(|padding| padding.iter().all(|byte| *byte == 0));
         let first = first?;
         admitted.then_some(Ok(DesignBaseFeatureConstruction::ResultBodies {
+            null_reference_flag_offset,
             bodies: DesignBaseFeatureResults::WithRepeatedFields { first, rest },
             metadata_record,
             metadata_record_offset,

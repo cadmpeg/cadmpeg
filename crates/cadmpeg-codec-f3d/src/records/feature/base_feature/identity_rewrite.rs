@@ -10,7 +10,7 @@ use super::{
 rewrite_native_scalar!(DesignBaseFeatureBodyReferenceForm);
 rewrite_native_scalar!(DesignBaseFeatureCompactMode);
 rewrite_native_enum!(DesignBaseFeatureConstruction, []; {
-    ResultBodies {bodies, metadata_record, metadata_record_offset, metadata_field},
+    ResultBodies {bodies, metadata_record, metadata_record_offset, metadata_field, null_reference_flag_offset},
     BodyBasedOnFaces {body, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset},
     LegacyBodyBasedOnFaces {form, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset},
     BodySnapshot {bodies, related_guids, related_guid_offsets, linkage_record, linkage_record_offset, auxiliary_record, auxiliary_record_offset},

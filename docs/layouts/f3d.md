@@ -3579,8 +3579,11 @@ Offsets are relative to the primary indexed header. The first GUID follows the c
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
 | 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | In the 262-byte zero-body form, offsets 11 through 19 are zero |
-| 20 | 1 | `zero_body_marker` | `u8` | little | spec | offset 20 stores `u8 1`, offsets 21 through 35 are zero |
-| 21 | 15 | `zero_run_15` | `bytes[15]` | little | spec | offsets 21 through 35 are zero |
+| 20 | 1 | `zero_body_marker` | `u8` | little | spec | offset 20 stores the marked null reference |
+| 21 | 8 | `null_reference` | `bytes[8]` | little | spec | The marked null reference is `u8 1`, a zero u64 |
+| 29 | 1 | `null_reference_flag` | `u8` | little | spec | with its flag byte at offset 29 |
+| 30 | 1 | `null_reference_zero` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
+| 31 | 5 | `zero_run_5` | `bytes[5]` | little | spec | offsets 31 through 35 are zero |
 | 36 | 1 | `shared_metadata_marker` | `u8` | little | spec | offset 36 stores the shared-metadata marker |
 | 37 | 8 | `shared_metadata_record` | `u64` | little | spec | offset 37 its u64 record index |
 | 45 | 6 | `shared_metadata_field` | `bytes[6]` | little | spec | offset 45 the six-byte field |
@@ -3597,8 +3600,11 @@ Offsets are relative to the primary indexed header. The first GUID follows the c
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
 | 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | In the 262-byte zero-body form, offsets 11 through 19 are zero |
-| 20 | 1 | `zero_body_marker` | `u8` | little | spec | offset 20 stores `u8 1`, offsets 21 through 35 are zero |
-| 21 | 15 | `zero_run_15` | `bytes[15]` | little | spec | offsets 21 through 35 are zero |
+| 20 | 1 | `zero_body_marker` | `u8` | little | spec | offset 20 stores the marked null reference |
+| 21 | 8 | `null_reference` | `bytes[8]` | little | spec | The marked null reference is `u8 1`, a zero u64 |
+| 29 | 1 | `null_reference_flag` | `u8` | little | spec | with its flag byte at offset 29 |
+| 30 | 1 | `null_reference_zero` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
+| 31 | 5 | `zero_run_5` | `bytes[5]` | little | spec | offsets 31 through 35 are zero |
 | 36 | 1 | `shared_metadata_marker` | `u8` | little | spec | offset 36 stores the shared-metadata marker |
 | 37 | 8 | `shared_metadata_record` | `u64` | little | spec | offset 37 its u64 record index |
 | 45 | 6 | `shared_metadata_field` | `bytes[6]` | little | spec | offset 45 the six-byte field |
@@ -3624,6 +3630,20 @@ This layout repeats for each body entity suffix and each passive body-reference 
 | 0 | 1 | `reference_marker` | `u8` | little | spec | marked u64 Design body entity suffixes |
 | 1 | 8 | `reference_value` | `u64` | little | spec | marked u64 Design body entity suffixes |
 | 9 | 6 | `reference_field` | `bytes[6]` | little | spec | every value has a six-byte trailing field |
+
+## `base_feature_null_reference_count`
+
+Spec §3.1 · layout: byte offsets · size: 15 B
+
+Offsets are relative to the byte after the two parallel 15-byte body-entry runs of the ordinary form.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `null_reference_marker` | `u8` | little | spec | The marked null reference is `u8 1`, a zero u64 |
+| 1 | 8 | `null_reference` | `bytes[8]` | little | spec | The marked null reference is `u8 1`, a zero u64 |
+| 9 | 1 | `null_reference_flag` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
+| 10 | 1 | `null_reference_zero` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
+| 11 | 4 | `body_count` | `u32` | little | spec | The ordinary form then stores a marked null reference, u32 `N` |
 
 ## `base_feature_compact_result_body_count`
 
