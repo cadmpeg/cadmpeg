@@ -77,6 +77,8 @@ pub(crate) mod curves;
 
 pub(crate) mod dimensions;
 
+pub(crate) mod extrusion_start;
+
 pub(crate) mod direct_edits;
 
 mod drafts;
