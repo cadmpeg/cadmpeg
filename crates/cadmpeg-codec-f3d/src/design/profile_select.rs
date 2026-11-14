@@ -33,6 +33,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
 mod cap_regions;
+mod compact_members;
 pub(crate) mod face_profile_sets;
 mod region_members;
 
@@ -935,27 +936,55 @@ pub(crate) fn bind_extrude_profile_selections(
                         );
                         break 'feature_edit;
                     }
-                    if matching_groups.is_empty() {
-                        if let Some(selected) = compact_profile_loops(scope, sketch, curve_resolution) {
-                            *profile = ProfileRef::Planar(PlanarProfileRef::sketch_selection(
-                                sketch.id.clone(), vec![scope.id.clone()],
-                            ).unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone())));
-                            if let Some(states) = scope.history_state_id().zip(effective_previous_history_state_id) {
+                    let sketch_id = sketch_id.clone();
+                    if matching_groups.is_empty()
+                        && curve_resolution.profile_curves.iter().any(|selection| {
+                            native_stream(&selection.id) == native_stream(&scope.id)
+                                && selection.scope_record_index == scope.record_index
+                                && selection.compact_references()
+                        })
+                    {
+                        *profile = ProfileRef::Planar(PlanarProfileRef::sketch_selection(
+                            sketch.id.clone(), vec![scope.id.clone()],
+                        ).unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone())));
+                        if let Some(states) = scope.history_state_id().zip(effective_previous_history_state_id) {
+                            let sweep = cap_regions::compact::Sweep { operation: op, start, direction, extent };
+                            if let Some(selected) = compact_profile_loops(scope, sketch, curve_resolution) {
                                 if cap_regions::compact::selection_agrees(
-                                    sketch, scoped_resolution, &selected, states,
-                                    cap_regions::compact::Sweep { operation: op, start, direction, extent },
+                                    sketch, scoped_resolution, &selected, states, sweep,
                                 )? {
                                     *profile = selected;
+                                    break 'feature_edit;
                                 }
                             }
                         }
+                    }
+                    if let Some(states) = scope.history_state_id().zip(effective_previous_history_state_id) {
+                        let mut compact_groups = curve_resolution.groups.iter().filter(|group| {
+                            native_stream(&group.id) == native_stream(&scope.id)
+                                && group.scope_record_index == scope.record_index
+                                && group.role() == DesignOperandRole::PROFILE
+                                && scope.extrude_profile().is_some_and(|operand| {
+                                    matches!(group.members(), [member] if member.value == operand.record_index)
+                                })
+                        });
+                        if let Some(group) = compact_groups.next().filter(|_| compact_groups.next().is_none()) {
+                            if let Some(selected) = compact_members::resolve(
+                                group, &curve_resolution.path_resolution(), scoped_resolution, states,
+                                cap_regions::compact::Sweep { operation: op, start, direction, extent },
+                            )? {
+                                *profile = ProfileRef::Planar(selected);
+                                break 'feature_edit;
+                            }
+                        }
+                    }
+                    if matching_groups.is_empty() {
                         break 'feature_edit;
                     }
                     let group_ids: Vec<_> = matching_groups
                         .iter()
                         .map(|group| group.id.clone())
                         .collect();
-                    let sketch_id = sketch_id.clone();
                     let fallback = match PlanarProfileRef::sketch_selection(sketch_id, group_ids) {
                         Ok(profile) => profile,
                         Err(_) => PlanarProfileRef::Native(scope.id.clone()),
@@ -4112,7 +4141,7 @@ fn compact_profile_loops(
     sketch: &cadmpeg_ir::sketches::Sketch,
     resolution: &SketchCurveSelectionResolution<'_>,
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
-    if sketch.profiles.len() < 2 {
+    if sketch.profiles.is_empty() {
         return None;
     }
     let operand = scope.extrude_profile()?;
