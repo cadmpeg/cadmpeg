@@ -1468,7 +1468,16 @@ fn parse_legacy_sketch_member_run_with(
         {
             return None;
         }
-        let count_at = paired_at + 19 + width + 11;
+        let count_at = if typed {
+            // The sketch name sits between the ordinal and the count.
+            let units = usize::try_from(View::u32_le_at(bytes, paired_at + TYPED_RUN_NAME_LENGTH)?)
+                .ok()
+                .filter(|units| *units <= TYPED_RUN_NAME_LIMIT)?;
+            let terminator = paired_at + TYPED_RUN_NAME + units * 2;
+            (bytes.get(terminator) == Some(&0)).then_some(terminator + 1)?
+        } else {
+            paired_at + 19 + width + 11
+        };
         let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
         if count == 0 {
             return None;

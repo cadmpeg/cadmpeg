@@ -1026,6 +1026,28 @@ fn typed_member_run_record(name: &str, members: &[u32]) -> Vec<u8> {
 }
 
 #[test]
+fn typed_legacy_sketch_pair_counts_members_after_the_sketch_name() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"305");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.resize(40, 0);
+    let paired_at = bytes.len();
+    bytes.extend_from_slice(&typed_member_run_record(
+        "Reconstructed-Sketch1",
+        &[317, 319],
+    ));
+    let members =
+        tested_parse_legacy_sketch_member_run(&bytes, 0, 100).expect("named typed member run");
+    assert_eq!(
+        members.iter().map(|row| row.value).collect::<Vec<_>>(),
+        [317, 319]
+    );
+    let first = paired_at + 81 + 2 * "Reconstructed-Sketch1".len() + 4;
+    assert_eq!(members[0].offset, u64_from_index(first + 1));
+}
+
+#[test]
 fn typed_sketch_member_run_follows_the_name_and_counts_typed_references() {
     let values = |bytes: &[u8]| {
         tested_parse_sketch_member_run(bytes, 0, 100)
