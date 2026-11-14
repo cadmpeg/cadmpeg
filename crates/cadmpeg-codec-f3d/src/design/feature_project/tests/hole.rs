@@ -1418,7 +1418,7 @@ fn extra_parameters_and_native_sizing_keep_the_admitted_hole_dimensions() {
     assert_eq!(bottom, Some(cadmpeg_ir::features::holes::HoleBottom::Flat));
     for code in [
         crate::loss::F3dLossCode::HoleParametersIndependentAssumed,
-        crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed,
+        crate::loss::F3dLossCode::HoleTappedDiameterStored,
         crate::loss::F3dLossCode::HoleStandardSizingAssumed,
     ] {
         assert!(losses.iter().any(|loss| loss.code == code.kind()));
@@ -1569,4 +1569,48 @@ fn an_encoded_simple_form_retains_unmatched_counterbore_parameters() {
             .any(|loss| loss.code
                 == crate::loss::F3dLossCode::HoleParametersIndependentAssumed.kind())
     );
+}
+
+#[test]
+fn the_tap_type_selects_the_hole_diameter_loss() {
+    use super::super::hole_tap_type_loss;
+    assert!(hole_tap_type_loss("hole", 0).is_none());
+    assert!(hole_tap_type_loss("hole", 1).is_none());
+    assert_eq!(
+        hole_tap_type_loss("hole", 2).unwrap().code,
+        crate::loss::F3dLossCode::HoleTappedDiameterStored.kind()
+    );
+    for other in [3, 1_867_538_229] {
+        assert_eq!(
+            hole_tap_type_loss("hole", other).unwrap().code,
+            crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed.kind()
+        );
+    }
+}
+
+#[test]
+fn a_clearance_tap_type_reports_no_word_loss() {
+    let mut scope = hole_scope();
+    if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
+        slot.extent.as_mut().unwrap().leading_word = Some(crate::records::identity::Located {
+            value: 1,
+            offset: 5,
+        });
+    }
+    let parameters = hole_parameters().to_vec();
+    let indexed: Vec<_> = parameters
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (u32::try_from(i).unwrap(), p))
+        .collect();
+    let mut losses = Vec::new();
+    assert!(project_hole(&scope, &indexed, &[], &[], &mut losses)
+        .unwrap()
+        .is_some());
+    for code in [
+        crate::loss::F3dLossCode::HoleTappedDiameterStored,
+        crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed,
+    ] {
+        assert!(!losses.iter().any(|loss| loss.code == code.kind()));
+    }
 }
