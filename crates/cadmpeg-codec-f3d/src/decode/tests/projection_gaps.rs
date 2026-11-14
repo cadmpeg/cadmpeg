@@ -354,6 +354,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         secondary_id: 2,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     });
     native.lost_edge_references.push(
         LostEdgeReference::new(
