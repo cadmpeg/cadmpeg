@@ -10188,6 +10188,25 @@ Unstated regions:
 - `132..152` (20 B): The specification states no field in this range.
 - `157..267` (110 B): The specification states no field in this range.
 
+## `path_pattern_reordered_settings`
+
+Spec §Assembly operands · layout: byte offsets · size: 298 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 24 | 11 | `count_owner_reference` | `bytes[11]` | little | spec | Marked references at offsets 24 and 39 name the count owner and distance owner |
+| 39 | 11 | `distance_owner_reference` | `bytes[11]` | little | spec | Marked references at offsets 24 and 39 name the count owner and distance owner |
+| 157 | 141 | `trailing_payload` | `bytes[141]` | little | spec | Its trailing payload occupies offsets 157 through 297 |
+
+Unstated regions:
+
+- `0..24` (24 B): Shared settings prefix.
+- `35..39` (4 B): Shared settings separator.
+- `50..157` (107 B): Shared fixed controls through offset 156.
+
 ## `path_pattern_start`
 
 Spec §Assembly operands · layout: byte offsets · size: 197 B
@@ -10841,6 +10860,56 @@ Parsed by:
 | 11 | 6 | `zeros` | `bytes[6]` | little | spec | reference, six zero bytes, an identity byte · value `[0, 0, 0, 0, 0, 0]` |
 | 17 | 1 | `identity` | `u8` | little | spec | reference, six zero bytes, an identity byte |
 
+## `assembly_version_three_extended_tail`
+
+Spec §Assembly operands · layout: byte offsets · size: 87 B
+
+Offsets start at the feature ordinal of the plain-reference extended version-three tail.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_v3.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `ordinal` | `u32` | little | spec | The extended version-three tail adds a nonnull reference |
+| 4 | 15 | `prefix_zeros` | `bytes[15]` | little | spec | The extended version-three tail adds a nonnull reference · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 19 | 11 | `first_reference` | `bytes[11]` | little | spec | The extended version-three tail adds a nonnull reference |
+| 30 | 11 | `additional_reference` | `bytes[11]` | little | spec | The extended version-three tail adds a nonnull reference |
+| 41 | 4 | `previous_history` | `u32` | little | spec | The extended version-three tail adds a nonnull reference |
+| 45 | 4 | `word_a` | `u32` | little | spec | The extended version-three tail adds a nonnull reference |
+| 49 | 8 | `scalar` | `f64` | little | spec | The extended version-three tail adds a nonnull reference |
+| 57 | 4 | `word_b` | `u32` | little | spec | The extended version-three tail adds a nonnull reference |
+| 61 | 11 | `middle_reference` | `bytes[11]` | little | spec | The extended version-three tail adds a nonnull reference |
+| 72 | 1 | `first_boolean` | `u8` | little | spec | The extended version-three tail adds a nonnull reference |
+| 73 | 1 | `second_boolean` | `u8` | little | spec | The extended version-three tail adds a nonnull reference |
+| 74 | 11 | `last_reference` | `bytes[11]` | little | spec | The extended version-three tail adds a nonnull reference |
+| 85 | 2 | `tail_zeros` | `bytes[2]` | little | spec | The extended version-three tail adds a nonnull reference · value `[0, 0]` |
+
+## `assembly_version_three_typed_extended_tail`
+
+Spec §Assembly operands · layout: byte offsets · size: 247 B
+
+Offsets start at the feature ordinal of the typed-reference extended version-three tail.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `ordinal` | `u32` | little | spec | The typed-reference extended tail has four 51-byte references |
+| 4 | 15 | `prefix_zeros` | `bytes[15]` | little | spec | The typed-reference extended tail has four 51-byte references · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 19 | 51 | `first_reference` | `bytes[51]` | little | spec | The typed-reference extended tail has four 51-byte references |
+| 70 | 51 | `additional_reference` | `bytes[51]` | little | spec | The typed-reference extended tail has four 51-byte references |
+| 121 | 4 | `previous_history` | `u32` | little | spec | The typed-reference extended tail has four 51-byte references |
+| 125 | 4 | `word_a` | `u32` | little | spec | The typed-reference extended tail has four 51-byte references |
+| 129 | 8 | `scalar` | `f64` | little | spec | The typed-reference extended tail has four 51-byte references |
+| 137 | 4 | `word_b` | `u32` | little | spec | The typed-reference extended tail has four 51-byte references |
+| 141 | 51 | `middle_reference` | `bytes[51]` | little | spec | The typed-reference extended tail has four 51-byte references |
+| 192 | 1 | `first_boolean` | `u8` | little | spec | The typed-reference extended tail has four 51-byte references |
+| 193 | 1 | `second_boolean` | `u8` | little | spec | The typed-reference extended tail has four 51-byte references |
+| 194 | 51 | `last_reference` | `bytes[51]` | little | spec | The typed-reference extended tail has four 51-byte references |
+| 245 | 2 | `tail_zeros` | `bytes[2]` | little | spec | The typed-reference extended tail has four 51-byte references · value `[0, 0]` |
+
 ## `marked_reference_box_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 339 B
@@ -10937,6 +11006,124 @@ Parsed by:
 | 0 | 2 | `control` | `u16` | little | spec | The empty-attribute generation can insert a source-placement flag |
 | 2 | 4 | `ordinal` | `u32` | little | spec | after the positive ordinal and before the two UUIDs |
 | 6 | 1 | `source_identity_flag` | `u8` | little | spec | Flag `1` stores source identity |
+
+## `sphere_compact_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 63 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 25 | 4 | `operation` | `u32` | little | spec | The compact prefix has operation offset 25 |
+| 29 | 1 | `marker` | `u8` | little | spec | marker offset 29 · value `1` |
+| 30 | 11 | `placement` | `bytes[11]` | little | spec | references at offsets 30, 41, and 52 |
+| 41 | 11 | `diameter_owner` | `bytes[11]` | little | spec | references at offsets 30, 41, and 52 |
+| 52 | 11 | `result` | `bytes[11]` | little | spec | references at offsets 30, 41, and 52 |
+
+Unstated regions:
+
+- `0..25` (25 B): Indexed header and inherited prefix.
+
+## `sphere_shifted_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 59 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 4 | `operation` | `u32` | little | spec | The shifted prefix has operation offset 21 |
+| 25 | 1 | `marker` | `u8` | little | spec | marker offset 25 · value `1` |
+| 26 | 11 | `placement` | `bytes[11]` | little | spec | references at offsets 26, 37, and 48 |
+| 37 | 11 | `diameter_owner` | `bytes[11]` | little | spec | references at offsets 26, 37, and 48 |
+| 48 | 11 | `result` | `bytes[11]` | little | spec | references at offsets 26, 37, and 48 |
+
+Unstated regions:
+
+- `0..21` (21 B): Indexed header and inherited prefix.
+
+## `sphere_typed_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 178 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `operation` | `u32` | little | spec | The typed prefix has operation offset 20 |
+| 24 | 1 | `marker` | `u8` | little | spec | marker offset 24 · value `1` |
+| 25 | 51 | `placement` | `bytes[51]` | little | spec | references at offsets 25, 76, and 127 |
+| 76 | 51 | `diameter_owner` | `bytes[51]` | little | spec | references at offsets 25, 76, and 127 |
+| 127 | 51 | `result` | `bytes[51]` | little | spec | references at offsets 25, 76, and 127 |
+
+Unstated regions:
+
+- `0..20` (20 B): Indexed header and inherited prefix.
+
+## `captured_position_prefix`
+
+Spec §Captured component positions · layout: byte offsets · size: 33 B
+
+Offsets are relative to the scope primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The inline prefix starts with the eleven-byte indexed header |
+| 11 | 18 | `zero_run` | `bytes[18]` | little | spec | The inline prefix starts with the eleven-byte indexed header · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 29 | 4 | `row_count` | `u32` | little | spec | The inline prefix starts with the eleven-byte indexed header |
+
+## `captured_position_row`
+
+Spec §Captured component positions · layout: byte offsets · size: 13 B
+
+Offsets are relative to the start of each ordered row.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `zero` | `u8` | little | spec | Each Position row starts with byte zero · value `0` |
+| 1 | 1 | `reference_marker` | `u8` | little | spec | Each Position row starts with byte zero · value `1` |
+| 2 | 8 | `target` | `u64` | little | spec | Each Position row starts with byte zero |
+| 10 | 2 | `reference_padding` | `u16` | little | spec | Each Position row starts with byte zero · value `0` |
+| 12 | 1 | `matrix_marker` | `u8` | little | spec | Each Position row starts with byte zero |
+
+## `captured_position_matrix`
+
+Spec §Captured component positions · layout: byte offsets · size: 128 B
+
+Offsets are relative to the first coefficient after matrix marker 0.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 128 | `coefficients` | `f64[16]` | little | spec | Matrix marker 0 is followed by sixteen row-major finite f64 coefficients |
+
+## `captured_position_suffix`
+
+Spec §Captured component positions · layout: byte offsets · size: 83 B
+
+Offsets are relative to the suffix immediately after the ordered rows.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `zero_word` | `u32` | little | spec | The Position suffix spans 83 bytes · value `0` |
+| 4 | 4 | `identity_length` | `u32` | little | spec | The Position suffix spans 83 bytes · value `36` |
+| 8 | 72 | `identity` | `bytes[72]` | little | spec | The Position suffix spans 83 bytes |
+| 80 | 3 | `zero_tail` | `bytes[3]` | little | spec | The Position suffix spans 83 bytes · value `[0, 0, 0]` |
 
 ## Not tabulated
 

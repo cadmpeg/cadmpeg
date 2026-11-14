@@ -3021,6 +3021,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 let additional_members_link =
                     rigid_group_members_link(scope, alignment, rigid_as_built, stream_types);
                 operand_frames_link
+                    && alignment.additional_tail_reference.is_none()
                     && (alignment.additional_owner_run.is_none()
                         || design::assembly::placement_ordered_as_built_scope(scope))
                     && solved_frame_link

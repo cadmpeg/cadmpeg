@@ -525,6 +525,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.design_placement_constructions,
         ),
     );
+    losses.extend(
+        crate::design::decode::placement_construction::spheres::bind(
+            &mut design.design_parameter_scopes,
+            &design.design_placement_constructions,
+        ),
+    );
     crate::design::decode::operands::bind_work_point_input_carriers(
         scan,
         &mut design.design_parameter_scopes,
@@ -1226,6 +1232,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         products.occurrences,
         &design.design_parameter_scopes,
     );
+    losses.extend(crate::design::position::bind_occurrences(
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &occurrence_paths,
+    ));
     losses.extend(crate::design::components::paths::bind_feature_paths(
         &mut model.features,
         &occurrence_paths,
@@ -1357,7 +1368,7 @@ pub(super) fn scope_related_indices(
             .chain(
                 scope
                     .path_pattern_settings()
-                    .map(|settings| settings.settings_record_index),
+                    .and_then(|settings| settings.settings_record_index),
             )
             .chain(
                 scope

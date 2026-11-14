@@ -5,6 +5,7 @@ use crate::records::identity::ReferenceRun;
 use crate::records::parameters::DesignParameterOwnerWire;
 use crate::test_support::indexed_header;
 
+mod extended_tails;
 mod owner_runs;
 
 const OTHER_GUID: &str = "11111111-1111-1111-1111-111111111111";

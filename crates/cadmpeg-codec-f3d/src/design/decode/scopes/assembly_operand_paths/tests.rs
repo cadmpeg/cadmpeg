@@ -93,6 +93,7 @@ fn assembly_path_span_keeps_its_record_index() {
         64,
         0,
         0,
+        |_| Ok(()),
     )
     .unwrap()
     .unwrap();
@@ -218,13 +219,14 @@ fn wide_scope_locator_is_admitted_by_its_record_type() {
         let bytes = wide_envelope_bytes(scope.record_index, transform);
         let locator_length = if transform { 225 } else { 97 };
         assert_eq!(bytes.len(), locator_length + path_bytes().len() + 37 + 11);
-        let path = exact_assembly_operand_path_envelope(&bytes, &scope, &typed, 64, 0, 0)
-            .unwrap()
-            .expect("wide locator");
+        let path =
+            exact_assembly_operand_path_envelope(&bytes, &scope, &typed, 64, 0, 0, |_| Ok(()))
+                .unwrap()
+                .expect("wide locator");
         assert_eq!(path.record_index, 65);
         let untyped = std::collections::HashMap::new();
         assert!(
-            exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0, 0)
+            exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0, 0, |_| Ok(()))
                 .unwrap()
                 .is_none()
         );
@@ -437,7 +439,7 @@ fn wide_locator_path_continues_over_typed_records() {
         (66, (TYPED, 4)),
     ]);
     let bytes = envelope(true);
-    let path = exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 0, 0)
+    let path = exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 0, 0, |_| Ok(()))
         .unwrap()
         .expect("continued wide path");
     let occurrences = path
@@ -464,7 +466,7 @@ fn wide_locator_path_continues_over_typed_records() {
         (65, (TYPED, 4)),
     ]);
     assert!(
-        exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0, 0)
+        exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0, 0, |_| Ok(()))
             .unwrap()
             .is_none()
     );
@@ -563,7 +565,8 @@ fn rigid_group_locator_version_selects_its_exact_frame_and_reference_width() {
                 64,
                 (super::WIDE_PATH_LOCATOR_TYPE_GUID, version),
             )]);
-            exact_assembly_operand_path_envelope(bytes, &scope, &types, 64, 1, 0).unwrap()
+            exact_assembly_operand_path_envelope(bytes, &scope, &types, 64, 1, 0, |_| Ok(()))
+                .unwrap()
         };
         assert!(exact_assembly_operand_path_envelope(
             &bytes,
@@ -572,6 +575,7 @@ fn rigid_group_locator_version_selects_its_exact_frame_and_reference_width() {
             64,
             1,
             0,
+            |_| Ok(()),
         )
         .unwrap()
         .is_none());
@@ -721,7 +725,8 @@ fn rigid_group_nullable_locators_keep_counted_path_order_and_reference_width() {
             (66, (TYPED, 4)),
         ]);
         let read = |bytes: &[u8]| {
-            exact_assembly_operand_path_envelope(bytes, &scope, &types, 64, 1, 0).unwrap()
+            exact_assembly_operand_path_envelope(bytes, &scope, &types, 64, 1, 0, |_| Ok(()))
+                .unwrap()
         };
         let path = read(&bytes).unwrap();
         assert_eq!(path.occurrence_guids().len(), 2);
@@ -768,9 +773,10 @@ fn rigid_group_locator_refuses_cross_version_lengths() {
             64,
             (super::WIDE_PATH_LOCATOR_TYPE_GUID, frame_version),
         )]);
-        let path = exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 1, 0)
-            .unwrap()
-            .unwrap();
+        let path =
+            exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 1, 0, |_| Ok(()))
+                .unwrap()
+                .unwrap();
         assert!(exact_as_built_operand_frame(&bytes, &path, &scope, &types).is_some());
         for version in [1, 2, 3, 4, 5, 6] {
             let types = std::collections::HashMap::from([(
@@ -778,7 +784,8 @@ fn rigid_group_locator_refuses_cross_version_lengths() {
                 (super::WIDE_PATH_LOCATOR_TYPE_GUID, version),
             )]);
             let decoded =
-                exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 1, 0).unwrap();
+                exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 1, 0, |_| Ok(()))
+                    .unwrap();
             assert_eq!(decoded.is_some(), version == frame_version);
             assert_eq!(
                 exact_as_built_operand_frame(&bytes, &path, &scope, &types).is_some(),

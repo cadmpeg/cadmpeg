@@ -701,6 +701,25 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             let _ = owners_by_index.insert((stream, owner.record_index()), owner);
         }
     }
+    let extended_assembly_frames = scopes
+        .iter()
+        .filter(|scope| scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble)
+        .filter_map(|scope| {
+            scope
+                .assembly_alignment()
+                .filter(|alignment| alignment.additional_tail_reference.is_some())
+                .and_then(
+                    crate::records::feature::assembly::DesignAssemblyAlignment::operand_frames,
+                )
+        })
+        .flatten()
+        .map(|frame| {
+            (
+                (frame.reference_record_index, frame.transform_offset),
+                frame.transform,
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let mut features = scopes
         .iter()
         .filter(|scope| {
@@ -1264,7 +1283,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs, ctx)?
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 None => {
-                    if let Some(primitive) = project_solid_primitive(
+                    if let Some(definition) = super::position::project(scope, &mut projection_losses) {
+                        definition
+                    } else if let Some(primitive) = project_solid_primitive(
                         scope,
                         inputs.placement_constructions,
                         &mut projection_losses,
@@ -1442,8 +1463,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     {
                         path_pattern::path_pattern_definition(
                             scope,
-                            construction_groups,
+                            inputs,
                             &parameters,
+                            &source_ordinals,
                             &mut projection_losses,
                         )?
                     } else if scope.kind()
@@ -1561,6 +1583,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     }
                 }
             };
+            let extended_joint_origin = scope.joint_origin_frame().is_some_and(|origin| {
+                extended_assembly_frames.get(&(
+                    scope.record_index, origin.joint_origin_transform_offset,
+                )).is_some_and(|transform| *transform == origin.joint_origin_transform)
+            });
             let outputs = inserted_bodies;
             Ok(Feature {
                 product_definition: None,
@@ -1585,9 +1612,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 source_properties: if matches!(
                     &definition,
                     FeatureDefinition::Operation(FeatureOperation::Native { .. })
-                ) || matches!(family, Some(DesignFeatureFamily::Hole))
+                ) || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CurveDrivenPartial { .. }))
+                    || matches!(family, Some(DesignFeatureFamily::Hole))
                     || matches!(family, Some(DesignFeatureFamily::Emboss))
                     || shell_has_independent_walls(scope)
+                    || extended_joint_origin
                 {
                     let mut properties = scope_properties(scope, native_scope, placements, &parameters)?;
                     if shell_has_independent_walls(scope)
@@ -2545,13 +2574,15 @@ fn scope_properties(
     parameters: &[(u32, &DesignParameter)],
 ) -> Result<std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     let mut properties = std::collections::BTreeMap::new();
-    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble
-        && scope.assembly_alignment().is_some_and(|alignment| {
-            alignment
-                .additional_owner_run
-                .as_ref()
-                .is_some_and(|run| run.count.value != 0)
-        })
+    if scope.joint_origin_frame().is_some()
+        || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble
+            && scope.assembly_alignment().is_some_and(|alignment| {
+                alignment.additional_tail_reference.is_some()
+                    || alignment
+                        .additional_owner_run
+                        .as_ref()
+                        .is_some_and(|run| run.count.value != 0)
+            })
     {
         for (_, parameter) in parameters {
             properties.insert(
@@ -2569,6 +2600,17 @@ fn scope_properties(
                 .ok_or_else(|| CodecError::malformed("reference property key is blank"))?,
             format!("{record_index}"),
         );
+        if scope.kind() == crate::records::feature::scope::DesignFeatureKind::PathPattern
+            && scope
+                .unclosed_construction_operand_groups
+                .contains(record_index)
+        {
+            properties.insert(
+                cadmpeg_core::text::NonBlankString::new(format!("unclosed-group:{ordinal}"))
+                    .ok_or_else(|| CodecError::malformed("unclosed group property key is blank"))?,
+                format!("{record_index}"),
+            );
+        }
     }
     if let Some(profile) = scope
         .extrude_profile()
