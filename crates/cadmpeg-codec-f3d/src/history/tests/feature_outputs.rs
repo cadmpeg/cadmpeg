@@ -1594,7 +1594,7 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
         FeatureEvaluation, FeatureId, FeatureOperation,
     };
 
-    let resolved = |form: Option<DesignCombineForm>, bodies_before: &[i64]| {
+    let resolved = |form: Option<DesignCombineForm>, bodies_before: &[i64], initial_op, keep| {
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#1",
             DesignFeatureKind::Combine,
@@ -1645,8 +1645,8 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
                         BodySelection::Unresolved,
                     )
                     .unwrap(),
-                    op: BooleanKind::Join,
-                    keep_tools: true,
+                    op: initial_op,
+                    keep_tools: keep,
 
                     destination: cadmpeg_ir::features::CombineDestination::default(),
                 }),
@@ -1665,7 +1665,7 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
                 state(0, 0, None, solid_boxes_topology(bodies_before)),
             ],
         );
-        super::super::bind_feature_outputs(
+        let losses = super::super::bind_feature_outputs(
             std::slice::from_mut(&mut feature),
             std::slice::from_ref(&scope),
             &mut [history],
@@ -1673,13 +1673,20 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
             &Default::default(),
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         let FeatureDefinition::Operation(FeatureOperation::Combine { op, .. }) =
             feature.evaluation.definition()
         else {
             panic!("expected Combine");
         };
-        *op
+        let assumptions = losses
+            .iter()
+            .filter(|loss| {
+                loss.code == crate::loss::F3dLossCode::FeatureCombineKeptToolsCutAssumed.kind()
+            })
+            .count();
+        (*op, assumptions)
     };
 
     for (form, expected) in [
@@ -1689,8 +1696,27 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
         (Some(DesignCombineForm::ExtendedReference), BooleanKind::Cut),
         (Some(DesignCombineForm::OperandLists), BooleanKind::Join),
     ] {
-        assert_eq!(resolved(form, &[1]), expected, "{form:?}");
-        assert_eq!(resolved(form, &[1, 2]), BooleanKind::Join, "{form:?}");
+        let assumptions = usize::from(expected == BooleanKind::Cut);
+        assert_eq!(
+            resolved(form, &[1], BooleanKind::Join, true),
+            (expected, assumptions),
+            "{form:?}"
+        );
+        assert_eq!(
+            resolved(form, &[1, 2], BooleanKind::Join, true),
+            (BooleanKind::Join, 0),
+            "{form:?}"
+        );
+        assert_eq!(
+            resolved(form, &[1], BooleanKind::Cut, true),
+            (BooleanKind::Cut, 0),
+            "{form:?}"
+        );
+        assert_eq!(
+            resolved(form, &[1], BooleanKind::Join, false),
+            (BooleanKind::Join, 0),
+            "{form:?}"
+        );
     }
 }
 
