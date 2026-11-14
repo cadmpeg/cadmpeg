@@ -11424,35 +11424,14 @@ name = "zero_body_marker"
 offset = 20
 type = "u8"
 source = "spec"
-anchor = "offset 20 stores the marked null reference"
+anchor = "offset 20 stores `u8 1`, offsets 21 through 35 are zero"
 
 [[record.field]]
-name = "null_reference"
+name = "zero_run_15"
 offset = 21
-type = "bytes[8]"
+type = "bytes[15]"
 source = "spec"
-anchor = "The marked null reference is `u8 1`, a zero u64"
-
-[[record.field]]
-name = "null_reference_flag"
-offset = 29
-type = "u8"
-source = "spec"
-anchor = "with its flag byte at offset 29"
-
-[[record.field]]
-name = "null_reference_zero"
-offset = 30
-type = "u8"
-source = "spec"
-anchor = "a flag byte of `0` or `1`, and a zero byte"
-
-[[record.field]]
-name = "zero_run_5"
-offset = 31
-type = "bytes[5]"
-source = "spec"
-anchor = "offsets 31 through 35 are zero"
+anchor = "offsets 21 through 35 are zero"
 
 [[record.field]]
 name = "shared_metadata_marker"
@@ -11516,35 +11495,14 @@ name = "zero_body_marker"
 offset = 20
 type = "u8"
 source = "spec"
-anchor = "offset 20 stores the marked null reference"
+anchor = "offset 20 stores `u8 1`, offsets 21 through 35 are zero"
 
 [[record.field]]
-name = "null_reference"
+name = "zero_run_15"
 offset = 21
-type = "bytes[8]"
+type = "bytes[15]"
 source = "spec"
-anchor = "The marked null reference is `u8 1`, a zero u64"
-
-[[record.field]]
-name = "null_reference_flag"
-offset = 29
-type = "u8"
-source = "spec"
-anchor = "with its flag byte at offset 29"
-
-[[record.field]]
-name = "null_reference_zero"
-offset = 30
-type = "u8"
-source = "spec"
-anchor = "a flag byte of `0` or `1`, and a zero byte"
-
-[[record.field]]
-name = "zero_run_5"
-offset = 31
-type = "bytes[5]"
-source = "spec"
-anchor = "offsets 31 through 35 are zero"
+anchor = "offsets 21 through 35 are zero"
 
 [[record.field]]
 name = "shared_metadata_marker"

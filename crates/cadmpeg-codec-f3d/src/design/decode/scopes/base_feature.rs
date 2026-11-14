@@ -705,9 +705,8 @@ fn read_base_feature_entry_at(
     Some(entry)
 }
 
-/// Reads the marked null reference at `at` and returns the offset of its flag
-/// byte when the flag is `1`.
-fn marked_null_reference_flag(bytes: &[u8], at: usize) -> Option<Option<u64>> {
+/// Reads the marked null reference at `at` and returns its flag.
+fn marked_null_reference_flag(bytes: &[u8], at: usize) -> Option<bool> {
     if bytes.get(at + null_count::NULL_REFERENCE_MARKER) != Some(&1)
         || bytes.get(at + null_count::NULL_REFERENCE..at + null_count::NULL_REFERENCE_FLAG)
             != Some(&[0; 8])
@@ -715,10 +714,9 @@ fn marked_null_reference_flag(bytes: &[u8], at: usize) -> Option<Option<u64>> {
     {
         return None;
     }
-    let flag_at = at + null_count::NULL_REFERENCE_FLAG;
-    match bytes.get(flag_at)? {
-        0 => Some(None),
-        1 => Some(Some(u64::try_from(flag_at).ok()?)),
+    match bytes.get(at + null_count::NULL_REFERENCE_FLAG)? {
+        0 => Some(false),
+        1 => Some(true),
         _ => None,
     }
 }
@@ -1109,15 +1107,14 @@ fn exact_wide_zero_body_base_feature(
     start: usize,
 ) -> Option<DesignBaseFeatureConstruction> {
     use crate::records::feature::base_feature::DesignBaseFeatureResults;
-    let null_reference_flag_offset =
-        marked_null_reference_flag(bytes, start + wide_zero_body::ZERO_BODY_MARKER)?;
     if scope.byte_offset().checked_add(scope.frame_length()) != Some(scope.paired_byte_offset())
         || bytes
             .get(start + wide_zero_body::ZERO_RUN_9..start + wide_zero_body::ZERO_BODY_MARKER)?
             != [0; 9]
+        || bytes.get(start + wide_zero_body::ZERO_BODY_MARKER) != Some(&1)
         || bytes.get(
-            start + wide_zero_body::ZERO_RUN_5..start + wide_zero_body::SHARED_METADATA_MARKER,
-        )? != [0; 5]
+            start + wide_zero_body::ZERO_RUN_15..start + wide_zero_body::SHARED_METADATA_MARKER,
+        )? != [0; 15]
         || bytes.get(start + wide_zero_body::SHARED_METADATA_MARKER) != Some(&1)
         || bytes.get(
             start + wide_zero_body::ZERO_PADDING_8..start + wide_zero_body::GUID_CODE_UNIT_COUNT,
@@ -1140,7 +1137,7 @@ fn exact_wide_zero_body_base_feature(
         return None;
     }
     Some(DesignBaseFeatureConstruction::ResultBodies {
-        null_reference_flag_offset,
+        null_reference_flag_offset: None,
         bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
         metadata_record,
         metadata_record_offset: scope.byte_offset()
@@ -1161,16 +1158,15 @@ fn exact_wide_shifted_zero_body_base_feature(
     start: usize,
 ) -> Option<DesignBaseFeatureConstruction> {
     use crate::records::feature::base_feature::DesignBaseFeatureResults;
-    let null_reference_flag_offset =
-        marked_null_reference_flag(bytes, start + shifted_zero_body::ZERO_BODY_MARKER)?;
     if scope.byte_offset().checked_add(scope.frame_length()) != Some(scope.paired_byte_offset())
         || bytes.get(
             start + shifted_zero_body::ZERO_RUN_9..start + shifted_zero_body::ZERO_BODY_MARKER,
         )? != [0; 9]
+        || bytes.get(start + shifted_zero_body::ZERO_BODY_MARKER) != Some(&1)
         || bytes.get(
-            start + shifted_zero_body::ZERO_RUN_5
+            start + shifted_zero_body::ZERO_RUN_15
                 ..start + shifted_zero_body::SHARED_METADATA_MARKER,
-        )? != [0; 5]
+        )? != [0; 15]
         || bytes.get(start + shifted_zero_body::SHARED_METADATA_MARKER) != Some(&1)
         || bytes.get(
             start + shifted_zero_body::ZERO_PADDING_12
@@ -1223,7 +1219,7 @@ fn exact_wide_shifted_zero_body_base_feature(
         return None;
     }
     Some(DesignBaseFeatureConstruction::ResultBodies {
-        null_reference_flag_offset,
+        null_reference_flag_offset: None,
         bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
         metadata_record,
         metadata_record_offset: scope.byte_offset()
@@ -1548,7 +1544,10 @@ pub(super) fn exact_base_feature_construction(
             }
             cursor += compact_count::LEN;
         } else {
-            null_reference_flag_offset = marked_null_reference_flag(bytes, cursor)?;
+            if marked_null_reference_flag(bytes, cursor)? {
+                null_reference_flag_offset =
+                    Some(u64::try_from(cursor + null_count::NULL_REFERENCE_FLAG).ok()?);
+            }
             if usize::try_from(View::u32_le_at(bytes, cursor + null_count::BODY_COUNT)?).ok()?
                 != body_count
             {

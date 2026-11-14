@@ -3112,8 +3112,8 @@ pub(crate) mod base_feature_wide_zero_body {
     pub(crate) const ZERO_RUN_9: usize = 11;
     /// Offset of `zero_body_marker` (`u8`). Spec §3.1.
     pub(crate) const ZERO_BODY_MARKER: usize = 20;
-    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_5: usize = 31;
+    /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_15: usize = 21;
     /// Offset of `shared_metadata_marker` (`u8`). Spec §3.1.
     pub(crate) const SHARED_METADATA_MARKER: usize = 36;
     /// Offset of `shared_metadata_record` (`u64`, little-endian). Spec §3.1.
@@ -3138,8 +3138,8 @@ pub(crate) mod base_feature_wide_shifted_zero_body {
     pub(crate) const ZERO_RUN_9: usize = 11;
     /// Offset of `zero_body_marker` (`u8`). Spec §3.1.
     pub(crate) const ZERO_BODY_MARKER: usize = 20;
-    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_5: usize = 31;
+    /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_15: usize = 21;
     /// Offset of `shared_metadata_marker` (`u8`). Spec §3.1.
     pub(crate) const SHARED_METADATA_MARKER: usize = 36;
     /// Offset of `shared_metadata_record` (`u64`, little-endian). Spec §3.1.

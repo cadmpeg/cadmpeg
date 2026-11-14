@@ -797,33 +797,22 @@ fn wide_zero_body_frame_reads_its_metadata_at_offset_37() {
     let (bytes, scope) = zero_body_frame(262, 36, ("284", "259"));
     assert_eq!(zero_body_metadata(&bytes, &scope), Some((0, 77)));
 
+    let mut flagged = bytes.clone();
+    flagged[29] = 1;
+    assert_eq!(zero_body_metadata(&flagged, &scope), None);
+
     let mut unmarked = bytes;
     unmarked[36] = 0;
     assert_eq!(zero_body_metadata(&unmarked, &scope), None);
 }
 
-fn null_reference_flag(bytes: &[u8], scope: &DesignParameterScope) -> Option<Option<u64>> {
+/// Whether the frame decodes, and the flag offset its construction keeps.
+fn null_reference_flag(bytes: &[u8], scope: &DesignParameterScope) -> (bool, Option<u64>) {
     exact_base_feature_construction(bytes, scope)
         .unwrap()
-        .map(|construction| construction.null_reference_flag_offset())
-}
-
-#[test]
-fn a_wide_zero_body_frame_reads_the_flag_of_its_marked_null_reference() {
-    let (bytes, scope) = zero_body_frame(262, 36, ("304", "258"));
-    assert_eq!(null_reference_flag(&bytes, &scope), Some(None));
-    for (offset, value, expected) in [(29, 1, Some(Some(29))), (29, 2, None), (30, 1, None)] {
-        let mut flagged = bytes.clone();
-        flagged[offset] = value;
-        assert_eq!(
-            null_reference_flag(&flagged, &scope),
-            expected,
-            "byte {offset} = {value}"
-        );
-        if expected.is_some() {
-            assert_eq!(zero_body_metadata(&flagged, &scope), Some((0, 77)));
-        }
-    }
+        .map_or((false, None), |construction| {
+            (true, construction.null_reference_flag_offset())
+        })
 }
 
 /// One-body ordinary form: entity and passive-reference runs, the marked null
@@ -874,8 +863,13 @@ fn ordinary_one_body_frame() -> (Vec<u8>, DesignParameterScope) {
 #[test]
 fn an_ordinary_frame_reads_the_flag_of_its_marked_null_reference() {
     let (bytes, scope) = ordinary_one_body_frame();
-    assert_eq!(null_reference_flag(&bytes, &scope), Some(None));
-    for (offset, value, expected) in [(63, 1, Some(Some(63))), (63, 2, None), (64, 1, None)] {
+    assert_eq!(null_reference_flag(&bytes, &scope), (true, None));
+    for (offset, value, expected) in [
+        (63, 1, (true, Some(63))),
+        (63, 2, (false, None)),
+        (64, 1, (false, None)),
+        (58, 1, (false, None)),
+    ] {
         let mut flagged = bytes.clone();
         flagged[offset] = value;
         assert_eq!(
@@ -883,7 +877,7 @@ fn an_ordinary_frame_reads_the_flag_of_its_marked_null_reference() {
             expected,
             "byte {offset} = {value}"
         );
-        if expected.is_some() {
+        if expected.0 {
             let Some(DesignBaseFeatureConstruction::ResultBodies {
                 bodies,
                 metadata_record,
