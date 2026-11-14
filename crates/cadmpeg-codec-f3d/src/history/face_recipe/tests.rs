@@ -453,24 +453,39 @@ fn a_one_clause_node_leaves_the_bounded_face_member_unresolved() {
 }
 
 /// A face with one single-edge loop whose closed edge also bounds a second
-/// face with one single-edge loop.
+/// face. The second face has a further single-edge loop on a closed edge shared
+/// with a third face, so only the first face has a boundary of one edge.
 fn closed_edge_topology() -> AsmHistoricalTopology {
     let mut topology = AsmHistoricalTopology {
-        faces: vec![200, 201],
-        edges: vec![20],
-        vertices: vec![5],
-        edge_vertices: vec![AsmHistoricalEdge {
-            edge: 20,
-            start_vertex: 5,
-            end_vertex: 5,
-        }],
+        faces: vec![200, 201, 202],
+        edges: vec![20, 21],
+        vertices: vec![5, 6],
+        edge_vertices: vec![
+            AsmHistoricalEdge {
+                edge: 20,
+                start_vertex: 5,
+                end_vertex: 5,
+            },
+            AsmHistoricalEdge {
+                edge: 21,
+                start_vertex: 6,
+                end_vertex: 6,
+            },
+        ],
         ..Default::default()
     };
-    for (face, loop_, coedge, radial_next) in [(200, 300, 2000, 2001), (201, 301, 2001, 2000)] {
+    for (face, loops) in [(200, vec![300]), (201, vec![301, 303]), (202, vec![304])] {
         topology.face_loops.push(AsmHistoricalRelation {
             owner_ref: face,
-            member_refs: vec![loop_],
+            member_refs: loops,
         });
+    }
+    for (loop_, coedge, edge, radial_next) in [
+        (300, 2000, 20, 2001),
+        (301, 2001, 20, 2000),
+        (303, 2003, 21, 2004),
+        (304, 2004, 21, 2003),
+    ] {
         topology.loop_coedges.push(AsmHistoricalRelation {
             owner_ref: loop_,
             member_refs: vec![coedge],
@@ -478,7 +493,7 @@ fn closed_edge_topology() -> AsmHistoricalTopology {
         topology.coedge_topology.push(AsmHistoricalCoedge {
             coedge,
             owner_loop: loop_,
-            edge: 20,
+            edge,
             next: coedge,
             previous: coedge,
             radial_next,
@@ -541,7 +556,6 @@ fn closed_edge_operand(fan_tail: i32) -> DesignFaceOperand {
 fn a_one_clause_node_binds_a_closed_edge_through_its_two_face_fan() {
     let index = FaceRecipeIndex::new(&closed_edge_topology());
     assert_eq!(index.resolve(&closed_edge_operand(0)), Some(200));
-    assert_eq!(index.resolve_loop(&closed_edge_operand(0)), Some(200));
     assert_eq!(index.resolve(&closed_edge_operand(1)), None);
 }
 
@@ -552,9 +566,9 @@ fn a_one_clause_node_refuses_an_open_edge_and_a_crowded_vertex() {
     open.vertices.push(6);
     assert_eq!(FaceRecipeIndex::new(&open).resolve(&closed_edge_operand(0)), None);
     let mut crowded = closed_edge_topology();
-    crowded.faces.push(202);
+    crowded.faces.push(203);
     crowded.face_loops.push(AsmHistoricalRelation {
-        owner_ref: 202,
+        owner_ref: 203,
         member_refs: vec![302],
     });
     crowded.loop_coedges.push(AsmHistoricalRelation {

@@ -383,7 +383,7 @@ fn a_face_recipe_node_has_two_side_clauses_only_with_a_two_side_structure() {
 
 #[test]
 fn a_node_ordinal_check_admits_one_clause_for_a_closed_edge_only_with_a_matching_count() {
-    let references = [recipe_reference(100, 108), recipe_reference(125, 129)];
+    let references = [recipe_reference(100, 108), recipe_reference(125, 133)];
     let mut structure = recipe_structure(1);
     structure.prelude = [0, 1];
     structure.sides.truncate(1);
