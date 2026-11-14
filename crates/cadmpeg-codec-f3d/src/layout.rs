@@ -10042,3 +10042,33 @@ pub(crate) mod assembly_version_four_connector_prefix {
     /// Stated value of `zeros` (`bytes[6]`). Spec §Assembly operands.
     pub(crate) const ZEROS_VALUE: [u8; 6] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 }
+
+/// Byte offsets for the `sphere_compact_prefix` record.
+///
+/// Spec §3.1. Record length 63 B.
+pub(crate) mod sphere_compact_prefix {
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 25;
+    /// Offset of `placement` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PLACEMENT: usize = 30;
+}
+
+/// Byte offsets for the `sphere_shifted_prefix` record.
+///
+/// Spec §3.1. Record length 59 B.
+pub(crate) mod sphere_shifted_prefix {
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 21;
+    /// Offset of `placement` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PLACEMENT: usize = 26;
+}
+
+/// Byte offsets for the `sphere_typed_prefix` record.
+///
+/// Spec §3.1. Record length 178 B.
+pub(crate) mod sphere_typed_prefix {
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 20;
+    /// Offset of `placement` (`bytes[51]`). Spec §3.1.
+    pub(crate) const PLACEMENT: usize = 25;
+}
