@@ -2,6 +2,79 @@ use super::{SheetMetalBendLinesConstruction, SheetMetalLineBend};
 use serde_json::json;
 
 #[test]
+fn edge_partial_extent_inputs_keep_each_known_member() {
+    use crate::features::FeatureOperation;
+    for width in [
+        json!({"kind":"symmetric_per_edge","value":{"widths":[{"width":3.0},{"width":7.0},{}]}}),
+        json!({"kind":"two_sides_per_edge","value":{"widths":[{"first":4.0},{"second":2.0}]}}),
+        json!({"kind":"symmetric","value":{"width":3.0}}),
+        json!({"kind":"two_sides","value":{"second":2.0}}),
+    ] {
+        let wire = json!({
+            "definition":"sheet_metal_edge_flange",
+            "height":{"kind":"to_object","value":{"target":{"kind":"native","value":"test:target"}}},
+            "width":width
+        });
+        let value: FeatureOperation =
+            serde_json::from_value(wire.clone()).expect("independent extent inputs");
+        assert_eq!(serde_json::to_value(value).expect("extent wire"), wire);
+    }
+    for (field, ty) in [("width", 0), ("first", 1), ("second", 1)] {
+        let value = json!({field: null});
+        let error = if ty == 0 {
+            serde_json::from_value::<super::SheetMetalFlangeSymmetricWidth>(value)
+                .expect_err("null width")
+                .to_string()
+        } else {
+            serde_json::from_value::<crate::features::SheetMetalFlangeTwoSidedWidth>(value)
+                .expect_err("null distance")
+                .to_string()
+        };
+        assert!(error.contains(field), "{error}");
+    }
+    for field in ["target", "offset"] {
+        assert!(
+            serde_json::from_value::<super::SheetMetalFlangeTargetConstruction>(
+                json!({field:null})
+            )
+            .expect_err("null height input")
+            .to_string()
+            .contains(field)
+        );
+    }
+    assert!(
+        serde_json::from_value::<crate::features::SheetMetalFlangeWidth>(
+            json!({"kind":"two_sides_per_edge","value":{"widths":[]}})
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn edge_complete_extent_laws_keep_their_existing_wire() {
+    use crate::features::{SheetMetalFlangeHeight, SheetMetalFlangeWidth};
+    for wire in [
+        json!({"kind":"symmetric","value":{"width":3.0}}),
+        json!({"kind":"two_sides","value":{"first":4.0,"second":2.0}}),
+        json!({"kind":"two_sides_per_edge","value":{"widths":[{"first":4.0,"second":2.0}]}}),
+    ] {
+        let value: SheetMetalFlangeWidth =
+            serde_json::from_value(wire.clone()).expect("complete width law");
+        assert_eq!(
+            serde_json::to_value(value).expect("complete width wire"),
+            wire
+        );
+    }
+    let wire = json!({"kind":"to_object","value":{"target":{"kind":"native","value":"test:plane"},"offset":-2.0}});
+    let value: SheetMetalFlangeHeight =
+        serde_json::from_value(wire.clone()).expect("complete height law");
+    assert_eq!(
+        serde_json::to_value(value).expect("complete height wire"),
+        wire
+    );
+}
+
+#[test]
 fn edge_construction_keeps_complete_flat_wire_and_accepts_sparse_inputs() {
     use super::SheetMetalEdgeFlangeConstruction;
     use crate::features::FeatureOperation;
@@ -103,6 +176,27 @@ fn edge_construction_schema_admits_absence_and_excludes_null() {
             "{key}"
         );
     }
+    for schema in [
+        serde_json::to_value(schemars::schema_for!(super::SheetMetalFlangeSymmetricWidth))
+            .expect("width schema"),
+        serde_json::to_value(schemars::schema_for!(
+            crate::features::SheetMetalFlangeTwoSidedWidth
+        ))
+        .expect("side schema"),
+        serde_json::to_value(schemars::schema_for!(
+            super::SheetMetalFlangeTargetConstruction
+        ))
+        .expect("target schema"),
+    ] {
+        assert!(schema.get("required").is_none());
+        for field in schema["properties"]
+            .as_object()
+            .expect("optional properties")
+            .values()
+        {
+            assert!(!field.to_string().contains("\"null\""));
+        }
+    }
 }
 
 #[test]
@@ -115,12 +209,12 @@ fn edge_construction_rewrite_visits_optional_height_feature() {
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let construction = SheetMetalEdgeFlangeConstruction {
-        height: Some(SheetMetalFlangeHeight::ToObject {
-            target: SheetMetalFlangeHeightTarget::Feature(
+        height: Some(SheetMetalFlangeHeight::to_object(
+            SheetMetalFlangeHeightTarget::Feature(
                 FeatureId::mint("test:model:feature#source").expect("source feature"),
             ),
-            offset: Length::new(-2.0).expect("signed height offset"),
-        }),
+            Length::new(-2.0).expect("signed height offset"),
+        )),
         ..Default::default()
     };
     let arena = DecodeArena::new();
@@ -131,9 +225,24 @@ fn edge_construction_rewrite_visits_optional_height_feature() {
         .rewrite_identities(&context, &mut map)
         .expect("rewrite edge construction");
     assert!(
-        matches!(rewritten.height, Some(SheetMetalFlangeHeight::ToObject { target: SheetMetalFlangeHeightTarget::Feature(ref id), .. }) if id.as_str()=="test:model:feature#rewritten")
+        matches!(rewritten.height, Some(SheetMetalFlangeHeight::ToObject(ref target)) if matches!(&target.target, Some(SheetMetalFlangeHeightTarget::Feature(id)) if id.as_str()=="test:model:feature#rewritten"))
     );
     map.finish().expect("finish rewrite");
+    let partial = super::SheetMetalFlangeTargetConstruction {
+        target: Some(SheetMetalFlangeHeightTarget::Feature(
+            FeatureId::mint("test:model:feature#source").expect("partial target"),
+        )),
+        ..Default::default()
+    };
+    let height = SheetMetalFlangeHeight::ToObject(partial);
+    let mut map = IdentityMap::new(|source: &str| Ok(source.replace("#source", "#rewritten")));
+    let rewritten = height
+        .rewrite_identities(&context, &mut map)
+        .expect("partial target rewrite");
+    assert!(
+        matches!(rewritten, SheetMetalFlangeHeight::ToObject(construction) if matches!(construction.target, Some(SheetMetalFlangeHeightTarget::Feature(ref id)) if id.as_str() == "test:model:feature#rewritten") && construction.offset.is_none())
+    );
+    map.finish().expect("finish partial rewrite");
 }
 
 #[test]

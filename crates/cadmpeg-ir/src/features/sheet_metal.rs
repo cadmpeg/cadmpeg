@@ -7,6 +7,62 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
+#[doc = "Independently decoded height target and offset inputs."]
+pub struct SheetMetalFlangeTargetConstruction {
+    #[doc = "Height reference target."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_target_inputs_target"
+    )]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "super::SheetMetalFlangeHeightTarget")
+    )]
+    pub target: Option<super::SheetMetalFlangeHeightTarget>,
+    #[doc = "Signed target offset in millimetres."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_target_inputs_offset"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "crate::scalar::Length"))]
+    pub offset: Option<crate::scalar::Length>,
+}
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_target_inputs_target,
+    super::SheetMetalFlangeHeightTarget,
+    "target"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_target_inputs_offset,
+    crate::scalar::Length,
+    "offset"
+);
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = "Independently decoded symmetric flange width inputs."]
+pub struct SheetMetalFlangeSymmetricWidth {
+    #[doc = "Total symmetric width in millimetres."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_symmetric_width_width"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "PositiveLength"))]
+    pub width: Option<PositiveLength>,
+}
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_symmetric_width_width,
+    PositiveLength,
+    "width"
+);
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 #[doc = "Independently decoded inputs of an edge flange."]
 pub struct SheetMetalEdgeFlangeConstruction {
     #[doc = "Selected source edges."]
@@ -98,15 +154,31 @@ cadmpeg_core::named_optional_field!(
 );
 
 impl SheetMetalEdgeFlangeConstruction {
-    #[doc = "Whether all construction fields and offset members are present."]
+    #[doc = "Whether all required construction inputs are present."]
     pub fn has_all_inputs(&self) -> bool {
         self.edges.is_some()
-            && self.height.is_some()
+            && self.height.as_ref().is_some_and(|height| match height {
+                super::SheetMetalFlangeHeight::ToObject(construction) => {
+                    construction.target.is_some() && construction.offset.is_some()
+                }
+                super::SheetMetalFlangeHeight::Distance(_) => true,
+            })
             && self.angle.is_some()
             && self.height_datum.is_some()
             && self.bend_position.is_some()
             && self.bend_radius.is_some()
             && self.width.as_ref().is_some_and(|width| match width {
+                super::SheetMetalFlangeWidth::SymmetricPerEdge { widths } => {
+                    widths.iter().all(|row| row.width.is_some())
+                }
+                super::SheetMetalFlangeWidth::TwoSidesPerEdge { widths } => widths
+                    .as_slice()
+                    .iter()
+                    .all(|row| row.first.is_some() && row.second.is_some()),
+                super::SheetMetalFlangeWidth::Symmetric(width) => width.width.is_some(),
+                super::SheetMetalFlangeWidth::TwoSides(width) => {
+                    width.first.is_some() && width.second.is_some()
+                }
                 super::SheetMetalFlangeWidth::TwoOffsetsPerEdge { offsets } => {
                     offsets.iter().all(|row| {
                         row.first.is_some()
@@ -115,7 +187,7 @@ impl SheetMetalEdgeFlangeConstruction {
                             && row.second_reference.is_some()
                     })
                 }
-                _ => true,
+                super::SheetMetalFlangeWidth::FullEdge => true,
             })
     }
     #[doc = "Construct an edge flange with all seven construction inputs."]

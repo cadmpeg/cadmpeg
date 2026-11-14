@@ -5074,7 +5074,7 @@ fn project_edge_flange(
                         *offset_owner_record_index,
                         "ToObjectOffset"
                     ))));
-                    SheetMetalFlangeHeight::ToObject { target, offset }
+                    SheetMetalFlangeHeight::to_object(target, offset)
                 }
             };
             let angle = or_none!(design_angle(or_none!(parameter(
@@ -5089,12 +5089,9 @@ fn project_edge_flange(
                 crate::records::feature::sheet_metal::DesignEdgeFlangeShape::Symmetric {
                     owner,
                     ..
-                } => SheetMetalFlangeWidth::Symmetric {
-                    width: or_none!(design_positive_length(or_none!(parameter(
-                        *owner,
-                        "EdgeWidth"
-                    )))),
-                },
+                } => SheetMetalFlangeWidth::symmetric(or_none!(design_positive_length(or_none!(
+                    parameter(*owner, "EdgeWidth")
+                )))),
                 crate::records::feature::sheet_metal::DesignEdgeFlangeShape::SymmetricPerEdge(
                     edges,
                 ) => {
@@ -5105,7 +5102,7 @@ fn project_edge_flange(
                     if widths.any(|width| width != Some(first)) {
                         return Ok(None);
                     }
-                    SheetMetalFlangeWidth::Symmetric { width: first }
+                    SheetMetalFlangeWidth::symmetric(first)
                 }
                 crate::records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSidesPerEdge {
                     edges,
@@ -5114,23 +5111,26 @@ fn project_edge_flange(
                     if *source == DesignEdgeFlangeWidthParameterSource::EdgeOffset {
                         let mut offsets = Vec::new();
                         for row in edges {
-                            let mut offset =
-                                cadmpeg_ir::features::sheet_metal::SheetMetalFlangeOffset::default(
-                                );
-                            offset.first = Some(or_none!(design_length(or_none!(parameter(
-                                row.owners[0],
-                                "EdgeOffset_1"
-                            )))));
-                            offset.second = Some(or_none!(design_length(or_none!(parameter(
-                                row.owners[1],
-                                "EdgeOffset_2"
-                            )))));
-                            offset.first_reference =
-                                cadmpeg_ir::features::SelectionReference::new(scope.id.clone())
-                                    .ok();
-                            offset.second_reference =
-                                cadmpeg_ir::features::SelectionReference::new(scope.id.clone())
-                                    .ok();
+                            let offset =
+                                cadmpeg_ir::features::sheet_metal::SheetMetalFlangeOffset {
+                                    first: Some(or_none!(design_length(or_none!(parameter(
+                                        row.owners[0],
+                                        "EdgeOffset_1"
+                                    ))))),
+                                    second: Some(or_none!(design_length(or_none!(parameter(
+                                        row.owners[1],
+                                        "EdgeOffset_2"
+                                    ))))),
+                                    first_reference: cadmpeg_ir::features::SelectionReference::new(
+                                        scope.id.clone(),
+                                    )
+                                    .ok(),
+                                    second_reference:
+                                        cadmpeg_ir::features::SelectionReference::new(
+                                            scope.id.clone(),
+                                        )
+                                        .ok(),
+                                };
                             offsets.push(offset);
                         }
                         SheetMetalFlangeWidth::TwoOffsetsPerEdge {
@@ -5142,16 +5142,16 @@ fn project_edge_flange(
                     } else {
                         let mut widths = Vec::new();
                         for row in edges {
-                            widths.push(SheetMetalFlangeTwoSidedWidth {
-                                first: or_none!(design_positive_length(or_none!(parameter(
+                            widths.push(SheetMetalFlangeTwoSidedWidth::complete(
+                                or_none!(design_positive_length(or_none!(parameter(
                                     row.owners[0],
                                     "EdgeWidth_1"
                                 )))),
-                                second: or_none!(design_positive_length(or_none!(parameter(
+                                or_none!(design_positive_length(or_none!(parameter(
                                     row.owners[1],
                                     "EdgeWidth_2"
                                 )))),
-                            });
+                            ));
                         }
                         SheetMetalFlangeWidth::TwoSidesPerEdge {
                             widths: or_none!(
@@ -5163,16 +5163,16 @@ fn project_edge_flange(
                 crate::records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSides {
                     owners: [first, second],
                     ..
-                } => SheetMetalFlangeWidth::TwoSides {
-                    first: or_none!(design_positive_length(or_none!(parameter(
+                } => SheetMetalFlangeWidth::two_sides(
+                    or_none!(design_positive_length(or_none!(parameter(
                         *first,
                         "EdgeWidth_1"
                     )))),
-                    second: or_none!(design_positive_length(or_none!(parameter(
+                    or_none!(design_positive_length(or_none!(parameter(
                         *second,
                         "EdgeWidth_2"
                     )))),
-                },
+                ),
             };
 
             let height_datum = match operation.height_datum {

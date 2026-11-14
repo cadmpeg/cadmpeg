@@ -29,6 +29,23 @@ fn scope() -> DesignParameterScope {
     scope
 }
 
+#[test]
+fn reference_edge_local_zero_is_distinct_from_a_null_reference() {
+    let mut bytes = Vec::new();
+    reference(&mut bytes, Some(0), false);
+    reference(&mut bytes, None, false);
+    let mut view = View::over_retained(&bytes);
+    let present = local(&mut view, &HashMap::new())
+        .expect("local reference")
+        .expect("present target");
+    assert_eq!(present.value, 0);
+    assert_eq!(view.position(), 11);
+    assert!(local(&mut view, &HashMap::new())
+        .expect("null reference")
+        .is_none());
+    assert_eq!(view.position(), 12);
+}
+
 fn operation(count: u32, results: u32, wide: bool, typed: bool, missing_height: bool) -> Vec<u8> {
     let mut bytes = vec![0; 21];
     bytes.extend(2_u32.to_le_bytes());
@@ -75,7 +92,7 @@ fn reference_edge_reads_counts_padding_reference_widths_and_null_owners() {
                     let mut bytes = operation(count, results, wide, typed, missing_height);
                     bytes.resize(4096, 0);
                     let records = IndexedRecordOffsets::build(&bytes);
-                    let types = HashMap::from([(10, (OPERATION_GUID, 4))]);
+                    let types = HashMap::from([(10, (OPERATION_GUID, if wide { 6 } else { 4 }))]);
                     bind(ctx, &bytes, &records, &types, &mut scopes).expect("bounded native read");
                     let parsed = scopes[0].edge_flange_construction().expect("operation");
                     assert!(parsed.valid_for_scope(&scopes[0]));
@@ -144,6 +161,25 @@ fn reference_edge_refuses_truncation_disagreement_and_ambiguous_windows() {
         )
         .expect("ambiguous read");
         assert!(scopes[0].edge_flange_construction().is_none());
+    });
+}
+
+#[test]
+fn reference_edge_requires_its_registered_operation_family_and_version() {
+    with_decode_context(|ctx| {
+        let mut bytes = operation(1, 2, false, false, false);
+        bytes.resize(4096, 0);
+        let records = IndexedRecordOffsets::build(&bytes);
+        for types in [
+            HashMap::new(),
+            HashMap::from([(10, (OPERATION_GUID, 3))]),
+            HashMap::from([(10, (OPERATION_GUID, 7))]),
+            HashMap::from([(10, ("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", 4))]),
+        ] {
+            let mut scopes = [scope()];
+            bind(ctx, &bytes, &records, &types, &mut scopes).expect("unsupported registration");
+            assert!(scopes[0].edge_flange_construction().is_none());
+        }
     });
 }
 

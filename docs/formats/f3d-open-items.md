@@ -3040,3 +3040,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Controlled saves with a changed definition, changed owner cache or unresolved display-unit token while the other parameter fields remain fixed.
 
 **Note.** `feature.edge-flange-parameter-owner-backlink-assumed` permits a unique definition backlink when its owner frame is absent. `feature.edge-flange-cached-parameter-assumed` permits a cached scalar when its definition is absent. `feature.edge-flange-parameter-unit-assumed` permits the database unit convention when the display-unit token is unresolved. A missing value reports `feature.edge-flange-parameter-unresolved` and preserves other inputs.
+
+### DR-566. Unresolved EdgeFlange height targets
+
+**Question.** Which neutral construction does a retained to-object height selection identify when its source target is unresolved?
+
+**Known.** A to-object height carries a target group, target selection and signed offset owner. Each input has an independent source identity. A local WorkPlane or WorkPoint target has its own construction scope.
+
+**Need.** Controlled to-object flanges whose selected construction remains external or unresolved while the signed offset is retained.
+
+**Note.** `feature.edge-flange-height-target-native` retains the decoded target selection program. `feature.edge-flange-height-target-scope-assumed` retains the owning scope program when that target selection is unresolved. The target and signed offset remain independent neutral construction inputs.

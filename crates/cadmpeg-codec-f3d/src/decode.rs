@@ -1016,7 +1016,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(construction)) => {
             !construction.has_all_inputs()
                 || construction.edges.as_ref().is_none_or(|edges| !edge_selection_is_resolved(edges))
-                || matches!(construction.height, Some(cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject { target: cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_), .. }))
+                || matches!(&construction.height, Some(cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject(target)) if matches!(target.target, Some(cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_))))
                 || matches!(construction.width, Some(cadmpeg_ir::features::SheetMetalFlangeWidth::TwoOffsetsPerEdge { .. }))
         }
         FeatureDefinition::Operation(FeatureOperation::SheetMetalHem {

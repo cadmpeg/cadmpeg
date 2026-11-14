@@ -492,7 +492,7 @@ rewrite_record!(SheetMetalFlangeEdgeWidths, []; (field0));
 
 rewrite_enum!(SheetMetalFlangeHeight, []; {
     Distance(field0),
-    ToObject { target, offset },
+    ToObject(field0),
 });
 
 rewrite_enum!(SheetMetalFlangeHeightTarget, []; {
@@ -503,10 +503,11 @@ rewrite_enum!(SheetMetalFlangeHeightTarget, []; {
 rewrite_record!(SheetMetalFlangeTwoSidedWidth, []; { first, second });
 
 rewrite_enum!(SheetMetalFlangeWidth, []; {
+    SymmetricPerEdge { widths },
     TwoOffsetsPerEdge { offsets },
     FullEdge,
-    Symmetric { width },
-    TwoSides { first, second },
+    Symmetric(field0),
+    TwoSides(field0),
     TwoSidesPerEdge { widths },
 });
 
@@ -628,4 +629,6 @@ rewrite_record!(super::sheet_metal::SheetMetalRefoldConstruction, []; {unfold});
 
 rewrite_record!(super::sheet_metal::SheetMetalEdgeFlangeConstruction, []; {edges, height, angle, height_datum, bend_position, width, bend_radius});
 rewrite_record!(super::sheet_metal::SheetMetalFlangeOffset, []; {first, second, first_reference, second_reference});
+rewrite_record!(super::sheet_metal::SheetMetalFlangeTargetConstruction, []; {target, offset});
+rewrite_record!(super::sheet_metal::SheetMetalFlangeSymmetricWidth, []; {width});
 rewrite_record!(super::sheet_metal::SheetMetalContourFlangeConstruction, []; {profile, direction, extent, thickness, inside_radius, side, neutral_factor});

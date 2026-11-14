@@ -47,7 +47,7 @@ fn local(view: &mut View<'_>, types: &Types<'_>) -> Option<Option<Located<u32>>>
             target,
             inline_type_guid,
         } => {
-            let value = u32::try_from(target).ok().filter(|value| *value != 0)?;
+            let value = u32::try_from(target).ok()?;
             if inline_type_guid.is_some_and(|inline| {
                 types
                     .get(&target)

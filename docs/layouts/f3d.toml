@@ -37963,6 +37963,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
 size = 8
+note = "Offsets are relative to the first bend-position byte of the operation window."
 
 [[record.field]]
 name = "bend_position"
@@ -37985,6 +37986,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
 size = 18
+note = "Offsets are relative to the reference-side discriminator."
 
 [[record.field]]
 name = "reference_side"
@@ -38022,6 +38024,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
 size = 29
+note = "Offsets are relative to the reference-side discriminator."
 
 [[record.field]]
 name = "reference_side"
@@ -38059,6 +38062,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
 size = 12
+note = "Offsets are relative to the first padding byte after the aggregate reference."
 
 [[record.field]]
 name = "group_zero"
@@ -38081,6 +38085,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
 size = 16
+note = "Offsets are relative to the first padding byte after the aggregate reference."
 
 [[record.field]]
 name = "group_zero"
@@ -38103,6 +38108,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
 size = 112
+note = "Offsets are relative to the indexed header with compact local references. Null and inline-type reference widths shift following fields."
 
 [[record.gap]]
 offset = 0
@@ -38195,6 +38201,8 @@ offset = 101
 type = "bytes[11]"
 source = "spec"
 anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record]]
 name = "sheet_metal_contour_short_prefix"
 kind = "byte"
 section = "3.1"

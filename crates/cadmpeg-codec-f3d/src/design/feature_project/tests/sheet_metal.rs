@@ -228,11 +228,11 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     assert_eq!(height_datum, SheetMetalHeightDatum::InnerFaces);
     assert_eq!(bend_position, SheetMetalBendPosition::Adjacent);
     assert!((bend_radius.get() - 2.5).abs() < 1.0e-12);
-    let SheetMetalFlangeWidth::TwoSides { first, second } = width else {
+    let SheetMetalFlangeWidth::TwoSides(width) = width else {
         panic!("expected a two-sided flange width");
     };
-    assert!((first.get() - 30.0).abs() < 1.0e-12);
-    assert!((second.get() - 15.0).abs() < 1.0e-12);
+    assert!((width.first.expect("first width").get() - 30.0).abs() < 1.0e-12);
+    assert!((width.second.expect("second width").get() - 15.0).abs() < 1.0e-12);
 
     let mut offset_scope = scope.clone();
     let mut offset_operation = offset_scope
@@ -455,9 +455,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     };
     assert_eq!(
         width,
-        SheetMetalFlangeWidth::Symmetric {
-            width: cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap(),
-        }
+        SheetMetalFlangeWidth::symmetric(cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap())
     );
     let mut distinct_parameters = per_edge_parameters.clone();
     distinct_parameters[1].try_set_evaluated_value(1.5).unwrap();
@@ -545,14 +543,14 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         width,
         SheetMetalFlangeWidth::TwoSidesPerEdge {
             widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(vec![
-                SheetMetalFlangeTwoSidedWidth {
-                    first: cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap(),
-                    second: cadmpeg_ir::scalar::PositiveLength::new(15.0).unwrap(),
-                },
-                SheetMetalFlangeTwoSidedWidth {
-                    first: cadmpeg_ir::scalar::PositiveLength::new(20.0).unwrap(),
-                    second: cadmpeg_ir::scalar::PositiveLength::new(40.0).unwrap(),
-                },
+                SheetMetalFlangeTwoSidedWidth::complete(
+                    cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap(),
+                    cadmpeg_ir::scalar::PositiveLength::new(15.0).unwrap()
+                ),
+                SheetMetalFlangeTwoSidedWidth::complete(
+                    cadmpeg_ir::scalar::PositiveLength::new(20.0).unwrap(),
+                    cadmpeg_ir::scalar::PositiveLength::new(40.0).unwrap()
+                ),
             ])
             .unwrap(),
         }
@@ -845,14 +843,14 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     else {
         panic!("expected a sheet-metal edge flange");
     };
-    let SheetMetalFlangeHeight::ToObject { target, offset } = height else {
+    let SheetMetalFlangeHeight::ToObject(target) = height else {
         panic!("expected a to-object flange height");
     };
     assert_eq!(
-        target,
+        target.target.expect("height target"),
         SheetMetalFlangeHeightTarget::Feature(crate::ids::neutral_feature_id(&target_scope))
     );
-    assert_eq!(offset.get(), 15.0);
+    assert_eq!(target.offset.expect("height offset").get(), 15.0);
 }
 
 #[test]
@@ -870,10 +868,12 @@ fn edge_flange_unresolved_to_object_keeps_native_target() {
         definition,
         FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(
             SheetMetalEdgeFlangeConstruction {
-                height: Some(SheetMetalFlangeHeight::ToObject {
-                    target: SheetMetalFlangeHeightTarget::Native(_),
-                    ..
-                }),
+                height: Some(SheetMetalFlangeHeight::ToObject(
+                    cadmpeg_ir::features::sheet_metal::SheetMetalFlangeTargetConstruction {
+                        target: Some(SheetMetalFlangeHeightTarget::Native(_)),
+                        ..
+                    }
+                )),
                 ..
             }
         ))
@@ -907,10 +907,10 @@ fn edge_flange_two_sided_projects() {
     assert_eq!(
         width,
         SheetMetalFlangeWidth::TwoSidesPerEdge {
-            widths: SheetMetalFlangeEdgeWidths::new(vec![SheetMetalFlangeTwoSidedWidth {
-                first: PositiveLength::new(30.0).unwrap(),
-                second: PositiveLength::new(15.0).unwrap(),
-            }])
+            widths: SheetMetalFlangeEdgeWidths::new(vec![SheetMetalFlangeTwoSidedWidth::complete(
+                PositiveLength::new(30.0).unwrap(),
+                PositiveLength::new(15.0).unwrap()
+            )])
             .unwrap(),
         }
     );

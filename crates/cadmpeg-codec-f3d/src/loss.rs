@@ -63,6 +63,8 @@ pub(crate) enum F3dLossCode {
     EdgeDatumUnresolved,
     EdgePositionUnresolved,
     EdgeWidthUnresolved,
+    EdgeHeightTargetNative,
+    EdgeHeightTargetScopeAssumed,
     UnfoldControlUnresolved,
     UnfoldSelectionSlotsAssumed,
     UnfoldSelectionNative,
@@ -959,21 +961,6 @@ impl F3dLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
-        Self::EdgeReferenceEnvelopeUnresolved,
-        Self::EdgeParameterOwnerBacklinkAssumed,
-        Self::EdgeCachedParameterAssumed,
-        Self::EdgeParameterUnitAssumed,
-        Self::EdgeParameterUnresolved,
-        Self::EdgeStoredRadiusInsideAssumed,
-        Self::EdgeRadiusUnresolved,
-        Self::EdgeSelectionNative,
-        Self::EdgeBoundaryReferenceNative,
-        Self::EdgeBoundaryScopeReferenceAssumed,
-        Self::EdgeFullWidthAssumed,
-        Self::EdgeSignedOffsetsAssumed,
-        Self::EdgeDatumUnresolved,
-        Self::EdgePositionUnresolved,
-        Self::EdgeWidthUnresolved,
         Self::SceneOverrideRefused,
         Self::ContourVectorOwnerDistanceRoleAssumed,
         Self::ContourProfileNative,
@@ -997,6 +984,23 @@ impl F3dLossCode {
         Self::ContourRadiusUnresolved,
         Self::ContourRuleFactorUnresolved,
         Self::UnfoldAllBendsFlagAssumed,
+        Self::EdgeReferenceEnvelopeUnresolved,
+        Self::EdgeParameterOwnerBacklinkAssumed,
+        Self::EdgeCachedParameterAssumed,
+        Self::EdgeParameterUnitAssumed,
+        Self::EdgeParameterUnresolved,
+        Self::EdgeStoredRadiusInsideAssumed,
+        Self::EdgeRadiusUnresolved,
+        Self::EdgeSelectionNative,
+        Self::EdgeBoundaryReferenceNative,
+        Self::EdgeBoundaryScopeReferenceAssumed,
+        Self::EdgeFullWidthAssumed,
+        Self::EdgeSignedOffsetsAssumed,
+        Self::EdgeDatumUnresolved,
+        Self::EdgePositionUnresolved,
+        Self::EdgeWidthUnresolved,
+        Self::EdgeHeightTargetNative,
+        Self::EdgeHeightTargetScopeAssumed,
         Self::UnfoldControlUnresolved,
         Self::UnfoldSelectionSlotsAssumed,
         Self::UnfoldSelectionNative,
@@ -1629,6 +1633,8 @@ impl F3dLossCode {
             Self::EdgeDatumUnresolved => "feature.edge-flange-datum-unresolved",
             Self::EdgePositionUnresolved => "feature.edge-flange-position-unresolved",
             Self::EdgeWidthUnresolved => "feature.edge-flange-width-unresolved",
+            Self::EdgeHeightTargetNative => "feature.edge-flange-height-target-native",
+            Self::EdgeHeightTargetScopeAssumed => "feature.edge-flange-height-target-scope-assumed",
             Self::SceneOverrideAmbiguous => "scene.override-ambiguous",
             Self::SceneOverrideUnbound => "scene.override-unbound",
             Self::ScopeOwnerUnresolved => "scope.owner-unresolved",
@@ -2371,6 +2377,8 @@ impl F3dLossCode {
             | Self::EdgeDatumUnresolved
             | Self::EdgePositionUnresolved
             | Self::EdgeWidthUnresolved
+            | Self::EdgeHeightTargetNative
+            | Self::EdgeHeightTargetScopeAssumed
             | Self::ContourVectorOwnerDistanceRoleAssumed
             | Self::ContourProfileNative
             | Self::ContourDefaultSideOneLeftAssumed
@@ -2952,6 +2960,8 @@ impl F3dLossCode {
             | Self::EdgeDatumUnresolved
             | Self::EdgePositionUnresolved
             | Self::EdgeWidthUnresolved
+            | Self::EdgeHeightTargetNative
+            | Self::EdgeHeightTargetScopeAssumed
             | Self::ContourVectorOwnerDistanceRoleAssumed
             | Self::ContourProfileNative
             | Self::ContourDefaultSideOneLeftAssumed
@@ -3558,21 +3568,6 @@ mod tests {
         assert_eq!(
             codes,
             [
-                "feature.edge-flange-reference-envelope-unresolved",
-                "feature.edge-flange-parameter-owner-backlink-assumed",
-                "feature.edge-flange-cached-parameter-assumed",
-                "feature.edge-flange-parameter-unit-assumed",
-                "feature.edge-flange-parameter-unresolved",
-                "feature.edge-flange-stored-radius-inside-assumed",
-                "feature.edge-flange-radius-unresolved",
-                "feature.edge-flange-selection-native",
-                "feature.edge-flange-boundary-reference-native",
-                "feature.edge-flange-boundary-scope-reference-assumed",
-                "feature.edge-flange-full-width-assumed",
-                "feature.edge-flange-signed-offsets-assumed",
-                "feature.edge-flange-datum-unresolved",
-                "feature.edge-flange-position-unresolved",
-                "feature.edge-flange-width-unresolved",
                 "scene.override-refused",
                 "feature.contour-vector-owner-distance-role-assumed",
                 "feature.contour-profile-native",
@@ -3596,6 +3591,23 @@ mod tests {
                 "feature.contour-radius-unresolved",
                 "feature.contour-rule-factor-unresolved",
                 "feature.unfold-all-bends-flag-assumed",
+                "feature.edge-flange-reference-envelope-unresolved",
+                "feature.edge-flange-parameter-owner-backlink-assumed",
+                "feature.edge-flange-cached-parameter-assumed",
+                "feature.edge-flange-parameter-unit-assumed",
+                "feature.edge-flange-parameter-unresolved",
+                "feature.edge-flange-stored-radius-inside-assumed",
+                "feature.edge-flange-radius-unresolved",
+                "feature.edge-flange-selection-native",
+                "feature.edge-flange-boundary-reference-native",
+                "feature.edge-flange-boundary-scope-reference-assumed",
+                "feature.edge-flange-full-width-assumed",
+                "feature.edge-flange-signed-offsets-assumed",
+                "feature.edge-flange-datum-unresolved",
+                "feature.edge-flange-position-unresolved",
+                "feature.edge-flange-width-unresolved",
+                "feature.edge-flange-height-target-native",
+                "feature.edge-flange-height-target-scope-assumed",
                 "feature.unfold-control-unresolved",
                 "feature.unfold-selection-slots-assumed",
                 "feature.unfold-selection-native",

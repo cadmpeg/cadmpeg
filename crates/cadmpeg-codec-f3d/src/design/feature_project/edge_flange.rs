@@ -13,6 +13,49 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, Length, NonNegativeLength, PositiveLength};
 
+mod legacy_inputs;
+
+fn role_owner(scope: &DesignParameterScope, kind: &str, inputs: &ProjectInputs<'_>) -> Option<u32> {
+    let stream = native_stream(&scope.id)?;
+    let owners = inputs
+        .owners
+        .iter()
+        .filter(|owner| {
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+                && inputs.native.iter().any(|parameter| {
+                    native_stream(&parameter.id) == Some(stream)
+                        && parameter.record_index == owner.parameter_record_index()
+                        && parameter.source_kind() == kind
+                })
+        })
+        .map(|owner| owner.record_index());
+    let backlinks = inputs
+        .native
+        .iter()
+        .filter(|parameter| {
+            native_stream(&parameter.id) == Some(stream) && parameter.source_kind() == kind
+        })
+        .filter_map(|parameter| parameter.owner_record_index())
+        .filter(|index| {
+            scope
+                .reference_members()
+                .values()
+                .any(|value| value == index)
+                && !inputs.owners.iter().any(|owner| {
+                    native_stream(owner.id()) == Some(stream) && owner.record_index() == *index
+                })
+        });
+    let mut found = None;
+    for index in owners.chain(backlinks) {
+        if found.is_some_and(|previous| previous != index) {
+            return None;
+        }
+        found = Some(index);
+    }
+    found
+}
+
 fn scalar(
     scope: &DesignParameterScope,
     index: Option<u32>,
@@ -64,6 +107,12 @@ fn scalar(
         }
         parameter.evaluated_value().get()
     } else if let Some(owner) = owner {
+        if inputs.native.iter().any(|parameter| {
+            native_stream(&parameter.id) == Some(stream)
+                && parameter.record_index == owner.parameter_record_index()
+        }) {
+            return None;
+        }
         losses.push(F3dLossCode::EdgeCachedParameterAssumed.note(format!(
             "EdgeFlange scope {} reads owner {} cached scalar as its missing {} definition in database units.", scope.id, index, kind
         )));
@@ -120,7 +169,40 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<FeatureDefinition, CodecError> {
-    if let Some(definition) = super::project_edge_flange(scope, inputs, ctx)? {
+    let mut explicit_radii = inputs.native.iter().filter(|parameter| {
+        native_stream(&parameter.id) == native_stream(&scope.id)
+            && parameter.source_kind() == "BendRadius"
+            && parameter.owner_record_index().is_some_and(|index| {
+                scope
+                    .reference_members()
+                    .values()
+                    .any(|value| *value == index)
+            })
+    });
+    let explicit_radius = explicit_radii.next();
+    let preferred_radius = if explicit_radii.next().is_none() {
+        explicit_radius
+            .and_then(|parameter| {
+                scalar(
+                    scope,
+                    parameter.owner_record_index(),
+                    "BendRadius",
+                    inputs,
+                    losses,
+                )
+            })
+            .and_then(NonNegativeLength::new)
+    } else {
+        None
+    };
+    if let Some(mut definition) = super::project_edge_flange(scope, inputs, ctx)? {
+        if let (
+            Some(radius),
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(construction)),
+        ) = (preferred_radius, &mut definition)
+        {
+            construction.bend_radius = Some(radius);
+        }
         if matches!(&definition, FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(value))
             if matches!(value.width, Some(SheetMetalFlangeWidth::TwoOffsetsPerEdge { .. })))
         {
@@ -166,39 +248,23 @@ pub(super) fn project(
     let height_owner = reference
         .and_then(|value| value.height_owner.as_ref())
         .map(|value| value.value)
-        .or_else(|| legacy.map(|value| value.height_owner_record_index));
+        .or_else(|| legacy.map(|value| value.height_owner_record_index))
+        .or_else(|| role_owner(scope, "FlangeHeight", inputs));
     let angle_owner = reference
         .and_then(|value| value.angle_owner.as_ref())
         .map(|value| value.value)
-        .or_else(|| legacy.map(|value| value.angle_owner_record_index));
-    construction.height = scalar(scope, height_owner, "FlangeHeight", inputs, losses)
-        .and_then(PositiveLength::new)
-        .map(SheetMetalFlangeHeight::Distance);
+        .or_else(|| legacy.map(|value| value.angle_owner_record_index))
+        .or_else(|| role_owner(scope, "FlangeAngle", inputs));
+    construction.height = if legacy.is_some() {
+        legacy_inputs::height(scope, inputs, losses)
+    } else {
+        scalar(scope, height_owner, "FlangeHeight", inputs, losses)
+            .and_then(PositiveLength::new)
+            .map(SheetMetalFlangeHeight::Distance)
+    };
     construction.angle =
         scalar(scope, angle_owner, "FlangeAngle", inputs, losses).and_then(Angle::new);
-    let mut explicit_radii = inputs.native.iter().filter(|parameter| {
-        native_stream(&parameter.id) == native_stream(&scope.id)
-            && parameter.source_kind() == "BendRadius"
-            && parameter.owner_record_index().is_some_and(|index| {
-                scope
-                    .reference_members()
-                    .values()
-                    .any(|value| *value == index)
-            })
-    });
-    let explicit_radius = explicit_radii.next();
-    if explicit_radii.next().is_none() {
-        construction.bend_radius = explicit_radius.and_then(|parameter| {
-            scalar(
-                scope,
-                parameter.owner_record_index(),
-                "BendRadius",
-                inputs,
-                losses,
-            )
-            .and_then(NonNegativeLength::new)
-        });
-    }
+    construction.bend_radius = preferred_radius;
     if construction.bend_radius.is_none() {
         construction.bend_radius = reference
             .and_then(|value| value.radius_control.as_ref())
@@ -235,6 +301,8 @@ pub(super) fn project(
                 native_stream(&group.id) == native_stream(&scope.id)
                     && group.scope_record_index == scope.record_index
                     && group.record_index == index
+                    && group.role()
+                        == crate::records::topology::extrude_selection::DesignOperandRole::BODIES_B
             }))
         });
         let selection = match group {
@@ -322,6 +390,9 @@ pub(super) fn project(
             construction.width = Some(SheetMetalFlangeWidth::FullEdge);
             losses.push(F3dLossCode::EdgeFullWidthAssumed.note(format!("EdgeFlange scope {} reads reference-framed wrappers without a decoded offset pair as full-edge width.", scope.id)));
         }
+    }
+    if reference.is_none() {
+        construction.width = legacy_inputs::width(scope, inputs, ctx, losses)?;
     }
     for (missing, code, field) in [
         (

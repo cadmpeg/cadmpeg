@@ -1,7 +1,5 @@
 use super::parameter_scope::ParameterScopeSources;
-use super::sheet_metal_rule::{
-    local, rule_values, settings_rule, typed, RuleReadMode, Types, SETTINGS_GUID,
-};
+use super::sheet_metal_rule::{local, rule_values, settings_rule, typed, Types, SETTINGS_GUID};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::native_stream;
 use crate::layout::{
@@ -235,13 +233,7 @@ fn operation(
             )
         })
         .and_then(|(record_index, reference_assumed)| {
-            let values = rule_values(
-                bytes,
-                records,
-                types,
-                record_index,
-                RuleReadMode::IndependentEntries,
-            )?;
+            let values = rule_values(bytes, records, types, record_index)?;
             Some(DesignContourRule {
                 record_index,
                 reference_assumed,

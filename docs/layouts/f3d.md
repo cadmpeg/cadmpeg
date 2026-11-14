@@ -11396,6 +11396,8 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 8 B
 
+Offsets are relative to the first bend-position byte of the operation window.
+
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs`
 
@@ -11407,6 +11409,8 @@ Parsed by:
 ## `edge_flange_reference_side_short`
 
 Spec §3.1 · layout: byte offsets · size: 18 B
+
+Offsets are relative to the reference-side discriminator.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs`
@@ -11422,6 +11426,8 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 29 B
 
+Offsets are relative to the reference-side discriminator.
+
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs`
 
@@ -11436,6 +11442,8 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 12 B
 
+Offsets are relative to the first padding byte after the aggregate reference.
+
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs`
 
@@ -11448,6 +11456,8 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 16 B
 
+Offsets are relative to the first padding byte after the aggregate reference.
+
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs`
 
@@ -11459,6 +11469,8 @@ Parsed by:
 ## `edge_flange_two_offset_wrapper`
 
 Spec §3.1 · layout: byte offsets · size: 112 B
+
+Offsets are relative to the indexed header with compact local references. Null and inline-type reference widths shift following fields.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs`
@@ -11481,6 +11493,7 @@ Parsed by:
 Unstated regions:
 
 - `0..11` (11 B): Indexed record header.
+
 ## `sheet_metal_contour_short_prefix`
 
 Spec §3.1 · layout: byte offsets · size: not stated
