@@ -150,32 +150,44 @@ pub enum MeshRepair {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[doc = "Effect of an inline plane on a mesh."]
 pub enum MeshPlaneCutMode {
+    #[doc = "Retains the selected half-space of the mesh."]
     Trim,
+    #[doc = "Partitions the mesh into bodies on both sides of the plane."]
     SplitBodies,
+    #[doc = "Partitions mesh faces at the plane while retaining one body."]
     SplitFaces,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[doc = "Faces that close mesh boundaries produced by a plane cut."]
 pub enum MeshPlaneCutFill {
+    #[doc = "Leaves the cut boundaries open."]
     NoFill,
+    #[doc = "Closes the cut with a minimal number of faces."]
     Minimal,
+    #[doc = "Closes the cut with uniformly distributed faces."]
     Uniform,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[doc = "Retained half-space relative to the oriented plane normal."]
 pub enum MeshPlaneCutSide {
+    #[doc = "Retains points whose displacement from the origin has a nonnegative dot product with the normal."]
     Positive,
+    #[doc = "Retains points whose displacement from the origin has a nonpositive dot product with the normal."]
     Negative,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
+#[doc = "Independent plane and cut controls; absent fields remain unknown."]
 pub struct MeshPlaneCut {
     #[serde(
         default,
@@ -183,6 +195,7 @@ pub struct MeshPlaneCut {
         deserialize_with = "deserialize_cut_origin"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "FinitePoint3"))]
+    #[doc = "Point on the plane in model-space canonical millimetres."]
     pub origin: Option<FinitePoint3>,
     #[serde(
         default,
@@ -190,6 +203,7 @@ pub struct MeshPlaneCut {
         deserialize_with = "deserialize_cut_normal"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "FeatureDirection3"))]
+    #[doc = "Nonzero model-space normal; its magnitude is preserved."]
     pub normal: Option<FeatureDirection3>,
     #[serde(
         default,
@@ -197,6 +211,7 @@ pub struct MeshPlaneCut {
         deserialize_with = "deserialize_cut_mode"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "MeshPlaneCutMode"))]
+    #[doc = "Cut effect, independently of the other controls."]
     pub mode: Option<MeshPlaneCutMode>,
     #[serde(
         default,
@@ -204,6 +219,7 @@ pub struct MeshPlaneCut {
         deserialize_with = "deserialize_cut_fill"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "MeshPlaneCutFill"))]
+    #[doc = "Boundary fill for trim and body splitting; stored inactive values remain available."]
     pub fill: Option<MeshPlaneCutFill>,
     #[serde(
         default,
@@ -211,6 +227,7 @@ pub struct MeshPlaneCut {
         deserialize_with = "deserialize_cut_side"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "MeshPlaneCutSide"))]
+    #[doc = "Half-space retained by trimming; stored inactive values remain available."]
     pub retained_side: Option<MeshPlaneCutSide>,
 }
 
@@ -225,7 +242,9 @@ cadmpeg_core::named_optional_field!(deserialize_cut_side, MeshPlaneCutSide, "ret
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshModification {
+    #[doc = "Cuts the source mesh with an inline oriented plane."]
     PlaneCut {
+        #[doc = "Independently known plane components and cut controls."]
         cut: MeshPlaneCut,
     },
     #[doc = "Lowers the face count."]
