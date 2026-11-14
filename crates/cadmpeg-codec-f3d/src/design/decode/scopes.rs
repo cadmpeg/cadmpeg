@@ -22,6 +22,7 @@ mod emboss;
 pub(crate) mod extrude;
 pub(crate) mod fillet_set;
 mod fixed_parameters;
+mod fold;
 pub(super) mod hole;
 pub(crate) mod legacy_class_397;
 pub(crate) mod legacy_class_415;

@@ -3295,6 +3295,37 @@ fn check_feature_references(
                     face_selections.push(face);
                 }
             }
+            FeatureOperation::SheetMetalUnfold { construction } => {
+                face_selections.extend(construction.stationary.iter());
+                face_selections.extend(construction.bends.iter());
+            }
+            FeatureOperation::SheetMetalRefold { construction } => {
+                if let Some(source) = &construction.unfold {
+                    let candidate = feature_records.get(source.as_str());
+                    if !candidate.is_some_and(|candidate| {
+                        matches!(
+                            candidate.evaluation.definition().operation(),
+                            FeatureOperation::SheetMetalUnfold { .. }
+                        )
+                    }) {
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "refold Unfold",
+                            source.as_str(),
+                        );
+                    }
+                    if candidate.is_some_and(|candidate| candidate.ordinal >= feature.ordinal)
+                        || !feature.dependencies.contains(source)
+                    {
+                        geometry_error(
+                            findings,
+                            feature.id.as_str(),
+                            "refold Unfold must precede Refold and occur in its dependencies",
+                        );
+                    }
+                }
+            }
             FeatureOperation::SheetMetalBendLines { construction } => {
                 if let Some(stationary) = &construction.stationary {
                     face_selections.push(stationary);

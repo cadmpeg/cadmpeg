@@ -639,6 +639,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || modeled.is_none()
                 || extent.is_none()
         }
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalUnfold { construction }) => {
+            construction.stationary.as_ref().is_none_or(|face| !face_selection_is_resolved(face))
+                || construction.all_bends.is_none()
+                || (construction.all_bends != Some(true) && construction.bends.as_ref().is_none_or(|face| !face_selection_is_resolved(face)))
+                || construction.neutral_factor.is_none()
+        }
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalRefold { construction }) => construction.unfold.is_none(),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBendLines { construction }) => {
             construction.bends.is_empty()
                 || construction.bends.iter().any(|bend| {
