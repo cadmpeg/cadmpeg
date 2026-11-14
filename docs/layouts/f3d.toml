@@ -1830,7 +1830,7 @@ kind = "byte"
 section = "3.1"
 anchor = "In the marked prefix"
 size = 27
-note = "Offsets are relative to the primary indexed scope header. The marked prefix starts its wall slots at offset 26. The counted prefix stores zero at offset 26 and starts its wall slots at offset 27."
+note = "Offsets are relative to the primary indexed scope header. The marked prefix starts its wall slots at offset 26. The counted prefix stores its prefix byte at offset 26 and starts its wall slots at offset 27."
 
 [[record.field]]
 name = "indexed_header"
