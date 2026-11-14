@@ -1176,17 +1176,15 @@ The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are t
 
 **Conflict.** None.
 
-### DR-243. Face of an Extents To Hole
+### DR-467. Face that a Hole's `bounded_face` operands name
 
-**Question.** Which face does the member of an Extents To Hole's role-`0x0000000500000000` group name?
+**Question.** Which face do the `bounded_face` operands of a Hole scope name?
 
-**Known.** The member is a `face` recipe operand that follows the group in the scope reference table. In the controls, its candidate lanes name the bottom face of the plate, which is where the hole ends. The start-face `bounded_face` operands of the same scopes name that bottom face too, although the hole starts on the top face.
+**Known.** `f3d.md` §3.1 "A `Hole` scope starts after its indexed header with eight zero bytes" calls these operands start-face operands and admits the Through All form by their recipe kinds and scope-reference order. In the Extents To controls, their candidate lanes name the bottom face of the plate, although the hole starts on the top face.
 
-**Need.** Controls that end the hole on a side face, on a face of another body, and with an offset from the face.
+**Need.** A Hole whose start face, end face, and body bottom face are three different faces.
 
 **Conflict.** None.
-
-**Note.** The decoder projects the one face that the member resolves as the terminating face and reports `feature.hole-extent-face-assumed`. A member that resolves no face or several faces keeps the group as the native face selection.
 
 ### DR-254. Reference edges of a Hole's placement distances
 
