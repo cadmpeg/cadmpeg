@@ -177,6 +177,59 @@ pub(crate) fn project_local_components_with_types(
     projector.finish()
 }
 
+/// Place each body-owning definition that no occurrence instances once
+/// below the document root with the identity transform. Its bodies then
+/// keep their stored frames, as the unplaced and fallback-owner rules
+/// state. A design without any occurrence keeps its flat form.
+fn place_uninstanced_definitions(
+    occurrences: &mut BTreeMap<String, (Occurrence, Option<&DesignComponentOccurrence>)>,
+    definitions: &BTreeMap<String, ProductDefinition>,
+) -> Result<usize, cadmpeg_core::CodecError> {
+    if occurrences.is_empty() {
+        return Ok(0);
+    }
+    let instanced = occurrences
+        .values()
+        .filter_map(|(occurrence, _)| match &occurrence.prototype {
+            PrototypeReference::Local { definition } => Some(definition.as_str().to_owned()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let uninstanced = definitions
+        .values()
+        .filter(|definition| {
+            !definition.bodies.is_empty() && !instanced.contains(definition.id.as_str())
+        })
+        .map(|definition| definition.id.clone())
+        .collect::<Vec<_>>();
+    for definition in &uninstanced {
+        let id = OccurrenceId::mint(format!("{definition}/stored-frame-occurrence"))
+            .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+        occurrences.insert(
+            id.as_str().to_owned(),
+            (
+                Occurrence {
+                    id,
+                    prototype: PrototypeReference::Local {
+                        definition: definition.clone(),
+                    },
+                    parent: OccurrenceParent::Root {},
+                    ordinal: 0,
+                    transform: cadmpeg_ir::transform::Transform::identity(),
+                    linked_prototype: None,
+                    scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+                    name: None,
+                    visible: None,
+                    link: None,
+                    native_ref: None,
+                },
+                None,
+            ),
+        );
+    }
+    Ok(uninstanced.len())
+}
+
 /// Reason a local occurrence carrier stays unplaced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Unplaced {
@@ -1540,6 +1593,8 @@ impl<'a> Projector<'a> {
             self.definitions
                 .insert(definition.id.as_str().to_owned(), definition);
         }
+        let stored_frame_occurrences =
+            place_uninstanced_definitions(&mut self.occurrences, &self.definitions)?;
         let mut occurrences = self.occurrences.into_values().collect::<Vec<_>>();
         occurrences.sort_by(|(left, left_carrier), (right, right_carrier)| {
             (
@@ -1669,6 +1724,11 @@ impl<'a> Projector<'a> {
         if unresolved_owners != 0 {
             losses.push(F3dLossCode::ComponentBodyOwnerUnresolved.note(format!(
                 "{unresolved_owners} solved body binding(s) have no unique admitted Body-container component owner."
+            )));
+        }
+        if stored_frame_occurrences != 0 {
+            losses.push(F3dLossCode::StoredFrameOccurrence.note(format!(
+                "{stored_frame_occurrences} component definition(s) own bodies but have no placed occurrence; each is placed once below the document root with the identity transform, so its bodies keep their stored frames"
             )));
         }
         if fallback_owners != 0 {
@@ -2946,7 +3006,7 @@ mod tests {
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
         .unwrap();
-        assert_eq!(projection.occurrences.len(), 2);
+        assert_eq!(projection.occurrences.len(), 3);
         assert!(!projection
             .losses
             .iter()
@@ -2969,12 +3029,26 @@ mod tests {
                     .any(|body| body.as_str() == COMPONENT_BODY)
             })
             .unwrap();
-        assert!(projection.occurrences.iter().all(|occurrence| {
-            occurrence.prototype
-                != PrototypeReference::Local {
-                    definition: stored.id.clone(),
-                }
-        }));
+        let stored_occurrences = projection
+            .occurrences
+            .iter()
+            .filter(|occurrence| {
+                occurrence.prototype
+                    == PrototypeReference::Local {
+                        definition: stored.id.clone(),
+                    }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(stored_occurrences.len(), 1);
+        assert_eq!(stored_occurrences[0].parent, OccurrenceParent::Root {});
+        assert_eq!(
+            stored_occurrences[0].transform,
+            cadmpeg_ir::transform::Transform::identity()
+        );
+        assert!(projection
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::F3dLossCode::StoredFrameOccurrence.kind()));
         assert!(projection
             .losses
             .iter()
@@ -3007,7 +3081,7 @@ mod tests {
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
         .unwrap();
-        assert_eq!(projection.occurrences.len(), 2);
+        assert_eq!(projection.occurrences.len(), 3);
         assert_eq!(
             projection
                 .definitions
