@@ -1909,7 +1909,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder reports `feature.mesh-section-curves-unresolved`. An unavailable section plane reports `feature.mesh-section-plane-unresolved`.
 
-### DR-486. Mesh operation member selection tails
+### DR-504. Mesh operation member selection tails
 
 **Question.** Which source member tail fields select face groups or subsets of a mesh body?
 
@@ -1921,7 +1921,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder reports `feature.mesh-body-selection-assumed` for the body-selection reading.
 
-### DR-487. Mesh shell construction controls
+### DR-505. Mesh shell construction controls
 
 **Question.** Which mesh shell fields encode the wall direction, offset construction, corner continuation, and intersection settings?
 
