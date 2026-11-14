@@ -341,9 +341,11 @@ fn related_mesh_registration_requires_one_matching_local_mesh_guid_type() {
             });
         }
         let mesh_type = |target, key, stream, guid, base, version, module| {
+            let mut data = design_type(guid, Some(base), version, module, vec![target]);
+            data.byte_offset = key;
             SegmentType::try_new(
                 format!("f3d:{stream}/MetaStream.dat:design-type#{key}"),
-                design_type(guid, Some(base), version, module, vec![target]),
+                data,
             )
             .unwrap()
         };
