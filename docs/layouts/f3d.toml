@@ -37380,49 +37380,49 @@ name = "sphere_typed_prefix"
 kind = "byte"
 section = "3.1"
 anchor = "The reference-placed `SpherePrimitive` forms store three prefix references"
-size = 178
+size = 179
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs"
 
 [[record.gap]]
 offset = 0
-size = 20
+size = 21
 note = "Indexed header and inherited prefix."
 
 [[record.field]]
 name = "operation"
-offset = 20
+offset = 21
 type = "u32"
 source = "spec"
-anchor = "The typed prefix has operation offset 20"
+anchor = "The typed prefix has operation offset 21"
 
 [[record.field]]
 name = "marker"
-offset = 24
+offset = 25
 type = "u8"
 source = "spec"
-anchor = "marker offset 24"
+anchor = "marker offset 25"
 value = 1
 
 [[record.field]]
 name = "placement"
-offset = 25
+offset = 26
 type = "bytes[51]"
 source = "spec"
-anchor = "references at offsets 25, 76, and 127"
+anchor = "references at offsets 26, 77, and 128"
 
 [[record.field]]
 name = "diameter_owner"
-offset = 76
+offset = 77
 type = "bytes[51]"
 source = "spec"
-anchor = "references at offsets 25, 76, and 127"
+anchor = "references at offsets 26, 77, and 128"
 
 [[record.field]]
 name = "result"
-offset = 127
+offset = 128
 type = "bytes[51]"
 source = "spec"
-anchor = "references at offsets 25, 76, and 127"
+anchor = "references at offsets 26, 77, and 128"
 
 [[record]]
 name = "captured_position_prefix"
@@ -37558,6 +37558,44 @@ source = "spec"
 anchor = "The Position suffix spans 83 bytes"
 value = [0, 0, 0]
 
+[[record]]
+name = "unmarked_sphere_local_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The scope-local frame follows the third prefix reference."
+size = 128
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs"
+note = "Offsets are relative to the first byte after the third prefix reference. The marked matrix form has identity flag zero; flag one supplies identity and omits its matrix."
+
+[[record.field]]
+name = "matrix"
+offset = 0
+type = "f64[16]"
+source = "spec"
+anchor = "The unmarked local frame stores sixteen row-major f64 values at offset zero"
+
+[[record]]
+name = "marked_sphere_local_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The scope-local frame follows the third prefix reference."
+size = 129
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs"
+note = "Offsets are relative to the first byte after the third prefix reference. The marked matrix form has identity flag zero; flag one supplies identity and omits its matrix."
+
+[[record.field]]
+name = "identity"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "The marked local frame starts with a one-byte identity flag."
+
+[[record.field]]
+name = "matrix"
+offset = 1
+type = "f64[16]"
+source = "spec"
+anchor = "Flag `0` stores the same matrix at relative offset one"
 
 [[record]]
 name = "local_component_occurrence_attributed_short_ordinal"

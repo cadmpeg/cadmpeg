@@ -26,6 +26,7 @@ fn fixture(
             bytes[at + 13..at + 49].copy_from_slice(guid.as_bytes());
         }
     }
+    bytes[reference_at + 3 * if typed { 51 } else { 11 }] = 1;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#7",
         DesignFeatureKind::SpherePrimitive,
@@ -61,8 +62,168 @@ fn fixture(
 }
 
 #[test]
+fn typed_sphere_operation_follows_the_ten_byte_inherited_prefix() {
+    let (mut bytes, scope, owner) = fixture(21, 26, true);
+    bytes[21..26].copy_from_slice(&[4, 0, 0, 0, 1]);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let sphere = decode(&bytes, &records, &scope, &[owner], &[]).unwrap();
+    assert_eq!(
+        sphere.operation,
+        crate::records::feature::extrude::DesignExtrudeOperation::NewBody
+    );
+    assert_eq!(sphere.operation_offset, 21);
+    assert!(!sphere.prefix_framing_assumed);
+    assert_eq!(sphere.placement_record_index, Some(40));
+}
+
+#[test]
+fn sphere_preserves_marked_and_unmarked_local_frames() {
+    for (operation, references, typed) in [
+        (25, 30, false),
+        (21, 26, false),
+        (21, 26, true),
+        (20, 25, true),
+    ] {
+        for marked in [false, true] {
+            let (mut bytes, scope, owner) = fixture(operation, references, typed);
+            let frame = references + 3 * if typed { 51 } else { 11 };
+            bytes[frame] = 0;
+            let at = frame + usize::from(marked);
+            let rows = [
+                [0.0_f64, -1.0, 0.0, 1.2],
+                [1.0, 0.0, 0.0, -2.3],
+                [0.0, 0.0, 1.0, 3.4],
+                [0.0, 0.0, 0.0, 1.0],
+            ];
+            for (index, value) in rows.into_iter().flatten().enumerate() {
+                bytes[at + index * 8..at + index * 8 + 8].copy_from_slice(&value.to_le_bytes());
+            }
+            let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+            let sphere =
+                decode(&bytes, &records, &scope, std::slice::from_ref(&owner), &[]).unwrap();
+            assert!(sphere
+                .transform
+                .rows()
+                .into_iter()
+                .flatten()
+                .zip(rows.into_iter().flatten())
+                .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
+            assert_eq!(
+                sphere.transform_offset,
+                Some(cadmpeg_core::decode::u64_from_index(at))
+            );
+            assert_eq!(sphere.local_frame_assumption, None);
+            if marked {
+                bytes[frame] = 9;
+                let assumed = decode(&bytes, &records, &scope, &[owner], &[]).unwrap();
+                assert!(assumed
+                    .transform
+                    .rows()
+                    .into_iter()
+                    .flatten()
+                    .zip(rows.into_iter().flatten())
+                    .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
+                assert_eq!(assumed.local_frame_assumption, Some(crate::records::feature::primitives::DesignSphereLocalFrameAssumption::Framing));
+            }
+        }
+    }
+}
+
+#[test]
+fn sphere_retains_diameter_and_operation_with_unusable_local_frame() {
+    let (mut bytes, scope, owner) = fixture(25, 30, false);
+    bytes[63] = 0;
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let sphere = decode(&bytes, &records, &scope, &[owner], &[]).unwrap();
+    assert_eq!(sphere.diameter.get(), 1.7);
+    assert_eq!(
+        sphere.transform,
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
+    );
+    assert_eq!(sphere.transform_offset, None);
+    assert_eq!(
+        sphere.local_frame_assumption,
+        Some(crate::records::feature::primitives::DesignSphereLocalFrameAssumption::Identity)
+    );
+}
+
+#[test]
+fn sphere_refuses_nonfinite_and_nonrigid_local_matrices_without_losing_diameter() {
+    for (index, value) in [(0, 2.0_f64), (3, f64::NAN), (7, f64::INFINITY), (15, 0.0)] {
+        let (mut bytes, scope, owner) = fixture(25, 30, false);
+        bytes[63] = 0;
+        for (ordinal, coefficient) in [
+            1.0_f64, 0.0, 0.0, 1.2, 0.0, 1.0, 0.0, -2.3, 0.0, 0.0, 1.0, 3.4, 0.0, 0.0, 0.0, 1.0,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let at = 64 + ordinal * 8;
+            bytes[at..at + 8].copy_from_slice(&coefficient.to_le_bytes());
+        }
+        bytes[64 + index * 8..64 + index * 8 + 8].copy_from_slice(&value.to_le_bytes());
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let sphere = decode(&bytes, &records, &scope, &[owner], &[]).unwrap();
+        assert!((sphere.diameter.get() - 1.7).abs() < 1.0e-12);
+        assert_eq!(
+            sphere.operation,
+            crate::records::feature::extrude::DesignExtrudeOperation::Cut
+        );
+        assert_eq!(sphere.transform_offset, None);
+        assert_eq!(
+            sphere.local_frame_assumption,
+            Some(crate::records::feature::primitives::DesignSphereLocalFrameAssumption::Identity)
+        );
+    }
+}
+
+#[test]
+fn sphere_retains_unmarked_matrix_when_its_first_byte_is_an_identity_marker() {
+    let (mut bytes, scope, owner) = fixture(25, 30, false);
+    for (ordinal, coefficient) in [
+        f64::from_bits(0x3ff0_0000_0000_0001),
+        0.0,
+        0.0,
+        1.2,
+        0.0,
+        1.0,
+        0.0,
+        -2.3,
+        0.0,
+        0.0,
+        1.0,
+        3.4,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let at = 63 + ordinal * 8;
+        bytes[at..at + 8].copy_from_slice(&coefficient.to_le_bytes());
+    }
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let sphere = decode(&bytes, &records, &scope, &[owner], &[]).unwrap();
+    assert!((sphere.transform[0][3] - 1.2).abs() < 1.0e-12);
+    assert!((sphere.transform[1][3] + 2.3).abs() < 1.0e-12);
+    assert!((sphere.transform[2][3] - 3.4).abs() < 1.0e-12);
+    assert_eq!(sphere.transform_offset, Some(63));
+    assert_eq!(
+        sphere.local_frame_assumption,
+        Some(crate::records::feature::primitives::DesignSphereLocalFrameAssumption::Framing)
+    );
+}
+
+#[test]
 fn reference_placed_sphere_prefixes_bind_evaluated_diameters() {
-    for (operation, references, typed) in [(25, 30, false), (21, 26, false), (20, 25, true)] {
+    for (operation, references, typed) in [
+        (25, 30, false),
+        (21, 26, false),
+        (21, 26, true),
+        (20, 25, true),
+    ] {
         let (bytes, scope, owner) = fixture(operation, references, typed);
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let sphere = decode(&bytes, &records, &scope, &[owner], &[]).unwrap();
@@ -77,14 +238,21 @@ fn reference_placed_sphere_prefixes_bind_evaluated_diameters() {
             sphere.operation_offset,
             cadmpeg_core::decode::u64_from_index(operation)
         );
+        assert_eq!(sphere.prefix_framing_assumed, typed && operation == 20);
         assert!(!sphere.diameter_owner_assumed);
         assert!(sphere.diameter_source_assumed);
+        assert_eq!(sphere.local_frame_assumption, None);
     }
 }
 
 #[test]
 fn sphere_prefixes_refuse_truncation_corruption_and_duplicate_owners() {
-    for (operation, references, typed) in [(25, 30, false), (21, 26, false), (20, 25, true)] {
+    for (operation, references, typed) in [
+        (25, 30, false),
+        (21, 26, false),
+        (21, 26, true),
+        (20, 25, true),
+    ] {
         let (bytes, scope, owner) = fixture(operation, references, typed);
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         for end in [0, references, references + 10, 399] {
