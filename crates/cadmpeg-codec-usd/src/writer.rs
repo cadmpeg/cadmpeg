@@ -71,7 +71,7 @@ const SOURCE_UP_AXIS: &str = "up_axis";
 /// Topology, geometry carriers, tessellations, and appearances are
 /// `Reported`: [`plan`] charges a loss for each record no prim carries.
 const COVERAGE: ArenaDispositions = {
-    use ArenaDisposition::{Omitted, Reported, Written};
+    use ArenaDisposition::{Ignored, Omitted, Reported, Written};
     ArenaDispositions {
         bodies: Reported,
         regions: Reported,
@@ -110,6 +110,7 @@ const COVERAGE: ArenaDispositions = {
         view_presentations: Omitted,
         tessellations: Reported,
         point_clouds: Omitted,
+        history_bodies: Ignored,
         appearances: Reported,
         appearance_bindings: Reported,
         attributes: Omitted,
