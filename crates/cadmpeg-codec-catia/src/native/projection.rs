@@ -246,26 +246,40 @@ pub(crate) fn consolidated_edge_runs(
         let id = pcurve.id.clone();
         pcurve_ids.insert(pcurve.byte_offset, id);
     }
-    let mut resolved = HashMap::new();
-    for block in
-        crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
-            ctx, bytes, records, refusal,
-        )?
-    {
-        resolved.insert(block.block.pcurves[0].pos, block);
-    }
-    let mut nodes_by_offset = HashMap::new();
-    for node in nodes {
-        nodes_by_offset.insert(node.byte_offset, node);
-    }
-    let mut output = Vec::new();
-    for (index, run) in
+    let runs =
         crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
             bytes, records,
-        )?
-        .into_iter()
-        .enumerate()
-    {
+        )?;
+    let nodes_by_offset = nodes
+        .iter()
+        .map(|node| (node.byte_offset, node))
+        .collect::<HashMap<_, _>>();
+    let needed = runs
+        .iter()
+        .filter(|run| {
+            nodes_by_offset
+                .get(&u64_from_index(run.node.pos))
+                .is_some_and(|node| node.uses.is_some())
+                && run
+                    .edge
+                    .pcurves
+                    .iter()
+                    .all(|pcurve| pcurve_ids.contains_key(&u64_from_index(pcurve.pos)))
+        })
+        .map(|run| run.edge.pcurves[0].pos)
+        .collect::<std::collections::HashSet<_>>();
+    let mut resolved = HashMap::new();
+    for block in crate::families::consolidated::records::resolve_selected_consolidated_edge_blocks(
+        ctx,
+        bytes,
+        records,
+        |block| needed.contains(&block.pcurves[0].pos),
+        refusal,
+    )? {
+        resolved.insert(block.block.pcurves[0].pos, block);
+    }
+    let mut output = Vec::new();
+    for (index, run) in runs.into_iter().enumerate() {
         let pcurve_offsets = run
             .edge
             .pcurves

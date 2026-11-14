@@ -80,6 +80,7 @@ fn transfer(patch: Patch) -> (CadIr, Vec<cadmpeg_ir::report::loss::LossNote>) {
             vec![patch],
             &mut notes,
             &mut FamilyEntityAdmission::new(ctx),
+            &super::super::super::roster::BodyRoots::new(),
         )
     })
     .expect("transfer recovered patch");
