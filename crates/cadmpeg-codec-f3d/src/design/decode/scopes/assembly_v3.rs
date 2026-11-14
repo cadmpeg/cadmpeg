@@ -25,6 +25,7 @@ pub(crate) const TYPE_GUID: &str = "8DFDD543-F823-43AA-BDAF-C638E023F0A0";
 const ASSEMBLE_NAME_UNITS: usize = 8;
 /// Type GUID of the referenced joint record.
 const JOINT_TYPE_GUID: &str = "7F5A0426-1D2A-4DC4-9F06-58631F69D2F5";
+const ADDITIONAL_TAIL_TYPE_GUID: &str = "074F9459-89C2-4B7D-8AB4-DCE67AE944FE";
 
 pub(crate) fn registered(scope: &DesignParameterScope, types: &StreamTypes<'_>) -> bool {
     scope.kind() == DesignFeatureKind::Assemble
@@ -83,7 +84,7 @@ impl VersionLayout {
         }
         Some(match types.get(&u64::from(scope.record_index))?.1 {
             3 => Self {
-                joint_versions: &[3, 4],
+                joint_versions: &[3, 4, 5],
                 prologue_zeros: 0,
                 frame_zeros: 0,
                 reference_width: None,
@@ -156,6 +157,7 @@ pub(crate) struct ScopeGrammar {
     pub(crate) owners: [u32; 4],
     additional_owner_count: Located<u32>,
     additional_owner_start: usize,
+    additional_tail_reference: Option<Located<u32>>,
     pub(crate) locator_offsets: [usize; 2],
     pub(crate) stride: usize,
     pub(crate) facing: DesignJointFrameSense,
@@ -318,13 +320,6 @@ pub(crate) fn parse(
         offset: u64_from_index(fields.view.position()),
         value: fields.view.u32_le()?,
     };
-    if additional_owner_count.value != 0
-        && !types
-            .get(&u64::from(scope.record_index))
-            .is_some_and(|(_, version)| matches!(version, 4 | 5))
-    {
-        return None;
-    }
     let additional_owner_start = fields.view.position();
     fields
         .view
@@ -387,62 +382,84 @@ pub(crate) fn parse(
         fields.reference()?;
     }
     let tail = fields.view;
-    let mut separators = 0;
+    let mut candidates = 0;
     let mut tail_state = [0; 2];
-    for separator in 0..=usize::from(!layout.tail_reference) {
-        fields.view = tail;
-        let candidate = (|| {
-            fields.zero(separator)?;
-            fields.view.u32_le()?;
-            fields.view.u32_le()?;
-            if !fields.view.f64_le()?.is_finite() {
-                return None;
+    let mut additional_tail_reference = None;
+    for extra in 0..=usize::from(!layout.tail_reference) {
+        for separator in 0..=usize::from(!layout.tail_reference && extra == 0) {
+            fields.view = tail;
+            let candidate = (|| {
+                let reference = if extra == 0 {
+                    None
+                } else {
+                    let offset = u64_from_index(fields.view.position());
+                    let value = fields.reference()?;
+                    if !types.get(&u64::from(value)).is_some_and(|(guid, version)| {
+                        guid.eq_ignore_ascii_case(ADDITIONAL_TAIL_TYPE_GUID) && *version == 1
+                    }) {
+                        return None;
+                    }
+                    Some(Located { value, offset })
+                };
+                if additional_owner_count.value != 0 && !layout.tail_reference && extra == 0 {
+                    return None;
+                }
+                fields.zero(separator)?;
+                fields.view.u32_le()?;
+                fields.view.u32_le()?;
+                if !fields.view.f64_le()?.is_finite() {
+                    return None;
+                }
+                fields.view.u32_le()?;
+                fields.reference()?;
+                if layout.tail_marker && fields.view.u8()? != 1 {
+                    return None;
+                }
+                let state = [fields.view.u8()?, fields.view.u8()?];
+                if state.iter().any(|value| *value > 1) {
+                    return None;
+                }
+                fields.zero(layout.tail_zeros)?;
+                fields.reference()?;
+                fields.zero(2)?;
+                let matrices = frames
+                    .iter()
+                    .filter(|frame| {
+                        frame.transform_offset
+                            == frame.reference_offset + u64_from_index(stride + layout.frame_zeros)
+                    })
+                    .count();
+                let span = 190_usize
+                    .checked_add(
+                        usize::try_from(count)
+                            .ok()?
+                            .checked_add(12)?
+                            .checked_add(usize::try_from(additional_owner_count.value).ok()?)?
+                            .checked_mul(stride)?,
+                    )?
+                    .checked_add(128 * matrices)?
+                    .checked_add(4 * usize::from(expanded))?
+                    .checked_add(separator)?
+                    .checked_add(layout.extra_span(stride))?
+                    .checked_add(extra.checked_mul(stride)?)?
+                    .checked_add(2 * name.len())?
+                    .checked_sub(2 * ASSEMBLE_NAME_UNITS)?;
+                (fields.view.position() == end && span == end.checked_sub(start)?)
+                    .then_some((state, reference))
+            })();
+            if let Some((state, reference)) = candidate {
+                candidates += 1;
+                tail_state = state;
+                additional_tail_reference = reference;
             }
-            fields.view.u32_le()?;
-            fields.reference()?;
-            if layout.tail_marker && fields.view.u8()? != 1 {
-                return None;
-            }
-            let state = [fields.view.u8()?, fields.view.u8()?];
-            if state.iter().any(|value| *value > 1) {
-                return None;
-            }
-            fields.zero(layout.tail_zeros)?;
-            fields.reference()?;
-            fields.zero(2)?;
-            let matrices = frames
-                .iter()
-                .filter(|frame| {
-                    frame.transform_offset
-                        == frame.reference_offset + u64_from_index(stride + layout.frame_zeros)
-                })
-                .count();
-            let span = 190_usize
-                .checked_add(
-                    usize::try_from(count)
-                        .ok()?
-                        .checked_add(12)?
-                        .checked_add(usize::try_from(additional_owner_count.value).ok()?)?
-                        .checked_mul(stride)?,
-                )?
-                .checked_add(128 * matrices)?
-                .checked_add(4 * usize::from(expanded))?
-                .checked_add(separator)?
-                .checked_add(layout.extra_span(stride))?
-                .checked_add(2 * name.len())?
-                .checked_sub(2 * ASSEMBLE_NAME_UNITS)?;
-            (fields.view.position() == end && span == end.checked_sub(start)?).then_some(state)
-        })();
-        if let Some(state) = candidate {
-            separators += 1;
-            tail_state = state;
         }
     }
-    (separators == 1).then_some(ScopeGrammar {
+    (candidates == 1).then_some(ScopeGrammar {
         frames,
         owners,
         additional_owner_count,
         additional_owner_start,
+        additional_tail_reference,
         locator_offsets: [first, second],
         stride,
         facing,
@@ -565,6 +582,7 @@ pub(super) fn alignment(
     .map(|alignment| {
         let mut alignment = alignment.with_frame_sense(Some(grammar.facing));
         alignment.additional_owner_run = additional_owner_run;
+        alignment.additional_tail_reference = grammar.additional_tail_reference;
         alignment
     })
     .ok()
@@ -646,7 +664,9 @@ pub(crate) fn alignment_layout(
             if count == 0
                 || !types
                     .get(&u64::from(scope.record_index))
-                    .is_some_and(|(_, version)| matches!(version, 4 | 5))
+                    .is_some_and(|(_, version)| {
+                        matches!(version, 4 | 5) || alignment.additional_tail_reference.is_some()
+                    })
                 || run.references.len() != count
                 || run.count.offset != start.checked_add(u64_from_index(count_at))?
                 || !run
@@ -677,6 +697,26 @@ pub(crate) fn alignment_layout(
     if scope.reference_count_offset() != start.checked_add(u64_from_index(reference_count))? {
         return None;
     }
+    let extra_tail = match &alignment.additional_tail_reference {
+        None => 0,
+        Some(reference) => {
+            if layout.tail_reference
+                || reference.offset
+                    != scope
+                        .feature_ordinal_offset()
+                        .checked_add(19)?
+                        .checked_add(u64_from_index(stride))?
+                || !types
+                    .get(&u64::from(reference.value))
+                    .is_some_and(|(guid, version)| {
+                        guid.eq_ignore_ascii_case(ADDITIONAL_TAIL_TYPE_GUID) && *version == 1
+                    })
+            {
+                return None;
+            }
+            stride
+        }
+    };
     let span = 190_usize
         .checked_add(
             scope
@@ -689,9 +729,10 @@ pub(crate) fn alignment_layout(
         .checked_add(128 * matrices)?
         .checked_add(4 * expanded)?
         .checked_add(layout.extra_span(stride))?
+        .checked_add(extra_tail)?
         .checked_add(2 * scope.source_kind_name().encode_utf16().count())?
         .checked_sub(2 * ASSEMBLE_NAME_UNITS)?;
-    if !(span..=span.checked_add(usize::from(!layout.tail_reference))?)
+    if !(span..=span.checked_add(usize::from(!layout.tail_reference && extra_tail == 0))?)
         .contains(&usize::try_from(scope.frame_length()).ok()?)
     {
         return None;
