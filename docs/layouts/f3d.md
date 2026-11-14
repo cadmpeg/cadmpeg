@@ -1730,6 +1730,46 @@ Unstated regions:
 
 - `0..21` (21 B): Mesh operation scope prefix.
 
+## `mesh_combine_v1_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 34 B
+
+Flag-01 offsets. The mesh scope flag controls the inserted prefix word.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/combine.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 4 | `prefix_word` | `u32` | little | spec | Flag `01` inserts a u32 |
+| 25 | 4 | `operation` | `u32` | little | spec | the operation selector |
+| 29 | 1 | `control_byte` | `u8` | little | spec | a control byte |
+| 30 | 4 | `tool_count` | `u32` | little | spec | the tool-group count |
+
+Unstated regions:
+
+- `0..21` (21 B): Indexed header and mesh scope prefix.
+
+## `mesh_combine_v2_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 34 B
+
+Flag-00 offsets. The mesh scope flag controls the inserted prefix word.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/combine.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 4 | `operation` | `u32` | little | spec | the operation selector |
+| 25 | 4 | `control_word` | `u32` | little | spec | an additional control word |
+| 29 | 1 | `control_byte` | `u8` | little | spec | a control byte |
+| 30 | 4 | `tool_count` | `u32` | little | spec | the tool-group count |
+
+Unstated regions:
+
+- `0..21` (21 B): Indexed header and mesh scope prefix.
+
 ## `paramesh_guid_join_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 83 B
