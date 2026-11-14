@@ -165,25 +165,20 @@ fn decoded_move_face(
         bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(bytes),
         scope,
+        &std::collections::HashMap::new(),
+        &mut Vec::new(),
     )
 }
 
 #[test]
-fn move_face_decodes_both_prologues_and_refuses_broken_links() {
+fn move_face_decodes_both_prologues_and_refuses_broken_transform_markers() {
     for marker_one in [true, false] {
         let (bytes, scope, marker) = move_face_fixture(marker_one);
         let decoded = decoded_move_face(&bytes, &scope).unwrap();
         assert_eq!(decoded.transform_record_index, 71);
         assert_eq!(decoded.transform_offset, 48);
         let start = usize::try_from(scope.byte_offset()).unwrap();
-        for at in [
-            marker - 1,
-            marker,
-            marker + 1,
-            marker + 11,
-            marker + 15,
-            marker + 16,
-        ] {
+        for at in [marker - 1, marker, marker + 1, marker + 11] {
             let mut changed = bytes.clone();
             changed[start + at] ^= 0x02;
             assert!(
@@ -209,7 +204,7 @@ fn move_face_decodes_both_prologues_and_refuses_broken_links() {
     let (bytes, mut no_member, _) = move_face_fixture(true);
     let start = usize::try_from(no_member.byte_offset()).unwrap();
     lay_out_move_face(&mut no_member, start, 131, vec![50, 71]);
-    assert!(decoded_move_face(&bytes, &no_member).is_none());
+    assert!(decoded_move_face(&bytes, &no_member).is_some());
 }
 
 #[test]
@@ -224,7 +219,7 @@ fn move_face_transform_can_be_the_first_reference() {
 
         for references in [vec![71, 60, 50], vec![60, 50, 71], vec![60, 71, 50]] {
             lay_out_move_face(&mut scope, start, count, references);
-            assert!(decoded_move_face(&bytes, &scope).is_none());
+            assert!(decoded_move_face(&bytes, &scope).is_some());
         }
     }
 }
@@ -479,7 +474,9 @@ fn a_marked_transform_record_that_breaks_a_rigid_transform_rule_keeps_its_matrix
     assert_eq!(decoded.transform.rows()[0], [0., -1., 0., 7.]);
     assert_eq!(
         marked_move_loss(&bytes, &scope).as_deref(),
-        Some("Move scope f3d:test:scope#17 keeps the rigid matrix of its marked transform record 71, which has form word 1 in a 253-byte frame (DR-306).")
+        Some(
+            "Move scope f3d:test:scope#17 keeps the rigid matrix of its marked transform record 71, which has form word 1 in a 253-byte frame (DR-306)."
+        )
     );
 
     let (bytes, scope) = marked_move_fixture("332", 256);
@@ -637,7 +634,9 @@ fn a_284_byte_transform_record_stores_form_zero() {
         marked_move_transform_loss(&bytes, &records, &scope, &operation.motion, &class_types)
             .map(|note| note.message)
             .as_deref(),
-        Some("Modify scope f3d:test:scope#17 keeps the rigid matrix of its marked transform record 71, which has form word 1 in a 284-byte frame (DR-306).")
+        Some(
+            "Modify scope f3d:test:scope#17 keeps the rigid matrix of its marked transform record 71, which has form word 1 in a 284-byte frame (DR-306)."
+        )
     );
 }
 

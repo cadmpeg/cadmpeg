@@ -533,6 +533,12 @@ pub(crate) enum F3dLossCode {
     /// A form-2 rigid-transform record stores four references whose effect on its stored motion is unresolved.
     FeatureMoveTransformReferencesAssumed,
     FeatureMoveScopeReferencesAssumed,
+    FeatureMoveFaceScopeReferencesAssumed,
+    FeatureMoveFaceSelectionUnresolved,
+    FeatureMoveFaceTypeAssumed,
+    FeatureMoveFaceTypeConflict,
+    FeatureMoveFacePrologueAssumed,
+    FeatureMoveFaceMatrixAssumed,
     FeatureMoveTransformModeAssumed,
     FeatureMoveTransformPrefixAssumed,
     FeatureMoveTransformIdentityAssumed,
@@ -1067,6 +1073,12 @@ impl F3dLossCode {
         Self::FeatureMoveTransformAssumed,
         Self::FeatureMoveTransformReferencesAssumed,
         Self::FeatureMoveScopeReferencesAssumed,
+        Self::FeatureMoveFaceScopeReferencesAssumed,
+        Self::FeatureMoveFaceSelectionUnresolved,
+        Self::FeatureMoveFaceTypeAssumed,
+        Self::FeatureMoveFaceTypeConflict,
+        Self::FeatureMoveFacePrologueAssumed,
+        Self::FeatureMoveFaceMatrixAssumed,
         Self::FeatureMoveTransformModeAssumed,
         Self::FeatureMoveTransformPrefixAssumed,
         Self::FeatureMoveTransformIdentityAssumed,
@@ -1586,6 +1598,14 @@ impl F3dLossCode {
             Self::FeatureMoveTransformPrefixAssumed => "feature.move-transform-prefix-assumed",
             Self::FeatureMoveTransformModeAssumed => "feature.move-transform-mode-assumed",
             Self::FeatureMoveScopeReferencesAssumed => "feature.move-scope-references-assumed",
+            Self::FeatureMoveFaceScopeReferencesAssumed => {
+                "feature.move-face-scope-references-assumed"
+            }
+            Self::FeatureMoveFaceSelectionUnresolved => "feature.move-face-selection-unresolved",
+            Self::FeatureMoveFaceTypeAssumed => "feature.move-face-type-assumed",
+            Self::FeatureMoveFaceTypeConflict => "feature.move-face-type-conflict",
+            Self::FeatureMoveFacePrologueAssumed => "feature.move-face-prologue-assumed",
+            Self::FeatureMoveFaceMatrixAssumed => "feature.move-face-matrix-assumed",
             Self::FeatureModifyUnlistedGroupsAssumed => "feature.modify-unlisted-groups-assumed",
             Self::FeatureModifyTableAssumed => "feature.modify-table-assumed",
             Self::FeatureModifyStateAssumed => "feature.modify-state-assumed",
@@ -2047,6 +2067,12 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureMoveTransformReferencesAssumed
             | Self::FeatureMoveScopeReferencesAssumed
+            | Self::FeatureMoveFaceScopeReferencesAssumed
+            | Self::FeatureMoveFaceSelectionUnresolved
+            | Self::FeatureMoveFaceTypeAssumed
+            | Self::FeatureMoveFaceTypeConflict
+            | Self::FeatureMoveFacePrologueAssumed
+            | Self::FeatureMoveFaceMatrixAssumed
             | Self::FeatureMoveTransformModeAssumed
             | Self::FeatureMoveTransformPrefixAssumed
             | Self::FeatureMoveTransformIdentityAssumed
@@ -2418,6 +2444,12 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureMoveTransformReferencesAssumed
             | Self::FeatureMoveScopeReferencesAssumed
+            | Self::FeatureMoveFaceScopeReferencesAssumed
+            | Self::FeatureMoveFaceSelectionUnresolved
+            | Self::FeatureMoveFaceTypeAssumed
+            | Self::FeatureMoveFaceTypeConflict
+            | Self::FeatureMoveFacePrologueAssumed
+            | Self::FeatureMoveFaceMatrixAssumed
             | Self::FeatureMoveTransformModeAssumed
             | Self::FeatureMoveTransformPrefixAssumed
             | Self::FeatureMoveTransformIdentityAssumed
@@ -2894,6 +2926,12 @@ mod tests {
                 "feature.move-transform-assumed",
                 "feature.move-transform-references-assumed",
                 "feature.move-scope-references-assumed",
+                "feature.move-face-scope-references-assumed",
+                "feature.move-face-selection-unresolved",
+                "feature.move-face-type-assumed",
+                "feature.move-face-type-conflict",
+                "feature.move-face-prologue-assumed",
+                "feature.move-face-matrix-assumed",
                 "feature.move-transform-mode-assumed",
                 "feature.move-transform-prefix-assumed",
                 "feature.move-transform-identity-assumed",

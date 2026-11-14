@@ -1142,6 +1142,30 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Draft and Revolve plane targets use the same selection member.
 
+### DR-401. MoveFace matrix interpretation and unclassified references
+
+**Question.** Which coordinate frame and composition order apply to the marked MoveFace matrix, how do unclassified references and prefix fields affect it, and which transform families occur when registration is unavailable?
+
+**Known.** `f3d.md` §3.1 defines the marked references and counted table. The decoder prefers a unique frame registered as rigid-transform GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`, version `2`. It excludes positively conflicting registrations and reports `feature.move-face-type-conflict` when they leave the marked record without an admitted candidate. With no admitted registered frame, a unique framed candidate whose registration is unavailable keeps its motion with `feature.move-face-type-assumed`. Two admitted candidates within the preferred category remain ambiguous. Nonzero scope prefix fields keep marked motion with `feature.move-face-prologue-assumed`. Each projected matrix carries `feature.move-face-matrix-assumed`: the row-major matrix maps input face points to output model coordinates, with its translation converted from centimetres to millimetres. The complete ordered table, transform coefficients, prefix references and source prologue remain retained. References outside a bound group/member run and the transform remain unclassified; an unresolved selection leaves the entire table unclassified. Each unresolved table and each bound table with surplus references carries `feature.move-face-scope-references-assumed`. Form-two construction references retain the separate assumption in DR-375, and other transform-prefix fields retain DR-306.
+
+**Need.** Controlled native saves that vary one pivot, construction point, selection, occurrence frame or move definition, joined through registered target identities, matrix coefficients and before/after geometry.
+
+**Conflict.** Public move API semantics permit arbitrary translation and orientation and use centimetres for database lengths. These facts leave the raw matrix frame, composition order and reference roles unresolved.
+
+**Note.** The most likely reading treats the matrix as evaluated face motion and the unclassified references as its construction history. Missing source and definition records preserve each decoded motion under the named assumptions. Historical face binding compares changed plane and cylinder rows under the complete projected motion, including small linear components retained by the transform law.
+
+### DR-402. MoveFace motion with an unresolved face group
+
+**Question.** Which face selection does a MoveFace scope name when its marked group cannot bind one complete ordered face-member run?
+
+**Known.** The decoder retains the marked motion with a scope-native face selection when the group mark, role, identity, ordinal or member run is unresolved, or the transform is missing or repeated in the ordered table. It reports `feature.move-face-selection-unresolved`. Repeated table values name one transform record. A bound group retains its native identity for the historical face-recipe rule in DR-222. Matrix interpretation and unclassified-reference assumptions in DR-401 also apply when the selection is unresolved.
+
+**Need.** A group grammar and membership proof for each unresolved native selection form.
+
+**Conflict.** None.
+
+**Note.** A table inconsistency leaves the independently decoded transform intact.
+
 ### DR-375. References of a form-2 rigid-transform record
 
 **Question.** What do the four marked references of a 293-byte form-2 rigid-transform record name, and do they change the motion that its matrix stores?
