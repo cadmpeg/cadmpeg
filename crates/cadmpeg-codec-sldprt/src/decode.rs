@@ -1818,7 +1818,8 @@ pub(crate) fn append_design_losses(
                 FeatureOperation::DeleteBody { bodies, mode } => {
                     incomplete_body_selection(bodies) || *mode == BodyRetentionMode::Unresolved
                 }
-                FeatureOperation::DeleteFace { faces, .. } => incomplete_face_selection(faces),
+                FeatureOperation::DeleteFace { faces, .. }
+                | FeatureOperation::UnstitchFaces { faces } => incomplete_face_selection(faces),
                 FeatureOperation::ReplaceFace { operands } => {
                     let targets = operands.targets();
                     let replacements = operands.replacements();
