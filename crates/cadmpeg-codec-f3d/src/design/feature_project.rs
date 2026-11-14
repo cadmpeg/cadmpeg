@@ -2607,7 +2607,7 @@ fn scope_properties(
         scope.kind(),
         crate::records::feature::scope::DesignFeatureKind::Hole
             | crate::records::feature::scope::DesignFeatureKind::Emboss
-) {
+    ) {
         for (_, parameter) in parameters {
             let key =
                 cadmpeg_core::text::NonBlankString::new(format!("parameter:{}", parameter.name()))
