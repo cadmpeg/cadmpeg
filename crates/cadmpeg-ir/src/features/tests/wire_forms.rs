@@ -1283,7 +1283,7 @@ fn combine_omits_the_default_keep_tools_flag_from_json() {
         op: BooleanKind::Join,
         keep_tools: false,
 
-        destination: Default::default(),
+        destination: crate::features::CombineDestination::default(),
     });
     let json = serde_json::to_value(definition).unwrap();
     assert_eq!(json.get("keep_tools"), None);

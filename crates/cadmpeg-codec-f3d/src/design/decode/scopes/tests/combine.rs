@@ -282,7 +282,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
                 op: cadmpeg_ir::features::BooleanKind::Join,
                 keep_tools: true,
 
-                destination: Default::default(),
+                destination: cadmpeg_ir::features::CombineDestination::default(),
             }
         ))
     );

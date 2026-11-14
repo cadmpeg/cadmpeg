@@ -174,7 +174,7 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
             op: BooleanKind::Cut,
             keep_tools: false,
 
-            destination: Default::default(),
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         })
     );
 

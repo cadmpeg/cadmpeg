@@ -1694,7 +1694,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
 
-            destination: Default::default(),
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }));
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);

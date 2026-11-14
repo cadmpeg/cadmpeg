@@ -983,7 +983,7 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
         op: BooleanKind::Join,
         keep_tools: false,
 
-        destination: Default::default(),
+        destination: cadmpeg_ir::features::CombineDestination::default(),
     });
     assert_eq!(boolean_target_output(Some(&definition)), Some(&body));
 
@@ -997,7 +997,7 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
         op: BooleanKind::Join,
         keep_tools: false,
 
-        destination: Default::default(),
+        destination: cadmpeg_ir::features::CombineDestination::default(),
     });
     assert!(boolean_target_output(Some(&ambiguous)).is_none());
 }

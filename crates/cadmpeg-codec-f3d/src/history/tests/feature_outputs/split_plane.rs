@@ -1217,7 +1217,7 @@ fn combine_join_test_feature(scope_id: &str, target: Option<i64>, tool: Option<i
                 op: BooleanKind::Join,
                 keep_tools: false,
 
-                destination: Default::default(),
+                destination: cadmpeg_ir::features::CombineDestination::default(),
             }),
             DistinctMembers::try_from(vec![]).unwrap(),
         ),

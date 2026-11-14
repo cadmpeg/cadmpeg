@@ -105,7 +105,7 @@ fn combine_projection_binds_generated_target_and_tool_bodies() {
                 op: BooleanKind::Join,
                 keep_tools: false,
 
-                destination: Default::default(),
+                destination: cadmpeg_ir::features::CombineDestination::default(),
             }),
         ),
     ];

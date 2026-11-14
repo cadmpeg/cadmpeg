@@ -28,7 +28,7 @@ fn combine(tools: BodySelection) -> FeatureDefinition {
         op: BooleanKind::Cut,
         keep_tools: false,
 
-        destination: Default::default(),
+        destination: cadmpeg_ir::features::CombineDestination::default(),
     })
 }
 
