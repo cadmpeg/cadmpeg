@@ -725,7 +725,7 @@ fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
         ..transform
     };
     assert_eq!(
-        marker_transforms_with_frame_fallback(vec![other, transform], &sketch, 1.0e-8),
+        marker_transforms_with_frame_fallback(vec![other, transform], &sketch, 1.0e-8, &[]),
         vec![other, transform]
     );
     let translated = MarkerTransform {
@@ -733,15 +733,15 @@ fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
         ..transform
     };
     assert_eq!(
-        marker_transforms_with_frame_fallback(vec![other, translated], &sketch, 1.0e-8),
+        marker_transforms_with_frame_fallback(vec![other, translated], &sketch, 1.0e-8, &[]),
         vec![other, translated]
     );
     assert_eq!(
-        marker_transforms_with_frame_fallback(vec![other], &sketch, 1.0e-8),
+        marker_transforms_with_frame_fallback(vec![other], &sketch, 1.0e-8, &[]),
         vec![other]
     );
     assert_eq!(
-        marker_transforms_with_frame_fallback(vec![], &sketch, 1.0e-8),
+        marker_transforms_with_frame_fallback(vec![], &sketch, 1.0e-8, &[]),
         vec![transform]
     );
 }
@@ -1647,4 +1647,65 @@ fn direct_marker_votes_do_not_build_unused_fallback_matches() {
         candidates[0].apply((0, 0)),
         Some((700_000_000, 1_100_000_000))
     );
+}
+
+#[test]
+fn front_rectangle_coordinates_and_blind_travel_match_model_axes() {
+    use crate::resolved_features::compact_reference_planes::principal_sketch_frame;
+    use cadmpeg_core::convert::f64_from_i64;
+    use cadmpeg_ir::features::PrincipalPlane;
+
+    const QUANTUM: f64 = 1.0;
+    const TOLERANCE: f64 = 1.0e-12;
+    for (plane, normal, corners, expected) in [(
+        PrincipalPlane::Front,
+        Vector3::new(0.0, 0.0, 1.0),
+        [(0, 0), (40, 0), (40, 20), (0, 20)],
+        [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(40.0, 0.0, 0.0),
+            Point3::new(40.0, 20.0, 0.0),
+            Point3::new(0.0, 20.0, 0.0),
+        ],
+    )] {
+        let (origin, decoded_normal, u_axis) = principal_sketch_frame(plane);
+        let sketch = Sketch {
+            id: SketchId::mint("synthetic:test:id#principal-rectangle").unwrap(),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: SketchPlacement::try_resolved(origin, decoded_normal, u_axis).unwrap(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+            native_ref: None,
+        };
+        let transform = sketch_frame_marker_transform(&sketch, QUANTUM).unwrap();
+        let mirrored_normal = decoded_normal.scale(-1.0);
+        let mirrored = Sketch {
+            placement: SketchPlacement::try_resolved(origin, mirrored_normal, u_axis).unwrap(),
+            ..sketch.clone()
+        };
+        let mirrored_transform = sketch_frame_marker_transform(&mirrored, QUANTUM).unwrap();
+        let v_axis = decoded_normal.cross(u_axis);
+        for (stored, expected) in corners.into_iter().zip(expected) {
+            let (u, v) = transform.apply(stored).unwrap();
+            let point = origin
+                .translated(u_axis, f64_from_i64(u).unwrap())
+                .translated(v_axis, f64_from_i64(v).unwrap());
+            assert!(point.distance(expected) <= TOLERANCE);
+            let end = point.translated(decoded_normal, 10.0);
+            let cap = expected.translated(normal, 10.0);
+            let meets_cap =
+                |candidate: Point3| candidate.vector_from(cap).dot(normal).abs() <= TOLERANCE;
+            assert!(meets_cap(end));
+            let (mirrored_u, mirrored_v) = mirrored_transform.apply(stored).unwrap();
+            let mirrored_point = origin
+                .translated(u_axis, f64_from_i64(mirrored_u).unwrap())
+                .translated(
+                    mirrored_normal.cross(u_axis),
+                    f64_from_i64(mirrored_v).unwrap(),
+                );
+            assert!(mirrored_point.distance(expected) <= TOLERANCE);
+            assert!(!meets_cap(mirrored_point.translated(mirrored_normal, 10.0)));
+        }
+    }
 }

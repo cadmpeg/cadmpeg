@@ -112,6 +112,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     crate::design::decode::operands::assign_extrude_face_roles(
         &scope,
         std::slice::from_mut(&mut group),
+        None,
     );
     assert_eq!(
         group.extrude_role(),

@@ -275,6 +275,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     crate::design::decode::operands::assign_extrude_face_roles(
         &from_face_scope,
         std::slice::from_mut(&mut start_face),
+        None,
     );
     assert_eq!(
         start_face.extrude_role(),
@@ -324,6 +325,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     crate::design::decode::operands::assign_extrude_face_roles(
         &to_face_scope,
         std::slice::from_mut(&mut legacy_to_face),
+        None,
     );
     assert_eq!(
         legacy_to_face.extrude_role(),
@@ -331,6 +333,61 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignExtrudeFaceRole::Termination
         ))
     );
+
+    let face_start_to_face = |seventh_slot_record_index: Option<u32>| {
+        let mut scope = from_face_scope.clone();
+        if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
+            scope.payload_mut()
+        {
+            slot.get_or_insert_with(Default::default).extrude_prologue =
+                Some(DesignExtrudePrologue::ReferenceAware {
+                    reference: None,
+                    operation: DesignExtrudeOperation::Cut,
+                    operation_offset: 1028,
+                    direction_face_extend_values: [1, 2],
+                    side_extent_discriminators: [2, 0],
+                    side_extent_discriminator_offsets: [1077, 1090],
+                    first_side_target_ordinal: None,
+                    distance_tail: None,
+                    extent: DesignExtrudeExtent::OneSidedToFace,
+                    direction_face_extend_offsets: [1032, 1036],
+                    direction_reversed: false,
+                    direction_reversed_offset: 1040,
+                    solid_operation: true,
+                    solid_operation_offset: 1041,
+                    start: DesignExtrudeStart::FromFace,
+                    start_offset: 1042,
+                });
+        }
+        let mut group = parse_construction_operand_group(
+            &start_face_bytes,
+            &scope,
+            0,
+            &RecordFrame::from(&record),
+        )
+        .complete()
+        .expect("counted Extrude face group");
+        crate::design::decode::operands::assign_extrude_face_roles(
+            &scope,
+            std::slice::from_mut(&mut group),
+            seventh_slot_record_index,
+        );
+        group.extrude_role()
+    };
+    assert_eq!(
+        face_start_to_face(Some(start_face.record_index)),
+        Some(DesignExtrudeOperandRole::Faces(
+            DesignExtrudeFaceRole::Termination
+        ))
+    );
+    for seventh_slot_record_index in [None, Some(start_face.record_index + 1)] {
+        assert_eq!(
+            face_start_to_face(seventh_slot_record_index),
+            Some(DesignExtrudeOperandRole::Faces(
+                DesignExtrudeFaceRole::Start
+            ))
+        );
+    }
 
     let tail_at = 11 + 10 + 4 + 2 * 11;
     let mut flagless = bytes[..tail_at + 62].to_vec();
@@ -497,6 +554,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     crate::design::decode::operands::assign_extrude_face_roles(
         &scope,
         std::slice::from_mut(&mut auxiliary),
+        None,
     );
     assert_eq!(
         auxiliary.extrude_role(),
@@ -870,6 +928,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         selector: 1,
         selector_offset: 0,
         token: "23".into(),
+        token_integer: 0,
         token_offset: 0,
         design_reference: 332,
         design_reference_offset: 0,
@@ -1176,28 +1235,34 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&delete_scope);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    scopes,
-                    construction_groups: std::slice::from_ref(&delete_group),
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
-    assert!(matches!(
-        features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::DeleteFace,
-            ..
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        projection_losses,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&delete_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: std::slice::from_ref(&delete_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    assert_eq!(
+        *features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DeleteFace {
+            faces: FaceSelection::Native(delete_group.id.clone()),
+            heal: true,
         })
-    ));
+    );
+    assert!(projection_losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::DeleteFaceFrameControlsAssumed.kind()));
 
     let mut surface_scope = delete_scope.clone();
     let reference_bytes = 11 * u64_from_index(surface_scope.reference_members().len());
@@ -1304,28 +1369,34 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&surface_scope);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    scopes,
-                    construction_groups: std::slice::from_ref(&delete_group),
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
-    assert!(matches!(
-        features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::SurfaceDeleteFace,
-            ..
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        projection_losses,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&surface_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: std::slice::from_ref(&delete_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    assert_eq!(
+        *features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DeleteFace {
+            faces: FaceSelection::Native(delete_group.id.clone()),
+            heal: false,
         })
-    ));
+    );
+    assert!(projection_losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::DeleteFaceFrameControlsAssumed.kind()));
 
     for (class_tag, paired_class_tag, base_frame, base_kind) in [
         ("287", "270", 246_u64, 135_u64),

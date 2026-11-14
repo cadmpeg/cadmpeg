@@ -259,7 +259,7 @@ pub(super) fn pattern_is_incomplete<C: cadmpeg_ir::features::patterns::Composite
     pattern: &PatternKind<C>,
 ) -> bool {
     match pattern.definition() {
-        PatternTransform::Unresolved { .. } => true,
+        PatternTransform::Unresolved { .. } | PatternTransform::CurveDrivenPartial { .. } => true,
         PatternTransform::Linear {
             direction,
             count,
@@ -299,6 +299,7 @@ pub(crate) fn pattern_feature_is_incomplete(
 ) -> bool {
     seeds.is_empty()
         || seeds.iter().any(|seed| match seed {
+            cadmpeg_ir::features::patterns::PatternSeed::Native(_) => true,
             cadmpeg_ir::features::patterns::PatternSeed::Feature(feature) => {
                 !dependencies.contains(feature)
             }

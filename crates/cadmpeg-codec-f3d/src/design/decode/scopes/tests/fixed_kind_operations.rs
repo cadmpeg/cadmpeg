@@ -1522,6 +1522,7 @@ fn fixed_kind_edge_and_revolve_operations(
             .expect("valid entity ID"),
 
         visibility: None,
+        display_name: None,
 
         class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 904,
@@ -1550,6 +1551,7 @@ fn fixed_kind_edge_and_revolve_operations(
             .unwrap(),
         ),
         planar_z_noise: None,
+        tail_marker: None,
     };
     let projected = crate::design::feature_project::project_fixed_revolve_with_entities(
         &indexed_revolve_scope,

@@ -20,23 +20,14 @@ pub(super) fn embedded_image_asset(
     let (Some(entry), None) = (entries.next(), entries.next()) else {
         return Ok(None);
     };
-    let media_type = std::path::Path::new(asset_name)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .and_then(|extension| {
-            if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
-                Some("image/jpeg")
-            } else if extension.eq_ignore_ascii_case("png") {
-                Some("image/png")
-            } else {
-                None
-            }
-        })
-        .map(str::to_owned);
+    let media_type = image_media_type(asset_name);
     if entry.attributes.contains_key("payload_error") {
         return Ok(None);
     }
     let bytes = scan.entry_bytes(&entry.name)?;
+    if bytes.is_empty() {
+        return Ok(None);
+    }
     // The asset keeps a decoded copy of the source image bytes.
     ctx.retain_bytes(u64_from_index(bytes.len()), "retain F3D embedded image")?;
     let data = bytes.to_vec();
@@ -55,6 +46,22 @@ pub(super) fn embedded_image_asset(
         )
         .map_err(CodecError::Malformed)?,
     ))
+}
+
+pub(super) fn image_media_type(asset_name: &str) -> Option<String> {
+    std::path::Path::new(asset_name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .and_then(|extension| {
+            if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
+                Some("image/jpeg")
+            } else if extension.eq_ignore_ascii_case("png") {
+                Some("image/png")
+            } else {
+                None
+            }
+        })
+        .map(str::to_owned)
 }
 
 /// Decode image scopes in their owning streams, ordered by native identity.
@@ -138,6 +145,28 @@ mod tests {
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                         && limit.operation == "retain F3D embedded image"
             ));
+        });
+    }
+
+    #[test]
+    fn empty_embedded_image_keeps_the_source_unresolved() {
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(
+            "FusionAssetName[Active]/Design1/Images.BlobParts/mark.png",
+            stored,
+        )
+        .unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        with_scan(&archive, |scan| {
+            assert!(super::embedded_image_asset(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                "mark.png"
+            )
+            .unwrap()
+            .is_none());
         });
     }
 

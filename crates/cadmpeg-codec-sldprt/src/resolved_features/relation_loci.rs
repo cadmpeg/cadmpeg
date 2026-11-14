@@ -4580,7 +4580,7 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
             };
             let candidates =
                 if let Some(sketch) = sketches.iter().find(|candidate| candidate.id == **sketch) {
-                    marker_transforms_with_frame_fallback(candidates, sketch, QUANTUM)
+                    marker_transforms_with_frame_fallback(candidates, sketch, QUANTUM, features)
                 } else {
                     candidates
                 };

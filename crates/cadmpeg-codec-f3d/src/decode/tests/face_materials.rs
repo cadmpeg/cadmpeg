@@ -312,10 +312,50 @@ fn apply_body_presentation_names_skips_ambiguous_bindings_in_same_stream() {
 
         let binding1 = make_body_binding(stream, 100, entity, body_id.as_str());
         let binding2 = make_body_binding(stream, 200, entity, body_id.as_str());
-        super::super::apply_body_presentation_names(&mut ir, scan, &[binding1, binding2]).unwrap();
+        let losses =
+            super::super::apply_body_presentation_names(&mut ir, scan, &[binding1, binding2])
+                .unwrap();
         assert_eq!(
             ir.model.bodies[0].name, None,
             "sole-pair check must skip ambiguous bindings"
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::BodyDisplayNameAmbiguous
+                .note("")
+                .code
+        );
+    });
+}
+
+#[test]
+fn apply_body_presentation_names_reports_loss_on_conflicting_body_names() {
+    let stream1 = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let stream2 = "FusionAssetName[Active]/FusionDesignSegmentType2/BulkStream.dat";
+    let entity = 42u64;
+    let archive = synthetic_two_stream_presentation_archive(
+        stream1, entity, "Bottom", stream2, entity, "Top",
+    );
+
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let mut ir = model();
+        let body_id = ir.model.bodies[0].id.clone();
+        ir.model.bodies[0].name = None;
+        ir.model.bodies[0].visible = Some(true);
+
+        let binding1 = make_body_binding(stream1, 100, entity, body_id.as_str());
+        let binding2 = make_body_binding(stream2, 200, entity, body_id.as_str());
+        let losses =
+            super::super::apply_body_presentation_names(&mut ir, scan, &[binding1, binding2])
+                .unwrap();
+        assert_eq!(ir.model.bodies[0].name, None);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::BodyDisplayNameAmbiguous
+                .note("")
+                .code
         );
     });
 }

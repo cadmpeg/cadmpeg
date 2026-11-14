@@ -264,9 +264,12 @@ pub(super) fn fixed_kind_tail_operations(
             body_group_record_index: 102,
             center_record_index: 105,
             center_position: None,
-            uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(1.5)
-                .expect("checked fixture value"),
-            uniform_factor_offset: u64_from_index(scale_at + 25),
+            further_body_group_record_indices: Vec::new(),
+            factors: crate::records::feature::body_ops::DesignScaleFactors::Uniform {
+                factor: cadmpeg_ir::scalar::PositiveReal::new(1.5).expect("checked fixture value"),
+                offset: u64_from_index(scale_at + 25),
+            },
+            matrix_offset: None,
         })
     );
 
@@ -539,9 +542,12 @@ pub(super) fn fixed_kind_tail_operations(
     {
         *slot = Some(
             crate::records::feature::direct_face::DesignThickenOperation {
-                signed_thickness: crate::test_support::real(-1.0),
+                signed_thickness: Some(crate::test_support::real(-1.0)),
                 thickness_record_index: 74,
-                thickness_offset: 40,
+                thickness_offset: Some(40),
+                symmetric: false,
+                tangent_chain: true,
+                ..Default::default()
             },
         );
     }
@@ -595,12 +601,11 @@ pub(super) fn fixed_kind_tail_operations(
     )
     .unwrap();
     assert!(matches!(
-        crate::design::feature_project::project_thicken(&thicken_scope, &[], std::slice::from_ref(&thicken_group)).unwrap(),
+        crate::design::feature_project::thicken::project_thicken(&thicken_scope, &[], std::slice::from_ref(&thicken_group), &mut Vec::new()),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Thicken {
             faces: cadmpeg_ir::features::FaceSelection::Native(native),
             thickness: Some(actual_thickness),
-            side: Some(cadmpeg_ir::features::ThickenSide::Reverse),
-        })) if (native == "thicken-group") && actual_thickness.get() == 10.0
+            side: Some(cadmpeg_ir::features::ThickenSide::Reverse), .. })) if (native == "thicken-group") && actual_thickness.get() == 10.0
     ));
     let mut bounded_face_thicken_group = thicken_group.clone();
     bounded_face_thicken_group.operand_role =
@@ -608,7 +613,7 @@ pub(super) fn fixed_kind_tail_operations(
             DesignOperandRole::ROLE_0X12,
         );
     assert!(matches!(
-        crate::design::feature_project::project_thicken(&thicken_scope, &[], std::slice::from_ref(&bounded_face_thicken_group)).unwrap(),
+        crate::design::feature_project::thicken::project_thicken(&thicken_scope, &[], std::slice::from_ref(&bounded_face_thicken_group), &mut Vec::new()),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Thicken {
             faces: cadmpeg_ir::features::FaceSelection::Native(native),
             ..

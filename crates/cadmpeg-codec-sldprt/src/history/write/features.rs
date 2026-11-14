@@ -196,6 +196,7 @@ pub(in crate::history) fn sync_neutral_features(
         feature_input_lanes: Vec::new(),
         pmi_dimensions: Vec::new(),
     });
+    let contradicted_travel = crate::history::extrude_direction::contradicted_features(model);
     let original_parameters = native
         .feature_histories
         .iter()
@@ -384,6 +385,7 @@ pub(in crate::history) fn sync_neutral_features(
             mut parameters,
             mut properties,
         } = NeutralFeatureEncoder {
+            contradicted_travel: contradicted_travel.contains(&feature.id),
             feature,
             existing: existing.as_deref(),
             principal_planes_by_record: &principal_planes_by_record,

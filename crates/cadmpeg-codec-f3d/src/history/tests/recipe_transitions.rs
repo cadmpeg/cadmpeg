@@ -295,6 +295,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         selector: 1,
         selector_offset: 1_411,
         token: token.into(),
+        token_integer: 0,
         token_offset: 1_415,
         design_reference,
         design_reference_offset: 1_420,
@@ -392,6 +393,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
                             entity_ref,
                             selector: 17,
                             token: token.into(),
+                            token_integer: 0,
                             design_references: vec![design_reference],
                             ordinal: 0,
                         }

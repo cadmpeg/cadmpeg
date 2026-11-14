@@ -117,7 +117,7 @@ pub(super) fn pattern_kind_has_unresolved_operands<
     pattern: &PatternKind<C>,
 ) -> bool {
     match pattern.definition() {
-        PatternTransform::Unresolved { .. } => true,
+        PatternTransform::Unresolved { .. } | PatternTransform::CurveDrivenPartial { .. } => true,
         PatternTransform::Linear { direction, .. }
         | PatternTransform::LinearOffsets { direction, .. } => direction.is_none(),
         PatternTransform::CurveDriven { path, .. } => {

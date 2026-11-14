@@ -3812,6 +3812,67 @@ Parsed by:
 | 96 | 8 | `start_param` | `f64` | big | spec | the profile's parameter at each as two more, low parameter first |
 | 104 | 8 | `end_param` | `f64` | big | spec | the profile's parameter at each as two more, low parameter first |
 
+## `compact_principal_plane_component`
+
+Spec §2 · layout: byte offsets · size: 138 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/compact_reference_planes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `source` | `u32` | little | spec | Its source identifier and selector are |
+| 8 | 2 | `reserved` | `bytes[2]` | little | spec | A principal-plane component record has the 138-byte extent |
+| 10 | 4 | `selector` | `u32` | little | spec | Its source identifier and selector are |
+| 14 | 1 | `matrix_present` | `u8` | little | spec | Its f64 matrix is row-major |
+| 15 | 72 | `basis` | `f64[9]` | little | spec | Its f64 matrix is row-major |
+| 87 | 24 | `translation` | `f64[3]` | little | spec | Its translation is zero |
+| 111 | 8 | `scale` | `f64` | little | spec | its homogeneous scale is `1` |
+| 119 | 3 | `trailer_reserved` | `bytes[3]` | little | spec | A principal-plane component record has the 138-byte extent |
+| 122 | 4 | `trailer_kind` | `u32` | little | spec | A principal-plane component record has the 138-byte extent |
+| 126 | 4 | `trailer_sentinel` | `u32` | little | spec | A principal-plane component record has the 138-byte extent |
+
+Unstated regions:
+
+- `4..8` (4 B): Opaque identity.
+- `130..138` (8 B): Opaque continuation.
+
+## `sketch_array_first_entry_prefix`
+
+Spec §2 · layout: byte offsets · size: 14 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/relation_table.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `count` | `u32` | little | spec | array count u32 at prefix +0 |
+| 4 | 2 | `external_reference` | `u16` | little | spec | external-reference flag u16 at prefix +4 |
+| 6 | 4 | `contour_ordinal` | `u32` | little | spec | contour ordinal u32 at prefix +6 |
+| 10 | 4 | `identifier` | `u32` | little | spec | identifier u32 at prefix +10 |
+
+## `extrusion_compact_operation_trailer`
+
+Spec §2 · layout: byte offsets · size: 40 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `zero_header` | `u32` | little | spec | followed by four zero bytes |
+| 4 | 2 | `family` | `u16` | little | spec | The family word establishes the operation family independently of a shared class token |
+| 6 | 1 | `operation` | `u8` | little | spec | a one-byte Boolean operation |
+| 7 | 1 | `schema` | `u8` | little | spec | one schema byte |
+| 8 | 4 | `object_id` | `u32` | little | spec | the repeated little-endian u32 object identifier |
+| 12 | 4 | `zero_after_object` | `u32` | little | spec | and four zero bytes |
+| 16 | 2 | `continuation_word` | `u16` | little | spec | a little-endian u16 continuation word |
+| 18 | 2 | `marker` | `u16` | little | spec | a u16 marker equal to `1` · value `1` |
+| 20 | 2 | `reference` | `u16` | little | spec | a short archive object reference in `1..0x7fff` |
+| 22 | 12 | `zero_after_reference` | `bytes[12]` | little | spec | twelve zero bytes, a nonzero u16 final token |
+| 34 | 2 | `final_token` | `u16` | little | spec | a nonzero u16 final token |
+| 36 | 4 | `zero_tail` | `bytes[4]` | little | spec | four zero tail bytes |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

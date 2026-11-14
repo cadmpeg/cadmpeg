@@ -76,6 +76,8 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
 
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }),
     ));
 
@@ -126,6 +128,8 @@ fn combine_preserves_tools_when_requested() {
 
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: true,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }),
     ));
 
@@ -156,6 +160,8 @@ fn combine_with_exact_local_tools_preserves_its_retained_target() {
 
             op: cadmpeg_ir::features::BooleanKind::Cut,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }),
     );
     combine.suppressed = None;
@@ -183,6 +189,8 @@ fn output_free_combine_with_exact_native_operands_is_local_to_history() {
 
             op: cadmpeg_ir::features::BooleanKind::Intersect,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }),
     );
     combine.suppressed = None;
@@ -511,6 +519,8 @@ fn combine_rejects_a_tool_absent_from_prior_history() {
 
             op: cadmpeg_ir::features::BooleanKind::Cut,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }),
     ));
 
@@ -719,11 +729,11 @@ fn complete_single_body_dress_up_families_preserve_identity() {
             faces: first.clone(),
             distance: Some(Length::new(0.1).unwrap()),
         }),
-        FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces: first.clone(),
-            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(0.3).unwrap()),
-            side: Some(ThickenSide::Forward),
-        }),
+        FeatureDefinition::Operation(FeatureOperation::thicken(
+            first.clone(),
+            Some(cadmpeg_ir::scalar::PositiveLength::new(0.3).unwrap()),
+            Some(ThickenSide::Forward),
+        )),
         FeatureDefinition::Operation(FeatureOperation::Draft {
             faces: first.clone(),
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {

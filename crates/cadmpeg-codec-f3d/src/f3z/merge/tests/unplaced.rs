@@ -63,7 +63,13 @@ fn an_omitted_nested_placement_keeps_an_unbound_joint_native_and_its_feature_val
         "external-member",
         Vec::new(),
     );
-    model.assembly_joints = vec![omitted, bound.clone(), external];
+    let mut partial = joint("partial", Vec::new());
+    partial.connectors_mut().next().unwrap().operand = JointOperand::external(
+        cadmpeg_ir::products::ExternalDocument::Missing {},
+        "f3d:Design/BulkStream.dat:design-record#10",
+        Vec::new(),
+    );
+    model.assembly_joints = vec![omitted, bound.clone(), external, partial.clone()];
     let mut unchanged = model.clone();
     let mut losses = Vec::new();
     super::super::omit_unbound_member_joints(
@@ -77,10 +83,7 @@ fn an_omitted_nested_placement_keeps_an_unbound_joint_native_and_its_feature_val
     let members = std::collections::BTreeSet::from([id.clone()]);
     let mut losses = Vec::new();
     super::super::omit_unbound_member_joints(&mut projected, &members, &mut losses);
-    assert_eq!(
-        projected.assembly_joints.as_slice(),
-        std::slice::from_ref(&bound)
-    );
+    assert_eq!(projected.assembly_joints.as_slice(), &[bound, partial]);
     assert!(matches!(
         projected.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })

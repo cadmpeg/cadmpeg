@@ -11,6 +11,34 @@ const HEADER: &str = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_
 const TAIL: &str = "ENDSEC;END-ISO-10303-21;";
 
 #[test]
+fn composite_aspect_walk_bounds_depth_and_terminates_cycles() {
+    let parents = BTreeMap::from([(1, BTreeSet::from([2])), (2, BTreeSet::from([1]))]);
+    for depth in [1, 2] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = depth;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root policy");
+        let mut output = BTreeSet::new();
+        let result = super::super::collect_composite_annotations(
+            1,
+            &parents,
+            &BTreeMap::new(),
+            &mut BTreeSet::new(),
+            &mut output,
+            &ctx,
+        );
+        if depth == 1 {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RecursionDepth
+                    && refusal.operation == "step_pmi_composite_aspect_walk"));
+        } else {
+            result.expect("cycle terminates within two levels");
+            assert!(output.is_empty());
+        }
+    }
+}
+
+#[test]
 fn pmi_modifier_walk_refuses_depth_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

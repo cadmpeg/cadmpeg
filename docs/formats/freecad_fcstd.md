@@ -382,9 +382,9 @@ retain their serialized root order as an occurrence discriminator; they do not s
 region, shell, face, loop, coedge, edge, vertex, or point identity.
 A body's kind is its topology's dimension. An edge occurrence in a shell is an edge shape at the
 location identity of its composed face, wire, and edge use locations, so one edge shape at two
-location identities is two occurrences. Each use of an edge occurrence by a face's wire is
+location identities is two occurrences. Each boundary use of an edge occurrence by a face's wire is
 forward or reversed by the composed orientation of its face, wire, and edge uses. A shell is
-closed when each non-degenerate edge occurrence of its faces' wires has as many forward as
+closed when each non-degenerate boundary edge occurrence has as many forward as
 reversed uses, and at least one of each. The closed flag (the fifth of the `free,
 modified, checked, orientable, closed, infinite, convex` flags) does not determine closure. A
 `Solid` whose children are all closed shells is a solid body. A `Solid` whose children are all
@@ -392,6 +392,14 @@ shells, with at least one open shell, is a sheet body. A `Solid` with no child o
 that is not a shell is a general body. A `Shell` or `Face` is a sheet and a `Wire` or `Edge` a
 wire. A `Compound` or `CompSolid` has the kind its member shapes share, so a compound that holds
 one closed solid is a solid body; members of different kinds make it a general body.
+
+`Forward` and `Reversed` wire and edge uses supply the face boundary incidence.
+An `Internal` or `External` use supplies non-boundary topology. A wire can contain both
+boundary and non-boundary edge uses. A seam can use the same edge twice with opposite orientations.
+CADIR decision: non-boundary edges transfer as shell wire geometry. An edge that also has boundary
+uses retains its boundary ownership. Repeated non-boundary uses share one shell wire edge. Their
+face incidence and native orientation remain in the native shape record, with
+`fcstd/topology.non-boundary-incidence-retained`.
 
 An edge endpoint accessor visits the edge's direct child uses in serialized order. Its endpoint
 incidence has exactly one `Forward` vertex use and exactly one `Reversed` vertex use: `Forward`

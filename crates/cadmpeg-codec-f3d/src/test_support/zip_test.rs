@@ -400,7 +400,7 @@ fn f3d_with_smbh_and_instance_properties_and_design(
     )
 }
 
-fn f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+pub(crate) fn f3d_with_smbh_and_instance_properties_and_design_with_metastream(
     smbh: &[u8],
     properties: &[Vec<u8>],
     design_bulk: &[u8],

@@ -331,6 +331,8 @@ pub(crate) struct AsmHistoricalPersistentSubentityTag {
     pub(crate) entity_ref: i64,
     pub(crate) selector: i64,
     pub(crate) token: String,
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
+    pub(crate) token_integer: u32,
     pub(crate) design_references: Vec<i64>,
     pub(crate) ordinal: u32,
 }
@@ -448,6 +450,8 @@ pub(crate) struct AsmHistoricalOptionalCarrierBinding {
 /// Forward change from the older `next_ref` neighbour, or empty on the tail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalTransition {
+    #[serde(skip)]
+    pub(crate) geometry_unchanged: bool,
     /// Older state identity; absent only at the end of the reverse-history chain.
     #[serde(
         default,

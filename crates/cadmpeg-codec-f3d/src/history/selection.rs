@@ -296,9 +296,20 @@ pub(super) fn bind_face_selection(
         return;
     };
     if native == &scope.id {
-        if let Some(resolved) =
-            crate::design::feature_project::direct_face_selection(scope, operands)
-        {
+        let selected =
+            |operand: &&crate::records::topology::face::DesignFaceOperand| match scope.payload() {
+                crate::records::feature::scope::DesignScopePayload::Thicken(Some(operation)) => {
+                    operation.group_record_indices.is_empty()
+                        || operand
+                            .group_record_index()
+                            .is_none_or(|index| operation.group_record_indices.contains(&index))
+                }
+                _ => true,
+            };
+        if let Some(resolved) = crate::design::feature_project::direct_face_selection(
+            scope,
+            operands.iter().filter(selected),
+        ) {
             if !matches!(resolved, cadmpeg_ir::features::FaceSelection::Native(_)) {
                 *selection = resolved;
             }
@@ -354,6 +365,19 @@ pub(super) fn bind_face_selection(
         if matches.next().is_some() {
             return;
         }
+        let termination = group.extrude_face_role()
+            == Some(
+                crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
+            );
+        if termination && !operand.resolved_face_slots.is_empty() {
+            for slot in &operand.resolved_face_slots {
+                let candidate = crate::ids::brep_face_id(*slot);
+                if !faces.contains(&candidate) {
+                    faces.push(candidate);
+                }
+            }
+            continue;
+        }
         let previous_candidates = &operand.preceding_candidate_faces;
         let candidate = match previous_candidates.as_slice() {
             [face] => face,
@@ -364,6 +388,21 @@ pub(super) fn bind_face_selection(
                 face
             }
         };
+        if termination {
+            let referenced: HashSet<_> = operand
+                .recipe_references
+                .iter()
+                .flat_map(|reference| {
+                    reference
+                        .candidate_faces
+                        .iter()
+                        .chain(&reference.alternate_selector_faces)
+                })
+                .collect();
+            if !referenced.is_empty() && !referenced.contains(candidate) {
+                return;
+            }
+        }
         if faces.contains(candidate) {
             continue;
         }
@@ -1150,6 +1189,7 @@ pub(crate) fn bind_mirror_selection_planes(
         };
         construction.plane = None;
         construction.assumed_plane_scope = None;
+        construction.construction_plane_scope = None;
         let (Some(selection_record_index), Some(state_id), Some(previous_state_id)) = (
             construction.plane_selection_record_index,
             history_state_id,
@@ -1216,6 +1256,12 @@ pub(crate) fn bind_mirror_selection_planes(
             let Some(stream) = stream.as_deref() else {
                 continue;
             };
+            let construction_plane_identity = operand.secondary().is_none()
+                && crate::design::decode::meta::is_construction_plane_entity(
+                    design_types,
+                    stream,
+                    operand.primary_identity,
+                );
             match crate::design::decode::meta::classify_origin_entity(
                 design_types,
                 stream,
@@ -1228,6 +1274,28 @@ pub(crate) fn bind_mirror_selection_planes(
                     crate::design::decode::meta::OriginEntity::Axis(_),
                 )
                 | crate::design::decode::meta::OriginClassification::Unknown => continue,
+                crate::design::decode::meta::OriginClassification::NotOrigin
+                    if construction_plane_identity =>
+                {
+                    let Some(scope_record_index) = u32::try_from(operand.primary_identity)
+                        .ok()
+                        .and_then(|identity| identity.checked_add(1))
+                        .filter(|next_record| {
+                            construction
+                                .plane_scope_record_index
+                                .is_none_or(|scope| scope.value == *next_record)
+                        })
+                    else {
+                        continue;
+                    };
+                    construction.construction_plane_scope = Some(
+                        crate::records::feature::mirror::DesignMirrorConstructionPlaneScope {
+                            scope_record_index,
+                            identity_offset: operand.primary_identity_offset(),
+                        },
+                    );
+                    continue;
+                }
                 crate::design::decode::meta::OriginClassification::NotOrigin => {
                     let persistent_candidates = if let Some(identity) = identity
                         .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
@@ -2488,4 +2556,85 @@ fn historical_identity_faces(
         faces.insert(face);
     }
     faces
+}
+
+pub(super) fn feature_selected_input_state_id(
+    feature: &cadmpeg_ir::features::Feature,
+) -> Option<i64> {
+    use cadmpeg_ir::features::{
+        BodySelection, EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation,
+    };
+    let parse_state = |state: &cadmpeg_ir::ids::FeatureInputTopologyId| {
+        state
+            .as_str()
+            .rsplit_once(':')
+            .and_then(|(_, s)| s.parse::<i64>().ok())
+    };
+    let op = match feature.evaluation.definition() {
+        FeatureDefinition::Operation(op) => op,
+        FeatureDefinition::PostProcess { operation, .. } => operation,
+    };
+    match op {
+        FeatureOperation::Fillet { groups } => {
+            for g in groups {
+                if let EdgeSelection::Historical { state, .. }
+                | EdgeSelection::HistoricalPartial { state, .. } = &g.edges
+                {
+                    if let Some(id) = parse_state(state) {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+        FeatureOperation::Chamfer { groups, .. } => {
+            for g in groups {
+                if let EdgeSelection::Historical { state, .. }
+                | EdgeSelection::HistoricalPartial { state, .. } = &g.edges
+                {
+                    if let Some(id) = parse_state(state) {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+        FeatureOperation::SplitBody {
+            targets:
+                BodySelection::Historical { state, .. } | BodySelection::HistoricalSet { state, .. },
+            ..
+        } => {
+            if let Some(id) = parse_state(state) {
+                return Some(id);
+            }
+        }
+        FeatureOperation::SplitFace {
+            targets: FaceSelection::Historical { state, .. },
+            ..
+        } => {
+            if let Some(id) = parse_state(state) {
+                return Some(id);
+            }
+        }
+        FeatureOperation::Shell {
+            removed_faces,
+            bodies,
+            ..
+        } => {
+            if let FaceSelection::Historical { state, .. } = removed_faces {
+                if let Some(id) = parse_state(state) {
+                    return Some(id);
+                }
+            }
+            if let Some(
+                BodySelection::Historical { state, .. }
+                | BodySelection::HistoricalSet { state, .. },
+            ) = bodies
+            {
+                if let Some(id) = parse_state(state) {
+                    return Some(id);
+                }
+            }
+        }
+        _ => {}
+    }
+    None
 }

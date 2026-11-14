@@ -29,6 +29,7 @@ use crate::F3dCodec;
 mod act_document_root;
 mod arithmetic;
 mod body_ownership;
+mod chamfer_sets;
 mod component_insert;
 mod component_occurrences;
 mod configurations;
@@ -66,6 +67,7 @@ fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
         selector: 1,
         selector_offset: 20,
         token: "3".into(),
+        token_integer: 0,
         token_offset: 28,
         design_reference: 329,
         design_reference_offset: 37,
@@ -146,12 +148,13 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
     if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(slot) =
         scope.payload_mut()
     {
-        *slot = Some(DesignComponentInsertConstruction {
+        slot.construction = Some(DesignComponentInsertConstruction {
             relation_record_index: 167,
             carrier_record_index: 166,
             occurrence_identity: Some(17),
             neutron_role: "cccccccc-dddd-eeee-ffff-000000000000".into(),
             neutron_role_offset: 259,
+            occurrence_key: None,
             placement: None,
         });
     }
@@ -191,7 +194,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
     if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(slot) =
         f3d_native_mut(&mut envelope_only).design_parameter_scopes[0].payload_mut()
     {
-        *slot = None;
+        slot.construction = None;
     }
     let findings = crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native(ctx, &envelope_only).unwrap()
@@ -598,7 +601,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
             scope.payload_mut()
         {
-            *slot = (!hole_scope).then_some(DesignCombineOperation {
+            slot.operation = (!hole_scope).then_some(DesignCombineOperation {
                 form: DesignCombineForm::Standard,
                 operation: cadmpeg_ir::features::BooleanKind::Join,
                 operation_offset: 0,
@@ -622,6 +625,8 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                     },
                     additional: vec![],
                 },
+
+                destination: Default::default(),
             });
         }
         scopes.push(scope);

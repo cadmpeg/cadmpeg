@@ -519,3 +519,39 @@ fn product_history_implicit_root_uses_archive_owner_until_release() {
         .iter()
         .all(|feature| feature.product_definition.is_none()));
 }
+
+#[test]
+fn unadmitted_output_membership_retains_every_output_and_releases_the_owner() {
+    let mut native = native();
+    let mut model = model(&native);
+    let owned: cadmpeg_ir::ids::BodyId = "f3d:brep/owned.smbh/brep:entity#1".try_into().unwrap();
+    let unadmitted: cadmpeg_ir::ids::BodyId =
+        "f3d:brep/unadmitted.smbh/brep:entity#1".try_into().unwrap();
+    model.product_definitions[0].bodies = vec![owned.clone()];
+    model.product_definitions[1].bodies = vec![unadmitted.clone()];
+    native.design_body_bindings.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:Design/BulkStream.dat:design-body-binding#1000",
+            "stream": "Design/BulkStream.dat",
+            "pair_count": 1, "pair_ordinal": 0,
+            "asm_body_key": 11, "asm_body_key_offset": 1000,
+            "entity_suffix": 900, "entity_suffix_offset": 1008,
+            "blob_name": "BREP.", "blob_name_offset": 1032,
+            "body": unadmitted,
+        }))
+        .unwrap(),
+    );
+    let outputs = vec![owned, unadmitted];
+    model.features[0]
+        .evaluation
+        .set_outputs(DistinctMembers::try_from(outputs.clone()).unwrap());
+    let mut losses = Vec::new();
+    attach(&native, &mut model, &mut losses).unwrap();
+    assert_eq!(model.features[0].evaluation.outputs(), outputs.as_slice());
+    assert!(model.features[0].product_definition.is_none());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::ScopeOutputOwnerUnresolved.kind()
+    );
+}

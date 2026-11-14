@@ -42,6 +42,73 @@ pub(crate) struct DesignSurfaceExtendOperation {
     pub(crate) tolerance_offset: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignSurfaceUntrimOperation {
+    pub(crate) loops: DesignSurfaceUntrimLoops,
+    pub(crate) loops_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_untrim_extension"
+    )]
+    pub(crate) extension: Option<FiniteReal>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_untrim_extension_offset"
+    )]
+    pub(crate) extension_offset: Option<u64>,
+    pub(crate) extension_record_index: u32,
+    pub(crate) face_group_record_index: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) loop_group_record_indices: Vec<u32>,
+    pub(crate) padded: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_untrim_trailing_identity"
+    )]
+    pub(crate) trailing_identity: Option<crate::records::mesh::DesignRelaxedGuidText>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_untrim_extension, FiniteReal, "extension");
+cadmpeg_core::named_optional_field!(deserialize_untrim_extension_offset, u64, "extension_offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_untrim_trailing_identity,
+    crate::records::mesh::DesignRelaxedGuidText,
+    "trailing_identity"
+);
+
+impl DesignSurfaceUntrimOperation {
+    pub(crate) fn new(
+        loops: DesignSurfaceUntrimLoops,
+        loops_offset: u64,
+        extension_record_index: u32,
+        face_group_record_index: u32,
+    ) -> Self {
+        Self {
+            loops,
+            loops_offset,
+            extension: None,
+            extension_offset: None,
+            extension_record_index,
+            face_group_record_index,
+            loop_group_record_indices: Vec::new(),
+            padded: true,
+            trailing_identity: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignSurfaceUntrimLoops {
+    All,
+    Internal,
+    External,
+    Manual,
+}
+
 /// Source selection form named by a `SurfaceOffset` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]

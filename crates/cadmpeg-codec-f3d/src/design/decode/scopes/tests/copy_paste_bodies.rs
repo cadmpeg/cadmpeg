@@ -80,3 +80,45 @@ fn generated_copy_paste_bodies_decode_parameter_scopes() {
         );
     });
 }
+
+#[test]
+fn a_prologue_zero_scope_reads_its_references_after_the_marker_word() {
+    let (mut bytes, _) =
+        crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+        &bytes, &records,
+    )
+    .unwrap()
+    .into_iter()
+    .find(|header| header.record_index == 1_400)
+    .unwrap();
+    let scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+        &bytes,
+        &records,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .unwrap()
+    .expect("scope");
+    let start = usize::try_from(header.byte_offset).unwrap();
+    let references = bytes[start + 29..start + 51].to_vec();
+    bytes[start + 20] = 0;
+    bytes[start + 21..start + 25].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[start + 25..start + 47].copy_from_slice(&references);
+    bytes[start + 47..start + 51].fill(0);
+    let decode = |bytes: &[u8]| {
+        crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
+            bytes, &records, &scope,
+        )
+    };
+    let operation = decode(&bytes).expect("prologue-zero CopyPasteBodies operation");
+    assert_eq!(operation.body_group_record_index, 1_500);
+    assert_eq!(operation.relation_record_index, 1_700);
+    for (at, value) in [(start + 21, 2), (start + 15, 7), (start + 20, 1)] {
+        let mut other = bytes.clone();
+        other[at] = value;
+        assert!(decode(&other).is_none(), "byte {at} = {value}");
+    }
+}

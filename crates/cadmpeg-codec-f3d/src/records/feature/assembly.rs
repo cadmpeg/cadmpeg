@@ -300,6 +300,7 @@ pub(crate) struct DesignAssemblyAlignment {
     /// How the two operand frames mate, when the scope stores it.
     pub(crate) frame_sense: Option<DesignJointFrameSense>,
     pub(crate) additional_owner_run: Option<DesignAssemblyOwnerRun>,
+    pub(crate) additional_tail_reference: Option<Located<u32>>,
     /// Members of a rigid group after the two in `form`, in scope order.
     pub(crate) additional_members: Vec<DesignQualifiedAssemblyOperand>,
 }
@@ -395,6 +396,7 @@ impl DesignAssemblyAlignment {
             form,
             frame_sense: None,
             additional_owner_run: None,
+            additional_tail_reference: None,
             additional_members: Vec::new(),
         })
     }
@@ -556,11 +558,23 @@ struct DesignAssemblyAlignmentSerde {
         deserialize_with = "deserialize_additional_owner_run"
     )]
     additional_owner_run: Option<DesignAssemblyOwnerRun>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_additional_tail_reference"
+    )]
+    additional_tail_reference: Option<Located<u32>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     additional_operand_frames: Vec<DesignAssemblyOperandFrame>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     additional_operand_qualifiers: Vec<DesignAssemblyOperandQualifier>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_additional_tail_reference,
+    Located<u32>,
+    "additional_tail_reference"
+);
 
 cadmpeg_core::named_optional_field!(
     deserialize_additional_owner_run,
@@ -637,13 +651,14 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
             .with_frame_sense(wire.frame_sense)
             .with_additional_members(additional_members)?;
         alignment.additional_owner_run = wire.additional_owner_run;
+        alignment.additional_tail_reference = wire.additional_tail_reference;
         Ok(alignment)
     }
 }
 
 impl Serialize for DesignAssemblyAlignment {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut record = serializer.serialize_struct("DesignAssemblyAlignmentSerde", 14)?;
+        let mut record = serializer.serialize_struct("DesignAssemblyAlignmentSerde", 15)?;
         record.serialize_field("angle", &self.angle.get())?;
         record.serialize_field("offset", &self.offset.map(FiniteReal::get))?;
         record.serialize_field("owner_record_indices", &OwnerRecordIndices(&self.owners))?;
@@ -725,6 +740,9 @@ impl Serialize for DesignAssemblyAlignment {
         }
         if let Some(run) = &self.additional_owner_run {
             record.serialize_field("additional_owner_run", run)?;
+        }
+        if let Some(reference) = &self.additional_tail_reference {
+            record.serialize_field("additional_tail_reference", reference)?;
         }
         if let Some(sense) = &self.frame_sense {
             record.serialize_field("frame_sense", sense)?;

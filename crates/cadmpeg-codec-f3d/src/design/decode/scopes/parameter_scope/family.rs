@@ -5,6 +5,18 @@ use crate::records::feature::scope::DesignFeatureKind;
 
 const FAMILIES: &[(&str, DesignFeatureKind)] = &[
     (
+        "EC187027-FF97-48A3-8031-F923807E630B",
+        DesignFeatureKind::Unfold,
+    ),
+    (
+        "483D584F-29AA-46DA-ABA2-F139B0ED8100",
+        DesignFeatureKind::Refold,
+    ),
+    (
+        "1CF7B9E3-5DB6-4F9D-A131-6DE7535BFF52",
+        DesignFeatureKind::Bend,
+    ),
+    (
         "359F7902-43B0-445C-8F4B-FED1D15B2680",
         DesignFeatureKind::Align,
     ),
@@ -189,6 +201,10 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         DesignFeatureKind::SurfaceDeleteFace,
     ),
     (
+        "8DA2F4A9-C420-419B-AD5D-9CC901DF0B78",
+        DesignFeatureKind::UnStitch,
+    ),
+    (
         "D2BCAE08-CF42-4316-865F-8ED1DFD548E4",
         DesignFeatureKind::SurfaceExtend,
     ),
@@ -207,6 +223,10 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
     (
         "FF1741AE-E78B-4A5F-8418-751899E12F66",
         DesignFeatureKind::SurfaceTrim,
+    ),
+    (
+        "4082E43B-D693-40D7-B44B-26800C9148DB",
+        DesignFeatureKind::SurfaceUntrim,
     ),
     (
         "FCBB1707-4450-46B3-9E65-0F61682EA8CA",
@@ -241,20 +261,38 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
 /// Type GUID that `CopyPaste` and `CutPaste` scopes share.
 const PASTE_TYPE: &str = "D57B1A22-9D5A-4D7D-A909-E08C579612CA";
 
-/// Offset of the reference table that ends the compact `CopyPaste` prefix of
-/// a scope of the shared paste type, which types the scope as `CopyPaste`
-/// whatever its stored name.
-pub(super) fn paste_prefix_table(guid: &str, bytes: &[u8], start: usize) -> Option<usize> {
+pub(super) fn paste_scope_prefix(
+    guid: &str,
+    bytes: &[u8],
+    start: usize,
+) -> Option<(usize, DesignFeatureKind)> {
     if !guid.eq_ignore_ascii_case(PASTE_TYPE) {
         return None;
     }
-    super::super::occurrence_transfer::compact_copy_paste_prefix(bytes, start)
-        .map(|prefix| prefix.table_at)
+    let copy = super::super::occurrence_transfer::copy_paste_prefix_table(bytes, start)
+        .map(|table_at| (table_at, DesignFeatureKind::CopyPaste));
+    let cut = super::super::occurrence_transfer::cut_paste_prefix_table(bytes, start)
+        .map(|table_at| (table_at, DesignFeatureKind::native("CutPaste")));
+    match (copy, cut) {
+        (Some(_), Some(_)) => None,
+        (Some(copy), None) => Some(copy),
+        (None, Some(cut)) => Some(cut),
+        (None, None) => None,
+    }
 }
 
 pub(super) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {
+    if guid.eq_ignore_ascii_case(super::super::position::TYPE_GUID) {
+        return Some(DesignFeatureKind::native("Position"));
+    }
     FAMILIES
         .iter()
         .find(|(registered, _)| registered.eq_ignore_ascii_case(guid))
         .map(|(_, kind)| kind.clone())
+        .or_else(|| {
+            crate::records::feature::mesh_face_groups::SCOPE_TYPES
+                .iter()
+                .find(|(registered, _, _)| registered.eq_ignore_ascii_case(guid))
+                .map(|(_, _, kind)| kind.clone())
+        })
 }

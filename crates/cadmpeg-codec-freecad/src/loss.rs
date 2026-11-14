@@ -113,6 +113,8 @@ pub(crate) enum FreecadLossCode {
     PcurveLocationAmbiguous,
     /// Native topology remains retained when location identity expansion reaches its local cap.
     TopologyLocationIdentityBounded,
+    /// Non-boundary edge geometry transfers with its face incidence retained natively.
+    TopologyNonBoundaryIncidenceRetained,
     /// Producer version metadata used an alias or conflicting declarations.
     ProgramVersionNoncanonical,
     /// Persistence version metadata used a lowercase alias.
@@ -171,6 +173,7 @@ impl FreecadLossCode {
         Self::PcurveNotTransferred,
         Self::PcurveLocationAmbiguous,
         Self::TopologyLocationIdentityBounded,
+        Self::TopologyNonBoundaryIncidenceRetained,
         Self::ProgramVersionNoncanonical,
         Self::FileVersionNoncanonical,
         Self::FileVersionUnverified,
@@ -233,6 +236,9 @@ impl FreecadLossCode {
             Self::PcurveNotTransferred => "pcurve.not-transferred",
             Self::PcurveLocationAmbiguous => "pcurve.location-ambiguous",
             Self::TopologyLocationIdentityBounded => "topology.location-identity-bounded",
+            Self::TopologyNonBoundaryIncidenceRetained => {
+                "topology.non-boundary-incidence-retained"
+            }
             Self::ProgramVersionNoncanonical => "metadata.program-version-noncanonical",
             Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
             Self::FileVersionUnverified => "metadata.file-version-unverified",
@@ -288,6 +294,7 @@ impl FreecadLossCode {
             | Self::SourceGuiMetadataUnresolved
             | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred
+            | Self::TopologyNonBoundaryIncidenceRetained
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified
@@ -336,7 +343,8 @@ impl FreecadLossCode {
             | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred
             | Self::PcurveLocationAmbiguous
-            | Self::TopologyLocationIdentityBounded => LossTaxonomy::RecordNotTyped,
+            | Self::TopologyLocationIdentityBounded
+            | Self::TopologyNonBoundaryIncidenceRetained => LossTaxonomy::RecordNotTyped,
             Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::PersistenceCountNoncanonical
@@ -428,6 +436,7 @@ mod tests {
                 "pcurve.not-transferred",
                 "pcurve.location-ambiguous",
                 "topology.location-identity-bounded",
+                "topology.non-boundary-incidence-retained",
                 "metadata.program-version-noncanonical",
                 "metadata.file-version-noncanonical",
                 "metadata.file-version-unverified",

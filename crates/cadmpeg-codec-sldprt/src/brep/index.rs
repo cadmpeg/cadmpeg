@@ -203,6 +203,20 @@ impl CarrierIndex {
         })
     }
 
+    pub(super) fn exact_swept_support(
+        &self,
+        attr: u32,
+    ) -> Option<(&sweep::SweepCarrier, &CurveCarrier)> {
+        let sweep = self.sweep(attr)?;
+        if !sweep.positive_sense || !matches!(sweep.kind, sweep::SweepKind::Swept { .. }) {
+            return None;
+        }
+        let IndexedCurve::Exact(profile) = self.curve(sweep.profile_attr)? else {
+            return None;
+        };
+        sweep::native_profile_parameters(&profile.geometry).then_some((sweep, profile))
+    }
+
     /// The offset `attr` of a surface carrier as an `SP_CURVE` support.
     pub(super) fn offset_support(&self, attr: u32) -> Option<sp_curve::OffsetSupport> {
         let offset = self.offsets.get(&attr)?;
@@ -227,14 +241,53 @@ impl CarrierIndex {
         if self.surface_category_ambiguous(attr) {
             None
         } else {
-            self.offsets
-                .get(&attr)
-                .filter(|carrier| carrier.transferable)
+            self.offsets.get(&attr).filter(|carrier| {
+                carrier.transferable
+                    && (!carrier.unchecked || self.offset_support_is_typed(carrier.support))
+            })
         }
     }
 
+    fn offset_support_is_typed(&self, mut attr: u32) -> bool {
+        for _ in 0..=self.offsets.len() {
+            if self.surface(attr).is_some() {
+                return true;
+            }
+            if self.sweep(attr).is_some() {
+                return self.exact_swept_support(attr).is_some();
+            }
+            if self.surface_category_ambiguous(attr) {
+                return false;
+            }
+            let Some(offset) = self.offsets.get(&attr).filter(|offset| offset.transferable) else {
+                return false;
+            };
+            attr = offset.support;
+        }
+        false
+    }
+
+    pub(super) fn closed_offset_surface(&self, attr: u32) -> bool {
+        let Some(offset) = self.offset(attr) else {
+            return false;
+        };
+        let mut support = offset.support;
+        for _ in 0..=self.offsets.len() {
+            if let Some(surface) = self.surface(support) {
+                return matches!(surface.geometry.solved(), Some(
+                    cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(nurbs)
+                ) if nurbs.u_periodic() && nurbs.v_periodic());
+            }
+            let Some(offset) = self.offset(support) else {
+                return false;
+            };
+            support = offset.support;
+        }
+        false
+    }
+
     pub(super) fn has_unvalidated_offset(&self) -> bool {
-        self.offsets.values().any(|carrier| !carrier.transferable)
+        self.offsets.keys().any(|attr| self.offset(*attr).is_none())
     }
 
     /// Zero-offset surface pair carried by `attr`.
@@ -1323,5 +1376,117 @@ mod tests {
         let mut both = near.to_vec();
         both.extend_from_slice(&far);
         assert!(foot(&both).is_none_or(|other| other.distance(on_face) > 1.0e-3));
+    }
+    #[test]
+    fn unchecked_offset_graph_admission_requires_typed_acyclic_supports() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut index = super::scan_carriers(&ctx, &authored_surface(0x32, 23)).unwrap();
+        let offset = |support| super::offset::OffsetCarrier {
+            support,
+            distance: cadmpeg_ir::scalar::FiniteReal::new(2.5).unwrap(),
+            offset: 0,
+            transferable: true,
+            unchecked: true,
+        };
+        index.offsets.insert(73, offset(74));
+        assert!(index.offset(73).is_none());
+        assert!(index.has_unvalidated_offset());
+        index.offsets.insert(74, offset(23));
+        assert!(index.offset(73).is_some());
+        assert!(!index.has_unvalidated_offset());
+        index.offsets.get_mut(&74).unwrap().support = 73;
+        assert!(index.offset(73).is_none());
+        assert!(index.has_unvalidated_offset());
+        index.offsets.get_mut(&74).unwrap().support = 23;
+        index.offsets.get_mut(&74).unwrap().transferable = false;
+        assert!(index.offset(73).is_none());
+        index.offsets.get_mut(&74).unwrap().transferable = true;
+        index.merge_missing(super::scan_carriers(&ctx, &authored_surface(0x43, 23)).unwrap());
+        assert!(index.offset(73).is_none());
+        assert!(index.has_unvalidated_offset());
+    }
+    #[test]
+    fn a_whole_offset_requires_both_periodic_support_directions() {
+        use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+        let circle = [
+            (1.0, 0.0),
+            (1.0, 1.0),
+            (0.0, 1.0),
+            (-1.0, 1.0),
+            (-1.0, 0.0),
+            (-1.0, -1.0),
+            (0.0, -1.0),
+            (1.0, -1.0),
+            (1.0, 0.0),
+        ];
+        let knots = vec![
+            0.0, 0.0, 0.0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75, 1.0, 1.0, 1.0,
+        ];
+        for u_periodic in [false, true] {
+            for v_periodic in [false, true] {
+                let mut index = CarrierIndex::default();
+                let rows = circle
+                    .iter()
+                    .map(|(x, y)| {
+                        circle
+                            .iter()
+                            .map(|(r, z)| {
+                                cadmpeg_ir::math::Point3::new(
+                                    (8.0 + 2.0 * r) * x,
+                                    (8.0 + 2.0 * r) * y,
+                                    2.0 * z,
+                                )
+                            })
+                            .collect()
+                    })
+                    .collect();
+                let weights = (0..9)
+                    .map(|u| {
+                        (0..9)
+                            .map(|v| {
+                                let weight = |i| {
+                                    if i % 2 == 0 {
+                                        1.0
+                                    } else {
+                                        std::f64::consts::FRAC_1_SQRT_2
+                                    }
+                                };
+                                weight(u) * weight(v)
+                            })
+                            .collect()
+                    })
+                    .collect();
+                let nurbs = NurbsSurface::from_lanes(
+                    NurbsSurfaceAxis::new(2, knots.clone(), u_periodic),
+                    NurbsSurfaceAxis::new(2, knots.clone(), v_periodic),
+                    NurbsSurfaceLanes::new(rows, Some(weights)),
+                    false,
+                )
+                .unwrap();
+                index.insert(super::Carrier::Surface(super::SurfaceCarrier {
+                    attr: 20,
+                    offset: 0,
+                    end: 0,
+                    orientation_reversed: false,
+                    marker_reversed: false,
+                    geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(nurbs),
+                    ),
+                }));
+                index.offsets.insert(
+                    3,
+                    super::offset::OffsetCarrier {
+                        support: 20,
+                        distance: cadmpeg_ir::scalar::FiniteReal::new(0.25).unwrap(),
+                        offset: 0,
+                        transferable: true,
+                        unchecked: true,
+                    },
+                );
+                assert_eq!(index.closed_offset_surface(3), u_periodic && v_periodic);
+                index.offsets.get_mut(&3).unwrap().support = 3;
+                assert!(!index.closed_offset_surface(3));
+            }
+        }
     }
 }

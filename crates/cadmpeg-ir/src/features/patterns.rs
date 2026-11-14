@@ -8,9 +8,13 @@ use super::{
 use crate::ids::OccurrenceId;
 use crate::scalar::{Angle, Length, PositiveAngle, PositiveLength, PositiveReal};
 use crate::units::UnitVector3;
+use curve_driven::CurveDrivenPatternParameters;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+#[doc = "Independently decoded curve-driven pattern parameters."]
+pub mod curve_driven;
 
 /// One geometric selection repeated or reflected by a pattern operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -22,6 +26,8 @@ use serde::{Deserialize, Serialize};
     deny_unknown_fields
 )]
 pub enum PatternSeed {
+    #[doc = "Source-native seed selection whose entity kind remains unresolved."]
+    Native(String),
     /// Complete result of a preceding construction-history feature.
     Feature(FeatureId),
     /// Selected faces, including faces in an intermediate regenerated result.
@@ -196,6 +202,15 @@ impl<C: CompositeStages> PatternKind<C> {
                     ));
                 }
             }
+            PatternTransform::CurveDrivenPartial { parameters } => {
+                for length in [&mut parameters.spacing, &mut parameters.distance]
+                    .into_iter()
+                    .flatten()
+                {
+                    edit(PatternLengthField::PositiveLength(length))
+                        .map_err(PatternLengthEditError::Field)?;
+                }
+            }
             PatternTransform::CurveDriven { spacing, .. } => {
                 edit(PatternLengthField::PositiveLength(spacing))
                     .map_err(PatternLengthEditError::Field)?;
@@ -310,6 +325,12 @@ impl<C> PatternKind<C> {
             PatternTransform::CurveDriven { count, .. } => {
                 require(*count > 0, "pattern count must be positive")?;
             }
+            PatternTransform::CurveDrivenPartial { parameters } => {
+                require(
+                    parameters.count != Some(0),
+                    "pattern count must be positive",
+                )?;
+            }
             PatternTransform::Mirror { .. } => {}
             PatternTransform::MirrorReference {
                 plane: FaceSelection::Native(reference),
@@ -352,6 +373,9 @@ impl<C> PatternKind<C> {
             PatternTransform::Circular { count, .. }
             | PatternTransform::CurveDriven { count, .. }
             | PatternTransform::Scale { count, .. } => usize::try_from(*count).ok(),
+            PatternTransform::CurveDrivenPartial { parameters } => parameters
+                .count
+                .and_then(|count| usize::try_from(count).ok()),
             PatternTransform::CircularAngles { angles, .. } => Some(angles.len()),
             PatternTransform::Mirror { .. } | PatternTransform::MirrorReference { .. } => Some(2),
             PatternTransform::Unresolved { .. } => None,
@@ -380,13 +404,17 @@ impl<C> PatternKind<C> {
     pub fn curve_path_mut(&mut self) -> Option<&mut Option<PathRef>> {
         match &mut self.0 {
             PatternTransform::CurveDriven { path, .. } => Some(path),
+            PatternTransform::CurveDrivenPartial { parameters } => Some(&mut parameters.path),
             _ => None,
         }
     }
 
     /// Returns whether the pattern form lacks its required operands.
     pub const fn is_unresolved(&self) -> bool {
-        matches!(self.0, PatternTransform::Unresolved { .. })
+        matches!(
+            self.0,
+            PatternTransform::Unresolved { .. } | PatternTransform::CurveDrivenPartial { .. }
+        )
     }
 }
 
@@ -395,6 +423,9 @@ impl PatternTransform<NoNestedComposite> {
     #[must_use]
     pub fn widen<C>(self) -> PatternTransform<C> {
         match self {
+            Self::CurveDrivenPartial { parameters } => {
+                PatternTransform::CurveDrivenPartial { parameters }
+            }
             Self::Unresolved { form } => PatternTransform::Unresolved { form },
             Self::Linear {
                 direction,
@@ -496,6 +527,11 @@ pub enum PatternForm {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PatternTransform<C = CompositePattern> {
+    #[doc = "Curve-driven pattern with independently retained placement parameters."]
+    CurveDrivenPartial {
+        #[doc = "Decoded parameters and controls, including unresolved slots."]
+        parameters: CurveDrivenPatternParameters,
+    },
     /// Pattern construction that is not resolved; `form` names it when the
     /// source identified one.
     Unresolved {
@@ -726,6 +762,9 @@ fn composite_composition_is_valid(stages: &[crate::features::patterns::PatternSt
 
 fn primary_occurrence_count<C>(pattern: &PatternTransform<C>) -> Option<usize> {
     match pattern {
+        PatternTransform::CurveDrivenPartial { parameters } => parameters
+            .count
+            .and_then(|count| usize::try_from(count).ok()),
         PatternTransform::Linear { count, .. }
         | PatternTransform::Circular { count, .. }
         | PatternTransform::CurveDriven { count, .. }

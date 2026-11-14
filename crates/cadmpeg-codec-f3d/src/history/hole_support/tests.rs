@@ -124,6 +124,7 @@ impl Drill {
             }));
         }
         AsmHistoricalTransition {
+            geometry_unchanged: false,
             previous_state_id: Some(1),
             records: AsmHistoricalEntityDelta::default(),
             topology: AsmHistoricalTopologyDelta {

@@ -200,6 +200,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
         features_by_id.entry(feature.id.as_str()).or_insert(feature);
     }
     let mut terminations = HashMap::<String, Vec<Option<TerminationVote>>>::new();
+    let mut start_conditions =
+        HashMap::<String, Vec<super::extrusion_start::StartCondition>>::new();
     for lane in lanes {
         let mut names_by_id = HashMap::new();
         for name in &lane.names {
@@ -303,6 +305,14 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 .get(end_index)
                 .and_then(|object| usize::try_from(object.0).ok())
                 .unwrap_or(lane.native_payload.len());
+            if let Some(condition) =
+                super::extrusion_start::object_condition(&lane.native_payload, start..end)
+            {
+                start_conditions
+                    .entry(feature_id.clone())
+                    .or_default()
+                    .push(condition);
+            }
             let lane_key = lane
                 .id
                 .rsplit_once('#')
@@ -433,6 +443,15 @@ pub(crate) fn enrich_history_extrusion_terminations(
         .iter_mut()
         .flat_map(|history| &mut history.features)
     {
+        if let Some(conditions) = start_conditions.get(&feature.id) {
+            if !feature
+                .properties
+                .contains_key(super::extrusion_start::START_CONDITION)
+            {
+                let condition = super::extrusion_start::common_condition(conditions);
+                super::extrusion_start::insert_condition(&mut feature.properties, condition)?;
+            }
+        }
         if feature.properties.contains_key("EndCondition") {
             continue;
         }

@@ -48,6 +48,12 @@ pub(crate) enum DesignExtrudeExtent {
     TwoSidedThroughAll,
     /// Travel a fixed distance on the first side and to a selected face on the second side.
     TwoSidedDistanceToFace,
+    TwoSidedDistanceToFaceControlOne,
+    TwoSidedDistanceThroughAll,
+    TwoSidedTargetToDistanceOptionZero,
+    TwoSidedToTargetsOptionZero,
+    TwoSidedToTargetsOptionTwo,
+    TwoSidedThroughAllToFace,
     /// Travel one fixed total distance symmetrically around the profile plane.
     SymmetricDistance,
     /// Travel symmetrically through all material on both sides of the profile plane.
@@ -79,6 +85,7 @@ pub(crate) enum DesignExtrudeStart {
 pub(crate) struct DesignExtrudePrologueReference {
     /// Referenced Design record.
     pub(crate) record_index: u32,
+    pub(crate) type_guid: Option<DesignExtrudeReferenceType>,
     /// Byte offset of `record_index`.
     pub(crate) record_index_offset: u64,
     /// Number of zero bytes between `record_index` and the operation or its marker.
@@ -88,9 +95,27 @@ pub(crate) struct DesignExtrudePrologueReference {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum DesignExtrudeReferenceType {
+    #[serde(rename = "2CA5A1CD-C99B-4C9B-91AF-57989148E841")]
+    ConstructionGroup,
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_type_guid,
+    DesignExtrudeReferenceType,
+    "type_guid"
+);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 struct DesignExtrudePrologueReferenceWire {
     /// Referenced Design record.
     record_index: u32,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_type_guid"
+    )]
+    type_guid: Option<DesignExtrudeReferenceType>,
     /// Byte offset of `record_index`.
     record_index_offset: u64,
     /// Number of zero bytes between `record_index` and the operation or its marker.
@@ -116,6 +141,7 @@ impl TryFrom<DesignExtrudePrologueReferenceWire> for DesignExtrudePrologueRefere
     fn try_from(wire: DesignExtrudePrologueReferenceWire) -> Result<Self, Self::Error> {
         Ok(Self {
             record_index: wire.record_index,
+            type_guid: wire.type_guid,
             record_index_offset: wire.record_index_offset,
             trailing_zero_count: wire.trailing_zero_count,
             operation_prefix_marker_offset: match (wire.operation_prefix_marker, wire.operation_prefix_marker_offset) {
@@ -131,6 +157,7 @@ impl From<DesignExtrudePrologueReference> for DesignExtrudePrologueReferenceWire
     fn from(record: DesignExtrudePrologueReference) -> Self {
         Self {
             record_index: record.record_index,
+            type_guid: record.type_guid,
             record_index_offset: record.record_index_offset,
             trailing_zero_count: record.trailing_zero_count,
             operation_prefix_marker: record.operation_prefix_marker_offset.map(|_| 1),

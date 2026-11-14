@@ -79,6 +79,7 @@ fn inside_shell() -> State {
 
 fn transition(updated: &[i64], deleted: &[i64]) -> AsmHistoricalTransition {
     AsmHistoricalTransition {
+        geometry_unchanged: false,
         previous_state_id: Some(3),
         records: AsmHistoricalEntityDelta::default(),
         topology: AsmHistoricalTopologyDelta {

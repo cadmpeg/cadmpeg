@@ -34,6 +34,8 @@ macro_rules! geometric {
     };
 }
 
+pub(super) mod member_loop_union;
+
 /// Radians between the departure tangents of two arrangement edges at one
 /// node that leave in the same direction.
 const ARRANGEMENT_TANGENT_TOLERANCE: f64 = 1.0e-9;
@@ -43,7 +45,7 @@ const ARRANGEMENT_CURVATURE_TOLERANCE: f64 = 1.0e-12;
 
 /// Local work cap for arrangement edge retention walks, shared by every walk
 /// of one decode. An exhausted cap skips the arrangement.
-pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 1_000_000;
+pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 50_000_000;
 
 /// Local cap on the certified tubes of one NURBS span. A span that needs
 /// more skips the certification that uses it.
@@ -465,6 +467,34 @@ impl ArrangementRing {
         })
     }
 
+    /// The ring that remains when the curves in `unnamed` are removed from
+    /// every fragment. A fragment keeps its curve and traversal direction
+    /// when that curve is named; otherwise its first named coincident curve
+    /// takes its place. `None` when a fragment has no named curve.
+    fn without_unnamed(
+        &self,
+        unnamed: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+    ) -> Option<std::borrow::Cow<'_, Self>> {
+        if unnamed.is_empty() || !self.curves().any(|entity| unnamed.contains(entity)) {
+            return Some(std::borrow::Cow::Borrowed(self));
+        }
+        let mut fragments = Vec::with_capacity(self.fragments.len());
+        for fragment in &self.fragments {
+            let mut named = std::iter::once(&fragment.curve)
+                .chain(&fragment.coincident)
+                .filter(|use_| !unnamed.contains(&use_.entity))
+                .cloned();
+            fragments.push(ArrangementFragment {
+                curve: named.next()?,
+                coincident: named.collect(),
+            });
+        }
+        Some(std::borrow::Cow::Owned(Self {
+            boundary: self.boundary.clone(),
+            fragments,
+        }))
+    }
+
     /// The number of fragments with a coincident curve.
     fn shared_fragments(&self) -> usize {
         self.fragments
@@ -728,6 +758,7 @@ pub(super) fn arrangement_regions_matching_member_rings(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     rings: &[Vec<cadmpeg_ir::sketches::SketchEntityUse>],
+    unnamed: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
     tolerance: f64,
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
@@ -740,15 +771,23 @@ pub(super) fn arrangement_regions_matching_member_rings(
     )?);
     let mut candidates = Vec::new();
     for (index, face) in faces.iter().enumerate() {
-        candidates.push((index, None, &face.ring, face.ring.curves().count()));
+        if let Some(ring) = face.ring.without_unnamed(unnamed) {
+            let curves = ring.curves().count();
+            candidates.push((index, None, ring, curves));
+        }
         for (hole, ring) in face.holes.iter().flatten().enumerate() {
-            candidates.push((index, Some(hole), ring, ring.curves().count()));
+            if let Some(ring) = ring.without_unnamed(unnamed) {
+                let curves = ring.curves().count();
+                candidates.push((index, Some(hole), ring, curves));
+            }
         }
     }
     let mut outers = Vec::new();
     let mut holes = Vec::new();
     let mut coincident = false;
+    let mut identity_unique = true;
     for members in rings {
+        let mut identity_matches = 0usize;
         let mut found = None;
         for (index, hole, ring, curves) in &candidates {
             if *curves != members.len() {
@@ -763,7 +802,9 @@ pub(super) fn arrangement_regions_matching_member_rings(
                 work.arrangement_skipped.set(true);
                 return Ok(None);
             }
-            coincident |= ring.shared_fragments() != 0 && ring.has_curves(members);
+            let has_curves = ring.has_curves(members);
+            identity_matches += usize::from(has_curves);
+            coincident |= ring.shared_fragments() != 0 && has_curves;
             if !ring.matches_members(members) {
                 continue;
             }
@@ -772,6 +813,7 @@ pub(super) fn arrangement_regions_matching_member_rings(
             }
             found = Some((*index, *hole));
         }
+        identity_unique &= identity_matches == 1;
         let (face, hole) = geometric!(found);
         match hole {
             None if !outers.contains(&face) => outers.push(face),
@@ -806,6 +848,7 @@ pub(super) fn arrangement_regions_matching_member_rings(
         ));
     }
     Ok(Some(MemberRingRegions {
+        identity_unique,
         regions,
         coincident,
         island_absence,
@@ -814,10 +857,9 @@ pub(super) fn arrangement_regions_matching_member_rings(
 
 /// The regions that counted member rings select.
 pub(super) struct MemberRingRegions {
+    pub(super) identity_unique: bool,
     pub(super) regions: Vec<cadmpeg_ir::features::SketchProfileRegion>,
-    /// Whether a ring with an edge of coincident curves has the curves of a
-    /// member list, so that the member flags of that edge decided the
-    /// selection.
+    /// Keep coincident-edge matches for the selection loss policy.
     pub(super) coincident: bool,
     /// Whether a curve outside the arrangement can lie inside a selected
     /// face, so that its region assumes that the curve makes no island in it.
@@ -5072,6 +5114,7 @@ pub(super) fn closed_sketch_profiles(
                         break;
                     }
                 }
+                retain_profile_cycle_edges(&mut pruned, &edge_nodes, endpoints.len(), ctx)?;
                 let mut b_profiles: Vec<Vec<SketchEntityUse>> = Vec::new();
                 for profile in
                     branched_line_profiles(&pruned, &edges, &edge_nodes, linear_tolerance)
@@ -5217,6 +5260,66 @@ pub(super) fn closed_sketch_profiles(
         profiles,
         unprofiled: unprofiled_notes,
     })
+}
+
+fn retain_profile_cycle_edges(
+    component: &mut Vec<usize>,
+    edge_nodes: &[[usize; 2]],
+    node_count: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let mut adjacency = HashMap::<usize, Vec<(usize, usize)>>::new();
+    for &edge in component.iter() {
+        let [start, end] = edge_nodes[edge];
+        adjacency.entry(start).or_default().push((end, edge));
+        adjacency.entry(end).or_default().push((start, edge));
+    }
+    let mut discovery = ctx.alloc_filled(node_count, None, "f3d profile discovery order")?;
+    let mut low = ctx.alloc_filled(node_count, 0usize, "f3d profile low links")?;
+    let mut parents = HashMap::new();
+    let mut bridges = HashSet::new();
+    let mut ordinal = 0usize;
+    for &edge in component.iter() {
+        let root = edge_nodes[edge][0];
+        if discovery[root].is_some() {
+            continue;
+        }
+        discovery[root] = Some(ordinal);
+        low[root] = ordinal;
+        ordinal += 1;
+        let mut pending = vec![(root, 0usize)];
+        while let Some((node, cursor)) = pending.last_mut() {
+            let node = *node;
+            if let Some(&(next, next_edge)) = adjacency[&node].get(*cursor) {
+                *cursor += 1;
+                if parents
+                    .get(&node)
+                    .is_some_and(|&(_, edge)| edge == next_edge)
+                {
+                    continue;
+                }
+                if let Some(order) = discovery[next] {
+                    low[node] = low[node].min(order);
+                } else {
+                    parents.insert(next, (node, next_edge));
+                    discovery[next] = Some(ordinal);
+                    low[next] = ordinal;
+                    ordinal += 1;
+                    pending.push((next, 0));
+                }
+            } else {
+                pending.pop();
+                if let Some(&(parent, edge)) = parents.get(&node) {
+                    if discovery[parent].is_some_and(|order| low[node] > order) {
+                        bridges.insert(edge);
+                    }
+                    low[parent] = low[parent].min(low[node]);
+                }
+            }
+        }
+    }
+    component.retain(|edge| !bridges.contains(edge));
+    Ok(())
 }
 
 /// Direction and signed curvature of a half-edge where it leaves its start node.

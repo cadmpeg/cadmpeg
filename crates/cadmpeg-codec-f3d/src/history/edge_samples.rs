@@ -13,7 +13,7 @@ pub(super) fn historical_edge_samples(
     let curves = brep
         .curves
         .iter()
-        .map(|curve| (curve.id.as_str(), &curve.geometry))
+        .map(|curve| (curve.id.as_str(), curve))
         .collect::<HashMap<_, _>>();
     let mut samples = Vec::new();
     for edge in &brep.edges {
@@ -21,14 +21,16 @@ pub(super) fn historical_edge_samples(
         else {
             continue;
         };
-        let Some(geometry) = edge
-            .curve()
-            .and_then(|curve| curves.get(curve.as_str()))
-            .and_then(|geometry| geometry.solved())
-        else {
+        let Some(curve) = edge.curve().and_then(|curve| curves.get(curve.as_str())) else {
             continue;
         };
         let Some(edge_ref) = super::stable_ref(edge.id.as_str()) else {
+            continue;
+        };
+        let Some(geometry) = curve.geometry.solved() else {
+            if let Some(sample) = helix_sample(brep, curve, edge_ref, [start, end])? {
+                samples.push(sample);
+            }
             continue;
         };
         let parameter = 0.5 * start + 0.5 * end;
@@ -57,6 +59,57 @@ pub(super) fn historical_edge_samples(
     }
     samples.sort_by_key(|sample| sample.edge);
     Ok(samples)
+}
+
+fn helix_sample(
+    brep: &cadmpeg_asm::brep::AsmBrep,
+    curve: &cadmpeg_ir::geometry::Curve,
+    edge: i64,
+    [start, end]: [f64; 2],
+) -> Result<
+    Option<crate::history_records::AsmHistoricalEdgeSample>,
+    cadmpeg_core::decode::ResourceLimit,
+> {
+    let Some(construction) = curve.geometry.procedural_construction() else {
+        return Ok(None);
+    };
+    let mut definitions = brep
+        .procedural_curves
+        .iter()
+        .filter(|(owner, definition)| *owner == curve.id && definition.id == *construction);
+    let Some((_, definition)) = definitions.next().filter(|_| definitions.next().is_none()) else {
+        return Ok(None);
+    };
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix) = definition.definition()
+    else {
+        return Ok(None);
+    };
+    let [low, high] = helix
+        .angle_range()
+        .finite_components()
+        .map(cadmpeg_ir::scalar::FiniteReal::get);
+    if start.min(end) < low || start.max(end) > high {
+        return Ok(None);
+    }
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.curves.push(curve.clone());
+    ir.model.procedural_curves.push(definition.clone());
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir);
+    let Some(interior) = finite_or_refusal(cadmpeg_ir::eval::model_curve_point_by_id(
+        EvaluationAdmission::Standard,
+        &index,
+        &curve.id,
+        0.5 * start + 0.5 * end,
+    ))?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(crate::history_records::AsmHistoricalEdgeSample {
+        edge,
+        interior: interior.get(),
+        tangent: None,
+        bounds: None,
+    }))
 }
 
 fn sampled_bounds(
@@ -175,5 +228,80 @@ mod tests {
         assert_eq!(samples.len(), 1);
         assert_eq!(samples[0].interior, Point3::new(2., 0., 0.));
         assert!(samples[0].bounds.is_none());
+    }
+
+    #[test]
+    fn cacheless_helix_samples_use_the_stored_edge_interval() {
+        use cadmpeg_ir::geometry::{
+            Curve, CurveGeometry, HelixCurveConstruction, HelixFrame, ProceduralCurve,
+            ProceduralCurveDefinition,
+        };
+        use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, VertexId};
+        use cadmpeg_ir::math::Vector3;
+        use cadmpeg_ir::topology::{Edge, EdgeCarrier};
+
+        let curve = CurveId::mint("f3d:test:curve#1").unwrap();
+        let construction = ProceduralCurveId::mint("f3d:test:helix#1").unwrap();
+        let helix = HelixCurveConstruction::try_new(
+            [0.0, std::f64::consts::TAU],
+            HelixFrame {
+                center: Point3::new(1.0, 2.0, 3.0),
+                major: Vector3::new(2.0, 0.0, 0.0),
+                minor: Vector3::new(0.0, 2.0, 0.0),
+                pitch: Vector3::new(0.0, 0.0, 4.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            0.0,
+            None,
+        )
+        .unwrap();
+        let mut brep = cadmpeg_asm::brep::AsmBrep {
+            curves: vec![Curve {
+                id: curve.clone(),
+                geometry: CurveGeometry::Procedural {
+                    construction: construction.clone(),
+                    cache: None,
+                },
+                parameter_range: None,
+                source_object: None,
+            }],
+            procedural_curves: vec![(
+                curve.clone(),
+                ProceduralCurve::new(construction, ProceduralCurveDefinition::Helix(helix)),
+            )],
+            edges: vec![Edge {
+                id: EdgeId::mint("f3d:test:edge#1").unwrap(),
+                carrier: EdgeCarrier::new(Some(curve), None).unwrap(),
+                start: VertexId::mint("f3d:test:vertex#1").unwrap(),
+                end: VertexId::mint("f3d:test:vertex#2").unwrap(),
+                tolerance: None,
+            }],
+            ..Default::default()
+        };
+        for range in [
+            None,
+            Some([-0.25, std::f64::consts::TAU]),
+            Some([0.0, std::f64::consts::TAU + 0.25]),
+        ] {
+            brep.edges[0].set_param_range(
+                range.map(|range| cadmpeg_ir::topology::ParameterInterval::new(range).unwrap()),
+            );
+            assert!(historical_edge_samples(&brep).unwrap().is_empty());
+        }
+        for (range, expected) in [
+            ([0.0, std::f64::consts::TAU], Point3::new(-1.0, 2.0, 5.0)),
+            ([0.0, std::f64::consts::PI], Point3::new(1.0, 4.0, 4.0)),
+        ] {
+            brep.edges[0].set_param_range(Some(
+                cadmpeg_ir::topology::ParameterInterval::new(range).unwrap(),
+            ));
+            let samples = historical_edge_samples(&brep).unwrap();
+            assert_eq!(samples.len(), 1);
+            assert_eq!(samples[0].edge, 1);
+            assert!((samples[0].interior.x - expected.x).abs() < 1.0e-12);
+            assert!((samples[0].interior.y - expected.y).abs() < 1.0e-12);
+            assert!((samples[0].interior.z - expected.z).abs() < 1.0e-12);
+            assert!(samples[0].bounds.is_none());
+        }
     }
 }

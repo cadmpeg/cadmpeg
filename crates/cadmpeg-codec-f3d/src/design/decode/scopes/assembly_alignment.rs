@@ -52,13 +52,16 @@ pub(super) fn exact_assembly_alignment(
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Result<Option<DesignAssemblyAlignment>, CodecError> {
-    exact_assembly_alignment_with_types(
-        bytes,
-        records,
-        scope,
-        parameter_owners,
-        &std::collections::HashMap::new(),
-    )
+    crate::test_support::with_decode_context(|ctx| {
+        exact_assembly_alignment_with_types(
+            ctx,
+            bytes,
+            records,
+            scope,
+            parameter_owners,
+            &std::collections::HashMap::new(),
+        )
+    })
 }
 
 use crate::layout::assembly_as_built_scope_owner_run as as_built;
@@ -117,6 +120,7 @@ fn placement_ordered_owner_run(
 /// The alignment of an assembly scope. `stream_types` names the stream's
 /// record types, which admit typed operand-path records.
 pub(super) fn exact_assembly_alignment_with_types(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -130,6 +134,7 @@ pub(super) fn exact_assembly_alignment_with_types(
         })
     {
         return super::assembly_v3::alignment(
+            ctx,
             bytes,
             records,
             scope,
@@ -142,7 +147,7 @@ pub(super) fn exact_assembly_alignment_with_types(
     if existing.is_some() {
         return Ok(existing);
     }
-    super::assembly_v3::alignment(bytes, records, scope, parameter_owners, stream_types)
+    super::assembly_v3::alignment(ctx, bytes, records, scope, parameter_owners, stream_types)
 }
 
 fn legacy_assembly_alignment(

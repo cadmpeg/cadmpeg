@@ -9,6 +9,7 @@ const PREVIOUS: i64 = 7;
 
 fn transition(previous_state_id: i64, deleted: &[i64]) -> AsmHistoricalTransition {
     AsmHistoricalTransition {
+        geometry_unchanged: false,
         previous_state_id: Some(previous_state_id),
         records: AsmHistoricalEntityDelta::default(),
         topology: AsmHistoricalTopologyDelta {
