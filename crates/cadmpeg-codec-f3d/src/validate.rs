@@ -7459,6 +7459,15 @@ fn validate_face_operands<'a>(
         .map(|operand| (operand.id.as_str(), operand))
         .collect::<std::collections::HashMap<_, _>>();
     let mut face_operand_records = HashSet::new();
+    let header_indices_by_offset = records_by_index
+        .values()
+        .map(|header| {
+            (
+                (design_stream(&header.id), header.byte_offset),
+                header.record_index,
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
     let mut stream_types_by_stream = std::collections::HashMap::new();
     for operand in &native.design_face_operands {
         let native_stream = design_stream(&operand.id);
@@ -7536,6 +7545,13 @@ fn validate_face_operands<'a>(
             .collect::<Vec<_>>();
         expected_alternate_selector_faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         expected_alternate_selector_faces.dedup();
+        let next_header_matches = face_operand_next_header_matches(
+            header_indices_by_offset
+                .get(&(native_stream, operand.next_byte_offset()))
+                .copied(),
+            operand.next_record_index,
+            records_by_index.contains_key(&(native_stream, operand.next_record_index)),
+        );
         let expected_node_offsets = operand
             .recipe_program
             .windows(3)
@@ -7855,6 +7871,7 @@ fn validate_face_operands<'a>(
             })
             && u64_from_index(operand.recipe_program.len()).checked_mul(4).and_then(|delta| operand
                     .recipe_program_offset.checked_add(delta)).is_some_and(|expected_offset| operand.next_byte_offset() == expected_offset)
+            && next_header_matches
             && (historical_candidates_retained
                 || face_ids_match_refs(&operand.candidate_faces, &expected_faces))
             && (historical_candidates_retained
@@ -7888,6 +7905,22 @@ fn validate_face_operands<'a>(
         }
     }
     Ok(face_operand_records)
+}
+
+/// Whether a face operand's next record index agrees with the header arena.
+///
+/// `header_at_next` is the index of the arena header at the operand's next
+/// byte offset. The arena omits records that no entity reference names, and
+/// the stream end carries next index `0`.
+fn face_operand_next_header_matches(
+    header_at_next: Option<u32>,
+    next_record_index: u32,
+    next_index_in_arena: bool,
+) -> bool {
+    match header_at_next {
+        Some(record_index) => record_index == next_record_index,
+        None => next_record_index == 0 || !next_index_in_arena,
+    }
 }
 
 /// A `Split` direct face operand is the reference-one member, or a

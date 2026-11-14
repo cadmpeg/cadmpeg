@@ -6730,6 +6730,8 @@ fn edge_recipe_topology_triplet(
 /// present within the enclosing boundary, the first following valid indexed
 /// header terminates the envelope; its record index has no fixed delta from
 /// `N`. Select an expected continuation before applying that fallback.
+/// Without an enclosing boundary and a following header, the stream end
+/// terminates the envelope and the returned record index is `0`.
 fn face_recipe_next_boundary(
     bytes: &[u8],
     position: usize,
