@@ -2020,7 +2020,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.mesh-operation-source-unresolved`. An unreadable scope or source group reports `feature.mesh-operation-scope-unparsed`. A partially decoded geometry tail reports `feature.mesh-operation-tail-partial` and retains the preceding controls and references.
+**Note.** The decoder reports `feature.mesh-operation-source-unresolved` and `feature.mesh-plane-cut-source-unresolved` for historical geometry. Plane-cut admission, framing, plane components and selection membership report `feature.mesh-plane-cut-scope-unparsed`, `feature.mesh-plane-cut-tail-partial`, `feature.mesh-plane-cut-plane-partial` and `feature.mesh-plane-cut-selection-unresolved`. Unruled controls and retained construction fields report `feature.mesh-plane-cut-selector-unruled` and `feature.mesh-plane-cut-fields-uninterpreted`. An unreadable scope or source group reports `feature.mesh-operation-scope-unparsed`. A partially decoded geometry tail reports `feature.mesh-operation-tail-partial` and retains the preceding controls and references.
 
 ### DR-474. Mesh operation selector values and fixed fields
 
@@ -2056,7 +2056,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.mesh-body-selection-assumed` for the body-selection reading.
+**Note.** The decoder reports `feature.mesh-body-selection-assumed` for the body-selection reading and `feature.mesh-plane-cut-membership-assumed` for plane-cut source membership.
 
 ### DR-505. Mesh shell construction controls
 
@@ -2141,6 +2141,78 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 **Conflict.** None.
 
 **Note.** The decoder reports `feature.mesh-combine-legacy-boolean-assumed`.
+
+### MC-07. Plane-cut matrix orientation
+
+**Question.** Which matrix convention maps the plane-cut component run to its origin and normal?
+
+**Known.** The scope stores a counted run of sixteen f64 components. The decoder reads row-major translation and the third linear column as the plane normal.
+
+**Need.** Controlled saves with independent translations and rotations around each axis.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-plane-cut-matrix-orientation-assumed`.
+
+### MC-08. Plane-cut translation units
+
+**Question.** Which length unit applies to plane-cut matrix translations?
+
+**Known.** The decoder converts the translation column from centimetres to canonical millimetres.
+
+**Need.** Controlled saves with known translations and different display units.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-plane-cut-units-assumed`.
+
+### MC-09. Plane-cut coordinate space
+
+**Question.** Which coordinate space contains the plane-cut matrix?
+
+**Known.** The decoder interprets the origin and normal in model coordinates.
+
+**Need.** Controlled cuts in translated and rotated nested components.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-plane-cut-model-space-assumed`.
+
+### MC-10. Plane-cut retained side
+
+**Question.** Which control selects the retained half-space of a trim?
+
+**Known.** The scope stores one control byte after the fill selector. The decoder reads zero as the positive retained side and one as the negative retained side.
+
+**Need.** Controlled trims that change Flip while keeping the plane and fill fixed.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-plane-cut-retained-side-assumed`.
+
+### MC-11. Plane-cut face splitting selector
+
+**Question.** Which cut selector splits faces while retaining one mesh body?
+
+**Known.** Selectors zero and one select Trim and Split Body. The decoder reads selector two as Split Faces.
+
+**Need.** A controlled Split Faces save with its cut selector isolated.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-plane-cut-split-faces-assumed`.
+
+### MC-12. Plane-cut uniform fill selector
+
+**Question.** Which fill selector creates uniform closing faces?
+
+**Known.** Fill selectors zero and one select No Fill and Minimal. The decoder reads selector two as Uniform. Fill applies to Trim and Split Body.
+
+**Need.** Controlled saves that select each fill type while keeping the mesh, cut plane and cut type fixed.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-plane-cut-uniform-fill-assumed`.
 
 ### DR-373. Mesh body and collection-owner payload fields
 

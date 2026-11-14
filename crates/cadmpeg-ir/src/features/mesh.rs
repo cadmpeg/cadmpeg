@@ -1,4 +1,7 @@
-use super::{FeatureId, NativeSelections, SelectionMembers, SelectionReference};
+use super::{
+    FeatureDirection3, FeatureId, FinitePoint3, NativeSelections, SelectionMembers,
+    SelectionReference,
+};
 use crate::scalar::{Fraction, Length, NonNegativeLength, PositiveLength, PositiveReal};
 use crate::tessellation::TessellationId;
 #[cfg(feature = "schema")]
@@ -144,11 +147,87 @@ pub enum MeshRepair {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MeshPlaneCutMode {
+    Trim,
+    SplitBodies,
+    SplitFaces,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MeshPlaneCutFill {
+    NoFill,
+    Minimal,
+    Uniform,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MeshPlaneCutSide {
+    Positive,
+    Negative,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct MeshPlaneCut {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_cut_origin"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "FinitePoint3"))]
+    pub origin: Option<FinitePoint3>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_cut_normal"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "FeatureDirection3"))]
+    pub normal: Option<FeatureDirection3>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_cut_mode"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "MeshPlaneCutMode"))]
+    pub mode: Option<MeshPlaneCutMode>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_cut_fill"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "MeshPlaneCutFill"))]
+    pub fill: Option<MeshPlaneCutFill>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_cut_side"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "MeshPlaneCutSide"))]
+    pub retained_side: Option<MeshPlaneCutSide>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_cut_origin, FinitePoint3, "origin");
+cadmpeg_core::named_optional_field!(deserialize_cut_normal, FeatureDirection3, "normal");
+cadmpeg_core::named_optional_field!(deserialize_cut_mode, MeshPlaneCutMode, "mode");
+cadmpeg_core::named_optional_field!(deserialize_cut_fill, MeshPlaneCutFill, "fill");
+cadmpeg_core::named_optional_field!(deserialize_cut_side, MeshPlaneCutSide, "retained_side");
+
 #[doc = "Change that a mesh operation applies to its source."]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshModification {
+    PlaneCut {
+        cut: MeshPlaneCut,
+    },
     #[doc = "Lowers the face count."]
     Reduce {
         #[doc = "Face distribution of the result, when resolved."]

@@ -601,3 +601,35 @@ fn captured_component_positions_validate_resolved_occurrences() {
     assert!(findings.iter().any(|finding| finding.message
         == "references missing captured component occurrence `synthetic:test:occurrence#missing`"));
 }
+
+#[test]
+fn plane_cut_unresolved_sources_validate_actual_anchors_including_self() {
+    use crate::features::{FeatureDefinition, FeatureOperation};
+    for source in ["test:model:feature#cut", "test:model:feature#missing"] {
+        let mut ir = crate::CadIr::empty();
+        let operation: FeatureOperation = serde_json::from_value(serde_json::json!({"definition":"mesh_modify","source":{"feature":source},"modification":{"kind":"plane_cut","cut":{}}})).unwrap();
+        ir.model.features.push(crate::features::Feature {
+            product_definition: None,
+            id: crate::features::FeatureId::mint("test:model:feature#cut").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: crate::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(operation),
+            ),
+            native_ref: None,
+        });
+        let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+        assert_eq!(
+            findings.iter().any(|finding| finding.entity.as_deref()
+                == Some("test:model:feature#cut")
+                && finding.check == crate::report::check::Check::ReferentialIntegrity),
+            source.ends_with("missing")
+        );
+    }
+}

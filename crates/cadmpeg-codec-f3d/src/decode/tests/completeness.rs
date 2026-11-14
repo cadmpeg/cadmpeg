@@ -755,3 +755,45 @@ fn mesh_combination_local_operands_remain_incomplete_in_both_reports() {
         0
     );
 }
+
+#[test]
+fn plane_cut_completeness_requires_the_source_plane_and_active_controls() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let base = serde_json::json!({"definition":"mesh_modify","source":["test:mesh:tessellation#1"],"modification":{"kind":"plane_cut","cut":{"origin":{"x":0,"y":0,"z":0},"normal":{"x":0,"y":0,"z":1},"mode":"trim","fill":"no_fill","retained_side":"positive"}}});
+    let incomplete = |wire| {
+        feature_definition_is_incomplete(&FeatureDefinition::Operation(
+            serde_json::from_value::<FeatureOperation>(wire).unwrap(),
+        ))
+    };
+    assert!(!incomplete(base.clone()));
+    for key in ["origin", "normal", "mode", "fill", "retained_side"] {
+        let mut wire = base.clone();
+        wire["modification"]["cut"]
+            .as_object_mut()
+            .unwrap()
+            .remove(key);
+        assert!(incomplete(wire));
+    }
+    for (mode, fill_required) in [("split_bodies", true), ("split_faces", false)] {
+        let mut wire = base.clone();
+        wire["modification"]["cut"]["mode"] = mode.into();
+        wire["modification"]["cut"]
+            .as_object_mut()
+            .unwrap()
+            .remove("retained_side");
+        assert!(!incomplete(wire.clone()));
+        wire["modification"]["cut"]
+            .as_object_mut()
+            .unwrap()
+            .remove("fill");
+        assert_eq!(incomplete(wire), fill_required);
+    }
+    for source in [
+        serde_json::json!({"native":"scope","members":["7"]}),
+        serde_json::json!({"feature":"test:model:feature#cut"}),
+    ] {
+        let mut wire = base.clone();
+        wire["source"] = source;
+        assert!(incomplete(wire));
+    }
+}

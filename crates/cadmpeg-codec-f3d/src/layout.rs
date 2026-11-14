@@ -9974,3 +9974,17 @@ pub(crate) mod sheet_metal_unfold_refold_group {
     /// Offset of `first_member` (`u8`). Spec §3.1.
     pub(crate) const FIRST_MEMBER: usize = 76;
 }
+
+/// Byte offsets for the `mesh_plane_cut_scope_prefix` record.
+///
+/// Spec §3.1. Record length 162 B.
+///
+/// ```text
+/// Flag-00 prefix. Flag 01 inserts a four-byte word before the cut selector. Reference slots follow this prefix.
+/// ```
+pub(crate) mod mesh_plane_cut_scope_prefix {
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 29;
+    /// Offset of `fill_selector` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FILL_SELECTOR: usize = 157;
+}
