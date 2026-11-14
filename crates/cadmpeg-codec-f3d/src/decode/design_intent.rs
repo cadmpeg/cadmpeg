@@ -854,6 +854,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             shells: geometry.shells,
         },
     ));
+    losses.extend(crate::history::combine_history_tools::bind(
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &prereqs.design_body_bindings,
+    ));
     losses.extend(crate::history::bind_feature_face_selections(
         &mut model.features,
         &mut model.feature_input_topologies,
@@ -1068,6 +1073,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut losses,
     )?;
     super::mesh_operations::convert::bind_features(
+        ctx,
+        scan,
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &mut losses,
+    )?;
+    super::mesh_operations::combine::bind_features(
         ctx,
         scan,
         &mut model.features,
@@ -1749,12 +1761,10 @@ fn extend_related_design_records(
             &prereqs.design_parameter_owners,
             &prereqs.design_parameters,
         );
-    let chamfer_set_conflicts =
-        crate::design::decode::scopes::chamfer_set::retain_consistent_chamfer_sets(
-            &mut design.design_parameter_scopes,
-            &decoded_groups,
-            &prereqs.design_parameter_owners,
-        );
+    let chamfer_set_conflicts = crate::design::decode::scopes::chamfer_set::chamfer_set_conflicts(
+        &design.design_parameter_scopes,
+        &prereqs.design_parameter_owners,
+    );
     profile_losses.extend(
         crate::design::decode::scopes::chamfer_set::chamfer_set_conflict_loss(
             &chamfer_set_conflicts,

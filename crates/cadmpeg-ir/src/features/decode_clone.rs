@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity rewrite implementations for feature records.
 
+use super::surfaces::UntrimLoops;
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
     BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
@@ -265,6 +266,9 @@ rewrite_enum!(FeatureOperation, []; {
     SheetMetalAttachedPlate { profile, thickness, side, attachment },
     SheetMetalBend { plate, attachment, inside_radius, relief, transition },
     SheetMetalCorner { bend, effect },
+    SheetMetalBendLines { construction },
+    SheetMetalUnfold { construction },
+    SheetMetalRefold { construction },
     SheetMetalEdgeFlange { edges, height, angle, height_datum, bend_position, width, bend_radius },
     SheetMetalHem { edges, bend_position, form, direction, bend_radius },
     Fillet { groups },
@@ -287,6 +291,7 @@ Thicken { faces, thickness, side, result, tangent_chain },
     FilledSurface { boundary, support_faces, continuity, merge_result, interior_constraints, reverse_normal },
     TrimSurface { faces, tool, keep },
     ExtendSurface { faces, distance, method },
+    UntrimSurface { faces, loops, extension },
     RuledSurface { edges, support_faces, mode, angle, alternate_face, corner },
     Draft { faces, anchor, angle, outward, second_side },
     Combine { operands, op, keep_tools, destination },
@@ -547,6 +552,14 @@ rewrite_enum!(SplitFaceTool, []; {
     Planes { planes },
 });
 
+rewrite_enum!(UntrimLoops, []; {
+    Unresolved {},
+    All {},
+    Internal {},
+    External {},
+    Selected { edges },
+});
+
 rewrite_enum!(SurfaceBoundary, []; {
     Edges(field0),
     Path(field0),
@@ -604,3 +617,9 @@ rewrite_record!(super::Feature, []; { id, product_definition, ordinal, name, sup
 rewrite_record!(super::FeatureContent, []; (field0));
 rewrite_enum!(super::FeatureSourceContent, []; { Text(value), Parameter(value), Feature(value) });
 rewrite_enum!(super::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });
+
+rewrite_record!(super::sheet_metal::SheetMetalBendLinesConstruction, []; { bends, stationary, inside_radius });
+rewrite_record!(super::sheet_metal::SheetMetalLineBend, []; { line, angle });
+
+rewrite_record!(super::sheet_metal::SheetMetalUnfoldConstruction, []; {stationary, bends, all_bends, neutral_factor});
+rewrite_record!(super::sheet_metal::SheetMetalRefoldConstruction, []; {unfold});

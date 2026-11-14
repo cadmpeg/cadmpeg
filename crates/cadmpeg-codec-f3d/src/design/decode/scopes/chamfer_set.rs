@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Chamfer set lists named by the prefix of a parameter-owned `Chamfer` scope.
 
-use super::fillet_set::DecodedGroupKeys;
 use super::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
@@ -17,7 +16,6 @@ use crate::records::feature::chamfer_set::{
     DesignChamferSetSpec,
 };
 use crate::records::feature::scope::DesignParameterScope;
-use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
 
@@ -44,14 +42,10 @@ pub(crate) fn two_distance_kinds_pair(first: &str, second: &str) -> bool {
 /// Source kinds of a distance-angle angle.
 pub(crate) const ANGLE_KINDS: &[&str] = &["Angle", "Rotate Angle", "rotateAngle"];
 
-/// The chamfer set list of `scope`, admitted when the prefix, every set frame,
-/// and every owner reference match their forms.
 pub(super) fn chamfer_set_list(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-    parameters: &[DesignParameter],
-    parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignChamferSetList> {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Chamfer) {
         return None;
@@ -115,21 +109,12 @@ pub(super) fn chamfer_set_list(
     for (set_number, (set_record_index, group_record_index)) in
         (1_u32..).zip(set_references.into_iter().zip(group_references))
     {
-        if !scope
-            .reference_members()
-            .values()
-            .any(|member| *member == group_record_index)
-        {
-            return None;
-        }
         let entries = *set_entry_counts.get(usize::try_from(set_number - 1).ok()?)?;
         let set = chamfer_set(
             bytes,
             records,
             (set_record_index, set_number, entries),
             scope,
-            parameters,
-            parameter_owners,
         )?;
         if set.group_record_index != group_record_index {
             return None;
@@ -299,15 +284,6 @@ impl SetForm {
                     .any(|(start, width)| (*start..start + width).contains(&at))
         })
     }
-
-    /// Source kinds each owner reference of this form must carry.
-    fn owner_kinds(&self) -> [&'static [&'static str]; 2] {
-        match self.spec {
-            SpecForm::EqualDistance => [DISTANCE_KINDS, &[]],
-            SpecForm::TwoDistances => [FIRST_DISTANCE_KINDS, SECOND_DISTANCE_KINDS],
-            SpecForm::DistanceAngle => [DISTANCE_KINDS, ANGLE_KINDS],
-        }
-    }
 }
 
 /// The chamfer set record `record_index` with 1-based `set_number` and
@@ -317,8 +293,6 @@ fn chamfer_set(
     records: &IndexedRecordOffsets,
     (record_index, set_number, entry_count): (u32, u32, u32),
     scope: &DesignParameterScope,
-    parameters: &[DesignParameter],
-    parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignChamferSet> {
     let mut frames = records.frames(record_index);
     let (start, end) = frames.next()?;
@@ -337,24 +311,7 @@ fn chamfer_set(
         {
             return None;
         }
-        if records
-            .offsets(marked_record_reference(frame, form.auxiliary)?)
-            .is_empty()
-        {
-            return None;
-        }
-        let kinds = form.owner_kinds();
-        let owned_kind = |slot: usize| {
-            let owner = marked_record_reference(frame, form.owners[slot])?;
-            let kind = owned_source_kind(scope, owner, parameters, parameter_owners)?;
-            kinds[slot].contains(&kind).then_some((owner, kind))
-        };
-        let owner = |slot: usize| owned_kind(slot).map(|(owner, _)| owner);
-        if matches!(form.spec, SpecForm::TwoDistances)
-            && !two_distance_kinds_pair(owned_kind(0)?.1, owned_kind(1)?.1)
-        {
-            return None;
-        }
+        let owner = |slot| marked_record_reference(frame, form.owners[slot]);
         let spec = match form.spec {
             SpecForm::EqualDistance => DesignChamferSetSpec::EqualDistance {
                 distance_owner_record_index: owner(0)?,
@@ -383,36 +340,9 @@ fn chamfer_set(
     matches.next().is_none().then_some(set)
 }
 
-/// Source kind of the one Design parameter that owner `owner_record_index`
-/// of `scope` references and that references the owner back.
-fn owned_source_kind<'a>(
-    scope: &DesignParameterScope,
-    owner_record_index: u32,
-    parameters: &'a [DesignParameter],
-    parameter_owners: &[DesignParameterOwner],
-) -> Option<&'a str> {
-    let stream = native_stream(&scope.id)?;
-    let mut owners = parameter_owners.iter().filter(|owner| {
-        native_stream(owner.id()) == Some(stream)
-            && owner.scope_record_index() == scope.record_index
-            && owner.record_index() == owner_record_index
-    });
-    let owner = owners.next()?;
-    if owners.next().is_some() {
-        return None;
-    }
-    let mut owned = parameters.iter().filter(|parameter| {
-        native_stream(&parameter.id) == Some(stream)
-            && parameter.record_index == owner.parameter_record_index()
-            && parameter.owner_record_index() == Some(owner.record_index())
-    });
-    let parameter = owned.next()?;
-    owned.next().is_none().then(|| parameter.source_kind_str())
-}
-
 /// Owners of one set's specification in slot order: the distance or first
 /// distance, then the second distance or angle.
-fn spec_owners(spec: DesignChamferSetSpec) -> [Option<u32>; 2] {
+pub(crate) fn spec_owners(spec: DesignChamferSetSpec) -> [Option<u32>; 2] {
     match spec {
         DesignChamferSetSpec::EqualDistance {
             distance_owner_record_index,
@@ -437,11 +367,11 @@ fn spec_owners(spec: DesignChamferSetSpec) -> [Option<u32>; 2] {
 /// Whether the sets of `list`, taken in the reference-table order of their
 /// edge groups, name owners in increasing owner-local order in each slot, so
 /// that they assign the same specification to each group as owner order does.
-fn agrees_with_owner_order(
+pub(crate) fn agrees_with_owner_order(
     scope: &DesignParameterScope,
     list: &DesignChamferSetList,
     parameter_owners: &[DesignParameterOwner],
-) -> bool {
+) -> Option<bool> {
     let stream = native_stream(&scope.id);
     let local_ordinal = |owner_record_index: u32| {
         let mut owners = parameter_owners.iter().filter(|owner| {
@@ -454,80 +384,49 @@ fn agrees_with_owner_order(
     };
     let mut ordered = Vec::new();
     for set in &list.sets {
-        let Some(position) = scope
+        let position = scope
             .reference_members()
             .values()
-            .position(|member| *member == set.group_record_index)
-        else {
-            return false;
-        };
+            .position(|member| *member == set.group_record_index)?;
         ordered.push((position, spec_owners(set.spec)));
     }
     ordered.sort_by_key(|(position, _)| *position);
-    (0..2).all(|slot| {
+    for slot in 0..2 {
         let mut previous = None;
-        ordered.iter().all(|(_, owners)| match owners[slot] {
-            None => true,
-            Some(owner) => {
-                let Some(ordinal) = local_ordinal(owner) else {
-                    return false;
-                };
-                let increasing = previous.is_none_or(|previous| ordinal > previous);
+        for (_, owners) in &ordered {
+            if let Some(owner) = owners[slot] {
+                let ordinal = local_ordinal(owner)?;
+                if previous.is_some_and(|previous| ordinal <= previous) {
+                    return Some(false);
+                }
                 previous = Some(ordinal);
-                increasing
             }
-        })
-    })
-}
-
-/// Clear each chamfer set list that names an edge group outside the decoded
-/// construction-operand groups of its scope, or whose owners assign the
-/// specifications to the groups in another order than owner-local order.
-/// Returns the scopes cleared for disagreeing with owner order.
-pub(crate) fn retain_consistent_chamfer_sets(
-    scopes: &mut [DesignParameterScope],
-    decoded_groups: &DecodedGroupKeys,
-    parameter_owners: &[DesignParameterOwner],
-) -> Vec<String> {
-    let mut conflicts = Vec::new();
-    for scope in scopes {
-        let Some(sets) = scope.chamfer_sets() else {
-            continue;
-        };
-        let stream = native_stream(&scope.id);
-        let grouped = sets.sets.iter().all(|set| {
-            stream.is_some_and(|stream| {
-                decoded_groups.contains(&(
-                    stream.to_owned(),
-                    scope.record_index,
-                    set.group_record_index,
-                ))
-            })
-        });
-        let agreeing = agrees_with_owner_order(scope, sets, parameter_owners);
-        if grouped && agreeing {
-            continue;
-        }
-        if grouped {
-            conflicts.push(scope.id.clone());
-        }
-        if let crate::records::feature::scope::DesignScopePayloadMut::Chamfer(slot) =
-            scope.payload_mut()
-        {
-            slot.sets = None;
         }
     }
-    conflicts
+    Some(true)
 }
 
-/// The loss that names the Chamfer scopes whose set lists were dropped for
-/// disagreeing with owner order.
+pub(crate) fn chamfer_set_conflicts(
+    scopes: &[DesignParameterScope],
+    parameter_owners: &[DesignParameterOwner],
+) -> Vec<String> {
+    scopes
+        .iter()
+        .filter(|scope| {
+            scope.chamfer_sets().is_some_and(|sets| {
+                agrees_with_owner_order(scope, sets, parameter_owners) == Some(false)
+            })
+        })
+        .map(|scope| scope.id.clone())
+        .collect()
+}
+
 pub(crate) fn chamfer_set_conflict_loss(
     conflicts: &[String],
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
     (!conflicts.is_empty()).then(|| {
         crate::loss::F3dLossCode::FeatureChamferSetConflict.note(format!(
-            "{} Chamfer scope(s) store set records that pair edge groups and specifications in another order than owner-local order; the owner-order pairing is kept and the set lists are dropped: {}.",
+            "{} Chamfer scope(s) pair edge groups and specifications in another order than owner-local order; their explicit set references are retained: {}.",
             conflicts.len(),
             conflicts.join(", ")
         ))

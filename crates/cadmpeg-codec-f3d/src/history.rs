@@ -18,6 +18,7 @@ mod blend_spine;
 mod body_candidates;
 mod body_index;
 mod cache;
+pub(crate) mod combine_history_tools;
 mod combine_selection;
 pub(crate) mod compact_lineage;
 mod delete_face;
@@ -1914,6 +1915,7 @@ pub(crate) fn bind_feature_outputs(
                 .or_insert(formatted);
         }
         if deleted_set.is_empty() && !combine_states_applied_operation(feature, scopes) {
+            let mut assumed_cut = false;
             feature.evaluation.edit(|def, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::Combine {
                     op,
@@ -1927,9 +1929,15 @@ pub(crate) fn bind_feature_outputs(
                 {
                     if *op == cadmpeg_ir::features::BooleanKind::Join && *keep_tools {
                         *op = cadmpeg_ir::features::BooleanKind::Cut;
+                        assumed_cut = true;
                     }
                 }
             });
+            if assumed_cut {
+                losses.push(crate::loss::F3dLossCode::FeatureCombineKeptToolsCutAssumed.note(
+                    format!("feature {} assumes Cut for a stored Join with kept tools and no deleted bodies", feature.id),
+                ));
+            }
         }
         if let Some(solid_outputs) = cur_key.and_then(|k| state_solid_outputs.get(&k)) {
             let mut filtered: Vec<i64> = if let (Some(before), Some(after)) =
@@ -3557,6 +3565,25 @@ pub(crate) fn bind_feature_face_selections(
                     );
                     crate::design::feature_project::thicken::list_thicken_whole_bodies(
                         faces, scope, groups,
+                    );
+                    selection::bind_body_recipe_face_selection(
+                        faces,
+                        feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                }
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::UntrimSurface { faces, .. },
+                ) => {
+                    selection::bind_face_selection(
+                        faces,
+                        scope,
+                        groups,
+                        operands,
+                        &transition.topology.faces.updated,
                     );
                     selection::bind_body_recipe_face_selection(
                         faces,

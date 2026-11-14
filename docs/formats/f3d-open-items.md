@@ -114,13 +114,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The decoder checks that the u32 is nonzero, that the 93-byte tail repeats it, and that the final marked reference is present.
 
-### DR-106. Hole tap types above 2
+### DR-106. Hole tap-type words above 3
 
-**Question.** Which hole settings do Hole tap-type values other than `0`, `1`, and `2` encode?
+**Question.** Which hole settings do Hole tap-type words other than `0`, `1`, `2`, and `3` encode?
 
-**Known.** `f3d.md` §3.1 "A `Hole` scope starts after its indexed header with eight zero bytes" gives the settled tap-type values. The decoder retains any other value in the extent's `leading_word` and the `hole:extent_leading_word` source property, and reports `feature.hole-extent-leading-word-assumed` for the reading that the stored scalar geometry remains independent of it. The value `1867538229` seen in one System76 chassis Hole has the bytes `35 5F 50 6F`, which read as ASCII text, so the extent block of that Hole can begin at another offset.
+**Known.** `f3d.md` §3.1 "A `Hole` scope starts after its indexed header with eight zero bytes" gives the settled tap-type values. Two System76 chassis Holes store the tap-type words `35 5F 50 6F` and `6F 6E 2F 78`, which read as ASCII text. The other bytes of their extent blocks have the layout of standard flag `0`, and the B-rep bore of each has the stored `HoleDiameter`. The decoder retains any other value in the extent's `leading_word` and the `hole:extent_leading_word` source property, and reports `feature.hole-extent-leading-word-assumed` for the reading that the stored scalar geometry remains independent of it.
 
-**Need.** A controlled taper-tapped Hole, and the setting that writes the word value seen in one System76 chassis Hole.
+**Need.** The Fusion version or operation that writes a text word in the tap-type position.
 
 **Conflict.** None.
 
@@ -1010,6 +1010,22 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** A producer-generated radial TSM must retain a deleted domain slot at `p` and map a live element with raw slot `q > p`. The raw-slot prediction is `q`; the compact-index prediction after one deletion is `q-1`. Saving must preserve the deleted slot to separate these predictions. A controlled radial export with a nondefault sweep must establish the sweep-to-angle rule.
 
+### SM-02. Unfold controls, rule factor and Refold association
+
+**Question.** Which authored controls establish the Unfold selection slots, all-bends flag, settings-reference layout, rule neutral-axis factor and Refold source association?
+
+**Known.** The Unfold prefix contains a control byte and four ordered references. Both construction groups use role `0x10`. The projection reads the first group as bend faces, the fourth as the stationary face, and control zero/one as selected/all bends. `feature.unfold-selection-slots-assumed` and `feature.unfold-all-bends-flag-assumed` identify these readings. A settings primary can contain present input references before the rule. A unique registered rule target inside the bounded settings frame, whose closing local owner reference names this Unfold, supplies the rule link with `feature.unfold-settings-rule-reference-assumed` when the mask-and-slots form is unresolved. The unique material-trailer scalar of the owning settings rule supplies the neutral-axis factor with `feature.unfold-material-scalar-factor-assumed`. The unique preceding typed Unfold in the same ordered GroupMode supplies the Refold source with `feature.refold-group-source-assumed`. A resolved source must be emitted earlier in the same stream. Missing or ambiguous source links, rule factors, prefixes, selections and control values retain neutral partial constructions with their specific unresolved or native-selection losses.
+
+**Need.** Controlled edits of each selection, the all-bends setting, settings input presence and the rule factor, plus a group containing several Unfold operations, must establish these associations.
+
+### SM-01. Bend line association and stationary role
+
+**Question.** How does a Bend scope associate each angular owner with a selected sketch line and its stationary region?
+
+**Known.** The scope's ordered reference table contains construction groups, their members, and `BendAngle` owners. A role-`0x10` group carries a face selection. `BendRadius` parameters carry explicit radius overrides. The projection associates each angular owner with the group two references before it and interprets the role-`0x10` group as the stationary face. `feature.bend-line-owner-order-assumed` and `feature.bend-stationary-role-assumed` identify those readings. Missing angular definitions and unresolved rule radii carry `feature.bend-angle-unresolved` and `feature.bend-rule-radius-unresolved`. Multiple explicit radii use the first value and carry `feature.bend-radius-first-assumed`. A `BendAngle` definition with an absent owner frame binds through its owner backlink and the preceding singleton role-`0x21` group/member pair with `feature.bend-angle-owner-backlink-assumed`. A scoped cached owner following that pair supplies radians when its definition is absent with `feature.bend-cached-owner-angle-assumed`.
+
+**Need.** A controlled Bend with reordered sketch-line selections, independent angle changes, a changed stationary region, and a document-rule radius change.
+
 ### DR-160. EdgeFlange corner controls
 
 **Question.** Which fields select corner relief, miter, and the corner gap for adjacent flange edges?
@@ -1246,6 +1262,8 @@ The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are t
 
 **Conflict.** None.
 
+**Note.** Projection through explicit set references retains the flags and corner type in feature properties. A set with a true flag reports `feature.chamfer-tangent-chain-assumed`; a miter or blend corner reports `feature.chamfer-corner-treatment-unresolved`.
+
 ### DR-467. Face that a Hole's `bounded_face` operands name
 
 **Question.** Which face do the `bounded_face` operands of a Hole scope name?
@@ -1272,13 +1290,13 @@ The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are t
 
 **Question.** Which Hole parameters remain active when the extent controls, parameter associations, or entry-treatment dimensions leave the complete construction unresolved, and which standard sizing controls define a neutral clearance or thread specification?
 
-**Known.** Extent control `1` can coexist with a `HoleDepth` owner and an absent saved-depth property. The parameter owners retain the diameter, tip, treatment and reference-distance expressions and evaluated values. The sizing block retains four ordered names for standard, fit, size and fastener, followed by the entry-type word for simple, counterbore or countersink form.
+**Known.** Extent control `1` can coexist with a `HoleDepth` owner and an absent saved-depth property. The parameter owners retain the diameter, tip, treatment and reference-distance expressions and evaluated values. The sizing block retains four ordered names for standard, fit, size and fastener, followed by the entry-type word for simple, counterbore or countersink form. The standard, size and fit names of a clearance hole fill its neutral clearance specification; that specification's modeled, cosmetic, hand and depth fields take fixed values and report `feature.hole-clearance-fields-assumed`.
 
 **Need.** Controlled non-distance Holes that vary the stored depth independently of the target, partial and competing treatment parameter sets, and standard sizing controls that establish modeled, cosmetic, handedness and depth settings.
 
 **Conflict.** None.
 
-**Note.** The decoder retains independently admitted dimensions, parameter expressions and extent metadata on a neutral Hole. A readable entry-type word selects the active form; unmatched treatment parameters remain attached. An unresolved extent, entry-type or parameter association reports `feature.hole-parameters-independent-assumed`; an incomplete or conflicting shape reports `feature.hole-shape-partial-assumed`. Native sizing names remain source properties and report `feature.hole-standard-sizing-assumed`.
+**Note.** The decoder retains independently admitted dimensions, parameter expressions and extent metadata on a neutral Hole. A readable entry-type word selects the active form; unmatched treatment parameters remain attached. An unresolved extent, entry-type or parameter association reports `feature.hole-parameters-independent-assumed`; an incomplete or conflicting shape reports `feature.hole-shape-partial-assumed`. The four sizing names remain source properties. A sizing block that gives no clearance specification reports `feature.hole-standard-sizing-assumed`.
 
 ### DR-471. Hole drilling direction with an unavailable control
 
@@ -1570,7 +1588,7 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Conflict.** None.
 
-**Note.** None.
+**Note.** For a non-operand-list Combine stored as Join with kept tools and no deleted bodies, the history binding assumes Cut and reports `feature.combine-kept-tools-cut-assumed`. The native operation remains stored in the scope.
 
 ### DR-561. Destination of a Combine new-component result
 
@@ -2052,7 +2070,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder leaves unresolved construction settings unset and reports `feature.mesh-shell-controls-unresolved`.
 
-### DR-625. Mesh conversion controls
+### MC-01. Mesh conversion controls
 
 **Question.** Which conversion control selects the organic method, and which construction settings do the wrapper control fields select?
 
@@ -2064,7 +2082,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder reports `feature.mesh-conversion-method-assumed` for the control-to-method reading and `feature.mesh-conversion-method-unresolved` for an unruled control. A truncated scope reports `feature.mesh-conversion-scope-unparsed` or `feature.mesh-conversion-tail-partial` and retains readable controls and inputs.
 
-### DR-626. Mesh conversion output envelope
+### MC-02. Mesh conversion output envelope
 
 **Question.** Which format discriminator selects the optional four-byte control before the output count?
 
@@ -2076,7 +2094,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder reports `feature.mesh-conversion-envelope-assumed` for this envelope reading.
 
-### DR-627. Mesh conversion geometry identities
+### MC-03. Mesh conversion geometry identities
 
 **Question.** Which historical tessellation and neutral result body does each conversion wrapper identify?
 
@@ -2087,6 +2105,42 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 **Conflict.** None.
 
 **Note.** The decoder reports `feature.mesh-conversion-source-unresolved` and `feature.mesh-conversion-output-unresolved`. DR-504 tracks input member-tail selections.
+
+### MC-04. Mesh combination selector three
+
+**Question.** Which result structure does mesh combination selector `3` create?
+
+**Known.** The selector follows the mesh scope prefix. The decoder projects selector `3` as a compound with target members followed by tool members.
+
+**Need.** Controlled saves that distinguish preserved interior structures, ordered compound members, and the resulting mesh-body identity.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-combine-merge-assumed`.
+
+### MC-05. Mesh combination retention and destination
+
+**Question.** Which fields select tool retention and the result component of a mesh combination?
+
+**Known.** The version-2 prefix contains an additional control word. Both versions contain a control byte. Boolean projection assumes consumed tools and the target component. Compound projection retains the controls with unresolved retention and destination.
+
+**Need.** Controlled saves that change Keep Tools and New Component independently, with both scope versions.
+
+**Conflict.** None.
+
+**Note.** Boolean projection reports `feature.mesh-combine-keep-tools-assumed-false` and `feature.mesh-combine-destination-assumed-target-component`. Compound projection reports `feature.mesh-combine-keep-tools-unresolved` and `feature.mesh-combine-destination-unresolved`.
+
+### MC-06. Legacy mesh combination Boolean selectors
+
+**Question.** Which operations do version-1 mesh combination selectors `0`, `1`, and `2` select?
+
+**Known.** Both scope versions store an operation selector. The decoder applies the version-2 Boolean selector mapping to these version-1 values.
+
+**Need.** Version-1 saves with independently selected join, cut, and intersection operations.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-combine-legacy-boolean-assumed`.
 
 ### DR-373. Mesh body and collection-owner payload fields
 
@@ -2218,7 +2272,27 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** None.
 
-### DR-625. Counted Shell prefix byte and partial envelopes
+### DR-600. SurfaceUntrim retained groups and prefix variants
+
+**Question.** How do stored manual-loop groups affect a nonmanual loop choice, which selection does an incomplete group definition denote, and what does a nonnull trailing identifier select?
+
+**Known.** `f3d.md` §3.1 "A `SurfaceUntrim` scope removes trim loops" defines the loop choices and the ordered face and loop-group references. A nonmanual choice can retain loop-group references. The primary prefix closes at the ordered-reference count.
+
+**Need.** Saves that change the loop choice while retaining selected loops, complete definitions for each referenced group, a save with the unpadded closed prefix, and a save with a nonnull trailing identifier.
+
+**Note.** `feature.surface-untrim-stored-loop-groups-assumed` reads stored groups alongside a nonmanual choice as inactive selections. `feature.surface-untrim-loop-groups-aggregated-assumed` represents multiple manual groups by their scope expression. `feature.surface-untrim-group-selection-assumed` retains a scope expression for missing, ambiguous or inconsistent groups. `feature.surface-untrim-padding-assumed` admits uniquely closed unpadded runs. `feature.surface-untrim-frame-assumed` projects the operation with unresolved settings when its prefix has no closed reading. `feature.surface-untrim-trailing-identity-assumed` retains a nonnull identifier as auxiliary metadata while applying the decoded loop and extension settings.
+
+### DR-601. SurfaceUntrim signed extension and missing scalar definitions
+
+**Question.** Does a negative evaluated extension contract the exterior boundary, and which scalar definition applies when a referenced owner is incomplete or duplicated?
+
+**Known.** The extension reference names a numeric owner of local ordinal zero in the same scope. Its evaluated scalar is finite and expressed in centimetres. Extension applies when an exterior boundary is removed.
+
+**Need.** A save with negative extension and its resulting boundary, and complete owner definitions for ambiguous extension references.
+
+**Note.** `feature.surface-untrim-negative-extension-assumed` retains a negative scalar as signed neutral extension. `feature.surface-untrim-extension-unresolved` preserves the parsed frame when its scalar owner does not resolve uniquely. `feature.surface-untrim-extension-unrepresentable` retains the native value when its millimetre conversion overflows.
+
+### DR-622. Counted Shell prefix byte and partial envelopes
 
 **Question.** Which option does the counted Shell prefix byte select, and which fields preserve the wall-slot direction when that byte is nonzero or the envelope tail is incomplete?
 
@@ -2230,7 +2304,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** Partial Shell projection reports `feature.shell-counted-control-assumed` for reading the byte as a separate prefix field, `feature.shell-slot-direction-assumed` for the nonzero form's inside-first reading and `feature.shell-envelope-assumed` when a unique partial prefix supplies wall data. Unresolved values and selections remain in `shell:source` with their references and byte locations.
 
-### DR-626. Simultaneous Shell face and body groups
+### DR-623. Simultaneous Shell face and body groups
 
 **Question.** How do the removed-face group and the target-body group jointly select a Shell operation when its prefix names both groups?
 
@@ -2416,13 +2490,13 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which stored field assigns the first distance of a two-distance chamfer, or the distance of a distance-angle chamfer, to an input support face?
 
-**Known.** Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false.
+**Known.** Chamfer sets reference their edge groups and dimensional owners independently. One scope can combine equal-distance, two-distance, and distance-angle sets. Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false.
 
 **Need.** A rule that binds each selected input edge to its distance reference face, with both face widths checked against the stored dimensional specification. The rule must cover reversed recipe-reference order, propagated edge chains, and support faces split by earlier operations.
 
 **Conflict.** None.
 
-**Note.** The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
+**Note.** Projection through explicit set references keeps owner-slot order with forward direction and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
 
 ### DR-342. Chamfer recipes with conflicting transition selections
 
@@ -2446,7 +2520,19 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** The result plane forms an angle of approximately 21.2 degrees with the second input plane and 38.8 degrees with the first. Each differs from the 30-degree IR angle.
 
-**Note.** DR-341 tracks the input reference-face assignment.
+**Note.** Projection through explicit set references reports `feature.chamfer-angle-reference-assumed` when it reads the stored angle as the neutral reference-face angle. DR-341 tracks the input reference-face assignment.
+
+### DR-640. Chamfer parameter recovery from incomplete definitions
+
+**Question.** Which value and role remain authoritative when a Chamfer set's parameter definition, owner backlink, source kind, or unit token is incomplete or inconsistent, and when can an owner's evaluated scalar be stale?
+
+**Known.** A set's kind word identifies its distance and angle slots. The set references their owners. A parameter owner carries an evaluated scalar and a parameter reference; the parameter carries an owner backlink, source kind, and optional unit token. Fixed scalar records retain their record identities and values independently of a set list.
+
+**Need.** Controlled saves that distinguish current parameter values from stale owner values, parameter namespaces that share an owner, and incomplete reference graphs with independent dimensions for each set.
+
+**Conflict.** None.
+
+**Note.** The decoder uses a unique parameter backlink when its owner is absent, with `feature.chamfer-parameter-owner-assumed`. It uses a stored owner or fixed scalar when the parameter definition is absent, with `feature.chamfer-parameter-value-assumed`. Explicit slots select the most likely role and canonical unit, with `feature.chamfer-parameter-kind-assumed` or `feature.chamfer-parameter-unit-assumed` for a discrepancy. Ambiguous definitions retain the identified form and raw parameters with `feature.chamfer-definition-unresolved`. Explicit set references survive an owner-order conflict with `feature.chamfer-set-conflict`.
 
 ### DR-360. One-sided face-target Extrude without a termination group
 
@@ -2877,6 +2963,18 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The unresolved members retain their native identities and report `history.edge-midpoints-unresolved`. DR-164 tracks selectors over populated lanes; DR-224 tracks incomplete transition proofs.
 
+### DR-554. Interior null timeline items
+
+**Question.** Does a null item before a non-null reference occupy a timeline position?
+
+**Known.** A counted feature-timeline run can contain a one-byte null before another local reference. The local references retain their serialized order.
+
+**Need.** Controlled saves with a removed or suppressed timeline item and a visible timeline, including a save with a null between two readable references.
+
+**Conflict.** None.
+
+**Note.** The decoder assumes the null names no item and reports `feature.timeline-null-slot-assumed`.
+
 ### DR-530. Body frame of object-prelude occurrence snapshots
 
 **Question.** How does the closing placement of an object-prelude occurrence map the solved BREP body frame into its containing component?
@@ -2888,3 +2986,27 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** Treating every object-prelude closing matrix as a solved-body local placement gives the two incorrect mating placements above.
 
 **Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve.
+
+### DR-562. Occurrence of a cross-component Combine tool body
+
+**Question.** Which occurrence of its component supplies the body that a cross-component `Combine` tool names?
+
+**Known.** The browser node of a tool names the body entity suffix and the creating scope. The history-only body-map pair of that suffix names the BREP blob and body selector. The operand-list body-selection record stores an occurrence list before the body-node list.
+
+**Need.** A design that places one component more than once and combines the body of one placement, with the occurrence-list entries of the tool decoded against the component instance records.
+
+**Conflict.** None.
+
+**Note.** A generated tool identifies its generating feature and body-map pair only.
+
+### DR-563. Derived Base Feature creators of Combine tools
+
+**Question.** Which timeline feature regenerates a `Combine` tool body whose creating scope is a `Derived Base Feature` scope?
+
+**Known.** The `Derived Base Feature` scope is not a timeline item. Its record references the tool body entity. The `DerivedInstance` scope of the derived component references a class-407 record, and that record references a component-instance record listed under `ComponentInstancesRoot` and the `DerivedInstance` scope. No record found references both the `Derived Base Feature` scope and the `DerivedInstance` scope or its class-407 record.
+
+**Need.** A stored reference that joins the `Derived Base Feature` scope or its body to a timeline feature.
+
+**Conflict.** None.
+
+**Note.** The tool stays native and reports `feature.combine-tool-body-unbound`. Proven tools of the same `Combine` still add their generating features as dependencies.

@@ -2231,6 +2231,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
             _ => true,
         };
+        let fold_links = scope
+            .unfold_operation()
+            .is_none_or(|operation| operation.valid_for_scope(scope))
+            && scope
+                .refold_operation()
+                .is_none_or(|operation| operation.valid_for_scope(scope));
         let base_flange_link = match scope.base_flange_operation() {
             None => true,
             Some(operation) => {
@@ -4381,6 +4387,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && move_link
             && offset_faces_link
             && base_flange_link
+            && fold_links
             && edge_flange_link
             && hem_link
             && copy_paste_link
@@ -5310,6 +5317,15 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             | DesignOperandRole::ROLE_0X43
                     ) && group.extrude_role().is_none()
                 }
+                Some(design::DesignFeatureFamily::SheetMetalUnfold) => {
+                    matches!(group.role(), DesignOperandRole::BODIES_A | DesignOperandRole::ROLE_0X10) && group.extrude_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::SheetMetalRefold) => {
+                    group.role() == DesignOperandRole::BODIES_B && group.extrude_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::SheetMetalBend) => {
+                    matches!(group.role(), DesignOperandRole::ROLE_0X10 | DesignOperandRole::ROLE_0X21) && group.extrude_role().is_none()
+                }
                 Some(design::DesignFeatureFamily::SheetMetalHem) => {
                     matches!(
                         group.role(),
@@ -5405,6 +5421,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         group.role(),
                         DesignOperandRole::BODIES_B | DesignOperandRole::ROLE_0X43
                     ) && group.extrude_role().is_none()
+                }
+                None if scope.kind()
+                    == crate::records::feature::scope::DesignFeatureKind::SurfaceUntrim =>
+                {
+                    group.role() == DesignOperandRole::ROLE_0X9 && group.extrude_role().is_none()
                 }
                 None => false,
             };
@@ -7459,6 +7480,15 @@ fn validate_face_operands<'a>(
         .map(|operand| (operand.id.as_str(), operand))
         .collect::<std::collections::HashMap<_, _>>();
     let mut face_operand_records = HashSet::new();
+    let header_indices_by_offset = records_by_index
+        .values()
+        .map(|header| {
+            (
+                (design_stream(&header.id), header.byte_offset),
+                header.record_index,
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
     let mut stream_types_by_stream = std::collections::HashMap::new();
     for operand in &native.design_face_operands {
         let native_stream = design_stream(&operand.id);
@@ -7536,6 +7566,13 @@ fn validate_face_operands<'a>(
             .collect::<Vec<_>>();
         expected_alternate_selector_faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         expected_alternate_selector_faces.dedup();
+        let next_header_matches = face_operand_next_header_matches(
+            header_indices_by_offset
+                .get(&(native_stream, operand.next_byte_offset()))
+                .copied(),
+            operand.next_record_index,
+            records_by_index.contains_key(&(native_stream, operand.next_record_index)),
+        );
         let expected_node_offsets = operand
             .recipe_program
             .windows(3)
@@ -7780,6 +7817,16 @@ fn validate_face_operands<'a>(
                                 }) && operand.recipe_kind
                                     == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
+                            None if group.is_some_and(|group| {
+                                design::decode::operands::is_surface_untrim_face_group(scope, group)
+                            }) =>
+                            {
+                                matches!(
+                                    operand.recipe_kind,
+                                    records::recipes::ConstructionRecipeKind::Face
+                                        | records::recipes::ConstructionRecipeKind::BoundedFace
+                                )
+                            }
                             None if matches!(
                                 scope.kind(),
                                 crate::records::feature::scope::DesignFeatureKind::MoveFace
@@ -7855,6 +7902,7 @@ fn validate_face_operands<'a>(
             })
             && u64_from_index(operand.recipe_program.len()).checked_mul(4).and_then(|delta| operand
                     .recipe_program_offset.checked_add(delta)).is_some_and(|expected_offset| operand.next_byte_offset() == expected_offset)
+            && next_header_matches
             && (historical_candidates_retained
                 || face_ids_match_refs(&operand.candidate_faces, &expected_faces))
             && (historical_candidates_retained
@@ -7888,6 +7936,22 @@ fn validate_face_operands<'a>(
         }
     }
     Ok(face_operand_records)
+}
+
+/// Whether a face operand's next record index agrees with the header arena.
+///
+/// `header_at_next` is the index of the arena header at the operand's next
+/// byte offset. The arena omits records that no entity reference names, and
+/// the stream end carries next index `0`.
+fn face_operand_next_header_matches(
+    header_at_next: Option<u32>,
+    next_record_index: u32,
+    next_index_in_arena: bool,
+) -> bool {
+    match header_at_next {
+        Some(record_index) => record_index == next_record_index,
+        None => next_record_index == 0 || !next_index_in_arena,
+    }
 }
 
 /// A `Split` direct face operand is the reference-one member, or a

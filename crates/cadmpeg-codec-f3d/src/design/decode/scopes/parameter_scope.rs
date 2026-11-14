@@ -55,6 +55,7 @@ use super::surfaces::exact_ruled_surface_operation;
 use super::surfaces::exact_surface_extend_operation;
 use super::surfaces::exact_surface_offset_operation;
 use super::surfaces::exact_surface_stitch_operation;
+use super::surfaces::exact_surface_untrim_operation;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
 use super::work_geometry::exact_joint_origin_frame;
@@ -550,6 +551,13 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction =
+                    exact_surface_untrim_operation(ctx, bytes, &records, &scope, &mut losses)?;
+                if let scope::DesignScopePayloadMut::SurfaceUntrim(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction =
                     exact_surface_offset_operation(bytes, &records, &scope, recipes, &mut losses)?;
                 if let scope::DesignScopePayloadMut::SurfaceOffset(slot) = scope.payload_mut() {
                     *slot = construction;
@@ -589,7 +597,7 @@ pub(crate) fn decode_parameter_scopes(
             {
                 let construction =
                     exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
-                let sets = chamfer_set_list(bytes, &records, &scope, parameters, parameter_owners);
+                let sets = chamfer_set_list(bytes, &records, &scope);
                 if let scope::DesignScopePayloadMut::Chamfer(slot) = scope.payload_mut() {
                     *slot = crate::records::feature::chamfer_set::DesignChamferScope::admit(
                         construction,
@@ -804,6 +812,13 @@ pub(crate) fn decode_parameter_scopes(
 
             out.push(scope);
         }
+        super::fold::bind(
+            ctx,
+            bytes,
+            &records,
+            &stream_types,
+            &mut out[stream_scope_start..],
+        )?;
         bind_joint_origin_frames_from_assemblies(bytes, &mut out[stream_scope_start..]);
         bind_axial_assembly_operand_targets(bytes, &records, &mut out[stream_scope_start..])?;
     }
