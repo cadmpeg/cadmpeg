@@ -114,4 +114,3 @@ that identify the side of the travel.
 **Conflict.** Both paths can identify the same constraint; their precedence is not established.
 
 **Note.** The neutral projection reports a conflict and retains both native records.
-
