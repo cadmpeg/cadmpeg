@@ -93,6 +93,7 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
                 cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0))
                     .expect("finite plane normal"),
             ),
+            construction_plane_scope: None,
             assumed_plane_scope: None,
         });
     }
@@ -182,15 +183,28 @@ fn an_assumed_mirror_plane_scope_needs_a_framed_work_plane_and_records_its_loss(
     };
     use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
 
-    let mirror = |proven: bool| {
+    #[derive(Clone, Copy, PartialEq)]
+    enum Mode {
+        Proven,
+        Selected,
+        Assumed,
+    }
+    let mirror = |mode: Mode| {
         let mut scope = mirror_scope(40);
         if let DesignScopePayloadMut::Mirror(Some(construction)) = scope.payload_mut() {
             construction.plane = None;
-            if proven {
+            if mode == Mode::Proven {
                 construction.plane_scope_record_index = Some(crate::records::identity::Located {
                     value: 6,
                     offset: 0,
                 });
+            } else if mode == Mode::Selected {
+                construction.construction_plane_scope = Some(
+                    crate::records::feature::mirror::DesignMirrorConstructionPlaneScope {
+                        scope_record_index: 6,
+                        identity_offset: 21,
+                    },
+                );
             } else {
                 construction.assumed_plane_scope = Some(DesignMirrorAssumedPlaneScope {
                     scope_record_index: 6,
@@ -228,8 +242,8 @@ fn an_assumed_mirror_plane_scope_needs_a_framed_work_plane_and_records_its_loss(
         group(10, 40, DesignOperandRole::BODIES_B),
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
-    let project = |proven: bool, plane: DesignParameterScope| {
-        let scope = mirror(proven);
+    let project = |mode: Mode, plane: DesignParameterScope| {
+        let scope = mirror(mode);
         let mut losses = Vec::new();
         let definition = project_mirror(
             &scope,
@@ -241,8 +255,8 @@ fn an_assumed_mirror_plane_scope_needs_a_framed_work_plane_and_records_its_loss(
         );
         (definition, losses)
     };
-    for proven in [true, false] {
-        let (definition, losses) = project(proven, work_plane(DesignFeatureKind::WorkPlane, true));
+    for mode in [Mode::Proven, Mode::Selected, Mode::Assumed] {
+        let (definition, losses) = project(mode, work_plane(DesignFeatureKind::WorkPlane, true));
         let Some(FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. })) =
             definition
         else {
@@ -263,9 +277,7 @@ fn an_assumed_mirror_plane_scope_needs_a_framed_work_plane_and_records_its_loss(
             serde_json::to_value(plane_normal).unwrap(),
             serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0})
         );
-        if proven {
-            assert!(losses.is_empty());
-        } else {
+        if mode == Mode::Assumed {
             assert_eq!(losses.len(), 1);
             assert_eq!(
                 losses[0].code,
@@ -274,12 +286,14 @@ fn an_assumed_mirror_plane_scope_needs_a_framed_work_plane_and_records_its_loss(
             assert!(losses[0]
                 .message
                 .contains("face 10 of history history (not planar)"));
+        } else {
+            assert!(losses.is_empty());
         }
         for plane in [
             work_plane(DesignFeatureKind::WorkPlane, false),
             work_plane(DesignFeatureKind::Extrude, true),
         ] {
-            let (definition, losses) = project(proven, plane);
+            let (definition, losses) = project(mode, plane);
             assert!(definition.is_none());
             assert!(losses.is_empty());
         }

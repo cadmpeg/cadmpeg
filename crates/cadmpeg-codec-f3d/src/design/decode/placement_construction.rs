@@ -21,7 +21,7 @@ pub(crate) mod work_planes;
 const TYPE_GUID: &str = "7B6C3C2D-4096-4E6D-B225-699E8C2D9355";
 const BASE_GUID: &str = "2CA5A1CD-C99B-4C9B-91AF-57989148E841";
 
-pub(super) fn checked_solved_frame(
+pub(in crate::design) fn checked_solved_frame(
     placement: &DesignPlacementConstruction,
 ) -> Option<Located<crate::records::sketch_placement::SketchPlacementMatrix>> {
     if placement.fields.z_flip.value != 0

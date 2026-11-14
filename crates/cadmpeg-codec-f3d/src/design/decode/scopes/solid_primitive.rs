@@ -10,7 +10,10 @@ use crate::bytes::f64s_at;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_guid_end;
 use crate::ids::native_stream;
+use crate::layout::extended_prefixed_marked_reference_box_prefix as extended_box;
+use crate::layout::marked_reference_box_prefix as marked_box;
 use crate::layout::named_solid_primitive_prologue as solid_prologue;
+use crate::layout::prefixed_marked_reference_box_prefix as prefixed_box;
 use crate::layout::shifted_cylinder_primitive_352_frame as shifted_cylinder_352;
 use crate::layout::shifted_cylinder_primitive_502_frame as shifted_cylinder_502;
 use crate::layout::typed_reference_box_primitive_1295_frame as typed_box;
@@ -46,9 +49,6 @@ const TYPED_BOX_TABLE_GUIDS: [&str; 8] = [
 ];
 /// Ordered-reference index named by each of the seven prefix references.
 const TYPED_BOX_PREFIX_MEMBERS: [usize; 7] = [7, 2, 3, 4, 1, 5, 6];
-/// Largest absolute offset-owner value that counts as zero when the
-/// typed-reference form composes its stored frame with the owner offsets.
-const EPS_FRAME_OFFSET_ZERO: f64 = 0.0;
 
 pub(super) fn exact_solid_primitive(
     bytes: &[u8],
@@ -67,18 +67,33 @@ pub(super) fn exact_solid_primitive(
             )
         }
         "BoxPrimitive" => {
-            if let Some(operation_offset) = exact_named_solid_primitive_operation(bytes, start) {
-                (
-                    extrude_operation_at(bytes, operation_offset)?,
-                    operation_offset,
-                    None,
-                )
-            } else {
-                let prologue = exact_typed_reference_box_prologue(bytes, scope, start)?;
+            let reference_count = usize::try_from(
+                scope
+                    .reference_count_offset()
+                    .checked_sub(scope.byte_offset())?,
+            )
+            .ok()?;
+            if [
+                marked_box::REFERENCE_COUNT,
+                prefixed_box::REFERENCE_COUNT,
+                extended_box::REFERENCE_COUNT,
+                typed_box::REFERENCE_COUNT,
+            ]
+            .contains(&reference_count)
+            {
+                let prologue = exact_typed_reference_box_prologue(bytes, scope, start)
+                    .or_else(|| exact_marked_reference_box_prologue(bytes, scope, start))?;
                 (
                     prologue.operation,
                     prologue.operation_offset,
                     Some(prologue.transform),
+                )
+            } else {
+                let operation_offset = exact_named_solid_primitive_operation(bytes, start)?;
+                (
+                    extrude_operation_at(bytes, operation_offset)?,
+                    operation_offset,
+                    None,
                 )
             }
         }
@@ -182,16 +197,15 @@ pub(super) fn exact_solid_primitive(
                 return None;
             };
             if frame_transform.is_some() {
-                // The stored frame is the box placement only when the offset
-                // owners add no translation of their own.
                 let members: Vec<u32> = scope.reference_members().values().copied().collect();
                 let owners = [length, width, height, offset_x, offset_y];
-                if offset_x.evaluated_value().get().abs() > EPS_FRAME_OFFSET_ZERO
-                    || offset_y.evaluated_value().get().abs() > EPS_FRAME_OFFSET_ZERO
-                    || owners
-                        .iter()
-                        .zip(members.get(2..7)?)
-                        .any(|(owner, member)| owner.record_index() != *member)
+                if owners
+                    .iter()
+                    .zip(
+                        members
+                            .get(members.len().checked_sub(6)?..members.len().checked_sub(1)?)?,
+                    )
+                    .any(|(owner, member)| owner.record_index() != *member)
                 {
                     return None;
                 }
@@ -272,11 +286,103 @@ fn exact_named_solid_primitive_operation(bytes: &[u8], start: usize) -> Option<u
 }
 
 #[derive(Clone, Copy)]
-struct ExactTypedBoxPrologue {
+struct ExactBoxPrologue {
     operation: DesignExtrudeOperation,
     operation_offset: usize,
     transform:
         crate::records::identity::Located<crate::records::sketch_placement::SketchPlacementMatrix>,
+}
+
+fn exact_marked_reference_box_prologue(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    start: usize,
+) -> Option<ExactBoxPrologue> {
+    let at = |offset: usize| start.checked_add(offset);
+    let relative_count = usize::try_from(
+        scope
+            .reference_count_offset()
+            .checked_sub(scope.byte_offset())?,
+    )
+    .ok()?;
+    let (prefix_shift, guid, zeros) = match relative_count {
+        marked_box::REFERENCE_COUNT => {
+            (0, marked_box::GUID_CODE_UNIT_COUNT, marked_box::ZERO_RUN_3)
+        }
+        prefixed_box::REFERENCE_COUNT => (
+            prefixed_box::MATRIX - marked_box::MATRIX,
+            prefixed_box::GUID_CODE_UNIT_COUNT,
+            prefixed_box::ZERO_RUN_3,
+        ),
+        extended_box::REFERENCE_COUNT => (
+            prefixed_box::MATRIX - marked_box::MATRIX,
+            extended_box::GUID_CODE_UNIT_COUNT,
+            extended_box::ZERO_RUN_3,
+        ),
+        _ => return None,
+    };
+    if prefix_shift == 0 {
+        if bytes.get(at(marked_box::ZERO_RUN_10)?..at(marked_box::FORM_MARKER)?)? != [0; 10] {
+            return None;
+        }
+    } else if bytes.get(at(prefixed_box::ZERO_RUN_9)?..at(prefixed_box::ONE_PREFIX)?)? != [0; 9]
+        || View::u32_le_at(bytes, at(prefixed_box::ONE_PREFIX)?)? != 1
+        || bytes.get(at(prefixed_box::ZERO_FLAG)?) != Some(&0)
+    {
+        return None;
+    }
+    let prefix_at = |offset: usize| at(offset)?.checked_add(prefix_shift);
+    let members: Vec<u32> = scope.reference_members().values().copied().collect();
+    let count = members.len();
+    if !matches!(count, 8 | 10)
+        || scope.paired_byte_offset() != scope.byte_offset().checked_add(scope.frame_length())?
+        || bytes.get(prefix_at(marked_box::FORM_MARKER)?) != Some(&1)
+        || bytes.get(prefix_at(marked_box::NESTED_MARKER)?) != Some(&1)
+        || bytes.get(prefix_at(marked_box::ZERO_BEFORE_MATRIX)?) != Some(&0)
+        || !is_null_guid_utf16(bytes, at(guid)?)
+        || bytes.get(at(zeros)?..at(relative_count)?)? != [0; 3]
+        || View::u32_le_at(bytes, at(relative_count)?)? != u32::try_from(count).ok()?
+    {
+        return None;
+    }
+    for (ordinal, member) in members.iter().enumerate() {
+        let entry = at(relative_count)?
+            .checked_add(4)?
+            .checked_add(ordinal.checked_mul(11)?)?;
+        if marked_record_reference(bytes, entry) != Some(*member)
+            || scope.reference_members().offsets().nth(ordinal).copied()
+                != Some(u64_from_index(entry.checked_add(1)?))
+            || members[..ordinal].contains(member)
+        {
+            return None;
+        }
+    }
+    for (ordinal, distance) in [1, 6, 5, 4, 7, 3, 2].into_iter().enumerate() {
+        let offset = prefix_at(marked_box::REFERENCES)?.checked_add(ordinal.checked_mul(11)?)?;
+        if marked_record_reference(bytes, offset)
+            != members.get(count.checked_sub(distance)?).copied()
+        {
+            return None;
+        }
+    }
+    let values = f64s_at::<16>(bytes, prefix_at(marked_box::MATRIX)?)?;
+    let mut transform = [[0.0; 4]; 4];
+    for (ordinal, value) in values.into_iter().enumerate() {
+        transform[ordinal / 4][ordinal % 4] = value;
+    }
+    if !valid_sketch_transform(&transform) || !right_handed(&transform) {
+        return None;
+    }
+    let operation_offset = prefix_at(marked_box::OPERATION)?;
+    Some(ExactBoxPrologue {
+        operation: extrude_operation_at(bytes, operation_offset)?,
+        operation_offset,
+        transform: crate::records::identity::Located {
+            value: crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
+                .ok()?,
+            offset: u64_from_index(prefix_at(marked_box::MATRIX)?),
+        },
+    })
 }
 
 /// The typed-reference `BoxPrimitive` prologue: operation, seven prefix
@@ -286,7 +392,7 @@ fn exact_typed_reference_box_prologue(
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
-) -> Option<ExactTypedBoxPrologue> {
+) -> Option<ExactBoxPrologue> {
     const TABLE_LEN: usize = 8;
     let stride = crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
     let at = |relative_offset: usize| start.checked_add(relative_offset);
@@ -348,7 +454,7 @@ fn exact_typed_reference_box_prologue(
     if !valid_sketch_transform(&transform) || !right_handed(&transform) {
         return None;
     }
-    Some(ExactTypedBoxPrologue {
+    Some(ExactBoxPrologue {
         operation,
         operation_offset,
         transform: crate::records::identity::Located {

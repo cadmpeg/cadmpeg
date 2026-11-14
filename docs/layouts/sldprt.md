@@ -3851,6 +3851,28 @@ Parsed by:
 | 6 | 4 | `contour_ordinal` | `u32` | little | spec | contour ordinal u32 at prefix +6 |
 | 10 | 4 | `identifier` | `u32` | little | spec | identifier u32 at prefix +10 |
 
+## `extrusion_compact_operation_trailer`
+
+Spec §2 · layout: byte offsets · size: 40 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `zero_header` | `u32` | little | spec | followed by four zero bytes |
+| 4 | 2 | `family` | `u16` | little | spec | The family word establishes the operation family independently of a shared class token |
+| 6 | 1 | `operation` | `u8` | little | spec | a one-byte Boolean operation |
+| 7 | 1 | `schema` | `u8` | little | spec | one schema byte |
+| 8 | 4 | `object_id` | `u32` | little | spec | the repeated little-endian u32 object identifier |
+| 12 | 4 | `zero_after_object` | `u32` | little | spec | and four zero bytes |
+| 16 | 2 | `continuation_word` | `u16` | little | spec | a little-endian u16 continuation word |
+| 18 | 2 | `marker` | `u16` | little | spec | a u16 marker equal to `1` · value `1` |
+| 20 | 2 | `reference` | `u16` | little | spec | a short archive object reference in `1..0x7fff` |
+| 22 | 12 | `zero_after_reference` | `bytes[12]` | little | spec | twelve zero bytes, a nonzero u16 final token |
+| 34 | 2 | `final_token` | `u16` | little | spec | a nonzero u16 final token |
+| 36 | 4 | `zero_tail` | `bytes[4]` | little | spec | four zero tail bytes |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
