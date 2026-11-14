@@ -73,7 +73,10 @@ fn reference_placed_sphere_prefixes_bind_evaluated_diameters() {
             sphere.operation,
             crate::records::feature::extrude::DesignExtrudeOperation::Cut
         );
-        assert_eq!(sphere.operation_offset, operation as u64);
+        assert_eq!(
+            sphere.operation_offset,
+            cadmpeg_core::decode::u64_from_index(operation)
+        );
         assert!(!sphere.diameter_owner_assumed);
         assert!(sphere.diameter_source_assumed);
     }

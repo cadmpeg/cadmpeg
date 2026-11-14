@@ -2457,7 +2457,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder preserves the neutral deletion family. It records `feature.delete-face-frame-controls-assumed` for unfamiliar frames and `feature.delete-face-group-selection-assumed` for missing or inconsistent face groups.
 
-### DR-486. UnStitch prologue flag and reference runs
+### DR-491. UnStitch prologue flag and reference runs
 
 **Question.** Which setting does the UnStitch selection flag encode, and which entities do the identity and source reference runs name?
 
@@ -2549,7 +2549,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder uses a unique positive referenced scalar with `feature.sphere-diameter-owner-assumed` when ownership is unresolved, and retains the evaluated diameter with `feature.sphere-diameter-source-assumed` when its parameter source has no unique local definition.
 
-### DR-486. Operand containers of unqualified Assemble connectors
+### DR-492. Operand containers of unqualified Assemble connectors
 
 **Question.** Which occurrence or document contains a connector when its scope retains the connector reference and frame but its operand qualifier does not decode?
 
