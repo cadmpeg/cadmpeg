@@ -84,6 +84,28 @@ pub(crate) mod extent_struct {
     pub(crate) const TRAILING_WORD: usize = 16;
 }
 
+/// Byte offsets for the `visible_body_roster_prefix` record.
+///
+/// Spec §3.1. Record length 4 B.
+///
+/// ```text
+/// The count is followed by count positive u32le allocation ends and four zero u32le words.
+/// ```
+pub(crate) mod visible_body_roster_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 4;
+    /// Offset of `count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COUNT: usize = 0;
+}
+
+/// Byte offsets for the `visible_body_roster_suffix` record.
+///
+/// Spec §3.1. Record length 16 B.
+pub(crate) mod visible_body_roster_suffix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 16;
+}
+
 /// Byte offsets for the `vertex_roster_row` record.
 ///
 /// Spec §3.5. Record length 7 B.

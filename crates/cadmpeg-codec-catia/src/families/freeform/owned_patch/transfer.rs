@@ -25,6 +25,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
+use super::roster::BodyRoots;
 use crate::assemble::annotate;
 use crate::families::FamilyEntityAdmission;
 use crate::loss::CatiaLossCode;
@@ -98,6 +99,7 @@ pub(super) fn append(
     patches: Vec<Patch>,
     refusal: &mut LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
+    body_roots: &BodyRoots,
 ) -> Result<Option<LossNote>, CodecError> {
     let mut by_body = BTreeMap::<_, Vec<_>>::new();
     for patch in patches {
@@ -111,6 +113,10 @@ pub(super) fn append(
     let (mut rolling_ball, mut offset, mut ruled, mut extrusion) = (0, 0, 0, 0);
     let (mut adjusted, mut max_shift_mm) = (0, 0.0_f64);
     for ((source, body), mut patches) in by_body {
+        let roots = body_roots
+            .get(&(source, body))
+            .cloned()
+            .unwrap_or_else(|| BTreeSet::from([body]));
         patches.sort_by_key(|patch| patch.priority);
         let mut reconciliations = BTreeMap::new();
         let selected = compatible_patches(&mut patches, &mut reconciliations);
@@ -136,52 +142,54 @@ pub(super) fn append(
             }
             component.sort_unstable();
             let patches = component.iter().map(|&i| &patches[i]).collect::<Vec<_>>();
-            if append_component(ir, annotations, source, body, &patches, admission)? {
-                count += patches.len();
-                for index in &component {
-                    if let Some(record) = reconciliations.get(index) {
-                        for (count, gap) in reconciled.iter_mut().zip([
-                            record.vertex_repair,
-                            record.seed_alignment,
-                            record.retry,
-                            record.replaced_edge,
-                        ]) {
-                            if let Some(gap) = gap {
-                                *count += 1;
-                                max_discrepancy_mm = max_discrepancy_mm.max(gap);
+            for &root in &roots {
+                if append_component(ir, annotations, source, (root, body), &patches, admission)? {
+                    count += patches.len();
+                    for index in &component {
+                        if let Some(record) = reconciliations.get(index) {
+                            for (count, gap) in reconciled.iter_mut().zip([
+                                record.vertex_repair,
+                                record.seed_alignment,
+                                record.retry,
+                                record.replaced_edge,
+                            ]) {
+                                if let Some(gap) = gap {
+                                    *count += 1;
+                                    max_discrepancy_mm = max_discrepancy_mm.max(gap);
+                                }
                             }
                         }
                     }
-                }
-                for patch in &patches {
-                    let accuracy_gap = patch
-                        .sides
-                        .iter()
-                        .map(|side| side.lift_error_mm)
-                        .filter(|&gap| gap > GAP_MM)
-                        .fold(0.0_f64, f64::max);
-                    for ((faces, largest), gap) in boundary_recovery.iter_mut().zip([
-                        patch.recovery.rolling_extension_mm,
-                        patch.recovery.affine_vertex_shift_mm,
-                        accuracy_gap,
-                    ]) {
-                        if gap > 0.0 {
-                            *faces += 1;
-                            *largest = largest.max(gap);
+                    for patch in &patches {
+                        let accuracy_gap = patch
+                            .sides
+                            .iter()
+                            .map(|side| side.lift_error_mm)
+                            .filter(|&gap| gap > GAP_MM)
+                            .fold(0.0_f64, f64::max);
+                        for ((faces, largest), gap) in boundary_recovery.iter_mut().zip([
+                            patch.recovery.rolling_extension_mm,
+                            patch.recovery.affine_vertex_shift_mm,
+                            accuracy_gap,
+                        ]) {
+                            if gap > 0.0 {
+                                *faces += 1;
+                                *largest = largest.max(gap);
+                            }
                         }
                     }
-                }
-                inferred_senses += patches.iter().filter(|patch| patch.sense_inferred).count();
-                for fit in patches.iter().filter_map(|patch| patch.surface_fit) {
-                    match fit {
-                        SheetSurfaceFit::RollingBall { max_rail_shift_mm } => {
-                            rolling_ball += 1;
-                            adjusted += usize::from(max_rail_shift_mm > 0.0);
-                            max_shift_mm = max_shift_mm.max(max_rail_shift_mm);
+                    inferred_senses += patches.iter().filter(|patch| patch.sense_inferred).count();
+                    for fit in patches.iter().filter_map(|patch| patch.surface_fit) {
+                        match fit {
+                            SheetSurfaceFit::RollingBall { max_rail_shift_mm } => {
+                                rolling_ball += 1;
+                                adjusted += usize::from(max_rail_shift_mm > 0.0);
+                                max_shift_mm = max_shift_mm.max(max_rail_shift_mm);
+                            }
+                            SheetSurfaceFit::Offset => offset += 1,
+                            SheetSurfaceFit::Ruled => ruled += 1,
+                            SheetSurfaceFit::Extrusion => extrusion += 1,
                         }
-                        SheetSurfaceFit::Offset => offset += 1,
-                        SheetSurfaceFit::Ruled => ruled += 1,
-                        SheetSurfaceFit::Extrusion => extrusion += 1,
                     }
                 }
             }
@@ -213,7 +221,7 @@ pub(super) fn append(
     }
     Ok((count != 0).then(|| {
         CatiaLossCode::TopologyOwnedPatchSubset.note(format!(
-            "Transferred {count} bounded faces as sheet subsets of their native body rosters. The complete body and its active selection remain native."
+            "Transferred {count} bounded faces as sheet subsets of their native body rosters. The complete native body is retained."
         ))
     }))
 }
@@ -514,7 +522,7 @@ fn append_component(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     source: usize,
-    body: usize,
+    (root, body): (usize, usize),
     patches: &[&Patch],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<bool, CodecError> {
@@ -565,8 +573,8 @@ fn append_component(
     macro_rules! id {
         ($kind:ty, $label:literal, $offset:expr) => {
             <$kind>::mint(format!(
-                concat!("catia:owned-patch:", $label, "#{}:{}:{}:{}"),
-                source, body, first, $offset
+                concat!("catia:owned-patch:", $label, "#{}:{}:{}:{}:{}"),
+                source, root, body, first, $offset
             ))
             .map_err(CodecError::malformed)?
         };
@@ -582,12 +590,22 @@ fn append_component(
             Exactness::Derived,
         )
     };
-    let body_id = id!(BodyId, "body", body);
-    let region = id!(RegionId, "region", body);
+    let body_id = BodyId::mint(format!("catia:owned-patch:body#{source}:{root}"))
+        .map_err(CodecError::malformed)?;
+    let region = RegionId::mint(format!("catia:owned-patch:region#{source}:{root}"))
+        .map_err(CodecError::malformed)?;
     let shell = id!(ShellId, "shell", body);
-    for id in [body_id.as_str(), region.as_str(), shell.as_str()] {
-        admit(id, body, "bounded_face_subset")?;
+    let new_body = !ir
+        .model
+        .bodies
+        .iter()
+        .any(|candidate| candidate.id == body_id);
+    if new_body {
+        for id in [body_id.as_str(), region.as_str()] {
+            admit(id, root, "bounded_face_subset")?;
+        }
     }
+    admit(shell.as_str(), body, "bounded_face_subset")?;
     let tolerance = PositiveReal::new(GAP_MM);
     for (vertex, point) in vertices {
         let point_id = id!(PointId, "point", vertex);
@@ -758,20 +776,26 @@ fn append_component(
     ir.model.shells.push(
         Shell::with_faces(shell.clone(), region.clone(), faces).map_err(CodecError::malformed)?,
     );
-    ir.model.regions.push(Region {
-        id: region.clone(),
-        body: body_id.clone(),
-        shells: vec![shell],
-    });
-    ir.model.bodies.push(Body {
-        id: body_id,
-        kind: BodyKind::Sheet,
-        regions: vec![region],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+    if let Some(owner) = ir.model.regions.iter_mut().find(|owner| owner.id == region) {
+        owner.shells.push(shell);
+    } else {
+        ir.model.regions.push(Region {
+            id: region.clone(),
+            body: body_id.clone(),
+            shells: vec![shell],
+        });
+    }
+    if new_body {
+        ir.model.bodies.push(Body {
+            id: body_id,
+            kind: BodyKind::Sheet,
+            regions: vec![region],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+    }
     Ok(true)
 }
 

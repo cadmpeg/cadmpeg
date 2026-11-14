@@ -101,6 +101,7 @@ fn map_accuracy_and_affine_position_are_labelled_inferred() {
             patches,
             &mut LaneRefusals::new(),
             &mut FamilyEntityAdmission::new(ctx),
+            &BodyRoots::new(),
         )
     })
     .expect("transfer inferred accuracy");

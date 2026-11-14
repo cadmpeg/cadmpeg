@@ -34,6 +34,7 @@ use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 mod owned_patch;
+mod parameter_cache;
 mod rolling_ball_patch;
 
 use crate::assemble::{
@@ -694,6 +695,7 @@ pub(super) fn try_decode_freeform_surfaces(
             refusal,
             &mut admission,
         )));
+        let body_selection = admitted!(container::body_selection::read(ctx, scan, &sources));
         let owned_patch_loss = if topology_transferred {
             None
         } else {
@@ -704,6 +706,7 @@ pub(super) fn try_decode_freeform_surfaces(
                     data: &scan.data,
                     sources: &sources,
                     records: &consolidated_records,
+                    selection: body_selection.as_ref(),
                 },
                 &owned_carriers,
                 refusal,

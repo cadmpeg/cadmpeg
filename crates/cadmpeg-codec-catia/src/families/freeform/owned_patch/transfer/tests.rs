@@ -93,6 +93,7 @@ fn owned_sheet_emits_one_shared_edge_and_reports_partial_transfer() {
             two_face_sheet(),
             &mut crate::nurbs::LaneRefusals::new(),
             &mut FamilyEntityAdmission::new(ctx),
+            &BodyRoots::new(),
         )
     })
     .expect("sheet transfer succeeds")
@@ -289,6 +290,7 @@ fn transfer_fit_patches(patches: Vec<Patch>, faces: usize) -> Vec<LossNote> {
             patches,
             &mut refusal,
             &mut FamilyEntityAdmission::new(ctx),
+            &BodyRoots::new(),
         )
     })
     .expect("transfer the sheet");
@@ -388,6 +390,7 @@ fn planar_transfer_preserves_pcurves_with_native_accuracy() {
             patches,
             &mut crate::nurbs::LaneRefusals::new(),
             &mut FamilyEntityAdmission::new(ctx),
+            &BodyRoots::new(),
         )
     })
     .expect("transfer");
@@ -415,6 +418,7 @@ fn reused_native_faces_keep_distinct_owner_occurrences() {
             patches,
             &mut LaneRefusals::new(),
             &mut FamilyEntityAdmission::new(ctx),
+            &BodyRoots::new(),
         )
     })
     .expect("transfer shared native faces");
@@ -424,4 +428,90 @@ fn reused_native_faces_keep_distinct_owner_occurrences() {
     assert_eq!(ir.model.edges.len(), 14);
     let validation = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate owner occurrences");
     assert!(validation.is_ok(), "{:?}", validation.findings);
+}
+
+#[test]
+fn disconnected_recovered_shells_keep_their_native_body_owner() {
+    let mut patches = two_face_sheet();
+    for side in &mut patches[1].sides {
+        side.edge += 100;
+        for (vertex, _) in &mut side.vertices {
+            *vertex += 100;
+        }
+    }
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(|ctx| {
+        append(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            patches,
+            &mut LaneRefusals::new(),
+            &mut FamilyEntityAdmission::new(ctx),
+            &BodyRoots::new(),
+        )
+    })
+    .expect("transfer disconnected native body subsets");
+    ir.finalize();
+    assert_eq!(ir.model.bodies.len(), 1);
+    assert_eq!(ir.model.regions.len(), 1);
+    assert_eq!(ir.model.shells.len(), 2);
+    assert_eq!(ir.model.regions[0].shells.len(), 2);
+    assert_eq!(ir.model.regions[0].body, ir.model.bodies[0].id);
+    assert_eq!(ir.model.faces.len(), 2);
+    let report = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate ownership");
+    assert!(report.is_ok(), "{:?}", report.findings);
+}
+
+#[test]
+fn one_native_body_keeps_multiple_face_rosters() {
+    let mut patches = two_face_sheet();
+    patches[1].body = (0, 11);
+    let roots = [
+        ((0, 10), BTreeSet::from([100])),
+        ((0, 11), BTreeSet::from([100])),
+    ]
+    .into();
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(|ctx| {
+        append(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            patches,
+            &mut LaneRefusals::new(),
+            &mut FamilyEntityAdmission::new(ctx),
+            &roots,
+        )
+    })
+    .expect("transfer body with two face rosters");
+    ir.finalize();
+    assert_eq!(ir.model.bodies.len(), 1);
+    assert_eq!(ir.model.regions.len(), 1);
+    assert_eq!(ir.model.regions[0].shells.len(), 2);
+    assert_eq!(ir.model.faces.len(), 2);
+    let report = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate body ownership");
+    assert!(report.is_ok(), "{:?}", report.findings);
+}
+
+#[test]
+fn reused_face_roster_keeps_each_native_body_instance() {
+    let roots = [((0, 10), BTreeSet::from([100, 200]))].into();
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(|ctx| {
+        append(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            two_face_sheet(),
+            &mut LaneRefusals::new(),
+            &mut FamilyEntityAdmission::new(ctx),
+            &roots,
+        )
+    })
+    .expect("transfer reused roster instances");
+    ir.finalize();
+    assert_eq!(ir.model.bodies.len(), 2);
+    assert_eq!(ir.model.regions.len(), 2);
+    assert_eq!(ir.model.faces.len(), 4);
+    assert_eq!(ir.model.edges.len(), 14);
+    let report = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate roster instances");
+    assert!(report.is_ok(), "{:?}", report.findings);
 }

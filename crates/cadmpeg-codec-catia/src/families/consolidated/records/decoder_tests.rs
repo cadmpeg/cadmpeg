@@ -1611,3 +1611,44 @@ fn object_stream_vertex_record_reads_one_xyz_point() {
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
 }
+
+#[test]
+fn requested_edge_resolution_preserves_full_resolution_geometry() {
+    use crate::families::consolidated::records::{
+        resolve_consolidated_edge_blocks_from_records, resolve_selected_consolidated_edge_blocks,
+    };
+    let mut bytes = a5_cylinder_bound_edge_stream();
+    bytes.extend(a5_cylinder_bound_edge_stream());
+    let records = crate::wire::records::consolidated_records(&bytes);
+    crate::test_support::with_service_context(|ctx| {
+        let full = resolve_consolidated_edge_blocks_from_records(
+            ctx,
+            &bytes,
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("full resolution");
+        assert_eq!(full.len(), 2);
+        let selected = resolve_selected_consolidated_edge_blocks(
+            ctx,
+            &bytes,
+            &records,
+            |block| block.pcurves[0].pos == full[1].block.pcurves[0].pos,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("selected resolution");
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].supports, full[1].supports);
+        assert_eq!(selected[0].shared_loci, full[1].shared_loci);
+        assert_eq!(selected[0].endpoint_loci, full[1].endpoint_loci);
+        let empty = resolve_selected_consolidated_edge_blocks(
+            ctx,
+            &bytes,
+            &records,
+            |_| false,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("empty selection");
+        assert!(empty.is_empty());
+    });
+}
