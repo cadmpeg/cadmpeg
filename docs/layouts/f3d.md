@@ -22,6 +22,37 @@ locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
 The top-level manifest lineage suffix is tabulated in §1.3.
 Primary indexed-header prefixes use header-relative offsets.
 
+Shared record notes:
+Records `design_decal_scope_prefix`, `design_decal_scope_extended_prefix`, `design_decal_scope_typed_prefix`, `design_decal_scope_typed_extended_prefix`: Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix.
+Records `chamfer_set_equal`, `chamfer_set_two_distances`, `chamfer_set_distance_angle`, `chamfer_set_compact_equal`: Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header.
+Records `fillet_set_constant`, `fillet_set_chordal`, `fillet_set_compact_constant`: Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+Records `design_draft_scope_class318_shifted`, `design_draft_scope_class372`, `design_draft_scope_class448`: Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340.
+Records `paramesh_flagged_mesh_body_join_prefix`, `paramesh_mesh_body_join_prefix`: Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix.
+Records `paramesh_mesh_collection_prefix`, `paramesh_flagged_mesh_collection_prefix`: Offsets are relative to the mesh-collection indexed header. The nested CommonData record starts at the end of this prefix.
+Records `paramesh_collection_owner_backlink_prefix`, `paramesh_collection_owner_v17`: Offsets are relative to the collection-owner indexed header. The record can continue after this fixed backlink prefix.
+Records `assembly_legacy_class_369_path_wrapper_one`, `assembly_legacy_class_369_path_wrapper_two`: Offsets are relative to the class-369 indexed header.
+Records `assembly_variable_reference_operand_path_locator`, `assembly_compact_rigid_group_identity_locator`, `assembly_ordinary_rigid_group_identity_locator`, `assembly_null_typed_rigid_group_matrix_locator`, `assembly_null_typed_rigid_group_identity_locator`: Offsets are relative to the locator's indexed header.
+Records `combine_body_node_prefix`, `body_consumer_browser_node_prefix`: Offsets are relative to the browser-node record header. The GUID code units start at offset 25.
+Records `fixed_pipe_operation_prefix`, `legacy_pipe_operation_prefix`: Offsets are relative to the primary indexed header. The variable reference table follows the fixed prefix.
+Records `timeline_body_owner_prefix`, `timeline_body_owner_marked_prefix`: Offsets are relative to the object's primary indexed header. The counted references start at the end of this prefix, and the reference to the owned scope follows them.
+Records `compact_selection_tail_flags_2`, `compact_selection_tail_flags_3`: Offsets are relative to T = 36 + 11 * member_count; the paired header follows this tail.
+Records `coil_compact_persistent_selection_prefix`, `coil_compact_face_selection_prefix`: Offsets are relative to the first placement selection header. The asset and context UUID payloads follow the fixed UTF-16 length fields and therefore have variable length.
+Records `work_plane_direct_352_matrix_frame`, `work_plane_direct_363_matrix_frame`, `work_plane_direct_374_matrix_frame`: Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
+Records `offset_24_extrude_prologue`, `typed_reference_extrude_prologue`, `shifted_typed_reference_extrude_prologue`: Offsets are relative to the Extrude primary indexed header.
+Records `thread_standard_construction_tail`, `thread_compact_construction_tail`, `thread_compact_reference_construction_tail`: Offsets are relative to the first byte after the third LP-UTF16 string.
+Records `move_transform_frame_253`, `move_transform_frame_254`, `move_transform_frame_273`, `move_transform_frame_274`, `move_transform_frame_283`, `move_transform_frame_284`, `move_transform_frame_293`, `move_transform_v3_frame_256`, `move_transform_v3_frame_276`, `move_transform_v3_frame_286`, `move_transform_v3_frame_296`: Offsets are relative to the transform record's primary indexed header.
+Records `modify_marker_zero_prologue`, `modify_marker_one_prologue`: Offsets are relative to the Modify scope's primary indexed header. The group references continue in steps of eleven bytes.
+Records `sketch_point_legacy_tail`, `sketch_point_v8_tail_prefix`, `sketch_point_v10_tail_prefix`, `sketch_point_v11_tail_prefix`: Relative to the first flag byte; excludes the preceding property and first paired reference.
+Records `compact_reference_profile_selection_prefix`, `typed_reference_profile_selection_prefix`: Offsets are relative to the selection primary indexed header; the LP-UTF16 asset GUID and owner text follow.
+Records `compact_reference_profile_chain_record`, `typed_reference_profile_chain_record`: Offsets are relative to the chain record indexed header.
+Records `extrude_selection_member_long_tail`, `extrude_selection_member_scope_tail`: Offsets are relative to the end of the 190-byte selection-member frame.
+Records `root_instance_empty_path_frame`, `root_instance_empty_path_separated_frame`: The typed reference after the two GUIDs names the root component definition.
+Records `assembly_wide_operand_path_identity_locator`, `assembly_wide_operand_path_matrix_locator`: Offsets are relative to the locator indexed header.
+Records `ordinary_rigid_group_tail_76`, `ordinary_rigid_group_tail_88`: Offsets are relative to the end of the LP-UTF16 kind.
+Records `legacy_attributed_external_placement_identity_tail`, `legacy_attributed_external_placement_matrix_tail`: Offsets are relative to the byte after the identity flag.
+Records `thread_extended_standard_trailer`, `thread_extended_compact_trailer`: Offsets are relative to the construction marker plus 38.
+Records `marked_reference_box_prefix`, `prefixed_marked_reference_box_prefix`, `extended_prefixed_marked_reference_box_prefix`: Scope-relative prefix through the ordered reference count.
+
 ## Composite types
 
 | Type | Bytes | Endianness | Meaning |
@@ -171,8 +202,6 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 44 B
 
-Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/decal.rs`
 
@@ -189,8 +218,6 @@ Parsed by:
 ## `design_decal_scope_extended_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 48 B
-
-Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/decal.rs`
@@ -211,8 +238,6 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 124 B
 
-Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/decal.rs`
 
@@ -227,8 +252,6 @@ Parsed by:
 ## `design_decal_scope_typed_extended_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 128 B
-
-Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/decal.rs`
@@ -627,8 +650,6 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 83 B
 
-Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs`
 
@@ -653,8 +674,6 @@ Parsed by:
 ## `chamfer_set_two_distances`
 
 Spec §3.1 · layout: byte offsets · size: 93 B
-
-Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs`
@@ -681,8 +700,6 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 93 B
 
-Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs`
 
@@ -708,8 +725,6 @@ Parsed by:
 ## `chamfer_set_compact_equal`
 
 Spec §3.1 · layout: byte offsets · size: 82 B
-
-Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/chamfer_set.rs`
@@ -750,8 +765,6 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 97 B
 
-Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs`
 
@@ -776,8 +789,6 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 97 B
 
-Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs`
 
@@ -799,8 +810,6 @@ Parsed by:
 ## `fillet_set_compact_constant`
 
 Spec §3.1 · layout: byte offsets · size: 93 B
-
-Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs`
@@ -1019,8 +1028,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 340 B
 
-Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
 
@@ -1073,8 +1080,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 340 B
 
-Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
 
@@ -1126,8 +1131,6 @@ Unstated regions:
 ## `design_draft_scope_class448`
 
 Spec §3.1 · layout: byte offsets · size: 340 B
-
-Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
@@ -1425,8 +1428,6 @@ Offsets are relative to the container-GUID record's indexed header. A type-speci
 
 Spec §3.1 · layout: byte offsets · size: 568 B
 
-Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by ten zero bytes. |
@@ -1454,8 +1455,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 564 B
 
-Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by ten zero bytes. |
@@ -1480,8 +1479,6 @@ Unstated regions:
 ## `paramesh_mesh_collection_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 38 B
-
-Offsets are relative to the mesh-collection indexed header. The nested CommonData record starts at the end of this prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -1652,8 +1649,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 273 B
 
-Offsets are relative to the collection-owner indexed header. The record can continue after this fixed backlink prefix.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The owner has type GUID |
@@ -1681,8 +1676,6 @@ Unstated regions:
 ## `paramesh_collection_owner_v17`
 
 Spec §3.1 · layout: byte offsets · size: 252 B
-
-Offsets are relative to the collection-owner indexed header. The record can continue after this fixed backlink prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -1818,8 +1811,6 @@ Unstated regions:
 
 Spec §Assembly operands · layout: byte offsets · size: 37 B
 
-Offsets are relative to the class-369 indexed header.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
 
@@ -1837,8 +1828,6 @@ Unstated regions:
 ## `assembly_legacy_class_369_path_wrapper_two`
 
 Spec §Assembly operands · layout: byte offsets · size: 48 B
-
-Offsets are relative to the class-369 indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
@@ -2194,8 +2183,6 @@ Unstated regions:
 ## `assembly_variable_reference_operand_path_locator`
 
 Spec §Assembly operands · layout: byte offsets · size: 180 B
-
-Offsets are relative to the locator's indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
@@ -2555,8 +2542,6 @@ Offsets are relative to the body-selection record header. The clauses start at o
 
 Spec §3.1 · layout: byte offsets · size: 25 B
 
-Offsets are relative to the browser-node record header. The GUID code units start at offset 25.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
@@ -2878,8 +2863,6 @@ Spec §3.1 · layout: byte offsets · size: 100 B
 
 Spec §3.1 · layout: byte offsets · size: 28 B
 
-Offsets are relative to the primary indexed header. The variable reference table follows the fixed prefix.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | eleven-byte indexed header |
@@ -2904,8 +2887,6 @@ Offsets are relative to the byte after the two opaque bytes of the compact or le
 ## `legacy_pipe_operation_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 32 B
-
-Offsets are relative to the primary indexed header. The variable reference table follows the fixed prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -3185,8 +3166,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 25 B
 
-Offsets are relative to the object's primary indexed header. The counted references start at the end of this prefix, and the reference to the owned scope follows them.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
@@ -3196,8 +3175,6 @@ Offsets are relative to the object's primary indexed header. The counted referen
 ## `timeline_body_owner_marked_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 29 B
-
-Offsets are relative to the object's primary indexed header. The counted references start at the end of this prefix, and the reference to the owned scope follows them.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -3457,8 +3434,6 @@ Offsets are relative to the primary indexed header. Ordered 11-byte member refer
 
 Spec §3.1 · layout: byte offsets · size: 52 B
 
-Offsets are relative to T = 36 + 11 * member_count; the paired header follows this tail.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `ordinal` | `u32` | little | spec | `u32 ordinal` |
@@ -3473,8 +3448,6 @@ Offsets are relative to T = 36 + 11 * member_count; the paired header follows th
 ## `compact_selection_tail_flags_3`
 
 Spec §3.1 · layout: byte offsets · size: 53 B
-
-Offsets are relative to T = 36 + 11 * member_count; the paired header follows this tail.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -3767,8 +3740,6 @@ The block begins at primary indexed scope offset 77. Its final row is `(0, 0, 0,
 
 Spec §3.1 · layout: byte offsets · size: 40 B
 
-Offsets are relative to the first placement selection header. The asset and context UUID payloads follow the fixed UTF-16 length fields and therefore have variable length.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 21 | 1 | `nested_selection_marker` | `u8` | little | spec | u8 `1` at offset 21 |
@@ -3860,8 +3831,6 @@ Unstated regions:
 ## `coil_compact_face_selection_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 42 B
-
-Offsets are relative to the first placement selection header. The asset and context UUID payloads follow the fixed UTF-16 length fields and therefore have variable length.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -4147,8 +4116,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 352 B
 
-Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 55 | 1 | `marker` | `u8` | little | spec | store `0x01` at offset 55 · value `1` |
@@ -4167,8 +4134,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 363 B
 
-Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 55 | 1 | `marker` | `u8` | little | spec | store `0x01` at offset 55 · value `1` |
@@ -4186,8 +4151,6 @@ Unstated regions:
 ## `work_plane_direct_374_matrix_frame`
 
 Spec §3.1 · layout: byte offsets · size: 374 B
-
-Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -4342,8 +4305,6 @@ Unstated regions:
 ## `offset_24_extrude_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 28 B
-
-Offsets are relative to the Extrude primary indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
@@ -5078,8 +5039,6 @@ Offsets are relative to the primary Thread indexed header. The three LP-UTF16 fi
 
 Spec §3.1 · layout: byte offsets · size: 40 B
 
-Offsets are relative to the first byte after the third LP-UTF16 string.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | the five-byte construction marker is `00 01 00 00 00` |
@@ -5093,8 +5052,6 @@ Offsets are relative to the first byte after the third LP-UTF16 string.
 ## `thread_compact_construction_tail`
 
 Spec §3.1 · layout: byte offsets · size: 42 B
-
-Offsets are relative to the first byte after the third LP-UTF16 string.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -5154,8 +5111,6 @@ Offsets are relative to the first byte after the third LP-UTF16 string. This cla
 ## `thread_compact_reference_construction_tail`
 
 Spec §3.1 · layout: byte offsets · size: 49 B
-
-Offsets are relative to the first byte after the third LP-UTF16 string.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -5603,8 +5558,6 @@ Offsets are relative to the Move scope's primary indexed header. The marked refe
 
 Spec §3.1 · layout: byte offsets · size: 253 B
 
-Offsets are relative to the transform record's primary indexed header.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A 253- or 254-byte frame stores form word `5` |
@@ -5620,8 +5573,6 @@ Unstated regions:
 ## `move_transform_frame_254`
 
 Spec §3.1 · layout: byte offsets · size: 254 B
-
-Offsets are relative to the transform record's primary indexed header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -5639,8 +5590,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 273 B
 
-Offsets are relative to the transform record's primary indexed header.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A 273- or 274-byte frame stores form word `1` |
@@ -5656,8 +5605,6 @@ Unstated regions:
 ## `move_transform_frame_274`
 
 Spec §3.1 · layout: byte offsets · size: 274 B
-
-Offsets are relative to the transform record's primary indexed header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -5675,8 +5622,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 283 B
 
-Offsets are relative to the transform record's primary indexed header.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A 283- or 284-byte frame stores form word `0` |
@@ -5693,8 +5638,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 284 B
 
-Offsets are relative to the transform record's primary indexed header.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A 283- or 284-byte frame stores form word `0` |
@@ -5710,8 +5653,6 @@ Unstated regions:
 ## `move_transform_frame_293`
 
 Spec §3.1 · layout: byte offsets · size: 293 B
-
-Offsets are relative to the transform record's primary indexed header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -5735,8 +5676,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 256 B
 
-Offsets are relative to the transform record's primary indexed header.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | 256 bytes for form word `5` |
@@ -5752,8 +5691,6 @@ Unstated regions:
 ## `move_transform_v3_frame_276`
 
 Spec §3.1 · layout: byte offsets · size: 276 B
-
-Offsets are relative to the transform record's primary indexed header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -5771,8 +5708,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 286 B
 
-Offsets are relative to the transform record's primary indexed header.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | 286 bytes for form word `0` |
@@ -5788,8 +5723,6 @@ Unstated regions:
 ## `move_transform_v3_frame_296`
 
 Spec §3.1 · layout: byte offsets · size: 296 B
-
-Offsets are relative to the transform record's primary indexed header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -5813,8 +5746,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 47 B
 
-Offsets are relative to the Modify scope's primary indexed header. The group references continue in steps of eleven bytes.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its primary bytes 11 through 19 are zero |
@@ -5827,8 +5758,6 @@ Offsets are relative to the Modify scope's primary indexed header. The group ref
 ## `modify_marker_one_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 51 B
-
-Offsets are relative to the Modify scope's primary indexed header. The group references continue in steps of eleven bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -6867,8 +6796,6 @@ Spec §3.1 · layout: byte offsets · size: 25 B
 
 Spec §3.1 · layout: byte offsets · size: 25 B
 
-Offsets are relative to the browser-node record header. The GUID code units start at offset 25.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
@@ -6975,8 +6902,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 93 B
 
-Relative to the first flag byte; excludes the preceding property and first paired reference.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `flag` | `u8` | little | spec | The legacy tail contains the flag |
@@ -6993,8 +6918,6 @@ Relative to the first flag byte; excludes the preceding property and first paire
 
 Spec §3.1 · layout: byte offsets · size: 61 B
 
-Relative to the first flag byte; excludes the preceding property and first paired reference.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 7 | `flags` | `bytes[7]` | little | spec | Each modern fixed prefix contains the flags |
@@ -7008,8 +6931,6 @@ Relative to the first flag byte; excludes the preceding property and first paire
 ## `sketch_point_v10_tail_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 65 B
-
-Relative to the first flag byte; excludes the preceding property and first paired reference.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -7041,8 +6962,6 @@ Unstated regions:
 ## `sketch_point_v11_tail_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 66 B
-
-Relative to the first flag byte; excludes the preceding property and first paired reference.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -7178,8 +7097,6 @@ Spec §3.1 · layout: byte offsets · size: 29 B
 ## `paramesh_flagged_mesh_collection_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 42 B
-
-Offsets are relative to the mesh-collection indexed header. The nested CommonData record starts at the end of this prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -7350,8 +7267,6 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 26 B
 
-Offsets are relative to the Extrude primary indexed header.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
 
@@ -7367,8 +7282,6 @@ Unstated regions:
 ## `shifted_typed_reference_extrude_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 30 B
-
-Offsets are relative to the Extrude primary indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
@@ -7424,8 +7337,6 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 36 B
 
-Offsets are relative to the selection primary indexed header; the LP-UTF16 asset GUID and owner text follow.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
 
@@ -7442,8 +7353,6 @@ Unstated regions:
 ## `compact_reference_profile_chain_record`
 
 Spec §3.1 · layout: byte offsets · size: 42 B
-
-Offsets are relative to the chain record indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
@@ -7481,8 +7390,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 76 B
 
-Offsets are relative to the selection primary indexed header; the LP-UTF16 asset GUID and owner text follow.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
 
@@ -7499,8 +7406,6 @@ Unstated regions:
 ## `typed_reference_profile_chain_record`
 
 Spec §3.1 · layout: byte offsets · size: 82 B
-
-Offsets are relative to the chain record indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
@@ -7781,8 +7686,6 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 14 B
 
-Offsets are relative to the end of the 190-byte selection-member frame.
-
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `leading_zero` | `u8` | little | spec | byte `00`, u32 `2`, u64 `1`, and byte `00` · value `0` |
@@ -7793,8 +7696,6 @@ Offsets are relative to the end of the 190-byte selection-member frame.
 ## `extrude_selection_member_scope_tail`
 
 Spec §3.1 · layout: byte offsets · size: 50 B
-
-Offsets are relative to the end of the 190-byte selection-member frame.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -8483,8 +8384,6 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 255 B
 
-The typed reference after the two GUIDs names the root component definition.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
 
@@ -8507,8 +8406,6 @@ Parsed by:
 ## `root_instance_empty_path_separated_frame`
 
 Spec §3.1 · layout: byte offsets · size: 256 B
-
-The typed reference after the two GUIDs names the root component definition.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
@@ -8554,8 +8451,6 @@ Parsed by:
 
 Spec §Assembly operands · layout: byte offsets · size: 97 B
 
-Offsets are relative to the locator indexed header.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
 
@@ -8574,8 +8469,6 @@ Unstated regions:
 ## `assembly_wide_operand_path_matrix_locator`
 
 Spec §Assembly operands · layout: byte offsets · size: 225 B
-
-Offsets are relative to the locator indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
@@ -8596,8 +8489,6 @@ Unstated regions:
 ## `ordinary_rigid_group_tail_76`
 
 Spec §Assembly operands · layout: byte offsets · size: 76 B
-
-Offsets are relative to the end of the LP-UTF16 kind.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
@@ -8620,8 +8511,6 @@ Parsed by:
 ## `ordinary_rigid_group_tail_88`
 
 Spec §Assembly operands · layout: byte offsets · size: 88 B
-
-Offsets are relative to the end of the LP-UTF16 kind.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
@@ -8718,8 +8607,6 @@ Parsed by:
 
 Spec §Assembly operands · layout: byte offsets · size: 52 B
 
-Offsets are relative to the locator's indexed header.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
 
@@ -8738,8 +8625,6 @@ Parsed by:
 ## `assembly_ordinary_rigid_group_identity_locator`
 
 Spec §Assembly operands · layout: byte offsets · size: 62 B
-
-Offsets are relative to the locator's indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
@@ -8760,8 +8645,6 @@ Parsed by:
 
 Spec §Assembly operands · layout: byte offsets · size: 259 B
 
-Offsets are relative to the locator's indexed header.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
 
@@ -8780,8 +8663,6 @@ Parsed by:
 ## `assembly_null_typed_rigid_group_identity_locator`
 
 Spec §Assembly operands · layout: byte offsets · size: 131 B
-
-Offsets are relative to the locator's indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
@@ -8884,8 +8765,6 @@ Parsed by:
 
 Spec §1.4 · layout: byte offsets · size: 92 B
 
-Offsets are relative to the byte after the identity flag.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/xref.rs`
 
@@ -8902,8 +8781,6 @@ Parsed by:
 ## `legacy_attributed_external_placement_matrix_tail`
 
 Spec §1.4 · layout: byte offsets · size: 220 B
-
-Offsets are relative to the byte after the identity flag.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/xref.rs`
@@ -9473,8 +9350,6 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 24 B
 
-Offsets are relative to the construction marker plus 38.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs`
 
@@ -9488,8 +9363,6 @@ Parsed by:
 ## `thread_extended_compact_trailer`
 
 Spec §3.1 · layout: byte offsets · size: 34 B
-
-Offsets are relative to the construction marker plus 38.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs`
@@ -10715,8 +10588,6 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 339 B
 
-Scope-relative prefix through the ordered reference count.
-
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/solid_primitive.rs`
 
@@ -10742,8 +10613,6 @@ Unstated regions:
 ## `prefixed_marked_reference_box_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 343 B
-
-Scope-relative prefix through the ordered reference count.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/solid_primitive.rs`
@@ -10772,8 +10641,6 @@ Unstated regions:
 ## `extended_prefixed_marked_reference_box_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 347 B
-
-Scope-relative prefix through the ordered reference count.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/solid_primitive.rs`

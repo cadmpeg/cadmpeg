@@ -20,6 +20,37 @@ locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
 (§3.1), plus the `Canvas` geometry and scope records, the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix, and the local component-occurrence frames and root-instance prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
 The top-level manifest lineage suffix is tabulated in §1.3.
 Primary indexed-header prefixes use header-relative offsets.
+
+Shared record notes:
+Records `design_decal_scope_prefix`, `design_decal_scope_extended_prefix`, `design_decal_scope_typed_prefix`, `design_decal_scope_typed_extended_prefix`: Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix.
+Records `chamfer_set_equal`, `chamfer_set_two_distances`, `chamfer_set_distance_angle`, `chamfer_set_compact_equal`: Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header.
+Records `fillet_set_constant`, `fillet_set_chordal`, `fillet_set_compact_constant`: Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+Records `design_draft_scope_class318_shifted`, `design_draft_scope_class372`, `design_draft_scope_class448`: Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340.
+Records `paramesh_flagged_mesh_body_join_prefix`, `paramesh_mesh_body_join_prefix`: Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix.
+Records `paramesh_mesh_collection_prefix`, `paramesh_flagged_mesh_collection_prefix`: Offsets are relative to the mesh-collection indexed header. The nested CommonData record starts at the end of this prefix.
+Records `paramesh_collection_owner_backlink_prefix`, `paramesh_collection_owner_v17`: Offsets are relative to the collection-owner indexed header. The record can continue after this fixed backlink prefix.
+Records `assembly_legacy_class_369_path_wrapper_one`, `assembly_legacy_class_369_path_wrapper_two`: Offsets are relative to the class-369 indexed header.
+Records `assembly_variable_reference_operand_path_locator`, `assembly_compact_rigid_group_identity_locator`, `assembly_ordinary_rigid_group_identity_locator`, `assembly_null_typed_rigid_group_matrix_locator`, `assembly_null_typed_rigid_group_identity_locator`: Offsets are relative to the locator's indexed header.
+Records `combine_body_node_prefix`, `body_consumer_browser_node_prefix`: Offsets are relative to the browser-node record header. The GUID code units start at offset 25.
+Records `fixed_pipe_operation_prefix`, `legacy_pipe_operation_prefix`: Offsets are relative to the primary indexed header. The variable reference table follows the fixed prefix.
+Records `timeline_body_owner_prefix`, `timeline_body_owner_marked_prefix`: Offsets are relative to the object's primary indexed header. The counted references start at the end of this prefix, and the reference to the owned scope follows them.
+Records `compact_selection_tail_flags_2`, `compact_selection_tail_flags_3`: Offsets are relative to T = 36 + 11 * member_count; the paired header follows this tail.
+Records `coil_compact_persistent_selection_prefix`, `coil_compact_face_selection_prefix`: Offsets are relative to the first placement selection header. The asset and context UUID payloads follow the fixed UTF-16 length fields and therefore have variable length.
+Records `work_plane_direct_352_matrix_frame`, `work_plane_direct_363_matrix_frame`, `work_plane_direct_374_matrix_frame`: Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
+Records `offset_24_extrude_prologue`, `typed_reference_extrude_prologue`, `shifted_typed_reference_extrude_prologue`: Offsets are relative to the Extrude primary indexed header.
+Records `thread_standard_construction_tail`, `thread_compact_construction_tail`, `thread_compact_reference_construction_tail`: Offsets are relative to the first byte after the third LP-UTF16 string.
+Records `move_transform_frame_253`, `move_transform_frame_254`, `move_transform_frame_273`, `move_transform_frame_274`, `move_transform_frame_283`, `move_transform_frame_284`, `move_transform_frame_293`, `move_transform_v3_frame_256`, `move_transform_v3_frame_276`, `move_transform_v3_frame_286`, `move_transform_v3_frame_296`: Offsets are relative to the transform record's primary indexed header.
+Records `modify_marker_zero_prologue`, `modify_marker_one_prologue`: Offsets are relative to the Modify scope's primary indexed header. The group references continue in steps of eleven bytes.
+Records `sketch_point_legacy_tail`, `sketch_point_v8_tail_prefix`, `sketch_point_v10_tail_prefix`, `sketch_point_v11_tail_prefix`: Relative to the first flag byte; excludes the preceding property and first paired reference.
+Records `compact_reference_profile_selection_prefix`, `typed_reference_profile_selection_prefix`: Offsets are relative to the selection primary indexed header; the LP-UTF16 asset GUID and owner text follow.
+Records `compact_reference_profile_chain_record`, `typed_reference_profile_chain_record`: Offsets are relative to the chain record indexed header.
+Records `extrude_selection_member_long_tail`, `extrude_selection_member_scope_tail`: Offsets are relative to the end of the 190-byte selection-member frame.
+Records `root_instance_empty_path_frame`, `root_instance_empty_path_separated_frame`: The typed reference after the two GUIDs names the root component definition.
+Records `assembly_wide_operand_path_identity_locator`, `assembly_wide_operand_path_matrix_locator`: Offsets are relative to the locator indexed header.
+Records `ordinary_rigid_group_tail_76`, `ordinary_rigid_group_tail_88`: Offsets are relative to the end of the LP-UTF16 kind.
+Records `legacy_attributed_external_placement_identity_tail`, `legacy_attributed_external_placement_matrix_tail`: Offsets are relative to the byte after the identity flag.
+Records `thread_extended_standard_trailer`, `thread_extended_compact_trailer`: Offsets are relative to the construction marker plus 38.
+Records `marked_reference_box_prefix`, `prefixed_marked_reference_box_prefix`, `extended_prefixed_marked_reference_box_prefix`: Scope-relative prefix through the ordered reference count.
 """
 
 # --- §3.1 Design-segment fixed headers -------------------------------------
@@ -441,7 +472,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A `Decal` scope is a presentation timeline object"
 size = 44
-note = "Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix."
 
 [[record.field]]
 name = "indexed_header"
@@ -500,7 +530,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The extended Decal prefix stores nine zero bytes at offsets 11 through 19"
 size = 48
-note = "Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix."
 
 [[record.field]]
 name = "indexed_header"
@@ -578,7 +607,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The typed Decal prefix stores each reference as a 51-byte typed local reference"
 size = 124
-note = "Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix."
 
 [[record.field]]
 name = "indexed_header"
@@ -623,7 +651,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The typed extended Decal prefix has the extended header and the typed references"
 size = 128
-note = "Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix."
 
 [[record.field]]
 name = "indexed_header"
@@ -1825,7 +1852,6 @@ kind = "byte"
 section = "3.1"
 anchor = "`+36: u32 spec kind 1`"
 size = 83
-note = "Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -1941,7 +1967,6 @@ kind = "byte"
 section = "3.1"
 anchor = "`+46: u32 spec kind 2`"
 size = 93
-note = "Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -2057,7 +2082,6 @@ kind = "byte"
 section = "3.1"
 anchor = "`+46: u32 spec kind 3`"
 size = 93
-note = "Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -2180,7 +2204,6 @@ kind = "byte"
 section = "3.1"
 anchor = "`+59: auxiliary reference`"
 size = 82
-note = "Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -2318,7 +2341,6 @@ kind = "byte"
 section = "3.1"
 anchor = "`+29: edge-group reference`"
 size = 97
-note = "Offsets are relative to the set record indexed header; the frame ends at the next indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -2426,7 +2448,6 @@ kind = "byte"
 section = "3.1"
 anchor = "`+28: ChordLen owner reference`"
 size = 97
-note = "Offsets are relative to the set record indexed header; the frame ends at the next indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -2520,7 +2541,6 @@ kind = "byte"
 section = "3.1"
 anchor = "`+27: edge-group reference`"
 size = 93
-note = "Offsets are relative to the set record indexed header; the frame ends at the next indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -3229,7 +3249,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The reserved zero u32 shifts the reference table"
 size = 340
-note = "Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340."
 
 [[record.field]]
 name = "indexed_header"
@@ -3407,7 +3426,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The paired class `259` discriminates this generation."
 size = 340
-note = "Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340."
 
 [[record.field]]
 name = "indexed_header"
@@ -3583,7 +3601,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The paired class `263` discriminates this generation."
 size = 340
-note = "Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340."
 
 [[record.field]]
 name = "indexed_header"
@@ -4495,7 +4512,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A mesh body can instead store byte `01` at offset 20, in place of the last of the ten zero bytes, and a u32 at offset 21."
 size = 568
-note = "Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix."
 
 [[record.field]]
 name = "indexed_header"
@@ -4615,7 +4631,6 @@ kind = "byte"
 section = "3.1"
 anchor = "It carries two equal row-major 4×4 f64 affine matrices at record-relative offsets 42 and 171."
 size = 564
-note = "Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix."
 
 [[record.field]]
 name = "indexed_header"
@@ -4720,7 +4735,6 @@ kind = "byte"
 section = "3.1"
 anchor = "Its indexed header is followed by ten zero bytes, a u32 body count at offset 21, bytes `01 01` at offset 25, a marked same-segment texture-table reference at offset 27, and a nested same-index record at offset 38."
 size = 38
-note = "Offsets are relative to the mesh-collection indexed header. The nested CommonData record starts at the end of this prefix."
 
 [[record.field]]
 name = "indexed_header"
@@ -5197,7 +5211,6 @@ kind = "byte"
 section = "3.1"
 anchor = "In versions 22 and 23, the fixed-prefix form stores its marked same-segment reference at offset 262."
 size = 273
-note = "Offsets are relative to the collection-owner indexed header. The record can continue after this fixed backlink prefix."
 
 [[record.field]]
 name = "indexed_header"
@@ -5251,7 +5264,6 @@ kind = "byte"
 section = "3.1"
 anchor = "Version 17 stores its collection backlink at offset 241"
 size = 252
-note = "Offsets are relative to the collection-owner indexed header. The record can continue after this fixed backlink prefix."
 
 [[record.field]]
 name = "indexed_header"
@@ -5701,7 +5713,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "A class-369 wrapper with path count 1 is 37 bytes."
 size = 37
-note = "Offsets are relative to the class-369 indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -5745,7 +5756,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "A class-369 wrapper with path count 2 is 48 bytes."
 size = 48
-note = "Offsets are relative to the class-369 indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -6633,7 +6643,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The direct-path subform of the class-283/264 and class-347/260 generations uses a 180-byte locator envelope."
 size = 180
-note = "Offsets are relative to the locator's indexed header."
 
 [[record.gap]]
 offset = 0
@@ -7646,7 +7655,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A browser node stores ten zero bytes after its indexed header"
 size = 25
-note = "Offsets are relative to the browser-node record header. The GUID code units start at offset 25."
 
 [[record.field]]
 name = "indexed_header"
@@ -8884,7 +8892,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The compact Pipe prefix has"
 size = 28
-note = "Offsets are relative to the primary indexed header. The variable reference table follows the fixed prefix."
 
 [[record.field]]
 name = "indexed_header"
@@ -8964,7 +8971,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The legacy Pipe prefix has"
 size = 32
-note = "Offsets are relative to the primary indexed header. The variable reference table follows the fixed prefix."
 
 [[record.field]]
 name = "indexed_header"
@@ -10367,7 +10373,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A paste or body-to-component timeline object owns"
 size = 25
-note = "Offsets are relative to the object's primary indexed header. The counted references start at the end of this prefix, and the reference to the owned scope follows them."
 
 [[record.field]]
 name = "indexed_header"
@@ -10396,7 +10401,6 @@ kind = "byte"
 section = "3.1"
 anchor = "In the marked form, bytes 11 through 19 are zero"
 size = 29
-note = "Offsets are relative to the object's primary indexed header. The counted references start at the end of this prefix, and the reference to the owned scope follows them."
 
 [[record.field]]
 name = "indexed_header"
@@ -11228,7 +11232,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The two-byte-flag tail is 52 bytes:"
 size = 52
-note = "Offsets are relative to T = 36 + 11 * member_count; the paired header follows this tail."
 
 [[record.field]]
 name = "ordinal"
@@ -11292,7 +11295,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The three-byte-flag tail is 53 bytes:"
 size = 53
-note = "Offsets are relative to T = 36 + 11 * member_count; the paired header follows this tail."
 
 [[record.field]]
 name = "ordinal"
@@ -12293,7 +12295,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The persistent prefix stores zero bytes at offsets 11 through 20"
 size = 40
-note = "Offsets are relative to the first placement selection header. The asset and context UUID payloads follow the fixed UTF-16 length fields and therefore have variable length."
 
 [[record.gap]]
 offset = 0
@@ -12541,7 +12542,6 @@ kind = "byte"
 section = "3.1"
 anchor = "Its prefix stores zero bytes at offsets 11 through 22"
 size = 42
-note = "Offsets are relative to the first placement selection header. The asset and context UUID payloads follow the fixed UTF-16 length fields and therefore have variable length."
 
 [[record.gap]]
 offset = 0
@@ -13360,7 +13360,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The 352-, 363-, and 374-byte direct forms store"
 size = 352
-note = "Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque."
 
 [[record.gap]]
 offset = 0
@@ -13419,7 +13418,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The 352-, 363-, and 374-byte direct forms store"
 size = 363
-note = "Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque."
 
 [[record.gap]]
 offset = 0
@@ -13478,7 +13476,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The 352-, 363-, and 374-byte direct forms store"
 size = 374
-note = "Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque."
 
 [[record.gap]]
 offset = 0
@@ -13962,7 +13959,6 @@ kind = "byte"
 section = "3.1"
 anchor = "at primary-header offset 24 after thirteen zero bytes"
 size = 28
-note = "Offsets are relative to the Extrude primary indexed header."
 
 [[record.gap]]
 offset = 0
@@ -16402,7 +16398,6 @@ kind = "byte"
 section = "3.1"
 anchor = "the five-byte construction marker is `00 01 00 00 00` in the standard form"
 size = 40
-note = "Offsets are relative to the first byte after the third LP-UTF16 string."
 
 [[record.field]]
 name = "construction_marker"
@@ -16459,7 +16454,6 @@ kind = "byte"
 section = "3.1"
 anchor = "`01 02 00 00 00` in the compact form"
 size = 42
-note = "Offsets are relative to the first byte after the third LP-UTF16 string."
 
 [[record.field]]
 name = "construction_marker"
@@ -16620,7 +16614,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A compact trailer is either"
 size = 49
-note = "Offsets are relative to the first byte after the third LP-UTF16 string."
 
 [[record.field]]
 name = "construction_marker"
@@ -18358,7 +18351,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
 size = 253
-note = "Offsets are relative to the transform record's primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -18404,7 +18396,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
 size = 254
-note = "Offsets are relative to the transform record's primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -18450,7 +18441,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
 size = 273
-note = "Offsets are relative to the transform record's primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -18497,7 +18487,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
 size = 274
-note = "Offsets are relative to the transform record's primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -18543,7 +18532,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
 size = 283
-note = "Offsets are relative to the transform record's primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -18590,7 +18578,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
 size = 284
-note = "Offsets are relative to the transform record's primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -18637,7 +18624,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
 size = 293
-note = "Offsets are relative to the transform record's primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -18724,7 +18710,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A version-3 rigid-transform record stores the fields of its form"
 size = 256
-note = "Offsets are relative to the transform record's primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -18770,7 +18755,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A version-3 rigid-transform record stores the fields of its form"
 size = 276
-note = "Offsets are relative to the transform record's primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -18817,7 +18801,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A version-3 rigid-transform record stores the fields of its form"
 size = 286
-note = "Offsets are relative to the transform record's primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -18864,7 +18847,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A version-3 rigid-transform record stores the fields of its form"
 size = 296
-note = "Offsets are relative to the transform record's primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -18951,7 +18933,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A `Modify` scope moves whole bodies by one rigid transform"
 size = 47
-note = "Offsets are relative to the Modify scope's primary indexed header. The group references continue in steps of eleven bytes."
 
 [[record.field]]
 name = "indexed_header"
@@ -19002,7 +18983,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A `Modify` scope moves whole bodies by one rigid transform"
 size = 51
-note = "Offsets are relative to the Modify scope's primary indexed header. The group references continue in steps of eleven bytes."
 
 [[record.field]]
 name = "indexed_header"
@@ -22492,7 +22472,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A browser node named this way stores ten zero bytes after its indexed header"
 size = 25
-note = "Offsets are relative to the browser-node record header. The GUID code units start at offset 25."
 
 [[record.field]]
 name = "indexed_header"
@@ -22794,7 +22773,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The point-tail layouts"
 size = 93
-note = "Relative to the first flag byte; excludes the preceding property and first paired reference."
 
 [[record.field]]
 name = "flag"
@@ -22865,7 +22843,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The point-tail layouts"
 size = 61
-note = "Relative to the first flag byte; excludes the preceding property and first paired reference."
 
 [[record.field]]
 name = "flags"
@@ -22922,7 +22899,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The point-tail layouts"
 size = 65
-note = "Relative to the first flag byte; excludes the preceding property and first paired reference."
 
 [[record.field]]
 name = "flags"
@@ -23017,7 +22993,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The point-tail layouts"
 size = 66
-note = "Relative to the first flag byte; excludes the preceding property and first paired reference."
 
 [[record.field]]
 name = "flags"
@@ -23489,7 +23464,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A collection can instead store byte `01` at offset 20, in place of the last of the ten zero bytes, and a u32 at offset 25 after its first body count."
 size = 42
-note = "Offsets are relative to the mesh-collection indexed header. The nested CommonData record starts at the end of this prefix."
 
 [[record.field]]
 name = "indexed_header"
@@ -24068,7 +24042,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A typed-reference Extrude scope stores eleven zero bytes after its indexed header"
 size = 26
-note = "Offsets are relative to the Extrude primary indexed header."
 
 [[record.gap]]
 offset = 0
@@ -24096,7 +24069,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The shifted typed-reference form instead stores nine zero bytes, u32 `1` at offset 20"
 size = 30
-note = "Offsets are relative to the Extrude primary indexed header."
 
 [[record.gap]]
 offset = 0
@@ -24217,7 +24189,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The compact profile-loop selection uses eleven-byte local references."
 size = 36
-note = "Offsets are relative to the selection primary indexed header; the LP-UTF16 asset GUID and owner text follow."
 
 [[record.gap]]
 offset = 0
@@ -24252,7 +24223,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The compact profile-loop selection uses eleven-byte local references."
 size = 42
-note = "Offsets are relative to the chain record indexed header."
 
 [[record.gap]]
 offset = 0
@@ -24322,7 +24292,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A typed-reference profile selection is a construction-operand group member"
 size = 76
-note = "Offsets are relative to the selection primary indexed header; the LP-UTF16 asset GUID and owner text follow."
 
 [[record.gap]]
 offset = 0
@@ -24357,7 +24326,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The chain record at the selection's record index plus one stores fourteen zero bytes"
 size = 82
-note = "Offsets are relative to the chain record indexed header."
 
 [[record.gap]]
 offset = 0
@@ -25278,7 +25246,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The 204-byte form appends a fourteen-byte tail"
 size = 14
-note = "Offsets are relative to the end of the 190-byte selection-member frame."
 
 [[record.field]]
 name = "leading_zero"
@@ -25318,7 +25285,6 @@ kind = "byte"
 section = "3.1"
 anchor = "A selection member whose optional slot is absent can instead be a 240-byte indexed record"
 size = 50
-note = "Offsets are relative to the end of the 190-byte selection-member frame."
 
 [[record.field]]
 name = "leading_zero"
@@ -27637,7 +27603,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The empty-path typed identity root-instance frame is 255 bytes."
 size = 255
-note = "The typed reference after the two GUIDs names the root component definition."
 
 [[record.field]]
 name = "indexed_header"
@@ -27744,7 +27709,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
 size = 256
-note = "The typed reference after the two GUIDs names the root component definition."
 
 [[record.field]]
 name = "indexed_header"
@@ -27937,7 +27901,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The wide locator identity frame is 97 bytes."
 size = 97
-note = "Offsets are relative to the locator indexed header."
 
 [[record.gap]]
 offset = 0
@@ -27986,7 +27949,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The wide locator matrix frame is 225 bytes."
 size = 225
-note = "Offsets are relative to the locator indexed header."
 
 [[record.gap]]
 offset = 0
@@ -28042,7 +28004,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The 76-byte tail"
 size = 76
-note = "Offsets are relative to the end of the LP-UTF16 kind."
 
 [[record.field]]
 name = "ordinal"
@@ -28136,7 +28097,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The 88-byte tail"
 size = 88
-note = "Offsets are relative to the end of the LP-UTF16 kind."
 
 [[record.field]]
 name = "ordinal"
@@ -28547,7 +28507,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The compact identity"
 size = 52
-note = "Offsets are relative to the locator's indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -28619,7 +28578,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The ordinary identity"
 size = 62
-note = "Offsets are relative to the locator's indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -28691,7 +28649,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The null-construction matrix form"
 size = 259
-note = "Offsets are relative to the locator's indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -28763,7 +28720,6 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The null-construction identity form"
 size = 131
-note = "Offsets are relative to the locator's indexed header."
 
 [[record.field]]
 name = "indexed_header"
@@ -29150,7 +29106,6 @@ section = "1.4"
 anchor = "An attributed legacy occurrence placement with a zero control word"
 size = 92
 parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
-note = "Offsets are relative to the byte after the identity flag."
 
 [[record.field]]
 name = "zero"
@@ -29213,7 +29168,6 @@ section = "1.4"
 anchor = "An attributed legacy occurrence placement with a zero control word"
 size = 220
 parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
-note = "Offsets are relative to the byte after the identity flag."
 
 [[record.field]]
 name = "matrix"
@@ -31859,7 +31813,6 @@ kind = "byte"
 section = "3.1"
 anchor = "Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and byte `1`"
 size = 24
-note = "Offsets are relative to the construction marker plus 38."
 
 [[record.field]]
 name = "zero_flag"
@@ -31898,7 +31851,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1`"
 size = 34
-note = "Offsets are relative to the construction marker plus 38."
 
 [[record.field]]
 name = "hole_reference"
@@ -35835,7 +35787,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The marked-reference `BoxPrimitive` form has an eight-member or ten-member ordered reference table"
 size = 339
-note = "Scope-relative prefix through the ordered reference count."
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/solid_primitive.rs"
 
 [[record.field]]
@@ -35933,7 +35884,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The prefixed marked-reference `BoxPrimitive` forms store nine zero bytes"
 size = 343
-note = "Scope-relative prefix through the ordered reference count."
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/solid_primitive.rs"
 
 [[record.field]]
@@ -36045,7 +35995,6 @@ kind = "byte"
 section = "3.1"
 anchor = "The prefixed marked-reference `BoxPrimitive` forms store nine zero bytes"
 size = 347
-note = "Scope-relative prefix through the ordered reference count."
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/solid_primitive.rs"
 
 [[record.field]]
