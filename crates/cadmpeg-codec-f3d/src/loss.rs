@@ -203,6 +203,16 @@ pub(crate) enum F3dLossCode {
     FeatureMeshImportTessellationsUnresolved,
     FeatureMeshImportEmptySourceAssumed,
     FeatureMeshImportSourceUnparsed,
+    FeatureMeshSectionPlaneUnresolved,
+    FeatureMeshShellControlsUnresolved,
+    FeatureMeshOperationTailPartial,
+    FeatureMeshBodySelectionAssumed,
+    FeatureMeshOperationSourceUnresolved,
+    FeatureMeshOperationScopeUnparsed,
+    FeatureMeshOperationSelectorUnruled,
+    FeatureMeshOperationParameterUnbound,
+    FeatureMeshOperationFieldsUninterpreted,
+    FeatureMeshSectionCurvesUnresolved,
     /// A historical Thread selection has no complete proof of its live faces.
     ThreadLiveFaceUnproven,
     /// A stored-body operation has an empty proven body set.
@@ -862,6 +872,16 @@ impl F3dLossCode {
         Self::FeatureMeshImportTessellationsUnresolved,
         Self::FeatureMeshImportEmptySourceAssumed,
         Self::FeatureMeshImportSourceUnparsed,
+        Self::FeatureMeshSectionPlaneUnresolved,
+        Self::FeatureMeshShellControlsUnresolved,
+        Self::FeatureMeshOperationTailPartial,
+        Self::FeatureMeshBodySelectionAssumed,
+        Self::FeatureMeshOperationSourceUnresolved,
+        Self::FeatureMeshOperationScopeUnparsed,
+        Self::FeatureMeshOperationSelectorUnruled,
+        Self::FeatureMeshOperationParameterUnbound,
+        Self::FeatureMeshOperationFieldsUninterpreted,
+        Self::FeatureMeshSectionCurvesUnresolved,
         Self::ThreadLiveFaceUnproven,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
@@ -1375,6 +1395,22 @@ impl F3dLossCode {
             }
             Self::FeatureMeshImportEmptySourceAssumed => "feature.mesh-import-empty-source-assumed",
             Self::FeatureMeshImportSourceUnparsed => "feature.mesh-import-source-unparsed",
+            Self::FeatureMeshSectionPlaneUnresolved => "feature.mesh-section-plane-unresolved",
+            Self::FeatureMeshShellControlsUnresolved => "feature.mesh-shell-controls-unresolved",
+            Self::FeatureMeshOperationTailPartial => "feature.mesh-operation-tail-partial",
+            Self::FeatureMeshBodySelectionAssumed => "feature.mesh-body-selection-assumed",
+            Self::FeatureMeshOperationSourceUnresolved => {
+                "feature.mesh-operation-source-unresolved"
+            }
+            Self::FeatureMeshOperationScopeUnparsed => "feature.mesh-operation-scope-unparsed",
+            Self::FeatureMeshOperationSelectorUnruled => "feature.mesh-operation-selector-unruled",
+            Self::FeatureMeshOperationParameterUnbound => {
+                "feature.mesh-operation-parameter-unbound"
+            }
+            Self::FeatureMeshOperationFieldsUninterpreted => {
+                "feature.mesh-operation-fields-uninterpreted"
+            }
+            Self::FeatureMeshSectionCurvesUnresolved => "feature.mesh-section-curves-unresolved",
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
@@ -1868,6 +1904,16 @@ impl F3dLossCode {
             | Self::FeatureMeshImportTessellationsUnresolved
             | Self::FeatureMeshImportEmptySourceAssumed
             | Self::FeatureMeshImportSourceUnparsed
+            | Self::FeatureMeshSectionPlaneUnresolved
+            | Self::FeatureMeshShellControlsUnresolved
+            | Self::FeatureMeshOperationTailPartial
+            | Self::FeatureMeshBodySelectionAssumed
+            | Self::FeatureMeshOperationSourceUnresolved
+            | Self::FeatureMeshOperationScopeUnparsed
+            | Self::FeatureMeshOperationSelectorUnruled
+            | Self::FeatureMeshOperationParameterUnbound
+            | Self::FeatureMeshOperationFieldsUninterpreted
+            | Self::FeatureMeshSectionCurvesUnresolved
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
@@ -2230,6 +2276,16 @@ impl F3dLossCode {
             | Self::FeatureMeshImportTessellationsUnresolved
             | Self::FeatureMeshImportEmptySourceAssumed
             | Self::FeatureMeshImportSourceUnparsed
+            | Self::FeatureMeshSectionPlaneUnresolved
+            | Self::FeatureMeshShellControlsUnresolved
+            | Self::FeatureMeshOperationTailPartial
+            | Self::FeatureMeshBodySelectionAssumed
+            | Self::FeatureMeshOperationSourceUnresolved
+            | Self::FeatureMeshOperationScopeUnparsed
+            | Self::FeatureMeshOperationSelectorUnruled
+            | Self::FeatureMeshOperationParameterUnbound
+            | Self::FeatureMeshOperationFieldsUninterpreted
+            | Self::FeatureMeshSectionCurvesUnresolved
             | Self::ThreadLiveFaceUnproven
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound
@@ -2643,6 +2699,16 @@ mod tests {
                 "feature.mesh-import-tessellations-unresolved",
                 "feature.mesh-import-empty-source-assumed",
                 "feature.mesh-import-source-unparsed",
+                "feature.mesh-section-plane-unresolved",
+                "feature.mesh-shell-controls-unresolved",
+                "feature.mesh-operation-tail-partial",
+                "feature.mesh-body-selection-assumed",
+                "feature.mesh-operation-source-unresolved",
+                "feature.mesh-operation-scope-unparsed",
+                "feature.mesh-operation-selector-unruled",
+                "feature.mesh-operation-parameter-unbound",
+                "feature.mesh-operation-fields-uninterpreted",
+                "feature.mesh-section-curves-unresolved",
                 "feature.thread-live-face-unproven",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
