@@ -467,6 +467,34 @@ impl ArrangementRing {
         })
     }
 
+    /// The ring that remains when the curves in `unnamed` are removed from
+    /// every fragment. A fragment keeps its curve and traversal direction
+    /// when that curve is named; otherwise its first named coincident curve
+    /// takes its place. `None` when a fragment has no named curve.
+    fn without_unnamed(
+        &self,
+        unnamed: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+    ) -> Option<std::borrow::Cow<'_, Self>> {
+        if unnamed.is_empty() || !self.curves().any(|entity| unnamed.contains(entity)) {
+            return Some(std::borrow::Cow::Borrowed(self));
+        }
+        let mut fragments = Vec::with_capacity(self.fragments.len());
+        for fragment in &self.fragments {
+            let mut named = std::iter::once(&fragment.curve)
+                .chain(&fragment.coincident)
+                .filter(|use_| !unnamed.contains(&use_.entity))
+                .cloned();
+            fragments.push(ArrangementFragment {
+                curve: named.next()?,
+                coincident: named.collect(),
+            });
+        }
+        Some(std::borrow::Cow::Owned(Self {
+            boundary: self.boundary.clone(),
+            fragments,
+        }))
+    }
+
     /// The number of fragments with a coincident curve.
     fn shared_fragments(&self) -> usize {
         self.fragments
@@ -730,6 +758,7 @@ pub(super) fn arrangement_regions_matching_member_rings(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     rings: &[Vec<cadmpeg_ir::sketches::SketchEntityUse>],
+    unnamed: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
     tolerance: f64,
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
@@ -742,9 +771,15 @@ pub(super) fn arrangement_regions_matching_member_rings(
     )?);
     let mut candidates = Vec::new();
     for (index, face) in faces.iter().enumerate() {
-        candidates.push((index, None, &face.ring, face.ring.curves().count()));
+        if let Some(ring) = face.ring.without_unnamed(unnamed) {
+            let curves = ring.curves().count();
+            candidates.push((index, None, ring, curves));
+        }
         for (hole, ring) in face.holes.iter().flatten().enumerate() {
-            candidates.push((index, Some(hole), ring, ring.curves().count()));
+            if let Some(ring) = ring.without_unnamed(unnamed) {
+                let curves = ring.curves().count();
+                candidates.push((index, Some(hole), ring, curves));
+            }
         }
     }
     let mut outers = Vec::new();

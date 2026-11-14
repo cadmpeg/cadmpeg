@@ -23958,9 +23958,16 @@ anchor = "`P = 5` when `N = 1`"
 [[record.field]]
 name = "opaque"
 offset = 16
-type = "bytes[4]"
+type = "bytes[3]"
 source = "spec"
-anchor = "four opaque bytes"
+anchor = "three opaque bytes"
+
+[[record.field]]
+name = "tail_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "u8 tail marker"
 
 [[record.field]]
 name = "flag_guard"
@@ -24037,9 +24044,16 @@ anchor = "`P = 3` when `N` is `2` or `3`"
 [[record.field]]
 name = "opaque"
 offset = 25
-type = "bytes[4]"
+type = "bytes[3]"
 source = "spec"
-anchor = "four opaque bytes"
+anchor = "three opaque bytes"
+
+[[record.field]]
+name = "tail_marker"
+offset = 28
+type = "u8"
+source = "spec"
+anchor = "u8 tail marker"
 
 [[record.field]]
 name = "flag_guard"
@@ -24137,9 +24151,16 @@ anchor = "`P = 3` when `N` is `2` or `3`"
 [[record.field]]
 name = "opaque"
 offset = 36
-type = "bytes[4]"
+type = "bytes[3]"
 source = "spec"
-anchor = "four opaque bytes"
+anchor = "three opaque bytes"
+
+[[record.field]]
+name = "tail_marker"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "u8 tail marker"
 
 [[record.field]]
 name = "flag_guard"

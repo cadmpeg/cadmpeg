@@ -7336,7 +7336,8 @@ Parsed by:
 | 1 | 4 | `reference_record_index` | `u32` | little | spec | u32 `record_index` |
 | 5 | 6 | `reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
 | 11 | 5 | `zero_pad` | `bytes[5]` | little | spec | `P = 5` when `N = 1` |
-| 16 | 4 | `opaque` | `bytes[4]` | little | spec | four opaque bytes |
+| 16 | 3 | `opaque` | `bytes[3]` | little | spec | three opaque bytes |
+| 19 | 1 | `tail_marker` | `u8` | little | spec | u8 tail marker |
 | 20 | 4 | `flag_guard` | `u32` | little | spec | u32 `1` |
 | 24 | 1 | `construction_flag` | `u8` | little | spec | u8 construction flag |
 
@@ -7358,7 +7359,8 @@ Parsed by:
 | 12 | 4 | `second_reference_record_index` | `u32` | little | spec | u32 `record_index` |
 | 16 | 6 | `second_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
 | 22 | 3 | `zero_pad` | `bytes[3]` | little | spec | `P = 3` when `N` is `2` or `3` |
-| 25 | 4 | `opaque` | `bytes[4]` | little | spec | four opaque bytes |
+| 25 | 3 | `opaque` | `bytes[3]` | little | spec | three opaque bytes |
+| 28 | 1 | `tail_marker` | `u8` | little | spec | u8 tail marker |
 | 29 | 4 | `flag_guard` | `u32` | little | spec | u32 `1` |
 | 33 | 1 | `construction_flag` | `u8` | little | spec | u8 construction flag |
 
@@ -7383,7 +7385,8 @@ Parsed by:
 | 23 | 4 | `third_reference_record_index` | `u32` | little | spec | u32 `record_index` |
 | 27 | 6 | `third_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
 | 33 | 3 | `zero_pad` | `bytes[3]` | little | spec | `P = 3` when `N` is `2` or `3` |
-| 36 | 4 | `opaque` | `bytes[4]` | little | spec | four opaque bytes |
+| 36 | 3 | `opaque` | `bytes[3]` | little | spec | three opaque bytes |
+| 39 | 1 | `tail_marker` | `u8` | little | spec | u8 tail marker |
 | 40 | 4 | `flag_guard` | `u32` | little | spec | u32 `1` |
 | 44 | 1 | `construction_flag` | `u8` | little | spec | u8 construction flag |
 

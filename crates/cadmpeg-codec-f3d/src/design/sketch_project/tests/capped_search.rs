@@ -39,6 +39,7 @@ fn capped_spatial_profile_search_reports_a_loss() {
             let record_index = 1000 + index;
             SketchCurveIdentity {
                 planar_z_noise: None,
+                tail_marker: None,
                 id: format!("f3d:Design/BulkStream.dat:curve#{record_index}"),
                 record_index,
                 owner_reference: Some(42),

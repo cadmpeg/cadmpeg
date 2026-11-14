@@ -257,6 +257,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
                 .unwrap(),
             ),
             planar_z_noise: None,
+            tail_marker: None,
         };
     let curves = vec![
         curve(10, 10, (0.0, 0.0), (10.0, 0.0)),
@@ -446,6 +447,7 @@ fn point_closure_does_not_mark_construction_geometry() {
             .unwrap(),
         ),
         planar_z_noise: None,
+        tail_marker: None,
     };
 
     let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
@@ -535,6 +537,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             .unwrap(),
         ),
         planar_z_noise: None,
+        tail_marker: None,
     };
     let clockwise_arc = SketchCurveIdentity {
         id: "f3d:native:curve#220".into(),
@@ -559,6 +562,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             .unwrap(),
         ),
         planar_z_noise: None,
+        tail_marker: None,
     };
     let nonclamped_nurbs = SketchCurveIdentity {
         id: "f3d:native:curve#218".into(),
@@ -594,6 +598,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             .unwrap(),
         )),
         planar_z_noise: None,
+        tail_marker: None,
     };
 
     let placements = vec![placement];
@@ -992,6 +997,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         secondary_id: 0,
         geometry: Some(geometry),
         planar_z_noise: None,
+        tail_marker: None,
     };
     let mut curves = vec![
         curve(
@@ -1043,6 +1049,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         secondary_id: 0,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     });
     curves.push(curve(
         104,
@@ -1486,6 +1493,7 @@ fn shared_curve_identity_pairs_project_distinct_entities() {
                 normal: Vector3| {
         SketchCurveIdentity {
             planar_z_noise: None,
+            tail_marker: None,
             id: format!("f3d:Design/BulkStream.dat:curve#{record_index}"),
             record_index,
             owner_reference: Some(42),
@@ -1747,6 +1755,7 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
         secondary_id: 0,
         geometry: Some(geom),
         planar_z_noise: None,
+        tail_marker: None,
     };
 
     let c_line_const = mk_curve(10, off_line_const, line_geom((0.0, 0.0), (10.0, 0.0)));

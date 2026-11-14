@@ -29,6 +29,7 @@ fn curve(record_index: u32) -> SketchCurveIdentity {
         secondary_id: 0,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     }
 }
 

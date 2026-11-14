@@ -297,6 +297,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         secondary_id: 0,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     };
     let annotation_point_entity = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#radial-extension-point").unwrap(),
@@ -396,6 +397,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         secondary_id: 0,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     });
     let mut entities_with_refs = entities.clone();
     for (entity, curve) in entities_with_refs.iter_mut().zip(&curves) {
