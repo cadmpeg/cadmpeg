@@ -2565,7 +2565,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** Each authored insertion scope with a decoded placement can produce one unresolved-prototype occurrence at the document root. The per-scope membership reading is assumed. `assembly.component-insert-container-assumed` records that container-frame reading. A feature with unresolved source membership uses its native selection in a neutral component insertion and reports `feature.component-insert-membership-assumed`. The native scope retains the relation reference, occurrence identity, and decoded placement.
 
-### DR-503. Motion roles of additional Assemble owners
+### DR-504. Motion roles of additional Assemble owners
 
 **Question.** How do additional rotation, translation, yaw, and roll owners select enabled motion axes, limits, and rest positions when the joint motion is unresolved or has multiple freedom lanes?
 
