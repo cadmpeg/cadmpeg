@@ -115,6 +115,8 @@ pub(crate) struct ProjectInputs<'a> {
     pub(crate) face_operands: &'a [DesignFaceOperand],
     pub(crate) body_recipe_operands: &'a [DesignBodyRecipeOperand],
     pub(crate) placements: &'a [DesignSketchPlacement],
+    pub(crate) placement_constructions:
+        &'a [crate::records::placement_construction::DesignPlacementConstruction],
     pub(crate) body_bindings: &'a [DesignBodyBinding],
     pub(crate) component_naming_spaces: &'a [crate::records::recipes::DesignComponentNamingSpace],
     pub(crate) histories: &'a [crate::history_records::AsmHistory],
@@ -1253,7 +1255,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs, ctx)?
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 None => {
-                    if let Some(primitive) = project_solid_primitive(scope) {
+                    if let Some(primitive) = project_solid_primitive(
+                        scope,
+                        inputs.placement_constructions,
+                        &mut projection_losses,
+                    ) {
                         primitive
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Align {
                         project_align(scope, construction_groups, &mut projection_losses)
@@ -2013,6 +2019,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
 
 fn project_solid_primitive(
     scope: &DesignParameterScope,
+    placements: &[crate::records::placement_construction::DesignPlacementConstruction],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, PrimitiveSolid, PrimitiveSolidKind,
@@ -2038,24 +2046,81 @@ fn project_solid_primitive(
                 ..
             },
         )) => {
-            // The typed-reference form stores the complete local frame; the
-            // named form places the box by its two planar offsets.
-            let placement = match transform {
+            let (placement, support_assumption) = match transform {
                 Some(frame) => {
                     let rows = frame.rows();
                     let row = |index: usize| {
                         let [x, y, z, translation] = rows[index];
-                        [x, y, z, translation * 10.0]
+                        [
+                            x,
+                            y,
+                            z,
+                            (translation + x * offset_x.get() + y * offset_y.get()) * 10.0,
+                        ]
                     };
-                    cadmpeg_ir::transform::Transform::affine([row(0), row(1), row(2)])?
+                    let local = cadmpeg_ir::transform::Transform::affine([row(0), row(1), row(2)])?;
+                    let support = (|| {
+                        let stream = native_stream(&scope.id)?;
+                        let target = *scope
+                            .reference_members()
+                            .values()
+                            .nth(scope.reference_members().len().checked_sub(7)?)?;
+                        let mut candidates = placements.iter().filter(|placement| {
+                            native_stream(&placement.id) == Some(stream)
+                                && placement.record_index == u64::from(target)
+                        });
+                        let placement = candidates.next()?;
+                        if candidates.next().is_some() {
+                            return None;
+                        }
+                        let checked =
+                            crate::design::decode::placement_construction::checked_solved_frame(
+                                placement,
+                            );
+                        let flags_assumed = checked.is_none()
+                            || placement.fields.inferred_x_axis.value != 0
+                            || placement.fields.inferred_z_axis.value != 0;
+                        let frame = checked
+                            .map(|frame| frame.value)
+                            .or_else(|| placement.fields.matrix.as_ref().map(|matrix| matrix.value))
+                            .or_else(|| {
+                                placement
+                                    .fields
+                                    .identity
+                                    .as_ref()
+                                    .filter(|identity| identity.value)
+                                    .map(|_| crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY)
+                            })?;
+                        let rows = frame.rows();
+                        let [x, y, z, _] = rows;
+                        let support = cadmpeg_ir::transform::Transform::affine(
+                            [x, y, z].map(|[x, y, z, translation]| [x, y, z, translation * 10.0]),
+                        )?;
+                        cadmpeg_ir::features::FeatureRigidPlacement::new(support)?;
+                        Some((support.compose(local).ok()?, flags_assumed))
+                    })();
+                    match support {
+                        Some((frame, false)) => (frame, None),
+                        Some((frame, true)) => (frame, Some((
+                            crate::loss::F3dLossCode::FeatureBoxSupportFlagsAssumed,
+                            "uses its stored support frame despite unresolved placement flags",
+                        ))),
+                        None => (local, Some((
+                            crate::loss::F3dLossCode::FeatureBoxSupportFrameAssumed,
+                            "applies an identity support frame because its placement construction has no unique usable frame",
+                        ))),
+                    }
                 }
-                None => cadmpeg_ir::transform::Transform::affine([
-                    [1.0, 0.0, 0.0, offset_x.get() * 10.0],
-                    [0.0, 1.0, 0.0, offset_y.get() * 10.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                ])?,
+                None => (
+                    cadmpeg_ir::transform::Transform::affine([
+                        [1.0, 0.0, 0.0, offset_x.get() * 10.0],
+                        [0.0, 1.0, 0.0, offset_y.get() * 10.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                    ])?,
+                    None,
+                ),
             };
-            FeatureDefinition::Operation(FeatureOperation::Block {
+            let definition = FeatureDefinition::Operation(FeatureOperation::Block {
                 dimensions: Some([
                     cadmpeg_ir::scalar::PositiveLength::new(length.get() * 10.0)?,
                     cadmpeg_ir::scalar::PositiveLength::new(width.get() * 10.0)?,
@@ -2063,7 +2128,17 @@ fn project_solid_primitive(
                 ]),
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::new(placement)?),
                 op: operation(*result),
-            })
+            });
+            if let Some((code, assumption)) = support_assumption {
+                losses.push(code.note(format!("Box scope {} {assumption} (DR-123)", scope.id)));
+            }
+            if transform.is_some() && (offset_x.get() != 0.0 || offset_y.get() != 0.0) {
+                losses.push(crate::loss::F3dLossCode::FeatureBoxOffsetFrameAssumed.note(format!(
+                    "Box scope {} applies its planar offsets along the stored frame's local axes (DR-123)",
+                    scope.id
+                )));
+            }
+            definition
         }
         crate::records::feature::scope::DesignScopePayload::CylinderPrimitive(Some(
             crate::records::feature::primitives::DesignCylinderPrimitive {
