@@ -2693,7 +2693,7 @@ mod contour_tests {
                 extent: Some(ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: NonZeroLength::new(-2.0).unwrap(),
+                            length: NonZeroLength::new(-2.0).expect("nonzero synthetic travel"),
                         },
                         draft: None,
                     },
@@ -2702,14 +2702,27 @@ mod contour_tests {
             },
         };
         crate::decode::with_service_context(|ctx| {
-            scale_feature_operation(ctx, &mut operation, PositiveReal::new(25.4).unwrap())
+            scale_feature_operation(
+                ctx,
+                &mut operation,
+                PositiveReal::new(25.4).expect("positive synthetic scale"),
+            )
         })
-        .unwrap();
+        .expect("contour construction scales");
         let FeatureOperation::SheetMetalContourFlange { construction } = operation else {
             panic!("contour flange");
         };
-        assert_eq!(construction.thickness.unwrap().get(), 25.4);
-        assert_eq!(construction.inside_radius.unwrap().get(), 12.7);
+        assert_eq!(
+            construction.thickness.expect("scaled thickness").get(),
+            25.4
+        );
+        assert_eq!(
+            construction
+                .inside_radius
+                .expect("scaled inside radius")
+                .get(),
+            12.7
+        );
         assert!(
             matches!(construction.extent, Some(ExtrudeExtent::OneSided { side: ExtrudeSide { termination: LinearTermination::Blind { length }, .. } }) if length.get() == -50.8)
         );
