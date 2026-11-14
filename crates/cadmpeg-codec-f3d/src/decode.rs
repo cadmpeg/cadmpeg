@@ -791,12 +791,12 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             construction,
             result,
         }) => {
-            use cadmpeg_ir::features::{CoilPlacement, CoilResult};
+            use cadmpeg_ir::features::{CoilPlacement, SolidFeatureResult};
 
             matches!(construction.placement, CoilPlacement::Native { .. })
                 || match result {
-                    CoilResult::NewBody {} => false,
-                    CoilResult::Boolean { targets, .. } => !body_selection_is_resolved(targets),
+                    SolidFeatureResult::NewBody {} => false,
+                    SolidFeatureResult::Boolean { targets, .. } => !body_selection_is_resolved(targets),
                 }
         }
         // The draft angle remains available when face recipes fail, but replay
@@ -876,11 +876,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
             thickness,
-            side,
-        }) => {
+            side, result, .. }) => {
             !face_selection_is_resolved(faces)
                 || thickness.is_none()
                 || side.is_none()
+                || matches!(result, Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }) if !body_selection_is_resolved(targets))
         }
         FeatureDefinition::Operation(FeatureOperation::KnitSurface {
             faces,
@@ -1653,9 +1653,17 @@ fn design_projection_gaps(
                     native_body_selection_count(target) + native_body_selection_count(tools);
             }
             FeatureDefinition::Operation(FeatureOperation::Coil {
-                result: cadmpeg_ir::features::CoilResult::Boolean { targets, .. },
+                result: cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. },
                 ..
             }) => gaps.body_selections += native_body_selection_count(targets),
+            FeatureDefinition::Operation(FeatureOperation::Thicken { faces, result, .. }) => {
+                face_selection(faces);
+                if let Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }) =
+                    result
+                {
+                    gaps.body_selections += native_body_selection_count(targets);
+                }
+            }
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile,
                 start,

@@ -770,6 +770,7 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
                 faces: FaceSelection::Unresolved,
                 thickness: None,
                 side: None,
+                ..
             }
         ))
     ));

@@ -173,8 +173,8 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Thicken {
-                faces: FaceSelection::generated(
+            FeatureDefinition::Operation(FeatureOperation::thicken(
+                FaceSelection::generated(
                     vec![GeneratedFaceRef::new(
                         cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
                             .expect("identity grammar"),
@@ -184,9 +184,9 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
                     "creo:generated-face#7".to_string(),
                 )
                 .expect("valid test fixture"),
-                thickness: None,
-                side: None,
-            }),
+                None,
+                None,
+            )),
         ),
         native_ref: None,
     });
@@ -278,8 +278,8 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Thicken {
-                faces: FaceSelection::generated(
+            FeatureDefinition::Operation(FeatureOperation::thicken(
+                FaceSelection::generated(
                     vec![GeneratedFaceRef::new(
                         cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
                             .expect("identity grammar"),
@@ -289,9 +289,9 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
                     "creo:generated-face#7".to_string(),
                 )
                 .expect("valid test fixture"),
-                thickness: None,
-                side: None,
-            }),
+                None,
+                None,
+            )),
         ),
         native_ref: None,
     });
