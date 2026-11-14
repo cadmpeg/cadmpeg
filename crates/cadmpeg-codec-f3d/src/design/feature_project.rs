@@ -67,6 +67,7 @@ const EPS_FEATURE_PROJECT_PROJECT_OFFSET_FACES_E9: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1.0e-12;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;
 const EPS_MOVE_FACE_MOTION_ROUNDING: f64 = 32.0 * f64::EPSILON;
+const EPS_MOVE_PARAMETER_AGREEMENT: f64 = 1.0e-9;
 /// Largest difference, in radians, between a circular pattern's total angle
 /// and a full turn for which the pattern still spans the full turn.
 const EPS_CIRCULAR_PATTERN_FULL_TURN: f64 = 1.0e-12;
@@ -1062,7 +1063,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Move) => {
-                    project_move(scope, construction_groups, &mut projection_losses)
+                    project_move(scope, construction_groups, owners, &mut projection_losses)
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Shell) => {
@@ -4769,6 +4770,7 @@ fn project_align(
 fn project_move(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
+    owners: &[DesignParameterOwner],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::BodySelection;
@@ -4776,6 +4778,7 @@ fn project_move(
     let operation = scope.move_operation()?;
     let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
     let definition = move_body(operation, BodySelection::Native(group.id.clone()))?;
+    let parameters = move_parameter_owners(scope, operation, owners);
     let auxiliary = scope
         .reference_members()
         .values()
@@ -4784,6 +4787,7 @@ fn project_move(
             *index != group.record_index
                 && *index != operation.transform_record_index
                 && !group.members().iter().any(|member| member.value == *index)
+                && !parameters.contains(index)
         })
         .collect::<Vec<_>>();
     if !auxiliary.is_empty() {
@@ -4793,6 +4797,71 @@ fn project_move(
         )));
     }
     Some(definition)
+}
+
+/// Record indices of the `Move` parameter owners whose values agree with the
+/// stored matrix: the X, Y and Z distances of a translation, or the angle of a
+/// rotation.
+fn move_parameter_owners(
+    scope: &DesignParameterScope,
+    operation: &crate::records::feature::direct_face::DesignMoveOperation,
+    owners: &[DesignParameterOwner],
+) -> Vec<u32> {
+    use crate::records::feature::direct_face::DesignMoveForm;
+
+    let Some(stream) = native_stream(&scope.id) else {
+        return Vec::new();
+    };
+    let mut values = owners
+        .iter()
+        .filter(|owner| {
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+        })
+        .map(|owner| {
+            (
+                owner.local_ordinal(),
+                owner.record_index(),
+                owner.evaluated_value().get(),
+            )
+        })
+        .collect::<Vec<_>>();
+    values.sort_unstable_by_key(|&(ordinal, record_index, _)| (ordinal, record_index));
+    let transform = &operation.transform;
+    let agrees = match (operation.form, values.as_slice()) {
+        (DesignMoveForm::Form0, [(0, _, x), (1, _, y), (2, _, z)]) => {
+            let translation = [transform[0][3], transform[1][3], transform[2][3]];
+            let world = operation
+                .prefix
+                .as_ref()
+                .is_some_and(|prefix| prefix.codes == [0, 1]);
+            if world {
+                let length =
+                    |vector: [f64; 3]| vector.iter().map(|value| value * value).sum::<f64>().sqrt();
+                (length([*x, *y, *z]) - length(translation)).abs() <= EPS_MOVE_PARAMETER_AGREEMENT
+            } else {
+                [*x, *y, *z]
+                    .iter()
+                    .zip(translation)
+                    .all(|(value, component)| {
+                        (value - component).abs() <= EPS_MOVE_PARAMETER_AGREEMENT
+                    })
+            }
+        }
+        (DesignMoveForm::Form1, [(0, _, angle)]) => {
+            let cosine = (transform[0][0] + transform[1][1] + transform[2][2] - 1.0) / 2.0;
+            (angle.cos() - cosine).abs() <= EPS_MOVE_PARAMETER_AGREEMENT
+        }
+        _ => false,
+    };
+    if agrees {
+        values
+            .iter()
+            .map(|&(_, record_index, _)| record_index)
+            .collect()
+    } else {
+        Vec::new()
+    }
 }
 
 fn move_body(
