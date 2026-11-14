@@ -333,6 +333,9 @@ impl Serialize for DesignParameterScope {
         if let Some(deleted_members) = &self.deleted_members {
             emit!("deleted_members", deleted_members);
         }
+        if let Some(derived_base_owner) = &self.derived_base_owner {
+            emit!("derived_base_owner", derived_base_owner);
+        }
         emit_opt!("hole_construction", self.hole_construction());
         emit_opt!("hole_extent", self.hole_extent());
         if let Some(sketch) = self.sketch_entity() {

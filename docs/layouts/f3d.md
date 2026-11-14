@@ -9583,6 +9583,25 @@ Unstated regions:
 - `434..438` (4 B): The specification states no field in this range.
 - `487..491` (4 B): The specification states no field in this range.
 
+## `derived_base_owner_reference`
+
+Spec §3.1 · layout: byte offsets · size: 70 B
+
+Offsets are relative to the primary indexed header of a derived base scope whose references use the eleven-byte form; the 711-, 707-, and 491-byte typed-reference forms store other fields here. The same eleven bytes repeat twelve bytes before the frame end, followed by u8 0.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/derived_base.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 59 | 1 | `marker` | `u8` | little | spec | `01 + u64 owner_record_index + 00 00` at offset 59 · value `1` |
+| 60 | 8 | `record_index` | `u64` | little | spec | `01 + u64 owner_record_index + 00 00` at offset 59 |
+| 68 | 2 | `zero_run_2` | `bytes[2]` | little | spec | `01 + u64 owner_record_index + 00 00` at offset 59 |
+
+Unstated regions:
+
+- `0..59` (59 B): The specification states no field in this range.
+
 ## `entity_tracking_carrier_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 73 B

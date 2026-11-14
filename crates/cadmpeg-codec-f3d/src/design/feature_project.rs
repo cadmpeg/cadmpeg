@@ -329,6 +329,12 @@ fn authored_scope_ordinals_for_stream<'a>(
             let _ = out.insert((stream, scope.record_index), ordinal);
         }
     }
+    crate::records::feature::derived_base::take_owner_positions(
+        stream,
+        scopes,
+        &item_ordinals,
+        &mut out,
+    );
     for scope in scopes {
         let Some(target_record_index) = scope
             .assembly_alignment()
@@ -1659,6 +1665,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             features.push(feature?);
             Ok::<_, CodecError>(features)
         })?;
+    crate::records::feature::derived_base::mark_group_features(
+        &mut features,
+        scopes,
+        timelines,
+        &source_ordinals,
+    );
     let scope_history = ScopeHistoryGraph::new(
         scopes,
         body_bindings,

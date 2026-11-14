@@ -96,6 +96,11 @@ cadmpeg_core::named_optional_field!(
     "deleted_members"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_derived_base_owner,
+    super::derived_base::DesignDerivedBaseOwner,
+    "derived_base_owner"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_assembly_alignment,
     DesignAssemblyAlignment,
     "assembly_alignment"
@@ -905,6 +910,9 @@ pub(crate) struct DesignParameterScope {
     /// members.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) deleted_members: Option<super::deleted_members::DesignDeletedMembers>,
+    /// Owner record that a derived base frame names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) derived_base_owner: Option<super::derived_base::DesignDerivedBaseOwner>,
     /// Per-file dynamic class tag of the paired header.
     pub(crate) paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
@@ -1353,6 +1361,13 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_deleted_members"
     )]
     deleted_members: Option<super::deleted_members::DesignDeletedMembers>,
+    /// Owner record that a derived base frame names.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_derived_base_owner"
+    )]
+    derived_base_owner: Option<super::derived_base::DesignDerivedBaseOwner>,
     /// Exact point-and-direction construction carried by a `Hole` scope.
     #[serde(
         default,
@@ -2437,6 +2452,15 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         admitted.captured_positions = captured_positions;
         admitted.occurrence_transfer = occurrence_transfer;
         admitted.occurrence_transfer_intent = occurrence_transfer_intent;
+        if wire.derived_base_owner.is_some_and(|owner| {
+            !super::derived_base::is_derived_base(&admitted)
+                || !owner.frame_holds(admitted.byte_offset(), admitted.paired_byte_offset())
+        }) {
+            return Err(DesignParameterScopePayloadError(
+                "derived_base_owner disagrees with scope".into(),
+            ));
+        }
+        admitted.derived_base_owner = wire.derived_base_owner;
         Ok(admitted)
     }
 }
@@ -2517,6 +2541,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             work_point_construction: None,
             unclosed_construction_operand_groups: scope.unclosed_construction_operand_groups,
             deleted_members: scope.deleted_members,
+            derived_base_owner: scope.derived_base_owner,
             hole_construction: None,
             hole_extent: None,
             sketch_entity: None,
@@ -2932,6 +2957,7 @@ impl DesignParameterScope {
             payload: draft.payload,
             unclosed_construction_operand_groups: draft.unclosed_construction_operand_groups,
             deleted_members: draft.deleted_members,
+            derived_base_owner: None,
             paired_class_tag: draft.paired_class_tag,
             paired_byte_offset: draft.paired_byte_offset,
         };

@@ -32397,6 +32397,41 @@ size = 4
 note = "The specification states no field in this range."
 
 [[record]]
+name = "derived_base_owner_reference"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/derived_base.rs"
+kind = "byte"
+section = "3.1"
+anchor = "names its owner, the timeline item of its derive operation"
+size = 70
+note = "Offsets are relative to the primary indexed header of a derived base scope whose references use the eleven-byte form; the 711-, 707-, and 491-byte typed-reference forms store other fields here. The same eleven bytes repeat twelve bytes before the frame end, followed by u8 0."
+
+[[record.gap]]
+offset = 0
+size = 59
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "marker"
+offset = 59
+type = "u8"
+source = "spec"
+anchor = "`01 + u64 owner_record_index + 00 00` at offset 59"
+value = 1
+
+[[record.field]]
+name = "record_index"
+offset = 60
+type = "u64"
+source = "spec"
+anchor = "`01 + u64 owner_record_index + 00 00` at offset 59"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 68
+type = "bytes[2]"
+source = "spec"
+anchor = "`01 + u64 owner_record_index + 00 00` at offset 59"
+[[record]]
 name = "entity_tracking_carrier_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
 kind = "byte"

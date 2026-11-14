@@ -1572,6 +1572,10 @@ fn extend_related_design_records(
         &mut design.design_parameter_scopes,
         &mut design.design_record_headers,
     )?;
+    crate::design::decode::derived_base::mark_derived_base_owners(
+        scan,
+        &mut design.design_parameter_scopes,
+    )?;
     let mut profile_losses = crate::design::decode::operands::bind_sketch_profiles(
         scan,
         &mut design.design_parameter_scopes,

@@ -1328,7 +1328,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Conflict.** None.
 
-**Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding. The public Voron Trident `z_mounts_front.f3d` has nine such scopes. Component context bindings identify their result owners. The source-body and source-frame joins require the derivation references independently of those owner bindings.
+**Note.** The decoder projects the derived base scopes that name one owner as one feature at the owner's timeline position when the owner is a timeline item that no scope occupies and no other feature claims, no scope of the group holds its own timeline position, the scopes' history states chain, and no derived base scope without an owner reference continues or precedes the chain. The feature lists the group's record indices in its `derived_base_scopes` source property. Every other derived base scope remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding. The public Voron Trident `z_mounts_front.f3d` has nine such scopes. Component context bindings identify their result owners. The source-body and source-frame joins require the derivation references independently of those owner bindings.
 
 ### DR-552. Sphere placement flags and unresolved placement references
 

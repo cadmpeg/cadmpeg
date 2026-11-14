@@ -1997,6 +1997,13 @@ pub(crate) fn bind_feature_outputs(
             )));
             continue;
         };
+        let outputs = crate::records::feature::derived_base::derived_base_output_order(
+            feature,
+            scopes,
+            history_index,
+            &state_outputs,
+            outputs,
+        );
         if stored_bodies::bound_result_bodies(feature).is_some()
             || stored_bodies::is_base_feature_copy(feature, scopes)
         {
@@ -2085,6 +2092,11 @@ fn feature_history_states(
         .native_ref
         .as_deref()
         .and_then(|id| scopes.iter().find(|scope| scope.id == id))?;
+    if let Some(group) =
+        crate::records::feature::derived_base::feature_derived_base_scopes(feature, scopes)
+    {
+        return crate::records::feature::derived_base::group_history_states(&group);
+    }
     let state_id = scope.history_state_id()?;
     let previous_state_id = effective_scope_previous_history_state_id(scope, histories)?;
     Some((state_id, previous_state_id))
