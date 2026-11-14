@@ -6,7 +6,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::mesh::MeshSelection;
+use cadmpeg_ir::features::mesh::{MeshConversionMethod, MeshSelection};
 use cadmpeg_ir::features::{
     Feature, FeatureDefinition, FeatureOperation, NativeSelections, SelectionReference,
 };
@@ -25,16 +25,26 @@ fn source_selection(
     let bodies = match group {
         Ok(group) => {
             notes.property(format!("mesh-conversion-group:{ordinal}"), group);
-            records.group_bodies(ctx, group)?
+            let captured = records.group_body_references(ctx, group)?;
+            if let Some(count) = captured.declared_count {
+                notes.property(format!("mesh-conversion-member-count:{ordinal}"), count);
+            }
+            for (member, body) in captured.references.iter().enumerate() {
+                if *body != 0 {
+                    notes.property(format!("mesh-conversion-body:{ordinal}:{member}"), body);
+                }
+            }
+            match captured.framing {
+                Some(error) => Err(error),
+                None => Ok(captured.references),
+            }
         }
         Err(error) => Err(error),
     };
     let members = match bodies {
         Ok(bodies) => {
-            for (member, body) in bodies.iter().enumerate() {
-                notes.property(format!("mesh-conversion-body:{ordinal}:{member}"), body);
-            }
-            match NativeSelections::try_from(bodies.iter().map(u32::to_string).collect::<Vec<_>>()) {
+            match NativeSelections::try_from(bodies.iter().map(u32::to_string).collect::<Vec<_>>())
+            {
                 Ok(members) => {
                     notes.losses.push(F3dLossCode::FeatureMeshBodySelectionAssumed.note(format!(
                         "Mesh conversion {} reads input {ordinal} member body references as input-local body selections; member-tail selections remain unresolved.", notes.source
@@ -60,11 +70,8 @@ fn source_selection(
         "Mesh conversion {} retains input {ordinal} in its wrapper context; the historical source tessellation remains unresolved.", notes.source
     )));
     Ok(MeshSelection::Native {
-        native: SelectionReference::try_from(format!(
-            "{}:mesh-conversion-input#{ordinal}",
-            notes.source
-        ))
-        .map_err(CodecError::malformed)?,
+        native: SelectionReference::try_from(notes.source.to_owned())
+            .map_err(CodecError::malformed)?,
         members,
     })
 }
@@ -81,9 +88,9 @@ pub(in crate::decode) fn bind_features(
         if feature.source_tag.as_deref() != Some("Convert Mesh") {
             continue;
         }
-        let mut candidates = scopes.iter().filter(|scope| {
-            feature.native_ref.as_deref() == Some(scope.id.as_str())
-        });
+        let mut candidates = scopes
+            .iter()
+            .filter(|scope| feature.native_ref.as_deref() == Some(scope.id.as_str()));
         let scope = candidates.next().filter(|_| candidates.next().is_none());
         let source = scope.map_or_else(|| feature.id.to_string(), |scope| scope.id.clone());
         let mut notes = Notes {
@@ -104,7 +111,10 @@ pub(in crate::decode) fn bind_features(
             let indexed = match records.entry(entry) {
                 std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::hash_map::Entry::Vacant(entry) => {
-                    let meta = match crate::design::decode::meta::metadata_for_bulk_stream(scan, entry.key()) {
+                    let meta = match crate::design::decode::meta::metadata_for_bulk_stream(
+                        scan,
+                        entry.key(),
+                    ) {
                         Ok(meta) => meta,
                         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                         Err(_) => None,
@@ -113,22 +123,38 @@ pub(in crate::decode) fn bind_features(
                 }
             };
             match indexed.as_ref() {
-                Some(records) => Some((records, records.conversion_scope(ctx, scope.record_index)?)),
+                Some(records) => {
+                    Some((records, records.conversion_scope(ctx, scope.record_index)?))
+                }
                 None => None,
             }
         } else {
             None
         };
         let mut sources = Vec::new();
+        let mut method = None;
         match parsed {
             Some((records, Ok(parsed))) => {
-                notes.property("mesh-conversion-control", parsed.control);
+                if let Some(control) = parsed.control {
+                    notes.property("mesh-conversion-control", control);
+                }
                 if let Some(count) = parsed.input_count {
                     notes.property("mesh-conversion-input-count", count);
                 }
-                notes.losses.push(F3dLossCode::FeatureMeshConversionMethodUnresolved.note(format!(
-                    "Mesh conversion {source} retains control {} in its source properties; its conversion method remains unresolved.", parsed.control
-                )));
+                method = match parsed.control {
+                    Some(1) => Some(MeshConversionMethod::Prismatic),
+                    Some(3) => Some(MeshConversionMethod::Faceted),
+                    _ => None,
+                };
+                if let Some(method) = method {
+                    notes.losses.push(F3dLossCode::FeatureMeshConversionMethodAssumed.note(format!(
+                        "Mesh conversion {source} reads its retained conversion control as the {method:?} method."
+                    )));
+                } else {
+                    notes.losses.push(F3dLossCode::FeatureMeshConversionMethodUnresolved.note(format!(
+                        "Mesh conversion {source} retains its readable control word in source properties; its conversion method remains unresolved."
+                    )));
+                }
                 if let Some(word) = parsed.prefix_word {
                     notes.property("mesh-scope-prefix-word", word);
                     notes.losses.push(F3dLossCode::MeshScopePrefixUninterpreted.note(format!(
@@ -156,16 +182,35 @@ pub(in crate::decode) fn bind_features(
                     )));
                 }
                 for (ordinal, wrapper) in parsed.input_wrappers.into_iter().enumerate() {
-                    sources.push(source_selection(ctx, records, ordinal, wrapper, &mut notes)?);
+                    sources.push(source_selection(
+                        ctx, records, ordinal, wrapper, &mut notes,
+                    )?);
                 }
                 for (ordinal, wrapper) in parsed.output_wrappers.into_iter().enumerate() {
                     notes.property(format!("mesh-conversion-output:{ordinal}"), wrapper);
                     let reason = match records.conversion_output(wrapper) {
                         Ok(output) => {
-                            notes.property(format!("mesh-conversion-output-guid:{ordinal}"), &output.guid);
-                            notes.property(format!("mesh-conversion-output-control:{ordinal}"), output.control);
-                            notes.property(format!("mesh-conversion-output-body:{ordinal}"), output.body);
-                            format!("its body record {} has no resolved neutral result identity", output.body)
+                            notes.property(
+                                format!("mesh-conversion-output-guid:{ordinal}"),
+                                &output.guid,
+                            );
+                            if let Some(control) = output.control {
+                                notes.property(
+                                    format!("mesh-conversion-output-control:{ordinal}"),
+                                    control,
+                                );
+                            }
+                            if let Some(body) = output.body {
+                                notes.property(
+                                    format!("mesh-conversion-output-body:{ordinal}"),
+                                    body,
+                                );
+                            }
+                            match output.tail_error {
+                                Some(error) => format!("its {error} is unresolved"),
+                                None => "its body record has no resolved neutral result identity"
+                                    .to_owned(),
+                            }
                         }
                         Err(error) => format!("its {error} is unresolved"),
                     };
@@ -185,7 +230,9 @@ pub(in crate::decode) fn bind_features(
             }
         }
         if sources.is_empty() {
-            sources.push(MeshSelection::Unresolved { feature: feature.id.clone() });
+            sources.push(MeshSelection::Unresolved {
+                feature: feature.id.clone(),
+            });
             notes.losses.push(F3dLossCode::FeatureMeshConversionSourceUnresolved.note(format!(
                 "Mesh conversion {source} retains its originating feature as its unresolved mesh source."
             )));
@@ -196,7 +243,11 @@ pub(in crate::decode) fn bind_features(
             feature.source_properties.insert(key, value);
         }
         losses.append(&mut notes.losses);
-        feature.evaluation.set_definition(FeatureDefinition::Operation(FeatureOperation::MeshConvert { sources }));
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(
+                FeatureOperation::MeshConvert { sources, method },
+            ));
     }
     Ok(())
 }

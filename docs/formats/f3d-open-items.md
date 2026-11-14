@@ -1970,19 +1970,19 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder leaves unresolved construction settings unset and reports `feature.mesh-shell-controls-unresolved`.
 
-### DR-506. Mesh conversion controls
+### DR-507. Mesh conversion controls
 
-**Question.** Which conversion methods and construction settings do the scope control and wrapper control fields select?
+**Question.** Which conversion control selects the organic method, and which construction settings do the wrapper control fields select?
 
-**Known.** The conversion scope stores a u32 control before its counted inputs. An output wrapper stores a control byte before its body reference. The decoder retains these values in source properties and projects an ordered mesh-to-body conversion.
+**Known.** Conversion control `1` selects the prismatic method and `3` selects the faceted method. An output wrapper stores a control byte before its body reference. The decoder retains the raw values in source properties and projects an ordered mesh-to-body conversion with its readable method.
 
 **Need.** Controlled saves with faceted, prismatic, and organic conversion methods and construction settings changed independently.
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.mesh-conversion-method-unresolved`. A truncated scope reports `feature.mesh-conversion-scope-unparsed` or `feature.mesh-conversion-tail-partial` and retains readable controls and inputs.
+**Note.** The decoder reports `feature.mesh-conversion-method-assumed` for the control-to-method reading and `feature.mesh-conversion-method-unresolved` for an unruled control. A truncated scope reports `feature.mesh-conversion-scope-unparsed` or `feature.mesh-conversion-tail-partial` and retains readable controls and inputs.
 
-### DR-507. Mesh conversion output envelope
+### DR-508. Mesh conversion output envelope
 
 **Question.** Which format discriminator selects the optional four-byte control before the output count?
 
@@ -1994,11 +1994,11 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder reports `feature.mesh-conversion-envelope-assumed` for this envelope reading.
 
-### DR-508. Mesh conversion geometry identities
+### DR-509. Mesh conversion geometry identities
 
 **Question.** Which historical tessellation and neutral result body does each conversion wrapper identify?
 
-**Known.** Each input wrapper names one mesh operation group. Each output wrapper stores a body GUID and body-record reference. The decoder retains their order and references. Each input's native selection retains its wrapper context and readable member body records.
+**Known.** Each input wrapper names one mesh operation group. Each output wrapper stores a body GUID and body-record reference. The decoder retains their order and references. Each input uses its declared scope as its native selection source. Source properties retain its wrapper context and readable member body references, including references with unavailable definitions. A partial output wrapper retains its readable GUID and control.
 
 **Need.** A controlled conversion with known input tessellations and output body identities, joined through the wrapper records and historical geometry states.
 

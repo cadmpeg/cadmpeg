@@ -31,6 +31,17 @@ pub enum MeshSelection {
     },
 }
 
+#[doc = "Construction used to convert mesh faces to a boundary representation."]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MeshConversionMethod {
+    #[doc = "Creates a boundary face for each source mesh face."]
+    Faceted,
+    #[doc = "Combines face groups into faces of inferred prismatic features."]
+    Prismatic,
+}
+
 #[doc = "Distribution of the faces that a mesh operation produces."]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

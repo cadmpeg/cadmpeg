@@ -1489,6 +1489,58 @@ Unstated regions:
 
 - `0..11` (11 B): Indexed header.
 
+## `mesh_convert_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 33 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/convert.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 25 | 4 | `control` | `u32` | little | spec | the u32 conversion control is at offset 25 |
+| 29 | 4 | `input_count` | `u32` | little | spec | the u32 input count is at offset 29 |
+
+Unstated regions:
+
+- `0..25` (25 B): Flagged mesh scope prefix.
+
+## `mesh_convert_input_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 33 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/convert.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | Its indexed header is followed by eleven zero bytes |
+| 22 | 11 | `group_reference` | `bytes[11]` | little | spec | a marked same-segment reference to a mesh operation group at offset 22 |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+
+## `mesh_convert_output_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 110 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/convert.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its indexed header is followed by ten zero bytes |
+| 21 | 4 | `guid_length` | `u32` | little | spec | The GUID has 36 code units · value `36` |
+| 25 | 72 | `guid_utf16` | `u16[36]` | little | derived | The indexed header, ten zeros and u32 count precede 36 UTF-16LE code units. |
+| 97 | 1 | `control` | `u8` | little | spec | The control byte is at offset 97 |
+| 98 | 1 | `presence` | `u8` | little | spec | byte `01` is at offset 98 · value `1` |
+| 99 | 11 | `body_reference` | `bytes[11]` | little | spec | the body reference starts at offset 99 |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+
 ## `mesh_operation_geometry_tail`
 
 Spec §3.1 · layout: byte offsets · size: 38 B

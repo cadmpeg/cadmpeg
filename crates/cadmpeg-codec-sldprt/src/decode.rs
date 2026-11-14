@@ -1308,7 +1308,8 @@ pub(crate) fn append_design_losses(
                 FeatureOperation::InsertBodies { bodies } => !bodies.is_resolved(),
                 FeatureOperation::MeshImport { .. }
                 | FeatureOperation::MeshSection { .. }
-                | FeatureOperation::MeshModify { .. } => false,
+                | FeatureOperation::MeshModify { .. }
+                | FeatureOperation::MeshConvert { .. } => false,
                 FeatureOperation::InsertComponent { occurrence } => !ir
                     .model
                     .occurrences

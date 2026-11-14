@@ -2783,6 +2783,13 @@ pub enum FeatureOperation {
     MeshConvert {
         #[doc = "Input meshes in construction order."]
         sources: Vec<mesh::MeshSelection>,
+        #[doc = "Conversion method, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_mesh_conversion_method"
+        )]
+        method: Option<mesh::MeshConversionMethod>,
     },
     /// Independent bodies introduced by a copy-and-paste operation. The copies
     /// are the feature's outputs, so the selection carries only its native
@@ -9699,6 +9706,11 @@ mod tests;
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_plane, FeatureId, "plane");
 cadmpeg_core::named_optional_field!(deserialize_section_sketch, FeatureId, "sketch");
+cadmpeg_core::named_optional_field!(
+    deserialize_mesh_conversion_method,
+    mesh::MeshConversionMethod,
+    "method"
+);
 cadmpeg_core::named_optional_field!(deserialize_section_plane, FeatureSupportPlaneFrame, "plane");
 cadmpeg_core::named_optional_field!(deserialize_pull, DraftPull, "pull");
 cadmpeg_core::named_optional_field!(deserialize_frame, FeatureSupportPlaneFrame, "frame");

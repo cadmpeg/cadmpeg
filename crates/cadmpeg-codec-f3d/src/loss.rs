@@ -215,6 +215,7 @@ pub(crate) enum F3dLossCode {
     FeatureMeshConversionScopeUnparsed,
     FeatureMeshConversionTailPartial,
     FeatureMeshConversionMethodUnresolved,
+    FeatureMeshConversionMethodAssumed,
     FeatureMeshConversionEnvelopeAssumed,
     FeatureMeshConversionSourceUnresolved,
     FeatureMeshConversionOutputUnresolved,
@@ -889,6 +890,7 @@ impl F3dLossCode {
         Self::FeatureMeshConversionScopeUnparsed,
         Self::FeatureMeshConversionTailPartial,
         Self::FeatureMeshConversionMethodUnresolved,
+        Self::FeatureMeshConversionMethodAssumed,
         Self::FeatureMeshConversionEnvelopeAssumed,
         Self::FeatureMeshConversionSourceUnresolved,
         Self::FeatureMeshConversionOutputUnresolved,
@@ -1420,10 +1422,19 @@ impl F3dLossCode {
             Self::FeatureMeshSectionCurvesUnresolved => "feature.mesh-section-curves-unresolved",
             Self::FeatureMeshConversionScopeUnparsed => "feature.mesh-conversion-scope-unparsed",
             Self::FeatureMeshConversionTailPartial => "feature.mesh-conversion-tail-partial",
-            Self::FeatureMeshConversionMethodUnresolved => "feature.mesh-conversion-method-unresolved",
-            Self::FeatureMeshConversionEnvelopeAssumed => "feature.mesh-conversion-envelope-assumed",
-            Self::FeatureMeshConversionSourceUnresolved => "feature.mesh-conversion-source-unresolved",
-            Self::FeatureMeshConversionOutputUnresolved => "feature.mesh-conversion-output-unresolved",
+            Self::FeatureMeshConversionMethodUnresolved => {
+                "feature.mesh-conversion-method-unresolved"
+            }
+            Self::FeatureMeshConversionMethodAssumed => "feature.mesh-conversion-method-assumed",
+            Self::FeatureMeshConversionEnvelopeAssumed => {
+                "feature.mesh-conversion-envelope-assumed"
+            }
+            Self::FeatureMeshConversionSourceUnresolved => {
+                "feature.mesh-conversion-source-unresolved"
+            }
+            Self::FeatureMeshConversionOutputUnresolved => {
+                "feature.mesh-conversion-output-unresolved"
+            }
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
@@ -1929,6 +1940,7 @@ impl F3dLossCode {
             | Self::FeatureMeshConversionScopeUnparsed
             | Self::FeatureMeshConversionTailPartial
             | Self::FeatureMeshConversionMethodUnresolved
+            | Self::FeatureMeshConversionMethodAssumed
             | Self::FeatureMeshConversionEnvelopeAssumed
             | Self::FeatureMeshConversionSourceUnresolved
             | Self::FeatureMeshConversionOutputUnresolved
@@ -2307,6 +2319,7 @@ impl F3dLossCode {
             | Self::FeatureMeshConversionScopeUnparsed
             | Self::FeatureMeshConversionTailPartial
             | Self::FeatureMeshConversionMethodUnresolved
+            | Self::FeatureMeshConversionMethodAssumed
             | Self::FeatureMeshConversionEnvelopeAssumed
             | Self::FeatureMeshConversionSourceUnresolved
             | Self::FeatureMeshConversionOutputUnresolved
@@ -2731,6 +2744,13 @@ mod tests {
                 "feature.mesh-operation-parameter-unbound",
                 "feature.mesh-operation-fields-uninterpreted",
                 "feature.mesh-section-curves-unresolved",
+                "feature.mesh-conversion-scope-unparsed",
+                "feature.mesh-conversion-tail-partial",
+                "feature.mesh-conversion-method-unresolved",
+                "feature.mesh-conversion-method-assumed",
+                "feature.mesh-conversion-envelope-assumed",
+                "feature.mesh-conversion-source-unresolved",
+                "feature.mesh-conversion-output-unresolved",
                 "feature.thread-live-face-unproven",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",

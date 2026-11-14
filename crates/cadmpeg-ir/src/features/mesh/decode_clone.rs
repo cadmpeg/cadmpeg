@@ -1,6 +1,6 @@
 use super::{
-    MeshFaceDistribution, MeshModification, MeshRebuildMode, MeshReduceTarget, MeshRepair,
-    MeshSelection,
+    MeshConversionMethod, MeshFaceDistribution, MeshModification, MeshRebuildMode,
+    MeshReduceTarget, MeshRepair, MeshSelection,
 };
 
 rewrite_enum!(MeshSelection, []; {
@@ -10,6 +10,7 @@ rewrite_enum!(MeshSelection, []; {
 });
 
 rewrite_scalar!(MeshFaceDistribution);
+rewrite_scalar!(MeshConversionMethod);
 rewrite_scalar!(MeshRebuildMode);
 
 rewrite_enum!(MeshReduceTarget, []; {

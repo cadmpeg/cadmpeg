@@ -199,7 +199,7 @@ rewrite_enum!(FeatureOperation, []; {
     MeshImport { tessellations },
     MeshSection { source, plane, sketch },
     MeshModify { source, modification },
-    MeshConvert { sources },
+    MeshConvert { sources, method },
     InsertBodies { bodies },
     InsertComponent { occurrence },
     InsertComponents { components },

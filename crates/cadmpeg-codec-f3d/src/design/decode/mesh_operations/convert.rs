@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct MeshConversionScope {
     pub(crate) prefix_word: Option<u32>,
-    pub(crate) control: u32,
+    pub(crate) control: Option<u32>,
     pub(crate) input_count: Option<u32>,
     pub(crate) input_wrappers: Vec<u32>,
     pub(crate) output_wrappers: Vec<u32>,
@@ -20,8 +20,9 @@ pub(crate) struct MeshConversionScope {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct MeshConversionOutput {
     pub(crate) guid: String,
-    pub(crate) control: u8,
-    pub(crate) body: u32,
+    pub(crate) control: Option<u8>,
+    pub(crate) body: Option<u32>,
+    pub(crate) tail_error: Option<MeshOperationFraming>,
 }
 
 impl MeshOperationRecords<'_> {
@@ -87,33 +88,59 @@ impl MeshOperationRecords<'_> {
         }
         let (guid, at) = crate::bytes::lp_utf16_bounded(record, output::GUID_LENGTH, 36..=36)
             .ok_or(MeshOperationFraming("conversion output body GUID"))?;
+        if !crate::bytes::is_guid_hyphenated(&guid) {
+            return Err(MeshOperationFraming("conversion output body GUID"));
+        }
         let mut cursor = Cursor {
             bytes: record,
             at,
             deviations: Vec::new(),
         };
-        let control = cursor.u8("conversion output control")?;
-        if cursor.u8("conversion output presence")? != 1 {
-            return Err(MeshOperationFraming("conversion output presence"));
-        }
-        Ok(MeshConversionOutput {
+        let mut output = MeshConversionOutput {
             guid,
-            control,
-            body: cursor.reference("conversion output body reference")?,
-        })
+            control: None,
+            body: None,
+            tail_error: None,
+        };
+        let tail = (|| {
+            output.control = Some(cursor.u8("conversion output control")?);
+            if cursor.u8("conversion output presence")? != 1 {
+                return Err(MeshOperationFraming("conversion output presence"));
+            }
+            output.body = cursor.optional_reference("conversion output body reference")?;
+            output
+                .body
+                .ok_or(MeshOperationFraming("conversion output body reference"))?;
+            Ok(())
+        })();
+        output.tail_error = tail.err();
+        Ok(output)
     }
 }
 
 fn output_envelope(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
     let count = cadmpeg_core::decode::View::u32_le_at(bytes, at)?;
     let start = at.checked_add(4)?;
-    let count = bounded_len(u64::from(count), 11, bytes.len().checked_sub(start)?)?;
-    let end = start.checked_add(count.checked_mul(11)?)?;
+    let count = bounded_len(u64::from(count), 1, bytes.len().checked_sub(start)?)?;
+    let mut cursor = Cursor {
+        bytes,
+        at: start,
+        deviations: Vec::new(),
+    };
+    for _ in 0..count {
+        cursor
+            .optional_reference("conversion output wrapper reference")
+            .ok()?;
+    }
+    let end = cursor.at;
     let guid = end.checked_add(8)?;
     if bytes.get(end..guid)?.iter().any(|byte| *byte != 0) {
         return None;
     }
-    crate::bytes::lp_utf16_bounded_view(bytes, guid, 36..=36)?;
+    let (text, _) = crate::bytes::lp_utf16_bounded(bytes, guid, 36..=36)?;
+    if !crate::bytes::is_guid_hyphenated(&text) {
+        return None;
+    }
     Some((count, start))
 }
 
@@ -140,13 +167,10 @@ fn read_scope(
         },
         _ => return Ok(Err(MeshOperationFraming("conversion scope flag"))),
     };
-    let control = match cursor.u32("conversion control") {
-        Ok(control) => control,
-        Err(error) => return Ok(Err(error)),
-    };
+    let control = cursor.u32("conversion control");
     let mut parsed = MeshConversionScope {
         prefix_word,
-        control,
+        control: control.as_ref().ok().copied(),
         input_count: None,
         input_wrappers: Vec::new(),
         output_wrappers: Vec::new(),
@@ -154,13 +178,17 @@ fn read_scope(
         tail_error: None,
         deviations: Vec::new(),
     };
+    if let Err(error) = control {
+        parsed.tail_error = Some(error);
+        return Ok(Ok(parsed));
+    }
     let read = (|| -> Result<Result<(), MeshOperationFraming>, CodecError> {
         let declared = match cursor.u32("conversion input count") {
             Ok(count) => count,
             Err(error) => return Ok(Err(error)),
         };
         parsed.input_count = Some(declared);
-        let Some(count) = bounded_len(u64::from(declared), 11, bytes.len() - cursor.at) else {
+        let Some(count) = bounded_len(u64::from(declared), 1, bytes.len() - cursor.at) else {
             return Ok(Err(MeshOperationFraming("conversion input count")));
         };
         parsed.input_wrappers = ctx.alloc_filled(count, 0, "F3D mesh conversion inputs")?;
@@ -175,7 +203,10 @@ fn read_scope(
             cursor.expect_u8("conversion-tail-byte:0", 0)?;
             cursor.expect_u8("conversion-tail-byte:1", 0)?;
             let short = output_envelope(bytes, cursor.at);
-            let long_at = cursor.at.checked_add(4).ok_or(MeshOperationFraming("conversion output extent"))?;
+            let long_at = cursor
+                .at
+                .checked_add(4)
+                .ok_or(MeshOperationFraming("conversion output extent"))?;
             let long = output_envelope(bytes, long_at);
             match (short, long) {
                 (Some(envelope), None) => Ok(envelope),

@@ -3109,9 +3109,11 @@ fn check_feature_references(
                     }
                 }
             }
-            FeatureOperation::MeshConvert { sources } => {
+            FeatureOperation::MeshConvert { sources, .. } => {
                 for source in sources {
-                    if let crate::features::mesh::MeshSelection::Tessellations(tessellations) = source {
+                    if let crate::features::mesh::MeshSelection::Tessellations(tessellations) =
+                        source
+                    {
                         for tessellation in tessellations {
                             if ids
                                 .tessellations(tessellation.as_str(), crate::index::StandardIndex)
