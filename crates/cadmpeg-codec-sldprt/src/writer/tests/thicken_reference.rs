@@ -1405,6 +1405,56 @@ fn semantic_writer_round_trips_all_move_face_forms() {
 }
 
 #[test]
+fn semantic_writer_refuses_complete_face_motion_without_losing_a_component() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
+    use cadmpeg_ir::features::{FaceMotion, FeatureDefinition, FeatureOperation};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><MoveFace Name="Move" Type="MoveFace" id="21" Faces="face:1" Mode="Translate" Direction="1,0,0"><Dimension Name="Distance">3mm</Dimension></MoveFace></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = EditableDecodeResult::from(decoded);
+    {
+        let mut edit = decoded.ir_mut();
+        edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::MoveFace { motion, .. }) =
+                definition
+            else {
+                panic!("expected face motion");
+            };
+            *motion = FaceMotion::Transform {
+                transform: cadmpeg_ir::transform::Transform::affine([
+                    [0., -1., 0., 2.5],
+                    [1., 0., 0., -5.],
+                    [0., 0., 1., 1.25],
+                ])
+                .unwrap(),
+            };
+        });
+    }
+    let error = crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Inherit,
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let FeatureDefinition::Operation(FeatureOperation::MoveFace {
+        motion: FaceMotion::Transform { transform },
+        ..
+    }) = decoded.ir().model.features[0].evaluation.definition()
+    else {
+        panic!("expected preserved face motion");
+    };
+    assert!((transform.rows()[2][3] - 1.25).abs() <= 1.0e-12);
+    assert!((transform.rows()[1][0] - 1.).abs() <= 1.0e-12);
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_dome() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 

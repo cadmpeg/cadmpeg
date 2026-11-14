@@ -176,6 +176,7 @@ rewrite_enum!(FaceMotion, []; {
     Offset { distance },
     Translate { direction, distance },
     Rotate { axis_origin, axis_dir, angle },
+    Transform { transform },
 });
 
 rewrite_enum!(FaceSelection, []; {

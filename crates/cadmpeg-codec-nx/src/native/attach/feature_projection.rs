@@ -1081,7 +1081,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
             op,
             keep_tools: false,
 
-            destination: Default::default(),
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }));
     }
     Ok(match kind {

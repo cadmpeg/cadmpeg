@@ -91,7 +91,7 @@ pub(crate) fn definition<'a>(
         op,
         keep_tools,
 
-        destination: Default::default(),
+        destination: cadmpeg_ir::features::CombineDestination::default(),
     }))
 }
 

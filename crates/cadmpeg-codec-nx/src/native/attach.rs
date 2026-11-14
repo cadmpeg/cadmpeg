@@ -5836,7 +5836,7 @@ pub(super) fn boolean_feature_definition(
         },
         keep_tools: false,
 
-        destination: Default::default(),
+        destination: cadmpeg_ir::features::CombineDestination::default(),
     }))
 }
 

@@ -363,7 +363,7 @@ pub(crate) fn decode_parameter_scopes(
                     _ => {
                         return Err(CodecError::NotImplemented(
                             "F3D solid primitive payload kind mismatch".into(),
-                        ))
+                        ));
                     }
                 }
             }
@@ -452,7 +452,8 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_move_face_operation(bytes, &records, &scope);
+                let construction =
+                    exact_move_face_operation(bytes, &records, &scope, &class_types, &mut losses);
                 if let Some(operation) = &construction {
                     losses.extend(move_transform_references_loss(&scope, operation));
                     losses.extend(move_transform_prefix_losses(&scope, operation));
@@ -623,6 +624,7 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_assembly_alignment_with_types(
+                    ctx,
                     bytes,
                     &records,
                     &scope,
@@ -1140,6 +1142,26 @@ pub(super) fn reference_table_ends_at(
             == Some(end)
 }
 
+fn scope_reference_table_ends_at(
+    kind: &str,
+    start: usize,
+    count_at: usize,
+    count: usize,
+    stride: usize,
+    end: usize,
+) -> bool {
+    reference_table_ends_at(count_at, count, stride, end)
+        || kind == "MoveFace"
+            && count == 0
+            && count_at.checked_add(4) == Some(end)
+            && [
+                crate::layout::move_face_marker_zero_prologue::REFERENCE_COUNT,
+                crate::layout::move_face_marker_one_prologue::REFERENCE_COUNT,
+            ]
+            .into_iter()
+            .any(|offset| start.checked_add(offset) == Some(count_at))
+}
+
 pub(crate) fn parameter_scope_tail_length_is_valid(
     kind: impl AsRef<str>,
     tail_length: usize,
@@ -1396,12 +1418,22 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         let mut named_candidate = None;
         let mut named_ambiguous = false;
         let kind_scan_end = paired_at.checked_sub(72)?;
-        for at in (start.checked_add(11)?..paired_at)
+        let kind_offsets = (start.checked_add(11)?..paired_at)
             .rev()
             .take(590 + 4 + 2 * 256)
             .rev()
-            .take_while(|at| *at < kind_scan_end)
-        {
+            .take_while(|at| *at < kind_scan_end);
+        let move_face_frame = type_family.as_ref().map_or_else(
+            || {
+                kind_offsets.clone().any(|at| {
+                    lp_utf16_bounded(bytes, at, 1..=256).is_some_and(|(kind, _)| {
+                        scope_feature_kind(&kind, None) == Some(scope::DesignFeatureKind::MoveFace)
+                    })
+                })
+            },
+            |family| *family == scope::DesignFeatureKind::MoveFace,
+        );
+        for at in kind_offsets {
             let Some((kind, kind_end)) = lp_utf16_bounded(bytes, at, 1..=256) else {
                 continue;
             };
@@ -1412,6 +1444,25 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             let kind = selected
                 .as_ref()
                 .map_or(kind.as_str(), scope::DesignFeatureKind::as_str);
+            if move_face_frame
+                && !at.checked_sub(4).is_some_and(|end| {
+                    (start + 11..end).any(|count_at| {
+                        View::u32_le_at(bytes, count_at)
+                            .and_then(|count| usize::try_from(count).ok())
+                            .is_some_and(|count| {
+                                [11, crate::bytes::TYPED_LOCAL_REFERENCE_LEN]
+                                    .into_iter()
+                                    .any(|stride| {
+                                        scope_reference_table_ends_at(
+                                            kind, start, count_at, count, stride, end,
+                                        )
+                                    })
+                            })
+                    })
+                })
+            {
+                continue;
+            }
             let Some(tail_length) = paired_at.checked_sub(kind_end) else {
                 continue;
             };
@@ -1520,7 +1571,14 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         let mut reference_table = None;
         for count_at in start + 11..reference_table_end {
             let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
-            if !reference_table_ends_at(count_at, count, stride, reference_table_end) {
+            if !scope_reference_table_ends_at(
+                kind.as_str(),
+                start,
+                count_at,
+                count,
+                stride,
+                reference_table_end,
+            ) {
                 continue;
             }
             let first = count_at.checked_add(4)?;

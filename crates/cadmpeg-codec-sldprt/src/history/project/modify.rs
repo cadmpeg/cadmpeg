@@ -256,7 +256,7 @@ pub(super) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
         op,
         keep_tools: false,
 
-        destination: Default::default(),
+        destination: cadmpeg_ir::features::CombineDestination::default(),
     }))
 }
 
