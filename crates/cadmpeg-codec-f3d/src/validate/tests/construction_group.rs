@@ -316,6 +316,48 @@ fn align_group_requires_the_body_or_geometry_role() {
 }
 
 #[test]
+fn mesh_face_group_scope_keeps_native_body_group_guards() {
+    use crate::records::{
+        feature::scope::DesignScopePayload,
+        topology::{
+            construction::DesignConstructionOperandRole, extrude_selection::DesignOperandRole,
+        },
+    };
+    for combine in [false, true] {
+        for mutation in 0..5 {
+            crate::test_support::with_decode_context(|decode| {
+                let ir = cadmpeg_ir::CadIr::empty();
+                let mut native = native(true, false);
+                native.design_parameter_scopes[0]
+                    .try_edit(|draft| {
+                        let data = (mutation != 1).then(Default::default);
+                        draft.payload = if combine {
+                            DesignScopePayload::CombineFaceGroups(data)
+                        } else {
+                            DesignScopePayload::GenerateFaceGroups(data)
+                        };
+                    })
+                    .unwrap();
+                let group = &mut native.design_construction_operand_groups[0];
+                match mutation {
+                    2 => {
+                        group.operand_role =
+                            DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
+                    }
+                    3 => group.frame.member_count_offset += 1,
+                    4 => group.scope_reference_ordinal = 1,
+                    _ => {}
+                }
+                let ctx = super::super::Ctx::new(&ir, &native, decode);
+                let mut findings = Vec::new();
+                super::super::validate_construction_operand_groups(&ctx, &mut findings);
+                assert_eq!(findings.is_empty(), mutation == 0, "{findings:?}");
+            });
+        }
+    }
+}
+
+#[test]
 fn thread_face_group_does_not_require_a_specialized_thread_payload() {
     use crate::records::{
         feature::scope::{DesignFeatureKind, DesignParameterScope},

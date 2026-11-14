@@ -5,6 +5,51 @@ use crate::examples::unit_cube;
 use crate::validate::validate_neutral;
 
 #[test]
+fn mesh_face_group_sources_validate_meshes_and_originating_features() {
+    use crate::features::{Feature, FeatureDefinition, FeatureOperation};
+    let mut ir = crate::CadIr::empty();
+    for (ordinal, source) in [
+        serde_json::json!(["test:mesh:tessellation#missing"]),
+        serde_json::json!({"feature":"test:model:feature#1"}),
+        serde_json::json!({"feature":"test:model:feature#missing"}),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let operation: FeatureOperation = serde_json::from_value(
+            serde_json::json!({"definition":"mesh_combine_face_groups", "source":source}),
+        )
+        .unwrap();
+        ir.model.features.push(Feature {
+            product_definition: None,
+            id: crate::features::FeatureId::mint(format!("test:model:feature#{ordinal}")).unwrap(),
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
+            name: None,
+            suppressed: Some(false),
+            dependencies: crate::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: crate::features::FeatureContent::default(),
+            evaluation: crate::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(operation),
+            ),
+            native_ref: None,
+        });
+    }
+    let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+    for ordinal in [0, 2] {
+        assert!(findings.iter().any(|finding| finding.check
+            == crate::report::check::Check::ReferentialIntegrity
+            && finding.entity.as_deref()
+                == Some(format!("test:model:feature#{ordinal}").as_str())));
+    }
+    assert!(!findings
+        .iter()
+        .any(|finding| finding.entity.as_deref() == Some("test:model:feature#1")));
+}
+
+#[test]
 fn feature_operation_geometry_is_validated() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 

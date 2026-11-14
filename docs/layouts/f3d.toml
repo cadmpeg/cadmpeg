@@ -4646,6 +4646,51 @@ source = "spec"
 anchor = "a marked same-segment mesh-body reference at offset 21"
 
 [[record]]
+name = "mesh_face_groups_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A face-group scope prefix stores ten zero bytes after its eleven-byte indexed header"
+size = 21
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/mesh_face_groups.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "after its eleven-byte indexed header"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "stores ten zero bytes"
+
+[[record]]
+name = "mesh_face_group_uuid"
+kind = "byte"
+section = "3.1"
+anchor = "A face-group UUID token occupies 40 bytes"
+size = 40
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/mesh_face_groups.rs"
+
+[[record.field]]
+name = "character_count"
+offset = 0
+type = "u32"
+value = 36
+source = "spec"
+anchor = "its u32 character count is 36"
+
+[[record.field]]
+name = "text"
+offset = 4
+type = "bytes[36]"
+source = "spec"
+anchor = "its 36 ASCII bytes start at token offset 4"
+
+[[record]]
 name = "mesh_operation_scope_prefix"
 kind = "byte"
 section = "3.1"

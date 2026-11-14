@@ -152,6 +152,31 @@ pub(crate) fn decode_parameter_scopes(
             })
             .unwrap_or_default();
         let stream_scope_start = out.len();
+        let mut mesh_scope_ranges = HashMap::new();
+        if class_types.values().any(|info| {
+            !info.entities.is_empty()
+                && crate::records::feature::mesh_face_groups::SCOPE_TYPES
+                    .iter()
+                    .any(|(guid, _, _)| info.type_guid.as_str().eq_ignore_ascii_case(guid))
+        }) {
+            if let Some(meta) =
+                crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            {
+                for frame in crate::metastream::primary_record_frames(&meta, bytes.len())? {
+                    if stream_types
+                        .get(&frame.entity_id)
+                        .is_some_and(|(registered, _)| {
+                            crate::records::feature::mesh_face_groups::SCOPE_TYPES
+                                .iter()
+                                .any(|(guid, _, _)| registered.eq_ignore_ascii_case(guid))
+                        })
+                        && frame.member_end < frame.end
+                    {
+                        mesh_scope_ranges.insert(frame.entity_id, (frame.start, frame.member_end));
+                    }
+                }
+            }
+        }
         for header in parameter_scope_candidate_headers(bytes, &records)? {
             let Some(mut scope) = parse_parameter_scope_with_type_guid(
                 bytes,
@@ -180,9 +205,29 @@ pub(crate) fn decode_parameter_scopes(
                 }
                 continue;
             };
+            if mesh_scope_ranges
+                .get(&u64::from(scope.record_index))
+                .is_some_and(|(start, _)| u64::try_from(*start).ok() != Some(scope.byte_offset()))
+            {
+                continue;
+            }
             scope.id =
                 design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
             let type_info = stream_types.get(&u64::from(scope.record_index)).copied();
+            let face_groups = super::mesh_face_groups::decode_prefix(
+                ctx,
+                bytes,
+                &scope,
+                class_types.get(&scope.class_tag.code()).copied(),
+                mesh_scope_ranges
+                    .get(&u64::from(scope.record_index))
+                    .copied(),
+            )?;
+            match scope.payload_mut() {
+                scope::DesignScopePayloadMut::GenerateFaceGroups(slot)
+                | scope::DesignScopePayloadMut::CombineFaceGroups(slot) => *slot = face_groups,
+                _ => {}
+            }
             if type_info
                 .is_some_and(|(guid, _)| guid.eq_ignore_ascii_case(super::position::TYPE_GUID))
             {
