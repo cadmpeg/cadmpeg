@@ -3,11 +3,12 @@
 
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
-    BodyMembers, BodySelection, CoilConstruction, CoilPlacement, CombineOperands,
-    ComponentTransferMode, DatumPlaneReference, DatumPointConstruction, DistinctMembers,
-    DraftAnchor, DraftPull, DraftSecondSide, EdgeSelection, ExtrudeDirection, ExtrudeExtent,
-    ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion,
-    FaceSelection, FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
+    BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
+    CoilConstruction, CoilPlacement, CombineOperands, ComponentTransferMode, DatumPlaneReference,
+    DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull, DraftSecondSide,
+    EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+    ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion, FaceSelection,
+    FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
     FilledSurfaceContinuity, FilledSurfaceContinuityState, GeneratedBodyRef, GeneratedCurveRef,
     GeneratedEdgeRef, GeneratedFaceRef, GeneratedSweepSection, GeneratedVertexRef,
     GeometryImportPath, HelicalSweepConstruction, InsertedBodies, InsertedComponents,
@@ -39,6 +40,11 @@ rewrite_enum!(AngularTermination, []; {
 });
 
 rewrite_record!(AxisAngle, []; { origin, direction, angle });
+rewrite_record!(CapturedComponentPosition, []; { selector, occurrence, transform });
+rewrite_enum!(CapturedPositionTransform, []; {
+    Affine { transform },
+    Native { scope, row },
+});
 
 rewrite_enum!(BinderConstruction, []; {
     Shape { trace_support },
@@ -204,6 +210,7 @@ rewrite_enum!(FeatureOperation, []; {
     InsertComponent { occurrence },
     InsertComponents { components },
     ComponentTransfer { mode, occurrence, component, source_owner, target_owner, source_transform, target_transform },
+    CapturedComponentPositions { positions },
     AssemblyJoint { joint },
     Form { cages },
     CosmeticThread { face, standard, designation, diameter, pitch, modeled, extent },
