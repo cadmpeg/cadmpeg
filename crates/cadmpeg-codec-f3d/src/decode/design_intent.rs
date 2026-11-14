@@ -1368,7 +1368,7 @@ pub(super) fn scope_related_indices(
             .chain(
                 scope
                     .path_pattern_settings()
-                    .map(|settings| settings.settings_record_index),
+                    .and_then(|settings| settings.settings_record_index),
             )
             .chain(
                 scope

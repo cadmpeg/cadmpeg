@@ -1258,7 +1258,10 @@ fn apply_complete_body_pattern(
         .iter()
         .map(|seed| match seed {
             PatternSeed::Bodies(selection) => explicit_body_selection(selection),
-            PatternSeed::Feature(_) | PatternSeed::Faces(_) | PatternSeed::Occurrences(_) => None,
+            PatternSeed::Feature(_)
+            | PatternSeed::Faces(_)
+            | PatternSeed::Occurrences(_)
+            | PatternSeed::Native(_) => None,
         })
         .collect::<Option<Vec<_>>>()
     else {
