@@ -671,8 +671,17 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_component_insert_construction(bytes, &records, &scope)?;
+                let unresolved_placement = construction
+                    .is_none()
+                    .then(|| {
+                        super::component_constructions::unresolved_component_insert_placement(
+                            bytes, &scope,
+                        )
+                    })
+                    .flatten();
                 if let scope::DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() {
-                    *slot = construction;
+                    slot.construction = construction;
+                    slot.unresolved_placement = unresolved_placement;
                 }
             }
             {
