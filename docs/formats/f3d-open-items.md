@@ -2475,3 +2475,27 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The specialized scope payload stays uninterpreted. The result bodies remain available with `feature.stored-bodies-recipe-absent`.
+
+### DR-486. Sphere placement flags and unresolved placement references
+
+**Question.** How do the inferred-axis and orientation flags change a sphere centre, and which placement supplies the centre when its reference is unresolved?
+
+**Known.** Reference-placed spheres retain a diameter owner, result operation, and placement reference. Placement constructions carry a solved matrix or an identity marker. Sphere axis rotation preserves its shape.
+
+**Need.** Controlled saves with nonzero placement flags and a changed sphere centre, and a reference-placed sphere with a resolvable external placement.
+
+**Conflict.** None.
+
+**Note.** The decoder uses the stored solved frame with `feature.sphere-placement-flags-assumed` when its flags are unresolved. It assumes an origin centre with `feature.sphere-placement-frame-assumed` when the referenced frame has no unique usable local definition.
+
+### DR-487. Sphere diameter references with incomplete ownership
+
+**Question.** Which diameter applies when the referenced scalar has incomplete scope ownership or parameter-source binding?
+
+**Known.** The sphere prefix identifies a diameter-owner record. Its evaluated scalar supplies the diameter in centimetres, and the owner names its scope and parameter source.
+
+**Need.** Controlled saves that distinguish a stale evaluated diameter from a live value after an ownership or source-reference failure.
+
+**Conflict.** None.
+
+**Note.** The decoder uses a unique positive referenced scalar with `feature.sphere-diameter-owner-assumed` when ownership is unresolved, and retains the evaluated diameter with `feature.sphere-diameter-source-assumed` when its parameter source has no unique local definition.

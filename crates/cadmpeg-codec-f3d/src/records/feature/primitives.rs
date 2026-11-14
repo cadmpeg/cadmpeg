@@ -177,6 +177,12 @@ impl TryFrom<DesignCylinderPrimitiveWire> for DesignCylinderPrimitive {
 /// Exact `Sphere` primitive construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSpherePrimitive {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) placement_record_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) diameter_owner_assumed: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) diameter_source_assumed: bool,
     /// Row-major local-to-model placement frame.
     pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the placement matrix.

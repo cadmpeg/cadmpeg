@@ -340,7 +340,9 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             if let Some(construction) =
-                exact_solid_primitive(bytes, &records, &scope, parameter_owners)
+                super::sphere::decode(bytes, &records, &scope, parameter_owners, parameters)
+                    .map(crate::records::feature::primitives::DesignSolidPrimitive::Sphere)
+                    .or_else(|| exact_solid_primitive(bytes, &records, &scope, parameter_owners))
             {
                 match (scope.payload_mut(), construction) {
                     (
