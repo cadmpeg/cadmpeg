@@ -1155,3 +1155,33 @@ fn pattern_seed_plane_and_path_selections_count_as_retained_selections() {
     assert_eq!(gaps.body_selections, 1);
     assert_eq!(gaps.path_selections, 1);
 }
+
+#[test]
+fn unstitch_faces_reports_native_and_absent_selections_as_incomplete() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+
+    for (faces, expected) in [
+        (FaceSelection::Native("native:face-group".into()), 1),
+        (FaceSelection::Unresolved, 1),
+        (
+            FaceSelection::Faces(vec![
+                cadmpeg_ir::ids::FaceId::mint("test:model:face#1").unwrap()
+            ]),
+            0,
+        ),
+    ] {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        ir.model.features.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "test:model:feature#unstitch",
+                "ordinal": 0,
+                "suppressed": null,
+                "definition": FeatureDefinition::Operation(FeatureOperation::UnstitchFaces { faces })
+            }))
+            .unwrap(),
+        );
+        let gaps = design_projection_gaps(&ir, &F3dNative::default());
+        assert_eq!(gaps.incomplete_features, expected);
+        assert_eq!(gaps.face_selections, expected);
+    }
+}

@@ -36,14 +36,15 @@ fn loft_binding_with_regions(
     Feature,
     cadmpeg_ir::sketches::SketchId,
 ) {
-    binding_with_regions(
+    let (losses, group, feature, sketch, _) = binding_with_regions(
         flags,
         tail_length,
         selected,
         role,
         usize::from(selected.is_some()),
         [0, 1, 1],
-    )
+    );
+    (losses, group, feature, sketch)
 }
 
 fn binding_with_regions(
@@ -58,6 +59,7 @@ fn binding_with_regions(
     crate::records::topology::construction::DesignConstructionOperandGroup,
     Feature,
     cadmpeg_ir::sketches::SketchId,
+    Feature,
 ) {
     let (archive, _, headers, entities) =
         crate::test_support::multiple_profiles::fixture_with_curve_region_operands(
@@ -217,16 +219,7 @@ fn binding_with_regions(
         .unwrap()
     });
     let [feature, revolve] = <[Feature; 2]>::try_from(features).unwrap();
-    let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
-        revolve.evaluation.definition()
-    else {
-        panic!("revolve definition");
-    };
-    assert_eq!(
-        construction.profile(),
-        Some(&PlanarProfileRef::Sketch(sketch_id.clone())),
-    );
-    (losses, profile_group, feature, sketch_id)
+    (losses, profile_group, feature, sketch_id, revolve)
 }
 
 fn loft_section(feature: &Feature) -> &LoftSection {
@@ -427,7 +420,7 @@ fn loft_unresolved_planar_region_selection_stays_native_with_loss() {
         loft_section(&feature),
         &LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(group.id),))
     );
-    assert_eq!(losses.len(), 1);
+    assert_eq!(losses.len(), 2);
     assert_eq!(
         losses[0].code.local_code(),
         "feature.profile-selection-native"
@@ -456,8 +449,8 @@ fn loft_single_outer_loop_selects_the_outer_profile() {
 }
 
 #[test]
-fn revolve_counted_region_selection_keeps_main_whole_sketch_profile() {
-    let (losses, group, feature, _) = binding_with_regions(
+fn revolve_unresolved_counted_region_selection_stays_native_with_loss() {
+    let (losses, group, feature, sketch, revolve) = binding_with_regions(
         [0, 0],
         93,
         Some(&[(99, 0, true)]),
@@ -477,13 +470,149 @@ fn revolve_counted_region_selection_keeps_main_whole_sketch_profile() {
     assert_eq!(member.curve_primary_id.get(), 99);
     assert!(member.incidence_flag);
     assert_eq!(member.incidence_values.map(u32::from), [2, 2]);
-    assert_eq!(losses.len(), 1);
+    assert_eq!(losses.len(), 2);
     assert_eq!(
         losses[0].code.local_code(),
         "feature.profile-selection-native"
     );
     assert_eq!(
+        revolve_profile(&revolve),
+        &PlanarProfileRef::sketch_selection(sketch, vec![group.id.clone()]).unwrap()
+    );
+    assert_eq!(
         loft_section(&feature),
         &LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(group.id))),
+    );
+}
+
+fn revolve_profile(feature: &Feature) -> &PlanarProfileRef {
+    let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
+        feature.evaluation.definition()
+    else {
+        panic!("revolve definition");
+    };
+    construction.profile().unwrap()
+}
+
+#[test]
+fn revolve_typed_profile_selects_inner_disc() {
+    let (losses, _, _, sketch, revolve) = binding_with_regions(
+        [0, 0],
+        93,
+        Some(&[(12, 116, true)]),
+        DesignOperandRole::PROFILE,
+        1,
+        [0, 1, 1],
+    );
+    assert!(losses.is_empty());
+    assert_eq!(
+        revolve_profile(&revolve),
+        &PlanarProfileRef::sketch_regions(
+            sketch,
+            vec![cadmpeg_ir::features::SketchProfileRegion::loops(1, vec![]).unwrap()],
+        )
+        .unwrap()
+    );
+}
+
+#[test]
+fn revolve_typed_profile_preserves_outer_and_hole() {
+    let (losses, _, _, sketch, revolve) = binding_with_regions(
+        [0, 0],
+        93,
+        Some(&[(11, 115, true), (12, 116, false)]),
+        DesignOperandRole::PROFILE,
+        1,
+        [0, 1, 1],
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        revolve_profile(&revolve),
+        &PlanarProfileRef::sketch_regions(
+            sketch,
+            vec![cadmpeg_ir::features::SketchProfileRegion::loops(0, vec![1]).unwrap()],
+        )
+        .unwrap()
+    );
+}
+
+#[test]
+fn revolve_unresolved_typed_profile_stays_native_with_loss() {
+    let (losses, group, _, sketch, revolve) = binding_with_regions(
+        [0, 0],
+        93,
+        Some(&[(99, 117, true)]),
+        DesignOperandRole::PROFILE,
+        1,
+        [0, 1, 1],
+    );
+    assert_eq!(
+        revolve_profile(&revolve),
+        &PlanarProfileRef::sketch_selection(sketch, vec![group.id]).unwrap()
+    );
+    assert_eq!(losses.len(), 2);
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code.local_code() == "feature.profile-selection-native"));
+}
+
+#[test]
+fn revolve_counted_members_select_the_inner_atomic_region() {
+    let (losses, _, _, sketch, revolve) = binding_with_regions(
+        [0, 0],
+        93,
+        Some(&[(12, 0, true)]),
+        DesignOperandRole::PROFILE,
+        0,
+        [0, 2, 3],
+    );
+    assert_eq!(losses.len(), 1);
+    let PlanarProfileRef::SketchRegions {
+        sketch: selected,
+        regions,
+    } = revolve_profile(&revolve)
+    else {
+        panic!("selected atomic region");
+    };
+    assert_eq!(selected, &sketch);
+    let [cadmpeg_ir::features::SketchProfileRegion::Trimmed {
+        outer_boundary,
+        hole_boundaries,
+    }] = regions.as_slice()
+    else {
+        panic!("one trimmed disc");
+    };
+    assert!(hole_boundaries.is_empty());
+    assert!(!outer_boundary.is_empty());
+    let inner = crate::ids::neutral_sketch_curve_id(&sketch, 12, 116);
+    assert!(outer_boundary.iter().all(|use_| use_.entity == inner));
+}
+
+#[test]
+fn revolve_curve_loop_selection_retains_compact_tail_flags() {
+    let (losses, group, _, sketch, revolve) = binding_with_regions(
+        [0, 1],
+        93,
+        Some(&[(12, 116, true)]),
+        DesignOperandRole::PROFILE,
+        1,
+        [0, 1, 1],
+    );
+    assert_eq!(
+        revolve_profile(&revolve),
+        &PlanarProfileRef::sketch_regions(
+            sketch,
+            vec![cadmpeg_ir::features::SketchProfileRegion::loops(1, vec![]).unwrap()],
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        group.sketch_profile.unwrap().compact_tail_flags,
+        Some([false, true])
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.sketch-profile-flags-assumed"
     );
 }

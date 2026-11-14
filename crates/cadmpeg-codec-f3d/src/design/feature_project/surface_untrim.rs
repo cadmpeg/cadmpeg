@@ -63,7 +63,7 @@ pub(super) fn project_surface_untrim(
         .unwrap_or_else(|| FaceSelection::Native(group.id.clone())),
         None => {
             losses.push(F3dLossCode::SurfaceUntrimGroupSelectionAssumed.note(format!(
-                "SurfaceUntrim {} retains its ordered references as the face selection because face group record {} is missing, ambiguous or inconsistent (DR-490).",
+                "SurfaceUntrim {} retains its ordered references as the face selection because face group record {} is missing, ambiguous or inconsistent (DR-504).",
                 scope.id, operation.face_group_record_index
             )));
             FaceSelection::Native(scope.id.clone())
@@ -86,7 +86,7 @@ pub(super) fn project_surface_untrim(
                     })
                 {
                     losses.push(F3dLossCode::SurfaceUntrimGroupSelectionAssumed.note(format!(
-                        "SurfaceUntrim {} retains its ordered loop-group references as a scope selection because a group definition is missing, ambiguous or inconsistent (DR-490).", scope.id
+                        "SurfaceUntrim {} retains its ordered loop-group references as a scope selection because a group definition is missing, ambiguous or inconsistent (DR-504).", scope.id
                     )));
                 }
                 EdgeSelection::Native(scope.id.clone())
@@ -97,7 +97,7 @@ pub(super) fn project_surface_untrim(
         && operation.loop_group_record_indices.len() > 1
     {
         losses.push(F3dLossCode::SurfaceUntrimLoopGroupsAggregatedAssumed.note(format!(
-            "SurfaceUntrim {} treats its {} ordered loop groups as one scope-native manual-loop selection (DR-490).",
+            "SurfaceUntrim {} treats its {} ordered loop groups as one scope-native manual-loop selection (DR-504).",
             scope.id, operation.loop_group_record_indices.len()
         )));
     }
@@ -105,7 +105,7 @@ pub(super) fn project_surface_untrim(
         && !operation.loop_group_record_indices.is_empty()
     {
         losses.push(F3dLossCode::SurfaceUntrimStoredLoopGroupsAssumed.note(format!(
-            "SurfaceUntrim {} applies loop choice {:?} while retaining {} stored manual-loop group(s) as inactive selections (DR-490).",
+            "SurfaceUntrim {} applies loop choice {:?} while retaining {} stored manual-loop group(s) as inactive selections (DR-504).",
             scope.id,
             operation.loops,
             operation.loop_group_record_indices.len()
@@ -119,7 +119,7 @@ pub(super) fn project_surface_untrim(
             )));
         } else if value.get() < 0.0 {
             losses.push(F3dLossCode::SurfaceUntrimNegativeExtensionAssumed.note(format!(
-                "SurfaceUntrim {} reads its negative evaluated distance as signed exterior-boundary extension (DR-491).", scope.id
+                "SurfaceUntrim {} reads its negative evaluated distance as signed exterior-boundary extension (DR-505).", scope.id
             )));
         }
         extension
