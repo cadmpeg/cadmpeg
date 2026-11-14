@@ -20,8 +20,8 @@ use super::{
     SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding,
     SketchPointSelection, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion,
-    SketchProfileRegions, SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool,
-    SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
+    SketchProfileRegions, SolidFeatureResult, SplitBodyTool, SplitFaceMethod, SplitFacePlanes,
+    SplitFaceTool, SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
     ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
     VertexSelection,
 };
@@ -294,7 +294,7 @@ Thicken { faces, thickness, side, result, tangent_chain },
     TrimBodies { operands, keep },
     TrimBodiesAtPlane { targets, plane, keep },
     SplitBody { targets, tool },
-    SplitFace { targets, tool },
+    SplitFace { targets, tool, method },
     DeleteBody { bodies, mode },
     DeleteFace { faces, heal },
     ReplaceFace { operands },
@@ -541,9 +541,18 @@ rewrite_enum!(SplitBodyTool, []; {
 });
 
 rewrite_enum!(SplitFaceTool, []; {
+    Faces(field0),
+    Native(field0),
     Path(field0),
     Plane { plane },
     Planes { planes },
+});
+
+rewrite_enum!(SplitFaceMethod, []; {
+    Unresolved {},
+    SurfaceIntersection { extend },
+    ClosestPoint {},
+    AlongVector { direction, native_carrier, native_inputs, native_input_count, native_inputs_complete },
 });
 
 rewrite_enum!(SurfaceBoundary, []; {

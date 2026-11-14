@@ -4,8 +4,8 @@ use cadmpeg_core::decode::u64_from_index;
 use super::exact_hole_construction as exact_hole_construction_with_ctx;
 use super::exact_hole_face_selection;
 use super::HOLE_FACE_SELECTION_TYPE_GUID;
-use crate::design::decode::scopes::point_direction::POINT_DIRECTION_TYPE_GUID;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use std::collections::HashMap;
@@ -18,13 +18,16 @@ fn exact_hole_construction(
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<crate::records::feature::hole::DesignHoleConstruction> {
-    exact_hole_construction_with_ctx(
-        bytes,
-        records,
-        scope,
-        stream_types,
-        &crate::records::feature::scope::DesignFeatureKind::Hole,
-    )
+    crate::test_support::with_decode_context(|ctx| {
+        exact_hole_construction_with_ctx(
+            ctx,
+            bytes,
+            records,
+            scope,
+            stream_types,
+            &crate::records::feature::scope::DesignFeatureKind::Hole,
+        )
+    })
     .unwrap()
 }
 
@@ -40,24 +43,30 @@ fn hole_carrier_reads_borrowed_as_built_scope() {
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let types = HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, 4))]);
-    let construction = exact_hole_construction_with_ctx(
-        &bytes,
-        &records,
-        &scope,
-        &types,
-        &crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-    )
+    let construction = crate::test_support::with_decode_context(|ctx| {
+        exact_hole_construction_with_ctx(
+            ctx,
+            &bytes,
+            &records,
+            &scope,
+            &types,
+            &crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+        )
+    })
     .unwrap();
     assert_eq!(construction.unwrap().point_record_index, 55);
-    assert!(exact_hole_construction_with_ctx(
-        &bytes,
-        &records,
-        &scope,
-        &types,
-        &crate::records::feature::scope::DesignFeatureKind::Hole
-    )
-    .unwrap()
-    .is_none());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| exact_hole_construction_with_ctx(
+            ctx,
+            &bytes,
+            &records,
+            &scope,
+            &types,
+            &crate::records::feature::scope::DesignFeatureKind::Hole
+        ))
+        .unwrap()
+        .is_none()
+    );
 }
 
 fn assert_f64_array<const N: usize>(actual: [f64; N], expected: [f64; N]) {

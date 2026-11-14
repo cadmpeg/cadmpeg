@@ -1124,6 +1124,20 @@ pub(crate) mod design_mirror_scope_class441_count_owner {
     pub(crate) const OWNED_ORDINAL_VALUE: u32 = 0x0000_0001;
 }
 
+/// Byte offsets for the `design_hole_point_data_v1_prefix` record.
+///
+/// Spec §3.1. Record length 97 B.
+///
+/// ```text
+/// Offsets are relative to the version-one Hole point-data primary indexed header. The counted non-null reference run follows the fixed prefix.
+/// ```
+pub(crate) mod design_hole_point_data_v1_prefix {
+    /// Offset of `direction` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const DIRECTION: usize = 49;
+    /// Offset of `input_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const INPUT_COUNT: usize = 93;
+}
+
 /// Byte offsets for the `scale_legacy_uniform_tail` record.
 ///
 /// Spec §3.1. Record length 78 B.
@@ -9893,4 +9907,28 @@ pub(crate) mod captured_position_suffix {
     pub(crate) const IDENTITY_LENGTH_VALUE: u32 = 0x0000_0024;
     /// Stated value of `zero_tail` (`bytes[3]`). Spec §Captured component positions.
     pub(crate) const ZERO_TAIL_VALUE: [u8; 3] = [0x00, 0x00, 0x00];
+}
+
+/// Byte offsets for the `split_face_scope_prefix` record.
+///
+/// Spec §3.1. Record length 19 B.
+pub(crate) mod split_face_scope_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 19;
+    /// Offset of `zero_run` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+}
+
+/// Byte offsets for the `split_face_method_flags` record.
+///
+/// Spec §3.1. Record length 6 B.
+pub(crate) mod split_face_method_flags {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 6;
+    /// Offset of `family` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FAMILY: usize = 0;
+    /// Offset of `projection` (`u8`). Spec §3.1.
+    pub(crate) const PROJECTION: usize = 4;
+    /// Offset of `extension` (`u8`). Spec §3.1.
+    pub(crate) const EXTENSION: usize = 5;
 }

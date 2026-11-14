@@ -328,12 +328,16 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let construction = exact_work_axis_construction(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &scope,
-            &std::collections::HashMap::new(),
-        )
+        let construction = crate::test_support::with_decode_context(|ctx| {
+            exact_work_axis_construction(
+                ctx,
+                &bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                &scope,
+                &std::collections::HashMap::new(),
+            )
+        })
+        .unwrap()
         .expect("direct WorkAxis carrier")
         .construction;
         assert_eq!(construction.origin_offset, 25);

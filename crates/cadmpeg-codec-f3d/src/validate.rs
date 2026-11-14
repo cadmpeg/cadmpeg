@@ -2222,6 +2222,18 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .copied()
             }),
         );
+        let split_face_link = scope.split_face_operation().is_none_or(|operation| {
+            operation.scope_offsets_valid(scope.byte_offset(), scope.reference_count_offset())
+                && operation.carrier_frame.is_none_or(|frame| {
+                    operation.reference_record_index().is_some_and(|record_index| {
+                        records_by_index.get(&(native_stream, record_index)).is_some_and(|header| header.byte_offset == frame.primary_offset)
+                            && stream_types.get(&u64::from(record_index)).is_some_and(|(guid, version)| {
+                                guid.eq_ignore_ascii_case(records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID) && *version == frame.version
+                            })
+                            && native.design_record_headers.iter().filter(|header| design_stream(&header.id) == native_stream && header.byte_offset > frame.primary_offset).map(|header| header.byte_offset).min().is_none_or(|next| frame.end_offset <= next)
+                    })
+                })
+        });
         let offset_faces_link = match scope.payload() {
             records::feature::scope::DesignScopePayload::OffsetFaces(Some(operation)) => {
                 design::decode::scopes::direct_face::offset_faces_distance_reference_matches(
@@ -4380,6 +4392,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && emboss_profile_link
             && move_link
             && offset_faces_link
+            && split_face_link
             && base_flange_link
             && edge_flange_link
             && hem_link
@@ -5345,7 +5358,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 {
                     matches!(
                         group.role(),
-                        DesignOperandRole::ROLE_0X10 | DesignOperandRole::ROLE_0X21
+                        DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X10 | DesignOperandRole::ROLE_0X21
                     ) && group.extrude_role().is_none()
                 }
                 None if matches!(
@@ -7776,9 +7789,9 @@ fn validate_face_operands<'a>(
                                 == crate::records::feature::scope::DesignFeatureKind::SplitFace =>
                             {
                                 group.is_some_and(|group| {
-                                    group.role() == DesignOperandRole::ROLE_0X10
-                                }) && operand.recipe_kind
-                                    == records::recipes::ConstructionRecipeKind::BoundedFace
+                                    matches!(group.role(), DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X10)
+                                }) && matches!(operand.recipe_kind,
+                                    records::recipes::ConstructionRecipeKind::BoundedFace | records::recipes::ConstructionRecipeKind::Face)
                             }
                             None if matches!(
                                 scope.kind(),
@@ -7816,6 +7829,10 @@ fn validate_face_operands<'a>(
                                 operand.recipe_kind,
                                 records::recipes::ConstructionRecipeKind::BoundedFace
                                     | records::recipes::ConstructionRecipeKind::Face
+                            ),
+                            None if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace => matches!(
+                                operand.recipe_kind,
+                                records::recipes::ConstructionRecipeKind::BoundedFace | records::recipes::ConstructionRecipeKind::Face
                             ),
                             Some(design::DesignFeatureFamily::Assemble)
                                 if scope.kind()

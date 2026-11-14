@@ -1007,9 +1007,17 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     cadmpeg_ir::features::SheetMetalHemForm::GapLength { .. }
                 )
         }
-        FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, tool }) => {
+        FeatureDefinition::Operation(FeatureOperation::SplitFace {
+            targets,
+            tool,
+            method,
+        }) => {
             !face_selection_is_resolved(targets)
                 || match tool {
+                    cadmpeg_ir::features::SplitFaceTool::Faces(faces) => {
+                        !face_selection_is_resolved(faces)
+                    }
+                    cadmpeg_ir::features::SplitFaceTool::Native(_) => true,
                     cadmpeg_ir::features::SplitFaceTool::Plane { .. }
                     | cadmpeg_ir::features::SplitFaceTool::Planes { .. } => false,
                     cadmpeg_ir::features::SplitFaceTool::Path(path) => matches!(
@@ -1017,6 +1025,12 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                         cadmpeg_ir::features::PathRef::Native(_)
                             | cadmpeg_ir::features::PathRef::Unresolved(_)
                     ),
+                }
+                || match method {
+                    cadmpeg_ir::features::SplitFaceMethod::Unresolved {} => true,
+                    cadmpeg_ir::features::SplitFaceMethod::SurfaceIntersection { .. }
+                    | cadmpeg_ir::features::SplitFaceMethod::ClosestPoint {} => false,
+                    cadmpeg_ir::features::SplitFaceMethod::AlongVector { .. } => true,
                 }
         }
         FeatureDefinition::Operation(FeatureOperation::Loft {

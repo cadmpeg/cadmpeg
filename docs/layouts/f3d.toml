@@ -37436,3 +37436,56 @@ type = "bytes[3]"
 source = "spec"
 anchor = "The Position suffix spans 83 bytes"
 value = [0, 0, 0]
+
+[[record]]
+name = "split_face_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A `SplitFace` scope begins with an eleven-byte indexed header and eight zero bytes"
+size = 19
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/split_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "eleven-byte indexed header"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record]]
+name = "split_face_method_flags"
+kind = "byte"
+section = "3.1"
+anchor = "the method control has a little-endian u32 family, a u8 projection, and a u8 extension"
+size = 6
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/split_face.rs"
+
+[[record.field]]
+name = "family"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "u32 family"
+
+[[record.field]]
+name = "projection"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "u8 projection"
+
+[[record.field]]
+name = "extension"
+offset = 5
+type = "u8"
+source = "spec"
+anchor = "u8 extension"

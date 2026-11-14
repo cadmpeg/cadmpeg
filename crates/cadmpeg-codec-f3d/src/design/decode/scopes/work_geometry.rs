@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact work-plane, work-axis and joint-origin frames.
 
+use crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::point_data::exact_point_data_construction;
 use super::point_direction::{
-    point_direction_carrier_at, PointDirectionCarrier, POINT_DIRECTION_TYPE_GUID,
+    point_direction_carrier_at, PointDirectionBoundary, PointDirectionCarrier,
 };
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
@@ -308,31 +309,33 @@ pub(super) fn exact_work_plane_frame(
 }
 
 pub(super) fn exact_work_axis_construction(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
-) -> Option<ExactWorkAxis> {
+) -> Result<Option<ExactWorkAxis>, cadmpeg_core::CodecError> {
     if scope.kind() != scope::DesignFeatureKind::WorkAxis {
-        return None;
+        return Ok(None);
     }
-    exact_two_point_work_axis_construction(bytes, records, scope)
+    if let Some(construction) = exact_two_point_work_axis_construction(bytes, records, scope)
         .or_else(|| exact_direct_work_axis_construction(bytes, records, scope))
-        .map(|construction| ExactWorkAxis {
+    {
+        return Ok(Some(ExactWorkAxis {
             construction,
             endpoint_deviation_cm: 0.0,
-        })
-        .or_else(|| {
-            exact_point_direction_work_axis_construction(bytes, records, scope, stream_types)
-        })
+        }));
+    }
+    exact_point_direction_work_axis_construction(ctx, bytes, records, scope, stream_types)
 }
 
 fn exact_point_direction_work_axis_construction(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
-) -> Option<ExactWorkAxis> {
+) -> Result<Option<ExactWorkAxis>, cadmpeg_core::CodecError> {
     let mut candidate = None;
     for record_index in scope.reference_members().values() {
         let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
@@ -343,40 +346,64 @@ fn exact_point_direction_work_axis_construction(
         }
         let mut frames = records.frames(*record_index);
         let (Some((start, paired)), None) = (frames.next(), frames.next()) else {
-            return None;
+            return Ok(None);
         };
-        let carrier = point_direction_carrier_at(bytes, start, paired, *record_index, *version)?;
-        let axis = work_axis_from_point_direction_carrier(
+        let Some(carrier) = point_direction_carrier_at(
+            ctx,
+            bytes,
+            start,
+            PointDirectionBoundary::Indexed(paired),
+            *record_index,
+            *version,
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(local_inputs) = carrier.local_inputs() else {
+            return Ok(None);
+        };
+        let mut input_indices =
+            ctx.alloc_filled(carrier.inputs.len(), 0, "WorkAxis carrier inputs")?;
+        for (slot, input) in input_indices.iter_mut().zip(local_inputs) {
+            *slot = input.value;
+        }
+        let Some(axis) = work_axis_from_point_direction_carrier(
             bytes,
             records,
             *record_index,
             &carrier,
+            input_indices,
             stream_types,
-        )?;
+        ) else {
+            return Ok(None);
+        };
         if candidate.as_ref().is_some_and(|previous| previous != &axis) {
-            return None;
+            return Ok(None);
         }
         candidate = Some(axis);
     }
-    candidate
+    Ok(candidate)
 }
 
 fn work_axis_from_point_direction_carrier(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     carrier_record_index: u32,
-    carrier: &PointDirectionCarrier,
+    carrier: &PointDirectionCarrier<'_>,
+    input_indices: Vec<u32>,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<ExactWorkAxis> {
+    let (position, point_parameters, reference_type) = (
+        carrier.position?,
+        carrier.point_parameters?,
+        carrier.reference_type?,
+    );
     if carrier.bounding_box_index != WORK_AXIS_CARRIER_VALUE_COUNT
-        || carrier
-            .point_parameters
-            .iter()
-            .any(|value| value.get() != 0.0)
+        || point_parameters.iter().any(|value| value.get() != 0.0)
     {
         return None;
     }
-    let origin = carrier.position;
+    let origin = position;
     let displacement = carrier.direction;
     let displacement_length = displacement[0]
         .get()
@@ -386,19 +413,17 @@ fn work_axis_from_point_direction_carrier(
         return None;
     }
     let mut endpoint_deviation_cm: f64 = 0.0;
-    let source = if carrier.reference_type == WORK_AXIS_TWO_POINT_REFERENCE_TYPE {
-        let [first, second] = carrier.input_records.as_slice() else {
+    let source = if reference_type == WORK_AXIS_TWO_POINT_REFERENCE_TYPE {
+        let [first, second] = input_indices.as_slice() else {
             return None;
         };
         let endpoint: [f64; 3] =
             std::array::from_fn(|axis| origin[axis].get() + displacement[axis].get());
         let mut point_offsets = [0; 2];
-        for (ordinal, (input, expected)) in [
-            (first.value, origin.map(FiniteReal::get)),
-            (second.value, endpoint),
-        ]
-        .into_iter()
-        .enumerate()
+        for (ordinal, (input, expected)) in
+            [(*first, origin.map(FiniteReal::get)), (*second, endpoint)]
+                .into_iter()
+                .enumerate()
         {
             let point = exact_point_data_construction(bytes, records, [&input], stream_types)?;
             let deviation = point
@@ -414,18 +439,14 @@ fn work_axis_from_point_direction_carrier(
             point_offsets[ordinal] = point.position_offset;
         }
         DesignWorkAxisSource::TwoPoint {
-            point_record_indices: [first.value, second.value],
+            point_record_indices: [*first, *second],
             point_offsets,
         }
     } else {
         DesignWorkAxisSource::PointDirection {
             carrier_record_index,
-            reference_type: carrier.reference_type,
-            input_record_indices: carrier
-                .input_records
-                .iter()
-                .map(|input| input.value)
-                .collect(),
+            reference_type,
+            input_record_indices: input_indices,
         }
     };
     Some(ExactWorkAxis {

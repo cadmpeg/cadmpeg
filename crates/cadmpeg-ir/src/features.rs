@@ -3899,6 +3899,9 @@ pub enum FeatureOperation {
         targets: FaceSelection,
         /// Geometry or datum plane that partitions the target faces.
         tool: SplitFaceTool,
+        #[doc = "Method used to apply the splitting tool to the target faces."]
+        #[serde(default, skip_serializing_if = "SplitFaceMethod::is_unresolved")]
+        method: SplitFaceMethod,
     },
     /// Deletes bodies directly or retains only the selected bodies.
     DeleteBody {
@@ -9575,6 +9578,10 @@ pub enum SplitBodyTool {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum SplitFaceTool {
+    #[doc = "Selected surface faces used as the splitting tool."]
+    Faces(FaceSelection),
+    #[doc = "Native splitting geometry whose neutral kind is unresolved."]
+    Native(String),
     /// Sketch or model-space path projected onto the target faces.
     Path(PathRef),
     /// Datum-plane feature extended through the target faces.
@@ -9588,6 +9595,76 @@ pub enum SplitFaceTool {
         planes: SplitFacePlanes,
     },
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[doc = "Projection method used by a `SplitFace` operation."]
+pub enum SplitFaceMethod {
+    #[doc = "Splitting method remains unresolved."]
+    Unresolved {},
+    #[doc = "Intersect target faces with the splitting tool's surfaces."]
+    SurfaceIntersection {
+        #[doc = "Extend the splitting tool beyond its existing boundary."]
+        extend: bool,
+    },
+    #[doc = "Project the splitting tool onto the closest target points."]
+    ClosestPoint {},
+    #[doc = "Project the splitting tool along a selected direction."]
+    AlongVector {
+        #[doc = "Decoded finite projection vector, including degenerate triples."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_split_face_direction"
+        )]
+        direction: Option<FiniteVector3>,
+        #[doc = "Original source label of the unresolved direction carrier."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_split_face_native_carrier"
+        )]
+        native_carrier: Option<String>,
+        #[doc = "Original source labels and null slots, in encoded input order."]
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        native_inputs: Vec<Option<String>>,
+        #[doc = "Declared number of direction-source input slots."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_split_face_native_input_count"
+        )]
+        native_input_count: Option<u32>,
+        #[doc = "Whether the declared input run was read completely."]
+        #[serde(default)]
+        native_inputs_complete: bool,
+    },
+}
+
+impl SplitFaceMethod {
+    fn is_unresolved(&self) -> bool {
+        matches!(self, Self::Unresolved {})
+    }
+}
+
+impl Default for SplitFaceMethod {
+    fn default() -> Self {
+        Self::Unresolved {}
+    }
+}
+
+cadmpeg_core::named_optional_field!(deserialize_split_face_direction, FiniteVector3, "direction");
+cadmpeg_core::named_optional_field!(
+    deserialize_split_face_native_carrier,
+    String,
+    "native_carrier"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_split_face_native_input_count,
+    u32,
+    "native_input_count"
+);
 
 /// Deformation applied by a flex feature.
 ///

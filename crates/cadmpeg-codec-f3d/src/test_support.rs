@@ -33,6 +33,7 @@ pub(crate) mod origin_types;
 pub(crate) mod procedural_support;
 pub(crate) mod sketch_relations;
 pub(crate) mod sketch_text;
+pub(crate) mod split_face;
 pub(crate) mod verification;
 
 pub(crate) fn with_decode_context<T>(

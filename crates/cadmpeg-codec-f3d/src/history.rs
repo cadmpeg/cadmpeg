@@ -3607,7 +3607,7 @@ pub(crate) fn bind_feature_face_selections(
                     );
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::SplitFace { targets, .. },
+                    cadmpeg_ir::features::FeatureOperation::SplitFace { targets, tool, .. },
                 ) => {
                     selection::bind_face_selection(
                         targets,
@@ -3616,6 +3616,15 @@ pub(crate) fn bind_feature_face_selections(
                         operands,
                         &transition.topology.faces.updated,
                     );
+                    if let cadmpeg_ir::features::SplitFaceTool::Faces(faces) = tool {
+                        selection::bind_face_selection(
+                            faces,
+                            scope,
+                            groups,
+                            operands,
+                            &transition.topology.faces.updated,
+                        );
+                    }
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::DeleteFace { faces, .. },

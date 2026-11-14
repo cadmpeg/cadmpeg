@@ -2794,3 +2794,64 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The unresolved members retain their native identities and report `history.edge-midpoints-unresolved`. DR-164 tracks selectors over populated lanes; DR-224 tracks incomplete transition proofs.
+
+### DR-570. Additional SplitFace method controls
+
+**Question.** Which splitting methods do SplitFace method-control tuples outside the documented surface-intersection, closest-point, and along-vector forms select?
+
+**Known.** The method control stores a u32 family, a u8 projection, and a u8 extension after the nullable direction reference. The recognized tuples are recorded in `f3d.md` §3.1. Other tuples remain available as raw controls.
+
+**Need.** Controlled saves that change one splitting method setting at a time and identify the resulting tuple.
+
+**Conflict.** None.
+
+**Note.** The decoder keeps the SplitFace operation with an `Unresolved` method and records `feature.split-face-method-unresolved`.
+
+### DR-571. Along-vector source binding
+
+**Question.** How do an along-vector carrier's ordered input references identify a neutral direction source?
+
+**Known.** The carrier stores a finite three-component vector and ordered input references. The vector can be retained when the source feature or its definition is unavailable.
+
+**Need.** Independent identity joins from carrier inputs to neutral axis, plane, edge, or face selections across supported document states.
+
+**Conflict.** None.
+
+**Note.** The decoder retains the vector, complete reference qualifiers, and the readable prefix of an incomplete input run in a typed along-vector method. The native payload distinguishes a complete run from an unavailable or truncated run. External targets do not select same-numbered local records. `feature.split-face-direction-unresolved` records the unavailable neutral source; an incomplete local reference partition also records DR-572.
+
+### DR-572. Incomplete SplitFace reference partitions
+
+**Question.** How do additional ordered references outside the tool group, target group, and decoded along-vector references affect a SplitFace operation?
+
+**Known.** The tool group precedes the target group and their members appear contiguously. An along-vector scope can carry a direction carrier and its input selections after the group members.
+
+**Need.** Controlled scopes with additional reference members whose records and roles identify their relation to the SplitFace operation.
+
+**Conflict.** None.
+
+**Note.** The decoder projects the readable method and selections and records `feature.split-face-groups-unresolved` while the full ordered partition is unproved.
+
+### DR-573. Unresolved SplitFace tool selections
+
+**Question.** Which role-`0x0000002100000000` selections identify splitting geometry beyond resolved paths, WorkPlanes, and historical face selections?
+
+**Known.** The role can carry path, plane, or face selections. Its ordered native selection remains available when a unique neutral geometry cannot be established.
+
+**Need.** Controlled selections that vary the native entity type and record path independently.
+
+**Conflict.** None.
+
+**Note.** The decoder projects the SplitFace operation with its readable method and records `feature.split-face-selection-unresolved` for unresolved tools or targets.
+
+
+### DR-574. SplitFace face projection failures
+
+**Question.** Which face selections require additional projection rules?
+
+**Known.** A face-selection projection can fail while decoding a SplitFace group.
+
+**Need.** A face selection and its complete registered operand frame for each unsupported projection.
+
+**Conflict.** None.
+
+**Note.** The decoder retains the native group and records `feature.split-face-selection-projection-failed` with the projection error.

@@ -42,6 +42,7 @@ pub(in crate::design) mod shared_frames;
 pub(crate) mod sheet_metal;
 mod solid_primitive;
 mod sphere;
+mod split_face;
 mod surfaces;
 mod thicken_shell;
 mod thread;

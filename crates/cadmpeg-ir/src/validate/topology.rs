@@ -3563,9 +3563,41 @@ fn check_feature_references(
                     ),
                 }
             }
-            FeatureOperation::SplitFace { targets, tool } => {
+            FeatureOperation::SplitFace {
+                targets,
+                tool,
+                method,
+            } => {
                 face_selections.push(targets);
+                if let crate::features::SplitFaceMethod::AlongVector {
+                    native_inputs,
+                    native_input_count,
+                    native_inputs_complete,
+                    ..
+                } = method
+                {
+                    let count_matches = native_input_count.map_or_else(
+                        || native_inputs.is_empty() && !native_inputs_complete,
+                        |count| {
+                            u64::try_from(native_inputs.len())
+                                .ok()
+                                .is_some_and(|length| {
+                                    length <= u64::from(count)
+                                        && (!native_inputs_complete || length == u64::from(count))
+                                })
+                        },
+                    );
+                    if !count_matches {
+                        geometry_error(
+                            findings,
+                            feature.id.as_str(),
+                            "split-face direction input run is inconsistent",
+                        );
+                    }
+                }
                 match tool {
+                    SplitFaceTool::Faces(faces) => face_selections.push(faces),
+                    SplitFaceTool::Native(_) => {}
                     SplitFaceTool::Path(path) => paths.push(path),
                     SplitFaceTool::Plane { plane } => check_plane_feature_reference(
                         findings,

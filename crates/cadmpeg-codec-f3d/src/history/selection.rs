@@ -2606,12 +2606,18 @@ pub(super) fn feature_selected_input_state_id(
                 return Some(id);
             }
         }
-        FeatureOperation::SplitFace {
-            targets: FaceSelection::Historical { state, .. },
-            ..
-        } => {
-            if let Some(id) = parse_state(state) {
-                return Some(id);
+        FeatureOperation::SplitFace { targets, tool, .. } => {
+            for selection in std::iter::once(targets).chain(match tool {
+                cadmpeg_ir::features::SplitFaceTool::Faces(faces) => Some(faces),
+                _ => None,
+            }) {
+                if let FaceSelection::Historical { state, .. }
+                | FaceSelection::HistoricalPartial { state, .. } = selection
+                {
+                    if let Some(id) = parse_state(state) {
+                        return Some(id);
+                    }
+                }
             }
         }
         FeatureOperation::Shell {

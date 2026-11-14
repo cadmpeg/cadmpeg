@@ -625,6 +625,40 @@ pub(super) fn design_primary_frames<'a>(
     Ok(frames)
 }
 
+pub(super) fn unambiguous_design_primary_frames<'a>(
+    bytes: &[u8],
+    meta: &'a crate::metastream::MetaStream,
+) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
+    use crate::layout::indexed_design_record_header as header;
+
+    let frames = design_primary_frames(bytes, meta)?;
+    let mut registered = HashSet::new();
+    for entity_id in meta.types.iter().flat_map(|row| row.entities.values()) {
+        if !registered.insert(*entity_id) {
+            return Err(CodecError::malformed(
+                "F3D Design entity has ambiguous type registrations",
+            ));
+        }
+    }
+    for frame in &frames {
+        if frame
+            .start
+            .checked_add(header::LEN)
+            .is_none_or(|end| end > frame.member_end)
+            || (frame.member_end < frame.end
+                && frame
+                    .member_end
+                    .checked_add(header::LEN)
+                    .is_none_or(|end| end > frame.end))
+        {
+            return Err(CodecError::malformed(
+                "F3D indexed header exceeds its registered member extent",
+            ));
+        }
+    }
+    Ok(frames)
+}
+
 /// One primary `BulkStream` frame selected through a registered Design type.
 #[derive(Clone, Copy)]
 pub(super) struct TypedPrimaryFrame<'a> {

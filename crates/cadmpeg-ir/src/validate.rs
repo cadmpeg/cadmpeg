@@ -447,12 +447,61 @@ mod tests {
                     tool: SplitFaceTool::Planes {
                         planes: vec![first.clone(), second.clone()].try_into().unwrap(),
                     },
+                    method: crate::features::SplitFaceMethod::default(),
                 }),
             ),
         ];
 
         let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(report.findings.is_empty(), "{:?}", report.findings);
+    }
+
+    #[test]
+    fn split_face_direction_input_metadata_matches_the_retained_slots() {
+        for (count, complete, slots, valid) in [
+            (None, false, 0, true),
+            (None, true, 0, false),
+            (None, false, 1, false),
+            (Some(0), true, 0, true),
+            (Some(1), true, 1, true),
+            (Some(2), false, 1, true),
+            (Some(2), true, 1, false),
+            (Some(0), false, 1, false),
+        ] {
+            let mut ir = CadIr::empty();
+            ir.model.features.push(Feature {
+                product_definition: None,
+                id: FeatureId::mint("test:model:feature#split").unwrap(),
+                ordinal: 0,
+                name: None,
+                suppressed: None,
+                dependencies: crate::features::DistinctMembers::default(),
+                source_properties: BTreeMap::default(),
+                source_tag: None,
+                source_text: None,
+                source_content: crate::features::FeatureContent::default(),
+                native_ref: None,
+                evaluation: crate::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::SplitFace {
+                        targets: FaceSelection::Unresolved,
+                        tool: SplitFaceTool::Native("source-tool".into()),
+                        method: crate::features::SplitFaceMethod::AlongVector {
+                            direction: None,
+                            native_carrier: None,
+                            native_inputs: if slots == 0 { Vec::new() } else { vec![None] },
+                            native_input_count: count,
+                            native_inputs_complete: complete,
+                        },
+                    }),
+                ),
+            });
+            let report = validate_neutral(&ir, Vec::new()).unwrap();
+            let inconsistent = report
+                .findings
+                .iter()
+                .any(|finding| finding.message == "split-face direction input run is inconsistent");
+            assert_eq!(inconsistent, !valid);
+        }
     }
 
     #[test]

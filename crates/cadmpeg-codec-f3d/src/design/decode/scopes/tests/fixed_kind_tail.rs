@@ -681,12 +681,16 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let construction = exact_work_axis_construction(
-        &axis_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&axis_bytes),
-        &axis_scope,
-        &std::collections::HashMap::new(),
-    )
+    let construction = crate::test_support::with_decode_context(|ctx| {
+        exact_work_axis_construction(
+            ctx,
+            &axis_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&axis_bytes),
+            &axis_scope,
+            &std::collections::HashMap::new(),
+        )
+    })
+    .unwrap()
     .expect("exact two-point WorkAxis construction")
     .construction;
     assert_eq!(

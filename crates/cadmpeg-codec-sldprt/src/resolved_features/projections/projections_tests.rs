@@ -1278,6 +1278,7 @@ fn split_face_collects_distinct_generated_target_faces() {
                 tool: cadmpeg_ir::features::SplitFaceTool::Path(
                     cadmpeg_ir::features::PathRef::Native("tool".into()),
                 ),
+                method: cadmpeg_ir::features::SplitFaceMethod::default(),
             }),
         ),
     ];

@@ -3,13 +3,13 @@
 use std::collections::HashMap;
 
 use crate::design::decode::scopes::point_data::POINT_DATA_TYPE_GUID;
-use crate::design::decode::scopes::point_direction::POINT_DIRECTION_TYPE_GUID;
 use crate::design::decode::scopes::work_geometry::{
     exact_work_axis_construction, work_axis_loss_notes, ExactWorkAxis,
 };
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::feature::work_geometry::DesignWorkAxisSource;
+use crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID;
 use crate::test_support::indexed_header;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 
@@ -133,12 +133,16 @@ fn carrier_types(version: u32) -> HashMap<u64, (&'static str, u32)> {
 }
 
 fn read(bytes: &[u8], types: &HashMap<u64, (&str, u32)>) -> Option<ExactWorkAxis> {
-    exact_work_axis_construction(
-        bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(bytes),
-        &work_axis_scope(),
-        types,
-    )
+    crate::test_support::with_decode_context(|ctx| {
+        exact_work_axis_construction(
+            ctx,
+            bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+            &work_axis_scope(),
+            types,
+        )
+    })
+    .unwrap()
 }
 
 fn unassigned_rule_values() -> [f64; 8] {
@@ -197,12 +201,16 @@ fn point_direction_carrier_projects_a_datum_axis() {
     let mut bytes = Vec::new();
     Carrier::new(unassigned_rule_values(), 16).write(&mut bytes);
     let mut scope = work_axis_scope();
-    let construction = exact_work_axis_construction(
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &carrier_types(1),
-    );
+    let construction = crate::test_support::with_decode_context(|ctx| {
+        exact_work_axis_construction(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &carrier_types(1),
+        )
+    })
+    .unwrap();
     if let crate::records::feature::scope::DesignScopePayloadMut::WorkAxis(slot) =
         scope.payload_mut()
     {

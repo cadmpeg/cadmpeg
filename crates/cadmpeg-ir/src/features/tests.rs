@@ -1429,6 +1429,7 @@ mod local_admission;
 
 mod configurations;
 mod finite_vectors;
+mod split_face;
 mod unit_scaling;
 mod wire_forms;
 
