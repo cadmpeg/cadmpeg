@@ -63,6 +63,34 @@ Records `marked_reference_box_prefix`, `prefixed_marked_reference_box_prefix`, `
 | `component_body_membership_local_entry` | 15 | little | An 11-byte untyped Body reference followed by u32 1 in the repeated body list. List order is independent; both lists contain the same unique body identities. |
 | `component_body_membership_single_overhead` | 15 | little | A u32 body count and an eleven-byte untyped owner reference enclose the single body list. |
 
+## `named_parameter_scope_tail`
+
+Spec §3.1 · layout: byte offsets · size: 78 B
+
+Offsets use an empty label, no associated references and null middle/closing references. Variable fields shift subsequent offsets by their serialized widths.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `ordinal` | `u32` | little | spec | begins with the ordinal, zero word and LP-UTF16 label |
+| 4 | 4 | `zero_word` | `bytes[4]` | little | spec | begins with the ordinal, zero word and LP-UTF16 label |
+| 8 | 4 | `label_length` | `u32` | little | spec | begins with the ordinal, zero word and LP-UTF16 label |
+| 12 | 4 | `associated_count` | `u32` | little | spec | the associated count is at offset 12 |
+| 16 | 3 | `padding` | `bytes[3]` | little | spec | followed by a counted associated-reference list, three zero bytes |
+| 19 | 11 | `first_reference` | `bytes[11]` | little | spec | the required references at offsets 19, 51 and 65 |
+| 30 | 1 | `middle_reference` | `u8` | little | spec | the middle reference at offset 30 |
+| 31 | 4 | `opaque_word` | `u32` | little | spec | the opaque word at offset 31 |
+| 35 | 4 | `lane_word` | `u32` | little | spec | the repeated word at offsets 35 and 47 |
+| 39 | 8 | `lane_scalar` | `f64` | little | spec | the scalar at offset 39 |
+| 47 | 4 | `repeated_word` | `u32` | little | spec | the repeated word at offsets 35 and 47 |
+| 51 | 11 | `second_reference` | `bytes[11]` | little | spec | the required references at offsets 19, 51 and 65 |
+| 62 | 3 | `lane_flags` | `bytes[3]` | little | spec | the three flags at offset 62 |
+| 65 | 11 | `third_reference` | `bytes[11]` | little | spec | the required references at offsets 19, 51 and 65 |
+| 76 | 1 | `closing_reference` | `u8` | little | spec | the closing reference at offset 76 |
+| 77 | 1 | `final_zero` | `u8` | little | spec | the final zero at offset 77 |
+
 ## `indexed_design_record_header`
 
 Spec §3.1 · layout: byte offsets · size: 11 B
@@ -2728,7 +2756,7 @@ Offsets are relative to the class-329 primary indexed scope header. The variable
 
 Spec §3.1 · layout: byte offsets · size: 58 B
 
-Offsets are relative to the primary indexed scope header, for a prologue without a property block and with an empty companion list. An empty property block moves every field after the presence byte four bytes on; each companion reference moves every field after the companion list eleven bytes on. The tool list count is the last fixed field; the lists after it have variable length.
+Offsets are relative to the primary indexed scope header, without a property block or companion references, and with an ordinary present local reference. An empty property block moves later fields four bytes on; each companion advances later fields by its complete reference width. The tool list count is the last fixed field; the lists after it have variable length.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -2745,6 +2773,19 @@ Offsets are relative to the primary indexed scope header, for a prologue without
 | 44 | 2 | `reference_tail` | `bytes[2]` | little | spec | a two-byte zero trailing field, a u64 |
 | 46 | 8 | `stamp` | `u64` | little | spec | a u64 operation-identity value at offset 46 |
 | 54 | 4 | `tool_count` | `u32` | little | spec | the tool list at offset 54 |
+
+## `combine_null_reference_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 48 B
+
+The common operand-list fields precede the null reference. Offsets apply without a property block or companion references.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 35 | `common_prefix` | `bytes[35]` | little | spec | The null-reference form shares the first 35 bytes of the operand-list prologue |
+| 35 | 1 | `reference_marker` | `u8` | little | spec | zero reference marker at offset 35 · value `0` |
+| 36 | 8 | `stamp` | `u64` | little | spec | the u64 operation identity at offset 36 |
+| 44 | 4 | `tool_count` | `u32` | little | spec | the tool count at offset 44 |
 
 ## `combine_body_selection_prefix`
 

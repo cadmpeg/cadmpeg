@@ -538,6 +538,7 @@ pub(crate) fn append_design_intent_losses(
                 | UnresolvedFamily::Revolve
                 | UnresolvedFamily::Fillet
                 | UnresolvedFamily::BoundarySurface => continue,
+                UnresolvedFamily::Combine => "combine",
             },
             _ => continue,
         };

@@ -541,6 +541,11 @@ pub(crate) enum F3dLossCode {
     UnstitchPrologueControlsAssumed,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
+    #[doc = "A Combine lacks a complete Boolean construction and remains typed as an unresolved Combine."]
+    FeatureCombineDefinitionUnresolved,
+    FeatureCombineMiddleListOmittedAssumed,
+    FeatureCombineComponentDestinationAssumed,
+    FeatureCombineNamedTailPrologueAssumed,
     /// A Combine frame that matches the fixed fields of the operand-list
     /// prologue is read in the standard prologue.
     FeatureCombinePrologueAssumed,
@@ -548,8 +553,6 @@ pub(crate) enum F3dLossCode {
     /// the operand-list prologue or cannot be checked, and which no prologue
     /// reads stays native.
     FeatureCombineOperandListRefused,
-    /// A Combine that places its result in a new component stays native.
-    FeatureCombineNewComponentNative,
     /// A Combine with a companion `RemoveBody` scope reads every tool as
     /// removed, though the companion body selections do not name exactly the
     /// tools.
@@ -1148,9 +1151,12 @@ impl F3dLossCode {
         Self::UnstitchGroupSelectionAssumed,
         Self::UnstitchPrologueControlsAssumed,
         Self::FeatureCombineSelectionNative,
+        Self::FeatureCombineDefinitionUnresolved,
+        Self::FeatureCombineMiddleListOmittedAssumed,
+        Self::FeatureCombineComponentDestinationAssumed,
+        Self::FeatureCombineNamedTailPrologueAssumed,
         Self::FeatureCombinePrologueAssumed,
         Self::FeatureCombineOperandListRefused,
-        Self::FeatureCombineNewComponentNative,
         Self::FeatureCombineToolConsumptionAssumed,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureFilletRadiusUnresolved,
@@ -1732,9 +1738,18 @@ impl F3dLossCode {
             Self::UnstitchGroupSelectionAssumed => "feature.unstitch-group-selection-assumed",
             Self::UnstitchPrologueControlsAssumed => "feature.unstitch-prologue-controls-assumed",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
+            Self::FeatureCombineDefinitionUnresolved => "feature.combine-definition-unresolved",
+            Self::FeatureCombineMiddleListOmittedAssumed => {
+                "feature.combine-middle-list-omitted-assumed"
+            }
+            Self::FeatureCombineComponentDestinationAssumed => {
+                "feature.combine-component-destination-assumed"
+            }
+            Self::FeatureCombineNamedTailPrologueAssumed => {
+                "feature.combine-named-tail-prologue-assumed"
+            }
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
-            Self::FeatureCombineNewComponentNative => "feature.combine-new-component-native",
             Self::FeatureCombineToolConsumptionAssumed => {
                 "feature.combine-tool-consumption-assumed"
             }
@@ -2271,9 +2286,12 @@ impl F3dLossCode {
             | Self::UnstitchGroupSelectionAssumed
             | Self::UnstitchPrologueControlsAssumed
             | Self::FeatureCombineSelectionNative
+            | Self::FeatureCombineDefinitionUnresolved
+            | Self::FeatureCombineMiddleListOmittedAssumed
+            | Self::FeatureCombineComponentDestinationAssumed
+            | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
-            | Self::FeatureCombineNewComponentNative
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureFilletRadiusUnresolved
@@ -2696,9 +2714,12 @@ impl F3dLossCode {
             | Self::UnstitchGroupSelectionAssumed
             | Self::UnstitchPrologueControlsAssumed
             | Self::FeatureCombineSelectionNative
+            | Self::FeatureCombineDefinitionUnresolved
+            | Self::FeatureCombineMiddleListOmittedAssumed
+            | Self::FeatureCombineComponentDestinationAssumed
+            | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
-            | Self::FeatureCombineNewComponentNative
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureFilletRadiusUnresolved
@@ -3230,9 +3251,12 @@ mod tests {
                 "feature.unstitch-group-selection-assumed",
                 "feature.unstitch-prologue-controls-assumed",
                 "feature.combine-selection-native",
+                "feature.combine-definition-unresolved",
+                "feature.combine-middle-list-omitted-assumed",
+                "feature.combine-component-destination-assumed",
+                "feature.combine-named-tail-prologue-assumed",
                 "feature.combine-prologue-assumed",
                 "feature.combine-operand-list-refused",
-                "feature.combine-new-component-native",
                 "feature.combine-tool-consumption-assumed",
                 "feature.fixed-fillet-assignment-native",
                 "feature.fillet-radius-unresolved",
