@@ -1528,27 +1528,47 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 ### DR-271. List that a two-list Combine prologue omits
 
-**Question.** Which of the three lists between the tool list and the target list does an operand-list `Combine` prologue omit when it stores only two?
+**Question.** Which of the three lists between the tool list and the target list does an operand-list `Combine` prologue omit when it stores two?
 
-**Known.** `f3d.md` §3.1 gives the operand-list prologue: after the tool list, an empty list, a list that is empty or names the new component's browser node, the consumed-body list, and the target list. A prologue with a companion `RemoveBody` can store two empty lists between the tool list and the target list. A `Combine` with a companion consumes no tool in its own scope. The decoder reads every tool of such a `Combine` as removed. It compares the browser nodes that the tool selections name with the browser nodes that the body selections in the companion reference tables name. When the two sets differ, or a companion has no single reference table after the GUID or a selection without one browser node, it reports `feature.combine-tool-consumption-assumed`, whose note lists the tool selections that no companion selection confirms and the companion selections that name no tool. With the new-component Boolean zero, the reading of every stored field is the same for each omitted list; with the Boolean one, only the omitted browser-node list is consistent. The decoder reads a two-list prologue with a companion and two empty lists, and reports `feature.combine-new-component-native` when the Boolean is one.
+**Known.** `f3d.md` §3.1 gives the three middle lists: an empty list, a component-node list, and a consumed-body list. The two-list form can carry two empty lists with a companion, or an empty list followed by consumed-body references without a companion. A companion `RemoveBody` scope removes tools through its browser-node selections. The decoder compares those selections with the tool nodes and reports `feature.combine-tool-consumption-assumed` for an incomplete match. The new-component Boolean is independent of the number of middle lists.
 
-**Need.** A two-list prologue with a nonempty list between the tool list and the target list, or the Fusion version that adds the third list.
+**Need.** Controlled saves that vary component creation and tool retention in the two-list form, or the Fusion version that adds the third list.
 
 **Conflict.** None.
 
-**Note.** None.
+**Note.** A two-list form without a companion reads the middle lists as the component-node and consumed-body lists and reports `feature.combine-middle-list-omitted-assumed`. A nonempty first list is read as the requested component's browser node. DR-561 tracks the destination of a new-component request.
 
 ### DR-272. Prologue of a Combine frame whose byte 20 is one
 
 **Question.** Which prologue does a `Combine` frame store when byte 20 is one and its fixed fields match both the standard and the operand-list prologue?
 
-**Known.** `f3d.md` §3.1 gives the standard and operand-list prologues. A standard join and an operand-list prologue with an empty property block both store `01 00 00 00 00` at offsets 20 through 24, and such an operand-list prologue without a companion also stores zero at offsets 26 through 32, as the standard prologue does. When the standard prologue reads such a frame, the decoder reads it in that prologue and reports `feature.combine-prologue-assumed`, whose note says whether the lists name the scope's operation-identity records. Otherwise the decoder reads the frame in the operand-list prologue when its lists name those records, its counted GUID and three zero bytes end at its reference table, its other fields hold, and its new-component Boolean is zero. A frame that neither prologue reads stays native: it reports `feature.combine-new-component-native` when its new-component Boolean is one, and `feature.combine-operand-list-refused` when its lists name its operands and its other fields contradict the operand-list prologue or cannot be checked.
+**Known.** `f3d.md` §3.1 gives the standard and operand-list prologues. A standard join and an operand-list prologue with an empty property block both store `01 00 00 00 00` at offsets 20 through 24. An operand-list prologue without a companion can also store zero at offsets 26 through 32. A complete list reading independently checks the ordered operation identities, the counted GUID and exact reference-table boundary. The legacy reading takes the standard prefix when both readings hold and reports `feature.combine-prologue-assumed`. DR-560 covers the expanded named tail's separate reading. A new-component request retains its Boolean and unresolved placement. A frame whose lists match its operands but contradict other required list fields reports `feature.combine-operand-list-refused` when no prologue reads it.
 
 **Need.** A frame of this kind with its operation and keep-tools state shown by result volumes.
 
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-561. Destination of a Combine new-component result
+
+**Question.** How does a Combine's new-component request identify the product definition and placement that contain its result?
+
+**Known.** The operand-list prologue stores a new-component Boolean. The three-middle-list form names one browser node when that Boolean is one. A two-middle-list request can omit that node. The named tail can carry a distinct middle reference; it is separate from that browser node and remains located in the native scope. The Boolean operation and ordered target and tool selections remain readable.
+
+**Need.** A complete identity join from the result browser node and named-tail references to the component and placement, including a request whose middle lists omit the node.
+
+**Note.** The neutral Combine retains the new-component request, and the native operation retains its browser-node reference when present. The decoder reports `feature.combine-component-destination-assumed` for the unresolved destination placement and assumes the input component frame.
+
+### DR-560. Prologue of a Combine with an expanded named tail
+
+**Question.** Does an expanded named tail select the complete operand-list prologue whenever its fixed prefix also matches the standard prologue?
+
+**Known.** The expanded tail retains references outside the operand table. The complete operand-list reading supplies independent operation, keep-tools and new-component fields. The standard prefix can match only the initial bytes and give different control values. A component-Join control has zero-based operation zero, keep-tools one and new-component one.
+
+**Need.** Independent saves with expanded named tails across Boolean operations and tool-retention modes, including a frame whose complete operand lists contradict the standard-prefix reading.
+
+**Note.** The decoder uses the complete operand-list reading for the expanded named tail and reports `feature.combine-named-tail-prologue-assumed`. The synthetic control test preserves the independent destination node and tail reference while requiring the Join, keep-tools and component-request values.
 
 ### DR-202. Fields of the older Shell frames
 

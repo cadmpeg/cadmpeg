@@ -252,6 +252,7 @@ impl Serialize for DesignParameterScope {
         }
 
         emit_opt!("combine_operation", self.combine_operation());
+        emit_opt!("combine_named_tail", self.combine_named_tail());
         emit_opt!("thread_construction", self.thread_construction());
         emit_opt!("emboss_construction", self.emboss_construction());
         emit_opt!("draft_operation", self.draft_operation());

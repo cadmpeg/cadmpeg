@@ -5,9 +5,9 @@ use super::surfaces::UntrimLoops;
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
     BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
-    CoilConstruction, CoilPlacement, CombineOperands, ComponentTransferMode, DatumPlaneReference,
-    DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull, DraftSecondSide,
-    EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+    CoilConstruction, CoilPlacement, CombineDestination, CombineOperands, ComponentTransferMode,
+    DatumPlaneReference, DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull,
+    DraftSecondSide, EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
     ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion, FaceSelection,
     FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
     FilledSurfaceContinuity, FilledSurfaceContinuityState, GeneratedBodyRef, GeneratedCurveRef,
@@ -95,6 +95,8 @@ Reparent,
 });
 
 rewrite_record!(CombineOperands, []; { target, tools });
+
+rewrite_enum!(CombineDestination, []; { TargetComponent, NewComponent });
 
 rewrite_enum!(DatumPlaneReference, []; {
     Feature { feature },
@@ -288,7 +290,7 @@ Thicken { faces, thickness, side, result, tangent_chain },
     UntrimSurface { faces, loops, extension },
     RuledSurface { edges, support_faces, mode, angle, alternate_face, corner },
     Draft { faces, anchor, angle, outward, second_side },
-    Combine { operands, op, keep_tools },
+    Combine { operands, op, keep_tools, destination },
     BoundaryFill { tools, cells },
     CutWithSurface { targets, tools, reverse },
     TrimBodies { operands, keep },

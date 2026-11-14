@@ -1111,6 +1111,8 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
             .unwrap(),
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
             faces: FaceSelection::Native("face-d".into()),
