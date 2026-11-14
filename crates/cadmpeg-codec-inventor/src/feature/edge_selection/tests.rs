@@ -320,8 +320,8 @@ fn base_flange_result_carries_the_selected_generated_edge() {
         text::NonBlankString,
     };
     use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureEvaluation, FeatureOperation, FeatureResultMembers,
-        FeatureResultTopology, PlanarProfileRef, SheetMetalThicknessSide,
+        sheet_metal::SheetMetalThicknessSide, FeatureDefinition, FeatureEvaluation,
+        FeatureOperation, FeatureResultMembers, FeatureResultTopology, PlanarProfileRef,
     };
     let arena = DecodeArena::new();
     let (ctx, _) =

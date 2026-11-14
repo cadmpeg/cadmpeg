@@ -5,8 +5,8 @@ use crate::records::{feature::scope::DesignParameterScope, parameters::DesignPar
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{
+        sheet_metal::SheetMetalBendLinesConstruction, sheet_metal::SheetMetalLineBend,
         FaceSelection, FeatureDefinition, FeatureOperation, PathRef,
-        SheetMetalBendLinesConstruction, SheetMetalLineBend,
     },
     report::loss::LossNote,
 };

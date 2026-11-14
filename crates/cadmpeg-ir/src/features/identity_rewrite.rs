@@ -2,9 +2,9 @@
 //! Rewrite the identities owned by these fields.
 
 use super::{
-    BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderOffsetJoin, BinderPlacement,
-    BodyRetentionMode, BodyTrimSide, BooleanKind, BooleanOp, CoilExtent, CoilSection,
-    CoilSectionPlacement, CosmeticThreadExtent, CurveProjectionDirection,
+    sheet_metal::SheetMetalThicknessSide, BinderCopyOnChange, BinderLifecycle, BinderOffset,
+    BinderOffsetJoin, BinderPlacement, BodyRetentionMode, BodyTrimSide, BooleanKind, BooleanOp,
+    CoilExtent, CoilSection, CoilSectionPlacement, CosmeticThreadExtent, CurveProjectionDirection,
     CurveProjectionDirectionState, DecalMapping, DesignConfiguration, DesignParameter,
     DimensionDisplay, FeatureCircularArc, FeatureCoordinateFrame, FeatureEllipticArc,
     FeatureImageBounds, FeatureInputTopology, FeatureLineSegment, FeatureResultMembers,
@@ -14,10 +14,9 @@ use super::{
     HistoricalEdgeGeometry, InnerWireTaper, NoGeneratedSection, ParameterPmi, PmiDimensionSubtype,
     PolygonSideCount, PrincipalPlane, RevolutionFuseOrder, RibDraft, RibSide,
     RuledCurveOrientation, RuledSurfaceCorner, ScaleFactors, SheetMetalBendPosition,
-    SheetMetalHeightDatum, SheetMetalHemBendPosition, SheetMetalHemDirection,
-    SheetMetalThicknessSide, ShellJoin, ShellMode, SolidSweepOperation, SurfaceContinuity,
-    SurfaceExtension, SurfaceProjectionMode, SweepPathExtent, SweepTransformation, SweepTransition,
-    ThickenSide, UnresolvedFamily, WrapMode,
+    SheetMetalHeightDatum, SheetMetalHemBendPosition, SheetMetalHemDirection, ShellJoin, ShellMode,
+    SolidSweepOperation, SurfaceContinuity, SurfaceExtension, SurfaceProjectionMode,
+    SweepPathExtent, SweepTransformation, SweepTransition, ThickenSide, UnresolvedFamily, WrapMode,
 };
 
 rewrite_scalar!(BinderCopyOnChange);

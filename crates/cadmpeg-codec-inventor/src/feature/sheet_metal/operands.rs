@@ -2,8 +2,8 @@
 //! Attached-plate dimensions and retained construction controls.
 
 use cadmpeg_ir::features::{
-    SheetMetalRelief, SheetMetalReliefForm, SheetMetalThicknessSide, SheetMetalTransition,
-    SheetMetalTransitionForm,
+    sheet_metal::SheetMetalThicknessSide, SheetMetalRelief, SheetMetalReliefForm,
+    SheetMetalTransition, SheetMetalTransitionForm,
 };
 use cadmpeg_ir::scalar::{Length, NonNegativeLength, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;

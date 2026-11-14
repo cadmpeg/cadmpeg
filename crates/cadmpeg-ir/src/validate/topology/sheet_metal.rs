@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn plate_and_bend_selections_require_their_own_input_topology() {
         use crate::{
-            features::*,
+            features::{sheet_metal::SheetMetalThicknessSide, *},
             ids::{FeatureInputTopologyId, HistoricalEdgeId},
             scalar::{NonNegativeLength, PositiveLength},
         };

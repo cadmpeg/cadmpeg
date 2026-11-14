@@ -677,7 +677,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         },
         topology::construction::DesignConstructionOperandGroupFrame,
     };
-    use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, SheetMetalThicknessSide};
+    use cadmpeg_ir::features::{
+        sheet_metal::SheetMetalThicknessSide, BodyRetentionMode, BodySelection,
+    };
 
     let stream = "f3d:native/BulkStream.dat";
     let group = |scope_record_index: u32,

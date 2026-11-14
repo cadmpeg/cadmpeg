@@ -4803,7 +4803,7 @@ fn project_base_flange(
     settings: &[crate::records::sheet_metal_settings::DesignSheetMetalSettings],
 ) -> Option<(cadmpeg_ir::features::FeatureDefinition, bool)> {
     use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, PlanarProfileRef, SheetMetalThicknessSide,
+        sheet_metal::SheetMetalThicknessSide, FeatureDefinition, FeatureOperation, PlanarProfileRef,
     };
 
     let operation = scope.base_flange_operation()?;

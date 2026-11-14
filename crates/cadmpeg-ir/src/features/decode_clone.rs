@@ -601,5 +601,5 @@ rewrite_record!(super::FeatureContent, []; (field0));
 rewrite_enum!(super::FeatureSourceContent, []; { Text(value), Parameter(value), Feature(value) });
 rewrite_enum!(super::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });
 
-rewrite_record!(super::SheetMetalBendLinesConstruction, []; { bends, stationary, inside_radius });
-rewrite_record!(super::SheetMetalLineBend, []; { line, angle });
+rewrite_record!(super::sheet_metal::SheetMetalBendLinesConstruction, []; { bends, stationary, inside_radius });
+rewrite_record!(super::sheet_metal::SheetMetalLineBend, []; { line, angle });

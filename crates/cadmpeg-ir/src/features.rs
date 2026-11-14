@@ -50,6 +50,10 @@ use holes::{HoleBottom, HolePlacement, HoleProfileFilter, HoleShape};
 #[doc = "Mesh source selections."]
 pub mod mesh;
 
+#[doc = "Sheet-metal construction inputs and controls."]
+pub mod sheet_metal;
+use sheet_metal::{SheetMetalBendLinesConstruction, SheetMetalThicknessSide};
+
 pub mod patterns;
 use patterns::{PatternKind, PatternSeed};
 
@@ -6164,30 +6168,6 @@ pub enum ThickenSide {
     Both,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-#[doc = "Inputs of a sheet-metal bend along sketch lines."]
-pub struct SheetMetalBendLinesConstruction {
-    #[doc = "Line bends in source selection order."]
-    pub bends: Vec<SheetMetalLineBend>,
-    #[doc = "Face kept stationary during bending, when decoded."]
-    pub stationary: Option<FaceSelection>,
-    #[doc = "Inside bend radius in millimetres, when decoded."]
-    pub inside_radius: Option<PositiveLength>,
-}
-
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-#[doc = "One sketch-line selection and its signed bend angle."]
-pub struct SheetMetalLineBend {
-    #[doc = "Sketch line or retained source selection."]
-    pub line: Option<PathRef>,
-    #[doc = "Signed angle in radians, when decoded."]
-    pub angle: Option<Angle>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
@@ -6448,20 +6428,6 @@ pub struct SheetMetalFlangeTwoSidedWidth {
     /// Distance measured from the edge's second end.
     #[serde(deserialize_with = "deserialize_flange_second")]
     pub second: PositiveLength,
-}
-
-/// Distribution of sheet thickness relative to its construction plane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum SheetMetalThicknessSide {
-    /// Thickness lies along the profile plane's positive normal.
-    Forward,
-    /// Thickness lies along the profile plane's negative normal.
-    Reverse,
-    /// Thickness is split equally across both sides of the profile plane.
-    Symmetric,
 }
 
 selection_field_deserializer!(deserialize_selection_native, "native");

@@ -337,9 +337,9 @@ fn many_datum_plane_cycles_are_each_reported_once_in_linear_time() {
 #[test]
 fn attached_plate_and_bend_validate_profiles_edges_and_history() {
     use crate::features::{
-        EdgeSelection, FeatureDefinition, FeatureId, FeatureOperation, PlanarProfileRef,
-        SheetMetalRelief, SheetMetalReliefForm, SheetMetalThicknessSide, SheetMetalTransition,
-        SheetMetalTransitionForm,
+        sheet_metal::SheetMetalThicknessSide, EdgeSelection, FeatureDefinition, FeatureId,
+        FeatureOperation, PlanarProfileRef, SheetMetalRelief, SheetMetalReliefForm,
+        SheetMetalTransition, SheetMetalTransitionForm,
     };
     use crate::scalar::{NonNegativeLength, PositiveLength};
     let relief = SheetMetalRelief {
