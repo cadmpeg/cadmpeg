@@ -988,7 +988,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** A producer-generated radial TSM must retain a deleted domain slot at `p` and map a live element with raw slot `q > p`. The raw-slot prediction is `q`; the compact-index prediction after one deletion is `q-1`. Saving must preserve the deleted slot to separate these predictions. A controlled radial export with a nondefault sweep must establish the sweep-to-angle rule.
 
-### DR-492. Bend line association and stationary role
+### DR-622. Bend line association and stationary role
 
 **Question.** How does a Bend scope associate each angular owner with a selected sketch line and its stationary region?
 
