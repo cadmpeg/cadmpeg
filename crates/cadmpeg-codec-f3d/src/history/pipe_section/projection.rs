@@ -283,8 +283,14 @@ fn project_fallback(
             against_fraction: Fraction::new(against)?,
         })
     });
+    let open_path = construction.is_some_and(|construction| construction.point_selection.is_none())
+        && observation.is_none_or(|observation| observation.point_records.is_empty())
+        && values[0] == Some(1.0)
+        && values[1] == Some(1.0);
     if path_extent.is_some() {
-        note(F3dLossCode::FeaturePipePathParameterizationAssumed, "Pipe forward and reverse fractions are assumed to be the neutral along and against fractions; native origin and orientation remain unresolved");
+        if !open_path {
+            note(F3dLossCode::FeaturePipePathParameterizationAssumed, "Pipe forward and reverse fractions are assumed to be the neutral along and against fractions; native origin and orientation remain unresolved");
+        }
     } else {
         note(F3dLossCode::FeaturePipePathExtentUnresolved, "the Pipe fractions cannot form a unique bounded neutral extent; decoded source values are retained");
     }

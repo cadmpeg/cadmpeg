@@ -48,18 +48,24 @@ enum SectionReading {
 /// How a Pipe's fractions settle its whole-path extent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ExtentReading {
-    /// Both fractions equal one.
+    /// Both fractions equal one in a Pipe without a point-selection pair.
+    OpenPath,
+    /// Both fractions equal one in a Pipe with a point-selection pair.
     BothUnit,
     /// One fraction equals one and the other zero.
     OneUnit,
 }
 
 impl ExtentReading {
-    fn of(forward: f64, reverse: f64) -> Option<Self> {
+    fn of(forward: f64, reverse: f64, point_selected: bool) -> Option<Self> {
         let unit = |value: f64| value == 1.0;
         let zero = |value: f64| value == 0.0;
         if unit(forward) && unit(reverse) {
-            Some(Self::BothUnit)
+            Some(if point_selected {
+                Self::BothUnit
+            } else {
+                Self::OpenPath
+            })
         } else if unit(forward) && zero(reverse) || zero(forward) && unit(reverse) {
             Some(Self::OneUnit)
         } else {
@@ -123,15 +129,16 @@ fn circular_losses(
                 feature.id
             ))),
         });
-    losses.push(match extent {
-            ExtentReading::BothUnit => F3dLossCode::FeaturePipeWholePathExtentAssumed.note(format!(
-                "feature {}: the Pipe forward and reverse fractions are 1, and the sweep is assumed to cover its whole path group",
+    losses.extend(match extent {
+            ExtentReading::OpenPath => None,
+            ExtentReading::BothUnit => Some(F3dLossCode::FeaturePipeWholePathExtentAssumed.note(format!(
+                "feature {}: the Pipe forward and reverse fractions are 1 and a point selection places its section, and the sweep is assumed to cover its whole path group",
                 feature.id
-            )),
-            ExtentReading::OneUnit => F3dLossCode::FeaturePipePathEndSectionAssumed.note(format!(
-                "feature {}: one Pipe fraction is 1 and the other 0, and the section is assumed to lie at the path end where the unit fraction starts, so the sweep covers its whole path group",
+            ))),
+            ExtentReading::OneUnit => Some(F3dLossCode::FeaturePipePathEndSectionAssumed.note(format!(
+                "feature {}: one Pipe fraction is 1 and the other 0, and the section is assumed to lie where the unit fraction starts on the path, so the sweep covers its whole path group",
                 feature.id
-            )),
+            ))),
     });
     losses
 }
@@ -167,7 +174,7 @@ fn circular_pipe_sweep(
         return None;
     };
     let [forward, reverse, size, thickness] = pipe_values(scope, construction, inputs.owners)?;
-    let extent = ExtentReading::of(forward, reverse)?;
+    let extent = ExtentReading::of(forward, reverse, construction.point_selection.is_some())?;
     let stream = native_stream(&scope.id)?;
     let path = only(inputs.groups.iter().filter(|group| {
         native_stream(&group.id) == Some(stream)
