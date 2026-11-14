@@ -186,7 +186,8 @@ pub(crate) struct DesignSpherePrimitive {
     /// Row-major local-to-model placement frame.
     pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the placement matrix.
-    pub(crate) transform_offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) transform_offset: Option<u64>,
     /// Sphere diameter in source centimetres.
     pub(crate) diameter: PositiveReal,
     /// Referenced diameter record.

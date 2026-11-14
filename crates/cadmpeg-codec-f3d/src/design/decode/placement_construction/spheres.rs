@@ -48,16 +48,20 @@ pub(crate) fn bind(
         match frame {
             Some((frame, assumed)) => {
                 sphere.transform = frame.value;
-                sphere.transform_offset = frame.offset;
+                sphere.transform_offset = Some(frame.offset);
                 if assumed {
                     losses.push(F3dLossCode::SpherePlacementFlagsAssumed.note(format!(
                         "Sphere {id} uses the stored solved placement despite unresolved placement flags (DR-486)."
                     )));
                 }
             }
-            None => losses.push(F3dLossCode::SpherePlacementFrameAssumed.note(format!(
-                "Sphere {id} assumes an origin centre because placement {reference} has no unique usable same-stream solved frame (DR-486)."
-            ))),
+            None => {
+                sphere.transform = SketchPlacementMatrix::IDENTITY;
+                sphere.transform_offset = None;
+                losses.push(F3dLossCode::SpherePlacementFrameAssumed.note(format!(
+                    "Sphere {id} assumes an origin centre because placement {reference} has no unique usable same-stream solved frame (DR-486)."
+                )));
+            }
         }
         if sphere.diameter_owner_assumed {
             losses.push(F3dLossCode::SphereDiameterOwnerAssumed.note(format!(

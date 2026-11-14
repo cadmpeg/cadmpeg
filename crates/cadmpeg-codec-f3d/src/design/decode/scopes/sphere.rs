@@ -66,10 +66,7 @@ pub(super) fn decode(
     let mut candidates = owners.iter().filter(|owner| {
         owner.record_index() == diameter_record_index && native_stream(owner.id()) == Some(stream)
     });
-    let owner = candidates.next();
-    if candidates.next().is_some() {
-        return None;
-    }
+    let owner = candidates.next().filter(|_| candidates.next().is_none());
     let (value, diameter_offset, parameter_index, diameter_owner_assumed) = match owner {
         Some(owner) => (
             owner.evaluated_value().get(),
@@ -102,20 +99,20 @@ pub(super) fn decode(
         }
     };
     let diameter_source_assumed = parameter_index.is_none_or(|index| {
-        parameters
-            .iter()
-            .filter(|parameter| {
-                parameter.record_index == index && native_stream(&parameter.id) == Some(stream)
-            })
-            .count()
-            != 1
+        let mut sources = parameters.iter().filter(|parameter| {
+            parameter.record_index == index && native_stream(&parameter.id) == Some(stream)
+        });
+        match (sources.next(), sources.next()) {
+            (Some(source), None) => source.owner_record_index() != Some(diameter_record_index),
+            _ => true,
+        }
     });
     Some(DesignSpherePrimitive {
         placement_record_index: Some(placement),
         diameter_owner_assumed,
         diameter_source_assumed,
         transform: SketchPlacementMatrix::IDENTITY,
-        transform_offset: u64_from_index(start + operation_at),
+        transform_offset: None,
         diameter: PositiveReal::new(value)?,
         diameter_record_index,
         diameter_offset,

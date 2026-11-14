@@ -130,7 +130,7 @@ pub(super) fn exact_solid_primitive(
                     diameter_owner_assumed: false,
                     diameter_source_assumed: false,
                     transform,
-                    transform_offset,
+                    transform_offset: Some(transform_offset),
                     diameter,
                     diameter_record_index,
                     diameter_offset,
