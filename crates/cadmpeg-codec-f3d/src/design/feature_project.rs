@@ -2457,6 +2457,10 @@ fn scope_properties(
                 &construction.source_mesh,
             ),
             (
+                cadmpeg_core::nonblank_literal!("mesh-face-groups:related-mesh"),
+                &construction.related_mesh,
+            ),
+            (
                 cadmpeg_core::nonblank_literal!("mesh-face-groups:group-count"),
                 &construction.group_count,
             ),
@@ -2464,6 +2468,12 @@ fn scope_properties(
             if let Some(field) = field {
                 properties.insert(key, field.value.to_string());
             }
+        }
+        if let Some(hint) = &construction.group_hint {
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("mesh-face-groups:group-hint"),
+                hint.value.clone(),
+            );
         }
         for (ordinal, group) in construction.groups.iter().enumerate() {
             properties.insert(

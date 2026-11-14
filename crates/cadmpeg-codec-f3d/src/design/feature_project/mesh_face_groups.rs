@@ -40,7 +40,21 @@ pub(super) fn project(
         )));
     }
     let construction = scope.mesh_face_groups();
-    if let Some(source) = construction.and_then(|value| value.source_mesh.as_ref()) {
+    for (role, reference, code) in [
+        (
+            "source",
+            construction.and_then(|value| value.source_mesh.as_ref()),
+            F3dLossCode::FeatureFaceGroupsSourceTargetUnverified,
+        ),
+        (
+            "related",
+            construction.and_then(|value| value.related_mesh.as_ref()),
+            F3dLossCode::FeatureFaceGroupsRelatedMeshTargetUnverified,
+        ),
+    ] {
+        let Some(source) = reference else {
+            continue;
+        };
         let mut targets = types.iter().filter(|info| {
             native_stream(info.id()) == metadata.as_deref()
                 && info
@@ -60,10 +74,20 @@ pub(super) fn project(
                 && info.module == "ParaMesh"
         }) && targets.next().is_none();
         if !verified {
-            losses.push(F3dLossCode::FeatureFaceGroupsSourceTargetUnverified.note(format!(
-                "{} retains mesh source reference {} with a missing, ambiguous or unsupported target registration.", scope.id, source.value
+            losses.push(code.note(format!(
+                "{} retains mesh {role} reference {} with a missing, ambiguous or unsupported target registration.", scope.id, source.value
             )));
         }
+    }
+    if let Some(related) = construction.and_then(|value| value.related_mesh.as_ref()) {
+        losses.push(F3dLossCode::FeatureFaceGroupsRelatedMeshRoleUnassigned.note(format!(
+            "{} retains related mesh reference {} in source properties; its relation to the edited mesh and history state remains unassigned.", scope.id, related.value
+        )));
+    }
+    if let Some(hint) = construction.and_then(|value| value.group_hint.as_ref()) {
+        losses.push(F3dLossCode::FeatureFaceGroupsGroupHintRoleUnassigned.note(format!(
+            "{} retains leading group UUID {} in source properties; its role relative to the counted group selectors remains unassigned.", scope.id, hint.value
+        )));
     }
     if construction.is_none_or(|value| value.source_mesh.is_none() || value.group_count.is_none()) {
         losses.push(F3dLossCode::FeatureFaceGroupsPrefixUnparsed.note(format!(

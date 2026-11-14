@@ -460,6 +460,9 @@ pub(crate) enum F3dLossCode {
     FeatureFaceGroupsSourceAssumed,
     FeatureFaceGroupsSourceUnavailable,
     FeatureFaceGroupsSourceTargetUnverified,
+    FeatureFaceGroupsRelatedMeshTargetUnverified,
+    FeatureFaceGroupsRelatedMeshRoleUnassigned,
+    FeatureFaceGroupsGroupHintRoleUnassigned,
     FeatureFaceGroupsGroupRolesAssumed,
     FeatureFaceGroupsMemberRunUnrepresentable,
     FeatureFaceGroupsMethodAssumed,
@@ -966,6 +969,9 @@ impl F3dLossCode {
         Self::FeatureFaceGroupsSourceAssumed,
         Self::FeatureFaceGroupsSourceUnavailable,
         Self::FeatureFaceGroupsSourceTargetUnverified,
+        Self::FeatureFaceGroupsRelatedMeshTargetUnverified,
+        Self::FeatureFaceGroupsRelatedMeshRoleUnassigned,
+        Self::FeatureFaceGroupsGroupHintRoleUnassigned,
         Self::FeatureFaceGroupsGroupRolesAssumed,
         Self::FeatureFaceGroupsMemberRunUnrepresentable,
         Self::FeatureFaceGroupsMethodAssumed,
@@ -1411,6 +1417,15 @@ impl F3dLossCode {
             Self::FeatureFaceGroupsSourceTargetUnverified => {
                 "feature.mesh-face-groups-source-target-unverified"
             }
+            Self::FeatureFaceGroupsRelatedMeshTargetUnverified => {
+                "feature.mesh-face-groups-related-target-unverified"
+            }
+            Self::FeatureFaceGroupsRelatedMeshRoleUnassigned => {
+                "feature.mesh-face-groups-related-role-unassigned"
+            }
+            Self::FeatureFaceGroupsGroupHintRoleUnassigned => {
+                "feature.mesh-face-groups-group-hint-role-unassigned"
+            }
             Self::FeatureFaceGroupsGroupRolesAssumed => {
                 "feature.mesh-face-groups-group-roles-assumed"
             }
@@ -1845,6 +1860,9 @@ impl F3dLossCode {
             | Self::FeatureFaceGroupsPrefixUnparsed
             | Self::FeatureFaceGroupsSourceAssumed
             | Self::FeatureFaceGroupsSourceTargetUnverified
+            | Self::FeatureFaceGroupsRelatedMeshTargetUnverified
+            | Self::FeatureFaceGroupsRelatedMeshRoleUnassigned
+            | Self::FeatureFaceGroupsGroupHintRoleUnassigned
             | Self::FeatureFaceGroupsSourceUnavailable
             | Self::FeatureFaceGroupsGroupRolesAssumed
             | Self::FeatureFaceGroupsMemberRunUnrepresentable
@@ -2177,6 +2195,9 @@ impl F3dLossCode {
             | Self::FeatureFaceGroupsPrefixUnparsed
             | Self::FeatureFaceGroupsSourceAssumed
             | Self::FeatureFaceGroupsSourceTargetUnverified
+            | Self::FeatureFaceGroupsRelatedMeshTargetUnverified
+            | Self::FeatureFaceGroupsRelatedMeshRoleUnassigned
+            | Self::FeatureFaceGroupsGroupHintRoleUnassigned
             | Self::FeatureFaceGroupsSourceUnavailable
             | Self::FeatureFaceGroupsGroupRolesAssumed
             | Self::FeatureFaceGroupsMemberRunUnrepresentable
@@ -2605,6 +2626,9 @@ mod tests {
                 "feature.mesh-face-groups-source-assumed",
                 "feature.mesh-face-groups-source-unavailable",
                 "feature.mesh-face-groups-source-target-unverified",
+                "feature.mesh-face-groups-related-target-unverified",
+                "feature.mesh-face-groups-related-role-unassigned",
+                "feature.mesh-face-groups-group-hint-role-unassigned",
                 "feature.mesh-face-groups-group-roles-assumed",
                 "feature.mesh-face-groups-member-run-unrepresentable",
                 "feature.mesh-face-groups-method-assumed",

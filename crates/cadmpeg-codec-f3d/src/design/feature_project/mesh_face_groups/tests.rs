@@ -238,6 +238,179 @@ fn invalid_or_competing_setting_roles_preserve_valid_siblings() {
 }
 
 #[test]
+fn related_mesh_and_leading_group_hint_survive_typed_projection() {
+    for (combine, has_related) in [(false, false), (false, true), (true, false), (true, true)] {
+        let mut scope = scope(combine);
+        match scope.payload_mut() {
+            crate::records::feature::scope::DesignScopePayloadMut::GenerateFaceGroups(Some(
+                value,
+            ))
+            | crate::records::feature::scope::DesignScopePayloadMut::CombineFaceGroups(Some(
+                value,
+            )) => {
+                value.related_mesh = has_related.then_some(Located {
+                    value: 88,
+                    offset: 59,
+                });
+                value.group_hint = combine.then_some(Located {
+                    value: "11111111-2222-3333-4444-555555555555".to_owned(),
+                    offset: 25,
+                });
+                if combine {
+                    value.method_code = None;
+                }
+            }
+            _ => panic!("mesh face-group construction"),
+        }
+        let timelines = synthetic_feature_timelines(std::slice::from_ref(&scope));
+        let types = [registration(&scope)];
+        let projected = with_decode_context(|ctx| {
+            project_parameter_design_with_edge_identities(
+                ctx,
+                &ProjectInputs {
+                    scopes: std::slice::from_ref(&scope),
+                    timelines: &timelines,
+                    design_types: &types,
+                    ..Default::default()
+                },
+            )
+        })
+        .unwrap();
+        let properties = &projected.features[0].source_properties;
+        assert_eq!(
+            properties
+                .get("mesh-face-groups:related-mesh")
+                .map(String::as_str),
+            has_related.then_some("88")
+        );
+        assert_eq!(
+            properties
+                .get("mesh-face-groups:group-hint")
+                .map(String::as_str),
+            combine.then_some("11111111-2222-3333-4444-555555555555")
+        );
+        assert_eq!(
+            properties
+                .get("mesh-face-groups:group-count")
+                .map(String::as_str),
+            Some("0")
+        );
+        let (_, losses) = project_definition(&scope, &[]);
+        assert_eq!(
+            losses
+                .iter()
+                .any(|loss| loss.code
+                    == F3dLossCode::FeatureFaceGroupsRelatedMeshRoleUnassigned.kind()),
+            has_related
+        );
+        assert_eq!(
+            losses.iter().any(|loss| loss.code
+                == F3dLossCode::FeatureFaceGroupsRelatedMeshTargetUnverified.kind()),
+            has_related
+        );
+        assert_eq!(
+            losses
+                .iter()
+                .any(|loss| loss.code
+                    == F3dLossCode::FeatureFaceGroupsGroupHintRoleUnassigned.kind()),
+            combine
+        );
+    }
+}
+
+#[test]
+fn related_mesh_registration_requires_one_matching_local_mesh_guid_type() {
+    for case in [
+        "valid",
+        "missing",
+        "type",
+        "base",
+        "version",
+        "module",
+        "foreign",
+        "ambiguous",
+    ] {
+        let mut scope = scope(false);
+        if let crate::records::feature::scope::DesignScopePayloadMut::GenerateFaceGroups(Some(
+            value,
+        )) = scope.payload_mut()
+        {
+            value.related_mesh = Some(Located {
+                value: 88,
+                offset: 59,
+            });
+        }
+        let mesh_type = |target, key, stream, guid, base, version, module| {
+            SegmentType::try_new(
+                format!("f3d:{stream}/MetaStream.dat:design-type#{key}"),
+                design_type(guid, Some(base), version, module, vec![target]),
+            )
+            .unwrap()
+        };
+        let mut types = vec![
+            registration(&scope),
+            mesh_type(
+                89,
+                1,
+                "native",
+                "A8338A26-5436-433C-8BAC-C3CF024AD595",
+                "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
+                1,
+                "ParaMesh",
+            ),
+        ];
+        if case != "missing" {
+            types.push(mesh_type(
+                88,
+                2,
+                if case == "foreign" { "other" } else { "native" },
+                if case == "type" {
+                    "CA2AE956-FD81-4EBD-A601-F93A0F335722"
+                } else {
+                    "A8338A26-5436-433C-8BAC-C3CF024AD595"
+                },
+                if case == "base" {
+                    "90B8D2C6-05BB-4D0F-89EF-83AAC46CA1FF"
+                } else {
+                    "98542EB9-A4F2-4137-A808-DBB5B3CD6159"
+                },
+                if case == "version" { 0 } else { 1 },
+                if case == "module" {
+                    "Fusion"
+                } else {
+                    "ParaMesh"
+                },
+            ));
+        }
+        if case == "ambiguous" {
+            types.push(mesh_type(
+                88,
+                3,
+                "native",
+                "A8338A26-5436-433C-8BAC-C3CF024AD595",
+                "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
+                1,
+                "ParaMesh",
+            ));
+        }
+        let mut losses = Vec::new();
+        let _ = project(&scope, &[], &types, &mut losses);
+        assert_eq!(
+            losses.iter().any(|loss| loss.code
+                == F3dLossCode::FeatureFaceGroupsRelatedMeshTargetUnverified.kind()),
+            case != "valid",
+            "{case}"
+        );
+        assert!(!losses
+            .iter()
+            .any(|loss| loss.code == F3dLossCode::FeatureFaceGroupsSourceTargetUnverified.kind()));
+        assert!(losses.iter().any(
+            |loss| loss.code == F3dLossCode::FeatureFaceGroupsRelatedMeshRoleUnassigned.kind()
+        ));
+    }
+}
+
+#[test]
 fn typed_projection_preserves_all_parameters_and_scope_reference_slots() {
     let scope = scope(false);
     let (parameters, owners) = parameters();
