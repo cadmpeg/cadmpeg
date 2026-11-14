@@ -3684,20 +3684,20 @@ fn plate_profile(
 fn plate_side(
     source: &PmDcFeature,
     index: &ProjectionIndex<'_>,
-) -> Option<cadmpeg_ir::features::sheet_metal::SheetMetalThicknessSide> {
+) -> Option<cadmpeg_ir::features::SheetMetalThicknessSide> {
     Some(match slot_property(source, 2, index)?.kind {
         PmDcFeaturePropertyKind::Boolean { value, .. } => {
             if value {
-                cadmpeg_ir::features::sheet_metal::SheetMetalThicknessSide::Reverse
+                cadmpeg_ir::features::SheetMetalThicknessSide::Reverse
             } else {
-                cadmpeg_ir::features::sheet_metal::SheetMetalThicknessSide::Forward
+                cadmpeg_ir::features::SheetMetalThicknessSide::Forward
             }
         }
         PmDcFeaturePropertyKind::Enumeration {
             family: PmDcFeatureEnumFamily::PlateSide,
             type_value: 2,
             value: 0,
-        } => cadmpeg_ir::features::sheet_metal::SheetMetalThicknessSide::Forward,
+        } => cadmpeg_ir::features::SheetMetalThicknessSide::Forward,
         _ => return None,
     })
 }

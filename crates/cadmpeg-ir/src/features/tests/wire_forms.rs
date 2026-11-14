@@ -1831,7 +1831,7 @@ fn the_extrude_start_and_termination_unit_forms_reject_an_unknown_key() {
 
 #[test]
 fn sheet_metal_thickness_sides_name_themselves_on_the_wire() {
-    use crate::features::sheet_metal::SheetMetalThicknessSide;
+    use crate::features::SheetMetalThicknessSide;
 
     for (side, wire) in [
         (SheetMetalThicknessSide::Forward, "forward"),

@@ -1908,9 +1908,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
 #[test]
 fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
-    use cadmpeg_ir::features::{
-        sheet_metal::SheetMetalThicknessSide, BooleanOp, LoftSection, PathRef,
-    };
+    use cadmpeg_ir::features::{BooleanOp, LoftSection, PathRef, SheetMetalThicknessSide};
     use cadmpeg_ir::sketches::SpatialSketchId;
 
     let feature = |id: &str, ordinal, definition| Feature {

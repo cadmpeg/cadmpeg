@@ -27,17 +27,3 @@ pub struct SheetMetalLineBend {
     #[doc = "Signed angle in radians, when decoded."]
     pub angle: Option<Angle>,
 }
-
-#[doc = "Distribution of sheet thickness relative to its construction plane."]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum SheetMetalThicknessSide {
-    #[doc = "Thickness lies along the profile plane's positive normal."]
-    Forward,
-    #[doc = "Thickness lies along the profile plane's negative normal."]
-    Reverse,
-    #[doc = "Thickness is split equally across both sides of the profile plane."]
-    Symmetric,
-}

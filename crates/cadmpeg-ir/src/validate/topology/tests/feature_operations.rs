@@ -387,9 +387,9 @@ fn many_datum_plane_cycles_are_each_reported_once_in_linear_time() {
 #[test]
 fn attached_plate_and_bend_validate_profiles_edges_and_history() {
     use crate::features::{
-        sheet_metal::SheetMetalThicknessSide, EdgeSelection, FeatureDefinition, FeatureId,
-        FeatureOperation, PlanarProfileRef, SheetMetalRelief, SheetMetalReliefForm,
-        SheetMetalTransition, SheetMetalTransitionForm,
+        EdgeSelection, FeatureDefinition, FeatureId, FeatureOperation, PlanarProfileRef,
+        SheetMetalRelief, SheetMetalReliefForm, SheetMetalThicknessSide, SheetMetalTransition,
+        SheetMetalTransitionForm,
     };
     use crate::scalar::{NonNegativeLength, PositiveLength};
     let relief = SheetMetalRelief {
@@ -463,7 +463,7 @@ fn attached_plate_and_bend_validate_profiles_edges_and_history() {
 
 #[test]
 fn an_attached_plate_requires_one_bend() {
-    use crate::features::{sheet_metal::SheetMetalThicknessSide, *};
+    use crate::features::*;
     use crate::scalar::{NonNegativeLength, PositiveLength};
     let mut ir = crate::CadIr::empty();
     let id = FeatureId::mint("test:model:feature#plate").unwrap();

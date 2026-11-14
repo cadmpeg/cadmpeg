@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use crate::feature::{plate_result, plate_side, FeatureFamily, PLATE_SIDE_TYPE};
-use cadmpeg_ir::features::sheet_metal::SheetMetalThicknessSide;
+use cadmpeg_ir::features::SheetMetalThicknessSide;
 
 fn enumeration(
     family: PmDcFeatureEnumFamily,
