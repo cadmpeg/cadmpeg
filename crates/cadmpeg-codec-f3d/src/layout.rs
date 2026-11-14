@@ -6243,7 +6243,7 @@ pub(crate) mod local_component_occurrence_leading_flag_prefix {
 /// Spec §3.1. Record length 180 B.
 ///
 /// ```text
-/// Offsets are relative to the end of the 51-byte prefix or of the first matrix. A matrix frame repeats the matrix after the body; the 20-byte identity tail closes the frame.
+/// Offsets are relative to the end of the 51-byte prefix or of the first matrix. The local-placement flag selects the optional matrix after the body; the 20-byte identity tail closes the frame.
 /// ```
 pub(crate) mod local_component_occurrence_leading_flag_body {
     /// Record length in bytes. Spec §3.1.
