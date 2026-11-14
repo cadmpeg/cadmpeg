@@ -327,13 +327,29 @@ fn wall_slots_project_thickness_direction_mode_and_corners() {
 }
 
 #[test]
-fn walls_of_different_thickness_have_no_neutral_shell() {
+fn unequal_walls_project_both_sides_with_unresolved_thickness() {
     let group = group(DesignOperandRole::ROLE_0X10);
     let scope = wall_slot_scope(0.3, Some(0.1), false);
-    assert_eq!(
-        super::super::project_shell(&scope, &[], std::slice::from_ref(&group)).unwrap(),
-        None
-    );
+    let FeatureOperation::Shell {
+        thickness,
+        outward,
+        mode,
+        removed_faces,
+        join,
+        ..
+    } = projected_operation(super::super::project_shell(
+        &scope,
+        &[],
+        std::slice::from_ref(&group),
+    ))
+    else {
+        panic!("expected a Shell");
+    };
+    assert_eq!(thickness, None);
+    assert_eq!(outward, None);
+    assert_eq!(mode, Some(cadmpeg_ir::features::ShellMode::BothSides));
+    assert_eq!(removed_faces, FaceSelection::Native(group.id));
+    assert_eq!(join, Some(cadmpeg_ir::features::ShellJoin::Intersection));
 }
 
 #[test]
