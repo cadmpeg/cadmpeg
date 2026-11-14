@@ -1189,6 +1189,7 @@ pub(crate) fn bind_mirror_selection_planes(
         };
         construction.plane = None;
         construction.assumed_plane_scope = None;
+        construction.construction_plane_scope = None;
         let (Some(selection_record_index), Some(state_id), Some(previous_state_id)) = (
             construction.plane_selection_record_index,
             history_state_id,
@@ -1255,6 +1256,12 @@ pub(crate) fn bind_mirror_selection_planes(
             let Some(stream) = stream.as_deref() else {
                 continue;
             };
+            let construction_plane_identity = operand.secondary().is_none()
+                && crate::design::decode::meta::is_construction_plane_entity(
+                    design_types,
+                    stream,
+                    operand.primary_identity,
+                );
             match crate::design::decode::meta::classify_origin_entity(
                 design_types,
                 stream,
@@ -1267,6 +1274,28 @@ pub(crate) fn bind_mirror_selection_planes(
                     crate::design::decode::meta::OriginEntity::Axis(_),
                 )
                 | crate::design::decode::meta::OriginClassification::Unknown => continue,
+                crate::design::decode::meta::OriginClassification::NotOrigin
+                    if construction_plane_identity =>
+                {
+                    let Some(scope_record_index) = u32::try_from(operand.primary_identity)
+                        .ok()
+                        .and_then(|identity| identity.checked_add(1))
+                        .filter(|next_record| {
+                            construction
+                                .plane_scope_record_index
+                                .is_none_or(|scope| scope.value == *next_record)
+                        })
+                    else {
+                        continue;
+                    };
+                    construction.construction_plane_scope = Some(
+                        crate::records::feature::mirror::DesignMirrorConstructionPlaneScope {
+                            scope_record_index,
+                            identity_offset: operand.primary_identity_offset(),
+                        },
+                    );
+                    continue;
+                }
                 crate::design::decode::meta::OriginClassification::NotOrigin => {
                     let persistent_candidates = if let Some(identity) = identity
                         .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {

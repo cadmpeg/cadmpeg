@@ -471,15 +471,20 @@ fn sketch_records_use_the_primary_index_live_copy() {
         .expect("type GUID");
     let mut malformed_point = bytes.clone();
     malformed_point[live_point_at + 70] = 0;
-    assert!(matches!(
-        decode_sketch_points_from_stream(
-            &malformed_point,
-            &meta,
-            "Design/BulkStream.dat",
-            &mut Vec::new()
-        ),
-        Err(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    let mut malformed_losses = Vec::new();
+    assert!(decode_sketch_points_from_stream(
+        &malformed_point,
+        &meta,
+        "Design/BulkStream.dat",
+        &mut malformed_losses
+    )
+    .expect("an unreadable live point costs only that point")
+    .is_empty());
+    assert_eq!(malformed_losses.len(), 1);
+    assert_eq!(
+        malformed_losses[0].code,
+        crate::loss::F3dLossCode::SketchPointUndecoded.kind()
+    );
 
     let curves = decode_sketch_curve_identities_from_stream(
         &bytes,

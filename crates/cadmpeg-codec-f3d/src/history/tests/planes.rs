@@ -879,3 +879,189 @@ fn a_compact_plane_selection_without_a_usable_face_assumes_the_next_work_plane()
         (false, None)
     );
 }
+
+#[test]
+fn a_construction_plane_identity_names_the_next_work_plane_without_an_assumption() {
+    let meta = "f3d:Design/MetaStream.dat";
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        [2, 1]
+            .into_iter()
+            .map(|state_id| {
+                (
+                    AsmDeltaState {
+                        id: format!("history:state#{state_id}"),
+                        parent: "history".into(),
+                        byte_offset: 0,
+                        state_id,
+                        version_flag: 1,
+                        state_flag: 0,
+                        previous_ref: None,
+                        next_ref: (state_id == 2).then_some(1),
+                        node_index: state_id,
+                        partner_ref: None,
+                        owner_ref: 0,
+                        bulletin_boards: Vec::new(),
+                        records: Vec::new(),
+                        transition: None,
+                    },
+                    Some(AsmHistoricalTopology::default()),
+                    Vec::new(),
+                )
+            })
+            .collect(),
+    );
+    let group: crate::records::topology::construction::DesignConstructionOperandGroup =
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:Design/BulkStream.dat:group#30", "scope_record_index": 42,
+            "scope_reference_ordinal": 0, "record_index": 30, "byte_offset": 0,
+            "class_tag": "282", "members": [40], "member_offsets": [0],
+            "frame": {"member_count_offset": 0, "opaque_index": 1,
+                "opaque_index_offset": 18, "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 22, "variant": false},
+            "role": 21_474_836_480u64, "role_offset": 0,
+            "paired_class_tag": "261", "paired_byte_offset": 0
+        }))
+        .expect("mirror plane group");
+    let bound = |types: Vec<crate::records::entity_header::SegmentType>, plane_scope: u32| {
+        let mut mirror = crate::records::feature::scope::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:scope#42",
+            crate::records::feature::scope::DesignFeatureKind::Mirror,
+            42,
+        );
+        mirror
+            .try_edit(|draft| {
+                draft.history_state_id = Some(2);
+                draft.previous_history_state_id = Some(1);
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        if let crate::records::feature::scope::DesignScopePayloadMut::Mirror(slot) =
+            mirror.payload_mut()
+        {
+            *slot = Some({
+                let mut construction = serde_json::json!({
+                    "count": 2, "count_record_index": 11, "count_offset": 0,
+                    "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
+                    "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
+                    "plane_group_record_index": 30, "plane_selection_record_index": 40
+                });
+                if plane_scope != 369 {
+                    construction["plane_scope_record_index"] = serde_json::json!(plane_scope);
+                    construction["plane_reference_offset"] = serde_json::json!(0);
+                }
+                serde_json::from_value(construction).expect("mirror construction")
+            });
+        }
+        let mut work_plane = crate::records::feature::scope::DesignParameterScope::empty(
+            &format!("f3d:Design/BulkStream.dat:scope#{plane_scope}"),
+            crate::records::feature::scope::DesignFeatureKind::WorkPlane,
+            plane_scope,
+        );
+        if let crate::records::feature::scope::DesignScopePayloadMut::WorkPlane(slot) =
+            work_plane.payload_mut()
+        {
+            *slot = Some(crate::records::feature::scope::DesignWorkPlaneTransform {
+                work_plane_transform: [
+                    [0.0, 0.0, 1.0, 0.5],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [-1.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+                .try_into()
+                .unwrap(),
+                work_plane_transform_offset: 0,
+                reference: None,
+                work_plane_construction: None,
+            });
+        }
+        let operand: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
+            serde_json::from_value(serde_json::json!({
+                "id": "f3d:Design/BulkStream.dat:operand#40", "scope_record_index": 42,
+                "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
+                "byte_offset": 0, "class_tag": "313", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+                "asset_id_offset": 0, "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 0,
+                "identity_record_index": 43, "identity_record_offset": 0,
+                "primary_identity": 368, "primary_identity_offset": 21,
+                "next_record_index": 42, "next_byte_offset": 29
+            }))
+            .expect("mirror plane selection");
+        let mut scopes = [mirror, work_plane];
+        bind_mirror_selection_planes(
+            &mut scopes,
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&operand),
+            &[],
+            &[],
+            std::slice::from_ref(&history),
+            &types,
+        );
+        let construction = scopes[0]
+            .mirror_construction()
+            .expect("mirror construction");
+        (
+            construction
+                .construction_plane_scope
+                .map(|selected| (selected.scope_record_index, selected.identity_offset)),
+            construction.plane.is_some(),
+            construction.assumed_plane_scope.is_some(),
+        )
+    };
+    let plane_types = || {
+        let mut types = crate::test_support::origin_types::origin_design_types(meta, 39);
+        types.push(crate::test_support::origin_types::plane_row(meta, 368));
+        types.extend(
+            (363..=367)
+                .map(|entity| crate::test_support::origin_types::other_type_row(meta, entity)),
+        );
+        types
+    };
+    assert_eq!(bound(plane_types(), 369), (Some((369, 21)), false, false));
+    let mut other_types = crate::test_support::origin_types::origin_design_types(meta, 39);
+    other_types.extend(
+        (363..=368).map(|entity| crate::test_support::origin_types::other_type_row(meta, entity)),
+    );
+    assert_eq!(bound(other_types, 369), (None, false, true));
+    let mut conflicting = plane_types();
+    conflicting.push(crate::test_support::origin_types::other_type_row(meta, 368));
+    assert_eq!(bound(conflicting, 369), (None, false, false));
+    assert_eq!(bound(plane_types(), 500), (None, false, false));
+    let mut partial_run = crate::test_support::origin_types::origin_design_types(meta, 39);
+    partial_run.push(crate::test_support::origin_types::plane_row(meta, 368));
+    assert_eq!(bound(partial_run, 369), (None, false, false));
+}
+
+#[test]
+fn a_construction_plane_scope_excludes_an_assumed_scope_and_a_different_plane_reference() {
+    let construction = |extra: serde_json::Value| {
+        let mut construction = serde_json::json!({
+            "count": 2, "count_record_index": 11, "count_offset": 0,
+            "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
+            "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
+            "plane_group_record_index": 30, "plane_selection_record_index": 40,
+            "construction_plane_scope": {"scope_record_index": 369, "identity_offset": 21}
+        });
+        for (key, value) in extra.as_object().unwrap() {
+            construction[key] = value.clone();
+        }
+        serde_json::from_value::<crate::records::feature::mirror::DesignMirrorConstruction>(
+            construction,
+        )
+    };
+    assert!(construction(serde_json::json!({})).is_ok());
+    assert!(construction(serde_json::json!({
+        "plane_scope_record_index": 369, "plane_reference_offset": 0
+    }))
+    .is_ok());
+    assert!(construction(serde_json::json!({
+        "plane_scope_record_index": 500, "plane_reference_offset": 0
+    }))
+    .is_err());
+    assert!(construction(serde_json::json!({
+        "assumed_plane_scope": {"scope_record_index": 500, "identity_offset": 21, "unusable_faces": []}
+    }))
+    .is_err());
+}
