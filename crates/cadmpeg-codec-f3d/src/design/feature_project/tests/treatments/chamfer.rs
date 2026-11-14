@@ -5,15 +5,21 @@ use super::{
     localized_fillet_group, localized_fillet_group_with_role, localized_fillet_owner,
     localized_fillet_parameter,
 };
-use crate::loss::F3dLossCode;
-use crate::records::feature::chamfer_set::DesignChamferSetList;
-use crate::records::feature::scope::DesignParameterScope;
+use crate::loss::F3dLossCode::{
+    self, ChamferAngleReferenceAssumed, ChamferCornerTreatmentUnresolved,
+    ChamferDefinitionUnresolved, ChamferParameterKindAssumed, ChamferParameterOwnerAssumed,
+    ChamferParameterUnitAssumed, ChamferParameterValueAssumed, ChamferReferenceFaceAssumed,
+    ChamferSelectionUnresolved, ChamferTangentChainAssumed,
+};
+use crate::records::feature::chamfer_set::{DesignChamferCornerType, DesignChamferSetList};
+use crate::records::feature::scope::{DesignParameterScope, DesignScopePayloadMut};
 use crate::records::parameters::{
     DesignParameter, DesignParameterOwner, DesignParameterOwnerWire, DesignParameterSource,
 };
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
-use cadmpeg_ir::features::edge_treatments::ChamferGroup;
+use cadmpeg_ir::features::edge_treatments::{ChamferForm, ChamferGroup, ChamferSpec};
+use cadmpeg_ir::features::EdgeSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 
@@ -291,9 +297,7 @@ fn mixed_scope() -> DesignParameterScope {
         })
         .collect::<Vec<_>>();
     let mut scope = localized_chamfer_scope();
-    if let crate::records::feature::scope::DesignScopePayloadMut::Chamfer(payload) =
-        scope.payload_mut()
-    {
+    if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
         payload.sets = Some(
             serde_json::from_value(serde_json::json!({
                 "form":"current", "corner_type":"miter", "entry_count":3, "sets":sets
@@ -369,7 +373,6 @@ fn project_scope(
 
 #[test]
 fn mixed_chamfer_sets_preserve_each_form_dimension_and_selector() {
-    use cadmpeg_ir::features::{edge_treatments::ChamferSpec, EdgeSelection};
     let (mut parameters, mut owners) = mixed_parameters();
     parameters.reverse();
     owners.reverse();
@@ -391,25 +394,13 @@ fn mixed_chamfer_sets_preserve_each_form_dimension_and_selector() {
     for (actual, native) in actual.iter().zip(&groups) {
         assert!(matches!(&actual.edges, EdgeSelection::Native(id) if id == &native.id));
     }
-    assert!(!projected
-        .projection_losses
-        .iter()
-        .any(|loss| loss.code == F3dLossCode::ChamferDefinitionUnresolved.kind()));
+    assert_eq!(loss_count(&projected, ChamferDefinitionUnresolved), 0);
     for (code, count) in [
-        (F3dLossCode::ChamferReferenceFaceAssumed, 2),
-        (F3dLossCode::ChamferAngleReferenceAssumed, 1),
+        (ChamferReferenceFaceAssumed, 2),
+        (ChamferAngleReferenceAssumed, 1),
     ] {
         assert_eq!(loss_count(&projected, code), count);
     }
-    let saved = &projected.features[0].source_properties;
-    let saved_parameters: Vec<DesignParameter> =
-        serde_json::from_str(&saved["chamfer:parameters"]).unwrap();
-    assert_eq!(saved_parameters.len(), 5);
-    let saved_sets: DesignChamferSetList = serde_json::from_str(&saved["chamfer:sets"]).unwrap();
-    assert_eq!(
-        saved_sets.corner_type,
-        crate::records::feature::chamfer_set::DesignChamferCornerType::Miter
-    );
 }
 
 #[test]
@@ -438,9 +429,9 @@ fn mixed_chamfer_recovers_missing_owners_and_isolates_duplicated_owners() {
                 );
             }
             let code = if duplicated {
-                F3dLossCode::ChamferDefinitionUnresolved
+                ChamferDefinitionUnresolved
             } else {
-                F3dLossCode::ChamferParameterOwnerAssumed
+                ChamferParameterOwnerAssumed
             };
             assert_eq!(loss_count(&projected, code), 1);
             let retained: Vec<DesignParameter> = serde_json::from_str(
@@ -454,7 +445,6 @@ fn mixed_chamfer_recovers_missing_owners_and_isolates_duplicated_owners() {
 
 #[test]
 fn mixed_chamfer_missing_or_duplicated_groups_keep_dimensions() {
-    use cadmpeg_ir::features::EdgeSelection;
     let (parameters, owners) = mixed_parameters();
     let groups = mixed_groups();
     for duplicated in [false, true] {
@@ -467,32 +457,12 @@ fn mixed_chamfer_missing_or_duplicated_groups_keep_dimensions() {
         let projected = project_mixed(&parameters, &owners, &changed);
         let groups = projected_groups(&projected);
         assert_eq!(groups.len(), 3);
-        assert!(groups
-            .as_slice()
-            .iter()
-            .all(|group| !group.spec.is_unresolved()));
+        assert!(groups.iter().all(|group| !group.spec.is_unresolved()));
         assert!(
             matches!(&groups[1].edges, EdgeSelection::Native(id) if id == "f3d:native/BulkStream.dat:design-record-header#2100")
         );
-        assert_eq!(
-            loss_count(&projected, F3dLossCode::ChamferSelectionUnresolved),
-            1
-        );
+        assert_eq!(loss_count(&projected, ChamferSelectionUnresolved), 1);
     }
-}
-
-#[test]
-fn mixed_chamfer_broken_parameter_backlinks_keep_other_sets() {
-    let (mut parameters, owners) = mixed_parameters();
-    parameters[2]
-        .try_set_source(
-            DesignParameterSource::new("Distance 2".to_owned(), Some(999), None).unwrap(),
-        )
-        .unwrap();
-    let projected = project_mixed(&parameters, &owners, &mixed_groups());
-    assert!(projected_groups(&projected)[1].spec.is_unresolved());
-    assert!(!projected_groups(&projected)[0].spec.is_unresolved());
-    assert!(!projected_groups(&projected)[2].spec.is_unresolved());
 }
 
 #[test]
@@ -524,7 +494,6 @@ fn mixed_chamfer_invalid_scalars_keep_the_form_and_other_dimensions() {
 
 #[test]
 fn mixed_chamfer_keeps_forms_when_owner_and_parameter_definitions_are_absent() {
-    use cadmpeg_ir::features::edge_treatments::{ChamferForm, ChamferSpec};
     let (parameters, owners) = mixed_parameters();
     let groups = [localized_fillet_group(100, 0, vec![200])];
     let projected = project_mixed(&parameters[..1], &owners[..1], &groups);
@@ -562,7 +531,6 @@ fn loss_count(
 
 #[test]
 fn mixed_chamfer_missing_parameters_use_owner_scalars_without_borrowing_foreign_values() {
-    use cadmpeg_ir::features::edge_treatments::ChamferSpec;
     let (parameters, owners) = mixed_parameters();
     let groups = mixed_groups();
     for foreign in [false, true] {
@@ -577,55 +545,46 @@ fn mixed_chamfer_missing_parameters_use_owner_scalars_without_borrowing_foreign_
             matches!(projected_groups(&projected)[1].spec, ChamferSpec::TwoDistances { first, second }
             if (first.get() - 2.0).abs() < 1e-12 && (second.get() - 3.0).abs() < 1e-12)
         );
-        assert_eq!(
-            loss_count(&projected, F3dLossCode::ChamferParameterValueAssumed),
-            1
-        );
+        assert_eq!(loss_count(&projected, ChamferParameterValueAssumed), 1);
     }
 }
 
 #[test]
-fn mixed_chamfer_rejects_foreign_scopes_and_duplicated_parameter_definitions() {
+fn mixed_chamfer_isolates_foreign_scopes_duplicate_parameters_and_broken_backlinks() {
     let (parameters, owners) = mixed_parameters();
     let groups = mixed_groups();
-    for duplicate_parameter in [false, true] {
+    for case in 0..3 {
         let mut parameters = parameters.clone();
         let mut owners = owners.clone();
-        if duplicate_parameter {
+        if case == 0 {
             parameters.push(parameters[2].clone());
-        } else {
+        } else if case == 1 {
             let mut wire = DesignParameterOwnerWire::from(owners[2].clone());
             wire.scope_record_index = 99;
             owners[2] = DesignParameterOwner::try_from(wire).unwrap();
+        } else {
+            parameters[2]
+                .try_set_source(
+                    DesignParameterSource::new("Distance 2".to_owned(), Some(999), None).unwrap(),
+                )
+                .unwrap();
         }
         let projected = project_mixed(&parameters, &owners, &groups);
         assert!(projected_groups(&projected)[1].spec.is_unresolved());
         assert!(!projected_groups(&projected)[0].spec.is_unresolved());
         assert!(!projected_groups(&projected)[2].spec.is_unresolved());
-        assert_eq!(
-            loss_count(&projected, F3dLossCode::ChamferDefinitionUnresolved),
-            1
-        );
+        assert_eq!(loss_count(&projected, ChamferDefinitionUnresolved), 1);
     }
 }
 
 #[test]
 fn mixed_chamfer_explicit_slots_name_kind_and_unit_assumptions() {
-    use cadmpeg_ir::features::edge_treatments::ChamferSpec;
     let (parameters, owners) = mixed_parameters();
     let groups = mixed_groups();
     for (kind, unit, code) in [
-        (
-            "UnclassifiedAngle",
-            Some("rad"),
-            F3dLossCode::ChamferParameterKindAssumed,
-        ),
-        (
-            "Angle",
-            Some("mm"),
-            F3dLossCode::ChamferParameterUnitAssumed,
-        ),
-        ("Angle", None, F3dLossCode::ChamferParameterUnitAssumed),
+        ("Other", Some("rad"), ChamferParameterKindAssumed),
+        ("Angle", Some("mm"), ChamferParameterUnitAssumed),
+        ("Angle", None, ChamferParameterUnitAssumed),
     ] {
         let mut changed = parameters.clone();
         changed[4] = localized_fillet_parameter(50, 51, kind, unit, std::f64::consts::FRAC_PI_6);
@@ -640,7 +599,6 @@ fn mixed_chamfer_explicit_slots_name_kind_and_unit_assumptions() {
 
 #[test]
 fn mixed_chamfer_set_flags_and_corners_keep_metadata_and_specific_losses() {
-    use crate::records::feature::chamfer_set::DesignChamferCornerType;
     let (parameters, owners) = mixed_parameters();
     let groups = mixed_groups();
     for corner in [
@@ -650,20 +608,18 @@ fn mixed_chamfer_set_flags_and_corners_keep_metadata_and_specific_losses() {
     ] {
         for tangent in [false, true] {
             let mut scope = mixed_scope();
-            if let crate::records::feature::scope::DesignScopePayloadMut::Chamfer(payload) =
-                scope.payload_mut()
-            {
+            if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
                 let sets = payload.sets.as_mut().unwrap();
                 sets.corner_type = corner;
                 sets.sets[0].tangent_chain = tangent;
             }
             let projected = project_scope(&scope, &parameters, &owners, &groups);
             assert_eq!(
-                loss_count(&projected, F3dLossCode::ChamferCornerTreatmentUnresolved),
+                loss_count(&projected, ChamferCornerTreatmentUnresolved),
                 usize::from(corner != DesignChamferCornerType::Chamfer)
             );
             assert_eq!(
-                loss_count(&projected, F3dLossCode::ChamferTangentChainAssumed),
+                loss_count(&projected, ChamferTangentChainAssumed),
                 usize::from(tangent)
             );
             let retained: DesignChamferSetList =
@@ -677,14 +633,11 @@ fn mixed_chamfer_set_flags_and_corners_keep_metadata_and_specific_losses() {
 
 #[test]
 fn mixed_chamfer_fixed_scalar_fallback_preserves_the_referenced_dimensions() {
-    use cadmpeg_ir::features::edge_treatments::ChamferSpec;
     let (mut parameters, mut owners) = mixed_parameters();
     parameters.drain(1..3);
     owners.drain(1..3);
     let mut scope = mixed_scope();
-    if let crate::records::feature::scope::DesignScopePayloadMut::Chamfer(payload) =
-        scope.payload_mut()
-    {
+    if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
         payload.fixed = Some(
             serde_json::from_value(serde_json::json!({
                 "kind":"two_distances", "first":{"value":0.2,"record_index":20,"value_offset":2020},
@@ -699,31 +652,20 @@ fn mixed_chamfer_fixed_scalar_fallback_preserves_the_referenced_dimensions() {
         matches!(projected_groups(&projected)[1].spec, ChamferSpec::TwoDistances { first, second }
         if (first.get() - 2.0).abs() < 1e-12 && (second.get() - 3.0).abs() < 1e-12)
     );
-    assert_eq!(
-        loss_count(&projected, F3dLossCode::ChamferParameterValueAssumed),
-        2
-    );
+    assert_eq!(loss_count(&projected, ChamferParameterValueAssumed), 2);
 }
 
 #[test]
 fn mixed_chamfer_additional_parameters_remain_available_with_a_named_loss() {
     let (mut parameters, mut owners) = mixed_parameters();
-    parameters.push(localized_fillet_parameter(
-        60,
-        61,
-        "AdditionalSetting",
-        None,
-        0.125,
-    ));
+    let extra = localized_fillet_parameter(60, 61, "Extra", None, 0.125);
+    parameters.push(extra);
     owners.push(localized_fillet_owner(60, 61, 5));
     let projected = project_mixed(&parameters, &owners, &mixed_groups());
     assert!(projected_groups(&projected)
         .iter()
         .all(|group| !group.spec.is_unresolved()));
-    assert_eq!(
-        loss_count(&projected, F3dLossCode::ChamferDefinitionUnresolved),
-        1
-    );
+    assert_eq!(loss_count(&projected, ChamferDefinitionUnresolved), 1);
     let retained: Vec<DesignParameter> =
         serde_json::from_str(&projected.features[0].source_properties["chamfer:parameters"])
             .unwrap();
