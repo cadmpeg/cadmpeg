@@ -8496,6 +8496,21 @@ Parsed by:
 | 24 | 1 | `distance_type` | `u8` | little | spec | The next byte is the distance type |
 | 25 | 4 | `entry_count` | `u32` | little | spec | A u32 entry count, that many sixteen-byte entries |
 
+## `rectangular_pattern_payload_counted_head`
+
+Spec §Assembly operands · layout: byte offsets · size: 19 B
+
+Offsets are relative to the byte after the leading zero byte of the distribution block.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `count` | `u32` | little | spec | In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes. · value `1` |
+| 4 | 11 | `reference` | `bytes[11]` | little | spec | In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes. |
+| 15 | 4 | `zero_run` | `bytes[4]` | little | spec | In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes. |
+
 ## `rectangular_pattern_payload_suffix`
 
 Spec §Assembly operands · layout: byte offsets · size: 37 B
@@ -10508,6 +10523,41 @@ Parsed by:
 | 172 | 11 | `index_plus_one_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
 | 183 | 1 | `scope_separator` | `u8` | little | spec | The compact spacing direction form is a 195-byte frame. |
 | 184 | 11 | `scope_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
+
+## `rectangular_pattern_compact_extent_direction_record`
+
+Spec §Assembly operands · layout: byte offsets · size: 196 B
+
+Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 196.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 21 | 4 | `selection_kind` | `u32` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 25 | 24 | `origin` | `f64[3]` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 49 | 24 | `displacement` | `f64[3]` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 73 | 16 | `zero_run_16` | `bytes[16]` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 89 | 4 | `fixed_eight` | `u32` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 93 | 4 | `selection_count` | `u32` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 97 | 11 | `selection_reference` | `bytes[11]` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 108 | 2 | `zero_run_2` | `bytes[2]` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 110 | 4 | `auxiliary_count` | `u32` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 114 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 125 | 8 | `role` | `u64` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 133 | 10 | `zero_run_after_role` | `bytes[10]` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 143 | 4 | `opaque_index` | `u32` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 147 | 8 | `opaque_scalar` | `f64` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 155 | 4 | `opaque_index_repeat` | `u32` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 159 | 11 | `index_plus_two_reference` | `bytes[11]` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 170 | 1 | `separator_flag` | `u8` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 171 | 2 | `separator_zero_run` | `bytes[2]` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 173 | 11 | `index_plus_one_reference` | `bytes[11]` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 184 | 1 | `scope_separator` | `u8` | little | spec | The compact extent direction form is a 196-byte frame. |
+| 185 | 11 | `scope_reference` | `bytes[11]` | little | spec | The compact extent direction form is a 196-byte frame. |
 
 ## `thread_compact_owned_scope_prefix`
 
