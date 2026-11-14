@@ -207,7 +207,7 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
 }
 
 #[test]
-fn only_absent_membership_uses_the_component_cluster() {
+fn unadmitted_membership_keeps_the_body_in_an_uninstanced_definition() {
     for owners in [&[][..], &[200, 300][..], &[999][..]] {
         let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(owners);
         let bytes = f3d_with_breps_and_design(
@@ -228,8 +228,20 @@ fn only_absent_membership_uses_the_component_cluster() {
                 .iter()
                 .flat_map(|definition| &definition.bodies)
                 .count(),
-            usize::from(owners.is_empty())
+            1
         );
+        let model = &result.ir().model;
+        let definition = model
+            .product_definitions
+            .iter()
+            .find(|definition| !definition.bodies.is_empty())
+            .unwrap();
+        assert!(model.occurrences.iter().all(|occurrence| {
+            occurrence.prototype
+                != cadmpeg_ir::products::PrototypeReference::Local {
+                    definition: definition.id.clone(),
+                }
+        }));
         assert!(result.report().losses.iter().any(|loss| loss.code
             == if owners.is_empty() {
                 F3dLossCode::ComponentBodyOwnerFallback.kind()

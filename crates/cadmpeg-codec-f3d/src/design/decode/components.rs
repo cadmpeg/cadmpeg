@@ -1338,6 +1338,7 @@ pub(crate) struct StreamComponents {
     pub(crate) roots: std::collections::BTreeMap<u64, ComponentDefinition>,
     /// Component definition placed by the root instance, when exactly one names it.
     pub(crate) root_component: Option<u64>,
+    pub(crate) root_instances: std::collections::BTreeSet<u64>,
     /// Later revisions of a component definition record whose context binding
     /// is not the one that defines the component.
     pub(crate) revised_definitions: usize,
@@ -1359,9 +1360,18 @@ impl StreamComponents {
 
     fn bind_roots(&mut self, bytes: &[u8], frames: impl IntoIterator<Item = (usize, usize)>) {
         let mut roots = std::collections::BTreeSet::new();
+        let mut instances = Vec::new();
         for (start, end) in frames {
             if let Some(root) = root_instance_component(bytes, start, end) {
                 roots.insert(root);
+                if let Some(record) = View::u32_le_at(
+                    bytes,
+                    start + crate::layout::indexed_design_record_header::RECORD_INDEX,
+                )
+                .filter(|record| *record != 0)
+                {
+                    instances.push((u64::from(record), root));
+                }
             } else if root_instance_path_count(bytes, start, end) == Some(0) {
                 self.unbound_root_instances += 1;
             }
@@ -1371,6 +1381,11 @@ impl StreamComponents {
         } else {
             None
         };
+        self.root_instances = instances
+            .into_iter()
+            .filter(|(_, component)| Some(*component) == self.root_component)
+            .map(|(record, _)| record)
+            .collect();
     }
 
     /// Bind each definition frame to the naming space of its earliest
@@ -1858,6 +1873,14 @@ mod tests {
         record.extend_from_slice(&276_u64.to_le_bytes());
         record.extend_from_slice(&[0; 7]);
         assert_eq!(root_instance_component(&record, 0, record.len()), Some(276));
+
+        let mut components = super::StreamComponents::default();
+        components.bind_roots(&record, [(0, record.len())]);
+        assert_eq!(components.root_component, Some(276));
+        assert_eq!(
+            components.root_instances,
+            std::collections::BTreeSet::from([548])
+        );
 
         let mut empty_attributes = record.clone();
         *empty_attributes.last_mut().unwrap() = 1;

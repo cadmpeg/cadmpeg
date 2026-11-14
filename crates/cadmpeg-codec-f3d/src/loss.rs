@@ -36,6 +36,8 @@ pub(crate) enum F3dLossCode {
     ScopeOwnerUnresolved,
     /// A history output body belongs to another product definition.
     ScopeOutputOwnerMismatch,
+    /// Unadmitted output membership prevents a unique history product owner.
+    ScopeOutputOwnerUnresolved,
     /// A bound sketch collection belongs to another product definition.
     ScopeSketchOwnerMismatch,
     /// Component-path constraints prevent a uniform operation-table pose.
@@ -842,6 +844,7 @@ impl F3dLossCode {
         Self::OperationPoseApplied,
         Self::ScopeOwnerUnresolved,
         Self::ScopeOutputOwnerMismatch,
+        Self::ScopeOutputOwnerUnresolved,
         Self::ScopeSketchOwnerMismatch,
         Self::OperationPoseDisagrees,
         Self::OperationPoseNative,
@@ -1310,6 +1313,7 @@ impl F3dLossCode {
             Self::SceneOverrideUnbound => "scene.override-unbound",
             Self::ScopeOwnerUnresolved => "scope.owner-unresolved",
             Self::ScopeOutputOwnerMismatch => "scope.output-owner-mismatch",
+            Self::ScopeOutputOwnerUnresolved => "scope.output-owner-unresolved",
             Self::ScopeSketchOwnerMismatch => "scope.sketch-owner-mismatch",
             Self::OperationPoseApplied => "assembly.operation-table-pose",
             Self::OperationPoseDisagrees => "assembly.operation-table-pose-disagrees",
@@ -1929,6 +1933,7 @@ impl F3dLossCode {
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
             Self::ScopeOwnerUnresolved
+            | Self::ScopeOutputOwnerUnresolved
             | Self::OperationPoseApplied
             | Self::OperationPoseNative
             | Self::BodylessDesignCarrier
@@ -2395,9 +2400,9 @@ impl F3dLossCode {
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => {
                 LossTaxonomy::FeatureHistoryRetained
             }
-            Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => {
-                LossTaxonomy::FeatureHistoryRetained
-            }
+            Self::ScopeOutputOwnerMismatch
+            | Self::ScopeOutputOwnerUnresolved
+            | Self::ScopeSketchOwnerMismatch => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
@@ -2914,6 +2919,7 @@ mod tests {
                 "assembly.operation-table-pose",
                 "scope.owner-unresolved",
                 "scope.output-owner-mismatch",
+                "scope.output-owner-unresolved",
                 "scope.sketch-owner-mismatch",
                 "assembly.operation-table-pose-disagrees",
                 "assembly.operation-table-pose-native",

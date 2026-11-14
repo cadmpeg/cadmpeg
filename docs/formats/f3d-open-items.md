@@ -2796,3 +2796,15 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The unresolved members retain their native identities and report `history.edge-midpoints-unresolved`. DR-164 tracks selectors over populated lanes; DR-224 tracks incomplete transition proofs.
+
+### DR-530. Body frame of object-prelude occurrence snapshots
+
+**Question.** How does the closing placement of an object-prelude occurrence map the solved BREP body frame into its containing component?
+
+**Known.** The BMG carriers 505–508, 577–582, 587, 624 and 664 and PFA carrier 259 have an object property prelude, a one-byte zero ordinal prefix, and one closing placement. Their carrier GUID follows the ordinal directly. The closing component reference precedes the placement flag. BMG chain 582 × 578 × 624 gives the 50T disk a Y axis with its XZ center at (-4.3,13.5) mm; the mating shaft axis is near (0,0) mm. PFA carrier 259 rotates the solved flange's X axis to Z; the mating pulley has axis X. These files have zero admitted CommonData component paths. The leading-source and closing-local placements in the F30 generation are separate fields in another complete envelope.
+
+**Need.** A controlled object-prelude save with a moved component, its original and solved BREP frames, and an independent current placement. Determine the reference frame of the closing matrix and the body-frame correction before admitting that matrix as a body placement.
+
+**Conflict.** Treating every object-prelude closing matrix as a solved-body local placement gives the two incorrect mating placements above.
+
+**Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve.

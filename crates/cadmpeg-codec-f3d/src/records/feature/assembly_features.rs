@@ -839,6 +839,11 @@ impl DesignComponentOccurrence {
         }
     }
 
+    /// Whether the carrier stores an object property prelude.
+    pub(crate) fn has_object_prelude(&self) -> bool {
+        matches!(&self.frame, DesignComponentOccurrenceFrame::Attributed(frame) if !frame.property_names.is_empty())
+    }
+
     /// Attributed-frame members on the wire, for an attributed frame.
     fn attributed_wire(&self) -> Option<DesignAttributedOccurrenceWire> {
         match &self.frame {
