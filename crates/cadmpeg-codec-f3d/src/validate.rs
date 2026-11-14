@@ -5331,6 +5331,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     crate::records::feature::scope::DesignFeatureKind::MoveFace
                         | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
+                        | crate::records::feature::scope::DesignFeatureKind::UnStitch
                 ) =>
                 {
                     group.role() == DesignOperandRole::ROLE_0X10 && group.extrude_role().is_none()
@@ -7763,6 +7764,7 @@ fn validate_face_operands<'a>(
                                 crate::records::feature::scope::DesignFeatureKind::MoveFace
                                     | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                                     | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
+                                    | crate::records::feature::scope::DesignFeatureKind::UnStitch
                             ) =>
                             {
                                 group.is_some_and(|group| {

@@ -3414,6 +3414,9 @@ fn check_feature_references(
             FeatureOperation::KnitSurface { faces, .. } => {
                 face_selections.push(faces);
             }
+            FeatureOperation::UnstitchFaces { faces } => {
+                face_selections.push(faces);
+            }
             FeatureOperation::FilledSurface {
                 boundary,
                 support_faces,

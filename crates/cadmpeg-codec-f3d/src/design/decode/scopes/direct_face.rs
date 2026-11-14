@@ -27,6 +27,10 @@ use crate::layout::move_transform_frame_284 as move_frame_284;
 use crate::layout::move_transform_frame_293 as move_frame_293;
 use crate::layout::move_transform_omitted_matrix_frame_125 as omitted_move_125;
 use crate::layout::move_transform_omitted_matrix_frame_126 as omitted_move_126;
+use crate::layout::move_transform_v3_frame_256 as move_v3_frame_256;
+use crate::layout::move_transform_v3_frame_276 as move_v3_frame_276;
+use crate::layout::move_transform_v3_frame_286 as move_v3_frame_286;
+use crate::layout::move_transform_v3_frame_296 as move_v3_frame_296;
 use crate::layout::rigid_transform_leading_prefix as leading_move;
 use crate::layout::scale_legacy_uniform_tail as scale_tail;
 use crate::layout::scale_matrix_marker_one_prologue as scale_matrix_one;
@@ -45,6 +49,7 @@ use std::collections::HashMap;
 
 const RIGID_TRANSFORM_TYPE_GUID: &str = "84E6245F-1CDC-4FB8-8048-163A85FAD3F0";
 const RIGID_TRANSFORM_TYPE_VERSION: u32 = 2;
+const RIGID_TRANSFORM_TYPE_VERSION_3: u32 = 3;
 
 /// Primary-header offset of the marked distance reference of an `OffsetFaces`
 /// scope, or `None` when its prologue is not a known form.
@@ -466,7 +471,9 @@ fn unique_move_transform<'a>(
             let Some(next) = move_transform_at(bytes, start, paired, *record_index) else {
                 continue;
             };
-            if !rigid_transform_rule_breaks(bytes, start, paired, next.form, class_types).is_empty()
+            if !rigid_transform_type_matches(bytes, start, class_types)
+                || !rigid_transform_rule_breaks(bytes, start, paired, next.form, class_types)
+                    .is_empty()
             {
                 continue;
             }
@@ -483,16 +490,24 @@ fn rigid_transform_type_matches(
     start: usize,
     class_types: &HashMap<u32, &SegmentType>,
 ) -> bool {
+    rigid_transform_type_version(bytes, start, class_types) == Some(RIGID_TRANSFORM_TYPE_VERSION)
+}
+
+/// The type version of a record whose class type is the rigid-transform type.
+fn rigid_transform_type_version(
+    bytes: &[u8],
+    start: usize,
+    class_types: &HashMap<u32, &SegmentType>,
+) -> Option<u32> {
     lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
         .and_then(|(class_tag, _)| class_tag.parse::<u32>().ok())
         .and_then(|class_tag| class_types.get(&class_tag))
-        .is_some_and(|row| {
-            row.version == RIGID_TRANSFORM_TYPE_VERSION
-                && row
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(RIGID_TRANSFORM_TYPE_GUID)
+        .filter(|row| {
+            row.type_guid
+                .as_str()
+                .eq_ignore_ascii_case(RIGID_TRANSFORM_TYPE_GUID)
         })
+        .map(|row| row.version)
 }
 
 fn rigid_transform_rule_breaks(
@@ -503,20 +518,33 @@ fn rigid_transform_rule_breaks(
     class_types: &HashMap<u32, &SegmentType>,
 ) -> Vec<String> {
     let mut breaks = Vec::new();
-    if !rigid_transform_type_matches(bytes, start, class_types) {
+    let version = rigid_transform_type_version(bytes, start, class_types);
+    if !matches!(
+        version,
+        Some(RIGID_TRANSFORM_TYPE_VERSION | RIGID_TRANSFORM_TYPE_VERSION_3)
+    ) {
         breaks.push(format!(
-            "a class type other than {RIGID_TRANSFORM_TYPE_GUID} version {RIGID_TRANSFORM_TYPE_VERSION}"
+            "a class type other than {RIGID_TRANSFORM_TYPE_GUID} version {RIGID_TRANSFORM_TYPE_VERSION} or {RIGID_TRANSFORM_TYPE_VERSION_3}"
         ));
     }
     let Some(frame_length) = paired.checked_sub(start) else {
         breaks.push("a paired header before its primary header".to_owned());
         return breaks;
     };
+    let version_3 = version == Some(RIGID_TRANSFORM_TYPE_VERSION_3);
     let length_form = match frame_length {
-        move_frame::LEN | move_frame_254::LEN => direct_face::DesignMoveForm::Form5,
-        move_frame_273::LEN | move_frame_274::LEN => direct_face::DesignMoveForm::Form1,
-        move_frame_283::LEN | move_frame_284::LEN => direct_face::DesignMoveForm::Form0,
-        move_frame_293::LEN => direct_face::DesignMoveForm::Form2,
+        move_v3_frame_256::LEN if version_3 => direct_face::DesignMoveForm::Form5,
+        move_v3_frame_276::LEN if version_3 => direct_face::DesignMoveForm::Form1,
+        move_v3_frame_286::LEN if version_3 => direct_face::DesignMoveForm::Form0,
+        move_v3_frame_296::LEN if version_3 => direct_face::DesignMoveForm::Form2,
+        move_frame::LEN | move_frame_254::LEN if !version_3 => direct_face::DesignMoveForm::Form5,
+        move_frame_273::LEN | move_frame_274::LEN if !version_3 => {
+            direct_face::DesignMoveForm::Form1
+        }
+        move_frame_283::LEN | move_frame_284::LEN if !version_3 => {
+            direct_face::DesignMoveForm::Form0
+        }
+        move_frame_293::LEN if !version_3 => direct_face::DesignMoveForm::Form2,
         _ => {
             breaks.push(format!("a {frame_length}-byte frame"));
             return breaks;
