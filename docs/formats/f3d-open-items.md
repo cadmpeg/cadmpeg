@@ -2428,6 +2428,26 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder preserves the neutral deletion family. It records `feature.delete-face-frame-controls-assumed` for unfamiliar frames and `feature.delete-face-group-selection-assumed` for missing or inconsistent face groups.
 
+### DR-486. UnStitch prologue flag and reference runs
+
+**Question.** Which setting does the UnStitch selection flag encode, and which entities do the identity and source reference runs name?
+
+**Known.** `f3d.md` §3.1 "An `UnStitch` scope separates selected faces" defines the three prologue forms, the three counted reference runs, and the face group. The identity run has one reference for each member face. The selection flag is one in scopes with a nonempty source run and zero in scopes with an empty source run.
+
+**Need.** Saves that toggle chain selection and that select a whole body, with the resulting surface bodies identified.
+
+**Note.** The decoder separates exactly the member faces of the face group and records `feature.unstitch-prologue-controls-assumed`.
+
+### DR-488. UnStitch frames outside the three prologue forms and incomplete face groups
+
+**Question.** Which controls do further UnStitch frames carry, and which faces does an incomplete face-group definition select?
+
+**Known.** `f3d.md` §3.1 "An `UnStitch` scope separates selected faces" defines the ordered-reference table and its face group. The scope retains its ordered references in every frame.
+
+**Need.** Controlled saves with further prologue forms and complete native definitions for the referenced face groups.
+
+**Note.** The decoder keeps the neutral face separation. It records `feature.unstitch-frame-assumed` for a frame outside the three forms and `feature.unstitch-group-selection-assumed` for a missing or inconsistent face group, and retains the scope references as the native face selection.
+
 ### DR-480. Extrude termination through a compact Sketch-point identity
 
 **Question.** How does an Extrude termination group use a compact Sketch-point selection to set its travel, including an offset and a two-sided extent?

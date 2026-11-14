@@ -189,6 +189,10 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         DesignFeatureKind::SurfaceDeleteFace,
     ),
     (
+        "8DA2F4A9-C420-419B-AD5D-9CC901DF0B78",
+        DesignFeatureKind::UnStitch,
+    ),
+    (
         "D2BCAE08-CF42-4316-865F-8ED1DFD548E4",
         DesignFeatureKind::SurfaceExtend,
     ),

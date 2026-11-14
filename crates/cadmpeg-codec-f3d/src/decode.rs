@@ -943,7 +943,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     .iter()
                     .any(|group| !edge_selection_is_resolved(&group.edges))
         }
-        FeatureDefinition::Operation(FeatureOperation::DeleteFace { faces, .. }) => {
+        FeatureDefinition::Operation(
+            FeatureOperation::DeleteFace { faces, .. } | FeatureOperation::UnstitchFaces { faces },
+        ) => {
             !face_selection_is_resolved(faces)
         }
         FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) => {
@@ -1838,6 +1840,7 @@ fn design_projection_gaps(
             }
             FeatureDefinition::Operation(
                 FeatureOperation::DeleteFace { faces, .. }
+                | FeatureOperation::UnstitchFaces { faces }
                 | FeatureOperation::OffsetSurface { faces, .. },
             ) => face_selection(faces),
             FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) => {
