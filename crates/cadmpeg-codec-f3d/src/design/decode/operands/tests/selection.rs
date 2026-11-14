@@ -1182,3 +1182,62 @@ fn a_sketch_point_frame_matches_no_curve_and_names_no_topology_identity() {
     ));
     assert!(super::super::entity_selection_matches_curve(&pair, &curve));
 }
+
+#[test]
+fn sketch_region_companion_closes_before_a_later_face_recipe() {
+    use crate::design::decode::{operands, sketch::IndexedRecordOffsets};
+    use crate::records::{
+        feature::scope::{DesignFeatureKind, DesignParameterScope},
+        recipes::{ConstructionRecipe, ConstructionRecipeKind},
+    };
+
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"347", 100);
+    let paired_at = bytes.len();
+    bytes.extend(region_selection_frame().0);
+    indexed_header(&mut bytes, *b"423", 200);
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    let recipe_at = bytes.len();
+    bytes.extend_from_slice(b"face_recipe_data");
+    for word in [0i32, -1] {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    indexed_header(&mut bytes, *b"306", 104);
+    let selection = parse_sketch_profile_region_selection(&bytes, 100, paired_at).unwrap();
+    assert!(selection.companion_byte_offset < u64_from_index(recipe_at));
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#1",
+        DesignFeatureKind::Extrude,
+        1,
+    );
+    let header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:header#100".into(),
+        record_index: 100,
+        class_tag: "347".to_owned().try_into().unwrap(),
+        byte_offset: 0,
+    };
+    let recipe = ConstructionRecipe {
+        id: "f3d:Design/BulkStream.dat:recipe#200".into(),
+        byte_offset: u64_from_index(recipe_at),
+        kind: ConstructionRecipeKind::Face,
+        design: None,
+        recipe_index: 0,
+        record_index: None,
+    };
+    crate::test_support::with_decode_context(|ctx| {
+        assert!(operands::parse_face_operand(
+            ctx,
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            operands::FaceOperandFrame {
+                scope: &scope,
+                scope_reference_ordinal: 0,
+                group_ownership: None,
+                next_byte_offset: None,
+                header: &header,
+            },
+            &[recipe],
+        )
+        .is_none());
+    });
+}
