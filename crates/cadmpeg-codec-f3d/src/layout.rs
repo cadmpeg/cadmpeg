@@ -7655,6 +7655,26 @@ pub(crate) mod rectangular_pattern_payload_distribution {
     pub(crate) const ENTRY_COUNT: usize = 25;
 }
 
+/// Byte offsets for the `rectangular_pattern_payload_counted_head` record.
+///
+/// Spec §Assembly operands. Record length 19 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the leading zero byte of the distribution block.
+/// ```
+pub(crate) mod rectangular_pattern_payload_counted_head {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 19;
+    /// Offset of `count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const COUNT: usize = 0;
+    /// Stated value of `count` (`u32`). Spec §Assembly operands.
+    pub(crate) const COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const REFERENCE: usize = 4;
+    /// Offset of `zero_run` (`bytes[4]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN: usize = 15;
+}
+
 /// Byte offsets for the `rectangular_pattern_payload_suffix` record.
 ///
 /// Spec §Assembly operands. Record length 37 B.
@@ -9542,6 +9562,20 @@ pub(crate) mod rectangular_pattern_compact_spacing_direction_record {
     pub(crate) const SEPARATOR_ZERO_RUN: usize = 170;
     /// Offset of `index_plus_one_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const INDEX_PLUS_ONE_REFERENCE: usize = 172;
+}
+
+/// Byte offsets for the `rectangular_pattern_compact_extent_direction_record` record.
+///
+/// Spec §Assembly operands. Record length 196 B.
+///
+/// ```text
+/// Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 196.
+/// ```
+pub(crate) mod rectangular_pattern_compact_extent_direction_record {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 196;
+    /// Offset of `selection_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SELECTION_COUNT: usize = 93;
 }
 
 /// Byte offsets for the `thread_compact_owned_scope_prefix` record.
