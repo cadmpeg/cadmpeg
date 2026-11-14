@@ -62,6 +62,7 @@ Records `marked_reference_box_prefix`, `prefixed_marked_reference_box_prefix`, `
 | `component_body_membership_local_reference` | 11 | little | A present untyped same-segment reference with a nonzero u64 target and two zero bytes. |
 | `component_body_membership_local_entry` | 15 | little | An 11-byte untyped Body reference followed by u32 1 in the repeated body list. List order is independent; both lists contain the same unique body identities. |
 | `component_body_membership_single_overhead` | 15 | little | A u32 body count and an eleven-byte untyped owner reference enclose the single body list. |
+| `component_body_membership_single_zero_overhead` | 19 | little | A u32 body count, a zero u32 after the body list, and an eleven-byte untyped owner reference enclose the body list. |
 
 ## `named_parameter_scope_tail`
 
@@ -11200,6 +11201,49 @@ Parsed by:
 | 4 | 4 | `identity_length` | `u32` | little | spec | The Position suffix spans 83 bytes · value `36` |
 | 8 | 72 | `identity` | `bytes[72]` | little | spec | The Position suffix spans 83 bytes |
 | 80 | 3 | `zero_tail` | `bytes[3]` | little | spec | The Position suffix spans 83 bytes · value `[0, 0, 0]` |
+
+## `local_component_occurrence_attributed_short_ordinal`
+
+Spec §3.1 · layout: byte offsets · size: 5 B
+
+Offsets are relative to the ordinal prefix after the attribute run or object prelude. The carrier GUID follows this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `ordinal_prefix` | `u8` | little | spec | A version-two attributed local occurrence also permits a one-byte zero ordinal prefix · value `0` |
+| 1 | 4 | `occurrence_ordinal` | `u32` | little | spec | A version-two attributed local occurrence also permits a one-byte zero ordinal prefix |
+
+## `local_component_occurrence_attributed_ordinal`
+
+Spec §3.1 · layout: byte offsets · size: 6 B
+
+Offsets are relative to the ordinal prefix after the attribute run.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `ordinal_prefix` | `u16` | little | spec | Two prefix bytes, the u32 one-based occurrence ordinal |
+| 2 | 4 | `occurrence_ordinal` | `u32` | little | spec | Two prefix bytes, the u32 one-based occurrence ordinal |
+
+## `local_component_occurrence_attributed_marked_ordinal`
+
+Spec §3.1 · layout: byte offsets · size: 7 B
+
+Offsets are relative to the ordinal prefix after the attribute run. The carrier GUID follows this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `ordinal_prefix` | `u16` | little | spec | Two prefix bytes, the u32 one-based occurrence ordinal |
+| 2 | 4 | `occurrence_ordinal` | `u32` | little | spec | Two prefix bytes, the u32 one-based occurrence ordinal |
+| 6 | 1 | `guid_marker` | `u8` | little | spec | The two-byte prefix form permits marker `u8 1` after the ordinal · value `1` |
 
 ## Not tabulated
 
