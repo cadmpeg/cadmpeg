@@ -14,6 +14,7 @@
 use crate::kernel_header::RefWidth;
 use crate::stream_error::{StreamError, StreamFailure, StreamFormat};
 use cadmpeg_core::decode::{DecodeContext, View};
+use std::borrow::Cow;
 use std::sync::Arc;
 
 pub(crate) fn int_le_at(bytes: &[u8], offset: usize, width: RefWidth) -> Option<i64> {
@@ -324,7 +325,7 @@ pub fn payload_token(
             Lexed::Str(value) => {
                 name_done = true;
                 if payload_index == token_index {
-                    return Some((token_offset, Token::Str(value.to_owned())));
+                    return Some((token_offset, Token::Str(value.into_owned())));
                 }
                 payload_index += 1;
             }
@@ -355,7 +356,7 @@ pub(crate) fn lex_payload(
             Lexed::Value(token) => token,
             Lexed::Ident(name) => Token::Ident(name.to_owned()),
             Lexed::SubIdent(name) => Token::SubIdent(name.to_owned()),
-            Lexed::Str(value) => Token::Str(value.to_owned()),
+            Lexed::Str(value) => Token::Str(value.into_owned()),
             Lexed::Terminator => break,
         });
         offsets.push(next);
@@ -374,10 +375,26 @@ pub(crate) enum Lexed<'a> {
     Ident(&'a str),
     /// `0x0e` sub-identifier (name component).
     SubIdent(&'a str),
-    /// A borrowed `0x07`/`0x08`/`0x09`/`0x12` payload string.
-    Str(&'a str),
+    /// A `0x07`/`0x08`/`0x09`/`0x12` payload string: borrowed when it is UTF-8, else decoded as Windows-1252
+    /// (German Inventor stores appearance names such as "Grün - poliert" in the system code page).
+    Str(Cow<'a, str>),
     /// `0x11` record terminator.
     Terminator,
+}
+
+/// One byte of Windows-1252 as a char (0x80-0x9F the code page's own letters, the rest Latin-1).
+fn windows_1252(byte: u8) -> char {
+    const HIGH: [char; 32] = [
+        '\u{20AC}', '\u{81}', '\u{201A}', '\u{192}', '\u{201E}', '\u{2026}', '\u{2020}',
+        '\u{2021}', '\u{2C6}', '\u{2030}', '\u{160}', '\u{2039}', '\u{152}', '\u{8D}', '\u{17D}',
+        '\u{8F}', '\u{90}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}', '\u{2013}',
+        '\u{2014}', '\u{2DC}', '\u{2122}', '\u{161}', '\u{203A}', '\u{153}', '\u{9D}', '\u{17E}',
+        '\u{178}',
+    ];
+    match byte {
+        0x80..=0x9f => HIGH[usize::from(byte - 0x80)],
+        _ => char::from(byte),
+    }
 }
 
 pub(crate) fn lex(
@@ -404,6 +421,16 @@ pub(crate) fn lex(
             format: StreamFormat::Binary,
             offset: start + error.valid_up_to(),
             reason: format!("payload for tag {tag:#04x} is not valid UTF-8"),
+        })
+    };
+    // payload strings: UTF-8, else Windows-1252 - one appearance name ("Grün - poliert", "Türkis") written in the
+    // Windows code page dropped the whole Inventor part; identifiers stay strict
+    let payload = |start: usize, len: usize| -> Result<Cow<'_, str>, StreamError> {
+        let end = start.checked_add(len).ok_or_else(truncated)?;
+        let slice = bytes.get(start..end).ok_or_else(truncated)?;
+        Ok(match std::str::from_utf8(slice) {
+            Ok(text) => Cow::Borrowed(text),
+            Err(_) => Cow::Owned(slice.iter().map(|byte| windows_1252(*byte)).collect()),
         })
     };
     let out = match tag {
@@ -435,17 +462,17 @@ pub(crate) fn lex(
         ),
         0x07 => {
             let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
-            (Lexed::Str(string(p + 1, len)?), p + 1 + len)
+            (Lexed::Str(payload(p + 1, len)?), p + 1 + len)
         }
         0x08 => {
             let len = usize::from(View::u16_le_at(bytes, p).ok_or_else(truncated)?);
-            (Lexed::Str(string(p + 2, len)?), p + 2 + len)
+            (Lexed::Str(payload(p + 2, len)?), p + 2 + len)
         }
         0x09 | 0x12 => {
             let len = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
             let len = usize::try_from(len).map_err(|_| err("negative string length"))?;
             (
-                Lexed::Str(string(p + ref_width.bytes(), len)?),
+                Lexed::Str(payload(p + ref_width.bytes(), len)?),
                 p + ref_width.bytes() + len,
             )
         }
@@ -642,7 +669,7 @@ fn frame_impl(
                 Lexed::Str(value) => {
                     payload_start = false;
                     name_done = true;
-                    let owned = value.to_owned();
+                    let owned = value.into_owned();
                     tokens.push(Token::Str(owned));
                 }
                 Lexed::Value(Token::SubtypeOpen) => {
@@ -1101,23 +1128,11 @@ mod tests {
     }
 
     #[test]
-    fn binary_strings_reject_invalid_utf8_at_the_source_byte() {
-        let mut cases = vec![
+    fn binary_identifiers_reject_invalid_utf8_at_the_source_byte() {
+        let cases = vec![
             vec![0x0d, 1, 0xff, 0x11],
             vec![0x0e, 1, 0xff, 0x0d, 4, b'e', b'd', b'g', b'e', 0x11],
         ];
-        for tag in [0x07, 0x08, 0x09, 0x12] {
-            let mut bytes = vec![0x0d, 4, b'e', b'd', b'g', b'e', tag];
-            match tag {
-                0x07 => bytes.push(1),
-                0x08 => bytes.extend_from_slice(&1_u16.to_le_bytes()),
-                0x09 | 0x12 => bytes.extend_from_slice(&1_i64.to_le_bytes()),
-                _ => unreachable!("string tag is exhaustive"),
-            }
-            bytes.extend_from_slice(&[0xff, 0x11]);
-            cases.push(bytes);
-        }
-
         for bytes in cases {
             let invalid_offset = bytes
                 .iter()
@@ -1126,6 +1141,24 @@ mod tests {
             let error = frame(&bytes, 0, bytes.len(), RefWidth::Eight)
                 .expect_err("invalid UTF-8 must fail");
             assert_eq!(error.offset, invalid_offset);
+        }
+    }
+
+    #[test]
+    fn binary_payload_strings_fall_back_to_windows_1252() {
+        // "Grün" as German Inventor writes an appearance name: 0xFC is ü in Windows-1252
+        for tag in [0x07, 0x08, 0x09, 0x12] {
+            let mut bytes = vec![0x0d, 4, b'e', b'd', b'g', b'e', tag];
+            match tag {
+                0x07 => bytes.push(4),
+                0x08 => bytes.extend_from_slice(&4_u16.to_le_bytes()),
+                0x09 | 0x12 => bytes.extend_from_slice(&4_i64.to_le_bytes()),
+                _ => unreachable!("string tag is exhaustive"),
+            }
+            bytes.extend_from_slice(&[b'G', b'r', 0xfc, b'n', 0x11]);
+            let records =
+                frame(&bytes, 0, bytes.len(), RefWidth::Eight).expect("Windows-1252 string");
+            assert_eq!(records[0].chunk(0), Some(&super::Token::Str("Grün".into())));
         }
     }
 
