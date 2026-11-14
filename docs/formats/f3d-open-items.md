@@ -862,6 +862,14 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** Cylindrical, pin-slot, planar, and ball joints combine freedoms. A joint with only one limit needs the flag that enables it.
 
+### DR-642. Display visibility of a component occurrence
+
+**Question.** Which record stores the display visibility of a component occurrence, so that a hidden occurrence and the bodies below it leave the displayed model?
+
+**Known.** `f3d.md` §3.1 "A body-visibility browser-node member has type GUID" gives the body hidden flag. A body browser node names a body entity, and no browser node of that type names an occurrence or a component. The occurrence-placement carriers, the component instance list, its paired reference lists and the external-reference path records of a Design stream store no byte that varies as a flag across occurrences. `f3d.md` §1.1.4 gives the OGS `world` scene, whose `VisibilityAttribute` is drawable render-cache state, and an archive can have no OGS scene.
+
+**Need.** One assembly saved twice, with the display visibility of one component occurrence changed between the saves, identifies the record and the byte. A reader also needs the inheritance rule from a hidden occurrence to its child occurrences and bodies.
+
 ### DR-83. Attributed occurrence members
 
 **Question.** What do the two bytes before the occurrence ordinal and the marked record reference after the occurrence key of an attributed local component occurrence store?
