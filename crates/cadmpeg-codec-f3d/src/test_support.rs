@@ -292,3 +292,5 @@ pub(crate) fn loss_codes(
 ) -> Vec<cadmpeg_ir::report::loss::LossKind> {
     losses.iter().map(|loss| loss.code.clone()).collect()
 }
+
+pub(crate) mod move_face;
