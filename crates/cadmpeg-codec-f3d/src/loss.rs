@@ -312,6 +312,13 @@ pub(crate) enum F3dLossCode {
     FeatureShellAuxiliaryReferencesNative,
     /// An Emboss prefix matches no admitted native construction form.
     EmbossPrefixUnparsed,
+    EmbossProfileSelectionNative,
+    EmbossTargetSelectionNative,
+    EmbossDepthUnresolved,
+    EmbossDepthSignAssumed,
+    EmbossScalarOwnerAssumed,
+    EmbossScalarUnitAssumed,
+    EmbossPlacementNative,
     /// A non-equivalent duplicate scope envelope was superseded by the
     /// primary-indexed envelope.
     FeatureScopeEnvelopeSuperseded,
@@ -928,6 +935,13 @@ impl F3dLossCode {
         Self::EmbossControlsNative,
         Self::FeatureShellAuxiliaryReferencesNative,
         Self::EmbossPrefixUnparsed,
+        Self::EmbossProfileSelectionNative,
+        Self::EmbossTargetSelectionNative,
+        Self::EmbossDepthUnresolved,
+        Self::EmbossDepthSignAssumed,
+        Self::EmbossScalarOwnerAssumed,
+        Self::EmbossScalarUnitAssumed,
+        Self::EmbossPlacementNative,
         Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
         Self::ParameterRecordUnparsed,
@@ -1368,6 +1382,13 @@ impl F3dLossCode {
                 "feature.shell-auxiliary-references-native"
             }
             Self::EmbossPrefixUnparsed => "feature.emboss-prefix-unparsed",
+            Self::EmbossProfileSelectionNative => "feature.emboss-profile-selection-native",
+            Self::EmbossTargetSelectionNative => "feature.emboss-target-selection-native",
+            Self::EmbossDepthUnresolved => "feature.emboss-depth-unresolved",
+            Self::EmbossDepthSignAssumed => "feature.emboss-depth-sign-assumed",
+            Self::EmbossScalarOwnerAssumed => "feature.emboss-scalar-owner-assumed",
+            Self::EmbossScalarUnitAssumed => "feature.emboss-scalar-unit-assumed",
+            Self::EmbossPlacementNative => "feature.emboss-placement-native",
             Self::AlignOperandsUnresolved => "feature.align-operands-unresolved",
             Self::AlignEnvelopeUnparsed => "feature.align-envelope-unparsed",
             Self::AlignConstructionUnparsed => "feature.align-construction-unparsed",
@@ -1861,6 +1882,13 @@ impl F3dLossCode {
             | Self::EmbossControlsNative
             | Self::FeatureShellAuxiliaryReferencesNative
             | Self::EmbossPrefixUnparsed
+            | Self::EmbossProfileSelectionNative
+            | Self::EmbossTargetSelectionNative
+            | Self::EmbossDepthUnresolved
+            | Self::EmbossDepthSignAssumed
+            | Self::EmbossScalarOwnerAssumed
+            | Self::EmbossScalarUnitAssumed
+            | Self::EmbossPlacementNative
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
             | Self::AlignConstructionUnparsed
@@ -2220,6 +2248,13 @@ impl F3dLossCode {
             | Self::EmbossControlsNative
             | Self::FeatureShellAuxiliaryReferencesNative
             | Self::EmbossPrefixUnparsed
+            | Self::EmbossProfileSelectionNative
+            | Self::EmbossTargetSelectionNative
+            | Self::EmbossDepthUnresolved
+            | Self::EmbossDepthSignAssumed
+            | Self::EmbossScalarOwnerAssumed
+            | Self::EmbossScalarUnitAssumed
+            | Self::EmbossPlacementNative
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
             | Self::AlignConstructionUnparsed
@@ -2681,6 +2716,13 @@ mod tests {
                 "feature.emboss-controls-native",
                 "feature.shell-auxiliary-references-native",
                 "feature.emboss-prefix-unparsed",
+                "feature.emboss-profile-selection-native",
+                "feature.emboss-target-selection-native",
+                "feature.emboss-depth-unresolved",
+                "feature.emboss-depth-sign-assumed",
+                "feature.emboss-scalar-owner-assumed",
+                "feature.emboss-scalar-unit-assumed",
+                "feature.emboss-placement-native",
                 "feature.scope-envelope-superseded",
                 "parameter.unprojected",
                 "parameter.record-unparsed",
