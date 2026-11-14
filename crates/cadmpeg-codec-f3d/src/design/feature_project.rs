@@ -7863,6 +7863,8 @@ const HOLE_TAP_SIMPLE: u32 = 0;
 const HOLE_TAP_CLEARANCE: u32 = 1;
 /// Tap type of a tapped Hole.
 const HOLE_TAP_TAPPED: u32 = 2;
+/// Tap type of a taper-tapped Hole.
+const HOLE_TAP_TAPER_TAPPED: u32 = 3;
 
 /// The loss a Hole with tap type `tap_type` reports.
 pub(super) fn hole_tap_type_loss(
@@ -7873,6 +7875,9 @@ pub(super) fn hole_tap_type_loss(
         HOLE_TAP_SIMPLE | HOLE_TAP_CLEARANCE => None,
         HOLE_TAP_TAPPED => Some(crate::loss::F3dLossCode::HoleTappedDiameterStored.note(format!(
             "Tapped Hole {scope_id} keeps its stored HoleDiameter; Fusion models the bore diameter that its thread size gives."
+        ))),
+        HOLE_TAP_TAPER_TAPPED => Some(crate::loss::F3dLossCode::HoleTappedDiameterStored.note(format!(
+            "Taper-tapped Hole {scope_id} keeps its stored HoleDiameter; Fusion models the tapered bore that its thread size gives."
         ))),
         other => Some(crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed.note(format!(
             "Hole {scope_id} assumes its scalar geometry is independent of tap type {other} (DR-106)."

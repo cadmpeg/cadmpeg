@@ -370,7 +370,7 @@ pub(crate) enum F3dLossCode {
     HoleParametersIndependentAssumed,
     HoleShapePartialAssumed,
     HoleExtentLeadingWordAssumed,
-    /// A tapped Hole keeps its stored diameter instead of the bore of its thread size.
+    /// A tapped or taper-tapped Hole keeps its stored diameter instead of the bore of its thread size.
     HoleTappedDiameterStored,
     HoleStandardSizingAssumed,
     /// A clearance Hole's specification takes fixed values for the fields it does not store.

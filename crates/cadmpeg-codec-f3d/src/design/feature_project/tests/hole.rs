@@ -1705,11 +1705,13 @@ fn the_tap_type_selects_the_hole_diameter_loss() {
     use super::super::hole_tap_type_loss;
     assert!(hole_tap_type_loss("hole", 0).is_none());
     assert!(hole_tap_type_loss("hole", 1).is_none());
-    assert_eq!(
-        hole_tap_type_loss("hole", 2).unwrap().code,
-        crate::loss::F3dLossCode::HoleTappedDiameterStored.kind()
-    );
-    for other in [3, 1_867_538_229] {
+    for tapped in [2, 3] {
+        assert_eq!(
+            hole_tap_type_loss("hole", tapped).unwrap().code,
+            crate::loss::F3dLossCode::HoleTappedDiameterStored.kind()
+        );
+    }
+    for other in [4, 1_867_538_229] {
         assert_eq!(
             hole_tap_type_loss("hole", other).unwrap().code,
             crate::loss::F3dLossCode::HoleExtentLeadingWordAssumed.kind()
