@@ -26,6 +26,14 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
+    BendLineOwnerOrderAssumed,
+    BendStationaryRoleAssumed,
+    BendAngleUnresolved,
+    BendRadiusFirstAssumed,
+    BendStationarySelectionNative,
+    BendRuleRadiusUnresolved,
+    BendAngleOwnerBacklinkAssumed,
+    BendCachedOwnerAngleAssumed,
     /// A displayed path matches several neutral occurrences.
     SceneOverrideAmbiguous,
     /// A displayed path has no neutral occurrence.
@@ -36,6 +44,8 @@ pub(crate) enum F3dLossCode {
     ScopeOwnerUnresolved,
     /// A history output body belongs to another product definition.
     ScopeOutputOwnerMismatch,
+    /// Unadmitted output membership prevents a unique history product owner.
+    ScopeOutputOwnerUnresolved,
     /// A bound sketch collection belongs to another product definition.
     ScopeSketchOwnerMismatch,
     /// Component-path constraints prevent a uniform operation-table pose.
@@ -55,7 +65,10 @@ pub(crate) enum F3dLossCode {
     WorkPlaneInferredAxisAssumed,
     /// A cylinder primitive has no unique checked solved placement.
     CylinderPlacementUnbound,
+    SpherePrefixFramingAssumed,
     SpherePlacementFlagsAssumed,
+    SphereLocalMatrixFramingAssumed,
+    SphereLocalFrameAssumed,
     SpherePlacementFrameAssumed,
     SphereDiameterOwnerAssumed,
     SphereDiameterSourceAssumed,
@@ -123,6 +136,11 @@ pub(crate) enum F3dLossCode {
     RootInstanceDefinitionUnbound,
     /// Alternate occurrence frames without a unique primary-indexed selection.
     LocalOccurrenceEnvelopeSuperseded,
+    /// A registered unnamed local occurrence has an unresolved envelope.
+    LocalOccurrenceEnvelopeNative,
+    /// A component-path record with only local elements matches no admitted
+    /// local path form.
+    LocalComponentPathNative,
     /// A leading-flag occurrence frame whose record the occurrence-placement
     /// type row does not register.
     LocalOccurrenceTypeUnregistered,
@@ -858,6 +876,7 @@ impl F3dLossCode {
         Self::OperationPoseApplied,
         Self::ScopeOwnerUnresolved,
         Self::ScopeOutputOwnerMismatch,
+        Self::ScopeOutputOwnerUnresolved,
         Self::ScopeSketchOwnerMismatch,
         Self::OperationPoseDisagrees,
         Self::OperationPoseNative,
@@ -868,7 +887,10 @@ impl F3dLossCode {
         Self::WorkPlaneFrameUnbound,
         Self::WorkPlaneInferredAxisAssumed,
         Self::CylinderPlacementUnbound,
+        Self::SpherePrefixFramingAssumed,
         Self::SpherePlacementFlagsAssumed,
+        Self::SphereLocalMatrixFramingAssumed,
+        Self::SphereLocalFrameAssumed,
         Self::SpherePlacementFrameAssumed,
         Self::SphereDiameterOwnerAssumed,
         Self::SphereDiameterSourceAssumed,
@@ -904,6 +926,8 @@ impl F3dLossCode {
         Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
         Self::LocalOccurrenceEnvelopeSuperseded,
+        Self::LocalOccurrenceEnvelopeNative,
+        Self::LocalComponentPathNative,
         Self::LocalOccurrenceTypeUnregistered,
         Self::LocalOccurrenceYieldedToRegistered,
         Self::LocalOccurrenceKeyRepeated,
@@ -1339,10 +1363,19 @@ impl F3dLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::SceneOverrideRefused => "scene.override-refused",
+            Self::BendLineOwnerOrderAssumed => "feature.bend-line-owner-order-assumed",
+            Self::BendStationaryRoleAssumed => "feature.bend-stationary-role-assumed",
+            Self::BendAngleUnresolved => "feature.bend-angle-unresolved",
+            Self::BendRadiusFirstAssumed => "feature.bend-radius-first-assumed",
+            Self::BendStationarySelectionNative => "feature.bend-stationary-selection-native",
+            Self::BendRuleRadiusUnresolved => "feature.bend-rule-radius-unresolved",
+            Self::BendAngleOwnerBacklinkAssumed => "feature.bend-angle-owner-backlink-assumed",
+            Self::BendCachedOwnerAngleAssumed => "feature.bend-cached-owner-angle-assumed",
             Self::SceneOverrideAmbiguous => "scene.override-ambiguous",
             Self::SceneOverrideUnbound => "scene.override-unbound",
             Self::ScopeOwnerUnresolved => "scope.owner-unresolved",
             Self::ScopeOutputOwnerMismatch => "scope.output-owner-mismatch",
+            Self::ScopeOutputOwnerUnresolved => "scope.output-owner-unresolved",
             Self::ScopeSketchOwnerMismatch => "scope.sketch-owner-mismatch",
             Self::OperationPoseApplied => "assembly.operation-table-pose",
             Self::OperationPoseDisagrees => "assembly.operation-table-pose-disagrees",
@@ -1354,7 +1387,10 @@ impl F3dLossCode {
             Self::WorkPlaneFrameUnbound => "work-plane.frame-unbound",
             Self::WorkPlaneInferredAxisAssumed => "work-plane.inferred-axis-assumed",
             Self::CylinderPlacementUnbound => "feature.cylinder-placement-unbound",
+            Self::SpherePrefixFramingAssumed => "feature.sphere-prefix-framing-assumed",
             Self::SpherePlacementFlagsAssumed => "feature.sphere-placement-flags-assumed",
+            Self::SphereLocalMatrixFramingAssumed => "feature.sphere-local-matrix-framing-assumed",
+            Self::SphereLocalFrameAssumed => "feature.sphere-local-frame-assumed",
             Self::SpherePlacementFrameAssumed => "feature.sphere-placement-frame-assumed",
             Self::SphereDiameterOwnerAssumed => "feature.sphere-diameter-owner-assumed",
             Self::SphereDiameterSourceAssumed => "feature.sphere-diameter-source-assumed",
@@ -1399,6 +1435,8 @@ impl F3dLossCode {
             Self::ComponentNamingSpaceUnbound => "assembly.component-naming-space-unbound",
             Self::RootInstanceDefinitionUnbound => "assembly.root-instance-definition-unbound",
             Self::SavedFreeEdgeBodyUnowned => "assembly.saved-free-edge-body-unowned",
+            Self::LocalOccurrenceEnvelopeNative => "assembly.local-occurrence-envelope-native",
+            Self::LocalComponentPathNative => "assembly.local-component-path-native",
             Self::LocalOccurrenceIdentityOrdinalUnresolved => {
                 "assembly.local-occurrence-identity-ordinal-unresolved"
             }
@@ -1989,10 +2027,19 @@ impl F3dLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::SceneOverrideRefused => Severity::Warning,
+            Self::BendStationaryRoleAssumed
+            | Self::BendAngleUnresolved
+            | Self::BendRadiusFirstAssumed
+            | Self::BendLineOwnerOrderAssumed
+            | Self::BendStationarySelectionNative
+            | Self::BendRuleRadiusUnresolved
+            | Self::BendAngleOwnerBacklinkAssumed
+            | Self::BendCachedOwnerAngleAssumed => Severity::Warning,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => Severity::Info,
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
             Self::ScopeOwnerUnresolved
+            | Self::ScopeOutputOwnerUnresolved
             | Self::OperationPoseApplied
             | Self::OperationPoseNative
             | Self::BodylessDesignCarrier
@@ -2041,7 +2088,10 @@ impl F3dLossCode {
             | Self::WorkPlaneFrameUnbound
             | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
+            | Self::SpherePrefixFramingAssumed
             | Self::SpherePlacementFlagsAssumed
+            | Self::SphereLocalMatrixFramingAssumed
+            | Self::SphereLocalFrameAssumed
             | Self::SpherePlacementFrameAssumed
             | Self::SphereDiameterOwnerAssumed
             | Self::SphereDiameterSourceAssumed
@@ -2079,6 +2129,8 @@ impl F3dLossCode {
             | Self::LocalOccurrenceSourceUnregistered
             | Self::LocalOccurrenceKeyRepeated
             | Self::LocalOccurrenceFirstMatrixRefused
+            | Self::LocalOccurrenceEnvelopeNative
+            | Self::LocalComponentPathNative
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::LocalOccurrenceTypeUnregistered
             | Self::LocalOccurrenceYieldedToRegistered
@@ -2473,12 +2525,20 @@ impl F3dLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::SceneOverrideRefused => LossTaxonomy::RecordNotTyped,
+            Self::BendStationaryRoleAssumed
+            | Self::BendAngleUnresolved
+            | Self::BendRadiusFirstAssumed
+            | Self::BendLineOwnerOrderAssumed
+            | Self::BendStationarySelectionNative
+            | Self::BendRuleRadiusUnresolved
+            | Self::BendAngleOwnerBacklinkAssumed
+            | Self::BendCachedOwnerAngleAssumed => LossTaxonomy::FeatureHistoryRetained,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => {
                 LossTaxonomy::FeatureHistoryRetained
             }
-            Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => {
-                LossTaxonomy::FeatureHistoryRetained
-            }
+            Self::ScopeOutputOwnerMismatch
+            | Self::ScopeOutputOwnerUnresolved
+            | Self::ScopeSketchOwnerMismatch => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
@@ -2638,7 +2698,10 @@ impl F3dLossCode {
             | Self::WorkPlaneFrameUnbound
             | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
+            | Self::SpherePrefixFramingAssumed
             | Self::SpherePlacementFlagsAssumed
+            | Self::SphereLocalMatrixFramingAssumed
+            | Self::SphereLocalFrameAssumed
             | Self::SpherePlacementFrameAssumed
             | Self::SphereDiameterOwnerAssumed
             | Self::SphereDiameterSourceAssumed
@@ -2889,6 +2952,8 @@ impl F3dLossCode {
             | Self::LocalOccurrenceTypeUnregistered
             | Self::LocalOccurrenceKeyRepeated
             | Self::LocalOccurrenceFirstMatrixRefused
+            | Self::LocalOccurrenceEnvelopeNative
+            | Self::LocalComponentPathNative
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
@@ -3012,6 +3077,7 @@ mod tests {
                 "assembly.operation-table-pose",
                 "scope.owner-unresolved",
                 "scope.output-owner-mismatch",
+                "scope.output-owner-unresolved",
                 "scope.sketch-owner-mismatch",
                 "assembly.operation-table-pose-disagrees",
                 "assembly.operation-table-pose-native",
@@ -3022,7 +3088,10 @@ mod tests {
                 "work-plane.frame-unbound",
                 "work-plane.inferred-axis-assumed",
                 "feature.cylinder-placement-unbound",
+                "feature.sphere-prefix-framing-assumed",
                 "feature.sphere-placement-flags-assumed",
+                "feature.sphere-local-matrix-framing-assumed",
+                "feature.sphere-local-frame-assumed",
                 "feature.sphere-placement-frame-assumed",
                 "feature.sphere-diameter-owner-assumed",
                 "feature.sphere-diameter-source-assumed",
@@ -3058,6 +3127,8 @@ mod tests {
                 "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
                 "assembly.local-occurrence-envelope-superseded",
+                "assembly.local-occurrence-envelope-native",
+                "assembly.local-component-path-native",
                 "assembly.local-occurrence-type-unregistered",
                 "assembly.local-occurrence-yielded-to-registered",
                 "assembly.local-occurrence-key-repeated",

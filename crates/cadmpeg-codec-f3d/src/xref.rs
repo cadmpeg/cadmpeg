@@ -2791,6 +2791,32 @@ pub(crate) fn component_path_carriers(
     )
 }
 
+/// Count the component-path records of one Design stream whose path elements
+/// are all local references but that neither the two-element current-pose form
+/// nor the any-length local form admits.
+pub(crate) fn unadmitted_local_component_paths(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    serializer_magic: Option<u32>,
+) -> Result<usize, CodecError> {
+    Ok(
+        typed_records(bytes, meta, "CommonData", COMPONENT_PATH_TYPE_GUID)?
+            .iter()
+            .filter_map(|record| bytes.get(record.offset..record.end))
+            .filter(|body| local_component_path_unadmitted(body, serializer_magic))
+            .count(),
+    )
+}
+
+/// Whether a component-path record has only local path elements and matches
+/// neither the two-element current-pose form nor the any-length local form.
+pub(crate) fn local_component_path_unadmitted(body: &[u8], serializer_magic: Option<u32>) -> bool {
+    occurrence_path_members(body)
+        .is_some_and(|(members, _)| members.iter().all(|(element, _)| element.local().is_some()))
+        && local_component_path_pose(body, serializer_magic).is_none()
+        && component_path_carrier(body, serializer_magic).is_none()
+}
+
 /// Re-read a retained component-path record through the carrier parser and
 /// require it to state the retained path and matrix.
 pub(crate) fn component_path_matches(

@@ -62,6 +62,7 @@ Records `marked_reference_box_prefix`, `prefixed_marked_reference_box_prefix`, `
 | `component_body_membership_local_reference` | 11 | little | A present untyped same-segment reference with a nonzero u64 target and two zero bytes. |
 | `component_body_membership_local_entry` | 15 | little | An 11-byte untyped Body reference followed by u32 1 in the repeated body list. List order is independent; both lists contain the same unique body identities. |
 | `component_body_membership_single_overhead` | 15 | little | A u32 body count and an eleven-byte untyped owner reference enclose the single body list. |
+| `component_body_membership_single_zero_overhead` | 19 | little | A u32 body count, a zero u32 after the body list, and an eleven-byte untyped owner reference enclose the body list. |
 
 ## `named_parameter_scope_tail`
 
@@ -5505,6 +5506,21 @@ Offsets start after the rectangular-pattern property block, before the variable 
 | 1 | 1 | `direction_one_symmetric` | `bool8` | little | spec | The rectangular-pattern reference run |
 | 2 | 1 | `unassigned_flag` | `bool8` | little | spec | The rectangular-pattern reference run |
 | 3 | 4 | `direction_slot_count` | `u32` | little | spec | The rectangular-pattern reference run |
+
+## `bend_scope_angular_reference_roles`
+
+Spec §3.1 · layout: ordered slots (no stated byte offsets) · size: not stated
+
+Ordered reference roles for Bend angular inputs.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/feature_project/bend_lines.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `construction_group` | `u32` | little | spec | The ordered scope references carry the construction groups, selection operands, and parameter owners. |
+| 1 | `selection_operand` | `u32` | little | spec | The ordered scope references carry the construction groups, selection operands, and parameter owners. |
+| 2 | `angular_parameter_owner` | `u32` | little | spec | The parameter owner retains the association between a value and the scope reference table. |
 
 ## `edge_flange_fixed_operation_section`
 
@@ -11142,22 +11158,22 @@ Unstated regions:
 
 ## `sphere_typed_prefix`
 
-Spec §3.1 · layout: byte offsets · size: 178 B
+Spec §3.1 · layout: byte offsets · size: 179 B
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 20 | 4 | `operation` | `u32` | little | spec | The typed prefix has operation offset 20 |
-| 24 | 1 | `marker` | `u8` | little | spec | marker offset 24 · value `1` |
-| 25 | 51 | `placement` | `bytes[51]` | little | spec | references at offsets 25, 76, and 127 |
-| 76 | 51 | `diameter_owner` | `bytes[51]` | little | spec | references at offsets 25, 76, and 127 |
-| 127 | 51 | `result` | `bytes[51]` | little | spec | references at offsets 25, 76, and 127 |
+| 21 | 4 | `operation` | `u32` | little | spec | The typed prefix has operation offset 21 |
+| 25 | 1 | `marker` | `u8` | little | spec | marker offset 25 · value `1` |
+| 26 | 51 | `placement` | `bytes[51]` | little | spec | references at offsets 26, 77, and 128 |
+| 77 | 51 | `diameter_owner` | `bytes[51]` | little | spec | references at offsets 26, 77, and 128 |
+| 128 | 51 | `result` | `bytes[51]` | little | spec | references at offsets 26, 77, and 128 |
 
 Unstated regions:
 
-- `0..20` (20 B): Indexed header and inherited prefix.
+- `0..21` (21 B): Indexed header and inherited prefix.
 
 ## `captured_position_prefix`
 
@@ -11219,6 +11235,76 @@ Parsed by:
 | 4 | 4 | `identity_length` | `u32` | little | spec | The Position suffix spans 83 bytes · value `36` |
 | 8 | 72 | `identity` | `bytes[72]` | little | spec | The Position suffix spans 83 bytes |
 | 80 | 3 | `zero_tail` | `bytes[3]` | little | spec | The Position suffix spans 83 bytes · value `[0, 0, 0]` |
+
+## `unmarked_sphere_local_frame`
+
+Spec §3.1 · layout: byte offsets · size: 128 B
+
+Offsets are relative to the first byte after the third prefix reference. The marked matrix form has identity flag zero; flag one supplies identity and omits its matrix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 128 | `matrix` | `f64[16]` | little | spec | The unmarked local frame stores sixteen row-major f64 values at offset zero |
+
+## `marked_sphere_local_frame`
+
+Spec §3.1 · layout: byte offsets · size: 129 B
+
+Offsets are relative to the first byte after the third prefix reference. The marked matrix form has identity flag zero; flag one supplies identity and omits its matrix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sphere.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `identity` | `u8` | little | spec | The marked local frame starts with a one-byte identity flag. |
+| 1 | 128 | `matrix` | `f64[16]` | little | spec | Flag `0` stores the same matrix at relative offset one |
+
+## `local_component_occurrence_attributed_short_ordinal`
+
+Spec §3.1 · layout: byte offsets · size: 5 B
+
+Offsets are relative to the ordinal prefix after the attribute run or object prelude. The carrier GUID follows this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `ordinal_prefix` | `u8` | little | spec | A version-two attributed local occurrence also permits a one-byte zero ordinal prefix · value `0` |
+| 1 | 4 | `occurrence_ordinal` | `u32` | little | spec | A version-two attributed local occurrence also permits a one-byte zero ordinal prefix |
+
+## `local_component_occurrence_attributed_ordinal`
+
+Spec §3.1 · layout: byte offsets · size: 6 B
+
+Offsets are relative to the ordinal prefix after the attribute run.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `ordinal_prefix` | `u16` | little | spec | Two prefix bytes, the u32 one-based occurrence ordinal |
+| 2 | 4 | `occurrence_ordinal` | `u32` | little | spec | Two prefix bytes, the u32 one-based occurrence ordinal |
+
+## `local_component_occurrence_attributed_marked_ordinal`
+
+Spec §3.1 · layout: byte offsets · size: 7 B
+
+Offsets are relative to the ordinal prefix after the attribute run. The carrier GUID follows this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `ordinal_prefix` | `u16` | little | spec | Two prefix bytes, the u32 one-based occurrence ordinal |
+| 2 | 4 | `occurrence_ordinal` | `u32` | little | spec | Two prefix bytes, the u32 one-based occurrence ordinal |
+| 6 | 1 | `guid_marker` | `u8` | little | spec | The two-byte prefix form permits marker `u8 1` after the ordinal · value `1` |
 
 ## Not tabulated
 

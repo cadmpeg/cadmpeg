@@ -201,14 +201,17 @@ fn discover(
         .iter()
         .map(|frame| (frame.start, frame.member_end))
         .collect();
-    let admitted = super::super::admitted_stream_occurrences(
-        bytes,
-        STREAM,
-        &frame_ends,
-        &super::super::occurrence_source_entities(meta),
-        &primary,
-        &typed_primary,
-    );
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        super::super::admitted_stream_occurrences(
+            ctx,
+            bytes,
+            STREAM,
+            &frame_ends,
+            &super::super::occurrence_source_entities(meta),
+            &primary,
+            &typed_primary,
+        )
+    });
     (admitted.occurrences, admitted.losses, admitted.superseded)
 }
 
