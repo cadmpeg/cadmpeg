@@ -426,3 +426,49 @@ fn empty_model_maps_with_outgoing_references_are_an_assembly_without_docstruct()
         .attributes
         .contains_key("docstruct_type"));
 }
+
+#[test]
+fn leading_source_placement_closes_with_an_independent_local_matrix() {
+    use crate::layout::legacy_attributed_external_placement_empty_attributes as attributes;
+    use crate::layout::legacy_attributed_external_placement_members as members;
+    use crate::layout::legacy_attributed_external_placement_prefix as prefix;
+
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let local = [
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for (source, local, control) in [
+        (None, None, 0_u16),
+        (None, Some(local), 1),
+        (Some(super::super::IDENTITY_ROWS), None, 1),
+        (Some(super::super::IDENTITY_ROWS), Some(local), 0),
+    ] {
+        let mut frame =
+            crate::test_support::legacy_attributed_external_placement(role, false, local);
+        frame[prefix::LEN + attributes::LEN..][..2].copy_from_slice(&control.to_le_bytes());
+        let mut leading = vec![u8::from(source.is_none())];
+        if let Some(source) = source {
+            leading.extend(source.into_iter().flatten().flat_map(f64::to_le_bytes));
+        }
+        let at = prefix::LEN + attributes::LEN + members::METADATA_GUID_LENGTH;
+        frame.splice(at..at, leading);
+        let placement = super::super::occurrence_placement(&frame, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(placement.transform, local);
+        assert_eq!(placement.owner.unwrap().target, 7);
+        assert_eq!(placement.link_names, [role]);
+        for end in 0..frame.len() {
+            assert!(super::super::occurrence_placement(&frame[..end], None)
+                .unwrap()
+                .is_none());
+        }
+        frame.push(0);
+        assert!(super::super::occurrence_placement(&frame, None)
+            .unwrap()
+            .is_none());
+    }
+}

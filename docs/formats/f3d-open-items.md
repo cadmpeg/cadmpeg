@@ -1711,17 +1711,17 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** Extended version-five scopes retain the opaque scope envelope and its uninterpreted-payload loss.
 
-### DR-248. Closing reference and owner of unadmitted legacy placements
+### DR-248. Legacy closing references and six-name placement bindings
 
-**Question.** How does the closing reference of a legacy placement carrier identify its owner, including a 531-byte carrier whose closing target differs from `4`? Which saved state supplies the owner frame, and how do the instance key and metadata UUIDs bind its six-name envelope?
+**Question.** How does the closing reference of a 531-byte legacy placement select an owner other than target `4`, and how do the instance key and metadata UUIDs bind the six-name envelope?
 
-**Known.** The 403-byte identity and 531-byte matrix envelopes in §1.4 close with target value `4`. One local archive has eight XREF rows with undecoded placements; five target members decode, and five role-matched 531-byte carriers have nonidentity matrices and other non-null closing targets. Two public OSII Mini archives each have 43 refused version-2 Component placement carriers: two 404-byte identity spans and 41 532-byte matrix spans. The plain prefix has an extra byte, with values `0` and `1`, before its metadata count. Its closing references select five local owners. Each of the 82 matrices has a byte-identical copy in another form in its Design stream. Each root also has seven unadmitted 234-byte local identity carriers. Two local component paths retain translated frames while the corresponding local carriers store identity; one translation is `-3.6` cm on Z. One public Meanwell assembly has eight refused version-2 six-name matrix carriers: one 740-byte span and seven 744-byte spans. Each matrix also occurs in a CommonData path that names its placement carrier. Each closing owner is the document root. The six stored names are `Appearance`, `Geometry`, `PhysicalMaterial`, `Properties`, `StructureChange`, and `Transform`. These three public roots have zero saved display scenes and zero joint scopes. Their baseline losses are respectively 43, 43, and 8 `xref.placement-undecoded`, and 14, 14, and 5 `xref.placement-identity-assumed`. Multiple carriers share a reference role. In one measured assembly, nine decoded placements share a unique admitted identity owner carrier to the document root; its carrier chain supplies its external children's world frame. The three-property control-1 identity grammar is in §1.4. An undecoded XREF placement in an XREF-only table retains identity and emits `xref.placement-identity-assumed`. In a table with DERIVED rows it stays native and emits `xref.occurrence-unplaced`. A decoded placement with an unresolved owner retains its document-root placement and emits `xref.owner-unresolved`.
+**Known.** `f3d.md` §1.4 "The empty-attribute generation can insert" defines independent source and local placements in the attributed envelope. "A leading-flag local component occurrence" defines the corresponding local owner carrier. F30a and F30b place two inserted parts 10 mm along each owner's local X axis. Owner B is nested inside Owner A. Owner B's CommonData path and display row agree on its world frame. Capturing Owner A's translation changes its closing local matrix and moves both inserted parts by `(20, 30, 50)` mm. The inserted-part source and local matrices stay equal across this pair. A local archive has five role-matched 531-byte matrix carriers with non-null closing targets other than `4`. The public OSII Mini roots each contain 43 plain version-2 placement carriers with an extra byte before the metadata count. The public Meanwell root has eight version-2 six-name matrix carriers. Their six names are `Appearance`, `Geometry`, `PhysicalMaterial`, `Properties`, `StructureChange`, and `Transform`.
 
-**Need.** For a 531-byte carrier with a closing target other than `4`, public saves that vary the closing target and the owner transform separately, with a retained display scene or closing joint for each placement. These saves must show how the closing reference selects the owner and how the owner places the stored matrix in the document frame. For the plain envelope, save a public assembly with two distinct local owners and one asymmetric external child in each. Put owner A at identity and owner B at translation `(11, 13, 17)` cm with a 180-degree rotation about root Z. Put each child at translation `(1, 0, 0)` cm in its owner frame. Save the baseline, translate owner A by `(2, 3, 5)` cm, rotate it by 90 degrees about root Z through its own origin, then move its child by `(7, 0, 0)` cm in the owner frame, with a separate save after each change. Repeat the child below a second instance of its owner. Keep the child fixed while changing the active captured position, and save both positions. Retain a display scene or dimensioned mating geometry for each save. These pairs must distinguish the stored child frame, the owner's current frame, and the selected captured state, and must close the local owner-carrier grammar. For the six-name envelope, make a second public assembly with an asymmetric inserted part, two instances of that part, and an instance below a moved local owner. Save each insertion separately, add controlled copies until the stored instance key gains one decimal digit, change one tracked channel at a time, and save before and after a captured-position change. Add one fixed joint to each instance in separate saves with the poses held fixed, and compare its operand path to the instance key and both metadata UUIDs. Keep all three repeated target references, the counted name run, the instance key, both metadata UUIDs, and the closing owner in the comparison. Require a complete indexed span, registered type and version, occurrence binding, and an independently established owner-relative pose for each admitted form.
+**Need.** Close each complete plain or six-name indexed span through its registered type, occurrence role, and local owner. Vary the inserted child's local placement and selected captured state separately, with an independent scene or joint frame. Bind the six-name instance key and both metadata UUIDs through controlled repeated insertions, tracked-channel changes, and joint operand paths. A 531-byte legacy carrier with a closing target other than `4` requires an independent owner-relative pose.
 
 **Conflict.** None.
 
-**Note.** The public Voron Trident `z_mounts_front.f3d` stores 55 registered version-2 Component placement entities, 43 bound component naming spaces, and 34 component paths. Its local occurrence set is empty. Definition context bindings identify component owners independently of these placement frames. Equal matrix bytes corroborate a stored frame. Selection of an owner's current frame and of a captured state remains part of occurrence placement. The identity fallback records the unresolved placement proof.
+**Note.** Equal source and local matrices establish the F30 child frame. The event represented by a differing inserted-part source frame remains open.
 
 ### DR-252. Saved scene framing and state selection
 
@@ -1909,6 +1909,66 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 **Conflict.** None.
 
 **Note.** The decoder keeps a native mesh source selection and reports `feature.mesh-import-empty-source-assumed`. Unjoined nonempty body runs report `feature.mesh-import-tessellations-unresolved`. Unreadable source frames report `feature.mesh-import-source-unparsed`. DR-292 tracks the operation GUID bindings.
+
+### DR-473. Geometry states of mesh operation scopes
+
+**Question.** Which tessellation does each output-geometry and input-geometry reference of a mesh operation scope select?
+
+**Known.** Each reference names the Design GUID record of one mesh geometry state. The source group names the mesh bodies of the operation. The decoder keeps the scope with the ordered body record indices as the mesh source and stores both GUID record indices in the source properties.
+
+**Need.** The join from the GUID record of a superseded geometry state to its `.paramesh` container, checked against a controlled operation whose input and output meshes are known.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-operation-source-unresolved`. An unreadable scope or source group reports `feature.mesh-operation-scope-unparsed`. A partially decoded geometry tail reports `feature.mesh-operation-tail-partial` and retains the preceding controls and references.
+
+### DR-474. Mesh operation selector values and fixed fields
+
+**Question.** Which methods do `MeshRepair` method selector `2` and rebuild selectors `1` and `3` name, and what do the fixed zero fields of the `MeshReduce` and `MeshRemesh` scopes and the u32 `1` after the `MeshRemesh` edge-length owner store?
+
+**Known.** Method `0` closes holes, `1` stitches and removes, and `3` rebuilds. Rebuild selector `0` is fast and `2` is accurate. The decoder stores every selector value in the source properties and leaves the neutral field of an unlisted value unset. The decoder stores a fixed field with another value in the source properties.
+
+**Need.** Controlled saves of each repair method and rebuild type, and of remesh and reduce operations with each dialog option changed alone.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-operation-selector-unruled` and `feature.mesh-operation-fields-uninterpreted`. An owner reference without a usable value reports `feature.mesh-operation-parameter-unbound`.
+
+### DR-475. Section curves of a mesh section
+
+**Question.** Which records of the referenced `Sketch` scope store the section curves of a `MeshSection`?
+
+**Known.** The `MeshSection` scope references the `Sketch` scope that receives the section curves. The decoder names the feature of that scope in the neutral `MeshSection`.
+
+**Need.** A mesh section sketch with a known section polyline, with its sketch records compared against a sketch without section curves.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-section-curves-unresolved`. An unavailable section plane reports `feature.mesh-section-plane-unresolved`.
+
+### DR-504. Mesh operation member selection tails
+
+**Question.** Which source member tail fields select face groups or subsets of a mesh body?
+
+**Known.** A source member contains a body reference followed by selection fields. The decoder retains the body reference as an input-local body selection.
+
+**Need.** Controlled saves with whole-body and face-group selections changed independently.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-body-selection-assumed` for the body-selection reading.
+
+### DR-505. Mesh shell construction controls
+
+**Question.** Which mesh shell fields encode the wall direction, offset construction, corner continuation, and intersection settings?
+
+**Known.** The mesh shell scope names its thickness owner and source mesh. These values define the neutral Shell input and thickness.
+
+**Need.** Controlled saves that change each shell construction control independently.
+
+**Conflict.** None.
+
+**Note.** The decoder leaves unresolved construction settings unset and reports `feature.mesh-shell-controls-unresolved`.
 
 ### DR-373. Mesh body and collection-owner payload fields
 
