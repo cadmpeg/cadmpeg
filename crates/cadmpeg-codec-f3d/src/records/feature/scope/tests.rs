@@ -733,3 +733,54 @@ fn work_plane_scope_display_name_wire_validates_bounds_and_kind() {
     let bad_kind = serde_json::to_value(&non_work_plane).unwrap();
     assert!(serde_json::from_value::<DesignParameterScope>(bad_kind).is_err());
 }
+
+#[test]
+fn captured_position_scope_wire_checks_exact_row_extent_and_offsets() {
+    let (_, mut scope, _) = crate::test_support::position::fixture(&[
+        None,
+        Some(cadmpeg_ir::transform::Transform::identity().rows()),
+    ]);
+    scope.captured_positions = Some(
+        serde_json::from_value(serde_json::json!({
+            "rows": [
+                {"target": {"value": 700, "offset": 35}},
+                {"target": {"value": 703, "offset": 48}, "matrix": {
+                    "value": [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0],
+                    "offset": 59
+                }}
+            ], "paths": []
+        }))
+        .unwrap(),
+    );
+    let wire = serde_json::to_value(&scope).unwrap();
+    let decoded = serde_json::from_value::<super::DesignParameterScope>(wire.clone()).unwrap();
+    assert_eq!(decoded, scope);
+    assert_eq!(
+        serde_json::to_value(super::DesignParameterScopeSerde::from(scope)).unwrap(),
+        wire
+    );
+    for field in ["target", "matrix"] {
+        let mut invalid = wire.clone();
+        invalid["captured_positions"]["rows"][1][field]["offset"] = serde_json::json!(1);
+        assert!(
+            serde_json::from_value::<super::DesignParameterScope>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("captured_positions")
+        );
+    }
+    let mut invalid = wire.clone();
+    invalid["captured_positions"]["rows"]
+        .as_array_mut()
+        .unwrap()
+        .pop();
+    assert!(serde_json::from_value::<super::DesignParameterScope>(invalid).is_err());
+    let mut invalid = wire;
+    invalid["captured_positions"] = serde_json::Value::Null;
+    assert!(
+        serde_json::from_value::<super::DesignParameterScope>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains("captured_positions")
+    );
+}

@@ -21,6 +21,7 @@ pub(crate) mod mirror;
 pub(crate) mod occurrence_transfer;
 pub(crate) mod path_features;
 pub(crate) mod patterns;
+pub(crate) mod position;
 pub(crate) mod primitives;
 pub(crate) mod scope;
 pub(crate) mod sheet_metal;

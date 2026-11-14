@@ -86,6 +86,7 @@ impl Serialize for DesignParameterScope {
             };
         }
 
+        emit_opt!("captured_positions", self.captured_positions.as_ref());
         emit_opt!("occurrence_transfer", self.occurrence_transfer.as_ref());
         emit_opt!(
             "occurrence_transfer_intent",

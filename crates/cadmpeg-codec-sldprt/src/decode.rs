@@ -1323,6 +1323,19 @@ pub(crate) fn append_design_losses(
                                 .any(|candidate| candidate.id == *occurrence)
                         })
                 }
+                FeatureOperation::CapturedComponentPositions { positions } => {
+                    positions.iter().any(|position| {
+                        position.occurrence.as_ref().is_none_or(|occurrence| {
+                            !ir.model
+                                .occurrences
+                                .iter()
+                                .any(|candidate| candidate.id == *occurrence)
+                        }) || matches!(
+                            position.transform,
+                            cadmpeg_ir::features::CapturedPositionTransform::Native { .. }
+                        )
+                    })
+                }
                 FeatureOperation::ComponentTransfer {
                     occurrence,
                     component,

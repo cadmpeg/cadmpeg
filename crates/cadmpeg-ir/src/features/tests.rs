@@ -5,6 +5,7 @@ use crate::features::TrimCellSelection;
 use crate::math::{Point3, Vector3};
 
 mod attached_plates;
+mod captured_positions;
 mod distinct_members;
 mod draft_second_side;
 mod revolve;

@@ -183,6 +183,17 @@ pub(crate) fn decode_parameter_scopes(
             scope.id =
                 design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
             let type_info = stream_types.get(&u64::from(scope.record_index)).copied();
+            if type_info
+                .is_some_and(|(guid, _)| guid.eq_ignore_ascii_case(super::position::TYPE_GUID))
+            {
+                scope.captured_positions =
+                    super::position::decode(ctx, bytes, &records, &scope, &stream_types)?;
+                if scope.captured_positions.is_none() {
+                    losses.push(crate::loss::F3dLossCode::PositionEnvelopeUnparsed.note(format!(
+                        "Position scope {} has no admitted version-six captured-position envelope; its native scope is retained.", scope.id
+                    )));
+                }
+            }
             let normal = super::super::patch::surface_patch_normal(bytes, &scope, type_info);
             let selection =
                 super::super::patch::surface_patch_selection(ctx, bytes, &scope, type_info)?;
