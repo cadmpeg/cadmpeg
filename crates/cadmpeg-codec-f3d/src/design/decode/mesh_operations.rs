@@ -9,6 +9,8 @@ use crate::layout::paramesh_operation_member_prefix as member;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+pub(crate) mod convert;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MeshOperationKind {
     Section,

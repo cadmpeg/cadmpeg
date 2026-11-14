@@ -212,6 +212,12 @@ pub(crate) enum F3dLossCode {
     FeatureMeshOperationParameterUnbound,
     FeatureMeshOperationFieldsUninterpreted,
     FeatureMeshSectionCurvesUnresolved,
+    FeatureMeshConversionScopeUnparsed,
+    FeatureMeshConversionTailPartial,
+    FeatureMeshConversionMethodUnresolved,
+    FeatureMeshConversionEnvelopeAssumed,
+    FeatureMeshConversionSourceUnresolved,
+    FeatureMeshConversionOutputUnresolved,
     /// A historical Thread selection has no complete proof of its live faces.
     ThreadLiveFaceUnproven,
     /// A stored-body operation has an empty proven body set.
@@ -880,6 +886,12 @@ impl F3dLossCode {
         Self::FeatureMeshOperationParameterUnbound,
         Self::FeatureMeshOperationFieldsUninterpreted,
         Self::FeatureMeshSectionCurvesUnresolved,
+        Self::FeatureMeshConversionScopeUnparsed,
+        Self::FeatureMeshConversionTailPartial,
+        Self::FeatureMeshConversionMethodUnresolved,
+        Self::FeatureMeshConversionEnvelopeAssumed,
+        Self::FeatureMeshConversionSourceUnresolved,
+        Self::FeatureMeshConversionOutputUnresolved,
         Self::ThreadLiveFaceUnproven,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
@@ -1406,6 +1418,12 @@ impl F3dLossCode {
                 "feature.mesh-operation-fields-uninterpreted"
             }
             Self::FeatureMeshSectionCurvesUnresolved => "feature.mesh-section-curves-unresolved",
+            Self::FeatureMeshConversionScopeUnparsed => "feature.mesh-conversion-scope-unparsed",
+            Self::FeatureMeshConversionTailPartial => "feature.mesh-conversion-tail-partial",
+            Self::FeatureMeshConversionMethodUnresolved => "feature.mesh-conversion-method-unresolved",
+            Self::FeatureMeshConversionEnvelopeAssumed => "feature.mesh-conversion-envelope-assumed",
+            Self::FeatureMeshConversionSourceUnresolved => "feature.mesh-conversion-source-unresolved",
+            Self::FeatureMeshConversionOutputUnresolved => "feature.mesh-conversion-output-unresolved",
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
@@ -1908,6 +1926,12 @@ impl F3dLossCode {
             | Self::FeatureMeshOperationParameterUnbound
             | Self::FeatureMeshOperationFieldsUninterpreted
             | Self::FeatureMeshSectionCurvesUnresolved
+            | Self::FeatureMeshConversionScopeUnparsed
+            | Self::FeatureMeshConversionTailPartial
+            | Self::FeatureMeshConversionMethodUnresolved
+            | Self::FeatureMeshConversionEnvelopeAssumed
+            | Self::FeatureMeshConversionSourceUnresolved
+            | Self::FeatureMeshConversionOutputUnresolved
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
@@ -2280,6 +2304,12 @@ impl F3dLossCode {
             | Self::FeatureMeshOperationParameterUnbound
             | Self::FeatureMeshOperationFieldsUninterpreted
             | Self::FeatureMeshSectionCurvesUnresolved
+            | Self::FeatureMeshConversionScopeUnparsed
+            | Self::FeatureMeshConversionTailPartial
+            | Self::FeatureMeshConversionMethodUnresolved
+            | Self::FeatureMeshConversionEnvelopeAssumed
+            | Self::FeatureMeshConversionSourceUnresolved
+            | Self::FeatureMeshConversionOutputUnresolved
             | Self::ThreadLiveFaceUnproven
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound

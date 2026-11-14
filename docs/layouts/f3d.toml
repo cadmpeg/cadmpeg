@@ -4655,6 +4655,88 @@ source = "spec"
 anchor = "a flag byte at offset 20"
 
 [[record]]
+name = "mesh_convert_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "the u32 conversion control is at offset 25"
+size = 33
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/convert.rs"
+
+[[record.gap]]
+offset = 0
+size = 25
+note = "Flagged mesh scope prefix."
+
+[[record.field]]
+name = "control"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "the u32 conversion control is at offset 25"
+
+[[record.field]]
+name = "input_count"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "the u32 input count is at offset 29"
+
+[[record]]
+name = "mesh_convert_input_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "a marked same-segment reference to a mesh operation group at offset 22"
+size = 33
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/convert.rs"
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "Indexed header."
+
+[[record.field]]
+name = "zero_run_11"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by eleven zero bytes"
+
+[[record.field]]
+name = "group_reference"
+offset = 22
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked same-segment reference to a mesh operation group at offset 22"
+
+[[record]]
+name = "mesh_convert_output_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "a u32-count UTF-16LE body GUID at offset 21"
+size = 25
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/convert.rs"
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "Indexed header."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes"
+
+[[record.field]]
+name = "guid_length"
+offset = 21
+type = "u32"
+value = 36
+source = "spec"
+anchor = "The GUID has 36 code units"
+
+[[record]]
 name = "mesh_operation_geometry_tail"
 kind = "byte"
 section = "3.1"
