@@ -255,9 +255,8 @@ fn group(
     types: &Types<'_>,
     index: u32,
 ) -> Result<Option<DesignRefoldOperation>, CodecError> {
-    let mut view = match View::over_retained(bytes).child(start, end) {
-        Some(view) => view,
-        None => return Ok(None),
+    let Some(mut view) = View::over_retained(bytes).child(start, end) else {
+        return Ok(None);
     };
     let parsed = (|| {
         view.skip(group_layout::ZERO_RUN)?;
