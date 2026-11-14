@@ -3033,14 +3033,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         placement.matrix.as_ref(),
                     ) {
                         (Some(272 | 276), None) => true,
-                        (Some(400), Some(matrix)) => {
+                        (Some(frame @ (400 | 404)), Some(matrix)) => {
                             scope.byte_offset().checked_add(u64_from_index(
-                                crate::layout::component_insert_matrix_scope_400_prefix::TRANSFORM,
-                            )) == Some(matrix.offset)
-                        }
-                        (Some(404), Some(matrix)) => {
-                            scope.byte_offset().checked_add(u64_from_index(
-                                crate::layout::component_insert_matrix_scope_404_prefix::TRANSFORM,
+                                crate::layout::component_insert_matrix_scope_400_prefix::TRANSFORM
+                                    + frame
+                                    - 400,
                             )) == Some(matrix.offset)
                         }
                         _ => false,
