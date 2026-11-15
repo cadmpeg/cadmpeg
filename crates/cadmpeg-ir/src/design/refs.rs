@@ -156,9 +156,11 @@ pub struct StateRef {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_configuration"
     )]
     pub configuration: Option<ConfigurationId>,
     /// What the state's evaluation evaluates.
     pub of: Evaluated,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_configuration, ConfigurationId, "configuration");

@@ -105,6 +105,7 @@ fn an_omitted_optional_field_refuses_null_and_unknown_fields_are_refused() {
     // An internally tagged enum.
     refuses::<Boolean>(r#"{"kind": "apply", "op": {"kind": "cut"}, "targets": null}"#);
     refuses::<Boolean>(r#"{"kind": "apply", "op": {"kind": "cut"}, "extra": 1}"#);
+    refuses::<Boolean>(r#"{"kind": "new_body", "extra": 1}"#);
     // An adjacently tagged enum.
     refuses::<TopoName>(
         r#"{"kind": "root", "value": {"container": "test:design:container#1"}, "extra": 1}"#,
