@@ -6260,7 +6260,12 @@ fn bind_historical_face_operand_candidates<'a>(
             .get(topology, face_recipe::FaceRecipeIndex::new)
             .resolve_loop(operand)
         {
-            operand.resolved_face_slots = vec![face];
+            if !(operand.has_closed_edge_node()
+                && has_extrude_start_group
+                && !changed_faces.contains(&face))
+            {
+                operand.resolved_face_slots = vec![face];
+            }
         }
     }
     Ok(())
