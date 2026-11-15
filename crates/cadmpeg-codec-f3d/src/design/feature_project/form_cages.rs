@@ -1040,7 +1040,7 @@ impl FormFacts {
     ) -> Result<(), CodecError> {
         use crate::bytes::Reference;
         let (inline_type_guid, target) = match reference {
-            Reference::Null => (None, FormNativeReferenceTarget::Null),
+            Reference::Null => (None, FormNativeReferenceTarget::Null {}),
             Reference::Local {
                 target,
                 inline_type_guid,
@@ -1147,9 +1147,9 @@ impl FormFacts {
             run: slot.2,
             inline_type_guid: None,
             target: if unvisited {
-                FormNativeReferenceTarget::Unvisited
+                FormNativeReferenceTarget::Unvisited {}
             } else {
-                FormNativeReferenceTarget::Unreadable
+                FormNativeReferenceTarget::Unreadable {}
             },
             resource: None,
         };

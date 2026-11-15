@@ -141,7 +141,7 @@ fn review1368_tracking_variable_width_and_unreadable_prefixes() {
                 .inputs()
                 .reference_evidence
                 .iter()
-                .filter(|reference| matches!(reference.target, FormNativeReferenceTarget::Null))
+                .filter(|reference| matches!(reference.target, FormNativeReferenceTarget::Null {}))
                 .count(),
             usize::try_from(count - 1).unwrap()
         );
@@ -152,8 +152,8 @@ fn review1368_tracking_variable_width_and_unreadable_prefixes() {
     let meta = form_meta(&[("E079B079-016A-43C2-ACC7-9627B32A8960", 0, &[226])]);
     let result = body_construction(&bytes, &meta, &form_scope(220, vec![226]), &[]);
     for (ordinal, expected) in [
-        (0, FormNativeReferenceTarget::Unreadable),
-        (1, FormNativeReferenceTarget::Unvisited),
+        (0, FormNativeReferenceTarget::Unreadable {}),
+        (1, FormNativeReferenceTarget::Unvisited {}),
     ] {
         assert!(result
             .inputs()
@@ -669,8 +669,8 @@ fn review1368_serializer_primary_identity_is_global_across_routes() {
 fn review1368_serializer_null_and_unreadable_slots_remain_distinct() {
     let meta = form_meta(&[("830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06571", 0, &[299])]);
     for (marker, expected) in [
-        (0, FormNativeReferenceTarget::Null),
-        (2, FormNativeReferenceTarget::Unreadable),
+        (0, FormNativeReferenceTarget::Null {}),
+        (2, FormNativeReferenceTarget::Unreadable {}),
     ] {
         let mut serializer = form_serializer_frame(299, 296, FIRST_CAGE_UUID);
         serializer.truncate(serializer.len() - 11);
@@ -766,17 +766,18 @@ fn review1368_body_first_null_and_unreadable_keep_distinct_slots() {
             .collect::<Vec<_>>();
         assert_eq!(evidence.len(), 4);
         assert_eq!(
-            matches!(evidence[0].target, FormNativeReferenceTarget::Null),
+            matches!(evidence[0].target, FormNativeReferenceTarget::Null {}),
             marker == 0
         );
         assert_eq!(
-            matches!(evidence[0].target, FormNativeReferenceTarget::Unreadable),
+            matches!(evidence[0].target, FormNativeReferenceTarget::Unreadable {}),
             marker == 2
         );
         if marker == 2 {
-            assert!(evidence[1..]
-                .iter()
-                .all(|reference| matches!(reference.target, FormNativeReferenceTarget::Unvisited)));
+            assert!(evidence[1..].iter().all(|reference| matches!(
+                reference.target,
+                FormNativeReferenceTarget::Unvisited {}
+            )));
         } else {
             assert!(evidence[1..].iter().all(|reference| matches!(
                 reference.target,

@@ -223,11 +223,11 @@ pub enum FormReferenceRole {
 #[doc = include_str!("form-api-item.md")]
 pub enum FormNativeReferenceTarget {
     #[doc = include_str!("form-api-item.md")]
-    Null,
+    Null {},
     #[doc = include_str!("form-api-item.md")]
-    Unreadable,
+    Unreadable {},
     #[doc = include_str!("form-api-item.md")]
-    Unvisited,
+    Unvisited {},
     #[doc = include_str!("form-api-item.md")]
     Local {
         #[doc = include_str!("form-api-item.md")]
@@ -594,9 +594,9 @@ impl FormConstruction {
             if (reference.inline_type_guid.is_some()
                 && matches!(
                     &reference.target,
-                    FormNativeReferenceTarget::Null
-                        | FormNativeReferenceTarget::Unreadable
-                        | FormNativeReferenceTarget::Unvisited
+                    FormNativeReferenceTarget::Null {}
+                        | FormNativeReferenceTarget::Unreadable {}
+                        | FormNativeReferenceTarget::Unvisited {}
                 ))
                 || reference
                     .inline_type_guid

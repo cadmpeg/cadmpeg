@@ -614,6 +614,10 @@ fn form_wire_rejects_duplicate_evidence_and_invalid_type_claims() {
         let value = serde_json::json!({"cages":[],"inputs":{"reference_evidence":[{"source":"test:stream:record#1","role":"body","ordinal":0,"target":{"namespace":namespace}}]}});
         let parsed: FormConstruction = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(serde_json::to_value(parsed).unwrap(), value);
+        let mut unexpected = value;
+        unexpected["inputs"]["reference_evidence"][0]["target"]["unexpected"] =
+            serde_json::json!(true);
+        assert!(serde_json::from_value::<FormConstruction>(unexpected).is_err());
     }
 }
 #[test]
