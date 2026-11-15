@@ -1,12 +1,63 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded exchange statement recovery and DATA dependency closure.
 
+use cadmpeg_core::CodecError;
+
 use super::{
     AnchorEntry, BTreeMap, BTreeSet, BoundedExpansions, DecodeContext, ExpansionOmissions,
-    ParseDiagnostic, ParseDiagnosticKind, ParseError, Parser, Range, RawRecord, Value,
+    GiveUpCause, GivenUpStatement, ParseDiagnostic, ParseDiagnosticKind, ParseError, Parser, Range,
+    RawRecord, Value,
 };
 
 impl Parser<'_, '_, '_> {
+    /// Parses one statement as a part. `Ok(Err(cause))` gives the statement
+    /// up: it violates the grammar or exceeded a bound of one part.
+    fn statement_part<T>(
+        &mut self,
+        parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<Result<T, GiveUpCause>, ParseError> {
+        let budget = self.budget;
+        match budget.run_part(|| Ok(parse(self)))? {
+            Ok(Ok(value)) => Ok(Ok(value)),
+            Ok(Err(error @ ParseError::Syntax { .. })) => {
+                Ok(Err(GiveUpCause::Syntax(error.to_string())))
+            }
+            Ok(Err(error)) => Err(error),
+            Err(CodecError::ResourceLimit(limit)) => Ok(Err(GiveUpCause::Resource(limit))),
+            Err(error) => Err(ParseError::Resource(error)),
+        }
+    }
+
+    /// Gives up the statement at `span` and resumes after it.
+    fn give_up_statement(
+        &mut self,
+        kind: &'static str,
+        span: Range<usize>,
+        cause: GiveUpCause,
+        literals: super::LiteralAdmission,
+    ) -> Result<usize, ParseError> {
+        let end = span.end;
+        self.given_up.push(GivenUpStatement {
+            kind,
+            span,
+            cause,
+            dropped: Vec::new(),
+        });
+        self.lexer.set_literal_admission(literals);
+        self.lexer.seek(end);
+        self.last_end = end;
+        self.current = self.lex_next()?;
+        Ok(self.given_up.len() - 1)
+    }
+
+    /// Drops the record at `span` because it needs given-up statement `part`.
+    fn drop_for_part(&mut self, part: usize, span: Range<usize>, omitted: &mut Vec<Range<usize>>) {
+        if let Some(statement) = self.given_up.get_mut(part) {
+            statement.dropped.push(span.start);
+        }
+        omitted.push(span);
+    }
+
     pub(super) fn diagnostic(
         &mut self,
         offset: usize,
@@ -32,40 +83,31 @@ impl Parser<'_, '_, '_> {
 
     pub(super) fn recover_header_record(
         &mut self,
-        omitted: &mut Vec<Range<usize>>,
     ) -> Result<Option<super::HeaderRecord>, ParseError> {
         let start = self.current_offset();
         let diagnostic_start = self.diagnostics.len();
-        let parsed = (|| {
-            let name = self.take_name()?;
-            let parameters = self.parameter_nesting(Self::parameters_inner)?;
-            self.punct(&super::TokenKind::Semicolon)?;
+        let parsed = self.statement_part(|parser| {
+            let name = parser.take_name()?;
+            let parameters = parser.parameter_nesting(Self::parameters_inner)?;
+            parser.punct(&super::TokenKind::Semicolon)?;
             Ok(super::HeaderRecord {
                 name,
                 parameters,
                 offset: start,
-                end: self.previous_end(),
+                end: parser.previous_end(),
             })
-        })();
+        })?;
         match parsed {
             Ok(record) => Ok(Some(record)),
-            Err(error @ (ParseError::Resource(_) | ParseError::Lex(_))) => Err(error),
-            Err(error @ ParseError::Syntax { .. }) => {
+            Err(cause) => {
                 self.diagnostics.truncate(diagnostic_start);
                 let end = statement_end(self.lexer.input(), start, self.lexer.is_draft())?;
-                self.diagnostic(
-                    start,
-                    ParseDiagnosticKind::HeaderMetadataNoncanonical,
-                    format_args!(
-                        "bounded HEADER statement omitted: {error}; exact source retained"
-                    ),
-                );
-                omitted.push(start..end);
-                self.lexer
-                    .set_literal_admission(super::LiteralAdmission::Metadata);
-                self.lexer.seek(end);
-                self.last_end = end;
-                self.current = self.lex_next()?;
+                self.give_up_statement(
+                    "header_record",
+                    start..end,
+                    cause,
+                    super::LiteralAdmission::Metadata,
+                )?;
                 Ok(None)
             }
         }
@@ -84,34 +126,33 @@ impl Parser<'_, '_, '_> {
             _ => None,
         });
         let diagnostic_start = self.diagnostics.len();
-        let (id, record) = match self.record() {
+        let (id, record) = match self.statement_part(Self::record)? {
             Ok(record) => record,
-            Err(error @ ParseError::Resource(_)) => return Err(error),
-            Err(error @ ParseError::Lex(_)) => return Err(error),
-            Err(error @ ParseError::Syntax { .. }) => {
+            Err(cause) => {
                 self.diagnostics.truncate(diagnostic_start);
                 let end = statement_end(self.lexer.input(), start, self.lexer.is_draft())?;
-                self.omit_record(
+                let part = self.give_up_statement(
+                    "data_record",
                     start..end,
-                    omitted,
-                    format_args!("bounded DATA record omitted: {error}; exact source retained"),
-                );
+                    cause,
+                    super::LiteralAdmission::Required,
+                )?;
                 if let Some(id) = source_id {
+                    self.given_up_names.entry(id).or_insert(part);
                     if let Some(previous) = records.remove(&id) {
-                        self.omit_record(previous.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"));
+                        self.drop_for_part(part, previous.span, omitted);
                     }
                     // A readable name in a defective statement cannot give a
                     // later statement permission to select another definition.
                     ambiguous.insert(id);
                 }
-                self.lexer
-                    .set_literal_admission(super::LiteralAdmission::Required);
-                self.lexer.seek(end);
-                self.last_end = end;
-                self.current = self.lex_next()?;
                 return Ok(());
             }
         };
+        if let Some(&part) = self.given_up_names.get(&id) {
+            self.drop_for_part(part, record.span, omitted);
+            return Ok(());
+        }
         if ambiguous.contains(&id) || records.contains_key(&id) {
             if let Some(previous) = records.remove(&id) {
                 self.omit_record(previous.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"));
@@ -175,9 +216,12 @@ impl Parser<'_, '_, '_> {
         external_values: &BTreeSet<u64>,
         omitted: &mut Vec<Range<usize>>,
     ) -> Result<(), ParseError> {
+        // Each pending record carries the given-up statement it needs, if its
+        // only missing references name one.
         let mut pending = Vec::new();
         for (&id, record) in records.iter() {
             let mut missing = None;
+            let mut given_up = None;
             for partial in &record.partials {
                 for value in &partial.parameters {
                     visit_references(value, self.budget, &mut |target, value_instance| {
@@ -186,7 +230,10 @@ impl Parser<'_, '_, '_> {
                                 && !records.contains_key(&target)
                                 && !external.contains(&target))
                         {
-                            missing = Some((target, value_instance));
+                            match self.given_up_names.get(&target) {
+                                Some(&part) if !value_instance => given_up = Some(part),
+                                _ => missing = Some((target, value_instance)),
+                            }
                         }
                         Ok(())
                     })?;
@@ -195,7 +242,9 @@ impl Parser<'_, '_, '_> {
             if let Some((target, value_instance)) = missing {
                 let prefix = if value_instance { '@' } else { '#' };
                 self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{id} omitted: unresolved instance reference {prefix}{target}; exact source retained"));
-                pending.push(id);
+                pending.push((id, None));
+            } else if given_up.is_some() {
+                pending.push((id, given_up));
             }
         }
         if pending.is_empty() {
@@ -219,18 +268,23 @@ impl Parser<'_, '_, '_> {
         }
         let mut queued = pending
             .iter()
-            .copied()
+            .map(|&(id, _)| id)
             .collect::<std::collections::BTreeSet<_>>();
-        while let Some(id) = pending.pop() {
+        while let Some((id, part)) = pending.pop() {
             if let Some(record) = records.remove(&id) {
-                omitted.push(record.span);
+                match part {
+                    Some(part) => self.drop_for_part(part, record.span, omitted),
+                    None => omitted.push(record.span),
+                }
             }
             if let Some(users) = reverse.get(&id) {
                 for &user in users {
                     if queued.insert(user) {
                         if let Some(record) = records.get(&user) {
-                            self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{user} omitted: depends on omitted instance #{id}; exact source retained"));
-                            pending.push(user);
+                            if part.is_none() {
+                                self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{user} omitted: depends on omitted instance #{id}; exact source retained"));
+                            }
+                            pending.push((user, part));
                         }
                     }
                 }

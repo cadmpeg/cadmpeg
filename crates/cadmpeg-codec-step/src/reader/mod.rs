@@ -12,6 +12,7 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::ids::{Identity, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
@@ -337,6 +338,11 @@ fn decode_exchange_mode(
     ctx: &DecodeContext<'_>,
 ) -> Result<AnalyzedExchange, CodecError> {
     let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, mode);
+    let given_up = give_up_statements(input, exchange, ctx)?;
+    session
+        .body
+        .losses
+        .extend(given_up.iter().map(GivenUpPart::loss));
     if ctx.container_only() {
         return Ok(session.into_result(SourceFidelity::default(), BTreeSet::new()));
     }
@@ -350,7 +356,11 @@ fn decode_exchange_mode(
                 | crate::parse::ParseDiagnosticKind::ImplementationLevelUnverified
                 | crate::parse::ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange
         )
-    }) {
+    }) || exchange
+        .given_up()
+        .iter()
+        .any(|statement| statement.kind == "header_record")
+    {
         for record in exchange.header() {
             header_spans.push(record.offset..record.end);
         }
@@ -672,6 +682,10 @@ fn decode_exchange_mode(
             opaque,
             session.ctx,
         )?;
+        for part in given_up {
+            // discarded-value: each part's loss is reported with the parse diagnostics.
+            let _ = part.commit(session.ctx, &mut session.ir, &mut source_fidelity)?;
+        }
     }
     session.source_attributes.insert(
         cadmpeg_core::nonblank_literal!("bytes_structural"),
@@ -713,6 +727,34 @@ fn decode_exchange_mode(
     }
     session.charge_pending_ir_entities("step_admit_ir_entities")?;
     Ok(session.into_result(source_fidelity, opaque_offsets))
+}
+
+/// Gives up each statement the parser could not read as one part that names
+/// the records dropped because they need it.
+fn give_up_statements(
+    input: &[u8],
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<GivenUpPart>, CodecError> {
+    let mut parts = Vec::new();
+    for statement in exchange.given_up() {
+        let bytes = input
+            .get(statement.span.clone())
+            .ok_or_else(|| CodecError::malformed("given-up STEP statement escapes the exchange"))?;
+        let dropped = statement
+            .dropped
+            .iter()
+            .map(|&offset| Identity::from(ids::omitted_record(offset)));
+        let part = Part::at(
+            crate::dialect::FORMAT,
+            statement.kind,
+            u64_from_index(statement.span.start),
+            bytes,
+        )
+        .dropping(dropped);
+        parts.push(ctx.give_up_part(part, statement.cause.clone().into_error())?);
+    }
+    Ok(parts)
 }
 
 /// Copy source bytes that the decoded document keeps as an opaque record.
@@ -1245,7 +1287,10 @@ fn byte_accounting(
 ) -> Result<ByteAccounting, CodecError> {
     let mut classes =
         ctx.alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?;
-    for span in header_spans.iter().chain(exchange.omitted_spans()) {
+    for span in header_spans
+        .iter()
+        .chain(exchange.retained_statement_spans())
+    {
         claim_range(
             &mut classes,
             span,
@@ -1279,9 +1324,10 @@ fn byte_accounting(
     // spans of bounded source literals, including unreadable metadata.
     lexer.set_literal_admission(crate::lex::LiteralAdmission::Metadata);
     let draft = lexer.is_draft();
-    let mut omitted = (0..exchange.omitted_spans().len())
-        .map(|index| Ok(exchange.omitted_spans()[index].clone()))
-        .collect::<Result<Vec<_>, CodecError>>()?;
+    let mut omitted = exchange
+        .retained_statement_spans()
+        .cloned()
+        .collect::<Vec<_>>();
     omitted.sort_unstable_by_key(|left| left.start);
     let mut cursor = 0;
     loop {
