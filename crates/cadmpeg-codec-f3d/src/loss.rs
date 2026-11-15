@@ -444,6 +444,8 @@ pub(crate) enum F3dLossCode {
     ParameterRecordUnparsed,
     /// Decoded parameters set byte 3 of the compact expression trailer.
     ParameterTrailerFlagUninterpreted,
+    /// Decoded parameter owners store a set final flag byte in the compact trailer.
+    ParameterOwnerTrailerFlagUninterpreted,
     /// Decoded compact null-owner parameters have no owner binding.
     ParameterOwnerUnstored,
     /// Design parameter owner bindings have no recognized feature scope.
@@ -530,10 +532,10 @@ pub(crate) enum F3dLossCode {
     FeatureProfileSelectionNative,
     /// Multiple Sketch-profile operands retain an unresolved group composition.
     FeatureExtrudeProfileGroupNative,
-    FeatureExtrudeSurfaceProfileAssumed,
-    FeatureExtrudeSymmetricDistanceAssumed,
     /// An Extrude profile names a Sketch entity that the Design stream does not register.
     FeatureExtrudeProfileSketchAbsent,
+    FeatureExtrudeSurfaceProfileAssumed,
+    FeatureExtrudeSymmetricDistanceAssumed,
     FeatureExtrudeWallThicknessNative,
     FeatureExtrudeAuxiliarySelectionNative,
     FeatureExtrudeFaceControlAssumed,
@@ -1228,6 +1230,7 @@ impl F3dLossCode {
         Self::ParameterUnprojected,
         Self::ParameterRecordUnparsed,
         Self::ParameterTrailerFlagUninterpreted,
+        Self::ParameterOwnerTrailerFlagUninterpreted,
         Self::ParameterOwnerUnstored,
         Self::ParameterOwnerUnrecognized,
         Self::ParameterOwnerUnparsed,
@@ -1269,10 +1272,10 @@ impl F3dLossCode {
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
         Self::FeatureExtrudeProfileGroupNative,
+        Self::FeatureExtrudeProfileSketchAbsent,
         Self::FeatureExtrudeSurfaceProfileAssumed,
         Self::FeatureExtrudeSymmetricDistanceAssumed,
         Self::FeatureExtrudeWallThicknessNative,
-        Self::FeatureExtrudeProfileSketchAbsent,
         Self::FeatureExtrudeAuxiliarySelectionNative,
         Self::FeatureExtrudeFaceControlAssumed,
         Self::FeatureExtrudeSketchPlacementNative,
@@ -1910,6 +1913,9 @@ impl F3dLossCode {
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
             Self::ParameterTrailerFlagUninterpreted => "parameter.trailer-flag-uninterpreted",
+            Self::ParameterOwnerTrailerFlagUninterpreted => {
+                "parameter.owner-trailer-flag-uninterpreted"
+            }
             Self::ParameterOwnerUnstored => "parameter.owner-unstored",
             Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
             Self::ParameterOwnerUnparsed => "parameter.owner-unparsed",
@@ -1953,13 +1959,13 @@ impl F3dLossCode {
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureSketchProfileFlagsAssumed => "feature.sketch-profile-flags-assumed",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
+            Self::FeatureExtrudeProfileSketchAbsent => "feature.extrude-profile-sketch-absent",
             Self::FeatureExtrudeSurfaceProfileAssumed => "feature.extrude-surface-profile-assumed",
             Self::FeatureExtrudeSymmetricDistanceAssumed => {
                 "feature.extrude-symmetric-distance-assumed"
             }
             Self::FeatureExtrudeWallThicknessNative => "feature.extrude-wall-thickness-native",
             Self::FeatureExtrudeAuxiliarySelectionNative => {
-            Self::FeatureExtrudeProfileSketchAbsent => "feature.extrude-profile-sketch-absent",
                 "feature.extrude-auxiliary-selection-native"
             }
             Self::FeatureExtrudeFaceControlAssumed => "feature.extrude-face-control-assumed",
@@ -2612,6 +2618,7 @@ impl F3dLossCode {
             | Self::ParameterRecordUnparsed
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterTrailerFlagUninterpreted
+            | Self::ParameterOwnerTrailerFlagUninterpreted
             | Self::ParameterOwnerUnstored
             | Self::ParameterUnitUntyped
             | Self::MaterialDistanceUnitUntyped
@@ -2650,6 +2657,7 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeProfileSketchAbsent
             | Self::FeatureExtrudeSurfaceProfileAssumed
             | Self::FeatureExtrudeSymmetricDistanceAssumed
             | Self::FeatureExtrudeWallThicknessNative
@@ -2657,7 +2665,6 @@ impl F3dLossCode {
             | Self::FeatureExtrudeFaceControlAssumed
             | Self::FeatureExtrudeSketchPlacementNative
             | Self::FeatureExtrudeTargetOptionAssumed
-            | Self::FeatureExtrudeProfileSketchAbsent
             | Self::FeatureExtrudeStartFaceAbsentAssumed
             | Self::FeatureExtrudeZeroSideTaperIgnored
             | Self::FeatureExtrudeProfileFaceOrderAssumed
@@ -3134,6 +3141,7 @@ impl F3dLossCode {
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterTrailerFlagUninterpreted
+            | Self::ParameterOwnerTrailerFlagUninterpreted
             | Self::ParameterOwnerUnstored
             | Self::ParameterUnitUntyped
             | Self::ParameterExpressionUnbound
@@ -3169,6 +3177,7 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeProfileSketchAbsent
             | Self::FeatureExtrudeSurfaceProfileAssumed
             | Self::FeatureExtrudeSymmetricDistanceAssumed
             | Self::FeatureExtrudeWallThicknessNative
@@ -3177,7 +3186,6 @@ impl F3dLossCode {
             | Self::FeatureExtrudeSketchPlacementNative
             | Self::FeatureExtrudeTargetOptionAssumed
             | Self::FeatureExtrudeStartFaceAbsentAssumed
-            | Self::FeatureExtrudeProfileSketchAbsent
             | Self::FeatureExtrudeZeroSideTaperIgnored
             | Self::FeatureExtrudeProfileFaceOrderAssumed
             | Self::FeatureExtrudeProfileFaceSearchCapped
@@ -3763,6 +3771,7 @@ mod tests {
                 "parameter.unprojected",
                 "parameter.record-unparsed",
                 "parameter.trailer-flag-uninterpreted",
+                "parameter.owner-trailer-flag-uninterpreted",
                 "parameter.owner-unstored",
                 "parameter.owner-unrecognized",
                 "parameter.owner-unparsed",
@@ -3804,6 +3813,7 @@ mod tests {
                 "dimension.unprojected",
                 "feature.profile-selection-native",
                 "feature.extrude-profile-group-native",
+                "feature.extrude-profile-sketch-absent",
                 "feature.extrude-surface-profile-assumed",
                 "feature.extrude-symmetric-distance-assumed",
                 "feature.extrude-wall-thickness-native",
@@ -3813,7 +3823,6 @@ mod tests {
                 "feature.extrude-target-option-assumed",
                 "feature.extrude-start-face-absent-assumed",
                 "feature.extrude-zero-side-taper-ignored",
-                "feature.extrude-profile-sketch-absent",
                 "feature.extrude-profile-face-order-assumed",
                 "feature.extrude-profile-face-search-capped",
                 "feature.extrude-profile-cap-faces-inferred",
