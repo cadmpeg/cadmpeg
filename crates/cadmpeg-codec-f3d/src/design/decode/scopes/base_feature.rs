@@ -1461,19 +1461,19 @@ pub(super) fn exact_base_feature_construction(
                 (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
                 ("420", "258") | ("452", "266")
             );
-        let unclassed_count = if class_expanded || class_compact || legacy_444_263 {
-            None
-        } else {
-            unclassed_result_body_count(
-                bytes,
-                start
-                    + result_body::LEN
-                    + body_count
-                        .checked_mul(2)?
-                        .checked_mul(result_body_entry::LEN)?,
-                body_count,
-            )
-        };
+        let count_field = start
+            + result_body::LEN
+            + body_count
+                .checked_mul(2)?
+                .checked_mul(result_body_entry::LEN)?;
+        let flagged_null_reference =
+            ordinary && marked_null_reference_flag(bytes, count_field) == Some(true);
+        let unclassed_count =
+            if class_expanded || class_compact || legacy_444_263 || flagged_null_reference {
+                None
+            } else {
+                unclassed_result_body_count(bytes, count_field, body_count)
+            };
         let expanded = class_expanded || unclassed_count == Some(UnclassedResultBodyCount::Passive);
         let compact =
             class_compact || unclassed_count == Some(UnclassedResultBodyCount::BodySuffix);
@@ -1561,10 +1561,18 @@ pub(super) fn exact_base_feature_construction(
             }
             cursor += null_count::LEN;
         }
-        let first_repeat = View::u32_le_at(bytes, cursor + compact_entry::BODY_ENTITY_SUFFIX)?;
+        let repeated_value = |ordinal: usize| {
+            View::u32_le_at(
+                bytes,
+                cursor + ordinal * compact_entry::LEN + compact_entry::BODY_ENTITY_SUFFIX,
+            )
+        };
         let repeats_body_suffixes = ordinary_metadata_width.is_some()
-            && first_repeat != references.first()?.value
-            && u64::from(first_repeat) == entities.first()?.value;
+            && !(0..body_count)
+                .all(|ordinal| repeated_value(ordinal) == Some(references[ordinal].value))
+            && (0..body_count).all(|ordinal| {
+                repeated_value(ordinal).map(u64::from) == Some(entities[ordinal].value)
+            });
         let mut repeated_reference_fields = Vec::new();
         for ordinal in 0..body_count {
             let expected = if compact || repeats_body_suffixes {

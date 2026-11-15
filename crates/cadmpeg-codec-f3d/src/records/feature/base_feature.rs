@@ -100,8 +100,8 @@ pub(crate) enum DesignBaseFeatureConstruction {
         metadata_record_offset: u64,
         /// Variant-width source field following the metadata record.
         metadata_field: NativeBytes<Vec<u8>>,
-        /// Byte offset of the first trailing-field byte of the marked null
-        /// reference when that byte is `1`.
+        /// Byte offset of the flag byte of the marked null reference when the
+        /// flag is `1`.
         null_reference_flag_offset: Option<u64>,
         /// The ordinary repeated run holds the body suffixes in place of the
         /// passive references.
@@ -651,8 +651,8 @@ enum DesignBaseFeatureConstructionWire {
         result_record_offsets: Vec<u64>,
         /// Six-byte source fields parallel to `result_records`.
         result_fields: Vec<NativeBytes<[u8; 6]>>,
-        /// Byte offset of the first trailing-field byte of the marked null
-        /// reference when that byte is `1`.
+        /// Byte offset of the flag byte of the marked null reference when the
+        /// flag is `1`.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",

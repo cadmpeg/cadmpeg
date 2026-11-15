@@ -815,29 +815,49 @@ fn null_reference_flag(bytes: &[u8], scope: &DesignParameterScope) -> (bool, Opt
         })
 }
 
-/// One-body ordinary form: entity and passive-reference runs, the marked null
-/// reference at offset 54, the repeated run of `repeated` at offset 69, the
-/// metadata record with a six-byte field, and the result run; the kind starts
-/// at `169 + 52`.
-fn ordinary_one_body_frame_repeating(repeated: u32) -> (Vec<u8>, DesignParameterScope) {
-    let kind_offset = 169 + 52;
+/// Ordinary form with one body per entry of `entities`: the entity and
+/// passive-reference runs, the marked null reference with `flag`, the
+/// repeated run of `repeated`, the metadata record with a six-byte field, and
+/// the result run; the kind starts at `169 + 52N`.
+fn ordinary_frame(
+    entities: &[u32],
+    passives: &[u32],
+    repeated: &[u32],
+    flag: u8,
+) -> (Vec<u8>, DesignParameterScope) {
+    let count = entities.len();
+    let count_u32 = u32::try_from(count).expect("fixture count fits u32");
+    let kind_offset = 169 + 52 * count;
     let frame_length = kind_offset + 110;
     let mut bytes = vec![0u8; frame_length];
     bytes[19] = 1;
-    bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
-    bytes[24] = 1;
-    bytes[25..33].copy_from_slice(&209u64.to_le_bytes());
-    bytes[39] = 1;
-    bytes[40..48].copy_from_slice(&215u64.to_le_bytes());
-    bytes[54] = 1;
-    bytes[65..69].copy_from_slice(&1u32.to_le_bytes());
-    bytes[69] = 1;
-    bytes[70..74].copy_from_slice(&repeated.to_le_bytes());
-    bytes[81] = 1;
-    bytes[82..90].copy_from_slice(&206u64.to_le_bytes());
-    bytes[96..100].copy_from_slice(&1u32.to_le_bytes());
-    bytes[100] = 1;
-    bytes[101..105].copy_from_slice(&220u32.to_le_bytes());
+    bytes[20..24].copy_from_slice(&(2 * count_u32).to_le_bytes());
+    let mut cursor = 24;
+    for value in entities.iter().chain(passives) {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 9].copy_from_slice(&u64::from(*value).to_le_bytes());
+        cursor += 15;
+    }
+    bytes[cursor] = 1;
+    bytes[cursor + 9] = flag;
+    bytes[cursor + 11..cursor + 15].copy_from_slice(&count_u32.to_le_bytes());
+    cursor += 15;
+    for value in repeated {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 5].copy_from_slice(&value.to_le_bytes());
+        cursor += 11;
+    }
+    cursor += 1;
+    bytes[cursor] = 1;
+    bytes[cursor + 1..cursor + 9].copy_from_slice(&206u64.to_le_bytes());
+    cursor += 15;
+    bytes[cursor..cursor + 4].copy_from_slice(&count_u32.to_le_bytes());
+    cursor += 4;
+    for ordinal in 0..count_u32 {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 5].copy_from_slice(&(220 + ordinal).to_le_bytes());
+        cursor += 11;
+    }
     bytes[kind_offset - 102..kind_offset - 98].copy_from_slice(&36u32.to_le_bytes());
     let mut scope = DesignParameterScope::empty(
         "f3d:scope#base-feature-ordinary",
@@ -861,30 +881,46 @@ fn ordinary_one_body_frame_repeating(repeated: u32) -> (Vec<u8>, DesignParameter
     (bytes, scope)
 }
 
-fn ordinary_one_body_frame() -> (Vec<u8>, DesignParameterScope) {
-    ordinary_one_body_frame_repeating(215)
+/// The repeat source of a decoded ordinary frame.
+fn repeats_body_suffixes(bytes: &[u8], scope: &DesignParameterScope) -> Option<bool> {
+    exact_base_feature_construction(bytes, scope)
+        .unwrap()
+        .map(|construction| match construction {
+            DesignBaseFeatureConstruction::ResultBodies {
+                repeats_body_suffixes,
+                ..
+            } => repeats_body_suffixes,
+            _ => panic!("ordinary frame reads result bodies"),
+        })
 }
 
 #[test]
 fn an_ordinary_frame_repeats_its_passive_references_or_its_body_suffixes() {
-    for (repeated, expected) in [(215, Some(false)), (209, Some(true)), (300, None)] {
-        let (bytes, scope) = ordinary_one_body_frame_repeating(repeated);
-        let repeats = exact_base_feature_construction(&bytes, &scope)
-            .unwrap()
-            .map(|construction| match construction {
-                DesignBaseFeatureConstruction::ResultBodies {
-                    repeats_body_suffixes,
-                    ..
-                } => repeats_body_suffixes,
-                _ => panic!("ordinary frame reads result bodies"),
-            });
-        assert_eq!(repeats, expected, "repeated {repeated}");
+    for (repeated, expected) in [
+        (&[215, 216][..], Some(false)),
+        (&[209, 210][..], Some(true)),
+        (&[215, 210][..], None),
+        (&[300, 301][..], None),
+    ] {
+        let (bytes, scope) = ordinary_frame(&[209, 210], &[215, 216], repeated, 0);
+        assert_eq!(
+            repeats_body_suffixes(&bytes, &scope),
+            expected,
+            "repeated {repeated:?}"
+        );
     }
 }
 
 #[test]
+fn an_ordinary_frame_whose_first_suffix_equals_its_first_passive_reference_repeats_the_run_that_matches(
+) {
+    let (bytes, scope) = ordinary_frame(&[215, 300], &[215, 216], &[215, 300], 1);
+    assert_eq!(repeats_body_suffixes(&bytes, &scope), Some(true));
+}
+
+#[test]
 fn an_ordinary_frame_reads_the_flag_of_its_marked_null_reference() {
-    let (bytes, scope) = ordinary_one_body_frame();
+    let (bytes, scope) = ordinary_frame(&[209], &[215], &[209], 0);
     assert_eq!(null_reference_flag(&bytes, &scope), (true, None));
     for (offset, value, expected) in [
         (63, 1, (true, Some(63))),
@@ -903,6 +939,7 @@ fn an_ordinary_frame_reads_the_flag_of_its_marked_null_reference() {
             let Some(DesignBaseFeatureConstruction::ResultBodies {
                 bodies,
                 metadata_record,
+                repeats_body_suffixes,
                 ..
             }) = exact_base_feature_construction(&flagged, &scope).unwrap()
             else {
@@ -913,9 +950,25 @@ fn an_ordinary_frame_reads_the_flag_of_its_marked_null_reference() {
                 (body.entity.value, body.reference.value, body.result.value),
                 (209, 215, 220)
             );
-            assert_eq!(metadata_record, 206);
+            assert_eq!((metadata_record, repeats_body_suffixes), (206, true));
         }
     }
+}
+
+#[test]
+fn a_flagged_ordinary_frame_of_65536_bodies_keeps_the_ordinary_reading() {
+    let entities = (0..65_536u32)
+        .map(|value| 1_000_000 + value)
+        .collect::<Vec<_>>();
+    let passives = (0..65_536u32)
+        .map(|value| 2_000_000 + value)
+        .collect::<Vec<_>>();
+    let (bytes, scope) = ordinary_frame(&entities, &passives, &passives, 1);
+    let construction = exact_base_feature_construction(&bytes, &scope)
+        .unwrap()
+        .expect("flagged ordinary frame decodes");
+    assert_eq!(construction.body_entity_suffixes().len(), 65_536);
+    assert!(construction.null_reference_flag_offset().is_some());
 }
 
 #[test]
