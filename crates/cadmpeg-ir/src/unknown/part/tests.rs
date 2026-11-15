@@ -26,6 +26,7 @@ fn a_failed_part_leaves_one_linked_stub_its_bytes_and_one_error_loss() {
         DecodeContext::from_root_bytes(SOURCE, &arena, &DecodePolicy::default()).expect("root");
     let extent = root.child(4, 18).expect("part extent");
     let part = Part::new("synthetic", "record", extent)
+        .named("Body/7")
         .in_stream(crate::stream_name!("Body.bin"))
         .contained_in(identity("synthetic:native:body#7"))
         .dropping([
@@ -55,7 +56,7 @@ fn a_failed_part_leaves_one_linked_stub_its_bytes_and_one_error_loss() {
     assert_eq!(
         loss.message,
         format!(
-            "part record stream=\"Body.bin\" offset=4 length=14 record={id}: malformed container: \
+            "part record \"Body/7\" stream=\"Body.bin\" offset=4 length=14 record={id}: malformed container: \
              record length runs past its stream; dropped=[synthetic:model:edge#1, synthetic:model:face#2]"
         )
     );

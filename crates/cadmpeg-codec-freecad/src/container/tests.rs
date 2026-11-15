@@ -12,45 +12,6 @@ use cadmpeg_ir::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
-#[test]
-fn unreadable_entry_payload_uses_checked_hex() {
-    let data: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
-    let record = super::UnreadableEntry {
-        id: "fcstd:native:unreadable_entry#Payload.bin".into(),
-        name: "Payload.bin".into(),
-        data_start: 0,
-        data_end: u64::try_from(data.len()).unwrap(),
-        stored_data: data.clone().into(),
-        error: "unsupported compression".into(),
-    };
-    crate::test_support::with_service_context(&[], |ctx| {
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-        namespace
-            .set_arena(ctx, "unreadable_entries", &[record])
-            .unwrap();
-        let wire = namespace
-            .arena_as::<serde_json::Value>("unreadable_entries")
-            .unwrap();
-        assert_eq!(
-            wire[0]["stored_data"].as_str().unwrap().len(),
-            data.len() * 2
-        );
-        let typed = namespace
-            .arena_as::<super::UnreadableEntry>("unreadable_entries")
-            .unwrap();
-        assert_eq!(typed[0].stored_data, data);
-        for payload in [
-            serde_json::json!("a"),
-            serde_json::json!("gg"),
-            serde_json::json!([0]),
-        ] {
-            let mut invalid = wire[0].clone();
-            invalid["stored_data"] = payload;
-            assert!(serde_json::from_value::<super::UnreadableEntry>(invalid).is_err());
-        }
-    });
-}
-
 fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_>) -> T) -> T {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let bytes = archive(document);
@@ -183,24 +144,22 @@ fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusa
     let policy = DecodePolicy::service();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
     let scan = super::scan(&ctx, root).expect("one unreadable member does not refuse the archive");
-    let [loss] = scan.losses.as_slice() else {
-        panic!("one loss: {:?}", scan.losses);
+    assert!(scan.losses.is_empty(), "{:?}", scan.losses);
+    let [given_up] = scan.given_up.as_slice() else {
+        panic!("one given-up entry");
     };
-    let unreadable = crate::loss::FreecadLossCode::ArchiveEntryUnreadable
-        .note(String::new())
-        .code;
-    assert_eq!(loss.code, unreadable);
+    let loss = given_up.loss();
+    assert_eq!(loss.code.to_string(), "decode/record.unreadable");
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
     assert!(
         loss.message
-            .starts_with("thumbnails/Thumbnail.png cannot be opened")
-            && loss.message.contains("per-expansion allowance"),
+            .starts_with("part archive-entry \"thumbnails/Thumbnail.png\" stream=\"\" offset=")
+            && loss.message.contains("per-expansion allowance")
+            && loss.message.ends_with("; dropped=[]"),
         "{}",
         loss.message
     );
-    let [entry] = scan.unreadable_entries.as_slice() else {
-        panic!("one unreadable entry");
-    };
-    assert_eq!(entry.name, "thumbnails/Thumbnail.png");
+    assert!(scan.unreadable_names.contains("thumbnails/Thumbnail.png"));
     assert!(scan.data.contains_key("Document.xml"));
     assert_eq!(ctx.resource_refusal(), None);
     assert!(ctx.finish_session().is_ok());
@@ -208,11 +167,36 @@ fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusa
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("the decode keeps the document");
-    assert!(decoded
+    let losses: Vec<_> = decoded
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == unreadable));
+        .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+        .collect();
+    assert_eq!(losses.len(), 1);
+    let (ir, _, fidelity) = decoded.into_parts();
+    let stub = ir
+        .native_unknowns("fcstd")
+        .expect("native unknowns")
+        .into_iter()
+        .find(|stub| stub.id == *given_up.id())
+        .expect("the given-up entry has a stub");
+    assert_eq!(
+        stub.links
+            .iter()
+            .map(cadmpeg_ir::ids::Identity::as_str)
+            .collect::<Vec<_>>(),
+        ["fcstd:native:document#0"]
+    );
+    let retained = fidelity
+        .retained_record(given_up.id().as_str())
+        .expect("the entry's stored bytes are retained");
+    let stored = &bytes[usize::try_from(retained.offset()).expect("offset")..]
+        [..usize::try_from(retained.byte_len()).expect("length")];
+    assert_eq!(retained.data(), Some(stored));
+    assert!(stored
+        .windows(4)
+        .any(|window| window == [0x28, 0xb5, 0x2f, 0xfd]));
 }
 
 #[test]

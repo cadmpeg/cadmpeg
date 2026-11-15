@@ -108,9 +108,6 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let extensions =
         arena!(namespace.arena_as_for_decode::<native::ExtensionRecord>(ctx, "extensions"));
     let entries = arena!(namespace.arena_as_for_decode::<native::EntryRecord>(ctx, "entries"));
-    let unreadable = arena!(
-        namespace.arena_as_for_decode::<container::UnreadableEntry>(ctx, "unreadable_entries")
-    );
     let physical =
         arena!(namespace.arena_as_for_decode::<native::ArchiveSpan>(ctx, "physical_ledger"));
     let logical =
@@ -149,49 +146,6 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         arena!(namespace.arena_as_for_decode::<native::DesignCensusRecord>(ctx, "design_census"));
 
     let mut findings = Vec::new();
-    let mut payload_spans = HashSet::new();
-    let mut decoded_names = HashSet::new();
-    if !unreadable.is_empty() {
-        for span in &physical {
-            let (name, range) = match &span.role {
-                native::ArchiveSpanRole::CompressedPayload(name)
-                | native::ArchiveSpanRole::EntryArchivePadding(name) => {
-                    (name, (span.span.start(), span.span.end()))
-                }
-                native::ArchiveSpanRole::LocalName(name)
-                | native::ArchiveSpanRole::LocalExtra(name) => {
-                    (name, (span.span.end(), span.span.end()))
-                }
-                _ => continue,
-            };
-
-            payload_spans.insert((name.as_str(), range));
-        }
-        for entry in &entries {
-            decoded_names.insert(entry.name());
-        }
-    }
-    let mut unreadable_names = HashSet::new();
-    for entry in &unreadable {
-        let unique = unreadable_names.insert(entry.name.as_str());
-        if !native::is_safe_entry_name(&entry.name)
-            || entry.id.strip_prefix("fcstd:native:unreadable_entry#") != Some(entry.name.as_str())
-            || entry.error.trim().is_empty()
-            || entry.data_end.checked_sub(entry.data_start)
-                != Some(cadmpeg_core::decode::u64_from_index(
-                    entry.stored_data.len(),
-                ))
-            || !payload_spans.contains(&(entry.name.as_str(), (entry.data_start, entry.data_end)))
-            || decoded_names.contains(entry.name.as_str())
-            || !unique
-        {
-            findings.push(finding(
-                Check::PayloadIntegrity,
-                "invalid source-only FCStd entry",
-                None,
-            ));
-        }
-    }
     if carrier_census != brep::carrier_census(ctx, &shape_payloads)? {
         findings.push(finding(
             Check::PayloadIntegrity,
@@ -984,12 +938,13 @@ impl CodecBackend for FcstdCodec {
                 ctx,
             )?;
         }
+        for given_up in std::mem::take(&mut scan.given_up) {
+            let loss = given_up.commit(ctx, &mut ir, &mut source_fidelity)?;
+            scan.losses.push(loss);
+        }
         let namespace = ir.native.namespace_mut("fcstd");
         namespace.set_arena(ctx, "document", std::slice::from_ref(&scan.document))?;
         namespace.set_arena(ctx, "physical_ledger", &scan.ledger)?;
-        if !scan.unreadable_entries.is_empty() {
-            namespace.set_arena(ctx, "unreadable_entries", &scan.unreadable_entries)?;
-        }
         let decode_document = !ctx.container_only();
         if decode_document {
             let document_xml = &scan.document_xml;

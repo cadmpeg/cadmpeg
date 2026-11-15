@@ -37,6 +37,7 @@ pub fn record_unreadable_kind() -> LossKind {
 pub struct Part<'a> {
     codec: &'static str,
     kind: &'static str,
+    name: Option<String>,
     stream: Option<StreamName>,
     extent: View<'a>,
     containing: Option<Identity>,
@@ -51,11 +52,20 @@ impl<'a> Part<'a> {
         Self {
             codec,
             kind,
+            name: None,
             stream: None,
             extent,
             containing: None,
             dropped: Vec::new(),
         }
+    }
+
+    /// Gives the name the source stores for the part, such as an archive
+    /// entry's path, for the loss to report.
+    #[must_use]
+    pub fn named(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 
     /// Places the part in a named stream. `extent`'s offsets are offsets in
@@ -252,8 +262,13 @@ impl DecodeParts for DecodeContext<'_> {
         dropped.sort_unstable();
         dropped.dedup();
         let stream = part.stream.as_ref().map_or("", StreamName::as_str);
+        let name = part
+            .name
+            .as_ref()
+            .map(|name| format!(" {name:?}"))
+            .unwrap_or_default();
         let message = format!(
-            "part {} stream={stream:?} offset={} length={length} record={id}: {error}; dropped=[{}]",
+            "part {}{name} stream={stream:?} offset={} length={length} record={id}: {error}; dropped=[{}]",
             part.kind,
             part.offset(),
             dropped.join(", ")

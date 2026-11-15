@@ -11,7 +11,8 @@ use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::native::bytes::NativeBytes;
+use cadmpeg_ir::ids::Identity;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::brep::ShapePayloadRecord;
@@ -84,23 +85,12 @@ pub(crate) struct Scan<'a> {
     pub(crate) document_xml: roxmltree::Document<'a>,
     /// Exact physical archive partition.
     pub(crate) ledger: Vec<ArchiveSpan>,
-    /// Bounded physical payloads that could not be opened.
-    pub(crate) unreadable_entries: Vec<UnreadableEntry>,
+    /// Archive entries that could not be opened, given up as parts.
+    pub(crate) given_up: Vec<GivenUpPart>,
+    /// Names of the given-up archive entries.
+    pub(crate) unreadable_names: BTreeSet<String>,
     /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
     pub(crate) data: BTreeMap<String, View<'a>>,
-}
-
-/// A source-only ZIP payload. Its bytes are stored bytes, never expanded data.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct UnreadableEntry {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    pub(crate) data_start: u64,
-    pub(crate) data_end: u64,
-    #[serde(deserialize_with = "crate::native::deserialize_lowercase_native_bytes")]
-    pub(crate) stored_data: NativeBytes,
-    pub(crate) error: String,
 }
 
 /// Scan an archive through the session resource budget.
@@ -124,7 +114,8 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
     let document_xml = admit_document(ctx, document_bytes)?;
     let (document, schema_version) = parse_document(&document_xml, &mut losses)?;
     let mut data = BTreeMap::new();
-    let mut unreadable_entries = Vec::new();
+    let mut given_up = Vec::new();
+    let mut unreadable_names = BTreeSet::new();
     for file in archive.entries() {
         let name = file.name.clone();
         if !crate::native::is_safe_entry_name(&name) {
@@ -135,38 +126,22 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         let view = if file.name == "Document.xml" {
             document_view
         } else {
-            match archive.open(ctx, &file.name) {
+            match ctx.run_part(|| archive.open(ctx, &file.name))? {
                 Ok(view) => view,
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     let range = file.stored_range()?;
-                    let end = range.end;
-                    let start_index = usize::try_from(range.start)
-                        .map_err(|_| CodecError::malformed("ZIP data offset exceeds memory"))?;
-                    let end_index = usize::try_from(end)
-                        .map_err(|_| CodecError::malformed("ZIP data offset exceeds memory"))?;
-                    let bytes = root
-                        .window()
-                        .get(start_index..end_index)
+                    let stored = usize::try_from(range.start)
+                        .ok()
+                        .zip(usize::try_from(range.end).ok())
+                        .and_then(|(start, end)| root.child(start, end))
                         .ok_or_else(|| CodecError::malformed("ZIP payload escapes archive"))?;
-                    losses.push(crate::loss::FreecadLossCode::ArchiveEntryUnreadable.note(
-                        format!(
-                            "{} cannot be opened: {error}; stored payload retained",
-                            file.name
-                        ),
-                    ));
-                    ctx.retain_bytes(
-                        cadmpeg_core::decode::u64_from_index(bytes.len()),
-                        "FCStd unreadable stored payload",
-                    )?;
-                    unreadable_entries.push(UnreadableEntry {
-                        id: format!("fcstd:native:unreadable_entry#{name}"),
-                        name,
-                        data_start: range.start,
-                        data_end: end,
-                        stored_data: bytes.to_vec().into(),
-                        error: format!("{error}"),
-                    });
+                    let document = Identity::new(crate::native::native_id("document", "0"))
+                        .map_err(CodecError::malformed)?;
+                    let part = Part::new("fcstd", "archive-entry", stored)
+                        .named(name.as_str())
+                        .contained_in(document);
+                    given_up.push(ctx.give_up_part(part, error)?);
+                    unreadable_names.insert(name);
                     continue;
                 }
             }
@@ -189,7 +164,8 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         document,
         schema_version,
         document_xml,
-        unreadable_entries,
+        given_up,
+        unreadable_names,
         ledger,
         data,
     })
@@ -201,10 +177,6 @@ pub(crate) fn entry_records(
     properties: &[PropertyRecord],
 ) -> Result<Vec<EntryRecord>, CodecError> {
     let mut records = Vec::new();
-    let mut unreadable_names = HashSet::new();
-    for entry in &scan.unreadable_entries {
-        unreadable_names.insert(entry.name.as_str());
-    }
     let references = {
         let mut references = HashMap::<&str, Vec<usize>>::new();
         for (index, property) in properties.iter().enumerate() {
@@ -220,7 +192,7 @@ pub(crate) fn entry_records(
     }?;
     for entry in &scan.entries {
         let Some(bytes) = scan.data.get(&entry.name).map(|view| view.window()) else {
-            if unreadable_names.contains(entry.name.as_str()) {
+            if scan.unreadable_names.contains(&entry.name) {
                 // Stored source-only bytes have no expanded-byte coverage.
                 continue;
             }

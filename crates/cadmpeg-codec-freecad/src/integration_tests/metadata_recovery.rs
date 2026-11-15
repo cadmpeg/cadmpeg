@@ -73,35 +73,18 @@ fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
     assert_eq!(decoded.ir().model, baseline.ir().model);
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     crate::test_support::test_archive::assert_valid_document(decoded.ir());
-    let namespace = decoded.ir().native.namespace("fcstd").unwrap();
-    let unreadable = namespace
-        .arena_as::<crate::container::UnreadableEntry>("unreadable_entries")
-        .unwrap();
-    assert_eq!(unreadable.len(), 1);
-    let physical = namespace
+    let physical = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
         .arena_as::<crate::native::ArchiveSpan>("physical_ledger")
         .unwrap();
-    assert!(physical.last().unwrap().span.end() < unreadable[0].data_end);
-    let start = usize::try_from(unreadable[0].data_start).unwrap();
-    let end = usize::try_from(unreadable[0].data_end).unwrap();
-    assert_eq!(unreadable[0].stored_data, &changed[start..end]);
-
-    let mut shifted = unreadable;
-    shifted[0].data_start += 1;
-    shifted[0].data_end += 1;
-    let mut invalid = decoded.ir().clone();
-    invalid
-        .native
-        .namespace_mut("fcstd")
-        .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
-            "unreadable_entries",
-            &shifted,
-        )
-        .unwrap();
-    assert!(crate::test_support::validate_native(&invalid)
-        .iter()
-        .any(|finding| finding.message == "invalid source-only FCStd entry"));
+    let [(_, retained)] = given_up_entries(decoded).try_into().unwrap();
+    let start = usize::try_from(retained.offset()).unwrap();
+    let end = usize::try_from(retained.end_offset()).unwrap();
+    assert!(physical.last().unwrap().span.end() < retained.end_offset());
+    assert_eq!(retained.data(), Some(&changed[start..end]));
 }
 
 #[test]
@@ -131,25 +114,32 @@ fn unreadable_optional_payload_retains_stored_bytes_and_checked_geometry() {
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
         .expect("neutral validation")
         .is_ok());
-    let namespace = decoded
+    let admitted = decoded
         .ir()
         .native
         .namespace("fcstd")
-        .expect("native graph");
-    let raw = namespace
-        .arena_as::<crate::container::UnreadableEntry>("unreadable_entries")
-        .expect("source-only payload");
-    assert_eq!(raw.len(), 1);
-    assert_eq!(raw[0].name, "Thumbnail.png");
-    assert!(!raw[0].stored_data.is_empty());
-    let admitted = namespace
+        .expect("native graph")
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("admitted entries");
     assert!(!admitted.iter().any(|entry| entry.name() == "Thumbnail.png"));
+    let losses: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+        .map(|loss| loss.message.clone())
+        .collect();
+    let [(stub, retained)] = given_up_entries(decoded).try_into().unwrap();
+    let [message] = losses.as_slice() else {
+        panic!("one record.unreadable loss: {losses:?}");
+    };
+    assert!(message.starts_with("part archive-entry \"Thumbnail.png\""));
+    assert!(message.contains(&format!("record={}", stub.id)));
+    assert!(!retained.data().expect("inline bytes").is_empty());
 }
 
 #[test]
-fn empty_unreadable_payload_still_requires_its_physical_source_entry() {
+fn an_empty_unreadable_payload_is_given_up_with_no_bytes() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let mut bytes = archive_entries(&[
         ("Document.xml", document.as_bytes()),
@@ -168,29 +158,31 @@ fn empty_unreadable_payload_still_requires_its_physical_source_entry() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
-    let mut source = result
-        .ir()
-        .native
-        .namespace("fcstd")
+    let [(stub, retained)] = given_up_entries(result).try_into().unwrap();
+    assert_eq!(stub.links[0].as_str(), "fcstd:native:document#0");
+    assert_eq!(retained.data(), Some([].as_slice()));
+}
+
+/// The stub and retained bytes of each archive entry the decode gave up.
+fn given_up_entries(
+    result: cadmpeg_ir::DecodeResult,
+) -> Vec<(
+    cadmpeg_ir::NativeUnknownRecord,
+    cadmpeg_ir::source_fidelity::RetainedSourceRecord,
+)> {
+    let (ir, _, fidelity) = result.into_parts();
+    ir.native_unknowns("fcstd")
         .unwrap()
-        .arena_as::<crate::container::UnreadableEntry>("unreadable_entries")
-        .unwrap();
-    assert!(source[0].stored_data.is_empty());
-    source[0].name = "Absent.png".into();
-    source[0].id = "fcstd:native:unreadable_entry#Absent.png".into();
-    let mut changed = result.ir().clone();
-    changed
-        .native
-        .namespace_mut("fcstd")
-        .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
-            "unreadable_entries",
-            &source,
-        )
-        .unwrap();
-    assert!(crate::test_support::validate_native(&changed)
-        .iter()
-        .any(|finding| finding.message == "invalid source-only FCStd entry"));
+        .into_iter()
+        .filter(|stub| stub.id.as_str().starts_with("fcstd:source:part#"))
+        .map(|stub| {
+            let retained = fidelity
+                .retained_record(stub.id.as_str())
+                .expect("the given-up entry's bytes are retained")
+                .clone();
+            (stub, retained)
+        })
+        .collect()
 }
 
 #[test]
