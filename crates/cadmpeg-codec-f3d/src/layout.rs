@@ -3216,6 +3216,28 @@ pub(crate) mod base_feature_result_body_entry {
     pub(crate) const REFERENCE_FIELD: usize = 9;
 }
 
+/// Byte offsets for the `base_feature_null_reference_count` record.
+///
+/// Spec §3.1. Record length 15 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the two parallel 15-byte body-entry runs of the ordinary form.
+/// ```
+pub(crate) mod base_feature_null_reference_count {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 15;
+    /// Offset of `null_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE_MARKER: usize = 0;
+    /// Offset of `null_reference` (`bytes[8]`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE: usize = 1;
+    /// Offset of `null_reference_flag` (`u8`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE_FLAG: usize = 9;
+    /// Offset of `null_reference_zero` (`u8`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE_ZERO: usize = 10;
+    /// Offset of `body_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_COUNT: usize = 11;
+}
+
 /// Byte offsets for the `base_feature_compact_result_body_count` record.
 ///
 /// Spec §3.1. Record length 11 B.
@@ -10073,4 +10095,18 @@ pub(crate) mod sheet_metal_contour_vector_owner {
 pub(crate) mod sheet_metal_contour_compact_carrier {
     /// Offset of `carrier_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const CARRIER_REFERENCE: usize = 5;
+}
+
+/// Byte offsets for the `mesh_plane_cut_scope_prefix` record.
+///
+/// Spec §3.1. Record length 162 B.
+///
+/// ```text
+/// Flag-00 prefix. Flag 01 inserts a four-byte word before the cut selector. Reference slots follow this prefix.
+/// ```
+pub(crate) mod mesh_plane_cut_scope_prefix {
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 29;
+    /// Offset of `fill_selector` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FILL_SELECTOR: usize = 157;
 }

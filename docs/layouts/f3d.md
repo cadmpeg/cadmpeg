@@ -3721,6 +3721,20 @@ This layout repeats for each body entity suffix and each passive body-reference 
 | 1 | 8 | `reference_value` | `u64` | little | spec | marked u64 Design body entity suffixes |
 | 9 | 6 | `reference_field` | `bytes[6]` | little | spec | every value has a six-byte trailing field |
 
+## `base_feature_null_reference_count`
+
+Spec §3.1 · layout: byte offsets · size: 15 B
+
+Offsets are relative to the byte after the two parallel 15-byte body-entry runs of the ordinary form.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `null_reference_marker` | `u8` | little | spec | The marked null reference is `u8 1`, a zero u64 |
+| 1 | 8 | `null_reference` | `bytes[8]` | little | spec | The marked null reference is `u8 1`, a zero u64 |
+| 9 | 1 | `null_reference_flag` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
+| 10 | 1 | `null_reference_zero` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
+| 11 | 4 | `body_count` | `u32` | little | spec | The ordinary form then stores a marked null reference, u32 `N` |
+
 ## `base_feature_compact_result_body_count`
 
 Spec §3.1 · layout: byte offsets · size: 11 B
@@ -11610,6 +11624,27 @@ Parsed by:
 | 4 | 1 | `zero` | `u8` | little | spec | Immediately before the carrier reference |
 | 5 | 51 | `carrier_reference` | `bytes[51]` | little | spec | Immediately before the carrier reference |
 | 56 | 8 | `thickness` | `f64` | little | spec | Immediately before the carrier reference |
+
+## `mesh_plane_cut_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 162 B
+
+Flag-00 prefix. Flag 01 inserts a four-byte word before the cut selector. Reference slots follow this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/plane_cut.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 4 | `cut_selector` | `u32` | little | spec | The u32 cut selector is followed |
+| 25 | 4 | `matrix_count` | `u32` | little | spec | u32 matrix count of `16` |
+| 29 | 128 | `matrix` | `f64[16]` | little | spec | sixteen f64 matrix components in serialized order |
+| 157 | 4 | `fill_selector` | `u32` | little | spec | a u32 fill selector |
+| 161 | 1 | `control_byte` | `u8` | little | spec | and a control byte |
+
+Unstated regions:
+
+- `0..21` (21 B): Indexed header and mesh scope prefix.
 
 ## Not tabulated
 

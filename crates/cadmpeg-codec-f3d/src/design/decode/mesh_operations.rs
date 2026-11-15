@@ -13,6 +13,7 @@ pub(crate) const MESH_GROUP_GUID: &str = "22975A91-16AD-4CC9-A5E4-B4F8B4C27881";
 
 pub(crate) mod combine;
 pub(crate) mod convert;
+pub(crate) mod plane_cut;
 pub(crate) mod separate;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
