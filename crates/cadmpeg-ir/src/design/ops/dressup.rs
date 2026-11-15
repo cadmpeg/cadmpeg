@@ -1865,18 +1865,15 @@ pub struct DecalPlacement {
 fn deserialize_centers<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<BTreeSet<CenterSource>>, D::Error> {
-    cadmpeg_core::absent_key::named_present::<D, CenterSet>(deserializer, "centers")
-        .map(|centers| centers.map(|CenterSet(set)| set))
+    deserialize_center_set(deserializer).map(|centers| centers.map(|CenterSet(set)| set))
 }
 
 /// A set of center sources, read as a §2.5 set.
-struct CenterSet(BTreeSet<CenterSource>);
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct CenterSet(#[serde(with = "wire::set")] BTreeSet<CenterSource>);
 
-impl<'de> Deserialize<'de> for CenterSet {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        wire::set::deserialize(deserializer).map(Self)
-    }
-}
+cadmpeg_core::named_optional_field!(deserialize_center_set, CenterSet, "centers");
 
 cadmpeg_core::named_optional_field!(deserialize_against, SetSelection, "against");
 cadmpeg_core::named_optional_field!(deserialize_angle, Dimension<InteriorAngle>, "angle");

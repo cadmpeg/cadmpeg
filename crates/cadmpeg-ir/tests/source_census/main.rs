@@ -774,14 +774,26 @@ fn every_read_optional_field_refuses_a_null_spelling() {
 /// `deserialize_source_id` as a required key and another as an optional one.
 /// A name declared twice in one file carries both macros, which is what refuses
 /// a shim only some of whose definitions guard.
-fn shim_definitions() -> BTreeMap<(String, String), BTreeSet<String>> {
+///
+/// The second map holds each function [`forwarded_shim`] reads as a forward
+/// to another helper of its file, keyed the same way, with that helper's name.
+fn shim_definitions() -> (BTreeMap<Site, BTreeSet<String>>, BTreeMap<Site, String>) {
     fn walk(
         items: &[syn::Item],
         relative: &str,
-        found: &mut BTreeMap<(String, String), BTreeSet<String>>,
+        found: &mut BTreeMap<Site, BTreeSet<String>>,
+        forwarders: &mut BTreeMap<Site, String>,
     ) {
         for item in items {
             match item {
+                syn::Item::Fn(function) => {
+                    if let Some(callee) = forwarded_shim(function) {
+                        forwarders.insert(
+                            (relative.to_owned(), function.sig.ident.to_string()),
+                            callee,
+                        );
+                    }
+                }
                 syn::Item::Macro(invocation) => {
                     let Some(macro_name) = invocation.mac.path.segments.last() else {
                         continue;
@@ -800,7 +812,7 @@ fn shim_definitions() -> BTreeMap<(String, String), BTreeSet<String>> {
                 }
                 syn::Item::Mod(module) => {
                     if let Some((_, nested)) = &module.content {
-                        walk(nested, relative, found);
+                        walk(nested, relative, found, forwarders);
                     }
                 }
                 _ => {}
@@ -814,6 +826,7 @@ fn shim_definitions() -> BTreeMap<(String, String), BTreeSet<String>> {
         .expect("the repository root sits two levels above the crate manifest")
         .to_path_buf();
     let mut found = BTreeMap::new();
+    let mut forwarders = BTreeMap::new();
     for source in [
         "crates/cadmpeg-ir/src",
         "crates/cadmpeg-core/src",
@@ -836,10 +849,49 @@ fn shim_definitions() -> BTreeMap<(String, String), BTreeSet<String>> {
             let parsed = syn::parse_file(&text)
                 .map_err(|error| format!("{relative} does not parse: {error}"))
                 .expect("every source file in the wire crates parses");
-            walk(&parsed.items, &relative, &mut found);
+            walk(&parsed.items, &relative, &mut found, &mut forwarders);
         }
     }
-    found
+    (found, forwarders)
+}
+
+/// The helper `function` forwards to, when its body is one call of a helper
+/// named without a path on its one parameter, followed by nothing but `.map`
+/// calls.
+///
+/// Such a function refuses whatever its callee refuses: the callee returns a
+/// `Result`, and `Result::map` rewrites only `Ok`, so an error the callee
+/// raises for `null` is the function's own error.
+fn forwarded_shim(function: &syn::ItemFn) -> Option<String> {
+    let mut parameters = function.sig.inputs.iter();
+    let (Some(syn::FnArg::Typed(parameter)), None) = (parameters.next(), parameters.next()) else {
+        return None;
+    };
+    let syn::Pat::Ident(parameter) = parameter.pat.as_ref() else {
+        return None;
+    };
+    let [syn::Stmt::Expr(body, None)] = function.block.stmts.as_slice() else {
+        return None;
+    };
+    let mut expression = body;
+    while let syn::Expr::MethodCall(call) = expression {
+        if call.method != "map" || call.args.len() != 1 {
+            return None;
+        }
+        expression = &call.receiver;
+    }
+    let syn::Expr::Call(call) = expression else {
+        return None;
+    };
+    let syn::Expr::Path(callee) = call.func.as_ref() else {
+        return None;
+    };
+    let callee = callee.path.get_ident()?;
+    let mut arguments = call.args.iter();
+    let (Some(syn::Expr::Path(argument)), None) = (arguments.next(), arguments.next()) else {
+        return None;
+    };
+    (argument.path.get_ident()? == &parameter.ident).then(|| callee.to_string())
 }
 
 /// One key's spelling of `None` on the writing declaration.
@@ -1299,7 +1351,10 @@ fn derive_list_names_deserialize(attribute: &syn::Attribute) -> bool {
 /// is private to `cadmpeg_core::absent_key`. Every shim that macro defines
 /// refuses `null` and names its own key in the refusal. A name another macro
 /// also defines is left out, so a shim only some of whose definitions guard is
-/// no proof.
+/// no proof. A function that [`forwarded_shim`] reads as a forward to such a
+/// shim of its own file refuses `null` too; it is how a field whose type is not
+/// the shim's own reads through one, such as a set read with its refusal of a
+/// repeated member.
 ///
 /// Anything else on a field that skips on `None` is an offender, because a
 /// `deserialize_with` that does not state the refusal gives `None` a second
@@ -1307,11 +1362,20 @@ fn derive_list_names_deserialize(attribute: &syn::Attribute) -> bool {
 fn null_refusing_helpers() -> &'static BTreeSet<(String, String)> {
     static HELPERS: OnceLock<BTreeSet<(String, String)>> = OnceLock::new();
     HELPERS.get_or_init(|| {
-        shim_definitions()
-            .into_iter()
+        let (macros, forwarders) = shim_definitions();
+        let shims: BTreeSet<Site> = macros
+            .iter()
             .filter(|(_, macros)| macros.len() == 1 && macros.contains("named_optional_field"))
+            .map(|(site, _)| site.clone())
+            .collect();
+        let forwarding: Vec<Site> = forwarders
+            .into_iter()
+            .filter(|(site, callee)| {
+                !macros.contains_key(site) && shims.contains(&(site.0.clone(), callee.clone()))
+            })
             .map(|(site, _)| site)
-            .collect()
+            .collect();
+        shims.into_iter().chain(forwarding).collect()
     })
 }
 
@@ -1792,8 +1856,8 @@ fn collect_rust_sources(directory: &Path, found: &mut Vec<PathBuf>) -> Result<()
 #[cfg(test)]
 mod scanner_tests {
     use super::{
-        collect_hand_impls, collect_rust_sources, deserialize_impl_target, is_test_module,
-        macro_body_impl_targets, reader_routes,
+        collect_hand_impls, collect_rust_sources, deserialize_impl_target, forwarded_shim,
+        is_test_module, macro_body_impl_targets, reader_routes,
     };
 
     #[test]
@@ -1916,5 +1980,33 @@ mod scanner_tests {
         let cause = std::fs::read_dir(&missing).expect_err("the source root is absent");
         assert_eq!(cause.kind(), std::io::ErrorKind::NotFound);
         assert!(error.contains(&cause.to_string()), "{error}");
+    }
+
+    #[test]
+    fn a_forward_is_one_call_on_the_parameter_and_only_maps() {
+        let forward = |source: &str| {
+            forwarded_shim(&syn::parse_str(source).expect("parse forwarding function"))
+        };
+        assert_eq!(
+            forward("fn f<'de, D: Deserializer<'de>>(d: D) -> R { shim(d) }"),
+            Some("shim".into())
+        );
+        assert_eq!(
+            forward("fn f(d: D) -> R { shim(d).map(|x| x.map(|S(set)| set)).map(|x| x) }"),
+            Some("shim".into())
+        );
+        for refused in [
+            "fn f(d: D) -> R { shim(d).or_else(|_| Ok(None)) }",
+            "fn f(d: D) -> R { shim(d).map_err(|e| e) }",
+            "fn f(d: D) -> R { Ok(shim(d).unwrap_or(None)) }",
+            "fn f(d: D) -> R { inner::shim(d) }",
+            "fn f(d: D) -> R { shim(d, 1) }",
+            "fn f(d: D) -> R { shim(other) }",
+            "fn f(d: D, e: E) -> R { shim(d) }",
+            "fn f(d: D) -> R { let x = 1; shim(d) }",
+            "fn f(d: D) -> R { shim(d); }",
+        ] {
+            assert_eq!(forward(refused), None, "{refused}");
+        }
     }
 }
