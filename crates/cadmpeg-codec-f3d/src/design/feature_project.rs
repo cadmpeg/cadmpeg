@@ -48,6 +48,7 @@ use std::hash::Hash;
 pub(crate) mod form_cages;
 mod mesh_face_groups;
 mod mirror;
+mod move_owners;
 mod paste_copy;
 mod path_pattern;
 mod pattern_seeds;
@@ -1062,7 +1063,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Move) => {
-                    project_move(scope, construction_groups, &mut projection_losses)
+                    project_move(scope, construction_groups, owners, &mut projection_losses)
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Shell) => {
@@ -4771,6 +4772,7 @@ fn project_align(
 fn project_move(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
+    owners: &[DesignParameterOwner],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::BodySelection;
@@ -4778,6 +4780,11 @@ fn project_move(
     let operation = scope.move_operation()?;
     let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
     let definition = move_body(operation, BodySelection::Native(group.id.clone()))?;
+    let parameters = move_owners::move_parameter_owners(scope, operation, owners);
+    let classified = parameters
+        .as_ref()
+        .filter(|(_, agrees)| *agrees)
+        .map_or(&[][..], |(indices, _)| indices.as_slice());
     let auxiliary = scope
         .reference_members()
         .values()
@@ -4786,11 +4793,18 @@ fn project_move(
             *index != group.record_index
                 && *index != operation.transform_record_index
                 && !group.members().iter().any(|member| member.value == *index)
+                && !classified.contains(index)
         })
         .collect::<Vec<_>>();
     if !auxiliary.is_empty() {
+        let disagreement = match &parameters {
+            Some((indices, false)) => {
+                format!("; its parameter owners {indices:?} disagree with the stored matrix")
+            }
+            _ => String::new(),
+        };
         losses.push(crate::loss::F3dLossCode::FeatureMoveScopeReferencesAssumed.note(format!(
-            "Move scope {} applies its stored matrix to body group {}; auxiliary scope references {auxiliary:?} are assumed to leave that motion unchanged (DR-126).",
+            "Move scope {} applies its stored matrix to body group {}; auxiliary scope references {auxiliary:?} are assumed to leave that motion unchanged{disagreement} (DR-126).",
             scope.id, group.record_index
         )));
     }
@@ -7755,12 +7769,12 @@ fn project_rectangular_pattern_scalars(
         },
         |distribution| !distribution.total_extent.value,
     );
-    if distribution.is_some_and(|distribution| distribution.symmetric.value) {
+    let symmetric = distribution.is_some_and(|distribution| distribution.symmetric.value);
+    if symmetric {
         // The extent of a symmetric direction has no settled measurement.
         if !adjacent || construction.u_extent() == 0.0 {
             return None;
         }
-        dropped.push("the symmetric distribution of direction one".to_owned());
     }
     for (axis, (count, extent)) in [
         (construction.u_count(), construction.u_extent()),
@@ -7867,6 +7881,7 @@ fn project_rectangular_pattern_scalars(
                 direction: cadmpeg_ir::features::FeatureDirection3::from(*second_direction),
                 spacing: *second_spacing,
                 count: *second_count,
+                symmetric: false,
             }),
         ),
         _ => return None,
@@ -7877,6 +7892,7 @@ fn project_rectangular_pattern_scalars(
         count,
         second,
         omitted_instances: Vec::new(),
+        symmetric,
     })
     .ok()?;
     if !dropped.is_empty() {

@@ -3100,7 +3100,11 @@ pub enum FeatureOperation {
         /// Finite right-handed coordinate frame.
         frame: FeatureCoordinateFrame,
     },
-    /// Rectangular solid primitive.
+    /// Rectangular solid primitive. The solid is the set of points of the
+    /// placement origin plus `a`, `b`, and `c` times the first, second, and
+    /// third dimension along the local x, y, and z axes, for `a`, `b`, and `c`
+    /// in the closed unit interval. The placement origin is the box corner,
+    /// not its centre.
     Block {
         /// Ordered local x, y, and z dimensions, when resolved.
         #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]

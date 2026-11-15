@@ -740,7 +740,7 @@ pub(crate) enum F3dLossCode {
     FeatureExtrudeTerminationMissing,
     /// A marker-one `Revolve` scope has a token-independent frame length outside its documented set.
     FeatureRevolveLayoutAssumed,
-    /// A marked `Move` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record.
+    /// A marked `Move` or `Modify` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record, or a `MoveFace` transform record breaks a frame-length or form-word rule.
     FeatureMoveTransformAssumed,
     /// A form-2 rigid-transform record stores four references whose effect on its stored motion is unresolved.
     FeatureMoveTransformReferencesAssumed,
@@ -793,7 +793,7 @@ pub(crate) enum F3dLossCode {
     FeaturePathPatternStartUnresolved,
     FeaturePathPatternSettingsUnresolved,
     FeaturePathPatternPlacementNotTransferred,
-    /// A rectangular pattern's symmetric distribution or coincident direction has no linear pattern field.
+    /// A rectangular pattern's coincident direction has no linear pattern field.
     FeatureRectangularPatternPlacementNotTransferred,
     /// A `Thicken` scope stores a prologue flag byte `1` whose Thicken setting is unresolved.
     FeatureThickenFlagsAssumed,

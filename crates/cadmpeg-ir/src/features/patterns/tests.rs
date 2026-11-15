@@ -131,6 +131,7 @@ fn linear<C>(count: u32) -> PatternTransform<C> {
         count,
         second: None,
         omitted_instances: Vec::new(),
+        symmetric: false,
     }
 }
 
@@ -156,8 +157,10 @@ fn pattern_admission_rejects_invalid_numeric_operands() {
                 direction: axis,
                 spacing: PositiveLength::new(1.0).unwrap(),
                 count: 0,
+                symmetric: false,
             }),
             omitted_instances: Vec::new(),
+            symmetric: false,
         },
         PatternTransform::Circular {
             axis_origin: origin,
@@ -386,8 +389,10 @@ fn composite_pattern_counts_use_primary_instance_counts() {
             direction: direction(0.0, 1.0, 0.0),
             spacing: PositiveLength::new(1.0).unwrap(),
             count: 3,
+            symmetric: false,
         }),
         omitted_instances: Vec::new(),
+        symmetric: false,
     };
     let scale = PatternTransform::Scale {
         center: PatternScaleCenter::FirstSeedCentroid,
