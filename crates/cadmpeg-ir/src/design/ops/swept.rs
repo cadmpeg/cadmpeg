@@ -24,81 +24,6 @@ use crate::scalar::{
     PositiveReal,
 };
 
-cadmpeg_core::named_optional_field!(deserialize_against<T>, T, "against");
-cadmpeg_core::named_optional_field!(deserialize_along<T>, T, "along");
-cadmpeg_core::named_optional_field!(deserialize_angle<T>, T, "angle");
-cadmpeg_core::named_optional_field!(deserialize_apex<T>, T, "apex");
-cadmpeg_core::named_optional_field!(deserialize_axis<T>, T, "axis");
-cadmpeg_core::named_optional_field!(deserialize_boolean<T>, T, "boolean");
-cadmpeg_core::named_optional_field!(deserialize_closed<T>, T, "closed");
-cadmpeg_core::named_optional_field!(deserialize_condition<T>, T, "condition");
-cadmpeg_core::named_optional_field!(deserialize_correspondence<T>, T, "correspondence");
-cadmpeg_core::named_optional_field!(deserialize_curvilinear<T>, T, "curvilinear");
-cadmpeg_core::named_optional_field!(deserialize_deviation<T>, T, "deviation");
-cadmpeg_core::named_optional_field!(deserialize_direction<T>, T, "direction");
-cadmpeg_core::named_optional_field!(deserialize_draft<T>, T, "draft");
-cadmpeg_core::named_optional_field!(deserialize_end<T>, T, "end");
-cadmpeg_core::named_optional_field!(deserialize_extend_profile<T>, T, "extend_profile");
-cadmpeg_core::named_optional_field!(deserialize_extent<T>, T, "extent");
-cadmpeg_core::named_optional_field!(deserialize_fit<T>, T, "fit");
-cadmpeg_core::named_optional_field!(deserialize_flip<T>, T, "flip");
-cadmpeg_core::named_optional_field!(deserialize_flipped<T>, T, "flipped");
-cadmpeg_core::named_optional_field!(deserialize_growth<T>, T, "growth");
-cadmpeg_core::named_optional_field!(deserialize_hand<T>, T, "hand");
-cadmpeg_core::named_optional_field!(deserialize_holes<T>, T, "holes");
-cadmpeg_core::named_optional_field!(deserialize_influence<T>, T, "influence");
-cadmpeg_core::named_optional_field!(deserialize_inner<T>, T, "inner");
-cadmpeg_core::named_optional_field!(deserialize_inner_diameter<T>, T, "inner_diameter");
-cadmpeg_core::named_optional_field!(deserialize_inner_join<T>, T, "inner_join");
-cadmpeg_core::named_optional_field!(deserialize_latitudes<T>, T, "latitudes");
-cadmpeg_core::named_optional_field!(deserialize_law<T>, T, "law");
-cadmpeg_core::named_optional_field!(
-    deserialize_lengths_along_normal<T>,
-    T,
-    "lengths_along_normal"
-);
-cadmpeg_core::named_optional_field!(deserialize_longitude<T>, T, "longitude");
-cadmpeg_core::named_optional_field!(deserialize_loops<T>, T, "loops");
-cadmpeg_core::named_optional_field!(deserialize_max_degree<T>, T, "max_degree");
-cadmpeg_core::named_optional_field!(deserialize_merge_tangent_faces<T>, T, "merge_tangent_faces");
-cadmpeg_core::named_optional_field!(deserialize_mode<T>, T, "mode");
-cadmpeg_core::named_optional_field!(deserialize_neutral<T>, T, "neutral");
-cadmpeg_core::named_optional_field!(deserialize_offset<T>, T, "offset");
-cadmpeg_core::named_optional_field!(deserialize_orientation<T>, T, "orientation");
-cadmpeg_core::named_optional_field!(deserialize_origin<T>, T, "origin");
-cadmpeg_core::named_optional_field!(deserialize_outer<T>, T, "outer");
-cadmpeg_core::named_optional_field!(deserialize_outer_join<T>, T, "outer_join");
-cadmpeg_core::named_optional_field!(deserialize_outside<T>, T, "outside");
-cadmpeg_core::named_optional_field!(deserialize_placement<T>, T, "placement");
-cadmpeg_core::named_optional_field!(deserialize_rebuild<T>, T, "rebuild");
-cadmpeg_core::named_optional_field!(deserialize_relimit<T>, T, "relimit");
-cadmpeg_core::named_optional_field!(deserialize_reversed<T>, T, "reversed");
-cadmpeg_core::named_optional_field!(deserialize_root_fillet<T>, T, "root_fillet");
-cadmpeg_core::named_optional_field!(deserialize_ruled<T>, T, "ruled");
-cadmpeg_core::named_optional_field!(deserialize_scaling<T>, T, "scaling");
-cadmpeg_core::named_optional_field!(deserialize_seam<T>, T, "seam");
-cadmpeg_core::named_optional_field!(deserialize_section_law<T>, T, "section_law");
-cadmpeg_core::named_optional_field!(deserialize_sections<T>, T, "sections");
-cadmpeg_core::named_optional_field!(deserialize_sheet_cut<T>, T, "sheet_cut");
-cadmpeg_core::named_optional_field!(deserialize_smoothing<T>, T, "smoothing");
-cadmpeg_core::named_optional_field!(deserialize_span<T>, T, "span");
-cadmpeg_core::named_optional_field!(deserialize_spine<T>, T, "spine");
-cadmpeg_core::named_optional_field!(deserialize_spine_point<T>, T, "spine_point");
-cadmpeg_core::named_optional_field!(deserialize_start<T>, T, "start");
-cadmpeg_core::named_optional_field!(deserialize_style<T>, T, "style");
-cadmpeg_core::named_optional_field!(deserialize_swap_axes<T>, T, "swap_axes");
-cadmpeg_core::named_optional_field!(deserialize_tangency<T>, T, "tangency");
-cadmpeg_core::named_optional_field!(deserialize_tangent<T>, T, "tangent");
-cadmpeg_core::named_optional_field!(deserialize_taper<T>, T, "taper");
-cadmpeg_core::named_optional_field!(deserialize_thickness<T>, T, "thickness");
-cadmpeg_core::named_optional_field!(deserialize_thickness_at<T>, T, "thickness_at");
-cadmpeg_core::named_optional_field!(deserialize_tolerance<T>, T, "tolerance");
-cadmpeg_core::named_optional_field!(deserialize_transition<T>, T, "transition");
-cadmpeg_core::named_optional_field!(deserialize_trim_support<T>, T, "trim_support");
-cadmpeg_core::named_optional_field!(deserialize_turn<T>, T, "turn");
-cadmpeg_core::named_optional_field!(deserialize_twist<T>, T, "twist");
-cadmpeg_core::named_optional_field!(deserialize_weight<T>, T, "weight");
-
 /// An extrude: a profile swept along a direction over a span measured from
 /// an origin.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1848,6 +1773,81 @@ pub enum SheetCutNormal {
     /// A cut through the thickness in the flat state.
     Both,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_against<T>, T, "against");
+cadmpeg_core::named_optional_field!(deserialize_along<T>, T, "along");
+cadmpeg_core::named_optional_field!(deserialize_angle<T>, T, "angle");
+cadmpeg_core::named_optional_field!(deserialize_apex<T>, T, "apex");
+cadmpeg_core::named_optional_field!(deserialize_axis<T>, T, "axis");
+cadmpeg_core::named_optional_field!(deserialize_boolean<T>, T, "boolean");
+cadmpeg_core::named_optional_field!(deserialize_closed<T>, T, "closed");
+cadmpeg_core::named_optional_field!(deserialize_condition<T>, T, "condition");
+cadmpeg_core::named_optional_field!(deserialize_correspondence<T>, T, "correspondence");
+cadmpeg_core::named_optional_field!(deserialize_curvilinear<T>, T, "curvilinear");
+cadmpeg_core::named_optional_field!(deserialize_deviation<T>, T, "deviation");
+cadmpeg_core::named_optional_field!(deserialize_direction<T>, T, "direction");
+cadmpeg_core::named_optional_field!(deserialize_draft<T>, T, "draft");
+cadmpeg_core::named_optional_field!(deserialize_end<T>, T, "end");
+cadmpeg_core::named_optional_field!(deserialize_extend_profile<T>, T, "extend_profile");
+cadmpeg_core::named_optional_field!(deserialize_extent<T>, T, "extent");
+cadmpeg_core::named_optional_field!(deserialize_fit<T>, T, "fit");
+cadmpeg_core::named_optional_field!(deserialize_flip<T>, T, "flip");
+cadmpeg_core::named_optional_field!(deserialize_flipped<T>, T, "flipped");
+cadmpeg_core::named_optional_field!(deserialize_growth<T>, T, "growth");
+cadmpeg_core::named_optional_field!(deserialize_hand<T>, T, "hand");
+cadmpeg_core::named_optional_field!(deserialize_holes<T>, T, "holes");
+cadmpeg_core::named_optional_field!(deserialize_influence<T>, T, "influence");
+cadmpeg_core::named_optional_field!(deserialize_inner<T>, T, "inner");
+cadmpeg_core::named_optional_field!(deserialize_inner_diameter<T>, T, "inner_diameter");
+cadmpeg_core::named_optional_field!(deserialize_inner_join<T>, T, "inner_join");
+cadmpeg_core::named_optional_field!(deserialize_latitudes<T>, T, "latitudes");
+cadmpeg_core::named_optional_field!(deserialize_law<T>, T, "law");
+cadmpeg_core::named_optional_field!(
+    deserialize_lengths_along_normal<T>,
+    T,
+    "lengths_along_normal"
+);
+cadmpeg_core::named_optional_field!(deserialize_longitude<T>, T, "longitude");
+cadmpeg_core::named_optional_field!(deserialize_loops<T>, T, "loops");
+cadmpeg_core::named_optional_field!(deserialize_max_degree<T>, T, "max_degree");
+cadmpeg_core::named_optional_field!(deserialize_merge_tangent_faces<T>, T, "merge_tangent_faces");
+cadmpeg_core::named_optional_field!(deserialize_mode<T>, T, "mode");
+cadmpeg_core::named_optional_field!(deserialize_neutral<T>, T, "neutral");
+cadmpeg_core::named_optional_field!(deserialize_offset<T>, T, "offset");
+cadmpeg_core::named_optional_field!(deserialize_orientation<T>, T, "orientation");
+cadmpeg_core::named_optional_field!(deserialize_origin<T>, T, "origin");
+cadmpeg_core::named_optional_field!(deserialize_outer<T>, T, "outer");
+cadmpeg_core::named_optional_field!(deserialize_outer_join<T>, T, "outer_join");
+cadmpeg_core::named_optional_field!(deserialize_outside<T>, T, "outside");
+cadmpeg_core::named_optional_field!(deserialize_placement<T>, T, "placement");
+cadmpeg_core::named_optional_field!(deserialize_rebuild<T>, T, "rebuild");
+cadmpeg_core::named_optional_field!(deserialize_relimit<T>, T, "relimit");
+cadmpeg_core::named_optional_field!(deserialize_reversed<T>, T, "reversed");
+cadmpeg_core::named_optional_field!(deserialize_root_fillet<T>, T, "root_fillet");
+cadmpeg_core::named_optional_field!(deserialize_ruled<T>, T, "ruled");
+cadmpeg_core::named_optional_field!(deserialize_scaling<T>, T, "scaling");
+cadmpeg_core::named_optional_field!(deserialize_seam<T>, T, "seam");
+cadmpeg_core::named_optional_field!(deserialize_section_law<T>, T, "section_law");
+cadmpeg_core::named_optional_field!(deserialize_sections<T>, T, "sections");
+cadmpeg_core::named_optional_field!(deserialize_sheet_cut<T>, T, "sheet_cut");
+cadmpeg_core::named_optional_field!(deserialize_smoothing<T>, T, "smoothing");
+cadmpeg_core::named_optional_field!(deserialize_span<T>, T, "span");
+cadmpeg_core::named_optional_field!(deserialize_spine<T>, T, "spine");
+cadmpeg_core::named_optional_field!(deserialize_spine_point<T>, T, "spine_point");
+cadmpeg_core::named_optional_field!(deserialize_start<T>, T, "start");
+cadmpeg_core::named_optional_field!(deserialize_style<T>, T, "style");
+cadmpeg_core::named_optional_field!(deserialize_swap_axes<T>, T, "swap_axes");
+cadmpeg_core::named_optional_field!(deserialize_tangency<T>, T, "tangency");
+cadmpeg_core::named_optional_field!(deserialize_tangent<T>, T, "tangent");
+cadmpeg_core::named_optional_field!(deserialize_taper<T>, T, "taper");
+cadmpeg_core::named_optional_field!(deserialize_thickness<T>, T, "thickness");
+cadmpeg_core::named_optional_field!(deserialize_thickness_at<T>, T, "thickness_at");
+cadmpeg_core::named_optional_field!(deserialize_tolerance<T>, T, "tolerance");
+cadmpeg_core::named_optional_field!(deserialize_transition<T>, T, "transition");
+cadmpeg_core::named_optional_field!(deserialize_trim_support<T>, T, "trim_support");
+cadmpeg_core::named_optional_field!(deserialize_turn<T>, T, "turn");
+cadmpeg_core::named_optional_field!(deserialize_twist<T>, T, "twist");
+cadmpeg_core::named_optional_field!(deserialize_weight<T>, T, "weight");
 
 #[cfg(test)]
 mod tests;

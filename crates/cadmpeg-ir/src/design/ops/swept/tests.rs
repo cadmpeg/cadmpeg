@@ -164,7 +164,7 @@ fn native_options() -> NativeOptions {
 
 fn solid() -> SolidOutput {
     SolidOutput {
-        body: Some(BodyForm::Solid),
+        body: Some(BodyForm::Solid {}),
         boolean: Some(Boolean::Apply {
             op: BooleanOp::Join,
             targets: None,
@@ -773,7 +773,7 @@ fn ribs() -> Vec<Rib> {
             thickness_at: Some(RibEnd::Tip),
             root_fillet: Some(lit(positive(0.5))),
             extend_profile: Some(lit(false)),
-            boolean: Some(Boolean::NewBody),
+            boolean: Some(Boolean::NewBody {}),
             native_options: native_options(),
             source_settings: native_options(),
         },
@@ -911,7 +911,7 @@ fn sections() -> Vec<Section> {
             flip: Some(lit(true)),
             seam: seams().into_iter().next(),
             condition: Some(SectionCondition::Tangent {
-                support: Some(Support::Computed),
+                support: Some(Support::Computed {}),
                 weight: Some(lit(positive_real(1.5))),
                 flip: None,
             }),
