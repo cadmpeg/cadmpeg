@@ -1313,6 +1313,9 @@ fn parse_sketch_member_run(
     if View::u32_le_at(bytes, paired + 7).map(u64::from) != Some(entity_suffix) {
         return empty;
     }
+    if let Some(members) = parse_typed_sketch_member_run(bytes, paired) {
+        return members;
+    }
     let Some(count) =
         View::u32_le_at(bytes, paired + 52).and_then(|count| usize::try_from(count).ok())
     else {
@@ -1348,6 +1351,63 @@ fn parse_sketch_member_run(
         });
     }
     members
+}
+
+/// Offset of the u32 sketch ordinal in a typed member-run record: the
+/// 51-byte head-placement reference at offset 19 ends here.
+const TYPED_RUN_ORDINAL: usize = 19 + crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
+/// Offset of the u32 character count of the sketch name in a typed
+/// member-run record.
+const TYPED_RUN_NAME_LENGTH: usize = TYPED_RUN_ORDINAL + 6;
+/// Offset of the first UTF-16LE code unit of the sketch name.
+const TYPED_RUN_NAME: usize = TYPED_RUN_NAME_LENGTH + 4;
+/// Largest sketch name, in UTF-16 code units, that a typed member-run record
+/// stores.
+const TYPED_RUN_NAME_LIMIT: usize = 1024;
+
+/// Parse the counted member-reference run of a typed-reference sketch
+/// container's paired record. The paired record stores eight zero bytes after
+/// its header and the head-placement typed reference at offset 19. A u32
+/// sketch ordinal, two state bytes, and a u32 count of name code units follow
+/// that reference. The UTF-16LE name, one zero byte, and the u32 member count
+/// follow them. Each counted member is a 51-byte typed local reference.
+/// `None` when the record is not in this form.
+fn parse_typed_sketch_member_run(
+    bytes: &[u8],
+    paired: usize,
+) -> Option<Vec<crate::records::identity::Located<u32>>> {
+    use crate::bytes::{typed_local_reference_target, TYPED_LOCAL_REFERENCE_LEN};
+    if bytes.get(paired + 11..paired + 19) != Some(&[0u8; 8][..])
+        || typed_local_reference_target(bytes, paired + 19).is_none()
+    {
+        return None;
+    }
+    let name_units =
+        usize::try_from(View::u32_le_at(bytes, paired + TYPED_RUN_NAME_LENGTH)?).ok()?;
+    if name_units > TYPED_RUN_NAME_LIMIT {
+        return None;
+    }
+    let terminator = paired
+        .checked_add(TYPED_RUN_NAME)?
+        .checked_add(name_units.checked_mul(2)?)?;
+    if bytes.get(terminator) != Some(&0) {
+        return None;
+    }
+    let count_at = terminator.checked_add(1)?;
+    let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
+    let first = count_at.checked_add(4)?;
+    if bytes.len() < first.checked_add(count.checked_mul(TYPED_LOCAL_REFERENCE_LEN)?)? {
+        return None;
+    }
+    (0..count)
+        .map(|ordinal| {
+            let marker = first + ordinal * TYPED_LOCAL_REFERENCE_LEN;
+            Some(crate::records::identity::Located {
+                value: typed_local_reference_target(bytes, marker)?,
+                offset: u64_from_index(marker + 1),
+            })
+        })
+        .collect()
 }
 
 /// Parse the counted member-record run of a legacy sketch container's paired
@@ -1408,7 +1468,16 @@ fn parse_legacy_sketch_member_run_with(
         {
             return None;
         }
-        let count_at = paired_at + 19 + width + 11;
+        let count_at = if typed {
+            // The sketch name sits between the ordinal and the count.
+            let units = usize::try_from(View::u32_le_at(bytes, paired_at + TYPED_RUN_NAME_LENGTH)?)
+                .ok()
+                .filter(|units| *units <= TYPED_RUN_NAME_LIMIT)?;
+            let terminator = paired_at + TYPED_RUN_NAME + units * 2;
+            (bytes.get(terminator) == Some(&0)).then_some(terminator + 1)?
+        } else {
+            paired_at + 19 + width + 11
+        };
         let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
         if count == 0 {
             return None;
