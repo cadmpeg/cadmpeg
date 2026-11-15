@@ -2395,19 +2395,30 @@ fn body_membership(
                 .any(|path| path.references.contains(&body_id))
         });
         if !owned && !linked {
-            let unresolved_owner = alternatives.iter().any(|run| {
-                run.references[0]
-                    .as_ref()
-                    .and_then(FormReference::local)
-                    .is_none()
-            });
+            let unresolved_owner =
+                alternatives
+                    .iter()
+                    .filter(|run| !run.is_null_only())
+                    .any(|run| {
+                        run.references[0]
+                            .as_ref()
+                            .and_then(FormReference::local)
+                            .is_none()
+                    })
+                    || alternatives.iter().all(FormBodyRun::is_null_only);
             if !unresolved_owner {
                 continue;
             }
             closed = false;
         }
-        let unique = alternatives.len() == 1;
-        if !unique {
+        let competing = alternatives
+            .iter()
+            .filter(|run| !run.is_null_only())
+            .count();
+        let unique = competing == 1;
+        if competing == 0 {
+            closed = false;
+        } else if !unique {
             note(
                 losses,
                 F3dLossCode::FeatureFormCageBindingAmbiguous,
@@ -2418,6 +2429,7 @@ fn body_membership(
         }
         let mut selected = Vec::new();
         for run in alternatives {
+            let null_only = run.is_null_only();
             let references = run.references;
             let mut local = [None; FORM_BODY_REFERENCE_COUNT];
             let mut failed = false;
@@ -2479,6 +2491,9 @@ fn body_membership(
                         }
                     }
                 }
+            }
+            if null_only {
+                continue;
             }
             let raw_owner = references[0]
                 .as_ref()
@@ -2803,6 +2818,14 @@ fn take_form_reference(
 struct FormBodyRun {
     offset: usize,
     references: [Option<FormReference>; FORM_BODY_REFERENCE_COUNT],
+}
+
+impl FormBodyRun {
+    fn is_null_only(&self) -> bool {
+        self.references
+            .iter()
+            .all(|reference| matches!(reference, Some(FormReference::Null)))
+    }
 }
 
 fn form_body_references(

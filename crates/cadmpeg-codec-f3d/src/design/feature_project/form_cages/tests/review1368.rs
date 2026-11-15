@@ -786,6 +786,106 @@ fn review1368_body_first_null_and_unreadable_keep_distinct_slots() {
         }
     }
 }
+
+#[test]
+fn review1368_null_only_material_run_does_not_compete_with_owned_body() {
+    let meta = form_meta(&[
+        ("FA1F0081-C9A1-4E14-8F25-D12DD868ED90", 10, &[300]),
+        ("830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06571", 0, &[299]),
+        ("11111111-1111-4111-8111-111111111111", 0, &[201]),
+        ("CD57BC48-50EC-47DC-975A-FB6DEA72F4DA", 4, &[22]),
+        ("22709494-9149-4A70-A829-7D748A7B5DB1", 0, &[296]),
+        ("702B9CD2-537C-429E-8CC4-22BEEEB98C37", 1, &[301]),
+    ]);
+    let cage = neutral_form_cage("f3d:model:subd#1", FIRST_CAGE_UUID);
+    for null_only in [true, false] {
+        let mut body = indexed_frame(b"274", 300, 11);
+        push_material_envelope(&mut body, "PrismMaterial-synthetic-a");
+        for target in [201, 22, 296, 301] {
+            push_marked(&mut body, target);
+        }
+        push_material_envelope(&mut body, "PrismMaterial-synthetic-b");
+        if null_only {
+            body.extend_from_slice(&[0; 4]);
+        } else {
+            body.push(2);
+        }
+        body.extend_from_slice(&indexed_frame(b"258", 300, 15));
+        let bytes = [form_serializer_frame(299, 296, FIRST_CAGE_UUID), body].concat();
+        let result = body_construction(
+            &bytes,
+            &meta,
+            &form_scope(201, vec![]),
+            std::slice::from_ref(&cage),
+        );
+        assert_eq!(result.membership_is_complete(), null_only);
+        assert_eq!(result.committed_cages().count(), usize::from(null_only));
+        assert_eq!(result.referenced_cages().count(), 1);
+        let body_evidence = result
+            .inputs()
+            .reference_evidence
+            .iter()
+            .filter(|reference| reference.role == FormReferenceRole::Body)
+            .collect::<Vec<_>>();
+        assert_eq!(body_evidence.len(), 8);
+        assert_eq!(
+            body_evidence
+                .iter()
+                .filter(|reference| matches!(reference.target, FormNativeReferenceTarget::Null {}))
+                .count(),
+            if null_only { 4 } else { 0 }
+        );
+        assert_eq!(
+            body_evidence
+                .iter()
+                .filter(|reference| matches!(
+                    reference.target,
+                    FormNativeReferenceTarget::Unreadable {}
+                ))
+                .count(),
+            usize::from(!null_only)
+        );
+        assert_eq!(
+            body_evidence
+                .iter()
+                .filter(|reference| matches!(
+                    reference.target,
+                    FormNativeReferenceTarget::Unvisited {}
+                ))
+                .count(),
+            if null_only { 0 } else { 3 }
+        );
+        if null_only {
+            let other = body_construction(
+                &bytes,
+                &meta,
+                &form_scope(202, vec![]),
+                std::slice::from_ref(&cage),
+            );
+            assert_eq!(other.referenced_cages().count(), 0);
+            assert!(other
+                .inputs()
+                .reference_evidence
+                .iter()
+                .all(|reference| reference.role != FormReferenceRole::Body));
+        }
+    }
+    let mut body = indexed_frame(b"274", 300, 11);
+    push_material_envelope(&mut body, "PrismMaterial-synthetic-empty");
+    body.extend_from_slice(&[0; 4]);
+    body.extend_from_slice(&indexed_frame(b"258", 300, 15));
+    let result = body_construction(&body, &meta, &form_scope(201, vec![]), &[]);
+    assert!(!result.membership_is_complete());
+    assert_eq!(
+        result
+            .inputs()
+            .reference_evidence
+            .iter()
+            .filter(|reference| matches!(reference.target, FormNativeReferenceTarget::Null {}))
+            .count(),
+        4
+    );
+}
 #[test]
 fn review1368_typed_serializer_primary_orderings_withhold_body_closure() {
     let mut meta = form_meta(&[
