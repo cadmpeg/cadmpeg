@@ -3,8 +3,8 @@
 //! and the binding of `Fillet` and `Chamfer` edges from their transitions.
 
 use super::blend_spine::{
-    blend_spines, cylinder_axes, edge_ends, edge_geometry, edge_points, plane_rows, BlendSpine,
-    CylinderAxis, EdgeGeometry,
+    blend_spines, cylinder_axes, edge_ends, edge_geometry, edge_points, plane_rows, same_surface,
+    BlendSpine, CylinderAxis, EdgeGeometry,
 };
 use crate::history_records::{AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory};
 use crate::loss::F3dLossCode;
@@ -318,8 +318,9 @@ pub(super) struct TreatmentFaces {
 
 /// The inserted faces on new carriers of a transition with their supports,
 /// or `None` when a face of either state has no rebuilt boundary or no single
-/// carrier, a result face on a new carrier persists or is not listed as
-/// inserted, the transition inserts no face on a new carrier, or an inserted
+/// carrier, a result face on a new carrier is not listed as inserted or
+/// persists with a carrier of other geometry than before, the transition
+/// inserts no face on a new carrier, or an inserted
 /// face on a new carrier has no supports.
 pub(super) fn treatment_faces(
     transition: &AsmHistoricalTransition,
@@ -334,11 +335,23 @@ pub(super) fn treatment_faces(
     // an unlisted blend.
     let input_faces = input.faces.iter().copied().collect::<HashSet<_>>();
     let listed = inserted.iter().copied().collect::<HashSet<_>>();
+    let preceding_carriers = super::unique_face_carriers(input);
     for face in &output.faces {
         let carrier = carriers.get(face).copied().flatten()?;
         if !input_surfaces.contains(&carrier)
             && (input_faces.contains(face) || !listed.contains(face))
         {
+            // A face that persists with a new carrier of its old geometry
+            // is no blend: the transition only recorded the surface again.
+            let rerecorded = !listed.contains(face)
+                && preceding_carriers
+                    .get(face)
+                    .copied()
+                    .flatten()
+                    .is_some_and(|before| same_surface((input, before), (output, carrier)));
+            if rerecorded {
+                continue;
+            }
             return None;
         }
     }
