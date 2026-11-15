@@ -22,7 +22,5 @@ pub mod selection;
 pub mod topology;
 pub mod units;
 
-mod wire;
-
 #[cfg(test)]
 mod tests;

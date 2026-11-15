@@ -109,11 +109,13 @@ pub struct SolidOutput {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BodyForm {
     /// A solid.
-    Solid {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Solid,
     /// A solid wall about the profile curves.
     Thin(ThinWall),
     /// A surface result.
-    Sheet {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Sheet,
 }
 
 /// A solid wall about the profile curves.
@@ -238,7 +240,8 @@ pub enum ThinEnds {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Boolean {
     /// A body with no combination.
-    NewBody {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    NewBody,
     /// The result combines with existing bodies.
     Apply {
         /// The combination.
@@ -291,7 +294,8 @@ pub enum BooleanOp {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Targets {
     /// Every body.
-    All {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    All,
     /// The selected bodies.
     Selected(SetSelection),
 }
@@ -480,7 +484,8 @@ pub enum Support {
     /// The selected faces.
     Faces(SetSelection),
     /// An automatically computed support.
-    Computed {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Computed,
 }
 
 /// How a curve reaches a face.

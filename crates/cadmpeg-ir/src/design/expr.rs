@@ -401,7 +401,8 @@ pub enum MeasureKind {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeasureTarget {
     /// The scope's whole current model.
-    Model {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Model,
     /// The selected geometry.
     Selection(OrderedSelection),
 }
