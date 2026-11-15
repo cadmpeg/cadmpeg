@@ -18,8 +18,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::assets::AssetId;
 use crate::design::construction::{kinds, Construction};
 use crate::design::dimension::Dimension;
+use crate::design::ops::shared::{Interpolation, Limit, OffsetJoin};
 use crate::design::options::{
-    Boolean, Hand, Limit, NativeOptions, PathRef, ProfileRef, SheetOutput, Targets, Thickness,
+    Boolean, Hand, NativeOptions, PathRef, ProfileRef, SheetOutput, Targets, Thickness,
 };
 use crate::design::selection::{OrderedSelection, SetSelection};
 use crate::design::wire;
@@ -112,24 +113,6 @@ pub enum Along {
     Chain {},
     /// One edge, in the edge's own direction.
     Edge(OrderedSelection),
-}
-
-/// How a varying value runs between its stations.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
-pub enum Interpolation {
-    /// A linear blend between stations.
-    Linear,
-    /// A smooth (cubic) blend between stations.
-    Smooth,
-    /// A source interpolation whose meaning is not established.
-    Native(NonBlankString),
 }
 
 /// Rounds edges or blends between face sets. A fillet holds one or more
@@ -851,24 +834,6 @@ pub struct FaceThickness {
     pub faces: SetSelection,
     /// Their thickness.
     pub thickness: Dimension<PositiveLength>,
-}
-
-/// The corner law between offset faces.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
-pub enum OffsetJoin {
-    /// Rounded arcs.
-    Round,
-    /// A sharp intersection.
-    Sharp,
-    /// A source join whose meaning is not established.
-    Native(NonBlankString),
 }
 
 /// Which offset faces trim each other where their offsets meet.
