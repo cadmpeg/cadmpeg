@@ -1915,7 +1915,7 @@ fn design_projection_gaps(
                 }
             }
             FeatureDefinition::Operation(FeatureOperation::SheetMetalHem { edges, .. }) => {
-                edge_selection(edges)
+                edge_selection(edges);
             }
             FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, .. }) => {
                 face_selection(faces);

@@ -3,6 +3,7 @@ use crate::design::edge_resolve::resolved_edge_flange_group;
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::sheet_metal::{DesignBendPosition, DesignSheetMetalHeightDatum};
+use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::sheet_metal::{SheetMetalEdgeFlangeConstruction, SheetMetalFlangeOffset};
@@ -29,14 +30,14 @@ fn role_owner(scope: &DesignParameterScope, kind: &str, inputs: &ProjectInputs<'
                         && parameter.source_kind() == kind
                 })
         })
-        .map(|owner| owner.record_index());
+        .map(DesignParameterOwner::record_index);
     let backlinks = inputs
         .native
         .iter()
         .filter(|parameter| {
             native_stream(&parameter.id) == Some(stream) && parameter.source_kind() == kind
         })
-        .filter_map(|parameter| parameter.owner_record_index())
+        .filter_map(DesignParameter::owner_record_index)
         .filter(|index| {
             scope
                 .reference_members()
@@ -106,7 +107,8 @@ fn scalar(
             )));
         }
         parameter.evaluated_value().get()
-    } else if let Some(owner) = owner {
+    } else {
+        let owner = owner?;
         if inputs.native.iter().any(|parameter| {
             native_stream(&parameter.id) == Some(stream)
                 && parameter.record_index == owner.parameter_record_index()
@@ -117,8 +119,6 @@ fn scalar(
             "EdgeFlange scope {} reads owner {} cached scalar as its missing {} definition in database units.", scope.id, index, kind
         )));
         owner.evaluated_value().get()
-    } else {
-        return None;
     };
     let value = value * if angular { 1.0 } else { 10.0 };
     value.is_finite().then_some(value)

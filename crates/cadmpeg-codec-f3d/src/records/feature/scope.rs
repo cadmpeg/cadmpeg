@@ -2707,10 +2707,10 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             }
             DesignScopePayload::EdgeFlange(value) => match value {
                 DesignEdgeFlangeScope::Legacy(operation) => {
-                    wire.edge_flange_operation = Some(operation)
+                    wire.edge_flange_operation = Some(operation);
                 }
                 DesignEdgeFlangeScope::ReferenceFramed(construction) => {
-                    wire.edge_flange_construction = Some(construction)
+                    wire.edge_flange_construction = Some(construction);
                 }
                 DesignEdgeFlangeScope::Unresolved => {}
             },

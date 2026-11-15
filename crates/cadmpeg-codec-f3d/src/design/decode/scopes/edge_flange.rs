@@ -37,12 +37,26 @@ fn zeros(view: &mut View<'_>, count: usize) -> Option<()> {
         .then_some(())
 }
 
-fn local(view: &mut View<'_>, types: &Types<'_>) -> Option<Option<Located<u32>>> {
+enum LocalReference {
+    Null,
+    Target(Located<u32>),
+}
+
+impl LocalReference {
+    fn into_target(self) -> Option<Located<u32>> {
+        match self {
+            Self::Null => None,
+            Self::Target(target) => Some(target),
+        }
+    }
+}
+
+fn local(view: &mut View<'_>, types: &Types<'_>) -> Option<LocalReference> {
     let offset = u64_from_index(view.position());
     let mut end = 0;
     let reference = take_reference(view.unread(), &mut end)?;
     let value = match reference {
-        Reference::Null => None,
+        Reference::Null => LocalReference::Null,
         Reference::Local {
             target,
             inline_type_guid,
@@ -55,7 +69,7 @@ fn local(view: &mut View<'_>, types: &Types<'_>) -> Option<Option<Located<u32>>>
             }) {
                 return None;
             }
-            Some(Located { value, offset })
+            LocalReference::Target(Located { value, offset })
         }
         _ => return None,
     };
@@ -63,9 +77,8 @@ fn local(view: &mut View<'_>, types: &Types<'_>) -> Option<Option<Located<u32>>>
     Some(value)
 }
 
-fn member(scope: &DesignParameterScope, reference: &Option<Located<u32>>) -> Option<()> {
+fn member(scope: &DesignParameterScope, reference: Option<&Located<u32>>) -> Option<()> {
     reference
-        .as_ref()
         .is_none_or(|reference| {
             scope
                 .reference_members()
@@ -100,15 +113,15 @@ fn candidate<'a>(
     }
     let wrappers = view;
     for _ in 0..count {
-        member(scope, &local(&mut view, types)?)?;
+        member(scope, local(&mut view, types)?.into_target().as_ref())?;
     }
-    let settings = local(&mut view, types)?;
-    member(scope, &settings)?;
+    let settings = local(&mut view, types)?.into_target();
+    member(scope, settings.as_ref())?;
     let height_datum = word(&mut view)?;
-    let angle_owner = local(&mut view, types)?;
-    let height_owner = local(&mut view, types)?;
-    member(scope, &angle_owner)?;
-    member(scope, &height_owner)?;
+    let angle_owner = local(&mut view, types)?.into_target();
+    let height_owner = local(&mut view, types)?.into_target();
+    member(scope, angle_owner.as_ref())?;
+    member(scope, height_owner.as_ref())?;
     let (side_padding, radius_padding) = if wide_radius {
         (
             wide_side::RADIUS_CONTROL - wide_side::SIDE_ZERO,
@@ -141,8 +154,8 @@ fn candidate<'a>(
     if view.u32_le()? != 1 {
         return None;
     }
-    let aggregate_group = local(&mut view, types)?;
-    member(scope, &aggregate_group)?;
+    let aggregate_group = local(&mut view, types)?.into_target();
+    member(scope, aggregate_group.as_ref())?;
     zeros(
         &mut view,
         if wide_group {
@@ -156,7 +169,7 @@ fn candidate<'a>(
     }
     let groups = view;
     for _ in 0..count {
-        member(scope, &local(&mut view, types)?)?;
+        member(scope, local(&mut view, types)?.into_target().as_ref())?;
     }
     Some(Candidate {
         operation: DesignReferenceEdgeFlange {
@@ -206,23 +219,23 @@ fn offset_wrapper(
             {
                 return None;
             }
-            let group = local(&mut view, types)?;
+            let group = local(&mut view, types)?.into_target();
             if group.as_ref().map(|value| value.value)
                 != edge.group.as_ref().map(|value| value.value)
             {
                 return None;
             }
-            let first_boundary = local(&mut view, types)?;
-            let second_boundary = local(&mut view, types)?;
-            let first_owner = local(&mut view, types)?;
-            let second_owner = local(&mut view, types)?;
+            let first_boundary = local(&mut view, types)?.into_target();
+            let second_boundary = local(&mut view, types)?.into_target();
+            let first_owner = local(&mut view, types)?.into_target();
+            let second_owner = local(&mut view, types)?.into_target();
             zeros(
                 &mut view,
                 wrapper_layout::NESTED - wrapper_layout::MIDDLE_ZERO,
             )?;
-            local(&mut view, types)??;
+            local(&mut view, types)?.into_target()?;
             if view.u8()? != wrapper_layout::CLOSING_ZERO_VALUE
-                || local(&mut view, types)??.value != scope.record_index
+                || local(&mut view, types)?.into_target()?.value != scope.record_index
                 || !view.is_empty()
             {
                 return None;
@@ -233,7 +246,7 @@ fn offset_wrapper(
                 &first_owner,
                 &second_owner,
             ] {
-                member(scope, reference)?;
+                member(scope, reference.as_ref())?;
             }
             Some(DesignReferenceFlangeEdge {
                 first_boundary,
@@ -306,8 +319,8 @@ pub(super) fn bind(
             "reading EdgeFlange edge slots",
         )?;
         for edge in &mut edges {
-            edge.wrapper = local(&mut found.wrappers, types).flatten();
-            edge.group = local(&mut found.groups, types).flatten();
+            edge.wrapper = local(&mut found.wrappers, types).and_then(LocalReference::into_target);
+            edge.group = local(&mut found.groups, types).and_then(LocalReference::into_target);
             if let Some(width) = offset_wrapper(bytes, records, types, scope, edge) {
                 *edge = width;
             }
@@ -318,7 +331,7 @@ pub(super) fn bind(
             "reading EdgeFlange result slots",
         )?;
         for result in &mut results {
-            result.record = local(&mut found.results, types).flatten();
+            result.record = local(&mut found.results, types).and_then(LocalReference::into_target);
             result.trailer = word(&mut found.results);
         }
         found.operation.edges = edges;

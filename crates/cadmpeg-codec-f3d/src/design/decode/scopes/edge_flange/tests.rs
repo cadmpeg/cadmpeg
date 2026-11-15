@@ -37,11 +37,13 @@ fn reference_edge_local_zero_is_distinct_from_a_null_reference() {
     let mut view = View::over_retained(&bytes);
     let present = local(&mut view, &HashMap::new())
         .expect("local reference")
+        .into_target()
         .expect("present target");
     assert_eq!(present.value, 0);
     assert_eq!(view.position(), 11);
     assert!(local(&mut view, &HashMap::new())
         .expect("null reference")
+        .into_target()
         .is_none());
     assert_eq!(view.position(), 12);
 }
@@ -106,8 +108,14 @@ fn reference_edge_reads_counts_padding_reference_widths_and_null_owners() {
                     );
                     assert_eq!(parsed.height_owner.is_none(), missing_height);
                     assert_eq!(parsed.angle_owner.as_ref().expect("angle").value, 40);
-                    assert_eq!(parsed.edges.len(), count as usize);
-                    assert_eq!(parsed.results.len(), results as usize);
+                    assert_eq!(
+                        parsed.edges.len(),
+                        usize::try_from(count).expect("edge count")
+                    );
+                    assert_eq!(
+                        parsed.results.len(),
+                        usize::try_from(results).expect("result count")
+                    );
                     assert_eq!(
                         parsed
                             .edges

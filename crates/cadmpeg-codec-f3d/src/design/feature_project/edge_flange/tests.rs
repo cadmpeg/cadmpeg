@@ -169,11 +169,11 @@ fn reference_edge_legacy_fallback_retains_different_and_missing_widths() {
             selection: DesignEdgeFlangeSelection::try_new(
                 DesignEdgeFlangeShape::SymmetricPerEdge(vec![
                     DesignFlangeEdgeWidth {
-                        edge: edges[0].clone(),
+                        edge: edges[0],
                         owners: 40,
                     },
                     DesignFlangeEdgeWidth {
-                        edge: edges[1].clone(),
+                        edge: edges[1],
                         owners: 50,
                     },
                 ]),
@@ -207,7 +207,7 @@ fn reference_edge_legacy_fallback_retains_different_and_missing_widths() {
                 panic!("per-edge law")
             };
             assert_eq!(
-                widths[0].width.map(|width| width.get()),
+                widths[0].width.map(PositiveLength::get),
                 first_present.then_some(10.0)
             );
             assert_eq!(widths[1].width.expect("second width").get(), 20.0);
@@ -253,7 +253,7 @@ fn reference_edge_legacy_fallback_retains_different_and_missing_widths() {
             .clone();
         operation.selection = DesignEdgeFlangeSelection::try_new(
             DesignEdgeFlangeShape::FullEdge {
-                edges: vec![edges[0].clone()],
+                edges: vec![edges[0]],
                 height:
                     crate::records::feature::sheet_metal::DesignEdgeFlangeHeightExtent::ToObject {
                         target_group_record_index: 110,
