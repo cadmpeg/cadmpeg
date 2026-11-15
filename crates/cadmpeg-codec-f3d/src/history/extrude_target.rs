@@ -254,6 +254,7 @@ fn start_origin(
 }
 
 /// The profile, direction and start of an Extrude.
+#[derive(Clone, Copy)]
 struct SweepFrame<'a> {
     profile: &'a cadmpeg_ir::features::ProfileRef,
     direction: &'a ExtrudeDirection,
