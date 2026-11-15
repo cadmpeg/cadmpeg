@@ -18,6 +18,9 @@ use crate::pmdc::PmDcReference;
 
 const EPS_PLATE_DIRECTION: f64 = 1.0e-10;
 const EPS_ATTACHMENT_DIRECTION: f64 = 1.0e-10;
+/// Smallest V component of an oblique second attachment direction; a smaller
+/// component leaves the plate plane parallel to the attached face.
+const EPS_OBLIQUE_SECOND_DIRECTION: f64 = 1.0e-6;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PlateOperands {
@@ -234,13 +237,20 @@ pub(crate) fn plate<'a>(
         first_direction.as_raw().dot(*u_axis.as_raw()).abs() >= 1.0 - EPS_ATTACHMENT_DIRECTION,
         PlateRefusal::FirstDirection,
     )?;
-    // The second direction is parallel to V, or antiparallel to V when the
-    // first direction is antiparallel to U.
+    // The second direction is perpendicular to the first direction. It has a
+    // positive component along V, or it is antiparallel to V when the first
+    // direction is antiparallel to U. An oblique second direction belongs to
+    // a plate whose sketch plane is not perpendicular to the attached face.
     let along_v = second_direction.as_raw().dot(*v_axis.as_raw());
     let first_reversed = first_direction.as_raw().dot(*u_axis.as_raw()) < 0.0;
     require(
-        along_v >= 1.0 - EPS_ATTACHMENT_DIRECTION
-            || (first_reversed && along_v <= -1.0 + EPS_ATTACHMENT_DIRECTION),
+        second_direction
+            .as_raw()
+            .dot(*first_direction.as_raw())
+            .abs()
+            <= EPS_ATTACHMENT_DIRECTION
+            && (along_v >= EPS_OBLIQUE_SECOND_DIRECTION
+                || (first_reversed && along_v <= -1.0 + EPS_ATTACHMENT_DIRECTION)),
         PlateRefusal::SecondDirection,
     )?;
     require(same(*thickness, slots[3]), PlateRefusal::ThicknessReference)?;
