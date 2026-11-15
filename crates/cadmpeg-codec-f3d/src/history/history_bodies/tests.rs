@@ -255,6 +255,17 @@ fn run_bytes(
     count: usize,
     work: usize,
 ) -> (Vec<HistoryBody>, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    run_roles(bytes, width, count, work, (true, false), 1)
+}
+
+fn run_roles(
+    bytes: &[u8],
+    width: RefWidth,
+    count: usize,
+    work: usize,
+    roles: (bool, bool),
+    slot: i64,
+) -> (Vec<HistoryBody>, Vec<cadmpeg_ir::report::loss::LossNote>) {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default()).unwrap();
     let mut allowance = u64::MAX;
@@ -271,9 +282,11 @@ fn run_bytes(
     let feature = feature("base");
     let wants = (0..count)
         .map(|_| Want {
-            feature: &feature,
+            origin: &feature,
+            producer: roles.0.then_some(&feature),
+            consumer: roles.1.then_some(&feature),
             state: 12,
-            slot: 1,
+            slot,
         })
         .collect::<Vec<_>>();
     let mut bodies = Vec::new();
@@ -768,4 +781,69 @@ fn a_wrapped_surface_preserves_the_base_feature_geometry() {
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
         );
     }
+}
+
+/// The final state deletes the body of slots 6 through 10 that the state
+/// before it holds.
+fn deleted_bytes(width: RefWidth) -> Vec<u8> {
+    let mut out = Vec::new();
+    put_header(&mut out, width);
+    put_plain(&mut out, width, "asmheader", &[]);
+    put_sphere_solid(&mut out, width, 1, 7, -1, [10.0, 0.0, 0.0]);
+    let deleted = (6..=10).map(|slot| (slot, -1)).collect::<Vec<_>>();
+    put_state(&mut out, width, (13, -1, 1, 0), &deleted);
+    put_sphere_solid(&mut out, width, 6, 8, -1, [10.0, 0.0, 0.0]);
+    put_state(
+        &mut out,
+        width,
+        (12, 0, -1, 1),
+        &[(-1, 1), (-1, 2), (-1, 3), (-1, 4), (-1, 5)],
+    );
+    out
+}
+
+#[test]
+fn a_consumed_body_the_final_state_lacks_is_a_history_body() {
+    for width in [RefWidth::Four, RefWidth::Eight] {
+        let bytes = deleted_bytes(width);
+        let (bodies, losses) = run_roles(&bytes, width, 1, MAX_HISTORY_BODY_WORK, (false, true), 6);
+        assert!(losses.is_empty(), "{losses:?}");
+        let [body] = bodies.as_slice() else {
+            panic!("one history body")
+        };
+        assert_eq!(body.produced_by, None);
+        assert_eq!(body.consumed_by, Some(feature("base").id));
+        assert_eq!(body.state.identifier, 12);
+        // The body keeps the geometry of the state that holds it, in
+        // millimetres from the stored centimetre length.
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere)) =
+            &body.topology.surfaces[0].geometry
+        else {
+            panic!("sphere")
+        };
+        assert_eq!(
+            sphere.center().get(),
+            cadmpeg_ir::math::Point3::new(10.0 * 10.0, 0.0, 0.0)
+        );
+        let (both, _) = run_roles(&bytes, width, 1, MAX_HISTORY_BODY_WORK, (true, true), 6);
+        let [both] = both.as_slice() else {
+            panic!("one history body")
+        };
+        assert_eq!(both.produced_by, Some(feature("base").id));
+        assert_eq!(both.consumed_by, Some(feature("base").id));
+    }
+}
+
+#[test]
+fn a_consumed_body_the_final_state_still_holds_needs_no_history_body() {
+    let (bodies, losses) = run_roles(
+        &carrier_bytes(RefWidth::Eight, true),
+        RefWidth::Eight,
+        1,
+        MAX_HISTORY_BODY_WORK,
+        (false, true),
+        1,
+    );
+    assert!(bodies.is_empty());
+    assert!(losses.is_empty());
 }

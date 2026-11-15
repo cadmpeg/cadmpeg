@@ -26,8 +26,12 @@ use crate::records::feature::scope::DesignParameterScope;
 const MAX_HISTORY_BODIES: usize = 64;
 const MAX_HISTORY_BODY_WORK: usize = 1 << 21;
 
+/// A body slot of one history state that a feature produces or consumes.
 struct Want<'a> {
-    feature: &'a Feature,
+    /// The feature that first named the slot, for notes and admission.
+    origin: &'a Feature,
+    producer: Option<&'a Feature>,
+    consumer: Option<&'a Feature>,
     state: i64,
     slot: i64,
 }
@@ -101,10 +105,34 @@ pub(crate) fn fill(
         for body in bodies {
             if let Some(slot) = super::stable_ref(body.as_str()) {
                 wants.entry(history_index).or_default().push(Want {
-                    feature,
+                    origin: feature,
+                    producer: Some(feature),
+                    consumer: None,
                     state: current,
                     slot,
                 });
+            }
+        }
+    }
+    for feature in features {
+        let Some((history_index, state, slots)) =
+            split_targets(feature, scopes, histories, bindings)
+        else {
+            continue;
+        };
+        let wanted = wants.entry(history_index).or_default();
+        for slot in slots {
+            match wanted.iter_mut().find(|want| {
+                want.state == state && want.slot == slot && want.consumer.is_none()
+            }) {
+                Some(want) => want.consumer = Some(feature),
+                None => wanted.push(Want {
+                    origin: feature,
+                    producer: None,
+                    consumer: Some(feature),
+                    state,
+                    slot,
+                }),
             }
         }
     }
@@ -123,6 +151,72 @@ pub(crate) fn fill(
     }
     bodies_out.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(bodies_out)
+}
+
+/// The history, input state and body slots a Split selects, when the scope
+/// binds one history that holds the input state and the feature's own state
+/// exactly once.
+fn split_targets<'a>(
+    feature: &Feature,
+    scopes: &[DesignParameterScope],
+    histories: &'a [AsmHistory],
+    bindings: &HashMap<String, String>,
+) -> Option<(usize, i64, Vec<i64>)> {
+    let FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, .. }) =
+        feature.evaluation.definition()
+    else {
+        return None;
+    };
+    let ids: Vec<&str> = match targets {
+        BodySelection::Historical { bodies, .. } => bodies
+            .as_slice()
+            .iter()
+            .map(cadmpeg_ir::ids::HistoricalBodyId::as_str)
+            .collect(),
+        BodySelection::HistoricalSet { members, .. } => members
+            .bodies()
+            .map(cadmpeg_ir::ids::HistoricalBodyId::as_str)
+            .collect(),
+        _ => return None,
+    };
+    let input = super::selection::feature_selected_input_state_id(feature)?;
+    let native = feature.native_ref.as_deref()?;
+    let current = scopes
+        .iter()
+        .find(|scope| scope.id == native)?
+        .history_state_id()?;
+    let holds = |history: &AsmHistory| {
+        [current, input].into_iter().all(|id| {
+            history
+                .states()
+                .iter()
+                .filter(|state| state.state_id == id)
+                .count()
+                == 1
+        })
+    };
+    let index = match bindings.get(native) {
+        Some(bound) => {
+            let mut matches = histories
+                .iter()
+                .enumerate()
+                .filter(|(_, history)| history.id == *bound);
+            let (index, history) = matches.next()?;
+            (matches.next().is_none() && holds(history)).then_some(index)?
+        }
+        None => {
+            let (history, _, _) = super::unique_history_state_pair(histories, current, input)?;
+            let index = histories
+                .iter()
+                .position(|candidate| std::ptr::eq(candidate, history))?;
+            holds(history).then_some(index)?
+        }
+    };
+    let mut slots = Vec::new();
+    for id in ids {
+        slots.push(id.rsplit(':').next()?.parse::<i64>().ok()?);
+    }
+    Some((index, input, slots))
 }
 
 fn output_history<'a>(
@@ -181,6 +275,7 @@ fn fill_history(
     let mut subtypes = None;
     let mut newer = HashMap::<i64, HashSet<Option<i64>>>::new();
     let mut visited = 0;
+    let mut live_at_end = HashSet::<i64>::new();
     let mut failure = None;
     super::walk_entity_versions(
         states,
@@ -189,16 +284,26 @@ fn fill_history(
         |state_index, versions| {
             let ordinal = states.len() - visited - 1;
             visited += 1;
+            if visited == 1 {
+                live_at_end = versions.keys().copied().collect();
+            }
             if failure.is_some() {
                 return;
             }
             let state_id = states[state_index].state_id;
             for want in wants.iter().filter(|want| want.state == state_id) {
                 let revision = versions.get(&want.slot).copied();
-                if !newer
-                    .get(&want.slot)
-                    .is_some_and(|seen| seen.iter().any(|new| *new != revision))
-                {
+                let produced = want.producer.filter(|_| {
+                    newer
+                        .get(&want.slot)
+                        .is_some_and(|seen| seen.iter().any(|new| *new != revision))
+                });
+                // A consumed body that the final model still holds is a
+                // result body, not a history-only one.
+                let consumed = want
+                    .consumer
+                    .filter(|_| revision.is_some() && !live_at_end.contains(&want.slot));
+                if produced.is_none() && consumed.is_none() {
                     continue;
                 }
                 if !archive_attempted {
@@ -220,7 +325,7 @@ fn fill_history(
                 {
                     losses.push(F3dLossCode::FeatureHistoryBodyBounded.note(format!(
                         "{} body slot {} state {state_id} exceeds the history body cap",
-                        want.feature.id, want.slot
+                        want.origin.id, want.slot
                     )));
                     continue;
                 }
@@ -234,13 +339,14 @@ fn fill_history(
                     bytes,
                     (&header.metadata, subtypes),
                     want,
+                    (produced, consumed),
                     (ordinal, bodies.len()),
                 ) {
                     Ok(Some(body)) => bodies.push(body),
                     Ok(None) => {
                         losses.push(F3dLossCode::FeatureHistoryBodyUndecoded.note(format!(
                             "{} body slot {} state {state_id} has an incomplete or invalid geometry closure",
-                            want.feature.id, want.slot
+                            want.origin.id, want.slot
                         )));
                     }
                     Err(error) => failure = Some(error),
@@ -279,6 +385,7 @@ fn build(
         &cadmpeg_asm::nurbs::toks::SubtypeTable,
     ),
     want: &Want<'_>,
+    owners: (Option<&Feature>, Option<&Feature>),
     position: (usize, usize),
 ) -> Result<Option<HistoryBody>, CodecError> {
     let (ordinal, nest_index) = position;
@@ -337,8 +444,8 @@ fn build(
         HistoryBody {
             id: HistoryBodyId::mint(format!("f3d:history-body:nest#h{nest_index:04}"))
                 .map_err(|error| CodecError::malformed(format_args!("{error}")))?,
-            produced_by: Some(want.feature.id.clone()),
-            consumed_by: None,
+            produced_by: owners.0.map(|feature| feature.id.clone()),
+            consumed_by: owners.1.map(|feature| feature.id.clone()),
             state: HistoryStateRef {
                 ordinal: u32::try_from(ordinal)
                     .map_err(|_| CodecError::malformed("history ordinal"))?,
@@ -346,7 +453,7 @@ fn build(
             },
             topology,
         },
-        want.feature,
+        want.origin,
     )
 }
 
