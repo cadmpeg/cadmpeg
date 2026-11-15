@@ -1,16 +1,80 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Wire projections for feature metadata, memberships, and sweep sections.
+//! Borrowed wire projections for features, their metadata and memberships,
+//! and sweep sections.
+
+use std::collections::BTreeMap;
 
 use super::{
-    CoilPlacement, FeatureEquationCurve, FeatureResultMembers, PlanarProfileRef,
-    SelectionReference, SketchFeatureBinding, SweepCircularRegion, SweepSection,
+    CoilPlacement, DistinctMembers, Feature, FeatureContent, FeatureDefinition,
+    FeatureEquationCurve, FeatureId, FeatureResultMembers, PlanarProfileRef, SelectionReference,
+    SketchFeatureBinding, SweepSection,
 };
+use crate::ids::{BodyId, ProductDefinitionId};
 use crate::math::{Point3, Vector3};
-use crate::scalar::PositiveLength;
 use crate::sketches::SketchId;
 use cadmpeg_core::text::NonBlankString;
 use serde::ser::SerializeSeq;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Serialize, Serializer};
+
+#[derive(Serialize)]
+pub(crate) struct FeatureWriteWire<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    product_definition: &'a Option<ProductDefinitionId>,
+    id: &'a FeatureId,
+    ordinal: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: &'a Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    suppressed: &'a Option<bool>,
+    /// Regeneration predecessor of a feature that has no tree parent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    regeneration_parent: Option<&'a FeatureId>,
+    dependencies: &'a DistinctMembers<FeatureId>,
+    source_properties: &'a BTreeMap<NonBlankString, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_tag: &'a Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_text: &'a Option<String>,
+    source_content: &'a FeatureContent,
+    outputs: &'a Vec<BodyId>,
+    definition: &'a FeatureDefinition,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    native_ref: &'a Option<String>,
+}
+
+impl<'a> FeatureWriteWire<'a> {
+    pub(crate) fn new(feature: &'a Feature, regeneration_parent: Option<&'a FeatureId>) -> Self {
+        Self {
+            product_definition: &feature.product_definition,
+            id: &feature.id,
+            ordinal: feature.ordinal,
+            name: &feature.name,
+            suppressed: &feature.suppressed,
+            regeneration_parent,
+            dependencies: &feature.dependencies,
+            source_properties: &feature.source_properties,
+            source_tag: &feature.source_tag,
+            source_text: &feature.source_text,
+            source_content: &feature.source_content,
+            outputs: feature.evaluation.outputs(),
+            definition: feature.evaluation.definition(),
+            native_ref: &feature.native_ref,
+        }
+    }
+
+    fn standalone(feature: &'a Feature) -> Self {
+        Self::new(feature, None)
+    }
+}
+
+impl Serialize for Feature {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        FeatureWriteWire::standalone(self).serialize(serializer)
+    }
+}
 
 impl Serialize for FeatureResultMembers {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -102,23 +166,6 @@ impl Serialize for CoilPlacement {
             Self::Native { native_ref } => Wire::Native { native_ref },
         }
         .serialize(serializer)
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SweepCircularRegionWire {
-    outer_radius: PositiveLength,
-    #[serde(default, deserialize_with = "deserialize_wall_thickness")]
-    wall_thickness: Option<PositiveLength>,
-}
-
-cadmpeg_core::named_optional_field!(deserialize_wall_thickness, PositiveLength, "wall_thickness");
-
-impl<'de> Deserialize<'de> for SweepCircularRegion {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = SweepCircularRegionWire::deserialize(deserializer)?;
-        Self::new(wire.outer_radius, wire.wall_thickness).map_err(serde::de::Error::custom)
     }
 }
 
