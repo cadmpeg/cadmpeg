@@ -3744,12 +3744,12 @@ Offsets are relative to the primary indexed header. The LP-UTF16 scope kind payl
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
-| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | bytes 11 through 18 are zero |
-| 19 | 1 | `body_count_marker` | `u8` | little | spec | byte 19 is `0x01` |
-| 20 | 4 | `body_count` | `u32` | little | spec | stores u32 `1` at offset 20 |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | stores eight zero bytes at offsets 11 through 18 |
+| 19 | 1 | `body_count_marker` | `u8` | little | spec | `u8 1` at offset 19 |
+| 20 | 4 | `body_count` | `u32` | little | spec | and u32 `1` at offset 20 |
 | 24 | 1 | `body_marker` | `u8` | little | spec | marked u64 body entity suffix at offset 24 |
 | 25 | 8 | `body_entity_suffix` | `u64` | little | spec | marked u64 body entity suffix at offset 24 |
-| 33 | 6 | `body_field` | `bytes[6]` | little | spec | Each value has a six-byte trailing field |
+| 33 | 6 | `body_field` | `bytes[6]` | little | spec | an ordinary local 15-byte body-entity element |
 | 39 | 1 | `null_reference_marker` | `u8` | little | spec | the marked null reference at offset 39 |
 | 40 | 8 | `null_reference` | `bytes[8]` | little | spec | the marked null reference at offset 39 |
 | 48 | 1 | `null_reference_flag` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |

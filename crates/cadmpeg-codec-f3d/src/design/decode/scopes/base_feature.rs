@@ -1672,10 +1672,10 @@ pub(super) fn exact_base_feature_construction(
 /// Kind-offset increase per body of a suffix result-body frame: one entity
 /// entry, one repeated entry and one result entry.
 const SUFFIX_RESULT_BODY_KIND_STRIDE: usize = 37;
-/// Kind offset of a suffix result-body frame without bodies.
+/// Kind offset of a suffix result-body frame less one stride per body.
 const SUFFIX_RESULT_BODY_KIND_BASE: usize = 169;
-/// Distance from the null GUID length field to the scope kind.
-const SUFFIX_RESULT_BODY_GUID_COUNT_BEFORE_KIND: usize = 102;
+/// Distance from the end of the zero tail to the scope kind.
+const SUFFIX_RESULT_BODY_TAIL_END_BEFORE_KIND: usize = 102;
 
 /// The suffix result-body form: u32 `N` at offset 20, `N` body entries, the
 /// marked null reference, u32 `N`, the repeated body suffixes, one zero byte,
@@ -1761,15 +1761,10 @@ fn exact_suffix_result_bodies(
         });
         cursor += 11;
     }
-    let guid_count_at = start
+    let tail_end = start
         .checked_add(kind_offset)?
-        .checked_sub(SUFFIX_RESULT_BODY_GUID_COUNT_BEFORE_KIND)?;
-    if cursor > guid_count_at
-        || bytes
-            .get(cursor..guid_count_at)?
-            .iter()
-            .any(|byte| *byte != 0)
-    {
+        .checked_sub(SUFFIX_RESULT_BODY_TAIL_END_BEFORE_KIND)?;
+    if bytes.get(cursor..tail_end)?.iter().any(|byte| *byte != 0) {
         return None;
     }
     Some(DesignBaseFeatureConstruction::SuffixResultBodies {

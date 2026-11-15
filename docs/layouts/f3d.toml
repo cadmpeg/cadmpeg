@@ -11853,7 +11853,7 @@ anchor = "The ordinary form then stores a marked null reference, u32 `N`"
 name = "base_feature_suffix_result_body"
 kind = "byte"
 section = "3.1"
-anchor = "The suffix result-body form with one body stores u32 `1` at offset 20"
+anchor = "The suffix result-body form with one body stores eight zero bytes"
 size = 104
 note = "Offsets are relative to the primary indexed header. The LP-UTF16 scope kind payload begins at offset 206."
 
@@ -11869,21 +11869,21 @@ name = "zero_run_8"
 offset = 11
 type = "bytes[8]"
 source = "spec"
-anchor = "bytes 11 through 18 are zero"
+anchor = "stores eight zero bytes at offsets 11 through 18"
 
 [[record.field]]
 name = "body_count_marker"
 offset = 19
 type = "u8"
 source = "spec"
-anchor = "byte 19 is `0x01`"
+anchor = "`u8 1` at offset 19"
 
 [[record.field]]
 name = "body_count"
 offset = 20
 type = "u32"
 source = "spec"
-anchor = "stores u32 `1` at offset 20"
+anchor = "and u32 `1` at offset 20"
 
 [[record.field]]
 name = "body_marker"
@@ -11904,7 +11904,7 @@ name = "body_field"
 offset = 33
 type = "bytes[6]"
 source = "spec"
-anchor = "Each value has a six-byte trailing field"
+anchor = "an ordinary local 15-byte body-entity element"
 
 [[record.field]]
 name = "null_reference_marker"

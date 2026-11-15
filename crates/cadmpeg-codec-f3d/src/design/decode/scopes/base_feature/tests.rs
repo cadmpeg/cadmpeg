@@ -1069,7 +1069,11 @@ fn a_suffix_result_body_frame_reads_its_body_and_result_runs() {
 
 #[test]
 fn a_suffix_result_body_frame_refuses_a_broken_run() {
-    for (entities, repeated) in [(&[218][..], &[300][..]), (&[0][..], &[0][..])] {
+    for (entities, repeated) in [
+        (&[218][..], &[300][..]),
+        (&[0][..], &[0][..]),
+        (&[][..], &[][..]),
+    ] {
         let (bytes, scope) = suffix_frame(entities, repeated, 1);
         assert!(
             exact_base_feature_construction(&bytes, &scope)
@@ -1081,9 +1085,13 @@ fn a_suffix_result_body_frame_refuses_a_broken_run() {
 
     let (bytes, scope) = suffix_frame(&[218], &[218], 1);
     for (offset, value) in [
+        (11, 1),
+        (19, 0),
         (20, 2),
         (24, 0),
         (33, 1),
+        (39, 0),
+        (40, 1),
         (48, 2),
         (49, 1),
         (50, 2),
