@@ -55,9 +55,43 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
         f3d_with_reference_table_and_identity_xrefs, f3z_archive, redirections_json, XREF_ROLE,
     };
     const SECOND_ROLE: &str = "12345678-1234-4234-8234-123456789abc";
-    let child = crate::test_support::zip_test::f3d_with_partial_form_body_resources(
-        &crate::test_support::zip_test::generated_form_tsm(),
+    let program = crate::test_support::zip_test::generated_form_tsm();
+    let probe = super::decode(
+        crate::test_support::zip_test::f3d_with_partial_form_body_resources(
+            &program,
+            "literal:probe",
+        ),
     );
+    let collision = probe
+        .ir()
+        .native
+        .namespace("f3d")
+        .unwrap()
+        .arenas()
+        .values()
+        .flatten()
+        .map(cadmpeg_ir::NativeRecord::id)
+        .filter(|id| id.starts_with("f3d:"))
+        .min_by_key(|id| id.len())
+        .unwrap()
+        .to_owned();
+    assert!(
+        collision.len() <= 64,
+        "shortest native ID is {} bytes",
+        collision.len()
+    );
+    let child =
+        crate::test_support::zip_test::f3d_with_partial_form_body_resources(&program, &collision);
+    let unmerged = super::decode(child.clone());
+    assert!(unmerged
+        .ir()
+        .native
+        .namespace("f3d")
+        .unwrap()
+        .arenas()
+        .values()
+        .flatten()
+        .any(|record| record.id() == collision));
     let redirections = redirections_json(
         "root.f3d",
         &[("child-a.f3d", XREF_ROLE), ("child-b.f3d", SECOND_ROLE)],
@@ -122,15 +156,28 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
             .unwrap();
         let prefix = format!("role-{role}/reference-{reference}/occurrence-0/");
         assert!(!form.membership_is_complete());
-        assert_eq!(form.committed_cages().count(), 1);
+        assert_eq!(form.committed_cages().count(), 2);
         assert_eq!(form.referenced_cages().count(), 2);
         for id in form.referenced_cages() {
             assert!(id.as_str().contains(&prefix));
             assert!(decoded.ir().model.subds.iter().any(|cage| cage.id == *id));
             assert!(all_cages.insert(id.as_str().to_owned()));
         }
-        let foreign = form.inputs().reference_evidence.iter().find(|reference| matches!(&reference.target, FormNativeReferenceTarget::Document { link_name, .. } if link_name == "literal:foreign/link")).unwrap();
+        let foreign = form.inputs().reference_evidence.iter().find(|reference| matches!(&reference.target, FormNativeReferenceTarget::Document { asset_guid, target_type_guid: Some(type_guid), link_name, version: Some(version), .. } if asset_guid == &collision && type_guid == "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA" && link_name == &collision && version.key == "11111111-2222-3333-4444-555555555555" && version.urn == collision)).unwrap();
         assert!(foreign.source.as_str().contains(&prefix));
+        assert!(decoded
+            .ir()
+            .native
+            .namespace("f3d")
+            .unwrap()
+            .arenas()
+            .values()
+            .flatten()
+            .any(|record| record.id()
+                == format!(
+                    "f3d:xref/{prefix}{}",
+                    collision.strip_prefix("f3d:").unwrap()
+                )));
         let absent = form
             .inputs()
             .reference_evidence

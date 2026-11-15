@@ -431,7 +431,7 @@ pub(crate) fn f3d_with_form_body_resource(tsm: &[u8]) -> Vec<u8> {
     )
 }
 
-pub(crate) fn f3d_with_partial_form_body_resources(tsm: &[u8]) -> Vec<u8> {
+pub(crate) fn f3d_with_partial_form_body_resources(tsm: &[u8], literal: &str) -> Vec<u8> {
     use crate::test_support::{indexed_header, lp_ascii, lp_utf16, push_marked_reference};
     let (mut bulk, mut records) = generated_design_form_bulkstream();
     let mut types = generated_design_types(GeneratedDesignMetastreamVariant::Form);
@@ -520,11 +520,13 @@ pub(crate) fn f3d_with_partial_form_body_resources(tsm: &[u8]) -> Vec<u8> {
                     bulk.extend_from_slice(&22u64.to_le_bytes());
                     bulk.push(1);
                     bulk.extend_from_slice(&7u32.to_le_bytes());
-                    lp_utf16(&mut bulk, "11111111-2222-3333-4444-555555555555");
+                    lp_utf16(&mut bulk, literal);
                     bulk.push(0);
                     lp_ascii(&mut bulk, "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA");
-                    lp_utf16(&mut bulk, "literal:foreign/link");
-                    bulk.push(0);
+                    lp_utf16(&mut bulk, literal);
+                    bulk.push(1);
+                    lp_utf16(&mut bulk, "11111111-2222-3333-4444-555555555555");
+                    lp_utf16(&mut bulk, literal);
                     push_marked_reference(&mut bulk, 1712);
                     push_marked_reference(&mut bulk, 9999);
                 }

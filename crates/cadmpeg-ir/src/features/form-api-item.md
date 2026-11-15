@@ -1,1 +1,1 @@
-See the [Form construction contract](crate::features::form) for the meaning and admission rules of this item.
+See [inputs](crate::features::form#inputs), [reference evidence](crate::features::form#reference-evidence), [observations and membership](crate::features::form#observations-and-membership), and [wire and identities](crate::features::form#wire-and-identities) for the field and variant contracts.

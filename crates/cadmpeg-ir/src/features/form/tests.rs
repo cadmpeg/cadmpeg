@@ -256,7 +256,21 @@ fn form_schema_covers_legacy_arrays_and_retained_construction() {
     assert!(text.contains("FormCagesWire"));
     assert!(text.contains("FormCageObservation"));
     assert!(text.contains("cage_inputs"));
-    assert!(!text.contains("\"null\""));
+    fn has_null_type(value: &serde_json::Value) -> bool {
+        match value {
+            serde_json::Value::Object(fields) => {
+                fields.get("type").is_some_and(|kind| {
+                    kind == "null"
+                        || kind
+                            .as_array()
+                            .is_some_and(|types| types.iter().any(|kind| kind == "null"))
+                }) || fields.values().any(has_null_type)
+            }
+            serde_json::Value::Array(values) => values.iter().any(has_null_type),
+            _ => false,
+        }
+    }
+    assert!(!has_null_type(&schema));
     assert!(!schema["required"]
         .as_array()
         .unwrap()
@@ -304,6 +318,7 @@ fn foreign_form_reference_round_trips_and_rewrites_only_typed_local_identities()
             target: FormNativeReferenceTarget::Segment {
                 target: 22,
                 segment: 7,
+                asset_guid: None,
             },
             resource: None,
         },
@@ -317,7 +332,7 @@ fn foreign_form_reference_round_trips_and_rewrites_only_typed_local_identities()
                 target: 23,
                 segment: 8,
                 asset_guid: "literal asset".into(),
-                target_type_guid: "22222222-2222-4222-8222-222222222222".into(),
+                target_type_guid: Some("22222222-2222-4222-8222-222222222222".into()),
                 link_name: "test:stream:record#999".into(),
                 version: Some(FormExternalVersion {
                     key: "literal-key".into(),
@@ -336,10 +351,18 @@ fn foreign_form_reference_round_trips_and_rewrites_only_typed_local_identities()
         ordinal: 2,
     }];
     inputs.cardinality_evidence = vec![2, 3];
+    let membership = FormMembership::Partial {
+        cardinality: None,
+        order: FormOrder::Unknown,
+        members: vec![FormMember {
+            observation: FormObservationIndex(0),
+            ordinal: None,
+        }],
+    };
     let construction = FormConstruction::try_new(
         inputs.clone(),
         original.observations().to_vec(),
-        original.membership().clone(),
+        membership.clone(),
     )
     .unwrap();
     let encoded = serde_json::to_value(&construction).unwrap();
@@ -361,7 +384,8 @@ fn foreign_form_reference_round_trips_and_rewrites_only_typed_local_identities()
         &evidence[1].target,
         FormNativeReferenceTarget::Segment {
             target: 22,
-            segment: 7
+            segment: 7,
+            asset_guid: None
         }
     ));
     assert!(
@@ -389,17 +413,14 @@ fn foreign_form_reference_round_trips_and_rewrites_only_typed_local_identities()
     assert!(FormConstruction::try_new(
         invalid,
         original.observations().to_vec(),
-        original.membership().clone()
+        membership.clone()
     )
     .is_err());
     let mut invalid = inputs;
     invalid.position_evidence[0].observation = FormObservationIndex(999);
-    assert!(FormConstruction::try_new(
-        invalid,
-        original.observations().to_vec(),
-        original.membership().clone()
-    )
-    .is_err());
+    assert!(
+        FormConstruction::try_new(invalid, original.observations().to_vec(), membership).is_err()
+    );
 }
 
 #[test]
@@ -556,9 +577,299 @@ fn complete_form_rejects_contradictory_supplemental_membership_claims() {
         },
     ];
     assert!(FormConstruction::try_new(
-        inputs,
+        inputs.clone(),
         construction.observations().to_vec(),
         construction.membership().clone()
     )
+    .is_err());
+    assert!(FormConstruction::try_new(
+        inputs,
+        construction.observations().to_vec(),
+        FormMembership::Partial {
+            cardinality: None,
+            order: FormOrder::Unknown,
+            members: vec![FormMember {
+                observation: FormObservationIndex(0),
+                ordinal: None
+            }]
+        }
+    )
     .is_ok());
+}
+
+#[test]
+fn form_wire_rejects_duplicate_evidence_and_invalid_type_claims() {
+    let bad = [
+        serde_json::json!({"cages":[],"inputs":{"cardinality_evidence":[0,0]}}),
+        serde_json::json!({"cages":[],"inputs":{"resource_evidence":[{"source":"test:stream:record#1","entry":"literal"},{"source":"test:stream:record#1","entry":"literal"}]}}),
+        serde_json::json!({"cages":["test:model:subd#1"],"inputs":{"position_evidence":[{"observation":0,"ordinal":0},{"observation":0,"ordinal":0}]}}),
+        serde_json::json!({"cages":[],"inputs":{"reference_evidence":[{"source":"test:stream:record#1","role":"body","ordinal":0,"inline_type_guid":"not-a-guid","target":{"namespace":"local","target":"test:stream:record#2"}}]}}),
+        serde_json::json!({"cages":[],"inputs":{"reference_runs":[["test:stream:record#1"],["test:stream:record#1","test:stream:record#2"]]}}),
+        serde_json::json!({"cages":[],"inputs":{"reference_evidence":[{"source":"test:stream:record#1","role":"body","ordinal":0,"inline_type_guid":"11111111-1111-4111-8111-111111111111","target":{"namespace":"null"}}]}}),
+    ];
+    for value in bad {
+        assert!(serde_json::from_value::<FormConstruction>(value).is_err());
+    }
+    for namespace in ["null", "unreadable", "unvisited"] {
+        let value = serde_json::json!({"cages":[],"inputs":{"reference_evidence":[{"source":"test:stream:record#1","role":"body","ordinal":0,"target":{"namespace":namespace}}]}});
+        let parsed: FormConstruction = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(parsed).unwrap(), value);
+    }
+}
+#[test]
+fn complete_form_rejects_ambiguous_resource_state_evidence() {
+    let resource = FormResource {
+        source: NativeId::mint("test:stream:record#1").unwrap(),
+        entry: cadmpeg_core::nonblank_literal!("literal/cage.tsm"),
+    };
+    let inputs = FormInputs {
+        resource_state_evidence: vec![FormResourceStateEvidence {
+            resource: resource.clone(),
+            availability: FormResourceAvailability::Ambiguous,
+        }],
+        ..FormInputs::default()
+    };
+    let observations = vec![FormCageObservation {
+        paths: Vec::new(),
+        binding: FormCageBinding::Decoded {
+            cage: SubdId::mint("test:model:subd#1").unwrap(),
+            resource: Some(resource),
+        },
+    }];
+    assert!(FormConstruction::try_new(
+        inputs.clone(),
+        observations.clone(),
+        FormMembership::Complete {
+            members: vec![FormObservationIndex(0)],
+            order: FormKnownOrder::Source,
+            certainty: FormKnownOrder::Source
+        }
+    )
+    .is_err());
+    assert!(FormConstruction::try_new(
+        inputs,
+        observations,
+        FormMembership::Partial {
+            cardinality: Some(1),
+            order: FormOrder::Source,
+            members: vec![FormMember {
+                observation: FormObservationIndex(0),
+                ordinal: Some(0)
+            }]
+        }
+    )
+    .is_ok());
+}
+
+#[test]
+fn partial_form_rejects_contradictory_current_resource_states() {
+    let resource = FormResource {
+        source: NativeId::mint("test:stream:record#1").unwrap(),
+        entry: cadmpeg_core::nonblank_literal!("literal/cage.tsm"),
+    };
+    let inputs = FormInputs {
+        resource_state_evidence: vec![FormResourceStateEvidence {
+            resource: resource.clone(),
+            availability: FormResourceAvailability::Inactive,
+        }],
+        ..FormInputs::default()
+    };
+    let observation = |availability| FormCageObservation {
+        paths: Vec::new(),
+        binding: FormCageBinding::Undecoded {
+            resource: resource.clone(),
+            availability,
+        },
+    };
+    let membership = FormMembership::Partial {
+        cardinality: None,
+        order: FormOrder::Unknown,
+        members: vec![FormMember {
+            observation: FormObservationIndex(0),
+            ordinal: None,
+        }],
+    };
+    for availability in [
+        FormResourceAvailability::Unknown,
+        FormResourceAvailability::ActiveUndecoded,
+    ] {
+        assert!(FormConstruction::try_new(
+            inputs.clone(),
+            vec![observation(availability)],
+            membership.clone()
+        )
+        .is_err());
+    }
+    assert!(FormConstruction::try_new(
+        inputs,
+        vec![observation(FormResourceAvailability::Ambiguous)],
+        membership
+    )
+    .is_ok());
+    assert!(FormConstruction::try_new(
+        FormInputs::default(),
+        vec![
+            observation(FormResourceAvailability::Unknown),
+            observation(FormResourceAvailability::ActiveUndecoded)
+        ],
+        FormMembership::Partial {
+            cardinality: None,
+            order: FormOrder::Unknown,
+            members: Vec::new()
+        }
+    )
+    .is_err());
+}
+
+#[test]
+fn membership_checks_order_and_complete_closure_evidence() {
+    let complete = FormConstruction::complete(vec![
+        SubdId::mint("test:model:subd#1").unwrap(),
+        SubdId::mint("test:model:subd#2").unwrap(),
+    ])
+    .unwrap();
+    let observations = complete.observations().to_vec();
+    let partial = |order| FormMembership::Partial {
+        cardinality: Some(2),
+        order,
+        members: vec![
+            FormMember {
+                observation: FormObservationIndex(0),
+                ordinal: Some(1),
+            },
+            FormMember {
+                observation: FormObservationIndex(1),
+                ordinal: Some(0),
+            },
+        ],
+    };
+    assert!(FormConstruction::try_new(
+        FormInputs::default(),
+        observations.clone(),
+        partial(FormOrder::Source)
+    )
+    .is_err());
+    assert!(FormConstruction::try_new(
+        FormInputs::default(),
+        observations.clone(),
+        partial(FormOrder::Assumed)
+    )
+    .is_err());
+    assert!(FormConstruction::try_new(
+        FormInputs::default(),
+        observations.clone(),
+        partial(FormOrder::Unknown)
+    )
+    .is_ok());
+    let conflicting_positions = FormInputs {
+        position_evidence: vec![
+            FormPositionEvidence {
+                source: None,
+                observation: FormObservationIndex(0),
+                ordinal: 1,
+            },
+            FormPositionEvidence {
+                source: None,
+                observation: FormObservationIndex(1),
+                ordinal: 0,
+            },
+        ],
+        ..FormInputs::default()
+    };
+    let no_current_positions = |order| FormMembership::Partial {
+        cardinality: Some(2),
+        order,
+        members: vec![
+            FormMember {
+                observation: FormObservationIndex(0),
+                ordinal: None,
+            },
+            FormMember {
+                observation: FormObservationIndex(1),
+                ordinal: None,
+            },
+        ],
+    };
+    assert!(FormConstruction::try_new(
+        conflicting_positions.clone(),
+        observations.clone(),
+        no_current_positions(FormOrder::Source)
+    )
+    .is_err());
+    assert!(FormConstruction::try_new(
+        conflicting_positions.clone(),
+        observations.clone(),
+        no_current_positions(FormOrder::Unknown)
+    )
+    .is_ok());
+    let asserted_position = FormMembership::Partial {
+        cardinality: Some(2),
+        order: FormOrder::Unknown,
+        members: vec![FormMember {
+            observation: FormObservationIndex(0),
+            ordinal: Some(0),
+        }],
+    };
+    assert!(FormConstruction::try_new(
+        conflicting_positions,
+        observations.clone(),
+        asserted_position
+    )
+    .is_err());
+    for (members, certainty, selected_certainty, accepted) in [
+        (
+            vec![0, 1],
+            FormKnownOrder::Source,
+            FormKnownOrder::Source,
+            true,
+        ),
+        (
+            vec![0, 1],
+            FormKnownOrder::Assumed,
+            FormKnownOrder::Source,
+            true,
+        ),
+        (
+            vec![0, 1],
+            FormKnownOrder::Source,
+            FormKnownOrder::Assumed,
+            false,
+        ),
+        (
+            vec![0, 1],
+            FormKnownOrder::Assumed,
+            FormKnownOrder::Assumed,
+            true,
+        ),
+        (
+            vec![0],
+            FormKnownOrder::Source,
+            FormKnownOrder::Source,
+            false,
+        ),
+        (
+            vec![1, 0],
+            FormKnownOrder::Source,
+            FormKnownOrder::Source,
+            false,
+        ),
+    ] {
+        let inputs = FormInputs {
+            closure_evidence: vec![FormClosureEvidence {
+                members: members.into_iter().map(FormObservationIndex).collect(),
+                order: FormKnownOrder::Source,
+                certainty,
+            }],
+            ..FormInputs::default()
+        };
+        let membership = FormMembership::Complete {
+            members: vec![FormObservationIndex(0), FormObservationIndex(1)],
+            order: FormKnownOrder::Source,
+            certainty: selected_certainty,
+        };
+        assert_eq!(
+            FormConstruction::try_new(inputs, observations.clone(), membership).is_ok(),
+            accepted
+        );
+    }
 }

@@ -22,31 +22,80 @@ pub struct FormInputs {
     #[doc = include_str!("form-api-item.md")]
     pub references: Vec<NativeId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "unique_form_vec::<Vec<NativeId>>")
+    )]
+    #[doc = include_str!("form-api-item.md")]
+    pub reference_runs: Vec<Vec<NativeId>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "unique_form_vec::<FormNativeList>")
+    )]
     #[doc = include_str!("form-api-item.md")]
     pub lists: Vec<FormNativeList>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "unique_form_vec::<FormNativeReference>")
+    )]
     #[doc = include_str!("form-api-item.md")]
     pub reference_evidence: Vec<FormNativeReference>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "unique_form_vec::<FormPositionEvidence>")
+    )]
     #[doc = include_str!("form-api-item.md")]
     pub position_evidence: Vec<FormPositionEvidence>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "unique_form_vec::<FormOrderEvidence>")
+    )]
+    #[doc = include_str!("form-api-item.md")]
+    pub order_evidence: Vec<FormOrderEvidence>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "schema", schemars(schema_with = "unique_form_vec::<u32>"))]
     #[doc = include_str!("form-api-item.md")]
     pub cardinality_evidence: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "unique_form_vec::<FormClosureEvidence>")
+    )]
+    #[doc = include_str!("form-api-item.md")]
+    pub closure_evidence: Vec<FormClosureEvidence>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "unique_form_vec::<FormResource>")
+    )]
     #[doc = include_str!("form-api-item.md")]
     pub resource_evidence: Vec<FormResource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "unique_form_vec::<FormResourceStateEvidence>")
+    )]
+    #[doc = include_str!("form-api-item.md")]
+    pub resource_state_evidence: Vec<FormResourceStateEvidence>,
 }
 
 impl FormInputs {
     fn is_empty(&self) -> bool {
         self.parameters.is_empty()
             && self.references.is_empty()
+            && self.reference_runs.is_empty()
             && self.lists.is_empty()
             && self.reference_evidence.is_empty()
             && self.position_evidence.is_empty()
+            && self.order_evidence.is_empty()
             && self.cardinality_evidence.is_empty()
+            && self.closure_evidence.is_empty()
             && self.resource_evidence.is_empty()
+            && self.resource_state_evidence.is_empty()
     }
 }
 
@@ -74,6 +123,38 @@ cadmpeg_core::named_optional_field!(deserialize_position_source, FormInputPath, 
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[doc = include_str!("form-api-item.md")]
+pub struct FormOrderEvidence {
+    #[doc = include_str!("form-api-item.md")]
+    pub order: FormKnownOrder,
+    #[doc = include_str!("form-api-item.md")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "form_order_members_schema")
+    )]
+    pub members: Vec<FormObservationIndex>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = include_str!("form-api-item.md")]
+pub struct FormClosureEvidence {
+    #[doc = include_str!("form-api-item.md")]
+    pub members: Vec<FormObservationIndex>,
+    #[doc = include_str!("form-api-item.md")]
+    pub order: FormKnownOrder,
+    #[doc = include_str!("form-api-item.md")]
+    pub certainty: FormKnownOrder,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", schemars(extend("allOf" = [
+    {"if": {"properties": {"target": {"properties": {"namespace": {"const": "document"}}}}}, "then": {"anyOf": [{"required": ["inline_type_guid"]}, {"properties": {"target": {"required": ["target_type_guid"]}}}]}},
+    {"if": {"properties": {"target": {"properties": {"namespace": {"enum": ["null", "unreadable", "unvisited"]}}}}}, "then": {"not": {"required": ["inline_type_guid"]}}}
+])))]
+#[doc = include_str!("form-api-item.md")]
 pub struct FormNativeReference {
     #[doc = include_str!("form-api-item.md")]
     pub source: NativeId,
@@ -94,7 +175,15 @@ pub struct FormNativeReference {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_inline_type_guid"
     )]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(
+            with = "String",
+            regex(
+                pattern = "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+            )
+        )
+    )]
     #[doc = include_str!("form-api-item.md")]
     pub inline_type_guid: Option<String>,
     #[doc = include_str!("form-api-item.md")]
@@ -123,6 +212,8 @@ pub enum FormReferenceRole {
     #[doc = include_str!("form-api-item.md")]
     TrackingMember,
     #[doc = include_str!("form-api-item.md")]
+    TrackingMemberFixedAssumed,
+    #[doc = include_str!("form-api-item.md")]
     SerializerSurface,
 }
 
@@ -131,6 +222,12 @@ pub enum FormReferenceRole {
 #[serde(tag = "namespace", rename_all = "snake_case", deny_unknown_fields)]
 #[doc = include_str!("form-api-item.md")]
 pub enum FormNativeReferenceTarget {
+    #[doc = include_str!("form-api-item.md")]
+    Null,
+    #[doc = include_str!("form-api-item.md")]
+    Unreadable,
+    #[doc = include_str!("form-api-item.md")]
+    Unvisited,
     #[doc = include_str!("form-api-item.md")]
     Local {
         #[doc = include_str!("form-api-item.md")]
@@ -142,6 +239,14 @@ pub enum FormNativeReferenceTarget {
         target: u64,
         #[doc = include_str!("form-api-item.md")]
         segment: u32,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_asset_guid"
+        )]
+        #[cfg_attr(feature = "schema", schemars(with = "String"))]
+        #[doc = include_str!("form-api-item.md")]
+        asset_guid: Option<String>,
     },
     #[doc = include_str!("form-api-item.md")]
     Document {
@@ -151,8 +256,22 @@ pub enum FormNativeReferenceTarget {
         segment: u32,
         #[doc = include_str!("form-api-item.md")]
         asset_guid: String,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_target_type_guid"
+        )]
         #[doc = include_str!("form-api-item.md")]
-        target_type_guid: String,
+        #[cfg_attr(
+            feature = "schema",
+            schemars(
+                with = "String",
+                regex(
+                    pattern = "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+                )
+            )
+        )]
+        target_type_guid: Option<String>,
         #[doc = include_str!("form-api-item.md")]
         link_name: String,
         #[serde(
@@ -165,6 +284,8 @@ pub enum FormNativeReferenceTarget {
         version: Option<FormExternalVersion>,
     },
 }
+cadmpeg_core::named_optional_field!(deserialize_asset_guid, String, "asset_guid");
+cadmpeg_core::named_optional_field!(deserialize_target_type_guid, String, "target_type_guid");
 cadmpeg_core::named_optional_field!(
     deserialize_form_external_version,
     FormExternalVersion,
@@ -194,6 +315,10 @@ pub struct FormNativeList {
     #[doc = include_str!("form-api-item.md")]
     pub declared_count: u32,
     #[doc = include_str!("form-api-item.md")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "unique_form_vec::<FormNativeMember>")
+    )]
     pub members: Vec<FormNativeMember>,
 }
 
@@ -207,7 +332,11 @@ pub enum FormListRole {
     #[doc = include_str!("form-api-item.md")]
     TrackingSelection,
     #[doc = include_str!("form-api-item.md")]
+    TrackingSelectionFixedAssumed,
+    #[doc = include_str!("form-api-item.md")]
     CageCatalog,
+    #[doc = include_str!("form-api-item.md")]
+    CageCatalogCompanions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -236,6 +365,10 @@ pub struct FormInputPath {
 #[doc = include_str!("form-api-item.md")]
 pub struct FormCageObservation {
     #[doc = include_str!("form-api-item.md")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "unique_form_vec::<FormInputPath>")
+    )]
     pub paths: Vec<FormInputPath>,
     #[doc = include_str!("form-api-item.md")]
     pub binding: FormCageBinding,
@@ -282,7 +415,7 @@ pub struct FormResource {
     pub entry: NonBlankString,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[doc = include_str!("form-api-item.md")]
@@ -295,6 +428,17 @@ pub enum FormResourceAvailability {
     Unknown,
     #[doc = include_str!("form-api-item.md")]
     Ambiguous,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = include_str!("form-api-item.md")]
+pub struct FormResourceStateEvidence {
+    #[doc = include_str!("form-api-item.md")]
+    pub resource: FormResource,
+    #[doc = include_str!("form-api-item.md")]
+    pub availability: FormResourceAvailability,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -353,6 +497,10 @@ pub enum FormMembership {
     #[doc = include_str!("form-api-item.md")]
     Complete {
         #[doc = include_str!("form-api-item.md")]
+        #[cfg_attr(
+            feature = "schema",
+            schemars(schema_with = "unique_form_vec::<FormObservationIndex>")
+        )]
         members: Vec<FormObservationIndex>,
         #[doc = include_str!("form-api-item.md")]
         order: FormKnownOrder,
@@ -372,6 +520,10 @@ pub enum FormMembership {
         #[doc = include_str!("form-api-item.md")]
         order: FormOrder,
         #[doc = include_str!("form-api-item.md")]
+        #[cfg_attr(
+            feature = "schema",
+            schemars(schema_with = "unique_form_vec::<FormMember>")
+        )]
         members: Vec<FormMember>,
     },
 }
@@ -432,12 +584,25 @@ impl FormConstruction {
         observations: Vec<FormCageObservation>,
         membership: FormMembership,
     ) -> Result<Self, &'static str> {
+        if has_duplicates(&inputs.lists)
+            || has_duplicates(&inputs.reference_evidence)
+            || has_duplicates(&inputs.closure_evidence)
+        {
+            return Err("duplicate Form source evidence");
+        }
         for reference in &inputs.reference_evidence {
-            if reference
-                .inline_type_guid
-                .as_deref()
-                .is_some_and(|guid| !form_guid(guid))
-                || matches!(&reference.target, FormNativeReferenceTarget::Document { target_type_guid, .. } if !form_guid(target_type_guid))
+            if (reference.inline_type_guid.is_some()
+                && matches!(
+                    &reference.target,
+                    FormNativeReferenceTarget::Null
+                        | FormNativeReferenceTarget::Unreadable
+                        | FormNativeReferenceTarget::Unvisited
+                ))
+                || reference
+                    .inline_type_guid
+                    .as_deref()
+                    .is_some_and(|guid| !form_guid(guid))
+                || matches!(&reference.target, FormNativeReferenceTarget::Document { target_type_guid, .. } if target_type_guid.as_deref().is_some_and(|guid| !form_guid(guid)) || (target_type_guid.is_none() && reference.inline_type_guid.is_none()))
             {
                 return Err("invalid Form reference type GUID");
             }
@@ -457,6 +622,25 @@ impl FormConstruction {
                 return Err("invalid Form position evidence");
             }
         }
+        for (index, evidence) in inputs.order_evidence.iter().enumerate() {
+            if evidence.members.len() < 2
+                || evidence
+                    .members
+                    .iter()
+                    .any(|member| member.0 >= observations.len())
+                || inputs.order_evidence[..index].contains(evidence)
+            {
+                return Err("invalid Form order evidence");
+            }
+        }
+        if inputs.closure_evidence.iter().any(|claim| {
+            claim
+                .members
+                .iter()
+                .any(|member| member.0 >= observations.len())
+        }) {
+            return Err("invalid Form closure evidence");
+        }
         let mut counts = HashSet::new();
         if inputs
             .cardinality_evidence
@@ -469,6 +653,28 @@ impl FormConstruction {
             if inputs.resource_evidence[..index].contains(resource) {
                 return Err("duplicate Form resource evidence");
             }
+        }
+        for (index, state) in inputs.resource_state_evidence.iter().enumerate() {
+            if inputs.resource_state_evidence[..index].contains(state) {
+                return Err("duplicate Form resource state evidence");
+            }
+        }
+        for (index, run) in inputs.reference_runs.iter().enumerate() {
+            if !inputs.references.is_empty()
+                || inputs.reference_runs.len() < 2
+                || run.is_empty()
+                || inputs.reference_runs[..index]
+                    .iter()
+                    .any(|other| other.starts_with(run) || run.starts_with(other))
+            {
+                return Err("invalid Form reference runs");
+            }
+        }
+        if observations
+            .iter()
+            .any(|observation| has_duplicates(&observation.paths))
+        {
+            return Err("duplicate Form observation path");
         }
         let mut cages = HashSet::new();
         if observations
@@ -505,6 +711,37 @@ impl FormConstruction {
         if ambiguous_resource {
             return Err("ambiguous Form resource association");
         }
+        let mut undecoded_resources = HashSet::new();
+        for observation in &observations {
+            if let FormCageBinding::Undecoded {
+                resource,
+                availability,
+            } = &observation.binding
+            {
+                if !undecoded_resources.insert(resource.entry.as_str()) {
+                    return Err("duplicate Form resource observation");
+                }
+                if inputs.resource_state_evidence.iter().any(|claim| {
+                    claim.resource.entry == resource.entry
+                        && match availability {
+                            FormResourceAvailability::ActiveUndecoded => matches!(
+                                claim.availability,
+                                FormResourceAvailability::Inactive
+                                    | FormResourceAvailability::Ambiguous
+                            ),
+                            FormResourceAvailability::Inactive => matches!(
+                                claim.availability,
+                                FormResourceAvailability::ActiveUndecoded
+                                    | FormResourceAvailability::Ambiguous
+                            ),
+                            FormResourceAvailability::Unknown
+                            | FormResourceAvailability::Ambiguous => false,
+                        }
+                }) {
+                    return Err("contradictory Form resource state evidence");
+                }
+            }
+        }
         let mut selected = HashSet::new();
         let mut positions = HashSet::new();
         let mut admit = |index: FormObservationIndex,
@@ -526,6 +763,7 @@ impl FormConstruction {
                         ..
                     }
                 )
+                && !matches!(&observation.binding, FormCageBinding::Undecoded { resource, availability: FormResourceAvailability::Unknown } if inputs.resource_state_evidence.iter().any(|claim| claim.resource.entry == resource.entry && matches!(claim.availability, FormResourceAvailability::Inactive | FormResourceAvailability::Ambiguous)))
         };
         let valid = match &membership {
             FormMembership::Complete { members, .. } => {
@@ -543,22 +781,147 @@ impl FormConstruction {
                     .all(|member| admit(member.observation, member.ordinal, *cardinality, false))
             }
         };
+        let selected_positions_match = match &membership {
+            FormMembership::Complete { .. } => true,
+            FormMembership::Partial { members, .. } => members.iter().all(|member| {
+                member.ordinal.is_none_or(|ordinal| {
+                    inputs.position_evidence.iter().all(|claim| {
+                        (claim.observation != member.observation || claim.ordinal == ordinal)
+                            && (claim.ordinal != ordinal || claim.observation == member.observation)
+                    })
+                })
+            }),
+        };
+        let selected_count_matches = match &membership {
+            FormMembership::Complete { .. } => true,
+            FormMembership::Partial {
+                cardinality,
+                members,
+                ..
+            } => cardinality.is_none_or(|count| {
+                inputs
+                    .cardinality_evidence
+                    .iter()
+                    .all(|claim| *claim == count)
+                    && inputs.closure_evidence.iter().all(|claim| {
+                        u32::try_from(claim.members.len()).ok() == Some(count)
+                            && members
+                                .iter()
+                                .all(|member| claim.members.contains(&member.observation))
+                    })
+            }),
+        };
         let claims_match = match &membership {
-            FormMembership::Complete { members, .. } => {
+            FormMembership::Complete {
+                members,
+                order,
+                certainty,
+            } => {
                 inputs
                     .cardinality_evidence
                     .iter()
                     .all(|&count| u32::try_from(members.len()).ok() == Some(count))
+                    && inputs.closure_evidence.iter().all(|claim| {
+                        claim.members == *members
+                            && (*order == FormKnownOrder::Source
+                                || claim.order == FormKnownOrder::Assumed)
+                            && (*certainty == FormKnownOrder::Source
+                                || claim.certainty == FormKnownOrder::Assumed)
+                    })
                     && inputs.position_evidence.iter().all(|evidence| {
                         usize::try_from(evidence.ordinal)
                             .ok()
                             .and_then(|ordinal| members.get(ordinal))
                             == Some(&evidence.observation)
                     })
+                    && inputs
+                        .order_evidence
+                        .iter()
+                        .all(|evidence| is_subsequence(&evidence.members, members))
+                    && members.iter().all(|index| {
+                        match observations
+                            .get(index.0)
+                            .map(|observation| &observation.binding)
+                        {
+                            Some(FormCageBinding::Decoded {
+                                resource: Some(resource),
+                                ..
+                            }) => !inputs.resource_state_evidence.iter().any(|state| {
+                                state.resource.entry == resource.entry
+                                    && matches!(
+                                        state.availability,
+                                        FormResourceAvailability::Inactive
+                                            | FormResourceAvailability::Ambiguous
+                                    )
+                            }),
+                            _ => true,
+                        }
+                    })
             }
-            FormMembership::Partial { .. } => true,
+            FormMembership::Partial {
+                order: FormOrder::Unknown,
+                ..
+            } => true,
+            FormMembership::Partial { members, .. } => {
+                let selected = members
+                    .iter()
+                    .map(|member| member.observation)
+                    .collect::<Vec<_>>();
+                let mut last = None;
+                let positions_in_order =
+                    members
+                        .iter()
+                        .filter_map(|member| member.ordinal)
+                        .all(|ordinal| {
+                            let valid = last.is_none_or(|previous| previous < ordinal);
+                            last = Some(ordinal);
+                            valid
+                        });
+                let selected_positions = members
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(index, member)| {
+                        member
+                            .ordinal
+                            .into_iter()
+                            .chain(inputs.position_evidence.iter().filter_map(move |claim| {
+                                (claim.observation == member.observation).then_some(claim.ordinal)
+                            }))
+                            .map(move |ordinal| (index, ordinal))
+                    })
+                    .collect::<Vec<_>>();
+                let evidence_positions_in_order = selected_positions.iter().all(|&(left, a)| {
+                    selected_positions
+                        .iter()
+                        .all(|&(right, b)| match left.cmp(&right) {
+                            std::cmp::Ordering::Less => a < b,
+                            std::cmp::Ordering::Equal => a == b,
+                            std::cmp::Ordering::Greater => a > b,
+                        })
+                });
+                positions_in_order
+                    && evidence_positions_in_order
+                    && inputs
+                        .order_evidence
+                        .iter()
+                        .map(|evidence| evidence.members.as_slice())
+                        .chain(
+                            inputs
+                                .closure_evidence
+                                .iter()
+                                .map(|claim| claim.members.as_slice()),
+                        )
+                        .all(|sequence| {
+                            let relevant = sequence
+                                .iter()
+                                .copied()
+                                .filter(|member| selected.contains(member))
+                                .collect::<Vec<_>>();
+                            is_subsequence(&relevant, &selected)
+                        })
+            }
         };
-        if !valid || !claims_match {
+        if !valid || !selected_positions_match || !selected_count_matches || !claims_match {
             return Err("invalid Form membership");
         }
         Ok(Self {
@@ -645,6 +1008,34 @@ fn form_guid(value: &str) -> bool {
                 byte.is_ascii_hexdigit()
             }
         })
+}
+
+fn is_subsequence<T: PartialEq>(sequence: &[T], values: &[T]) -> bool {
+    let mut remaining = values.iter();
+    sequence
+        .iter()
+        .all(|item| remaining.any(|value| value == item))
+}
+
+fn has_duplicates<T: PartialEq>(values: &[T]) -> bool {
+    values
+        .iter()
+        .enumerate()
+        .any(|(index, value)| values[..index].contains(value))
+}
+
+#[cfg(feature = "schema")]
+fn unique_form_vec<T: JsonSchema>(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let mut schema = generator.subschema_for::<Vec<T>>();
+    schema.insert("uniqueItems".into(), true.into());
+    schema
+}
+
+#[cfg(feature = "schema")]
+fn form_order_members_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let mut schema = generator.subschema_for::<Vec<FormObservationIndex>>();
+    schema.insert("minItems".into(), 2.into());
+    schema
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -777,13 +1168,11 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormConstruction {
 }
 
 rewrite_record!(FormNativeList, []; { source, role, declared_count, members });
-rewrite_record!(FormNativeReference, []; { source, role, ordinal, run, inline_type_guid, target, resource });
 rewrite_record!(FormPositionEvidence, []; { source, observation, ordinal });
-rewrite_enum!(FormNativeReferenceTarget, []; { Local { target }, Segment { target, segment }, Document { target, segment, asset_guid, target_type_guid, link_name, version } });
-rewrite_record!(FormExternalVersion, []; { key, urn });
 rewrite_record!(FormNativeMember, []; { ordinal, reference });
 rewrite_record!(FormInputPath, []; { references });
 rewrite_record!(FormCageObservation, []; { paths, binding });
+rewrite_record!(FormResourceStateEvidence, []; { resource, availability });
 
 rewrite_record!(FormMember, []; { observation, ordinal });
 rewrite_scalar!(FormListRole);
@@ -795,6 +1184,60 @@ rewrite_scalar!(FormKnownOrder);
 rewrite_enum!(FormCageBinding, []; { Decoded { cage, resource }, Undecoded { resource, availability }, Unresolved {} });
 rewrite_enum!(FormMembership, []; { Complete { members, order, certainty }, Partial { cardinality, order, members } });
 
+impl crate::schema::rewrite::typed::RewriteIdentities for FormNativeReference {
+    fn visit_identity_references(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        self.source.visit_identity_references(ctx, visitor)?;
+        self.target.visit_identity_references(ctx, visitor)?;
+        self.resource.visit_identity_references(ctx, visitor)
+    }
+
+    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            source: self.source.rewrite_identities(ctx, map)?,
+            role: self.role,
+            ordinal: self.ordinal,
+            run: self.run,
+            inline_type_guid: self.inline_type_guid,
+            target: self.target.rewrite_identities(ctx, map)?,
+            resource: self.resource.rewrite_identities(ctx, map)?,
+        })
+    }
+}
+
+impl crate::schema::rewrite::typed::RewriteIdentities for FormNativeReferenceTarget {
+    fn visit_identity_references(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        if let Self::Local { target } = self {
+            target.visit_identity_references(ctx, visitor)?;
+        }
+        Ok(())
+    }
+
+    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(match self {
+            Self::Local { target } => Self::Local {
+                target: target.rewrite_identities(ctx, map)?,
+            },
+            literal => literal,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests;
 
@@ -805,12 +1248,16 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormInputs {
         visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         self.references.visit_identity_references(ctx, visitor)?;
+        self.reference_runs
+            .visit_identity_references(ctx, visitor)?;
         self.lists.visit_identity_references(ctx, visitor)?;
         self.reference_evidence
             .visit_identity_references(ctx, visitor)?;
         self.position_evidence
             .visit_identity_references(ctx, visitor)?;
         self.resource_evidence
+            .visit_identity_references(ctx, visitor)?;
+        self.resource_state_evidence
             .visit_identity_references(ctx, visitor)
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
@@ -821,11 +1268,15 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormInputs {
         Ok(Self {
             parameters: self.parameters,
             references: self.references.rewrite_identities(ctx, map)?,
+            reference_runs: self.reference_runs.rewrite_identities(ctx, map)?,
             lists: self.lists.rewrite_identities(ctx, map)?,
             reference_evidence: self.reference_evidence.rewrite_identities(ctx, map)?,
             position_evidence: self.position_evidence.rewrite_identities(ctx, map)?,
+            order_evidence: self.order_evidence,
             cardinality_evidence: self.cardinality_evidence,
+            closure_evidence: self.closure_evidence,
             resource_evidence: self.resource_evidence.rewrite_identities(ctx, map)?,
+            resource_state_evidence: self.resource_state_evidence.rewrite_identities(ctx, map)?,
         })
     }
 }

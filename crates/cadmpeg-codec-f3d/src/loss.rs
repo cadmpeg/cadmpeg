@@ -671,6 +671,7 @@ pub(crate) enum F3dLossCode {
     FeatureFormReferenceTypeConflict,
     FeatureFormForeignReferenceUnresolved,
     FeatureFormTrackingOwnerConflict,
+    FeatureFormTrackingFixedSlotsAssumed,
     FeatureFormSerializerReferenceUnresolved,
     FeatureFormMembershipConflict,
     /// A legacy Scale form is selected by the frame length of its English
@@ -1452,6 +1453,7 @@ impl F3dLossCode {
         Self::FeatureFormReferenceTypeConflict,
         Self::FeatureFormForeignReferenceUnresolved,
         Self::FeatureFormTrackingOwnerConflict,
+        Self::FeatureFormTrackingFixedSlotsAssumed,
         Self::FeatureFormSerializerReferenceUnresolved,
         Self::FeatureFormMembershipConflict,
         Self::FeatureScaleFrameLengthFormAssumed,
@@ -2297,6 +2299,9 @@ impl F3dLossCode {
                 "feature.form-foreign-reference-unresolved"
             }
             Self::FeatureFormTrackingOwnerConflict => "feature.form-tracking-owner-conflict",
+            Self::FeatureFormTrackingFixedSlotsAssumed => {
+                "feature.form-tracking-fixed-slots-assumed"
+            }
             Self::FeatureFormSerializerReferenceUnresolved => {
                 "feature.form-serializer-reference-unresolved"
             }
@@ -3043,6 +3048,7 @@ impl F3dLossCode {
             | Self::FeatureFormReferenceTypeConflict
             | Self::FeatureFormForeignReferenceUnresolved
             | Self::FeatureFormTrackingOwnerConflict
+            | Self::FeatureFormTrackingFixedSlotsAssumed
             | Self::FeatureFormSerializerReferenceUnresolved
             | Self::FeatureFormMembershipConflict
             | Self::FeatureScaleFrameLengthFormAssumed
@@ -3632,6 +3638,7 @@ impl F3dLossCode {
             | Self::FeatureFormReferenceTypeConflict
             | Self::FeatureFormForeignReferenceUnresolved
             | Self::FeatureFormTrackingOwnerConflict
+            | Self::FeatureFormTrackingFixedSlotsAssumed
             | Self::FeatureFormSerializerReferenceUnresolved
             | Self::FeatureFormMembershipConflict
             | Self::FeatureScaleFrameLengthFormAssumed
@@ -4339,6 +4346,7 @@ mod tests {
                 "feature.form-reference-type-conflict",
                 "feature.form-foreign-reference-unresolved",
                 "feature.form-tracking-owner-conflict",
+                "feature.form-tracking-fixed-slots-assumed",
                 "feature.form-serializer-reference-unresolved",
                 "feature.form-membership-conflict",
                 "feature.scale-frame-length-form-assumed",

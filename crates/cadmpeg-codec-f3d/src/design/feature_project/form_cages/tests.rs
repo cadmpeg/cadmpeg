@@ -618,7 +618,8 @@ fn form_review_reproduces_ambiguous_legacy_surfaces() {
 fn legacy_catalog_keeps_siblings_and_all_ambiguous_surface_paths() {
     use std::io::{Cursor, Write};
     const THIRD: &str = "33333333-3333-4333-8333-333333333333";
-    for ambiguous in [false, true] {
+    for (ambiguous, invalid_object) in [(false, false), (true, false), (false, true), (true, true)]
+    {
         let mut table = indexed_frame(b"325", 309, 1850);
         table[20] = 1;
         table[26] = 1;
@@ -629,7 +630,7 @@ fn legacy_catalog_keeps_siblings_and_all_ambiguous_surface_paths() {
             let object = 1000 + ordinal * 2;
             let companion = 2000 + ordinal * 2;
             let at = 41 + index_from_u32(ordinal) * 30;
-            table[at] = 1;
+            table[at] = if invalid_object && ordinal == 1 { 2 } else { 1 };
             table[at + 1..at + 9].copy_from_slice(&u64::from(object).to_le_bytes());
             table[at + 11..at + 19].copy_from_slice(&(307u64 + u64::from(ordinal)).to_le_bytes());
             table[at + 19] = 1;
@@ -719,7 +720,22 @@ fn legacy_catalog_keeps_siblings_and_all_ambiguous_surface_paths() {
                         .unwrap();
                 assert!(!result.membership_is_complete());
                 assert_eq!(result.inputs().lists[0].declared_count, 32);
-                assert_eq!(result.inputs().lists[0].members.len(), 32);
+                assert_eq!(
+                    result.inputs().lists[0].members.len(),
+                    if invalid_object { 31 } else { 32 }
+                );
+                let companions = result
+                    .inputs()
+                    .lists
+                    .iter()
+                    .find(|list| list.role == FormListRole::CageCatalogCompanions)
+                    .unwrap();
+                assert_eq!(companions.declared_count, 32);
+                assert!(companions
+                    .members
+                    .iter()
+                    .any(|member| member.ordinal == 1
+                        && member.reference.as_str().ends_with("#2002")));
                 assert!(result
                     .committed_cages()
                     .any(|id| id.as_str() == "f3d:model:subd#3"));
@@ -1097,11 +1113,20 @@ fn body_construction(
             };
             let types = FormRecordTypes::of(meta);
             facts.tracking(ctx, source, &types, &mut Vec::new())?;
+            let serializers = super::form_serializers(ctx, bytes, &records, Some(&types))?;
+            super::retain_unbound_serializers(
+                ctx,
+                scan,
+                source,
+                &serializers,
+                &mut facts,
+                &mut Vec::new(),
+            )?;
             let membership = super::body_membership(
                 ctx,
                 scan,
                 source,
-                &types,
+                (&types, &serializers),
                 &mut facts,
                 None,
                 &mut Vec::new(),
@@ -1742,7 +1767,7 @@ fn form_body_target_failures_preserve_decoded_cage_candidates() {
         let cages = [neutral_form_cage("f3d:model:subd#1", FIRST_CAGE_UUID)];
         let construction = body_construction(&bytes, &meta, &form_scope(201, vec![]), &cages);
         assert!(!construction.membership_is_complete());
-        assert_eq!(construction.committed_cages().count(), 0);
+        assert_eq!(construction.committed_cages().count(), 1);
         assert_eq!(
             construction
                 .referenced_cages()

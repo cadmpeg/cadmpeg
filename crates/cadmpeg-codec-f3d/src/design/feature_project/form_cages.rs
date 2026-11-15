@@ -17,10 +17,12 @@ use std::collections::{HashMap, HashSet};
 
 use crate::loss::F3dLossCode;
 use cadmpeg_ir::features::form::{
-    FormCageBinding, FormCageObservation, FormConstruction, FormExternalVersion, FormInputPath,
-    FormInputs, FormKnownOrder, FormListRole, FormMember, FormMembership, FormNativeList,
-    FormNativeMember, FormNativeReference, FormNativeReferenceTarget, FormObservationIndex,
-    FormOrder, FormPositionEvidence, FormReferenceRole, FormResource, FormResourceAvailability,
+    FormCageBinding, FormCageObservation, FormClosureEvidence, FormConstruction,
+    FormExternalVersion, FormInputPath, FormInputs, FormKnownOrder, FormListRole, FormMember,
+    FormMembership, FormNativeList, FormNativeMember, FormNativeReference,
+    FormNativeReferenceTarget, FormObservationIndex, FormOrder, FormOrderEvidence,
+    FormPositionEvidence, FormReferenceRole, FormResource, FormResourceAvailability,
+    FormResourceStateEvidence,
 };
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, NonEmptyMembers};
 use cadmpeg_ir::ids::NativeId;
@@ -126,9 +128,7 @@ pub(crate) fn project_forms(
         });
         if let Some(scope) = scope {
             let mut inputs = retained.inputs().clone();
-            if inputs.references.is_empty() {
-                inputs.references = form_inputs(scope)?.references;
-            }
+            merge_reference_runs(&mut inputs, &form_inputs(scope)?.references, &[]);
             retained = FormConstruction::try_new(
                 inputs,
                 retained.observations().to_vec(),
@@ -230,9 +230,11 @@ fn retain_knowledge(
     if facts.inputs.parameters.is_empty() {
         facts.inputs.parameters = new.inputs().parameters.clone();
     }
-    if facts.inputs.references.is_empty() {
-        facts.inputs.references.clone_from(&new.inputs().references);
-    }
+    merge_reference_runs(
+        &mut facts.inputs,
+        &new.inputs().references,
+        &new.inputs().reference_runs,
+    );
     for list in &new.inputs().lists {
         if !facts.inputs.lists.contains(list) {
             facts.inputs.lists.push(list.clone());
@@ -243,7 +245,37 @@ fn retain_knowledge(
             facts.inputs.reference_evidence.push(reference.clone());
         }
     }
-    let mapping = new
+    for old_observation in old.observations() {
+        for new_observation in new.observations() {
+            let (Some((old_resource, old_state)), Some((new_resource, new_state))) = (
+                resource_state(&old_observation.binding),
+                resource_state(&new_observation.binding),
+            ) else {
+                continue;
+            };
+            if old_resource.entry != new_resource.entry
+                || (old_state != Some(FormResourceAvailability::Inactive)
+                    && new_state != Some(FormResourceAvailability::Inactive))
+                || old_state == new_state
+            {
+                continue;
+            }
+            for (resource, availability) in [(old_resource, old_state), (new_resource, new_state)] {
+                if let Some(availability) = availability {
+                    if availability != FormResourceAvailability::Ambiguous {
+                        let state = FormResourceStateEvidence {
+                            resource: resource.clone(),
+                            availability,
+                        };
+                        if !facts.inputs.resource_state_evidence.contains(&state) {
+                            facts.inputs.resource_state_evidence.push(state);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut mapping = new
         .observations()
         .iter()
         .map(|observation| facts.observe(observation.clone()))
@@ -255,9 +287,27 @@ fn retain_knowledge(
             facts.inputs.position_evidence.push(evidence);
         }
     }
+    for evidence in &new.inputs().order_evidence {
+        let mut evidence = evidence.clone();
+        for member in &mut evidence.members {
+            *member = mapping[member.0];
+        }
+        if !facts.inputs.order_evidence.contains(&evidence) {
+            facts.inputs.order_evidence.push(evidence);
+        }
+    }
     for &count in &new.inputs().cardinality_evidence {
         if !facts.inputs.cardinality_evidence.contains(&count) {
             facts.inputs.cardinality_evidence.push(count);
+        }
+    }
+    for claim in &new.inputs().closure_evidence {
+        let mut claim = claim.clone();
+        for member in &mut claim.members {
+            *member = mapping[member.0];
+        }
+        if !facts.inputs.closure_evidence.contains(&claim) {
+            facts.inputs.closure_evidence.push(claim);
         }
     }
     for resource in &new.inputs().resource_evidence {
@@ -265,26 +315,45 @@ fn retain_knowledge(
             facts.inputs.resource_evidence.push(resource.clone());
         }
     }
+    for state in &new.inputs().resource_state_evidence {
+        if !facts.inputs.resource_state_evidence.contains(state) {
+            facts.inputs.resource_state_evidence.push(state.clone());
+        }
+    }
     let resource_conflict = facts.normalize_resource_conflicts();
+    let compacted = facts.coalesce_resource_observations();
+    facts.reconcile_resource_states();
+    for index in &mut mapping {
+        *index = compacted[index.0];
+    }
+    let old_membership = remap_membership(old.membership().clone(), &compacted);
     let new_membership = remap_membership(new.membership().clone(), &mapping);
     let old_empty = old.observations().is_empty()
         && old.inputs().lists.is_empty()
         && old.inputs().reference_evidence.is_empty()
+        && old.inputs().position_evidence.is_empty()
+        && old.inputs().order_evidence.is_empty()
         && old.inputs().cardinality_evidence.is_empty()
+        && old.inputs().closure_evidence.is_empty()
         && membership_unknown(old.membership());
     let new_empty = new.observations().is_empty()
         && new.inputs().lists.is_empty()
         && new.inputs().reference_evidence.is_empty()
+        && new.inputs().position_evidence.is_empty()
+        && new.inputs().order_evidence.is_empty()
         && new.inputs().cardinality_evidence.is_empty()
+        && new.inputs().closure_evidence.is_empty()
         && membership_unknown(new.membership());
-    let mut membership = if old_empty {
+    let mut membership = if old_empty && !membership_has_duplicate_members(&new_membership) {
         new_membership
-    } else if new_empty {
-        old.membership().clone()
+    } else if new_empty && !membership_has_duplicate_members(&old_membership) {
+        old_membership
     } else {
-        facts.reconcile(old.membership().clone(), new_membership)
+        facts.reconcile(old_membership, new_membership)
     };
     if resource_conflict && matches!(membership, FormMembership::Complete { .. }) {
+        facts.capture_membership(&membership);
+        facts.capture_closure(&membership);
         let (cardinality, order, members) = membership_parts(membership);
         membership = FormMembership::Partial {
             cardinality,
@@ -292,8 +361,118 @@ fn retain_knowledge(
             members,
         };
     }
+    let (_, _, selected) = membership_parts(membership.clone());
+    let mut selected_resource_conflict = false;
+    for member in selected {
+        if let Some((resource, _)) =
+            resource_state(&facts.observations[member.observation.0].binding)
+        {
+            selected_resource_conflict |=
+                facts.inputs.resource_state_evidence.iter().any(|state| {
+                    state.resource.entry == resource.entry
+                        && matches!(
+                            state.availability,
+                            FormResourceAvailability::Inactive
+                                | FormResourceAvailability::Ambiguous
+                        )
+                });
+        }
+        if let FormCageBinding::Undecoded {
+            resource,
+            availability,
+        } = &mut facts.observations[member.observation.0].binding
+        {
+            if *availability == FormResourceAvailability::Inactive {
+                let state = FormResourceStateEvidence {
+                    resource: resource.clone(),
+                    availability: *availability,
+                };
+                if !facts.inputs.resource_state_evidence.contains(&state) {
+                    facts.inputs.resource_state_evidence.push(state);
+                }
+                *availability = FormResourceAvailability::Ambiguous;
+                let (cardinality, order, members) = membership_parts(membership);
+                membership = FormMembership::Partial {
+                    cardinality,
+                    order,
+                    members,
+                };
+            }
+        }
+    }
+    if selected_resource_conflict && matches!(membership, FormMembership::Complete { .. }) {
+        facts.capture_membership(&membership);
+        facts.capture_closure(&membership);
+        let (cardinality, order, members) = membership_parts(membership);
+        membership = FormMembership::Partial {
+            cardinality,
+            order,
+            members,
+        };
+    }
+    facts.inputs.resource_state_evidence.sort_by(|a, b| {
+        (&a.resource.entry, &a.resource.source, a.availability).cmp(&(
+            &b.resource.entry,
+            &b.resource.source,
+            b.availability,
+        ))
+    });
     FormConstruction::try_new(facts.inputs, facts.observations, membership)
         .map_err(CodecError::malformed)
+}
+
+fn resource_state(
+    binding: &FormCageBinding,
+) -> Option<(&FormResource, Option<FormResourceAvailability>)> {
+    match binding {
+        FormCageBinding::Decoded {
+            resource: Some(resource),
+            ..
+        } => Some((resource, None)),
+        FormCageBinding::Undecoded {
+            resource,
+            availability,
+        } => Some((resource, Some(*availability))),
+        _ => None,
+    }
+}
+
+fn merge_resource_availability(
+    left: FormResourceAvailability,
+    right: FormResourceAvailability,
+) -> FormResourceAvailability {
+    match (left, right) {
+        (a, b) if a == b => a,
+        (FormResourceAvailability::Unknown, value) | (value, FormResourceAvailability::Unknown) => {
+            value
+        }
+        _ => FormResourceAvailability::Ambiguous,
+    }
+}
+
+fn merge_reference_runs(
+    inputs: &mut FormInputs,
+    fresh: &[NativeId],
+    alternatives: &[Vec<NativeId>],
+) {
+    let mut runs = std::mem::take(&mut inputs.reference_runs);
+    if !inputs.references.is_empty() {
+        runs.push(std::mem::take(&mut inputs.references));
+    }
+    for run in std::iter::once(fresh).chain(alternatives.iter().map(Vec::as_slice)) {
+        if run.is_empty() || runs.iter().any(|old| old.starts_with(run)) {
+            continue;
+        }
+        runs.retain(|old| !run.starts_with(old));
+        runs.push(run.to_vec());
+    }
+    if runs.len() == 1 {
+        inputs.references = runs.pop().unwrap_or_default();
+    } else {
+        runs.sort();
+        runs.dedup();
+        inputs.reference_runs = runs;
+    }
 }
 
 fn membership_unknown(membership: &FormMembership) -> bool {
@@ -301,23 +480,70 @@ fn membership_unknown(membership: &FormMembership) -> bool {
 }
 
 fn membership_evidence_conflicts(inputs: &FormInputs) -> bool {
-    if inputs.cardinality_evidence.len() > 1 {
+    if membership_count_conflicts(inputs) {
         return true;
     }
     let mut positions = HashMap::new();
-    let mut members = HashMap::new();
+    let mut positions_by_member = HashMap::new();
     for evidence in &inputs.position_evidence {
         if positions
             .insert(evidence.ordinal, evidence.observation)
             .is_some_and(|old| old != evidence.observation)
-            || members
+            || positions_by_member
                 .insert(evidence.observation, evidence.ordinal)
                 .is_some_and(|old| old != evidence.ordinal)
         {
             return true;
         }
     }
-    false
+    let mut seen = HashSet::new();
+    let members = inputs
+        .order_evidence
+        .iter()
+        .flat_map(|evidence| evidence.members.iter().copied())
+        .chain(
+            inputs
+                .closure_evidence
+                .iter()
+                .flat_map(|claim| claim.members.iter().copied()),
+        )
+        .chain(
+            inputs
+                .position_evidence
+                .iter()
+                .map(|evidence| evidence.observation),
+        )
+        .filter(|index| seen.insert(*index))
+        .map(|observation| FormMember {
+            observation,
+            ordinal: positions_by_member.get(&observation).copied(),
+        })
+        .collect::<Vec<_>>();
+    ordered_observations(
+        &members,
+        &inputs.order_evidence,
+        &inputs.closure_evidence,
+        false,
+        true,
+        false,
+    )
+    .is_none()
+}
+
+fn membership_count_conflicts(inputs: &FormInputs) -> bool {
+    let mut counts = inputs
+        .cardinality_evidence
+        .iter()
+        .map(|count| cadmpeg_core::decode::index_from_u32(*count))
+        .chain(
+            inputs
+                .closure_evidence
+                .iter()
+                .map(|claim| claim.members.len()),
+        );
+    counts
+        .next()
+        .is_some_and(|first| counts.any(|count| count != first))
 }
 
 fn remap_membership(
@@ -337,6 +563,18 @@ fn remap_membership(
         }
     }
     membership
+}
+
+fn membership_has_duplicate_members(membership: &FormMembership) -> bool {
+    let mut seen = HashSet::new();
+    match membership {
+        FormMembership::Complete { members, .. } => {
+            members.iter().any(|index| !seen.insert(*index))
+        }
+        FormMembership::Partial { members, .. } => members
+            .iter()
+            .any(|member| !seen.insert(member.observation)),
+    }
 }
 
 fn membership_parts(membership: FormMembership) -> (Option<u32>, FormOrder, Vec<FormMember>) {
@@ -366,10 +604,77 @@ fn membership_parts(membership: FormMembership) -> (Option<u32>, FormOrder, Vec<
 }
 
 fn merge_memberships(left: FormMembership, right: FormMembership) -> FormMembership {
-    if left == right {
+    if left == right && !membership_has_duplicate_members(&left) {
         return left;
     }
-    let (left_count, left_order, mut members) = membership_parts(left);
+    if let (
+        FormMembership::Complete {
+            members: left_members,
+            order: left_order,
+            certainty: left_certainty,
+        },
+        FormMembership::Complete {
+            members: right_members,
+            order: right_order,
+            certainty: right_certainty,
+        },
+    ) = (&left, &right)
+    {
+        if left_members == right_members {
+            let stronger = |a, b| {
+                if a == FormKnownOrder::Source || b == FormKnownOrder::Source {
+                    FormKnownOrder::Source
+                } else {
+                    FormKnownOrder::Assumed
+                }
+            };
+            return FormMembership::Complete {
+                members: left_members.clone(),
+                order: stronger(*left_order, *right_order),
+                certainty: stronger(*left_certainty, *right_certainty),
+            };
+        }
+    }
+    let complete = match (&left, &right) {
+        (FormMembership::Complete { .. }, _) if compatible_with_complete(&left, &right) => {
+            Some(left.clone())
+        }
+        (_, FormMembership::Complete { .. }) if compatible_with_complete(&right, &left) => {
+            Some(right.clone())
+        }
+        _ => None,
+    };
+    if let Some(mut complete) = complete {
+        let other = if matches!(&left, FormMembership::Complete { .. }) {
+            &right
+        } else {
+            &left
+        };
+        if let (
+            FormMembership::Complete { members, order, .. },
+            FormMembership::Partial {
+                cardinality: Some(count),
+                order: FormOrder::Source,
+                members: claims,
+            },
+        ) = (&mut complete, other)
+        {
+            if usize::try_from(*count).ok() == Some(members.len())
+                && claims.len() == members.len()
+                && claims.iter().all(|claim| {
+                    claim
+                        .ordinal
+                        .and_then(|ordinal| usize::try_from(ordinal).ok())
+                        .and_then(|ordinal| members.get(ordinal))
+                        == Some(&claim.observation)
+                })
+            {
+                *order = FormKnownOrder::Source;
+            }
+        }
+        return complete;
+    }
+    let (left_count, left_order, first) = membership_parts(left);
     let (right_count, right_order, more) = membership_parts(right);
     let cardinality = match (left_count, right_count) {
         (Some(a), Some(b)) if a != b => None,
@@ -377,14 +682,19 @@ fn merge_memberships(left: FormMembership, right: FormMembership) -> FormMembers
         _ => None,
     };
     let mut conflicting = HashSet::new();
-    for member in more {
+    let mut members: Vec<FormMember> = Vec::new();
+    for member in first.into_iter().chain(more) {
         if let Some(existing) = members
             .iter_mut()
             .find(|existing| existing.observation == member.observation)
         {
-            if existing.ordinal != member.ordinal {
-                existing.ordinal = None;
-                conflicting.insert(existing.observation);
+            match (existing.ordinal, member.ordinal) {
+                (None, Some(ordinal)) => existing.ordinal = Some(ordinal),
+                (Some(a), Some(b)) if a != b => {
+                    existing.ordinal = None;
+                    conflicting.insert(existing.observation);
+                }
+                _ => {}
             }
         } else {
             members.push(member);
@@ -419,13 +729,54 @@ fn merge_memberships(left: FormMembership, right: FormMembership) -> FormMembers
     });
     FormMembership::Partial {
         cardinality,
-        order: if conflicting.is_empty() && left_order == right_order {
-            left_order
+        order: if conflicting.is_empty()
+            && (left_order == right_order
+                || left_order == FormOrder::Unknown
+                || right_order == FormOrder::Unknown)
+        {
+            if left_order == FormOrder::Unknown {
+                right_order
+            } else {
+                left_order
+            }
         } else {
             FormOrder::Unknown
         },
         members,
     }
+}
+
+fn compatible_with_complete(complete: &FormMembership, other: &FormMembership) -> bool {
+    let FormMembership::Complete { members, .. } = complete else {
+        return false;
+    };
+    let (count, order, claims) = membership_parts(other.clone());
+    let mut previous = None;
+    let relative_order = order == FormOrder::Unknown
+        || claims.iter().all(|claim| {
+            let Some(position) = members
+                .iter()
+                .position(|member| *member == claim.observation)
+            else {
+                return false;
+            };
+            let valid = previous.is_none_or(|last| last < position);
+            previous = Some(position);
+            valid
+        });
+    !membership_has_duplicate_members(other)
+        && count.is_none_or(|count| usize::try_from(count).ok() == Some(members.len()))
+        && relative_order
+        && claims.iter().all(|claim| {
+            members
+                .iter()
+                .position(|index| *index == claim.observation)
+                .is_some_and(|ordinal| {
+                    claim
+                        .ordinal
+                        .is_none_or(|claimed| usize::try_from(claimed).ok() == Some(ordinal))
+                })
+        })
 }
 
 struct FormFacts {
@@ -439,8 +790,38 @@ struct FormSurface {
 }
 
 impl FormFacts {
+    fn capture_closure(&mut self, membership: &FormMembership) {
+        if let FormMembership::Complete {
+            members,
+            order,
+            certainty,
+        } = membership
+        {
+            let claim = FormClosureEvidence {
+                members: members.clone(),
+                order: *order,
+                certainty: *certainty,
+            };
+            if !self.inputs.closure_evidence.contains(&claim) {
+                self.inputs.closure_evidence.push(claim);
+            }
+        }
+    }
     fn capture_membership(&mut self, membership: &FormMembership) {
-        let (count, _, members) = membership_parts(membership.clone());
+        let (count, order, members) = membership_parts(membership.clone());
+        if members.len() > 1 && order != FormOrder::Unknown {
+            let evidence = FormOrderEvidence {
+                order: if order == FormOrder::Source {
+                    FormKnownOrder::Source
+                } else {
+                    FormKnownOrder::Assumed
+                },
+                members: members.iter().map(|member| member.observation).collect(),
+            };
+            if !self.inputs.order_evidence.contains(&evidence) {
+                self.inputs.order_evidence.push(evidence);
+            }
+        }
         if let Some(count) = count {
             if !self.inputs.cardinality_evidence.contains(&count) {
                 self.inputs.cardinality_evidence.push(count);
@@ -496,15 +877,154 @@ impl FormFacts {
         });
     }
     fn reconcile(&mut self, left: FormMembership, right: FormMembership) -> FormMembership {
-        if left != right {
+        let closure_claims = [left.clone(), right.clone()];
+        let capture = left != right || membership_has_duplicate_members(&left);
+        if capture {
             self.capture_membership(&left);
             self.capture_membership(&right);
         }
         let mut membership = merge_memberships(left, right);
-        if self.inputs.cardinality_evidence.len() > 1 {
+        for claim in self.inputs.closure_evidence.clone() {
+            let historical = FormMembership::Complete {
+                members: claim.members,
+                order: claim.order,
+                certainty: claim.certainty,
+            };
+            self.capture_membership(&historical);
+            membership = merge_memberships(membership, historical);
+        }
+        if let FormMembership::Complete {
+            members,
+            order,
+            certainty,
+        } = &mut membership
+        {
+            if self
+                .inputs
+                .closure_evidence
+                .iter()
+                .any(|claim| claim.certainty == FormKnownOrder::Source && claim.members == *members)
+            {
+                *certainty = FormKnownOrder::Source;
+            }
+            if self
+                .inputs
+                .closure_evidence
+                .iter()
+                .any(|claim| claim.order == FormKnownOrder::Source && claim.members == *members)
+            {
+                *order = FormKnownOrder::Source;
+            }
+            let conflicts = self
+                .inputs
+                .cardinality_evidence
+                .iter()
+                .any(|count| usize::try_from(*count).ok() != Some(members.len()))
+                || self
+                    .inputs
+                    .closure_evidence
+                    .iter()
+                    .any(|claim| claim.members != *members)
+                || self.inputs.position_evidence.iter().any(|evidence| {
+                    usize::try_from(evidence.ordinal)
+                        .ok()
+                        .and_then(|index| members.get(index))
+                        != Some(&evidence.observation)
+                })
+                || self.inputs.order_evidence.iter().any(|evidence| {
+                    let mut remaining = members.iter();
+                    !evidence
+                        .members
+                        .iter()
+                        .all(|index| remaining.any(|member| member == index))
+                });
+            if conflicts {
+                let (cardinality, order, members) = membership_parts(membership);
+                membership = FormMembership::Partial {
+                    cardinality,
+                    order,
+                    members,
+                };
+            }
+        }
+        if matches!(membership, FormMembership::Partial { .. }) {
+            for claim in &closure_claims {
+                self.capture_closure(claim);
+            }
+        }
+        if membership_count_conflicts(&self.inputs) {
             if let FormMembership::Partial { cardinality, .. } = &mut membership {
                 *cardinality = None;
             }
+        }
+        if membership_evidence_conflicts(&self.inputs) {
+            if let FormMembership::Partial { order, members, .. } = &mut membership {
+                *order = FormOrder::Unknown;
+                for member in members.iter_mut() {
+                    let positions = self
+                        .inputs
+                        .position_evidence
+                        .iter()
+                        .filter(|e| e.observation == member.observation)
+                        .map(|e| e.ordinal)
+                        .collect::<HashSet<_>>();
+                    if positions.len() > 1
+                        || positions.iter().any(|ordinal| {
+                            self.inputs.position_evidence.iter().any(|e| {
+                                e.ordinal == *ordinal && e.observation != member.observation
+                            })
+                        })
+                    {
+                        member.ordinal = None;
+                    }
+                }
+                members.sort_by_key(|member| {
+                    (
+                        member.ordinal.is_none(),
+                        member.ordinal,
+                        member.observation.0,
+                    )
+                });
+            }
+        } else if let FormMembership::Partial { order, members, .. } = &mut membership {
+            if members.len() > 1 {
+                let source = ordered_observations(
+                    members,
+                    &self.inputs.order_evidence,
+                    &self.inputs.closure_evidence,
+                    true,
+                    *order == FormOrder::Source,
+                    true,
+                );
+                let any = ordered_observations(
+                    members,
+                    &self.inputs.order_evidence,
+                    &self.inputs.closure_evidence,
+                    false,
+                    true,
+                    true,
+                );
+                let (sequence, certainty) = if let Some(sequence) = source {
+                    (Some(sequence), FormOrder::Source)
+                } else if let Some(sequence) = any {
+                    (Some(sequence), FormOrder::Assumed)
+                } else {
+                    (None, FormOrder::Unknown)
+                };
+                *order = certainty;
+                if let Some(sequence) = sequence {
+                    members.sort_by_key(|member| {
+                        sequence
+                            .iter()
+                            .position(|index| *index == member.observation)
+                    });
+                }
+            }
+        }
+        if capture
+            && matches!(&membership, FormMembership::Partial { order: FormOrder::Source | FormOrder::Assumed, members, .. } if members.len() > 1)
+        {
+            self.capture_membership(&membership);
         }
         membership
     }
@@ -519,7 +1039,7 @@ impl FormFacts {
     ) -> Result<(), CodecError> {
         use crate::bytes::Reference;
         let (inline_type_guid, target) = match reference {
-            Reference::Null => return Ok(()),
+            Reference::Null => (None, FormNativeReferenceTarget::Null),
             Reference::Local {
                 target,
                 inline_type_guid,
@@ -533,11 +1053,13 @@ impl FormFacts {
                 target,
                 inline_type_guid,
                 segment,
+                asset_guid,
             } => (
                 inline_type_guid.clone(),
                 FormNativeReferenceTarget::Segment {
                     target: *target,
                     segment: *segment,
+                    asset_guid: asset_guid.clone(),
                 },
             ),
             Reference::CrossDocument {
@@ -575,6 +1097,13 @@ impl FormFacts {
         if !self.inputs.reference_evidence.contains(&evidence) {
             let mut lengths = [0; 6];
             lengths[0] = evidence.inline_type_guid.as_deref().map_or(0, str::len);
+            if let FormNativeReferenceTarget::Segment {
+                asset_guid: Some(asset_guid),
+                ..
+            } = &evidence.target
+            {
+                lengths[1] = asset_guid.len();
+            }
             if let FormNativeReferenceTarget::Document {
                 asset_guid,
                 target_type_guid,
@@ -584,7 +1113,7 @@ impl FormFacts {
             } = &evidence.target
             {
                 lengths[1] = asset_guid.len();
-                lengths[2] = target_type_guid.len();
+                lengths[2] = target_type_guid.as_deref().map_or(0, str::len);
                 lengths[3] = link_name.len();
                 if let Some(version) = version {
                     lengths[4] = version.key.len();
@@ -599,6 +1128,31 @@ impl FormFacts {
                 cadmpeg_core::decode::u64_from_index(text_bytes),
                 "Form reference text",
             )?;
+            self.inputs.reference_evidence.push(evidence);
+        }
+        Ok(())
+    }
+    fn missing_reference(
+        &mut self,
+        scope: &DesignParameterScope,
+        source: u32,
+        slot: (FormReferenceRole, u32, Option<usize>),
+        unvisited: bool,
+    ) -> Result<(), CodecError> {
+        let evidence = FormNativeReference {
+            source: record_id(scope, source)?,
+            role: slot.0,
+            ordinal: slot.1,
+            run: slot.2,
+            inline_type_guid: None,
+            target: if unvisited {
+                FormNativeReferenceTarget::Unvisited
+            } else {
+                FormNativeReferenceTarget::Unreadable
+            },
+            resource: None,
+        };
+        if !self.inputs.reference_evidence.contains(&evidence) {
             self.inputs.reference_evidence.push(evidence);
         }
         Ok(())
@@ -662,6 +1216,145 @@ impl FormFacts {
             }
         }
         found
+    }
+    fn coalesce_resource_observations(&mut self) -> Vec<FormObservationIndex> {
+        let mut mapping = (0..self.observations.len())
+            .map(FormObservationIndex)
+            .collect::<Vec<_>>();
+        loop {
+            let pair = self
+                .observations
+                .iter()
+                .enumerate()
+                .find_map(|(decoded, observation)| {
+                    let FormCageBinding::Decoded {
+                        resource: Some(resource),
+                        ..
+                    } = &observation.binding
+                    else {
+                        return None;
+                    };
+                    self.observations
+                        .iter()
+                        .enumerate()
+                        .find_map(|(undecoded, candidate)| match &candidate.binding {
+                            FormCageBinding::Undecoded {
+                                resource: other,
+                                availability,
+                            } if other.entry == resource.entry
+                                && *availability != FormResourceAvailability::Ambiguous =>
+                            {
+                                Some((
+                                    decoded,
+                                    undecoded,
+                                    resource.clone(),
+                                    other.clone(),
+                                    *availability,
+                                ))
+                            }
+                            _ => None,
+                        })
+                });
+            let Some((decoded, undecoded, existing, resource, availability)) = pair else {
+                break;
+            };
+            let removed = self.observations.remove(undecoded);
+            let decoded_after = decoded - usize::from(undecoded < decoded);
+            if availability == FormResourceAvailability::Inactive {
+                let state = FormResourceStateEvidence {
+                    resource: resource.clone(),
+                    availability,
+                };
+                if !self.inputs.resource_state_evidence.contains(&state) {
+                    self.inputs.resource_state_evidence.push(state);
+                }
+            }
+            if resource != existing {
+                self.remember_resource(resource);
+                self.remember_resource(existing);
+            }
+            let paths = &mut self.observations[decoded_after].paths;
+            for path in removed.paths {
+                if !paths.contains(&path) {
+                    paths.push(path);
+                }
+            }
+            paths.sort_by(|a, b| a.references.as_slice().cmp(b.references.as_slice()));
+            for index in &mut mapping {
+                if index.0 == undecoded {
+                    index.0 = decoded;
+                }
+                if index.0 > undecoded {
+                    index.0 -= 1;
+                }
+            }
+        }
+        let mut positions = Vec::new();
+        for mut evidence in std::mem::take(&mut self.inputs.position_evidence) {
+            evidence.observation = mapping[evidence.observation.0];
+            if !positions.contains(&evidence) {
+                positions.push(evidence);
+            }
+        }
+        self.inputs.position_evidence = positions;
+        let mut orders = Vec::new();
+        for mut evidence in std::mem::take(&mut self.inputs.order_evidence) {
+            for member in &mut evidence.members {
+                *member = mapping[member.0];
+            }
+            if !orders.contains(&evidence) {
+                orders.push(evidence);
+            }
+        }
+        self.inputs.order_evidence = orders;
+        let mut closures = Vec::new();
+        for mut claim in std::mem::take(&mut self.inputs.closure_evidence) {
+            for member in &mut claim.members {
+                *member = mapping[member.0];
+            }
+            if !closures.contains(&claim) {
+                closures.push(claim);
+            }
+        }
+        self.inputs.closure_evidence = closures;
+        mapping
+    }
+    fn reconcile_resource_states(&mut self) {
+        let mut retained = Vec::new();
+        for observation in &mut self.observations {
+            let FormCageBinding::Undecoded {
+                resource,
+                availability,
+            } = &mut observation.binding
+            else {
+                continue;
+            };
+            let previous = *availability;
+            *availability = self
+                .inputs
+                .resource_state_evidence
+                .iter()
+                .filter(|claim| claim.resource.entry == resource.entry)
+                .fold(previous, |state, claim| {
+                    merge_resource_availability(state, claim.availability)
+                });
+            if *availability == FormResourceAvailability::Ambiguous
+                && !matches!(
+                    previous,
+                    FormResourceAvailability::Unknown | FormResourceAvailability::Ambiguous
+                )
+            {
+                retained.push(FormResourceStateEvidence {
+                    resource: resource.clone(),
+                    availability: previous,
+                });
+            }
+        }
+        for state in retained {
+            if !self.inputs.resource_state_evidence.contains(&state) {
+                self.inputs.resource_state_evidence.push(state);
+            }
+        }
     }
     fn observe(&mut self, mut observation: FormCageObservation) -> FormObservationIndex {
         if let FormCageBinding::Decoded {
@@ -763,12 +1456,7 @@ impl FormFacts {
                 },
             ) = (&mut self.observations[index].binding, &observation.binding)
             {
-                *old = match (*old, *new) {
-                    (a, b) if a == b => a,
-                    (FormResourceAvailability::Unknown, value)
-                    | (value, FormResourceAvailability::Unknown) => value,
-                    _ => FormResourceAvailability::Ambiguous,
-                };
+                *old = merge_resource_availability(*old, *new);
             }
             if let (
                 FormCageBinding::Decoded { resource: old, .. },
@@ -850,6 +1538,14 @@ impl FormFacts {
                         owner,
                         None,
                     )?;
+                    if foreign_type_conflict(owner) {
+                        note(
+                            losses,
+                            F3dLossCode::FeatureFormReferenceTypeConflict,
+                            &source.scope.id,
+                            "foreign reference type claims conflict",
+                        );
+                    }
                     match owner.local() {
                         None if matches!(owner, FormReference::Null) => note(
                             losses,
@@ -872,7 +1568,7 @@ impl FormFacts {
                                     "a tracking group names a different owner",
                                 );
                             }
-                            if inline.is_some_and(|guid| !types.type_matches(target, guid)) {
+                            if !types.reference_matches(target, None, inline) {
                                 note(
                                     losses,
                                     F3dLossCode::FeatureFormReferenceTypeConflict,
@@ -883,49 +1579,110 @@ impl FormFacts {
                         }
                     }
                 }
-                let members = run.members;
-                let mut local =
-                    ctx.alloc_filled(members.len(), None, "Form tracking local targets")?;
-                for (ordinal, reference) in members.iter().enumerate() {
-                    let Some(reference) = reference else {
-                        continue;
-                    };
-                    self.reference(
-                        ctx,
-                        source.scope,
-                        group,
-                        (
-                            FormReferenceRole::TrackingMember,
-                            u32::try_from(ordinal).map_err(CodecError::malformed)?,
+                for (members, reference_role, list_role, fixed_slots) in std::iter::once((
+                    &run.members,
+                    FormReferenceRole::TrackingMember,
+                    FormListRole::TrackingSelection,
+                    false,
+                ))
+                .chain(run.fixed_members.iter().map(|members| {
+                    (
+                        members,
+                        FormReferenceRole::TrackingMemberFixedAssumed,
+                        FormListRole::TrackingSelectionFixedAssumed,
+                        true,
+                    )
+                })) {
+                    if fixed_slots {
+                        note(losses, F3dLossCode::FeatureFormTrackingFixedSlotsAssumed, &source.scope.id, "a sparse tracking run also admits independently framed fixed-width slots");
+                    }
+                    let mut local =
+                        ctx.alloc_filled(members.len(), None, "Form tracking local targets")?;
+                    let mut failed = false;
+                    for (ordinal, reference) in members.iter().enumerate() {
+                        let Some(reference) = reference else {
+                            self.missing_reference(
+                                source.scope,
+                                group,
+                                (
+                                    reference_role,
+                                    u32::try_from(ordinal).map_err(CodecError::malformed)?,
+                                    None,
+                                ),
+                                failed && !fixed_slots,
+                            )?;
+                            failed = true;
+                            continue;
+                        };
+                        self.reference(
+                            ctx,
+                            source.scope,
+                            group,
+                            (
+                                reference_role,
+                                u32::try_from(ordinal).map_err(CodecError::malformed)?,
+                                None,
+                            ),
+                            reference,
                             None,
-                        ),
-                        reference,
-                        None,
-                    )?;
-                    let target = match reference.local() {
-                        None => {
+                        )?;
+                        if foreign_type_conflict(reference) {
                             note(
                                 losses,
-                                F3dLossCode::FeatureFormForeignReferenceUnresolved,
+                                F3dLossCode::FeatureFormReferenceTypeConflict,
                                 &source.scope.id,
-                                "a tracking member names another namespace",
+                                "foreign reference type claims conflict",
                             );
-                            None
                         }
-                        Some((target, inline)) => {
-                            let valid = inline.is_none_or(|guid| {
-                                guid.eq_ignore_ascii_case("C46D3EEB-40E1-43FA-83DC-9CB204335417")
-                                    && types.type_matches(target, guid)
-                            });
-                            if !valid {
-                                note(losses, F3dLossCode::FeatureFormReferenceTypeConflict, &source.scope.id, "a tracking member type conflicts with its target role or registration");
+                        let target = match reference.local() {
+                            None if matches!(reference, FormReference::Null) => None,
+                            None => {
+                                note(
+                                    losses,
+                                    F3dLossCode::FeatureFormForeignReferenceUnresolved,
+                                    &source.scope.id,
+                                    "a tracking member names another namespace",
+                                );
+                                None
                             }
-                            valid.then_some(target)
-                        }
-                    };
-                    local[ordinal] = target;
+                            Some((target, inline)) => {
+                                let valid = types.reference_matches(
+                                    target,
+                                    Some("C46D3EEB-40E1-43FA-83DC-9CB204335417"),
+                                    inline,
+                                );
+                                if !valid {
+                                    note(losses, F3dLossCode::FeatureFormReferenceTypeConflict, &source.scope.id, "a tracking member type conflicts with its target role or registration");
+                                }
+                                valid.then_some(target)
+                            }
+                        };
+                        local[ordinal] = target;
+                    }
+                    self.list(source.scope, group, list_role, &local)?;
                 }
-                self.list(source.scope, group, FormListRole::TrackingSelection, &local)?;
+            } else if let Some((start, end)) = one_indexed_frame(source.records, group) {
+                if let Some(frame) = source.bytes.get(start..end) {
+                    if frame.get(selection_prefix::ZERO_RUN_10..selection_prefix::OWNER_MARKER)
+                        == Some(&[0; 10])
+                    {
+                        let mut cursor = selection_prefix::OWNER_MARKER;
+                        if take_form_reference(ctx, frame, &mut cursor)?.is_none() {
+                            self.missing_reference(
+                                source.scope,
+                                group,
+                                (FormReferenceRole::TrackingOwner, 0, None),
+                                false,
+                            )?;
+                            note(
+                                losses,
+                                F3dLossCode::FeatureFormTrackingOwnerConflict,
+                                &source.scope.id,
+                                "a tracking group owner is unreadable",
+                            );
+                        }
+                    }
+                }
             }
         }
         Ok(())
@@ -1208,6 +1965,17 @@ fn retain_serializer_candidate(
             reference,
             Some(resource.clone()),
         )?;
+    } else {
+        facts.missing_reference(
+            scope,
+            serializer.record,
+            (
+                FormReferenceRole::SerializerSurface,
+                0,
+                Some(serializer.offset),
+            ),
+            false,
+        )?;
     }
     let mut path = FormInputPath {
         references: NonEmptyMembers::one(record_id(scope, serializer.record)?),
@@ -1276,10 +2044,22 @@ fn retain_unbound_serializers(
 ) -> Result<(), CodecError> {
     for serializer in &serializers.unbound {
         retain_serializer_candidate(ctx, scan, source, serializer, facts)?;
-        let foreign = serializer
+        let foreign = matches!(
+            &serializer.reference,
+            Some(FormReference::CrossSegment { .. } | FormReference::CrossDocument { .. })
+        );
+        if serializer
             .reference
             .as_ref()
-            .is_some_and(|reference| reference.local().is_none());
+            .is_some_and(foreign_type_conflict)
+        {
+            note(
+                losses,
+                F3dLossCode::FeatureFormReferenceTypeConflict,
+                &source.scope.id,
+                "foreign reference type claims conflict",
+            );
+        }
         note(
             losses,
             if foreign {
@@ -1329,14 +2109,13 @@ fn collect_membership(
         stream,
         ..
     } = source;
-    let mut serializers = form_cage_serializers(ctx, bytes, records)?;
     let types = match crate::design::decode::meta::metadata_for_bulk_stream(scan, stream) {
         Ok(Some(meta)) => Some(FormRecordTypes::of(&meta)),
         Ok(None) | Err(CodecError::Malformed(_)) => None,
         Err(error) => return Err(error),
     };
+    let serializers = form_serializers(ctx, bytes, records, types.as_ref())?;
     if let Some(types) = &types {
-        serializers.validate_types(types);
         facts.tracking(ctx, source, types, losses)?;
     }
     retain_unbound_serializers(ctx, scan, source, &serializers, facts, losses)?;
@@ -1352,6 +2131,15 @@ fn collect_membership(
                 scope.record_index,
                 FormListRole::CageCatalog,
                 &objects.iter().map(|entry| entry.object).collect::<Vec<_>>(),
+            )?;
+            facts.list(
+                scope,
+                scope.record_index,
+                FormListRole::CageCatalogCompanions,
+                &objects
+                    .iter()
+                    .map(|entry| entry.companion)
+                    .collect::<Vec<_>>(),
             )?;
             let closed = objects.iter().all(|entry| entry.valid);
             let slots = objects
@@ -1549,26 +2337,33 @@ fn collect_membership(
         );
         return Ok(ordinary.unwrap_or_else(|| FormConstruction::default().membership().clone()));
     };
-    body_membership(ctx, scan, source, &types, facts, ordinary, losses)
+    body_membership(
+        ctx,
+        scan,
+        source,
+        (&types, &serializers),
+        facts,
+        ordinary,
+        losses,
+    )
 }
 
 fn body_membership(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     source: FormSource<'_>,
-    types: &FormRecordTypes,
+    admission: (&FormRecordTypes, &FormCageSerializers),
     facts: &mut FormFacts,
     ordinary: Option<FormMembership>,
     losses: &mut Vec<LossNote>,
 ) -> Result<FormMembership, CodecError> {
+    let (types, serializers) = admission;
     let FormSource {
         bytes,
         records,
         scope,
         ..
     } = source;
-    let serializers = form_typed_serializers(ctx, bytes, records, types)?;
-    retain_unbound_serializers(ctx, scan, source, &serializers, facts, losses)?;
     let mut slots = Vec::new();
     let mut closed = !types.unsupported_bodies;
     if types.unsupported_bodies {
@@ -1624,8 +2419,20 @@ fn body_membership(
         for run in alternatives {
             let references = run.references;
             let mut local = [None; FORM_BODY_REFERENCE_COUNT];
+            let mut failed = false;
             for (ordinal, reference) in references.iter().enumerate() {
                 let Some(reference) = reference else {
+                    facts.missing_reference(
+                        scope,
+                        body,
+                        (
+                            FormReferenceRole::Body,
+                            u32::try_from(ordinal).map_err(CodecError::malformed)?,
+                            Some(run.offset),
+                        ),
+                        failed,
+                    )?;
+                    failed = true;
                     continue;
                 };
                 facts.reference(
@@ -1640,7 +2447,16 @@ fn body_membership(
                     reference,
                     None,
                 )?;
+                if foreign_type_conflict(reference) {
+                    note(
+                        losses,
+                        F3dLossCode::FeatureFormReferenceTypeConflict,
+                        &scope.id,
+                        "foreign reference type claims conflict",
+                    );
+                }
                 match reference.local() {
+                    None if matches!(reference, FormReference::Null) => {}
                     None => note(
                         losses,
                         F3dLossCode::FeatureFormForeignReferenceUnresolved,
@@ -1654,10 +2470,7 @@ fn body_membership(
                             3 => Some(crate::design::presentation::BODY_SCENE_NODE_TYPE_GUID),
                             _ => None,
                         };
-                        let valid_type = inline.is_none_or(|guid| {
-                            expected.is_none_or(|expected| guid.eq_ignore_ascii_case(expected))
-                                && types.type_matches(target, guid)
-                        });
+                        let valid_type = types.reference_matches(target, expected, inline);
                         if valid_type {
                             local[ordinal] = Some(target);
                         } else {
@@ -1713,7 +2526,7 @@ fn body_membership(
                     path,
                     record: local[2],
                 },
-                &serializers,
+                serializers,
                 losses,
             )?;
             for index in &observed {
@@ -1733,9 +2546,12 @@ fn body_membership(
                 && local[1].is_some_and(|target| types.body_containers.contains(&target))
                 && local[2].is_some_and(|target| types.surfaces.contains(&target))
                 && local[3].is_some_and(|target| types.scene_nodes.contains(&target));
-            if unique && valid {
+            let binding_proven =
+                owner_proven && local[2].is_some_and(|target| types.surfaces.contains(&target));
+            if unique && binding_proven {
                 selected = observed;
-            } else {
+            }
+            if !unique || !valid || !binding_proven {
                 closed = false;
             }
         }
@@ -1774,6 +2590,7 @@ fn body_membership(
 struct FormTrackingRun {
     owner: Option<FormReference>,
     members: Vec<Option<FormReference>>,
+    fixed_members: Option<Vec<Option<FormReference>>>,
 }
 
 fn form_tracking_members(
@@ -1800,43 +2617,58 @@ fn form_tracking_members(
         let mut at = selection_prefix::MEMBER_COUNT;
         if !short_owner {
             at = selection_prefix::OWNER_MARKER;
-            crate::bytes::take_reference(frame, &mut at)?;
+            crate::bytes::take_reference_lossless(frame, &mut at)?;
         }
         let count = View::u32_le_at(frame, at)?;
         at = at.checked_add(4)?;
-        let count_usize = bounded_len(u64::from(count), 11, frame.len().checked_sub(at)?)?;
-        let fixed_slots = frame
-            .len()
-            .checked_sub(at + 11 * count_usize)
-            .is_some_and(|tail| matches!(tail, 52 | 53));
-        Some((frame, count_usize, at, fixed_slots))
+        let count_usize = bounded_len(u64::from(count), 1, frame.len().checked_sub(at)?)?;
+        Some((frame, count_usize, at))
     })();
-    let Some((frame, count_usize, mut at, fixed_slots)) = parsed else {
+    let Some((frame, count_usize, start)) = parsed else {
         return Ok(None);
     };
     let mut owner_at = selection_prefix::OWNER_MARKER;
     let owner_reference = take_form_reference(ctx, frame, &mut owner_at)?;
     let mut members = ctx.alloc_filled(count_usize, None, "Form tracking members")?;
+    let mut at = start;
     for member in &mut members {
-        if fixed_slots {
-            let end = at + 11;
-            let mut cursor = at;
-            *member = take_form_reference(ctx, &frame[..end], &mut cursor)?
-                .filter(|_| cursor == end)
-                .filter(|reference| !matches!(reference, crate::bytes::Reference::Null));
-            at = end;
-            continue;
-        }
         let Some(reference) = take_form_reference(ctx, frame, &mut at)? else {
             break;
         };
-        if !matches!(reference, crate::bytes::Reference::Null) {
-            *member = Some(reference);
-        }
+        *member = Some(reference);
     }
+    let variable_framed = members.iter().all(Option::is_some)
+        && frame
+            .len()
+            .checked_sub(at)
+            .is_some_and(|tail| matches!(tail, 52 | 53));
+    let fixed_slots = !variable_framed
+        && count_usize
+            .checked_mul(11)
+            .and_then(|len| start.checked_add(len))
+            .and_then(|end| frame.len().checked_sub(end))
+            .is_some_and(|tail| matches!(tail, 52 | 53));
+    let fixed_members = if fixed_slots {
+        let mut fixed = ctx.alloc_filled(count_usize, None, "Form fixed tracking members")?;
+        at = start;
+        for member in &mut fixed {
+            let end = at + 11;
+            let mut cursor = at;
+            *member = take_form_reference(ctx, &frame[..end], &mut cursor)?.filter(|reference| {
+                cursor == end
+                    || (matches!(reference, FormReference::Null)
+                        && frame[cursor..end].iter().all(|byte| *byte == 0))
+            });
+            at = end;
+        }
+        Some(fixed)
+    } else {
+        None
+    };
     Ok(Some(FormTrackingRun {
         owner: owner_reference,
         members,
+        fixed_members,
     }))
 }
 
@@ -1934,16 +2766,26 @@ impl FormRecordTypes {
         types.serializers.dedup();
         types
     }
-    fn type_matches(&self, target: u64, guid: &str) -> bool {
-        self.registered
-            .get(&target)
-            .and_then(|index| *index)
-            .and_then(|index| self.type_guids.get(index))
-            .is_some_and(|registered| registered.eq_ignore_ascii_case(guid))
+    fn reference_matches(&self, target: u64, expected: Option<&str>, inline: Option<&str>) -> bool {
+        match self.registered.get(&target) {
+            Some(None) => false,
+            Some(Some(index)) => {
+                let Some(registered) = self.type_guids.get(*index) else {
+                    return false;
+                };
+                expected.is_none_or(|guid| registered.eq_ignore_ascii_case(guid))
+                    && inline.is_none_or(|guid| registered.eq_ignore_ascii_case(guid))
+            }
+            None => inline.is_none(),
+        }
     }
 }
 
 type FormReference = crate::bytes::Reference<String, String>;
+
+fn foreign_type_conflict(reference: &FormReference) -> bool {
+    matches!(reference, FormReference::CrossDocument { inline_type_guid: Some(inline), target_type_guid: Some(external), .. } if !inline.eq_ignore_ascii_case(external))
+}
 
 fn take_form_reference(
     ctx: &DecodeContext<'_>,
@@ -1953,7 +2795,8 @@ fn take_form_reference(
     if let Some(limit) = ctx.resource_refusal() {
         return Err(CodecError::ResourceLimit(limit));
     }
-    Ok(crate::bytes::take_owned_reference(bytes, cursor))
+    Ok(crate::bytes::take_reference_lossless(bytes, cursor)
+        .map(crate::bytes::Reference::into_owned))
 }
 
 struct FormBodyRun {
@@ -2005,16 +2848,12 @@ fn form_body_references(
             let Some(parsed) = take_form_reference(ctx, frame, &mut cursor)? else {
                 break;
             };
-            if !matches!(parsed, crate::bytes::Reference::Null) {
-                *reference = Some(parsed);
-            }
+            *reference = Some(parsed);
         }
-        if references.iter().any(Option::is_some) {
-            runs.push(FormBodyRun {
-                offset: at,
-                references,
-            });
-        }
+        runs.push(FormBodyRun {
+            offset: at,
+            references,
+        });
     }
     Ok(runs)
 }
@@ -2632,16 +3471,76 @@ struct FormCageSerializers {
     ordered: Vec<u64>,
     entries: HashMap<u64, Vec<FormSerializer>>,
     unbound: Vec<FormSerializer>,
+    primary_offsets: HashMap<u32, HashSet<usize>>,
 }
 
 impl FormCageSerializers {
+    fn merge(&mut self, other: Self) {
+        let mut offsets = self
+            .entries
+            .values()
+            .flatten()
+            .chain(self.unbound.iter())
+            .map(|entry| entry.offset)
+            .collect::<HashSet<_>>();
+        for (record, primary) in other.primary_offsets {
+            self.primary_offsets
+                .entry(record)
+                .or_default()
+                .extend(primary);
+        }
+        for (surface, entries) in other.entries {
+            for entry in entries {
+                if offsets.insert(entry.offset) {
+                    self.entries.entry(surface).or_default().push(entry);
+                }
+            }
+        }
+        for entry in other.unbound {
+            if offsets.insert(entry.offset) {
+                self.unbound.push(entry);
+            }
+        }
+        let mut ordered = self
+            .entries
+            .iter_mut()
+            .filter_map(|(&surface, entries)| {
+                entries.sort_by_key(|entry| entry.offset);
+                entries.first().map(|entry| (entry.offset, surface))
+            })
+            .collect::<Vec<_>>();
+        ordered.sort_unstable();
+        self.ordered = ordered.into_iter().map(|(_, surface)| surface).collect();
+        self.unbound.sort_by_key(|entry| entry.offset);
+        self.mark_ambiguity();
+    }
+
+    fn mark_ambiguity(&mut self) {
+        for entry in self
+            .entries
+            .values_mut()
+            .flatten()
+            .chain(self.unbound.iter_mut())
+        {
+            entry.ambiguous |= self
+                .primary_offsets
+                .get(&entry.record)
+                .is_some_and(|offsets| offsets.len() > 1);
+        }
+    }
+
     fn validate_types(&mut self, types: &FormRecordTypes) {
         for (&surface, entries) in &mut self.entries {
             for entry in entries {
-                if let Some((_, Some(guid))) =
-                    entry.reference.as_ref().and_then(FormReference::local)
-                {
-                    entry.valid &= types.type_matches(surface, guid);
+                entry.valid &= types.reference_matches(
+                    u64::from(entry.record),
+                    Some(FORM_SERIALIZER_TYPE_GUID),
+                    None,
+                ) && (!types.registered.contains_key(&u64::from(entry.record))
+                    || types.serializers.contains(&entry.record));
+                if let Some((_, inline)) = entry.reference.as_ref().and_then(FormReference::local) {
+                    entry.valid &=
+                        types.reference_matches(surface, Some(FORM_SURFACE_TYPE_GUID), inline);
                 }
             }
         }
@@ -2675,7 +3574,22 @@ fn form_cage_serializers(
         };
         frames.push((offset, frame));
     }
-    collect_form_cage_serializers(ctx, bytes, records, frames)
+    let mut primary_offsets = HashMap::<u32, HashSet<usize>>::new();
+    for (offset, _) in &frames {
+        if let Some(record) = View::u32_le_at(bytes, offset + 7) {
+            primary_offsets.entry(record).or_default().insert(*offset);
+        }
+    }
+    let mut serializers = collect_form_cage_serializers(ctx, bytes, records, frames)?;
+    for (record, offsets) in primary_offsets {
+        serializers
+            .primary_offsets
+            .entry(record)
+            .or_default()
+            .extend(offsets);
+    }
+    serializers.mark_ambiguity();
+    Ok(serializers)
 }
 
 fn form_typed_serializers(
@@ -2690,6 +3604,20 @@ fn form_typed_serializers(
         .flat_map(|serializer| records.offsets(*serializer).iter().copied())
         .collect::<Vec<_>>();
     offsets.sort_unstable();
+    let mut primary_offsets = HashMap::<u32, HashSet<usize>>::new();
+    for &offset in &offsets {
+        let primary_type = bytes
+            .get(offset + 4..offset + 7)
+            .and_then(|tag| std::str::from_utf8(tag).ok())
+            .and_then(|tag| tag.parse::<usize>().ok())
+            .and_then(|tag| tag.checked_sub(256))
+            .and_then(|index| types.type_guids.get(index));
+        if primary_type.is_some_and(|guid| guid.eq_ignore_ascii_case(FORM_SERIALIZER_TYPE_GUID)) {
+            if let Some(record) = View::u32_le_at(bytes, offset + 7) {
+                primary_offsets.entry(record).or_default().insert(offset);
+            }
+        }
+    }
     let mut serializers = collect_form_cage_serializers(
         ctx,
         bytes,
@@ -2699,20 +3627,27 @@ fn form_typed_serializers(
             .map(|offset| (offset, FormSerializerFrame::Ordinary)),
     )?;
     serializers.validate_types(types);
-    for entry in serializers.entries.values_mut().flatten() {
-        let offsets = records.offsets(entry.record);
-        entry.ambiguous = offsets.first().is_some_and(|first| *first < entry.offset)
-            || offsets
-                .iter()
-                .filter(|&&offset| {
-                    next_indexed_record_offset(bytes, offset + 1)
-                        .and_then(|next| next.checked_sub(offset))
-                        .is_some_and(|length| {
-                            length > form_serializer_frame_132::ENTRY_NAME_LENGTH + 4 + 2
-                        })
-                })
-                .count()
-                > 1;
+    for (record, offsets) in primary_offsets {
+        serializers
+            .primary_offsets
+            .entry(record)
+            .or_default()
+            .extend(offsets);
+    }
+    serializers.mark_ambiguity();
+    Ok(serializers)
+}
+
+fn form_serializers(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    types: Option<&FormRecordTypes>,
+) -> Result<FormCageSerializers, CodecError> {
+    let mut serializers = form_cage_serializers(ctx, bytes, records)?;
+    if let Some(types) = types {
+        serializers.merge(form_typed_serializers(ctx, bytes, records, types)?);
+        serializers.validate_types(types);
     }
     Ok(serializers)
 }
@@ -2766,10 +3701,25 @@ fn collect_form_cage_serializers(
             valid,
         });
     }
+    let mut primary_offsets = HashMap::<u32, HashSet<usize>>::new();
+    for entry in entries.values().flatten().chain(unbound.iter()) {
+        primary_offsets
+            .entry(entry.record)
+            .or_default()
+            .insert(entry.offset);
+    }
+    for entry in entries.values_mut().flatten().chain(unbound.iter_mut()) {
+        let offsets = records.offsets(entry.record);
+        entry.ambiguous = offsets.first().is_some_and(|first| *first < entry.offset)
+            || primary_offsets
+                .get(&entry.record)
+                .is_some_and(|offsets| offsets.len() > 1);
+    }
     Ok(FormCageSerializers {
         ordered,
         entries,
         unbound,
+        primary_offsets,
     })
 }
 
@@ -2838,8 +3788,7 @@ fn form_serializer_entry(
     let Some(frame) = bytes.get(..next) else {
         return Ok(None);
     };
-    let reference = take_form_reference(ctx, frame, &mut cursor)?
-        .filter(|reference| !matches!(reference, crate::bytes::Reference::Null));
+    let reference = take_form_reference(ctx, frame, &mut cursor)?;
     let valid = reference.as_ref().is_some_and(|reference| {
         if is_class_335 {
             bytes
@@ -2858,6 +3807,74 @@ fn form_serializer_entry(
         }
     });
     Ok(Some((reference, entry_name, valid)))
+}
+
+fn ordered_observations(
+    members: &[FormMember],
+    evidence: &[FormOrderEvidence],
+    closures: &[FormClosureEvidence],
+    source_only: bool,
+    use_positions: bool,
+    require_unique: bool,
+) -> Option<Vec<FormObservationIndex>> {
+    let mut pending = members
+        .iter()
+        .map(|member| member.observation)
+        .collect::<HashSet<_>>();
+    let mut predecessors = pending
+        .iter()
+        .copied()
+        .map(|index| (index, HashSet::new()))
+        .collect::<HashMap<_, _>>();
+    for (_, members) in evidence
+        .iter()
+        .map(|claim| (claim.order, claim.members.as_slice()))
+        .chain(
+            closures
+                .iter()
+                .map(|claim| (claim.order, claim.members.as_slice())),
+        )
+        .filter(|(order, _)| !source_only || *order == FormKnownOrder::Source)
+    {
+        let sequence = members
+            .iter()
+            .copied()
+            .filter(|index| pending.contains(index))
+            .collect::<Vec<_>>();
+        for pair in sequence.windows(2) {
+            predecessors.entry(pair[1]).or_default().insert(pair[0]);
+        }
+    }
+    if use_positions {
+        let mut positions = members
+            .iter()
+            .filter_map(|member| member.ordinal.map(|ordinal| (ordinal, member.observation)))
+            .collect::<Vec<_>>();
+        positions.sort_unstable_by_key(|(ordinal, _)| *ordinal);
+        for pair in positions.windows(2) {
+            predecessors.entry(pair[1].1).or_default().insert(pair[0].1);
+        }
+    }
+    let mut ordered = Vec::new();
+    while !pending.is_empty() {
+        let mut ready = pending
+            .iter()
+            .copied()
+            .filter(|index| {
+                predecessors
+                    .get(index)
+                    .is_none_or(|before| before.is_disjoint(&pending))
+            })
+            .collect::<Vec<_>>();
+        if ready.is_empty() || (require_unique && ready.len() != 1) {
+            return None;
+        }
+        ready.sort_unstable_by_key(|index| index.0);
+        let next = ready[0];
+        pending.remove(&next);
+        ordered.push(next);
+    }
+    Some(ordered)
 }
 
 #[cfg(test)]

@@ -209,7 +209,12 @@ fn form_tracking_fixed_slots_retain_members_after_malformed_and_null_slots() {
     bytes.extend_from_slice(&indexed_frame(b"264", 226, 30));
     let meta = form_meta(&[("E079B079-016A-43C2-ACC7-9627B32A8960", 0, &[226])]);
     let construction = body_construction(&bytes, &meta, &form_scope(220, vec![226]), &[]);
-    let list = &construction.inputs().lists[0];
+    let list = construction
+        .inputs()
+        .lists
+        .iter()
+        .find(|list| list.role == FormListRole::TrackingSelectionFixedAssumed)
+        .unwrap();
     assert_eq!(list.declared_count, 4);
     assert_eq!(
         list.members
@@ -328,7 +333,8 @@ fn form_tracking_foreign_member_and_conflicting_owner_keep_their_typed_evidence(
                     &reference.target,
                     FormNativeReferenceTarget::Segment {
                         target: 228,
-                        segment: 7
+                        segment: 7,
+                        ..
                     }
                 )
         ));
