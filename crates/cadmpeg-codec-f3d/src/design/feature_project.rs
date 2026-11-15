@@ -7753,12 +7753,12 @@ fn project_rectangular_pattern_scalars(
         },
         |distribution| !distribution.total_extent.value,
     );
-    if distribution.is_some_and(|distribution| distribution.symmetric.value) {
+    let symmetric = distribution.is_some_and(|distribution| distribution.symmetric.value);
+    if symmetric {
         // The extent of a symmetric direction has no settled measurement.
         if !adjacent || construction.u_extent() == 0.0 {
             return None;
         }
-        dropped.push("the symmetric distribution of direction one".to_owned());
     }
     for (axis, (count, extent)) in [
         (construction.u_count(), construction.u_extent()),
@@ -7865,6 +7865,7 @@ fn project_rectangular_pattern_scalars(
                 direction: cadmpeg_ir::features::FeatureDirection3::from(*second_direction),
                 spacing: *second_spacing,
                 count: *second_count,
+                symmetric: false,
             }),
         ),
         _ => return None,
@@ -7875,6 +7876,7 @@ fn project_rectangular_pattern_scalars(
         count,
         second,
         omitted_instances: Vec::new(),
+        symmetric,
     })
     .ok()?;
     if !dropped.is_empty() {
