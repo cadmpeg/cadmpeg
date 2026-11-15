@@ -1,5 +1,64 @@
 use super::*;
 use crate::test_support::{indexed_header, lp_utf16, with_decode_context};
+
+#[test]
+fn unfold_retains_material_scalar_with_an_independent_first_rule_entry() {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test/Design1/BulkStream.dat:scope#10",
+        DesignFeatureKind::Unfold,
+        10,
+    );
+    crate::design::test_support::name_scope_references(&mut scope, [20, 30, 40]);
+    scope
+        .try_edit(|draft| crate::design::test_support::lengthen_scope_frame(draft, 512))
+        .expect("scope bounds");
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"000", 10);
+    bytes.extend([0; 9]);
+    bytes.extend([0, 1]);
+    for index in [20, 30, 35, 40] {
+        reference(&mut bytes, index, None);
+    }
+    bytes.resize(512, 0);
+    indexed_header(&mut bytes, *b"001", 10);
+    indexed_header(&mut bytes, *b"000", 30);
+    bytes.extend([0; 10]);
+    bytes.extend(0_u32.to_le_bytes());
+    bytes.extend([0; 6]);
+    reference(&mut bytes, 60, None);
+    bytes.extend([0; 4]);
+    reference(&mut bytes, 70, None);
+    bytes.push(0);
+    reference(&mut bytes, 10, None);
+    indexed_header(&mut bytes, *b"001", 30);
+    indexed_header(&mut bytes, *b"000", 60);
+    bytes.extend([0; 10]);
+    bytes.extend(3_u32.to_le_bytes());
+    lp_utf16(&mut bytes, "RadiusExpression");
+    bytes.extend(0.2_f64.to_le_bytes());
+    bytes.extend([0; 12]);
+    bytes.extend(0.44_f64.to_le_bytes());
+    lp_utf16(&mut bytes, "Alloy");
+    lp_utf16(&mut bytes, "Thickness");
+    bytes.extend(0.125_f64.to_le_bytes());
+    indexed_header(&mut bytes, *b"001", 60);
+    let records = IndexedRecordOffsets::build(&bytes);
+    let types = HashMap::from([
+        (10, (UNFOLD_GUID, 0)),
+        (30, (SETTINGS_GUID, 1)),
+        (60, (super::super::sheet_metal_rule::RULE_GUID, 1)),
+    ]);
+    let value = unfold(&bytes, &records, &scope, &types).expect("independent rule entries");
+    assert_eq!(value.rule_record_index, Some(60));
+    assert_eq!(
+        value
+            .rule_material_scalar
+            .expect("retained material scalar")
+            .value
+            .get(),
+        0.44
+    );
+}
 use std::collections::HashMap;
 
 fn reference(out: &mut Vec<u8>, index: u32, guid: Option<&str>) {

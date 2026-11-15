@@ -1028,19 +1028,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile, ..
         }) => !planar_profile_ref_is_resolved(profile),
-        FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
-            edges,
-            height,
-            ..
-        }) => {
-            !edge_selection_is_resolved(edges)
-                || matches!(
-                    height,
-                    cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject {
-                        target: cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_),
-                        ..
-                    }
-                )
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(construction)) => {
+            !construction.has_all_inputs()
+                || construction.edges.as_ref().is_none_or(|edges| !edge_selection_is_resolved(edges))
+                || matches!(&construction.height, Some(cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject(target)) if matches!(target.target, Some(cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_))))
+                || matches!(construction.width, Some(cadmpeg_ir::features::SheetMetalFlangeWidth::TwoOffsetsPerEdge { .. }))
         }
         FeatureDefinition::Operation(FeatureOperation::SheetMetalHem {
             edges,
@@ -1930,10 +1922,16 @@ fn design_projection_gaps(
             }) => {
                 gaps.profile_selections += usize::from(!planar_profile_ref_is_resolved(profile));
             }
-            FeatureDefinition::Operation(
-                FeatureOperation::SheetMetalEdgeFlange { edges, .. }
-                | FeatureOperation::SheetMetalHem { edges, .. },
-            ) => edge_selection(edges),
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(construction)) => {
+                if let Some(edges) = &construction.edges {
+                    edge_selection(edges);
+                } else {
+                    edge_selection(&EdgeSelection::Unresolved);
+                }
+            }
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalHem { edges, .. }) => {
+                edge_selection(edges);
+            }
             FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, .. }) => {
                 face_selection(faces);
             }

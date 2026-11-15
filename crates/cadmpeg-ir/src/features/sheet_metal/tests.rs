@@ -2,6 +2,250 @@ use super::{SheetMetalBendLinesConstruction, SheetMetalLineBend};
 use serde_json::json;
 
 #[test]
+fn edge_partial_extent_inputs_keep_each_known_member() {
+    use crate::features::FeatureOperation;
+    for width in [
+        json!({"kind":"symmetric_per_edge","value":{"widths":[{"width":3.0},{"width":7.0},{}]}}),
+        json!({"kind":"two_sides_per_edge","value":{"widths":[{"first":4.0},{"second":2.0}]}}),
+        json!({"kind":"symmetric","value":{"width":3.0}}),
+        json!({"kind":"two_sides","value":{"second":2.0}}),
+    ] {
+        let wire = json!({
+            "definition":"sheet_metal_edge_flange",
+            "height":{"kind":"to_object","value":{"target":{"kind":"native","value":"test:target"}}},
+            "width":width
+        });
+        let value: FeatureOperation =
+            serde_json::from_value(wire.clone()).expect("independent extent inputs");
+        assert_eq!(serde_json::to_value(value).expect("extent wire"), wire);
+    }
+    for (field, ty) in [("width", 0), ("first", 1), ("second", 1)] {
+        let value = json!({field: null});
+        let error = if ty == 0 {
+            serde_json::from_value::<super::SheetMetalFlangeSymmetricWidth>(value)
+                .expect_err("null width")
+                .to_string()
+        } else {
+            serde_json::from_value::<crate::features::SheetMetalFlangeTwoSidedWidth>(value)
+                .expect_err("null distance")
+                .to_string()
+        };
+        assert!(error.contains(field), "{error}");
+    }
+    for field in ["target", "offset"] {
+        assert!(
+            serde_json::from_value::<super::SheetMetalFlangeTargetConstruction>(
+                json!({field:null})
+            )
+            .expect_err("null height input")
+            .to_string()
+            .contains(field)
+        );
+    }
+    assert!(
+        serde_json::from_value::<crate::features::SheetMetalFlangeWidth>(
+            json!({"kind":"two_sides_per_edge","value":{"widths":[]}})
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn edge_complete_extent_laws_keep_their_existing_wire() {
+    use crate::features::{SheetMetalFlangeHeight, SheetMetalFlangeWidth};
+    for wire in [
+        json!({"kind":"symmetric","value":{"width":3.0}}),
+        json!({"kind":"two_sides","value":{"first":4.0,"second":2.0}}),
+        json!({"kind":"two_sides_per_edge","value":{"widths":[{"first":4.0,"second":2.0}]}}),
+    ] {
+        let value: SheetMetalFlangeWidth =
+            serde_json::from_value(wire.clone()).expect("complete width law");
+        assert_eq!(
+            serde_json::to_value(value).expect("complete width wire"),
+            wire
+        );
+    }
+    let wire = json!({"kind":"to_object","value":{"target":{"kind":"native","value":"test:plane"},"offset":-2.0}});
+    let value: SheetMetalFlangeHeight =
+        serde_json::from_value(wire.clone()).expect("complete height law");
+    assert_eq!(
+        serde_json::to_value(value).expect("complete height wire"),
+        wire
+    );
+}
+
+#[test]
+fn edge_construction_keeps_complete_flat_wire_and_accepts_sparse_inputs() {
+    use super::SheetMetalEdgeFlangeConstruction;
+    use crate::features::FeatureOperation;
+    let wire = json!({
+        "definition": "sheet_metal_edge_flange",
+        "edges": {"kind": "native", "value": "test:edges"},
+        "height": {"kind": "distance", "value": 5.0},
+        "angle": 1.2,
+        "height_datum": "outer_faces",
+        "bend_position": "inside",
+        "width": {"kind": "full_edge"},
+        "bend_radius": 0.5
+    });
+    let operation: FeatureOperation =
+        serde_json::from_value(wire.clone()).expect("complete edge wire");
+    assert_eq!(serde_json::to_value(operation).expect("edge wire"), wire);
+    let sparse = json!({"definition": "sheet_metal_edge_flange"});
+    let operation: FeatureOperation =
+        serde_json::from_value(sparse.clone()).expect("sparse edge wire");
+    assert_eq!(
+        operation,
+        FeatureOperation::SheetMetalEdgeFlange(SheetMetalEdgeFlangeConstruction::default())
+    );
+    assert_eq!(
+        serde_json::to_value(operation).expect("sparse edge wire"),
+        sparse
+    );
+    for key in [
+        "edges",
+        "height",
+        "angle",
+        "height_datum",
+        "bend_position",
+        "width",
+        "bend_radius",
+    ] {
+        let mut invalid = wire.clone();
+        invalid[key] = serde_json::Value::Null;
+        let error = serde_json::from_value::<FeatureOperation>(invalid)
+            .expect_err("null construction member")
+            .to_string();
+        assert!(error.contains(key), "{error}");
+    }
+    let mut unknown = wire.clone();
+    unknown["extra"] = json!(true);
+    assert!(serde_json::from_value::<FeatureOperation>(unknown).is_err());
+    let mut zero_radius = wire;
+    zero_radius["bend_radius"] = json!(0.0);
+    assert!(serde_json::from_value::<FeatureOperation>(zero_radius).is_ok());
+}
+
+#[test]
+fn edge_offset_rows_keep_signed_and_missing_members() {
+    use super::SheetMetalFlangeOffset;
+    use crate::features::SheetMetalFlangeWidth;
+    let wire = json!({"kind": "two_offsets_per_edge", "value": {"offsets": [
+        {"first": 0.0, "second": -7.5, "first_reference": "test:boundary#first", "second_reference": "test:boundary#second"},
+        {"first": -5.0}
+    ]}});
+    let width: SheetMetalFlangeWidth =
+        serde_json::from_value(wire.clone()).expect("signed source offsets");
+    assert_eq!(serde_json::to_value(width).expect("offset wire"), wire);
+    assert!(serde_json::from_value::<SheetMetalFlangeWidth>(
+        json!({"kind":"two_offsets_per_edge","value":{"offsets":[]}})
+    )
+    .is_err());
+    for key in ["first", "second", "first_reference", "second_reference"] {
+        let mut invalid = json!({});
+        invalid[key] = serde_json::Value::Null;
+        let error = serde_json::from_value::<SheetMetalFlangeOffset>(invalid)
+            .expect_err("null offset member")
+            .to_string();
+        assert!(error.contains(key), "{error}");
+    }
+    assert!(
+        serde_json::from_value::<SheetMetalFlangeOffset>(json!({"first_reference":""})).is_err()
+    );
+    assert!(serde_json::from_value::<SheetMetalFlangeOffset>(json!({"extra": 1})).is_err());
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn edge_construction_schema_admits_absence_and_excludes_null() {
+    use super::SheetMetalEdgeFlangeConstruction;
+    let schema = serde_json::to_value(schemars::schema_for!(SheetMetalEdgeFlangeConstruction))
+        .expect("edge schema");
+    assert!(schema.get("required").is_none());
+    for key in [
+        "edges",
+        "height",
+        "angle",
+        "height_datum",
+        "bend_position",
+        "width",
+        "bend_radius",
+    ] {
+        assert!(
+            !schema["properties"][key].to_string().contains("\"null\""),
+            "{key}"
+        );
+    }
+    for schema in [
+        serde_json::to_value(schemars::schema_for!(super::SheetMetalFlangeSymmetricWidth))
+            .expect("width schema"),
+        serde_json::to_value(schemars::schema_for!(
+            crate::features::SheetMetalFlangeTwoSidedWidth
+        ))
+        .expect("side schema"),
+        serde_json::to_value(schemars::schema_for!(
+            super::SheetMetalFlangeTargetConstruction
+        ))
+        .expect("target schema"),
+    ] {
+        assert!(schema.get("required").is_none());
+        for field in schema["properties"]
+            .as_object()
+            .expect("optional properties")
+            .values()
+        {
+            assert!(!field.to_string().contains("\"null\""));
+        }
+    }
+}
+
+#[test]
+fn edge_construction_rewrite_visits_optional_height_feature() {
+    use super::SheetMetalEdgeFlangeConstruction;
+    use crate::{
+        features::{FeatureId, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget},
+        scalar::Length,
+        schema::rewrite::typed::{IdentityMap, RewriteIdentities},
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let construction = SheetMetalEdgeFlangeConstruction {
+        height: Some(SheetMetalFlangeHeight::to_object(
+            SheetMetalFlangeHeightTarget::Feature(
+                FeatureId::mint("test:model:feature#source").expect("source feature"),
+            ),
+            Length::new(-2.0).expect("signed height offset"),
+        )),
+        ..Default::default()
+    };
+    let arena = DecodeArena::new();
+    let (context, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("rewrite context");
+    let mut map = IdentityMap::new(|source: &str| Ok(source.replace("#source", "#rewritten")));
+    let rewritten = construction
+        .rewrite_identities(&context, &mut map)
+        .expect("rewrite edge construction");
+    assert!(
+        matches!(rewritten.height, Some(SheetMetalFlangeHeight::ToObject(ref target)) if matches!(&target.target, Some(SheetMetalFlangeHeightTarget::Feature(id)) if id.as_str()=="test:model:feature#rewritten"))
+    );
+    map.finish().expect("finish rewrite");
+    let partial = super::SheetMetalFlangeTargetConstruction {
+        target: Some(SheetMetalFlangeHeightTarget::Feature(
+            FeatureId::mint("test:model:feature#source").expect("partial target"),
+        )),
+        ..Default::default()
+    };
+    let height = SheetMetalFlangeHeight::ToObject(partial);
+    let mut map = IdentityMap::new(|source: &str| Ok(source.replace("#source", "#rewritten")));
+    let rewritten = height
+        .rewrite_identities(&context, &mut map)
+        .expect("partial target rewrite");
+    assert!(
+        matches!(rewritten, SheetMetalFlangeHeight::ToObject(construction) if matches!(construction.target, Some(SheetMetalFlangeHeightTarget::Feature(ref id)) if id.as_str() == "test:model:feature#rewritten") && construction.offset.is_none())
+    );
+    map.finish().expect("finish partial rewrite");
+}
+
+#[test]
 fn bend_construction_omits_absent_optional_inputs() {
     let value = json!({"bends": [{}]});
     let construction: SheetMetalBendLinesConstruction =

@@ -75,6 +75,9 @@ fn unfold_projects_partial_inputs_and_preserves_flag_and_rule_scalar() {
         };
         assert_eq!(construction.all_bends, expected);
         assert_eq!(construction.neutral_factor.unwrap().get(), 1.0);
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code == F3dLossCode::UnfoldMaterialScalarFactorAssumed.kind()));
         assert_eq!(
             construction.stationary,
             Some(FaceSelection::Native(source.id.clone()))

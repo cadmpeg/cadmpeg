@@ -487,15 +487,16 @@ fn scale_feature_operation(
             scale_optional_positive_length(&mut construction.inside_radius, scale)?;
         }
         FeatureOperation::SheetMetalCorner { .. } => {}
-        FeatureOperation::SheetMetalEdgeFlange {
-            height,
-            width,
-            bend_radius,
-            ..
-        } => {
-            scale_sheet_metal_flange_height(height, scale)?;
-            scale_sheet_metal_flange_width(width, scale)?;
-            scale_positive_length(bend_radius, scale)?;
+        FeatureOperation::SheetMetalEdgeFlange(construction) => {
+            if let Some(height) = &mut construction.height {
+                scale_sheet_metal_flange_height(height, scale)?;
+            }
+            if let Some(width) = &mut construction.width {
+                scale_sheet_metal_flange_width(width, scale)?;
+            }
+            if let Some(radius) = &mut construction.bend_radius {
+                scale_nonnegative_length(radius, scale)?;
+            }
         }
         FeatureOperation::SheetMetalHem {
             form, bend_radius, ..
@@ -782,8 +783,10 @@ fn scale_sheet_metal_flange_height(
     use cadmpeg_ir::features::SheetMetalFlangeHeight;
 
     match height {
+        SheetMetalFlangeHeight::ToObject(construction) => {
+            scale_optional_length(&mut construction.offset, scale)?;
+        }
         SheetMetalFlangeHeight::Distance(distance) => scale_positive_length(distance, scale)?,
-        SheetMetalFlangeHeight::ToObject { offset, .. } => scale_length(offset, scale)?,
     }
     Ok(())
 }
@@ -795,15 +798,28 @@ fn scale_sheet_metal_flange_width(
     use cadmpeg_ir::features::SheetMetalFlangeWidth;
 
     match width {
-        SheetMetalFlangeWidth::Symmetric { width } => scale_positive_length(width, scale)?,
-        SheetMetalFlangeWidth::TwoSides { first, second } => {
-            scale_positive_length(first, scale)?;
-            scale_positive_length(second, scale)?;
+        SheetMetalFlangeWidth::SymmetricPerEdge { widths } => {
+            for row in widths {
+                scale_optional_positive_length(&mut row.width, scale)?;
+            }
+        }
+        SheetMetalFlangeWidth::Symmetric(width) => {
+            scale_optional_positive_length(&mut width.width, scale)?;
+        }
+        SheetMetalFlangeWidth::TwoSides(width) => {
+            scale_optional_positive_length(&mut width.first, scale)?;
+            scale_optional_positive_length(&mut width.second, scale)?;
         }
         SheetMetalFlangeWidth::TwoSidesPerEdge { widths } => {
             for width in widths.as_mut_slice() {
-                scale_positive_length(&mut width.first, scale)?;
-                scale_positive_length(&mut width.second, scale)?;
+                scale_optional_positive_length(&mut width.first, scale)?;
+                scale_optional_positive_length(&mut width.second, scale)?;
+            }
+        }
+        SheetMetalFlangeWidth::TwoOffsetsPerEdge { offsets } => {
+            for row in offsets {
+                scale_optional_length(&mut row.first, scale)?;
+                scale_optional_length(&mut row.second, scale)?;
             }
         }
         SheetMetalFlangeWidth::FullEdge => {}
@@ -2672,6 +2688,9 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod edge_tests;
 
 #[cfg(test)]
 mod contour_tests {
