@@ -178,6 +178,8 @@ pub(crate) enum F3dLossCode {
     SketchMembershipConflict,
     SketchFolderClosingReference,
     SketchFolderUnprojected,
+    /// A sketch container's entity header has no recognised form; its visibility and name stay unread.
+    SketchContainerHeaderUnrecognized,
     /// Sketch geometry backlinks name a sketch geometry group whose member run omits the record.
     SketchGeometryGroupMemberUnlisted,
     SketchGeometryGroupMemberUnbacklinked,
@@ -718,6 +720,8 @@ pub(crate) enum F3dLossCode {
     FeatureCombineToolConsumptionAssumed,
     /// Fixed Fillet scalar lanes have no complete group assignment.
     FeatureFixedFilletAssignmentNative,
+    /// A parameter-owned Fillet scope's set list is not an admitted form; its operand groups have no radius assignment.
+    FeatureFilletSetListNative,
     /// Extrude scope retains an unassigned extent payload.
     FeatureExtrudeExtentNative,
     /// An Extrude face extent has fewer termination groups than its side count.
@@ -1118,6 +1122,7 @@ impl F3dLossCode {
         Self::SketchMembershipConflict,
         Self::SketchFolderClosingReference,
         Self::SketchFolderUnprojected,
+        Self::SketchContainerHeaderUnrecognized,
         Self::SketchGeometryGroupMemberUnlisted,
         Self::SketchGeometryGroupMemberUnbacklinked,
         Self::ComponentInsertUnplaced,
@@ -1466,6 +1471,7 @@ impl F3dLossCode {
         Self::FeatureCombineOperandListRefused,
         Self::FeatureCombineToolConsumptionAssumed,
         Self::FeatureFixedFilletAssignmentNative,
+        Self::FeatureFilletSetListNative,
         Self::FeatureExtrudeExtentNative,
         Self::FeatureExtrudeTerminationMissing,
         Self::FeatureRevolveLayoutAssumed,
@@ -1782,6 +1788,7 @@ impl F3dLossCode {
             Self::SketchMembershipConflict => "sketch.membership-conflict",
             Self::SketchFolderClosingReference => "sketch.folder-closing-reference",
             Self::SketchFolderUnprojected => "sketch.folder-unprojected",
+            Self::SketchContainerHeaderUnrecognized => "sketch.container-header-unrecognized",
             Self::SketchGeometryGroupMemberUnlisted => "sketch.geometry-group-member-unlisted",
             Self::SketchGeometryGroupMemberUnbacklinked => {
                 "sketch.geometry-group-member-unbacklinked"
@@ -2324,6 +2331,7 @@ impl F3dLossCode {
                 "feature.combine-tool-consumption-assumed"
             }
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
+            Self::FeatureFilletSetListNative => "feature.fillet-set-list-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureExtrudeTerminationMissing => "feature.extrude-termination-missing",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
@@ -2674,6 +2682,7 @@ impl F3dLossCode {
             | Self::SketchMembershipConflict
             | Self::SketchFolderClosingReference
             | Self::SketchFolderUnprojected
+            | Self::SketchContainerHeaderUnrecognized
             | Self::SketchGeometryGroupMemberUnlisted
             | Self::SketchGeometryGroupMemberUnbacklinked
             | Self::ComponentInsertUnplaced
@@ -3013,6 +3022,7 @@ impl F3dLossCode {
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
+            | Self::FeatureFilletSetListNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
@@ -3588,6 +3598,7 @@ impl F3dLossCode {
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
+            | Self::FeatureFilletSetListNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
@@ -3708,6 +3719,7 @@ impl F3dLossCode {
             | Self::SketchMembershipConflict
             | Self::SketchFolderClosingReference
             | Self::SketchFolderUnprojected
+            | Self::SketchContainerHeaderUnrecognized
             | Self::SketchGeometryGroupMemberUnlisted
             | Self::SketchGeometryGroupMemberUnbacklinked
             | Self::DesignBodyBindingUnresolved
@@ -3931,6 +3943,7 @@ mod tests {
                 "sketch.membership-conflict",
                 "sketch.folder-closing-reference",
                 "sketch.folder-unprojected",
+                "sketch.container-header-unrecognized",
                 "sketch.geometry-group-member-unlisted",
                 "sketch.geometry-group-member-unbacklinked",
                 "assembly.component-insert-unplaced",
@@ -4279,6 +4292,7 @@ mod tests {
                 "feature.combine-operand-list-refused",
                 "feature.combine-tool-consumption-assumed",
                 "feature.fixed-fillet-assignment-native",
+                "feature.fillet-set-list-native",
                 "feature.extrude-extent-native",
                 "feature.extrude-termination-missing",
                 "feature.revolve-layout-assumed",
