@@ -668,6 +668,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.design_construction_operand_groups,
         ),
     );
+    losses.extend(crate::design::decode::operands::fillet_set_list_losses(
+        &design.design_parameter_scopes,
+        &design.design_construction_operand_groups,
+        &design.design_fillet_radius_groups,
+        &prereqs.design_parameter_owners,
+    ));
     model.features = projected.features;
     model.parameters = projected.parameters;
     if projected.unordered_parameter_scopes != 0 {

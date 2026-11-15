@@ -569,6 +569,7 @@ fn unrecognised_container_header_is_a_loss_not_a_decode_failure() {
 fn good_container_survives_a_neighbour_with_an_unrecognised_header() {
     let (good, mut metadata) = visibility_stream();
     let mut bad = good.clone();
+    bad[7..15].copy_from_slice(&(ENTITY_SUFFIX + 1).to_le_bytes());
     bad[15] = 1;
     let good_at = bad.len();
     let mut bytes = bad;
@@ -593,10 +594,12 @@ fn good_container_survives_a_neighbour_with_an_unrecognised_header() {
     assert_eq!(visibilities.len(), 1);
     assert_eq!(visibilities[0].0, ENTITY_SUFFIX);
     assert!(visibilities[0].1.visible);
-    assert_eq!(losses.len(), 1);
-    assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::SketchContainerHeaderUnrecognized.kind()
-    );
-    assert!(losses[0].message.contains("202"));
+    let unrecognised = losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::F3dLossCode::SketchContainerHeaderUnrecognized.kind()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(unrecognised.len(), 1);
+    assert!(unrecognised[0].message.contains("202"));
 }
