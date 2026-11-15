@@ -465,6 +465,8 @@ pub(crate) enum F3dLossCode {
     HoleTaperTappedBoreCylindrical,
     /// A Base Feature whose marked null reference stores flag `1` reads its result runs as the ordinary result set.
     FeatureBaseFeatureNullFlagAssumed,
+    /// A Base Feature suffix result-body frame with more than one body reads its body, repeated, and result entries as three consecutive runs.
+    FeatureBaseFeatureSuffixRunOrderAssumed,
     HoleStandardSizingAssumed,
     /// A clearance Hole's specification takes fixed values for the fields it does not store.
     HoleClearanceFieldsAssumed,
@@ -1330,6 +1332,7 @@ impl F3dLossCode {
         Self::HoleTappedDiameterStored,
         Self::HoleTaperTappedBoreCylindrical,
         Self::FeatureBaseFeatureNullFlagAssumed,
+        Self::FeatureBaseFeatureSuffixRunOrderAssumed,
         Self::HoleStandardSizingAssumed,
         Self::HoleClearanceFieldsAssumed,
         Self::HoleCarrierAxisAssumed,
@@ -2143,6 +2146,9 @@ impl F3dLossCode {
             Self::HoleTappedDiameterStored => "feature.hole-tapped-diameter-stored",
             Self::HoleTaperTappedBoreCylindrical => "feature.hole-taper-tapped-bore-cylindrical",
             Self::FeatureBaseFeatureNullFlagAssumed => "feature.base-feature-null-flag-assumed",
+            Self::FeatureBaseFeatureSuffixRunOrderAssumed => {
+                "feature.base-feature-suffix-run-order-assumed"
+            }
             Self::HoleStandardSizingAssumed => "feature.hole-standard-sizing-assumed",
             Self::HoleClearanceFieldsAssumed => "feature.hole-clearance-fields-assumed",
             Self::HoleCarrierAxisAssumed => "feature.hole-carrier-axis-assumed",
@@ -2901,6 +2907,7 @@ impl F3dLossCode {
             | Self::HoleTappedDiameterStored
             | Self::HoleTaperTappedBoreCylindrical
             | Self::FeatureBaseFeatureNullFlagAssumed
+            | Self::FeatureBaseFeatureSuffixRunOrderAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -3489,6 +3496,7 @@ impl F3dLossCode {
             | Self::HoleTappedDiameterStored
             | Self::HoleTaperTappedBoreCylindrical
             | Self::FeatureBaseFeatureNullFlagAssumed
+            | Self::FeatureBaseFeatureSuffixRunOrderAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -4187,6 +4195,7 @@ mod tests {
                 "feature.hole-tapped-diameter-stored",
                 "feature.hole-taper-tapped-bore-cylindrical",
                 "feature.base-feature-null-flag-assumed",
+                "feature.base-feature-suffix-run-order-assumed",
                 "feature.hole-standard-sizing-assumed",
                 "feature.hole-clearance-fields-assumed",
                 "feature.hole-carrier-axis-assumed",
