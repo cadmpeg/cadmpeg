@@ -6213,6 +6213,27 @@ fn validate_fillet_operand_groups<'a>(
                         )
                     })
             });
+        let retained_set_list = scope.is_some_and(|scope| {
+            design::decode::operands::fillet_set_list_is_unadmitted(
+                scope,
+                &native.design_construction_operand_groups,
+                &native.design_fillet_radius_groups,
+                &native.design_parameter_owners,
+            ) && ctx
+                .ir
+                .model
+                .features
+                .iter()
+                .filter(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+                .all(|feature| {
+                    matches!(
+                        feature.evaluation.definition(),
+                        cadmpeg_ir::features::FeatureDefinition::Operation(
+                            cadmpeg_ir::features::FeatureOperation::Native { .. }
+                        )
+                    )
+                })
+        });
         // DR-321: a sole face-role group with no owner and no fixed lane.
         let no_stored_radius = !has_parameter_owner
             && sole_compact_group_shape
@@ -6220,6 +6241,7 @@ fn validate_fillet_operand_groups<'a>(
             && scope.is_some_and(|scope| scope.fixed_fillet_parameters().is_none());
         if is_fillet
             && !retained_fixed_assignment
+            && !retained_set_list
             && !no_stored_radius
             && (group.role() == DesignOperandRole::BODIES_B || sole_compact_group_shape)
             && !has_fixed_assignment

@@ -2389,6 +2389,51 @@ pub(crate) fn fixed_fillet_assignment_is_unresolved(
         && !(fixed.groups.len() == 1 && fillet_edge_and_face_groups(&scope_groups).is_some())
 }
 
+/// Whether a parameter-owned Fillet scope has operand groups, owned
+/// parameters, neither fixed lanes nor an admitted set list, and no radius
+/// assignment for any of its groups.
+pub(crate) fn fillet_set_list_is_unadmitted(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    radius_groups: &[DesignFilletRadiusGroup],
+    owners: &[DesignParameterOwner],
+) -> bool {
+    if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Fillet)
+        || scope.fixed_fillet_parameters().is_some()
+        || scope.fillet_sets().is_some()
+    {
+        return false;
+    }
+    let stream = native_stream(&scope.id);
+    owners
+        .iter()
+        .any(|owner| native_stream(owner.id()) == stream && scope.names_owner(owner))
+        && groups.iter().any(|group| {
+            native_stream(&group.id) == stream && group.scope_record_index == scope.record_index
+        })
+        && radius_groups.iter().all(|group| {
+            native_stream(&group.id) != stream || group.scope_record_index != scope.record_index
+        })
+}
+
+pub(crate) fn fillet_set_list_losses(
+    scopes: &[DesignParameterScope],
+    groups: &[DesignConstructionOperandGroup],
+    radius_groups: &[DesignFilletRadiusGroup],
+    owners: &[DesignParameterOwner],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    scopes
+        .iter()
+        .filter(|scope| fillet_set_list_is_unadmitted(scope, groups, radius_groups, owners))
+        .map(|scope| {
+            crate::loss::F3dLossCode::FeatureFilletSetListNative.note(format!(
+                "scope {} retains its operand groups and owned parameters because its fillet set list is not an admitted form",
+                scope.id
+            ))
+        })
+        .collect()
+}
+
 pub(crate) fn fixed_fillet_assignment_losses(
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],

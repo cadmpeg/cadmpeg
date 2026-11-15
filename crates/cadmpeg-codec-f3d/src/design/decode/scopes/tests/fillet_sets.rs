@@ -581,3 +581,14 @@ fn a_nonzero_byte_25_rejects_the_chordal_and_compact_forms() {
         .is_none());
     }
 }
+
+#[test]
+fn set_ordinals_form_a_permutation_of_the_list_positions() {
+    use super::super::fillet_set::ordinals_are_a_permutation;
+    assert!(ordinals_are_a_permutation(&[0]));
+    assert!(ordinals_are_a_permutation(&[2, 0, 1]));
+    assert!(!ordinals_are_a_permutation(&[]));
+    assert!(!ordinals_are_a_permutation(&[0, 0]));
+    assert!(!ordinals_are_a_permutation(&[1]));
+    assert!(!ordinals_are_a_permutation(&[0, 2]));
+}
