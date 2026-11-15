@@ -113,6 +113,29 @@ impl DecodeContext<'_> {
         text: &'input str,
         operation: &'static str,
     ) -> Result<roxmltree::Document<'input>, CodecError> {
+        self.parse_xml_located(text, operation)
+            .map_err(|(error, _)| error)
+    }
+
+    /// Parses XML as [`DecodeContext::parse_xml`] does, and keeps the
+    /// position of a syntax error so the recovering scanner can find the
+    /// element that holds it.
+    pub fn parse_xml_located<'input>(
+        &self,
+        text: &'input str,
+        operation: &'static str,
+    ) -> Result<roxmltree::Document<'input>, (CodecError, Option<roxmltree::TextPos>)> {
+        let mut position = None;
+        self.parse_xml_shaped(text, operation, &mut position)
+            .map_err(|error| (error, position))
+    }
+
+    fn parse_xml_shaped<'input>(
+        &self,
+        text: &'input str,
+        operation: &'static str,
+        position: &mut Option<roxmltree::TextPos>,
+    ) -> Result<roxmltree::Document<'input>, CodecError> {
         let shape = xml_shape(text);
         if shape.tag_attributes > MAX_XML_TAG_ATTRIBUTES {
             return Err(CodecError::NotImplemented(format!(
@@ -140,7 +163,10 @@ impl DecodeContext<'_> {
         self.at_depth(shape.depth, operation, || {
             roxmltree::Document::parse_with_options(text, options).map_err(|error| match error {
                 roxmltree::Error::NodesLimitReached => tree_too_large("XML", allowance, operation),
-                error => Self::tree_malformed(error),
+                error => {
+                    *position = Some(error.pos());
+                    Self::tree_malformed(error)
+                }
             })
         })
     }
