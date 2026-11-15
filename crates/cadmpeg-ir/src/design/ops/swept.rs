@@ -13,9 +13,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::design::construction::{kinds, Construction};
 use crate::design::dimension::Dimension;
+use crate::design::ops::shared::{
+    Interpolation, Law, Limit, OffsetJoin, RadialDimension, SheetCutNormal, Span,
+};
 use crate::design::options::{
-    Boolean, Hand, Law, Limit, LoopNesting, NativeOptions, PathRef, ProfileRef, RadialDimension,
-    SectionCondition, SolidOutput, Span, Thickness,
+    Boolean, Hand, LoopNesting, NativeOptions, PathRef, ProfileRef, SectionCondition, SolidOutput,
+    Thickness,
 };
 use crate::design::selection::{OrderedSelection, SetSelection};
 use crate::design::units::PositiveArea;
@@ -1720,58 +1723,6 @@ pub enum Rebuild {
     },
     /// The degree of a separate simplification of the result.
     Degree(u32),
-}
-
-/// How a value or a section changes between consecutive stations or
-/// sections.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
-pub enum Interpolation {
-    /// Each consecutive pair blends linearly, which leaves an edge at each
-    /// intermediate section.
-    Linear,
-    /// One smooth surface passes through every section.
-    Smooth,
-    /// A source interpolation whose meaning is not established.
-    Native(NonBlankString),
-}
-
-/// The corner law between offset faces.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
-pub enum OffsetJoin {
-    /// Rounded arcs.
-    Round,
-    /// Sharp intersection: the sides extend to meet.
-    Sharp,
-    /// A source join whose meaning is not established.
-    Native(NonBlankString),
-}
-
-/// The faces of a sheet-metal wall that a cut's side faces are normal to, the
-/// cut being made as if the part were flat.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum SheetCutNormal {
-    /// The face the wall is built from.
-    Defining,
-    /// The other face.
-    Opposite,
-    /// A cut through the thickness in the flat state.
-    Both,
 }
 
 cadmpeg_core::named_optional_field!(deserialize_against<T>, T, "against");
