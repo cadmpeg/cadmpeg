@@ -173,6 +173,7 @@ fn disputed(group: &str, reason: &str) -> LossNote {
 
 /// Replace each native single-group Extrude face profile whose set its own
 /// transition infers with the inferred historical faces.
+#[cfg(test)]
 pub(crate) fn bind_extrude_face_profile_sets(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &FaceProfileSetResolution<'_>,
