@@ -415,6 +415,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         count: 3,
         second: None,
         omitted_instances: Vec::new(),
+        symmetric: false,
     })
     .unwrap();
     assert!(!pattern_is_incomplete(&linear));
@@ -432,8 +433,10 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                 .unwrap(),
                 spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
                 count: 2,
+                symmetric: false,
             }),
             omitted_instances: vec![[0, 1]],
+            symmetric: false,
         },
     )
     .unwrap();
@@ -447,6 +450,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                 count: 3,
                 second: None,
                 omitted_instances: Vec::new(),
+                symmetric: false,
             }
         )
         .unwrap()
@@ -462,6 +466,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                 count: 1,
                 second: None,
                 omitted_instances: Vec::new(),
+                symmetric: false,
             }
         )
         .unwrap()
@@ -486,6 +491,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                         count: 3,
                         second: None,
                         omitted_instances: Vec::new(),
+                        symmetric: false,
                     })
                     .unwrap()
                 ),
