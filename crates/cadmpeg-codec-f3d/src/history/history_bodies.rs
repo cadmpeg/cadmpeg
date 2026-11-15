@@ -6,7 +6,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
-use cadmpeg_ir::features::Feature;
+use cadmpeg_ir::features::{
+    BodySelection, DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
+    FeatureOperation,
+};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -343,27 +346,45 @@ fn build(
             },
             topology,
         },
+        want.feature,
     )
 }
 
 fn admit(
     ctx: &DecodeContext<'_>,
-    mut body: HistoryBody,
+    body: HistoryBody,
+    origin: &Feature,
 ) -> Result<Option<HistoryBody>, CodecError> {
-    let producer = body.produced_by.take();
-    let consumer = body.consumed_by.take();
     let mut scratch = CadIr::empty();
+    // Admission checks the nest and the link to the origin. The stub carries
+    // only the identity, so no operand of the real feature is validated here.
+    scratch.model.features.push(Feature {
+        product_definition: None,
+        id: origin.id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Unresolved,
+            },
+        )),
+        native_ref: None,
+    });
     scratch.model.history_bodies.push(body);
     let report = cadmpeg_ir::validate::validate_neutral_for_decode(ctx, &scratch, Vec::new())?;
     let valid = !report
         .findings
         .iter()
         .any(|finding| finding.severity == cadmpeg_ir::report::Severity::Error);
-    let Some(mut body) = scratch.model.history_bodies.pop() else {
+    let Some(body) = scratch.model.history_bodies.pop() else {
         return Err(CodecError::malformed("history body admission"));
     };
-    body.produced_by = producer;
-    body.consumed_by = consumer;
     Ok(valid.then_some(body))
 }
 

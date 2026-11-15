@@ -527,7 +527,7 @@ fn an_invalid_history_body_nest_reports_the_undecoded_body() {
             },
             topology,
         };
-        assert!(admit(&ctx, candidate).unwrap().is_none());
+        assert!(admit(&ctx, candidate, &feature("base")).unwrap().is_none());
         let (bodies, losses) = run_bytes(&bytes, width, 1, MAX_HISTORY_BODY_WORK);
         assert!(bodies.is_empty());
         assert_eq!(losses.len(), 1);
@@ -682,7 +682,10 @@ fn admission_preserves_a_valid_nest_and_its_producer() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let candidate = cube_candidate();
     let expected = candidate.clone();
-    assert_eq!(admit(&ctx, candidate).expect("admission"), Some(expected));
+    assert_eq!(
+        admit(&ctx, candidate, &feature("base")).expect("admission"),
+        Some(expected)
+    );
 }
 
 #[test]
@@ -700,7 +703,9 @@ fn admission_rejects_a_reference_closed_nest_with_a_radial_ring_crossing_edges()
         .clone();
     candidate.topology.coedges[0].radial_next = other;
     assert!(!escapes(&ctx, &candidate.topology).expect("references"));
-    assert!(admit(&ctx, candidate).expect("admission").is_none());
+    assert!(admit(&ctx, candidate, &feature("base"))
+        .expect("admission")
+        .is_none());
 }
 
 #[test]
@@ -712,7 +717,9 @@ fn admission_rejects_a_reference_closed_nest_with_displaced_endpoints() {
             .expect("finite position"),
     );
     assert!(!escapes(&ctx, &candidate.topology).expect("references"));
-    assert!(admit(&ctx, candidate).expect("admission").is_none());
+    assert!(admit(&ctx, candidate, &feature("base"))
+        .expect("admission")
+        .is_none());
 }
 
 #[test]
