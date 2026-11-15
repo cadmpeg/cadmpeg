@@ -523,7 +523,7 @@ fn a_bare_parameter_the_census_cannot_enumerate_is_an_offender() {
             "#[derive(Serialize, Deserialize)] pub struct Slot<T = u8> { pub value: T }
              macro_rules! host { ($t:ty) => { #[derive(Serialize, Deserialize)] pub struct Host { pub nested: $t } }; }
              host!(Slot<Option<u16>>);",
-            "the call to host! at crates/cadmpeg-ir/src/lib.rs:3 spells Slot<..>, and the census does not expand it",
+            "the call to host! at crates/cadmpeg-ir/src/lib.rs:3 names Slot, and the census does not expand it",
         ),
         (
             "#[derive(Serialize, Deserialize)] pub struct Slot<T = u8> { pub value: T }
@@ -674,5 +674,227 @@ fn an_impl_the_item_walk_does_not_reach_is_unread() {
     assert_one_offender(
         &space("impl-in-a-block", &source),
         "sits where the census reads no impl, so its types are unread",
+    );
+}
+
+const OPEN_POINT: &str = "Entity.point states no deserialize_with";
+const OPEN_SLOT: &str = "Slot.value states no deserialize_with";
+const SLOT: &str = "#[derive(Serialize, Deserialize)] pub struct Slot<T = u8> { pub value: T }\n";
+const MAYBE: &str = "macro_rules! maybe { ($t:ty) => { Option<$t> }; }\n";
+const HOST: &str = "macro_rules! host { ($w:ident, $t:ty) => { #[derive(Serialize, Deserialize)] pub struct Host { pub nested: $w<$t> } }; }\n";
+const PLANAR_OPTION: &str = "pub trait Space { type Point; }
+pub struct Planar;
+impl Space for Planar { type Point = Option<u16>; }
+";
+
+#[test]
+fn a_raw_identifier_trait_impl_is_read() {
+    let source = SPACE.replace("PLANAR", "u16")
+        + "pub struct Extra; impl r#Space for Extra { type Point = Option<u8>; }";
+    assert_one_offender(&space("raw-trait-impl", &source), OPEN_POINT);
+}
+
+#[test]
+fn a_foreign_raw_identifier_impl_is_outside_the_wire_crates() {
+    let fixture = foreign(
+        "foreign-raw-trait",
+        "impl cadmpeg_ir::space::r#Space for Codec { type Point = u8; }",
+    );
+    assert_one_offender(
+        &fixture,
+        "an impl of Space at crates/codec/src/lib.rs:3 is outside the wire crates",
+    );
+}
+
+#[test]
+fn an_alias_renamed_by_use_holds_what_it_names() {
+    let fixture = Fixture::new(
+        "alias-renamed-by-use",
+        &[
+            ("crates/cadmpeg-ir/src/lib.rs", "mod kinds; mod space;"),
+            (
+                "crates/cadmpeg-ir/src/kinds.rs",
+                "pub type Maybe = Option<u16>;",
+            ),
+            (
+                "crates/cadmpeg-ir/src/space.rs",
+                "use crate::kinds::Maybe as Point;
+                 #[derive(Serialize, Deserialize)] pub struct Entity { pub point: Point }",
+            ),
+        ],
+    );
+    assert_one_offender(&fixture, OPEN_POINT);
+}
+
+#[test]
+fn an_alias_reexported_under_another_name_holds_what_it_names() {
+    let fixture = Fixture::new(
+        "alias-reexported-renamed",
+        &[
+            (
+                "crates/cadmpeg-ir/src/lib.rs",
+                "mod kinds; mod api; mod space;",
+            ),
+            (
+                "crates/cadmpeg-ir/src/kinds.rs",
+                "pub type Maybe = Option<u16>;",
+            ),
+            (
+                "crates/cadmpeg-ir/src/api.rs",
+                "pub use crate::kinds::Maybe as Point;",
+            ),
+            (
+                "crates/cadmpeg-ir/src/space.rs",
+                "use crate::api;
+                 #[derive(Serialize, Deserialize)] pub struct Entity { pub point: api::Point }",
+            ),
+        ],
+    );
+    assert_one_offender(&fixture, OPEN_POINT);
+}
+
+#[test]
+fn an_impl_stating_a_renamed_alias_holds_what_it_names() {
+    let source = SPACE.replace("PLANAR", "u16")
+        + "pub mod kinds { pub type Maybe = Option<u8>; }
+           use kinds::Maybe as Chosen;
+           pub struct Extra; impl Space for Extra { type Point = Chosen; }";
+    assert_one_offender(&space("impl-renamed-alias", &source), OPEN_POINT);
+}
+
+#[test]
+fn an_argument_spelled_by_a_renamed_alias_holds_what_it_names() {
+    let source = format!(
+        "{SLOT}pub mod kinds {{ pub type Maybe = Option<u16>; }}
+         use kinds::Maybe as Chosen;
+         #[derive(Serialize, Deserialize)] pub struct Host {{ pub nested: Slot<Chosen> }}"
+    );
+    assert_one_offender(&lib("argument-renamed-alias", &source), OPEN_SLOT);
+}
+
+#[test]
+fn a_const_argument_spelled_by_name_keeps_its_position() {
+    let source = "pub const SIZE: usize = 2;
+        #[derive(Serialize, Deserialize)] pub struct Slot<const N: usize, T> { pub value: T, pub pad: [u8; N] }
+        #[derive(Serialize, Deserialize)] pub struct Host { pub nested: Slot<SIZE, Option<u16>> }";
+    assert_one_offender(&lib("const-argument-by-name", source), OPEN_SLOT);
+}
+
+#[test]
+fn a_const_argument_spelled_by_name_keeps_its_alias_position() {
+    let source = "pub const SIZE: usize = 2;
+        pub type Pick<const N: usize, B> = B;
+        #[derive(Serialize, Deserialize)] pub struct Host { pub point: Pick<SIZE, Option<u16>> }";
+    assert_one_offender(
+        &lib("const-alias-argument-by-name", source),
+        "Host.point states no deserialize_with",
+    );
+}
+
+#[test]
+fn a_parameter_forwarded_to_one_nothing_fills_is_unread() {
+    let source = "#[derive(Serialize, Deserialize)] pub struct Slot<T> { pub value: T }
+        #[derive(Serialize, Deserialize)] pub struct Host<U> { pub nested: Slot<U> }";
+    let offenders = lib("forwarded-to-nothing", source).offenders();
+    assert!(
+        offenders.iter().any(|offender| offender.contains("Slot.value")
+            && offender.contains(
+                "cadmpeg_ir::Host has no default and no instantiation in the wire crates for its parameter U"
+            )),
+        "{offenders:#?}"
+    );
+}
+
+#[test]
+fn a_macro_call_naming_the_reader_beside_its_argument_leaves_it_unread() {
+    let source = format!("{SLOT}{HOST}host!(Slot, Option<u16>);");
+    assert_one_offender(
+        &lib("macro-reader-beside-argument", &source),
+        "the call to host! at crates/cadmpeg-ir/src/lib.rs:3 names Slot, and the census does not expand it",
+    );
+}
+
+#[test]
+fn a_foreign_macro_call_naming_the_reader_leaves_it_unread() {
+    let source = format!("{SLOT}other_crate::host!(Slot, Option<u16>);");
+    assert_one_offender(
+        &lib("foreign-macro-reader", &source),
+        "the call to host! at crates/cadmpeg-ir/src/lib.rs:2 names Slot, and the census does not expand it",
+    );
+}
+
+#[test]
+fn an_impl_stating_a_macro_type_is_unread() {
+    let source = SPACE.replace("PLANAR", "u16")
+        + MAYBE
+        + "pub struct Extra; impl Space for Extra { type Point = maybe!(u8); }";
+    assert_one_offender(
+        &space("impl-macro-type", &source),
+        "the type maybe!(..) is a macro call, which the census does not expand",
+    );
+}
+
+#[test]
+fn an_argument_spelled_by_a_macro_is_unread() {
+    let source = format!(
+        "{SLOT}{MAYBE}#[derive(Serialize, Deserialize)] pub struct Host {{ pub nested: Slot<maybe!(u16)> }}"
+    );
+    assert_one_offender(
+        &lib("argument-macro-type", &source),
+        "the type maybe!(..) is a macro call, which the census does not expand",
+    );
+}
+
+#[test]
+fn a_field_typed_by_a_concrete_projection_is_unread() {
+    let source = format!(
+        "{PLANAR_OPTION}#[derive(Serialize, Deserialize)] pub struct Entity {{ pub point: <Planar as Space>::Point }}"
+    );
+    assert_one_offender(
+        &lib("field-concrete-projection", &source),
+        "the type <Planar as Space>::Point names an associated type of a concrete type",
+    );
+}
+
+#[test]
+fn an_alias_of_a_concrete_projection_is_unread() {
+    let source = format!(
+        "{PLANAR_OPTION}pub type PlanarPoint = <Planar as Space>::Point;
+         #[derive(Serialize, Deserialize)] pub struct Entity {{ pub point: PlanarPoint }}"
+    );
+    assert_one_offender(
+        &lib("alias-concrete-projection", &source),
+        "the type <Planar as Space>::Point names an associated type of a concrete type",
+    );
+}
+
+#[test]
+fn an_argument_spelled_by_a_concrete_projection_is_unread() {
+    let source = format!(
+        "{SLOT}{PLANAR_OPTION}#[derive(Serialize, Deserialize)] pub struct Host {{ pub nested: Slot<<Planar as Space>::Point> }}"
+    );
+    assert_one_offender(
+        &lib("argument-concrete-projection", &source),
+        "the type <Planar as Space>::Point names an associated type of a concrete type",
+    );
+}
+
+#[test]
+fn an_impl_on_the_line_of_a_read_impl_is_unread() {
+    let source = SPACE.replace("PLANAR", "u16")
+        + "pub struct Other; pub struct Extra; impl Space for Other { type Point = u8; } const _: () = { impl Space for Extra { type Point = Option<u8>; } };";
+    assert_one_offender(
+        &space("impl-beside-read-impl", &source),
+        "the impl of Space at crates/cadmpeg-ir/src/space.rs:17 sits where the census reads no impl",
+    );
+}
+
+#[test]
+fn an_impl_on_the_line_of_a_test_module_is_unread() {
+    let source = SPACE.replace("PLANAR", "u16")
+        + "pub struct Extra; #[cfg(test)] mod tests {} const _: () = { impl Space for Extra { type Point = Option<u8>; } };";
+    assert_one_offender(
+        &space("impl-beside-test-module", &source),
+        "the impl of Space at crates/cadmpeg-ir/src/space.rs:17 sits where the census reads no impl",
     );
 }

@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::declarations::{module_scope, Declaration, Declarations};
 use crate::{
     collect_rust_sources, derive_list_names_deserialize, derive_list_names_serialize,
-    is_test_module, is_test_path, skip_meta_value, write_spelling, WriteSpelling,
+    is_test_module, is_test_path, read_source, skip_meta_value, write_spelling, WriteSpelling,
 };
 
 /// The writing declaration of a read type the routing attributes do not name.
@@ -225,7 +225,7 @@ pub(crate) fn wire_index(root: &Path) -> WireIndex {
             if is_test_path(&relative) {
                 continue;
             }
-            let text = std::fs::read_to_string(&file).expect("read source");
+            let text = read_source(&file);
             let parsed = syn::parse_file(&text)
                 .map_err(|error| format!("{relative} does not parse: {error}"))
                 .expect("every source file in the wire crates parses");

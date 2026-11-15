@@ -95,10 +95,10 @@ class DenyCensusTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'wire.rs'
             path.write_text('fn r#read<T>() { struct Inner { value: T } T::deserialize(d); }')
-            entries = census.reader_function_index(path)['r#read']
+            entries = census.reader_function_index(path)['read']
             self.assertEqual(len(entries), 1)
             opening, end, read, parameters = entries[0]
-            self.assertIn('struct Inner', path.read_text()[opening:end])
+            self.assertIn('struct Inner', census.read_source(path)[opening:end])
             self.assertEqual(read, {'T'})
             self.assertEqual(parameters, {'T'})
 
@@ -2350,7 +2350,7 @@ class GenericParameterProofTests(unittest.TestCase):
         self.assertIn(
             "Wrapper::A: payload T: the macro call at", output
         )
-        self.assertIn("spells Wrapper<..>, and the census does not expand it", output)
+        self.assertIn("names Wrapper, and the census does not expand it", output)
 
     def test_a_macro_writing_only_functions_states_no_instantiation(self) -> None:
         status, output = self.run_census({"lib.rs": self.WRAPPER + '''
@@ -2919,7 +2919,10 @@ class FailClosedResolutionTests(unittest.TestCase):
         })
         status, output = self.run_tree(files)
         self.assertEqual(status, 1, output)
-        self.assertIn("examples/demo.rs names Space outside the wire crates", output)
+        self.assertIn(
+            "the impl at examples/demo.rs:1 names Space, and the census cannot parse its header",
+            output,
+        )
         self.assertNotIn("Traceback", output)
 
     def test_a_foreign_call_to_an_implementing_macro_leaves_the_trait_unread(self) -> None:
@@ -2988,6 +2991,135 @@ class FailClosedResolutionTests(unittest.TestCase):
             "crates/codec/tests/fixture.rs": impl,
         }))
         self.assertEqual(status, 0, output)
+
+    GENERIC_SPACE = '''
+        pub trait Space<F = ()> { type Entity; }
+        pub struct Planar;
+        impl Space for Planar { type Entity = u8; }
+    '''
+
+    def assert_open_impl_read(self, space: str, extra: str, described: str) -> None:
+        """The census reads the impl in ``extra`` and fails its open type."""
+        status, output = self.run_census({"lib.rs": space + self.OPERAND + extra})
+        self.assertEqual(status, 1, output)
+        self.assertIn(f"Operand::Entity: payload S::Entity: {described} at", output)
+        self.assertIn("type Entity = Foreign", output)
+
+    def test_an_fn_bound_in_the_impl_generics_is_read(self) -> None:
+        self.assert_open_impl_read(self.SPACE, '''
+            pub struct Holder<F>(F);
+            impl<F: Fn() -> u8> Space for Holder<F> { type Entity = Foreign; }
+        ''', "impl Space for Holder<F>")
+
+    def test_a_binder_in_the_trait_arguments_is_read(self) -> None:
+        self.assert_open_impl_read(self.GENERIC_SPACE, '''
+            pub struct Extra;
+            impl Space<for<'a> fn(&'a u8)> for Extra { type Entity = Foreign; }
+        ''', "impl Space for Extra")
+
+    def test_a_shift_in_an_array_length_of_the_trait_arguments_is_read(self) -> None:
+        self.assert_open_impl_read(self.GENERIC_SPACE, '''
+            pub struct Extra;
+            impl Space<[u8; 1 << 2]> for Extra { type Entity = Foreign; }
+        ''', "impl Space for Extra")
+
+    def test_a_shift_in_a_const_block_of_the_self_type_is_read(self) -> None:
+        self.assert_open_impl_read(self.SPACE, '''
+            pub struct Arr<const N: usize>;
+            impl Space for Arr<{ 1 << 2 }> { type Entity = Foreign; }
+        ''', "impl Space for Arr<{ 1 << 2 }>")
+
+    def test_a_const_impl_is_read(self) -> None:
+        self.assert_open_impl_read(self.SPACE, '''
+            pub struct Extra;
+            impl const Space for Extra { type Entity = Foreign; }
+        ''', "impl Space for Extra")
+
+    def test_a_raw_identifier_trait_is_the_trait(self) -> None:
+        self.assert_open_impl_read(self.SPACE, '''
+            pub struct Extra;
+            impl r#Space for Extra { type Entity = Foreign; }
+        ''', "impl Space for Extra")
+
+    def test_a_raw_identifier_in_the_trait_path_is_the_trait(self) -> None:
+        self.assert_open_impl_read(self.SPACE, '''
+            pub struct Extra;
+            impl crate::r#Space for Extra { type Entity = Foreign; }
+        ''', "impl Space for Extra")
+
+    def test_a_wire_impl_header_the_parser_rejects_leaves_the_trait_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.GENERIC_SPACE + self.OPERAND + '''
+            pub struct Extra;
+            impl Space::<()> for Extra { type Entity = Foreign; }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Operand::Entity: payload S::Entity: the impl at ", output)
+        self.assertIn(
+            "lib.rs:11 names Space, and the census cannot parse its header", output
+        )
+
+    def assert_foreign_impl_unread(self, codec: str, reason: str) -> None:
+        status, output = self.run_tree(dict(self.WIRE, **{"crates/codec/src/lib.rs": codec}))
+        self.assertEqual(status, 1, output)
+        self.assertIn(f"Operand::Entity: payload S::Entity: {reason}", output)
+
+    def test_a_foreign_impl_with_an_fn_bound_is_outside_the_wire_crates(self) -> None:
+        self.assert_foreign_impl_unread(
+            "pub struct Holder<F>(F);\n"
+            "impl<F: Fn() -> u8> cadmpeg_ir::Space for Holder<F> { type Entity = CodecId; }\n",
+            "impl cadmpeg_ir::Space for Holder<F> at crates/codec/src/lib.rs:2 is outside",
+        )
+
+    def test_a_foreign_impl_with_a_binder_is_outside_the_wire_crates(self) -> None:
+        self.assert_foreign_impl_unread(
+            "pub struct Codec;\n"
+            "impl cadmpeg_ir::Space<for<'a> fn(&'a u8)> for Codec { type Entity = CodecId; }\n",
+            "impl cadmpeg_ir::Space for Codec at crates/codec/src/lib.rs:2 is outside",
+        )
+
+    def test_a_foreign_raw_identifier_impl_is_outside_the_wire_crates(self) -> None:
+        self.assert_foreign_impl_unread(
+            "pub struct Codec;\n"
+            "impl cadmpeg_ir::r#Space for Codec { type Entity = CodecId; }\n",
+            "impl cadmpeg_ir::Space for Codec at crates/codec/src/lib.rs:2 is outside",
+        )
+
+    def test_a_foreign_impl_header_the_parser_rejects_leaves_the_trait_unread(self) -> None:
+        self.assert_foreign_impl_unread(
+            "pub struct Codec;\n"
+            "impl cadmpeg_ir::Space::<()> for Codec { type Entity = CodecId; }\n",
+            "the impl at crates/codec/src/lib.rs:2 names Space, and the census "
+            "cannot parse its header",
+        )
+
+    WRAPPER = '''
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+        pub enum Wrapper<T = u8> { A(T) }
+    '''
+
+    def test_a_macro_naming_the_reader_beside_its_argument_leaves_it_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.WRAPPER + '''
+            macro_rules! host {
+                ($w:ident, $t:ty) => {
+                    #[derive(Deserialize)]
+                    #[serde(deny_unknown_fields)]
+                    pub struct Host { pub value: $w<$t> }
+                };
+            }
+            host!(Wrapper, Foreign);
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Wrapper::A: payload T: the macro call at ", output)
+        self.assertIn("lib.rs:13 names Wrapper, and the census does not expand it", output)
+
+    def test_a_foreign_macro_naming_the_reader_leaves_it_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.WRAPPER + '''
+            other_crate::host!(Wrapper, Foreign);
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Wrapper::A: payload T: the macro call at ", output)
+        self.assertIn("lib.rs:6 names Wrapper, and the census does not expand it", output)
 
 
 if __name__ == "__main__":

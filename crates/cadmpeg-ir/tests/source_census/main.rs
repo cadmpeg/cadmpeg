@@ -651,7 +651,7 @@ fn every_hand_written_deserialize_refuses_a_null_spelling() {
         if name.starts_with('$') {
             continue;
         }
-        let text = std::fs::read_to_string(root.join(path)).expect("read source");
+        let text = read_source(&root.join(path));
         let parsed = syn::parse_file(&text).expect("every source file in the wire crates parses");
         let mut skipping = Vec::new();
         declared_optional_fields(
@@ -878,7 +878,7 @@ fn shim_definitions() -> BTreeMap<(String, String), BTreeSet<String>> {
             if is_test_path(&relative) {
                 continue;
             }
-            let text = std::fs::read_to_string(&file).expect("read source");
+            let text = read_source(&file);
             let parsed = syn::parse_file(&text)
                 .map_err(|error| format!("{relative} does not parse: {error}"))
                 .expect("every source file in the wire crates parses");
@@ -938,7 +938,7 @@ fn optional_absence_census(root: &Path) -> (usize, Vec<String>) {
             if is_test_path(&relative) {
                 continue;
             }
-            let text = std::fs::read_to_string(&file).expect("read source");
+            let text = read_source(&file);
             let parsed = syn::parse_file(&text)
                 .map_err(|error| format!("{relative} does not parse: {error}"))
                 .expect("every source file in the wire crates parses");
@@ -1363,7 +1363,7 @@ fn hand_written_impls() -> Vec<(String, String)> {
             if is_test_path(&relative) {
                 continue;
             }
-            let text = std::fs::read_to_string(&file).expect("read source");
+            let text = read_source(&file);
             let parsed = syn::parse_file(&text)
                 .map_err(|error| format!("{relative} does not parse: {error}"))
                 .expect("every source file in the wire crates parses");
@@ -1553,6 +1553,50 @@ fn flatten_tokens(tokens: &proc_macro2::TokenStream, flat: &mut Vec<String>) {
             other => flat.push(other.to_string()),
         }
     }
+}
+
+/// Strict and reserved keywords: written bare, each is the keyword.
+const RUST_KEYWORDS: &[&str] = &[
+    "abstract", "as", "async", "await", "become", "box", "break", "const", "continue", "crate",
+    "do", "dyn", "else", "enum", "extern", "false", "final", "fn", "for", "gen", "if", "impl",
+    "in", "let", "loop", "macro", "match", "mod", "move", "mut", "override", "priv", "pub", "ref",
+    "return", "self", "Self", "static", "struct", "super", "trait", "true", "try", "type",
+    "typeof", "unsafe", "unsized", "use", "virtual", "where", "while", "yield",
+];
+
+/// Reads one source file with each raw identifier `r#name` spelled `name`,
+/// the name rustc reads, so every comparison of names sees one spelling.
+fn read_source(file: &Path) -> String {
+    unraw(&std::fs::read_to_string(file).expect("read source"))
+}
+
+/// `text` with each raw identifier `r#name` spelled `name`. A keyword keeps
+/// its prefix, since bare it would be the keyword. No line changes.
+fn unraw(text: &str) -> String {
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_';
+    let mut unrawn = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("r#") {
+        unrawn.push_str(&rest[..at]);
+        let after = &rest[at + 2..];
+        let length = after.find(|c: char| !is_ident(c)).unwrap_or(after.len());
+        let name = &after[..length];
+        let bounded = unrawn
+            .chars()
+            .next_back()
+            .is_none_or(|c| !is_ident(c) && c != '#');
+        let starts = name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphabetic() || c == '_');
+        if !(bounded && starts) || RUST_KEYWORDS.contains(&name) {
+            unrawn.push_str("r#");
+        }
+        unrawn.push_str(name);
+        rest = &after[length..];
+    }
+    unrawn.push_str(rest);
+    unrawn
 }
 
 /// Whether this crate-relative path is a test file or sits in a test tree.

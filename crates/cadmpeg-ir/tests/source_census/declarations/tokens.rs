@@ -8,7 +8,7 @@
 //! so the census reads the trees themselves and fails a proof that one of them
 //! could change.
 
-use proc_macro2::{Delimiter, Spacing, TokenStream, TokenTree};
+use proc_macro2::{Delimiter, TokenStream, TokenTree};
 
 /// Keywords that can stand before a `!` that negates a parenthesized operand.
 const NEGATING_KEYWORDS: &[&str] = &[
@@ -94,18 +94,6 @@ impl MacroTree {
             .find(|name| self.tokens.iter().any(|token| token == *name))
     }
 
-    /// The first of `names` the tree spells with generic arguments, as
-    /// `Name<..>` or `Name::<..>`.
-    pub(super) fn instantiates<'a>(&self, names: &'a [String]) -> Option<&'a String> {
-        self.tokens.iter().enumerate().find_map(|(index, token)| {
-            let name = names.iter().find(|name| *name == token)?;
-            let next = |offset: usize| self.tokens.get(index + offset).map(String::as_str);
-            let generic = next(1) == Some("<")
-                || (next(1) == Some(":") && next(2) == Some(":") && next(3) == Some("<"));
-            generic.then_some(name)
-        })
-    }
-
     /// Whether the tree's own tokens spell a type declaration: `struct`,
     /// `enum`, `union` or `type` that is no metavariable.
     pub(super) fn spells_declaration(&self) -> bool {
@@ -116,20 +104,44 @@ impl MacroTree {
     }
 }
 
+/// A position in a source, as (line, column).
+pub(super) type Position = (usize, usize);
+
+/// Where a token starts.
+pub(super) fn position(span: proc_macro2::Span) -> Position {
+    let start = span.start();
+    (start.line, start.column)
+}
+
+/// One trait impl header outside a token tree: an `impl` whose tokens up to
+/// its body spell `for`.
+pub(super) struct ImplHeader {
+    /// Every identifier its tokens spell, groups included.
+    pub(super) names: Vec<String>,
+    /// Where its `impl` keyword starts.
+    pub(super) at: Position,
+}
+
+impl ImplHeader {
+    /// The first of `names` the header spells.
+    pub(super) fn names<'a>(&self, names: &'a [String]) -> Option<&'a String> {
+        names.iter().find(|name| self.names.contains(name))
+    }
+}
+
 /// What one source states in tokens.
 #[derive(Default)]
 pub(super) struct FileTokens {
     pub(super) trees: Vec<MacroTree>,
-    /// Each trait impl header outside a token tree, as the last segment of its
-    /// trait path and the line of its `impl`.
-    pub(super) impl_headers: Vec<(String, usize)>,
+    pub(super) impl_headers: Vec<ImplHeader>,
     /// Each `original as alias` a `use` declaration states.
     pub(super) renames: Vec<(String, String)>,
 }
 
-/// Reads `text` as tokens, skipping every token on a line of `excluded`, the
-/// inclusive line ranges of its test modules. `None` when it does not lex.
-pub(super) fn scan(text: &str, excluded: &[(usize, usize)]) -> Option<FileTokens> {
+/// Reads `text` as tokens, skipping every token that starts in one of
+/// `excluded`, the half-open spans of its test modules. `None` when it does
+/// not lex.
+pub(super) fn scan(text: &str, excluded: &[(Position, Position)]) -> Option<FileTokens> {
     let stream: TokenStream = text.parse().ok()?;
     let mut found = FileTokens::default();
     walk(stream, excluded, &mut found);
@@ -196,14 +208,15 @@ fn called_macros(stream: TokenStream, calls: &mut Vec<String>) {
     }
 }
 
-fn walk(stream: TokenStream, excluded: &[(usize, usize)], found: &mut FileTokens) {
+fn walk(stream: TokenStream, excluded: &[(Position, Position)], found: &mut FileTokens) {
     let trees: Vec<TokenTree> = stream.into_iter().collect();
     let mut index = 0;
     while index < trees.len() {
-        let line = trees[index].span().start().line;
+        let at = position(trees[index].span());
+        let line = at.0;
         if excluded
             .iter()
-            .any(|(first, last)| (*first..=*last).contains(&line))
+            .any(|(start, end)| (start..end).contains(&&at))
         {
             index += 1;
             continue;
@@ -228,8 +241,8 @@ fn walk(stream: TokenStream, excluded: &[(usize, usize)], found: &mut FileTokens
                 renames(&trees[index + 1..], &mut found.renames);
             }
             TokenTree::Ident(keyword) if keyword == "impl" => {
-                if let Some(name) = impl_trait(&trees[index + 1..]) {
-                    found.impl_headers.push((name, line));
+                if let Some(names) = impl_header_names(&trees[index + 1..]) {
+                    found.impl_headers.push(ImplHeader { names, at });
                 }
             }
             TokenTree::Group(nested) => walk(nested.stream(), excluded, found),
@@ -265,57 +278,30 @@ fn renames(after: &[TokenTree], found: &mut Vec<(String, String)>) {
     }
 }
 
-/// The last segment of the trait an impl header names, when the tokens after
-/// its `impl` keyword are a trait impl header.
-fn impl_trait(after: &[TokenTree]) -> Option<String> {
-    let mut index = 0;
-    if is_punct(after.first(), '<') {
-        index = skip_generics(after, 0)?;
-    }
-    if is_punct(after.get(index), '!') {
-        index += 1;
-    }
-    let mut last = None;
-    while let Some(tree) = after.get(index) {
+/// Every identifier the tokens after an `impl` keyword spell up to its body,
+/// when they spell `for`, as every trait impl header does; `None` otherwise.
+///
+/// The body is the first brace group; a `;` or the end of the enclosing
+/// group ends a header that has none. No other shape is required, so a
+/// header no parser reads is still a header.
+fn impl_header_names(after: &[TokenTree]) -> Option<Vec<String>> {
+    let mut header = Vec::new();
+    let mut spells_for = false;
+    for tree in after {
         match tree {
-            TokenTree::Ident(ident) if ident == "for" => return last,
-            TokenTree::Ident(ident) => last = Some(ident.to_string()),
-            TokenTree::Punct(punct) if punct.as_char() == '<' => {
-                index = skip_generics(after, index)?;
-                continue;
-            }
-            // A path separator, or the `-> R` of a `Fn(A) -> R` trait.
-            TokenTree::Punct(punct) if matches!(punct.as_char(), ':' | '-' | '>') => {}
-            TokenTree::Group(group) if group.delimiter() == Delimiter::Parenthesis => {}
-            _ => return None,
-        }
-        index += 1;
-    }
-    None
-}
-
-/// The index after the `>` that closes the `<` at `start`.
-fn skip_generics(trees: &[TokenTree], start: usize) -> Option<usize> {
-    let mut depth = 0_usize;
-    let mut arrow = false;
-    for (index, tree) in trees.iter().enumerate().skip(start) {
-        let TokenTree::Punct(punct) = tree else {
-            arrow = false;
-            continue;
-        };
-        match punct.as_char() {
-            '<' => depth += 1,
-            '>' if !arrow => {
-                depth = depth.checked_sub(1)?;
-                if depth == 0 {
-                    return Some(index + 1);
-                }
-            }
+            TokenTree::Group(group) if group.delimiter() == Delimiter::Brace => break,
+            TokenTree::Punct(punct) if punct.as_char() == ';' => break,
+            TokenTree::Ident(ident) if ident == "for" => spells_for = true,
             _ => {}
         }
-        arrow = punct.as_char() == '-' && punct.spacing() == Spacing::Joint;
+        flatten(tree.clone().into(), &mut header);
     }
-    None
+    spells_for.then(|| {
+        header
+            .into_iter()
+            .filter(|token| token.starts_with(|c: char| c.is_alphabetic() || c == '_'))
+            .collect()
+    })
 }
 
 fn is_punct(tree: Option<&TokenTree>, wanted: char) -> bool {

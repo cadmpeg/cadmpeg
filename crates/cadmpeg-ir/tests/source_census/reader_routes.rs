@@ -7,7 +7,8 @@ use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use syn::spanned::Spanned;
 
 use super::{
-    collect_rust_sources, deserialize_impl_target, is_test_module, is_test_path, skip_meta_value,
+    collect_rust_sources, deserialize_impl_target, is_test_module, is_test_path, read_source,
+    skip_meta_value,
 };
 
 /// One route shape a hand-written reader is allowed to use.
@@ -813,7 +814,7 @@ fn source_index(root: &Path) -> SourceIndex {
             if is_test_path(&relative) {
                 continue;
             }
-            let source = std::fs::read_to_string(&file).expect("read source");
+            let source = read_source(&file);
             let parsed = syn::parse_file(&source)
                 .map_err(|error| format!("{relative} does not parse: {error}"))
                 .expect("every source file in the wire crates parses");
@@ -1279,6 +1280,31 @@ impl DeclarationResolver {
         scope: &[String],
         path: &syn::Path,
     ) -> Option<(String, Vec<String>, String)> {
+        match self.resolve_path(file, scope, path) {
+            resolve::ResolvedPath::Local(symbol) if symbol.kind == SymbolKind::Type => {
+                Some((symbol.path, symbol.scope, symbol.name))
+            }
+            resolve::ResolvedPath::Local(_)
+            | resolve::ResolvedPath::External(_)
+            | resolve::ResolvedPath::Unknown => None,
+        }
+    }
+
+    /// Whether `path`, from module `scope` of the file `file`, names a
+    /// standard or external path rather than a workspace declaration.
+    pub(super) fn is_external(&self, file: &str, scope: &[String], path: &syn::Path) -> bool {
+        matches!(
+            self.resolve_path(file, scope, path),
+            resolve::ResolvedPath::External(_)
+        )
+    }
+
+    fn resolve_path(
+        &self,
+        file: &str,
+        scope: &[String],
+        path: &syn::Path,
+    ) -> resolve::ResolvedPath {
         let shape = PathShape {
             segments: path
                 .segments
@@ -1287,20 +1313,7 @@ impl DeclarationResolver {
                 .collect(),
             absolute: path.leading_colon.is_some(),
         };
-        match resolve::resolve_path_from_context(
-            file,
-            scope,
-            &shape,
-            &self.index,
-            &mut BTreeSet::new(),
-        ) {
-            resolve::ResolvedPath::Local(symbol) if symbol.kind == SymbolKind::Type => {
-                Some((symbol.path, symbol.scope, symbol.name))
-            }
-            resolve::ResolvedPath::Local(_)
-            | resolve::ResolvedPath::External(_)
-            | resolve::ResolvedPath::Unknown => None,
-        }
+        resolve::resolve_path_from_context(file, scope, &shape, &self.index, &mut BTreeSet::new())
     }
 
     /// As [`Self::resolve`], and a path into another wire crate, spelled

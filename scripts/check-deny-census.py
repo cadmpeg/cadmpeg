@@ -28,6 +28,22 @@ a type that depends on what fills the impl's own parameters, an impl anywhere
 in the workspace outside the wire crates' sources, a call naming the trait to
 a macro that spells ``impl``, and a trait without an impl fail the proof.
 
+Every ``impl`` keyword in item position is a candidate, wherever it sits, and
+the header parser proves it. A candidate the parser does not read, whose
+tokens up to its body name the trait, fails the trait's proof with its file
+and line: the census fails where its parser does not follow, and never drops.
+A raw identifier ``r#Name`` is read as ``Name``, as rustc reads it. A macro
+token tree that names a generic reader and can declare a type leaves the
+reader's parameters unread, whether or not it spells the arguments beside the
+name.
+
+The proof is static: it reads what source tokens name. An impl or a use that
+no token names where the census reads is outside it by design, and a runtime
+sweep covers it: a proc-macro derive or attribute expansion, ``include!`` of a
+file that is not a ``.rs`` source of the crate, a ``#[path]`` module, a module
+in a skipped ``test_support`` or ``tests.rs`` file, a function body, and
+another crate's use of a wire reader.
+
 A second, independent rule runs over every crate: an optional key whose writer
 omits it for ``None`` (``skip_serializing_if = "Option::is_none"``) must read
 through a reader declared by ``cadmpeg_core::named_optional_field!``, so an
@@ -233,11 +249,34 @@ def source_files():
 
 SCOPE_TOKEN = re.compile(r"\bmod\s+(\w+)\s*\{|[{}]")
 
+RAW_IDENTIFIER = re.compile(r"(?<![\w#])r#([A-Za-z_]\w*)")
+# Strict and reserved keywords: written bare, each is the keyword.
+RUST_KEYWORDS = {
+    "abstract", "as", "async", "await", "become", "box", "break", "const",
+    "continue", "crate", "do", "dyn", "else", "enum", "extern", "false",
+    "final", "fn", "for", "gen", "if", "impl", "in", "let", "loop", "macro",
+    "match", "mod", "move", "mut", "override", "priv", "pub", "ref",
+    "return", "self", "Self", "static", "struct", "super", "trait", "true",
+    "try", "type", "typeof", "unsafe", "unsized", "use", "virtual", "where",
+    "while", "yield",
+}
+
+
+def unraw(source):
+    """Spell each raw identifier ``r#name`` as ``name``, the name rustc reads.
+
+    A keyword keeps its prefix, since bare it would be the keyword.
+    """
+    return RAW_IDENTIFIER.sub(
+        lambda raw: raw.group() if raw.group(1) in RUST_KEYWORDS else raw.group(1),
+        source,
+    )
+
 
 @SOURCE_POLICY.cached_analysis
 def read_source(path):
-    """Read each file once within a census invocation."""
-    return path.read_text(encoding="utf-8")
+    """Read each file once within a census invocation, raw identifiers unraw."""
+    return unraw(path.read_text(encoding="utf-8"))
 
 
 @SOURCE_POLICY.cached_analysis
@@ -1627,32 +1666,146 @@ class TraitImpl:
         self.definitions = definitions
 
 
-def trait_impl_header(header):
-    """Return ``(trait path, self type)`` for a trait impl header."""
-    code = SOURCE_POLICY.mask_rust_non_code(header)
-    implementation = re.match(r"\s*impl\b", code)
-    if implementation is None:
-        return None
-    trait_start = implementation.end()
-    while trait_start < len(code) and code[trait_start].isspace():
-        trait_start += 1
-    if trait_start < len(code) and code[trait_start] == "<":
-        trait_start = generic_end(code, trait_start)
-        if trait_start is None:
-            return None
-    for_match = re.search(r"\bfor\b", code[trait_start:])
-    if for_match is None:
-        return None
-    trait = re.fullmatch(
-        r"\s*(?P<path>(?:::)?(?:[A-Za-z_$]\w*\s*::\s*)*[A-Za-z_$]\w*)\s*(?:<.*>)?\s*",
-        code[trait_start:trait_start + for_match.start()],
-        re.S,
-    )
+IMPL_KEYWORD = re.compile(r"(?<![\w$])impl\b")
+HEADER_WORD = re.compile(r"[A-Za-z_]\w*")
+HEADER_CLOSES = {")": "(", "]": "[", "}": "{", ">": "<"}
+TRAIT_PATH = re.compile(
+    r"\s*(?P<path>(?:::)?(?:[A-Za-z_$]\w*\s*::\s*)*[A-Za-z_$]\w*)\s*(?:<.*>)?\s*",
+    re.S,
+)
+TYPE_POSITION_WORD = re.compile(r"(?:(?<![\w$])(?:mut|as|dyn)|'[A-Za-z_]\w*)\Z")
+
+
+def type_position(code, start):
+    """Whether the ``impl`` at ``start`` writes a type, as in ``-> impl Trait``
+    or ``x: impl Trait``, rather than an impl item.
+
+    An item follows the start of a file, a ``;``, a brace, an attribute, a
+    qualifier, a macro arm's ``=>`` or a repetition's ``$(``; a type follows
+    a token that starts or separates types.
+    """
+    before = code[max(0, start - 64):start].rstrip()
+    if before.endswith("=>"):
+        return False
+    if before.endswith("->") or TYPE_POSITION_WORD.search(before):
+        return True
+    if before.endswith("("):
+        opener = before[:-1].rstrip()
+        return not (opener.endswith("$") or opener.endswith("=>"))
+    return before[-1:] in {":", "<", ",", "=", "&", "[", "|"}
+
+
+def header_tokens(code, start):
+    """Each token from ``start`` as ``(index, token, depth)``, ``depth`` being
+    the delimiters open after it.
+
+    A token is a word, a delimiter or one other character. An angle bracket
+    delimits where a type is written: at the top level and inside another
+    angle bracket, never inside a parenthesis, bracket or brace, so the
+    ``<<`` of an array length and the ``>`` of a const block delimit nothing,
+    and neither does the ``>`` of ``->``. A closer that matches no opener ends
+    the walk with the token ``None``.
+    """
+    stack = []
+    index = start
+    while index < len(code):
+        char = code[index]
+        word = HEADER_WORD.match(code, index)
+        if word is not None and not (
+            index and (code[index - 1].isalnum() or code[index - 1] in "_$")
+        ):
+            yield index, word.group(), len(stack)
+            index = word.end()
+            continue
+        angle = not stack or stack[-1] == "<"
+        if char in "([{" or (char == "<" and angle):
+            stack.append(char)
+        elif char in ")]}" or (char == ">" and angle and code[index - 1:index] != "-"):
+            if not stack or stack[-1] != HEADER_CLOSES[char]:
+                yield index, None, len(stack)
+                return
+            stack.pop()
+        yield index, char, len(stack)
+        index += 1
+
+
+def crude_header_end(code, start):
+    """The first ``{`` or ``;`` after ``start`` outside parentheses and
+    brackets, or the end of the code: the most an impl header can span when
+    its delimiters do not balance."""
+    depth = 0
+    for index in range(start, len(code)):
+        char = code[index]
+        if char in "([":
+            depth += 1
+        elif char in ")]" and depth:
+            depth -= 1
+        elif char in "{;" and not depth:
+            return index
+    return len(code)
+
+
+def impl_header(code, start):
+    """Read the impl item whose ``impl`` keyword is at ``start``.
+
+    Returns ``("trait", trait path, self type, brace, negative)`` for a trait
+    impl, ``("inherent", brace)`` for an inherent impl, or ``("rejected",
+    header end)`` for a header this parser does not read.
+    """
+    state = "start"
+    trait_from = start + len("impl")
+    for_at = where_at = brace = None
+    negative = False
+    for index, token, depth in header_tokens(code, trait_from):
+        if token is None:
+            break
+        if token.isspace():
+            continue
+        if state == "start":
+            state = "qualifiers"
+            if token == "<":
+                state = "generics"
+                continue
+        if state == "generics":
+            if token == ">" and depth == 0:
+                state = "qualifiers"
+                trait_from = index + 1
+            continue
+        if state == "qualifiers":
+            if token == "const":
+                trait_from = index + len(token)
+                continue
+            state = "path"
+            if token == "!":
+                negative = True
+                trait_from = index + 1
+                continue
+        if token == "{" and depth == 1:
+            brace = index
+            break
+        if depth:
+            continue
+        if token == ";":
+            break
+        if token == "for" and for_at is None and where_at is None:
+            for_at = index
+        elif token == "where" and where_at is None:
+            where_at = index
+    if brace is None:
+        return "rejected", crude_header_end(code, start)
+    if for_at is None:
+        return "inherent", brace
+    trait = TRAIT_PATH.fullmatch(code, trait_from, for_at)
     if trait is None:
-        return None
-    self_type = code[trait_start + for_match.end():]
-    self_type = re.split(r"\bwhere\b", self_type, maxsplit=1)[0]
-    return canonical_path(trait.group("path")), " ".join(self_type.split())
+        return "rejected", brace
+    self_type = code[for_at + len("for"):brace if where_at is None else where_at]
+    return (
+        "trait",
+        canonical_path(trait.group("path")),
+        " ".join(self_type.split()),
+        brace,
+        negative,
+    )
 
 
 def associated_type_definitions(code):
@@ -1678,23 +1831,52 @@ def associated_type_definitions(code):
 
 
 @SOURCE_POLICY.cached_analysis
-def trait_impl_blocks(path):
-    """Each trait impl of one file as ``(start, brace, end, trait, self type)``."""
+def impl_items(path):
+    """Every impl item of one file's production code.
+
+    Returns the trait impls the header parser reads, each as ``(start,
+    brace, end, trait, self type)``, and the impls it does not read, each as
+    ``(start, header end)``. A negative impl states no associated type and an
+    inherent impl implements no trait, so neither is either.
+    """
     source = read_source(path)
     code, _ = SOURCE_POLICY.production_source(source)
     blocks = []
-    for opening in re.finditer(r"\bimpl\b", code):
-        brace = body_open(code, opening.end())
-        if brace is None:
+    rejected = []
+    for opening in IMPL_KEYWORD.finditer(code):
+        start = opening.start()
+        if type_position(code, start):
             continue
-        header = trait_impl_header(code[opening.start():brace])
-        if header is None:
+        header = impl_header(code, start)
+        if header[0] == "rejected":
+            rejected.append((start, header[1]))
             continue
+        if header[0] == "inherent":
+            continue
+        _, trait, self_type, brace, negative = header
         end = delimited_end(code, brace)
         if end is None:
-            raise ValueError(f"{path}: incomplete impl at byte {opening.start()}")
-        blocks.append((opening.start(), brace, end, *header))
-    return blocks
+            rejected.append((start, brace))
+        elif not negative:
+            blocks.append((start, brace, end, trait, self_type))
+    return blocks, rejected
+
+
+def trait_impl_blocks(path):
+    """Each trait impl of one file as ``(start, brace, end, trait, self type)``."""
+    return impl_items(path)[0]
+
+
+def rejected_impl_naming(path, names):
+    """The first impl of ``path`` whose header the parser does not read and
+    whose tokens name one of ``names``, as ``(line, name)``, or ``None``."""
+    code, _ = SOURCE_POLICY.production_source(read_source(path))
+    pattern = name_pattern(names)
+    for start, end in impl_items(path)[1]:
+        mention = pattern.search(code, start, end)
+        if mention is not None:
+            return read_source(path).count("\n", 0, start) + 1, mention.group()
+    return None
 
 
 @SOURCE_POLICY.cached_analysis
@@ -3310,14 +3492,16 @@ def main():
     macro_definitions = {}
 
     def macro_instantiation(names):
-        """The first wire macro token tree that can declare ``Name<..>``.
+        """The first wire macro token tree that can declare a use of ``Name``.
 
         Returns ``(tree, name)`` for one of ``names``, or ``None``. The census
         reads arguments from declarations, and a macro writes declarations it
-        does not read. A tree spelling ``Name<..>`` is one such source when
-        its own tokens spell a type declaration or a call there reaches a
-        macro that can write one; a macro that writes only functions and
-        impls of other traits states no argument a reader reaches.
+        does not read. A tree naming ``Name`` is one such source when its own
+        tokens spell a type declaration or a call there reaches a macro that
+        can write one: its arguments can be spelled beside the name, as in
+        ``host!(Name, Arg)``, and joined only by the expansion. A macro that
+        writes only functions and impls of other traits states no argument a
+        reader reaches.
         """
         if not macro_definitions:
             for path in paths:
@@ -3325,14 +3509,13 @@ def main():
                     if tree.kind == "definition":
                         macro_definitions.setdefault(tree.name, []).append(tree)
         named = name_pattern(names)
-        generic = re.compile(rf"{named.pattern}\s*(?:::\s*)?<")
         for path in paths:
             source = read_source(path)
             if not named.search(source):
                 continue
             code, _ = SOURCE_POLICY.production_source(source)
             for tree in macro_token_trees(path):
-                spelled = generic.search(code, tree.start, tree.end)
+                spelled = named.search(code, tree.start, tree.end)
                 if spelled is None:
                     continue
                 declares = (
@@ -3341,19 +3524,33 @@ def main():
                     or declaring_macro(tree.name, macro_definitions)
                 )
                 if declares:
-                    return tree, named.match(code, spelled.start()).group()
+                    return tree, spelled.group()
         return None
+
+    def unparsed_impl(path, names):
+        """Why an impl of ``path`` that names one of ``names`` and whose
+        header the parser does not read leaves the trait unread, or ``None``."""
+        found = rejected_impl_naming(path, names)
+        if found is None:
+            return None
+        line, name = found
+        return (
+            f"the impl at {path.as_posix()}:{line} names {name}, and the census "
+            "cannot parse its header, so its associated types are unread"
+        )
 
     def unread_trait(trait):
         """Why the census cannot read every impl of ``trait``, or ``None``.
 
         The trait is named by its own name and by every name a ``use``
         renames it to. An impl outside the wire crates names a type the
-        declaration index does not hold. A macro token tree that names the
-        trait can expand to an impl no source states, and the census expands
-        no macro call: a call naming it, an attribute naming it, and a
-        ``macro_rules!`` body naming it anywhere but a literal impl header
-        the census reads each leave its impls unread.
+        declaration index does not hold. An impl anywhere whose tokens name
+        the trait and whose header the parser does not read is unread. A
+        macro token tree that names the trait can expand to an impl no source
+        states, and the census expands no macro call: a call naming it, an
+        attribute naming it, and a ``macro_rules!`` body naming it anywhere
+        but a literal impl header the census reads each leave its impls
+        unread.
         """
         identity = (trait.path, trait.start)
         if identity in unread_traits:
@@ -3387,6 +3584,9 @@ def main():
                     "wire crates, so its associated types are unread"
                 )
                 break
+            reason = unparsed_impl(path, names)
+            if reason is not None:
+                break
             found = macro_tree_naming(path, names, wire=False)
             if found is not None:
                 tree, name = found
@@ -3396,6 +3596,9 @@ def main():
                 )
                 break
         for path in () if reason else paths:
+            reason = unparsed_impl(path, names)
+            if reason is not None:
+                break
             found = macro_tree_naming(path, names, wire=True)
             if found is None:
                 continue
@@ -3530,7 +3733,7 @@ def main():
             if spelled is not None:
                 tree, written = spelled
                 return False, (
-                    f"{route}{tree.describe()} spells {written}<..>, and the "
+                    f"{route}{tree.describe()} names {written}, and the "
                     f"census does not expand it, so its argument for {name} is unread"
                 )
             candidates.extend(arguments)
