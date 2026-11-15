@@ -437,6 +437,72 @@ fn genesis_entity_header_variant_resolves_suffix_and_id() {
     assert!(parse_settled_entity_header(&bytes, 0).is_none());
 }
 
+fn multi_key_genesis_header(keys: &[(&str, bool)], id: &str, suffix: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"294");
+    bytes.extend_from_slice(&suffix.to_le_bytes());
+    bytes.extend_from_slice(&[0u8; 7]);
+    bytes.push(1);
+    bytes.extend_from_slice(&u32::try_from(keys.len()).unwrap().to_le_bytes());
+    for (key, is_text) in keys {
+        crate::test_support::lp_ascii(&mut bytes, key);
+        if *is_text {
+            crate::test_support::lp_ascii(&mut bytes, "IntrinsicMetaTypeHString");
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+        } else {
+            crate::test_support::lp_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+            bytes.extend_from_slice(&10u64.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(
+        &u32::try_from(id.encode_utf16().count())
+            .unwrap()
+            .to_le_bytes(),
+    );
+    for unit in id.encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn genesis_entity_header_admits_empty_string_keys_before_the_genesis_key() {
+    let bytes = multi_key_genesis_header(
+        &[
+            ("RequestId", true),
+            ("UniqueSketchId", true),
+            ("EntityGenesis", false),
+        ],
+        "1_777",
+        777,
+    );
+    let header = parse_genesis_entity_header(&bytes, 0).unwrap();
+    assert_eq!(header.entity_id.suffix(), 777);
+    assert_eq!(header.end, bytes.len());
+    assert_eq!(header.entity_id_offset, bytes.len() - 10);
+}
+
+#[test]
+fn genesis_entity_header_rejects_unproven_key_forms() {
+    let id = "1_777";
+    let no_genesis = multi_key_genesis_header(&[("RequestId", true)], id, 777);
+    assert!(parse_genesis_entity_header(&no_genesis, 0).is_none());
+    let text_genesis = multi_key_genesis_header(&[("EntityGenesis", true)], id, 777);
+    assert!(parse_genesis_entity_header(&text_genesis, 0).is_none());
+    let twice = multi_key_genesis_header(
+        &[("EntityGenesis", false), ("EntityGenesis", false)],
+        id,
+        777,
+    );
+    assert!(parse_genesis_entity_header(&twice, 0).is_none());
+    let mut non_empty =
+        multi_key_genesis_header(&[("RequestId", true), ("EntityGenesis", false)], id, 777);
+    let value_at = 11 + 7 + 1 + 4 + 4 + 9 + 4 + 24;
+    non_empty[value_at] = 1;
+    assert!(parse_genesis_entity_header(&non_empty, 0).is_none());
+}
+
 fn genesis_relation_record(
     members: &[(u32, u32)],
     genesis: u64,

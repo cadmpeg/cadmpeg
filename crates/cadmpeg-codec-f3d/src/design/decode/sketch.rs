@@ -381,10 +381,11 @@ fn decode_sketch_visibilities_in_stream(
             None => parse_genesis_entity_header(&bytes[..frame.end], frame.start),
         })
         else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {} has an invalid entity header",
+            losses.push(F3dLossCode::SketchContainerHeaderUnrecognized.note(format!(
+                "sketch container {} has an entity header of no recognised form; its visibility and name stay unread",
                 frame.entity_id
             )));
+            continue;
         };
         let entity_suffix = entity_id.suffix();
         if entity_suffix != frame.entity_id {
@@ -1254,10 +1255,14 @@ pub(super) struct NamedEntityHeader {
 
 /// Parse the `EntityGenesis` entity-header layout at `start`: the u32 record
 /// index doubles as the entity suffix and is followed by a zero run, a
-/// `0x01`-marked u32 1, the `EntityGenesis` and `IntrinsicMetaTypeuint64`
-/// key strings, the u64 origin bitfield, and the UTF-16LE entity id whose
-/// numeric suffix equals the record index.
+/// `0x01`-marked u32 key count, that many key entries, the UTF-16LE entity id
+/// whose numeric suffix equals the record index. A key entry is a counted
+/// ASCII key, a counted ASCII type string, and a value. The
+/// `IntrinsicMetaTypeuint64` value is a u64; the `IntrinsicMetaTypeHString`
+/// value is a zero u32 (empty string). Exactly one entry is the
+/// `EntityGenesis` key with the u64 type.
 pub(super) fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<NamedEntityHeader> {
+    const GENESIS_KEY_ENTRY_LIMIT: u32 = 16;
     let entity_suffix = View::u32_le_at(bytes, start + 7).map(u64::from)?;
     if entity_suffix == 0 {
         return None;
@@ -1266,21 +1271,44 @@ pub(super) fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<
     while bytes.get(cursor) == Some(&0) && cursor < start + 35 {
         cursor += 1;
     }
-    if cursor == start + 11
-        || bytes.get(cursor) != Some(&1)
-        || View::u32_le_at(bytes, cursor + 1) != Some(1)
-    {
+    if cursor == start + 11 || bytes.get(cursor) != Some(&1) {
         return None;
     }
-    let after_key = lp_ascii_matches(bytes, cursor + 5, b"EntityGenesis")?;
-    let after_type = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64")?;
-    let (entity_id, end) = lp_utf16_bounded(bytes, after_type + 8, 1..=256)?;
+    let key_count = View::u32_le_at(bytes, cursor + 1)?;
+    if !(1..=GENESIS_KEY_ENTRY_LIMIT).contains(&key_count) {
+        return None;
+    }
+    let mut at = cursor + 5;
+    let mut genesis_entries = 0usize;
+    for _ in 0..key_count {
+        let (key, after_key) =
+            lp_ascii_filtered_view(bytes, at, 1..=64, u8::is_ascii_alphanumeric)?;
+        if let Some(after_type) = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64") {
+            if key == "EntityGenesis" {
+                genesis_entries += 1;
+            }
+            at = after_type + 8;
+        } else {
+            let after_type = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeHString")?;
+            if key == "EntityGenesis" || View::u32_le_at(bytes, after_type)? != 0 {
+                return None;
+            }
+            at = after_type + 4;
+        }
+        if at > bytes.len() {
+            return None;
+        }
+    }
+    if genesis_entries != 1 {
+        return None;
+    }
+    let (entity_id, end) = lp_utf16_bounded(bytes, at, 1..=256)?;
     let Ok(entity_id) = crate::records::identity::DesignEntityId::try_from(entity_id) else {
         return None;
     };
     (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
         entity_id,
-        entity_id_offset: after_type + 12,
+        entity_id_offset: at + 4,
         optional_slot_present: false,
         end,
     })

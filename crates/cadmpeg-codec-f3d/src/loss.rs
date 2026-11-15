@@ -161,6 +161,8 @@ pub(crate) enum F3dLossCode {
     SketchMembershipConflict,
     SketchFolderClosingReference,
     SketchFolderUnprojected,
+    /// A sketch container's entity header has no recognised form; its visibility and name stay unread.
+    SketchContainerHeaderUnrecognized,
     /// Sketch geometry backlinks name a sketch geometry group whose member run omits the record.
     SketchGeometryGroupMemberUnlisted,
     SketchGeometryGroupMemberUnbacklinked,
@@ -1057,6 +1059,7 @@ impl F3dLossCode {
         Self::SketchMembershipConflict,
         Self::SketchFolderClosingReference,
         Self::SketchFolderUnprojected,
+        Self::SketchContainerHeaderUnrecognized,
         Self::SketchGeometryGroupMemberUnlisted,
         Self::SketchGeometryGroupMemberUnbacklinked,
         Self::ComponentInsertUnplaced,
@@ -1671,6 +1674,7 @@ impl F3dLossCode {
             Self::SketchMembershipConflict => "sketch.membership-conflict",
             Self::SketchFolderClosingReference => "sketch.folder-closing-reference",
             Self::SketchFolderUnprojected => "sketch.folder-unprojected",
+            Self::SketchContainerHeaderUnrecognized => "sketch.container-header-unrecognized",
             Self::SketchGeometryGroupMemberUnlisted => "sketch.geometry-group-member-unlisted",
             Self::SketchGeometryGroupMemberUnbacklinked => {
                 "sketch.geometry-group-member-unbacklinked"
@@ -2491,6 +2495,7 @@ impl F3dLossCode {
             | Self::SketchMembershipConflict
             | Self::SketchFolderClosingReference
             | Self::SketchFolderUnprojected
+            | Self::SketchContainerHeaderUnrecognized
             | Self::SketchGeometryGroupMemberUnlisted
             | Self::SketchGeometryGroupMemberUnbacklinked
             | Self::ComponentInsertUnplaced
@@ -3458,6 +3463,7 @@ impl F3dLossCode {
             | Self::SketchMembershipConflict
             | Self::SketchFolderClosingReference
             | Self::SketchFolderUnprojected
+            | Self::SketchContainerHeaderUnrecognized
             | Self::SketchGeometryGroupMemberUnlisted
             | Self::SketchGeometryGroupMemberUnbacklinked
             | Self::DesignBodyBindingUnresolved
@@ -3664,6 +3670,7 @@ mod tests {
                 "sketch.membership-conflict",
                 "sketch.folder-closing-reference",
                 "sketch.folder-unprojected",
+                "sketch.container-header-unrecognized",
                 "sketch.geometry-group-member-unlisted",
                 "sketch.geometry-group-member-unbacklinked",
                 "assembly.component-insert-unplaced",

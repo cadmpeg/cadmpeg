@@ -550,3 +550,17 @@ fn sketch_member_display_name_supports_null_container_reference() {
         Some("UnlistedSketch")
     );
 }
+
+#[test]
+fn unrecognised_container_header_is_a_loss_not_a_decode_failure() {
+    let (mut bytes, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX])]);
+    bytes[15] = 1;
+    let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
+    assert!(visibilities.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SketchContainerHeaderUnrecognized.kind()
+    );
+    assert!(losses[0].message.contains("201"));
+}
