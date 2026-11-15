@@ -57,8 +57,8 @@ impl ExportLossCode {
             EntityKind::Feature
             | EntityKind::FeatureInputTopology
             | EntityKind::FeatureResultTopology
-            | EntityKind::DesignConfiguration
-            | EntityKind::DesignParameter
+            | EntityKind::Configuration
+            | EntityKind::Parameter
             | EntityKind::Sketch
             | EntityKind::SketchEntity
             | EntityKind::SketchConstraint
@@ -76,7 +76,17 @@ impl ExportLossCode {
             EntityKind::SemanticAnnotation | EntityKind::PmiAnnotation => LossTaxonomy::PmiOmitted,
             EntityKind::Tessellation => LossTaxonomy::TessellationOmitted,
             EntityKind::PointCloud => LossTaxonomy::PointCloudOmitted,
-            EntityKind::HistoryBody => LossTaxonomy::ParametricRecordOmitted,
+            EntityKind::HistoryBody
+            | EntityKind::DesignScope
+            | EntityKind::DesignContainer
+            | EntityKind::DesignFeature
+            | EntityKind::DesignParameter
+            | EntityKind::DesignSpreadsheet
+            | EntityKind::DesignProgram
+            | EntityKind::DesignConfiguration
+            | EntityKind::DesignArrangement
+            | EntityKind::DesignPublication
+            | EntityKind::DesignEvaluation => LossTaxonomy::ParametricRecordOmitted,
             EntityKind::Appearance | EntityKind::AppearanceBinding => {
                 LossTaxonomy::MaterialNotTransferred
             }

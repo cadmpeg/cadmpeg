@@ -19,7 +19,7 @@ use super::ids::{ContainerId, PublicationId};
 use super::names::{NameKind, NativeName, TopoName};
 use super::read::{self, Ceiling};
 use super::refs::{ConfigurationRef, EntityRef, Position};
-use super::topology::Topology;
+use crate::document::Topology;
 use crate::features::{FeatureId, FinitePoint3, NativeSelections};
 use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use crate::ids::{OccurrenceId, ProductDefinitionId};

@@ -316,7 +316,10 @@ fn write_path_structurally_authors_fidelity_resolution() {
 macro_rules! uniform_dispositions {
     ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         fn uniform_dispositions(disposition: ArenaDisposition) -> ArenaDispositions {
-            ArenaDispositions { $($field: disposition,)* }
+            ArenaDispositions {
+                $($field: disposition,)*
+                design: super::DesignArenaDispositions::uniform(disposition),
+            }
         }
     };
 }
@@ -343,6 +346,49 @@ fn coverage_losses(ir: &CadIr, coverage: ArenaCoverage) -> Vec<crate::report::lo
         .report()
         .losses
         .clone()
+}
+
+/// While a document holds a v10 design record, an omitted design-home arena
+/// restates what the v10 path writes and is charged nothing.
+#[test]
+fn an_omitted_design_arena_is_charged_only_without_v10_design_records() {
+    let sheet = |key: &str| {
+        crate::design::spreadsheet::Spreadsheet::new(
+            crate::spreadsheets::SpreadsheetId::mint(format!("test:design:spreadsheet#{key}"))
+                .unwrap(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
+        .unwrap()
+    };
+    let mut ir = CadIr::empty();
+    ir.design.spreadsheets.push(sheet("v11"));
+    let omitted = ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Omitted));
+    let losses = coverage_losses(&ir, omitted);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(
+        losses[0].message.contains("`design.spreadsheets`"),
+        "{losses:?}"
+    );
+
+    ir.model.spreadsheets.push(
+        crate::spreadsheets::Spreadsheet::new(
+            crate::spreadsheets::SpreadsheetId::mint("test:design:spreadsheet#v10").unwrap(),
+            crate::features::FeatureId::mint("test:design:feature#v10").unwrap(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
+        .unwrap(),
+    );
+    let losses = coverage_losses(&ir, omitted);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(losses[0].message.contains("`spreadsheets`"), "{losses:?}");
 }
 
 #[test]

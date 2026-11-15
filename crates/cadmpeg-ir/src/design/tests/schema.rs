@@ -37,11 +37,11 @@ use crate::design::selection::{
     PrincipalEntity, Propagation, RuleTerm, Selection, SelectionRule, SketchRegion, StepRef,
     Unordered, Witness,
 };
-use crate::design::topology::Topology;
 use crate::design::units::{
     AngularSpeed, Duration, Feed, PositiveArea, Quantity, Unit, UnitFactor, UnitSymbol, UnitSystem,
     ValueKind,
 };
+use crate::document::Topology;
 use crate::scalar::{Angle, Length};
 
 fn generates<T: JsonSchema>() {
@@ -201,4 +201,62 @@ fn a_neutral_schema_is_its_wire_form() {
     for field in ["text", "refs", "measures"] {
         assert!(properties.get(field).is_some(), "{field}: {schema}");
     }
+}
+
+#[test]
+fn every_design_root_type_has_a_schema() {
+    use crate::design::{configuration, container, evaluation, feature, parameter, program, scope};
+    generates::<crate::document::Design>();
+    generates::<scope::DesignScope>();
+    generates::<scope::OccurrenceDesign>();
+    generates::<container::Container>();
+    generates::<container::OrderedKind>();
+    generates::<container::UnorderedKind>();
+    generates::<container::Folder>();
+    generates::<container::Rollback>();
+    generates::<evaluation::Evaluation>();
+    generates::<evaluation::StateContent>();
+    generates::<evaluation::EvaluationStatus>();
+    generates::<evaluation::StateBase>();
+    generates::<evaluation::StateDelta>();
+    generates::<evaluation::CurrentState>();
+    generates::<feature::Feature>();
+    generates::<feature::FeatureDefinition>();
+    generates::<feature::Driver>();
+    generates::<feature::FuzzyTolerance>();
+    generates::<feature::FeatureOperation>();
+    generates::<feature::StoredOrigin>();
+    generates::<feature::Link>();
+    generates::<feature::LinkState>();
+    generates::<feature::OperationFamily>();
+    generates::<configuration::DesignConfiguration>();
+    generates::<configuration::Overrides>();
+    generates::<configuration::DefinitionOverride>();
+    generates::<configuration::PartNumber>();
+    generates::<configuration::ParameterOverride>();
+    generates::<configuration::FeatureStateOverride>();
+    generates::<configuration::OccurrenceOverride>();
+    generates::<configuration::MaterialOverride>();
+    generates::<configuration::MaterialRef>();
+    generates::<configuration::Publication>();
+    generates::<configuration::Arrangement>();
+    generates::<configuration::ArrangementKind>();
+    generates::<configuration::ArrangementAppearance>();
+    generates::<configuration::NestedArrangement>();
+    generates::<configuration::ArrangementRef>();
+    generates::<crate::products::NestedOverride>();
+    generates::<parameter::DesignParameter>();
+    generates::<parameter::ParameterOwner>();
+    generates::<parameter::ParameterDefinition>();
+    generates::<parameter::ParameterValue>();
+    generates::<parameter::DimensionDisplay>();
+    generates::<parameter::Tolerance>();
+    generates::<parameter::Deviations>();
+    generates::<parameter::FitDeviations>();
+    generates::<parameter::LimitSide>();
+    generates::<program::ParameterProgram>();
+    generates::<program::ProgramStage>();
+    generates::<program::ProgramBody>();
+    generates::<program::Statement>();
+    generates::<crate::design::spreadsheet::Spreadsheet>();
 }

@@ -49,10 +49,10 @@ pub enum EntityKind {
     FeatureInputTopology,
     /// Feature result topology.
     FeatureResultTopology,
-    /// Design configuration.
-    DesignConfiguration,
-    /// Design parameter.
-    DesignParameter,
+    /// Design configuration of the `model` home.
+    Configuration,
+    /// Design parameter of the `model` home.
+    Parameter,
     /// Planar sketch.
     Sketch,
     /// Planar sketch entity.
@@ -113,6 +113,26 @@ pub enum EntityKind {
     PointCloud,
     /// History body.
     HistoryBody,
+    /// Design scope.
+    DesignScope,
+    /// Design container.
+    DesignContainer,
+    /// Feature of the `design` home.
+    DesignFeature,
+    /// Parameter of the `design` home.
+    DesignParameter,
+    /// Spreadsheet of the `design` home.
+    DesignSpreadsheet,
+    /// Parameter program.
+    DesignProgram,
+    /// Configuration of the `design` home.
+    DesignConfiguration,
+    /// Arrangement.
+    DesignArrangement,
+    /// Publication.
+    DesignPublication,
+    /// Evaluation.
+    DesignEvaluation,
 }
 
 impl EntityKind {
@@ -138,8 +158,8 @@ impl EntityKind {
             Self::Feature => 16,
             Self::FeatureInputTopology => 17,
             Self::FeatureResultTopology => 18,
-            Self::DesignConfiguration => 19,
-            Self::DesignParameter => 20,
+            Self::Configuration => 19,
+            Self::Parameter => 20,
             Self::Sketch => 21,
             Self::SketchEntity => 22,
             Self::SketchConstraint => 23,
@@ -170,11 +190,21 @@ impl EntityKind {
             Self::DeclaredMeasure => 48,
             Self::PointCloud => 49,
             Self::HistoryBody => 50,
+            Self::DesignScope => 51,
+            Self::DesignContainer => 52,
+            Self::DesignFeature => 53,
+            Self::DesignParameter => 54,
+            Self::DesignSpreadsheet => 55,
+            Self::DesignProgram => 56,
+            Self::DesignConfiguration => 57,
+            Self::DesignArrangement => 58,
+            Self::DesignPublication => 59,
+            Self::DesignEvaluation => 60,
         }
     }
 
     /// Every registered entity kind in canonical arena order.
-    pub const ALL: [Self; 51] = [
+    pub const ALL: [Self; 61] = [
         Self::Body,
         Self::Region,
         Self::Shell,
@@ -194,8 +224,8 @@ impl EntityKind {
         Self::Feature,
         Self::FeatureInputTopology,
         Self::FeatureResultTopology,
-        Self::DesignConfiguration,
-        Self::DesignParameter,
+        Self::Configuration,
+        Self::Parameter,
         Self::Sketch,
         Self::SketchEntity,
         Self::SketchConstraint,
@@ -226,8 +256,99 @@ impl EntityKind {
         Self::DeclaredMeasure,
         Self::PointCloud,
         Self::HistoryBody,
+        Self::DesignScope,
+        Self::DesignContainer,
+        Self::DesignFeature,
+        Self::DesignParameter,
+        Self::DesignSpreadsheet,
+        Self::DesignProgram,
+        Self::DesignConfiguration,
+        Self::DesignArrangement,
+        Self::DesignPublication,
+        Self::DesignEvaluation,
     ];
 }
+
+/// The kind and identity of a record of any registered arena.
+///
+/// Every [`EntitySchema`] record has them. A record of the `design` home has
+/// them without the identity rewrite of [`EntitySchema`], and shares the id
+/// of the `model` record it restates.
+pub trait ArenaRecord {
+    /// The record's canonical arena kind.
+    const KIND: EntityKind;
+
+    /// The record's identity within its home.
+    fn record_identity(&self) -> &str;
+}
+
+impl<T: EntitySchema> ArenaRecord for T {
+    const KIND: EntityKind = <T as EntitySchema>::KIND;
+
+    fn record_identity(&self) -> &str {
+        self.identity()
+    }
+}
+
+macro_rules! impl_design_record {
+    ($type:ty, $kind:ident, |$record:ident| $identity:expr) => {
+        impl ArenaRecord for $type {
+            const KIND: EntityKind = EntityKind::$kind;
+
+            fn record_identity(&self) -> &str {
+                let $record = self;
+                $identity.as_str()
+            }
+        }
+    };
+}
+
+impl_design_record!(crate::design::scope::DesignScope, DesignScope, |scope| {
+    scope.definition
+});
+impl_design_record!(
+    crate::design::container::Container,
+    DesignContainer,
+    |container| container.id()
+);
+impl_design_record!(crate::design::feature::Feature, DesignFeature, |feature| {
+    feature.id
+});
+impl_design_record!(
+    crate::design::parameter::DesignParameter,
+    DesignParameter,
+    |parameter| parameter.id
+);
+impl_design_record!(
+    crate::design::spreadsheet::Spreadsheet,
+    DesignSpreadsheet,
+    |sheet| sheet.id
+);
+impl_design_record!(
+    crate::design::program::ParameterProgram,
+    DesignProgram,
+    |program| program.id
+);
+impl_design_record!(
+    crate::design::configuration::DesignConfiguration,
+    DesignConfiguration,
+    |configuration| configuration.id
+);
+impl_design_record!(
+    crate::design::configuration::Arrangement,
+    DesignArrangement,
+    |arrangement| arrangement.id
+);
+impl_design_record!(
+    crate::design::configuration::Publication,
+    DesignPublication,
+    |publication| publication.id
+);
+impl_design_record!(
+    crate::design::evaluation::Evaluation,
+    DesignEvaluation,
+    |evaluation| evaluation.id
+);
 
 /// Schema behavior required for every entity admitted to a model arena.
 pub trait EntitySchema: Serialize + rewrite::typed::RewriteIdentities {
@@ -322,12 +443,12 @@ impl EntitySchema for crate::features::FeatureResultTopology {
 }
 impl_entity_schema!(
     crate::features::DesignConfiguration,
-    DesignConfiguration,
+    Configuration,
     id;
     id, ordinal, active, source_index, name, material, properties, parameter_overrides,
     bodies, parameter_values, feature_states, native_ref
 );
-impl_entity_schema!(crate::features::DesignParameter, DesignParameter, id; id, product_definition, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
+impl_entity_schema!(crate::features::DesignParameter, Parameter, id; id, product_definition, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
 impl_entity_schema!(crate::sketches::Sketch, Sketch, id; id, name, configuration, visible, placement, profiles, native_ref);
 impl EntitySchema for crate::sketches::SketchEntity {
     const KIND: EntityKind = EntityKind::SketchEntity;

@@ -5,6 +5,8 @@
 mod ceilings;
 mod expressions;
 mod fixtures;
+mod root;
+mod root_fixtures;
 mod round_trip;
 #[cfg(feature = "schema")]
 mod schema;

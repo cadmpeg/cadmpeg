@@ -65,12 +65,15 @@ pub(crate) struct FeatureRegenerationParents(
 );
 
 /// Every neutral arena with its [`ArenaClass`] token (`model` or `design`)
-/// and its home token, the [`CadIr`] field that holds it (`geometry` or
-/// `model`).
+/// and its home token, the [`CadIr`] field that holds it (`geometry`,
+/// `model`, or `design`).
 ///
 /// Consumers that need the class match `$class:ident` after the type; every
-/// other consumer goes through [`arena_registry!`], which drops the class
-/// token. A consumer reaches an arena of a document as `ir.$home.$field`.
+/// other consumer goes through [`arena_registry!`] or
+/// [`every_arena_registry!`], which drop the class token. A consumer reaches
+/// an arena of a document as `ir.$home.$field`. The arenas of the `design`
+/// home follow every other, so the canonical index of every other arena does
+/// not depend on them.
 macro_rules! classified_arena_registry {
     ($macro:ident) => {
         $crate::document::classified_arena_registry! { @entries [$macro] }
@@ -129,20 +132,45 @@ macro_rules! classified_arena_registry {
             declared_measures: crate::declared_measures::DeclaredMeasure, model, model, "Declared measure arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             point_clouds: crate::point_cloud::PointCloud, model, model, "Point cloud arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             history_bodies: crate::history_body::HistoryBody, design, model, "History body arena: bodies that only an earlier history state holds, each with a nest of its own.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            scopes: crate::design::scope::DesignScope, design, design, "The design scopes, one per product definition that has a design.", [];
+            containers: crate::design::container::Container, design, design, "The ordered and unordered containers of the scopes' histories.", [];
+            features: crate::design::feature::Feature, design, design, "The features of the scopes' histories.", [];
+            parameters: crate::design::parameter::DesignParameter, design, design, "The design parameters.", [];
+            spreadsheets: crate::design::spreadsheet::Spreadsheet, design, design, "The sheets that own some of the design parameters.", [];
+            programs: crate::design::program::ParameterProgram, design, design, "The parameter programs.", [];
+            configurations: crate::design::configuration::DesignConfiguration, design, design, "The configurations of the scopes.", [];
+            arrangements: crate::design::configuration::Arrangement, design, design, "The arrangements of the scopes' occurrences.", [];
+            publications: crate::design::configuration::Publication, design, design, "The publications: named entry points into the scopes.", [];
+            evaluations: crate::design::evaluation::Evaluation, design, design, "The evaluations: the states of the scopes other than their current states.", [];
         }
     };
 }
 pub(crate) use classified_arena_registry;
 
-/// Every neutral arena with its home token, without its class token.
+/// Every neutral arena of the `geometry` and `model` homes with its home
+/// token, without its class token.
+///
+/// The arenas of the `design` home share ids with the `model` records they
+/// restate, so identity indexes, drafts, and validators read only these.
 macro_rules! arena_registry {
+    ($macro:ident) => {
+        $crate::document::classified_arena_registry! {
+            @entries [$crate::document::strip_design_arenas] $macro
+        }
+    };
+}
+pub(crate) use arena_registry;
+
+/// Every neutral arena of every home with its home token, without its class
+/// token.
+macro_rules! every_arena_registry {
     ($macro:ident) => {
         $crate::document::classified_arena_registry! {
             @entries [$crate::document::strip_arena_class] $macro
         }
     };
 }
-pub(crate) use arena_registry;
+pub(crate) use every_arena_registry;
 
 macro_rules! strip_arena_class {
     ($target:ident; $($field:ident: $ty:ty, $class:ident, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
@@ -150,6 +178,48 @@ macro_rules! strip_arena_class {
     };
 }
 pub(crate) use strip_arena_class;
+
+macro_rules! strip_design_arenas {
+    (@keep $target:ident [$($kept:tt)*]) => {
+        $target! { $($kept)* }
+    };
+    (@keep $target:ident [$($kept:tt)*] $field:ident: $ty:ty, $class:ident, design, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        $crate::document::strip_design_arenas! { @keep $target [$($kept)*] $($rest)* }
+    };
+    (@keep $target:ident [$($kept:tt)*] $field:ident: $ty:ty, $class:ident, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        $crate::document::strip_design_arenas! { @keep $target [$($kept)* $field: $ty, $home, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] $($rest)* }
+    };
+    ($target:ident; $($entries:tt)*) => {
+        $crate::document::strip_design_arenas! { @keep $target [] $($entries)* }
+    };
+}
+pub(crate) use strip_design_arenas;
+
+/// A registered arena's name: its JSON key, qualified by `design.` in the
+/// `design` home, where the key alone also names an arena of the `model`
+/// home.
+macro_rules! arena_label {
+    ($field:ident, design) => {
+        concat!("design.", stringify!($field))
+    };
+    ($field:ident, $home:ident) => {
+        stringify!($field)
+    };
+}
+pub(crate) use arena_label;
+
+/// A registered arena's [`ArenaName`].
+macro_rules! arena_name {
+    ($field:ident, $class:ident, $home:ident) => {
+        $crate::document::ArenaName::registered(
+            $crate::document::arena_label!($field, $home),
+            stringify!($field),
+            $crate::document::arena_class!($class),
+            $crate::document::arena_home!($home),
+        )
+    };
+}
+pub(crate) use arena_name;
 
 /// Maps a registry class token to its [`ArenaClass`]; any other token fails
 /// to compile.
@@ -174,6 +244,9 @@ macro_rules! arena_home {
     };
     (model) => {
         $crate::document::ArenaHome::Model
+    };
+    (design) => {
+        $crate::document::ArenaHome::Design
     };
 }
 pub(crate) use arena_home;
@@ -467,20 +540,25 @@ macro_rules! sorted_model_value {
 }
 
 /// Splits the registry by home token and declares [`Topology`] from the
-/// `geometry` arenas and [`Model`] from the `model` arenas.
+/// `geometry` arenas, [`Model`] from the `model` arenas, and [`Design`] from
+/// the `design` arenas.
 macro_rules! declare_homes {
-    (@split [$($geometry:tt)*] [$($model:tt)*] $field:ident: $ty:ty, geometry, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
-        declare_homes! { @split [$($geometry)* $field: $ty, geometry, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] [$($model)*] $($rest)* }
+    (@split [$($geometry:tt)*] [$($model:tt)*] [$($design:tt)*] $field:ident: $ty:ty, geometry, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        declare_homes! { @split [$($geometry)* $field: $ty, geometry, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] [$($model)*] [$($design)*] $($rest)* }
     };
-    (@split [$($geometry:tt)*] [$($model:tt)*] $field:ident: $ty:ty, model, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
-        declare_homes! { @split [$($geometry)*] [$($model)* $field: $ty, model, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] $($rest)* }
+    (@split [$($geometry:tt)*] [$($model:tt)*] [$($design:tt)*] $field:ident: $ty:ty, model, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        declare_homes! { @split [$($geometry)*] [$($model)* $field: $ty, model, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] [$($design)*] $($rest)* }
     };
-    (@split [$($geometry:tt)*] [$($model:tt)*]) => {
+    (@split [$($geometry:tt)*] [$($model:tt)*] [$($design:tt)*] $field:ident: $ty:ty, design, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        declare_homes! { @split [$($geometry)*] [$($model)*] [$($design)* $field: $ty, design, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] $($rest)* }
+    };
+    (@split [$($geometry:tt)*] [$($model:tt)*] [$($design:tt)*]) => {
         declare_topology! { $($geometry)* }
         declare_model! { $($model)* }
+        declare_design! { $($design)* }
     };
     ($($entries:tt)*) => {
-        declare_homes! { @split [] [] $($entries)* }
+        declare_homes! { @split [] [] [] $($entries)* }
     };
 }
 
@@ -497,20 +575,27 @@ macro_rules! declare_home_arenas {
             pub fn finalize(&mut self) {
                 $(if !arena_is_ordered(&self.$field) {
                     self.$field.sort_by(|left, right| {
-                        crate::schema::EntitySchema::identity(left)
-                            .cmp(crate::schema::EntitySchema::identity(right))
+                        crate::schema::ArenaRecord::record_identity(left)
+                            .cmp(crate::schema::ArenaRecord::record_identity(right))
                     });
                 })*
             }
 
             fn repro_select_arenas(&self, ids: &std::collections::BTreeSet<String>) -> Self {
-                use crate::schema::EntitySchema;
+                use crate::schema::ArenaRecord;
                 let mut selected = Self::default();
                 $(selected.$field = self.$field.iter()
-                    .filter(|entity| ids.contains(entity.identity())).cloned().collect();)*
+                    .filter(|entity| ids.contains(entity.record_identity())).cloned().collect();)*
                 selected
             }
+        }
+    };
+}
 
+/// The merges of a home whose records rewrite their identities.
+macro_rules! declare_home_rewrite {
+    ($home:ident, $($field:ident: $ty:ty;)*) => {
+        impl $home {
             fn append_arenas(&mut self, other: &mut Self) {
                 $(self.$field.append(&mut other.$field);)*
             }
@@ -542,6 +627,7 @@ macro_rules! declare_topology {
         }
 
         declare_home_arenas!(Topology, $($field: $ty;)*);
+        declare_home_rewrite!(Topology, $($field: $ty;)*);
 
         #[cfg(feature = "schema")]
         impl JsonSchema for Topology {
@@ -689,6 +775,7 @@ macro_rules! declare_model {
         }
 
         declare_home_arenas!(Model, $($field: $ty;)*);
+        declare_home_rewrite!(Model, $($field: $ty;)*);
 
         #[cfg(feature = "schema")]
         impl JsonSchema for Model {
@@ -822,6 +909,63 @@ macro_rules! declare_model {
     };
 }
 
+macro_rules! declare_design {
+    ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+        /// The design class's arenas: scopes, containers, features,
+        /// parameters, spreadsheets, programs, configurations, arrangements,
+        /// publications, and evaluations, and the names of the current
+        /// geometry.
+        ///
+        /// A record here keeps the id of the `model` record it restates, so
+        /// the design arenas are a namespace of their own.
+        #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[serde(deny_unknown_fields)]
+        pub struct Design {
+            $(
+                #[doc = $doc]
+                pub $field: Vec<$ty>,
+            )*
+            /// The names of the entities of the current geometry.
+            pub names: crate::design::names::NameTable,
+        }
+
+        declare_home_arenas!(Design, $($field: $ty;)*);
+
+        /// Every design arena borrowed in canonical identity order.
+        #[derive(Serialize)]
+        pub(crate) struct SortedDesign<'a> {
+            $($field: Vec<&'a $ty>,)*
+            names: &'a crate::design::names::NameTable,
+        }
+
+        impl Design {
+            /// Borrow every arena in canonical identity order.
+            pub(crate) fn sorted(&self) -> SortedDesign<'_> {
+                SortedDesign {
+                    $($field: sorted_rows(&self.$field, |value| value),)*
+                    names: &self.names,
+                }
+            }
+
+            /// The records of this design whose identity `ids` holds, and the
+            /// names of the entities `ids` holds.
+            pub(crate) fn repro_select(&self, ids: &std::collections::BTreeSet<String>) -> Self {
+                let mut selected = self.repro_select_arenas(ids);
+                selected.names = self
+                    .names
+                    .entries()
+                    .iter()
+                    .filter(|(entity, _)| ids.contains(entity.id()))
+                    .map(|(entity, entry)| (entity.clone(), entry.clone()))
+                    .collect::<BTreeMap<_, _>>()
+                    .into();
+                selected
+            }
+        }
+    };
+}
+
 /// Methods that walk every neutral arena of a document, in registry order.
 macro_rules! declare_document_arenas {
     ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
@@ -832,29 +976,29 @@ macro_rules! declare_document_arenas {
                 kind: crate::schema::EntityKind,
                 index: usize,
             ) -> Option<&'a str> {
-                $(if kind == <$ty as crate::schema::EntitySchema>::KIND {
+                $(if kind == <$ty as crate::schema::ArenaRecord>::KIND {
                     return self
                         .$home
                         .$field
                         .get(index)
-                        .map(crate::schema::EntitySchema::identity);
+                        .map(crate::schema::ArenaRecord::record_identity);
                 })*
                 None
             }
 
             /// Total number of admitted neutral entities across all arenas.
             pub(crate) fn entity_count(self) -> usize {
-                self.geometry.entity_count() + self.model.entity_count()
+                self.geometry.entity_count() + self.model.entity_count() + self.design.entity_count()
             }
 
             pub(crate) fn repro_graph(self, finding: &crate::report::check::Finding) -> Result<crate::repro::selection::Graph<'a>, CodecError> {
-                use crate::schema::EntitySchema;
+                use crate::schema::ArenaRecord;
                 let roots: std::collections::BTreeSet<&str> = finding.entity.iter().chain(&finding.related).map(String::as_str).collect();
                 let mut found = false;
-                $(found |= self.$home.$field.iter().any(|entity| roots.contains(entity.identity()));)*
+                $(found |= self.$home.$field.iter().any(|entity| roots.contains(entity.record_identity()));)*
                 let mut graph = crate::repro::selection::Graph::default();
                 $(for entity in self.$home.$field.iter() {
-                    graph.add(stringify!($field), entity.identity());
+                    graph.add(arena_label!($field, $home), entity.record_identity());
                 })*
                 graph.index();
                 if !found { return Ok(graph); }
@@ -872,6 +1016,15 @@ macro_rules! assert_entity_schemas {
         const _: fn() = || {
             fn assert_schema<T: crate::schema::EntitySchema>() {}
             $(assert_schema::<$ty>();)*
+        };
+    };
+}
+
+macro_rules! assert_arena_records {
+    ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+        const _: fn() = || {
+            fn assert_record<T: crate::schema::ArenaRecord>() {}
+            $(assert_record::<$ty>();)*
         };
     };
 }
@@ -910,18 +1063,18 @@ pub trait EntityRewrite {
 
 // Public arenas can change between calls. Check their current order instead
 // of retaining a flag that direct mutations could leave stale.
-fn arena_is_ordered<T: crate::schema::EntitySchema>(values: &[T]) -> bool {
+fn arena_is_ordered<T: crate::schema::ArenaRecord>(values: &[T]) -> bool {
     values
         .windows(2)
-        .all(|pair| pair[0].identity() <= pair[1].identity())
+        .all(|pair| pair[0].record_identity() <= pair[1].record_identity())
 }
 
-fn sorted_rows<'a, T: crate::schema::EntitySchema, U>(
+fn sorted_rows<'a, T: crate::schema::ArenaRecord, U>(
     entities: &'a [T],
     project: impl FnMut(&'a T) -> U,
 ) -> Vec<U> {
     let mut refs = entities.iter().collect::<Vec<_>>();
-    refs.sort_by(|left, right| left.identity().cmp(right.identity()));
+    refs.sort_by(|left, right| left.record_identity().cmp(right.record_identity()));
     refs.into_iter().map(project).collect()
 }
 
@@ -930,27 +1083,36 @@ macro_rules! declare_arena_name {
         /// Name of a registered neutral arena.
         ///
         /// Values use the `arena_registry!` field names so a new arena is
-        /// counted and diffed under its declared wire key.
+        /// counted and diffed under its declared wire key. An arena of the
+        /// `design` home is named `design.<key>`, since its key alone also
+        /// names an arena of the `model` home.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct ArenaName {
             name: &'static str,
+            key: &'static str,
             class: ArenaClass,
             home: ArenaHome,
         }
 
         impl ArenaName {
             /// Every registered arena, in registry order.
-            pub const ALL: &'static [Self] = &[$(Self::registered(stringify!($field), arena_class!($class), arena_home!($home))),*];
+            pub const ALL: &'static [Self] = &[$(arena_name!($field, $class, $home)),*];
 
-            pub(crate) const fn registered(name: &'static str, class: ArenaClass, home: ArenaHome) -> Self {
-                Self { name, class, home }
+            pub(crate) const fn registered(name: &'static str, key: &'static str, class: ArenaClass, home: ArenaHome) -> Self {
+                Self { name, key, class, home }
             }
 
-            /// Registry field name, which is also the arena's JSON object key
-            /// inside its home.
+            /// The arena's name: its JSON key, qualified by its home in the
+            /// `design` home.
             #[must_use]
             pub const fn as_str(self) -> &'static str {
                 self.name
+            }
+
+            /// The arena's JSON object key inside its home.
+            #[must_use]
+            pub const fn key(self) -> &'static str {
+                self.key
             }
 
             /// The class of the records this arena holds.
@@ -965,7 +1127,7 @@ macro_rules! declare_arena_name {
                 self.home
             }
 
-            /// Parse a registry field name.
+            /// Parse an arena name.
             #[must_use]
             pub fn parse(name: &str) -> Option<Self> {
                 Self::ALL.iter().copied().find(|arena| arena.as_str() == name)
@@ -976,9 +1138,17 @@ macro_rules! declare_arena_name {
             /// The first registered arena of `class` that holds a record.
             pub(crate) fn populated_arena(self, class: ArenaClass) -> Option<ArenaName> {
                 $(if arena_class!($class) == class && !self.$home.$field.is_empty() {
-                    return Some(ArenaName::registered(stringify!($field), arena_class!($class), arena_home!($home)));
+                    return Some(arena_name!($field, $class, $home));
                 })*
                 None
+            }
+
+            /// Whether an arena of `class` in `home` holds a record.
+            pub(crate) fn holds(self, class: ArenaClass, home: ArenaHome) -> bool {
+                $(if arena_class!($class) == class && arena_home!($home) == home && !self.$home.$field.is_empty() {
+                    return true;
+                })*
+                false
             }
         }
 
@@ -1004,9 +1174,20 @@ pub const IR_VERSION: &str = "10";
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct IrVersion;
 
-arena_registry!(declare_homes);
+macro_rules! count_arenas {
+    ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+        [$(stringify!($field)),*].len()
+    };
+}
+
+/// The number of arenas of the `geometry` and `model` homes. Their kinds
+/// take the first canonical indices.
+pub(crate) const MODEL_ARENA_COUNT: usize = arena_registry!(count_arenas);
+
+every_arena_registry!(declare_homes);
 arena_registry!(assert_entity_schemas);
-arena_registry!(declare_document_arenas);
+every_arena_registry!(assert_arena_records);
+every_arena_registry!(declare_document_arenas);
 classified_arena_registry!(declare_arena_name);
 
 /// Borrowed geometry and topology arenas for an embedded semantic record.
@@ -1703,14 +1884,6 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
     })
 }
 
-/// The design class's arenas: scopes, containers, features, sketches,
-/// parameters, programs, spreadsheets, sheet-metal rules, configurations,
-/// arrangements, publications, evaluations, and names.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct Design {}
-
 /// The process class's arenas: setups, operations, machining features,
 /// tools, presets, machines, programs, parameters, toolpaths, and process
 /// states.
@@ -1719,12 +1892,13 @@ pub struct Design {}
 #[serde(deny_unknown_fields)]
 pub struct Process {}
 
-/// The neutral arenas of one document, borrowed: its current geometry and
-/// its model.
+/// The neutral arenas of one document, borrowed: its current geometry, its
+/// model, and its design.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Arenas<'a> {
     pub(crate) geometry: &'a Topology,
     pub(crate) model: &'a Model,
+    pub(crate) design: &'a Design,
 }
 
 /// A versioned CAD document.
@@ -2168,6 +2342,7 @@ impl CadIr {
         Arenas {
             geometry: &self.geometry,
             model: &self.model,
+            design: &self.design,
         }
     }
 
@@ -2212,10 +2387,12 @@ impl CadIr {
             .map_err(<serde_json::Error as serde::de::Error>::custom)
     }
 
-    /// Sort geometry, model, native, and unknown-record arenas by identity.
+    /// Sort geometry, model, design, native, and unknown-record arenas by
+    /// identity.
     pub fn finalize(&mut self) {
         self.geometry.finalize();
         self.model.finalize();
+        self.design.finalize();
         self.native.finalize();
     }
 

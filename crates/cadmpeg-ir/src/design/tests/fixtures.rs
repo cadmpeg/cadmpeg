@@ -32,8 +32,8 @@ use crate::design::selection::{
     PrincipalEntity, Propagation, RuleTerm, Selection, SelectionRule, SketchRegion, StepRef,
     Witness,
 };
-use crate::design::topology::Topology;
 use crate::design::units::{Unit, UnitFactor, UnitSymbol};
+use crate::document::Topology;
 use crate::features::{ConfigurationId, FeatureId, FinitePoint3, NativeSelections, ParameterId};
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, OccurrenceId, PcurveId, PointId,

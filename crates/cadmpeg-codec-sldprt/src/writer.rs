@@ -508,6 +508,7 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
         physics_scenes: Omitted,
         solver_settings: Omitted,
         declared_measures: Omitted,
+        design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
     }
 }
 

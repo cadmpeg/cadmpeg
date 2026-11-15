@@ -39,6 +39,22 @@ pub enum EntityRef {
     Subd(SubdId),
 }
 
+impl EntityRef {
+    /// The entity's record id.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Body(id) => id.as_str(),
+            Self::Face(id) => id.as_str(),
+            Self::Edge(id) => id.as_str(),
+            Self::Vertex(id) => id.as_str(),
+            Self::Surface(id) => id.as_str(),
+            Self::Curve(id) => id.as_str(),
+            Self::Subd(id) => id.as_str(),
+        }
+    }
+}
+
 /// A record of any `Topology` arena, one variant per arena, for a delta's
 /// `removed` list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

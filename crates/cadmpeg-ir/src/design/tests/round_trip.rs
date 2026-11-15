@@ -27,8 +27,8 @@ use crate::design::options::{
 use crate::design::selection::{
     DatumPart, Fragment, OccurrencePath, Ordered, PathStep, StepRef, Unordered,
 };
-use crate::design::topology::Topology;
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, UnitSystem, ValueKind};
+use crate::document::Topology;
 use crate::scalar::{Angle, FiniteReal, Length};
 
 #[derive(Default)]
