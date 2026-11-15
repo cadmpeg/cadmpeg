@@ -426,15 +426,10 @@ pub(crate) fn project_sketch_design(
         let native_ref = point.id.clone();
         entities.push(
             SketchEntity::new(
-                point
-                    .persistent_id()
-                    .filter(|_| !repeated_tag)
-                    .map_or_else(
-                        || crate::ids::neutral_sketch_record_id(&sketch, point.record_index),
-                        |persistent_id| {
-                            crate::ids::neutral_sketch_point_id(&sketch, persistent_id)
-                        },
-                    ),
+                point.persistent_id().filter(|_| !repeated_tag).map_or_else(
+                    || crate::ids::neutral_sketch_record_id(&sketch, point.record_index),
+                    |persistent_id| crate::ids::neutral_sketch_point_id(&sketch, persistent_id),
+                ),
                 sketch,
                 geometry,
             )

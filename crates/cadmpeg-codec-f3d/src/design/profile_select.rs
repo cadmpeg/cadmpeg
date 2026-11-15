@@ -3782,9 +3782,9 @@ fn resolved_selection_member_point(
         .iter()
         .find(|entity| entity.id() == &record_id && entity.sketch == sketch.id)
         .or_else(|| {
-            entities.iter().find(|entity| {
-                Some(entity.id()) == tag_id.as_ref() && entity.sketch == sketch.id
-            })
+            entities
+                .iter()
+                .find(|entity| Some(entity.id()) == tag_id.as_ref() && entity.sketch == sketch.id)
         })?
         .geometry
         .definition()
