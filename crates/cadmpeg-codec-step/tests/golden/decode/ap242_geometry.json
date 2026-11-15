@@ -887,7 +887,9 @@
         },
         "offset": 2448,
         "stream": "",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       },
       "step:data:styled_item#43": {
         "bytes": {
@@ -896,9 +898,13 @@
         },
         "offset": 2505,
         "stream": "",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }

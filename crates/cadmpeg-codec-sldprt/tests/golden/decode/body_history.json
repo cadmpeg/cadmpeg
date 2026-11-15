@@ -463,7 +463,9 @@
         },
         "offset": 8,
         "stream": "Contents/Config-0-Partition",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -475,6 +477,8 @@
         "untyped": []
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }

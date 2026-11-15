@@ -197,7 +197,9 @@
         },
         "offset": 398,
         "stream": "",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       },
       "step:file:signature#0": {
         "bytes": {
@@ -209,6 +211,8 @@
         "untyped": []
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }

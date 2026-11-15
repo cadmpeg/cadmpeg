@@ -581,7 +581,9 @@
         },
         "offset": 143,
         "stream": "creo:NovisGeom",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       },
       "creo:VisibGeom:section#76": {
         "bytes": {
@@ -590,9 +592,13 @@
         },
         "offset": 76,
         "stream": "creo:VisibGeom",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }

@@ -287,10 +287,14 @@
           },
           "offset": 148,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         }
       },
-      "unrepresented": []
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

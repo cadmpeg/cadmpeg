@@ -6740,7 +6740,9 @@
           },
           "offset": 121,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         },
         "nx:container:parasolid#1": {
           "bytes": {
@@ -6749,10 +6751,14 @@
           },
           "offset": 1657,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         }
       },
-      "unrepresented": []
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

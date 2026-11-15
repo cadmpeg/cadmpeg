@@ -171,9 +171,13 @@
         },
         "offset": 193,
         "stream": "",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }

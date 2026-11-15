@@ -337,9 +337,13 @@
         },
         "offset": 0,
         "stream": "iges",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }

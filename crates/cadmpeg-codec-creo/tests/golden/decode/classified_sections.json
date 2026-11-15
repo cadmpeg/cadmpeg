@@ -577,7 +577,9 @@
         },
         "offset": 152,
         "stream": "creo:THMB_IMG_MAIN",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       },
       "creo:VisibGeom:section#79": {
         "bytes": {
@@ -586,9 +588,13 @@
         },
         "offset": 79,
         "stream": "creo:VisibGeom",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }

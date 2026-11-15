@@ -566,9 +566,15 @@
         },
         "offset": 0,
         "stream": "catia:CATPart",
-        "untyped": []
+        "untyped": [
+          "model",
+          "design"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }

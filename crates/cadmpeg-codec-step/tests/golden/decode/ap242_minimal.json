@@ -170,7 +170,9 @@
         },
         "offset": 267,
         "stream": "",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       },
       "step:data:opaque_target#2": {
         "bytes": {
@@ -179,9 +181,13 @@
         },
         "offset": 337,
         "stream": "",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }

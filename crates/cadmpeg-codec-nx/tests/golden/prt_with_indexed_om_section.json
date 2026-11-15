@@ -595,7 +595,9 @@
           },
           "offset": 357,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         },
         "nx:om-section-0:record#0": {
           "bytes": {
@@ -616,7 +618,9 @@
           "untyped": []
         }
       },
-      "unrepresented": []
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

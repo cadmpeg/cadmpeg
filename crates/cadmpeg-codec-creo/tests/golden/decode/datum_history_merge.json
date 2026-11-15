@@ -663,9 +663,13 @@
         },
         "offset": 76,
         "stream": "creo:ActDatums",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }

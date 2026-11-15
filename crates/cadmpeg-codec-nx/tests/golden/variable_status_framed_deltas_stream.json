@@ -198,10 +198,14 @@
           },
           "offset": 76,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         }
       },
-      "unrepresented": []
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

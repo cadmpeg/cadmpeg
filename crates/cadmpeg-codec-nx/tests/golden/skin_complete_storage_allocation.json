@@ -1128,7 +1128,10 @@
           },
           "offset": 586,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model",
+            "design"
+          ]
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -1311,7 +1314,10 @@
           "untyped": []
         }
       },
-      "unrepresented": []
+      "unrepresented": [
+        "model",
+        "design"
+      ]
     }
   },
   "inspect": {

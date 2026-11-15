@@ -4416,9 +4416,13 @@
         },
         "offset": 76,
         "stream": "creo:VisibGeom",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }

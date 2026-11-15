@@ -1211,7 +1211,10 @@
         },
         "offset": 0,
         "stream": "Contents/Features",
-        "untyped": []
+        "untyped": [
+          "model",
+          "design"
+        ]
       },
       "sldprt:file:block#12": {
         "bytes": {
@@ -1250,6 +1253,9 @@
         "untyped": []
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }

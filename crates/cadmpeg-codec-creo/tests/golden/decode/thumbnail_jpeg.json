@@ -551,9 +551,13 @@
         },
         "offset": 91,
         "stream": "creo:THMB_IMG_MAIN",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }
