@@ -259,7 +259,9 @@ terminal:
   end of file
   or u8 0, nonempty LP-UTF16 document_display_name,
            optional (nonempty LP-UTF16 lineage_urn beginning `urn:`,
-                     optional lineage_suffix), end of file
+                     optional lineage_suffix
+                     or LP-UTF16 `NA_EXPORT`
+                     or LP-UTF16 `NA_OFFLINESAVE`), end of file
   or u8 1, end of file
   or u8 1, LP-UTF16 `NA_EXPORT`, end of file
   or u8 1, LP-UTF16 `NA_OFFLINESAVE`, end of file
