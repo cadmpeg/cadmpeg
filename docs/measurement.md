@@ -219,6 +219,11 @@ pass at a sample, or between two samples whose parameter image turns by a
 quarter period or more, by a golden-section search of the distance to the
 singular points.
 
+An inverted 3D curve interval whose end lies within the allowance of a cone
+apex or a sphere pole keeps, from that end to the parameter where the curve
+enters the allowance, the `u` of the entry point, with `u' = 0`. The pole or
+apex segment of the loop starts or ends at that `u`.
+
 ## Regions
 
 `region` states the rule that decides a face's area:

@@ -24,6 +24,10 @@ const MAX_NESTING_SAMPLES_PER_PIECE: usize = 1 << 10;
 /// between two samples whose parameter image jumps.
 const MAX_SINGULAR_APPROACH_STEPS: usize = 64;
 
+/// Bisection steps of the search for the parameter where a piece enters the
+/// allowance of a singular point of the carrier.
+const MAX_SINGULAR_ENTRY_STEPS: usize = 64;
+
 /// Where a piece's points come from.
 #[derive(Clone)]
 pub(crate) enum Source<'ir> {
@@ -79,6 +83,9 @@ pub(crate) struct Piece<'ir> {
     /// The distance within which a point is at a singular point of the
     /// chart.
     alpha: f64,
+    /// Per end, the parameter where the piece enters the allowance of a
+    /// singular point and the lifted `u` it keeps from there to that end.
+    held: [Option<(f64, f64)>; 2],
 }
 
 impl<'ir> Piece<'ir> {
@@ -100,6 +107,7 @@ impl<'ir> Piece<'ir> {
             reference: vec![(0.0, from), (1.0, to)],
             periods: [None, None],
             alpha: 0.0,
+            held: [None, None],
         }
     }
 
@@ -124,6 +132,7 @@ impl<'ir> Piece<'ir> {
             reference: Vec::new(),
             periods: chart.periods(),
             alpha: use_.alpha,
+            held: [None, None],
         }
     }
 
@@ -199,7 +208,7 @@ impl<'ir> Piece<'ir> {
         let alpha = use_.alpha;
         let periods = chart.periods();
         let mut count = 4_usize;
-        let (reference, off_surface) = loop {
+        let (mut reference, off_surface) = loop {
             let mut raw_samples: Vec<(f64, [f64; 2], bool)> = Vec::with_capacity(count + 1);
             let mut off_surface: f64 = 0.0;
             let mut seed: Option<[f64; 2]> = None;
@@ -245,6 +254,7 @@ impl<'ir> Piece<'ir> {
             }
             count *= 2;
         };
+        let held = held_ends(eval, chart, &curve, &mut reference, alpha)?;
         Ok(Self {
             coedge: Some(use_.coedge),
             source: Source::Curve(curve),
@@ -256,7 +266,19 @@ impl<'ir> Piece<'ir> {
             reference,
             periods,
             alpha,
+            held,
         })
+    }
+
+    /// The `u` the piece keeps at `t` inside the allowance of a singular
+    /// point at one of its ends.
+    fn held_u(&self, t: f64) -> Option<f64> {
+        let [start, end] = self.held;
+        let forward = self.t1 >= self.t0;
+        start
+            .filter(|(entry, _)| (t <= *entry) == forward)
+            .or_else(|| end.filter(|(entry, _)| (t >= *entry) == forward))
+            .map(|(_, u)| u)
     }
 
     /// The reference lift at `t`, interpolated between samples.
@@ -305,15 +327,7 @@ impl<'ir> Piece<'ir> {
         point: Point3,
     ) -> Measure<([f64; 2], bool)> {
         let reference = self.reference_at(t);
-        let seed = match chart.domain() {
-            Some(domain) => std::array::from_fn(|axis| match self.periods[axis] {
-                Some(period) => {
-                    domain[axis][0] + (reference[axis] - domain[axis][0]).rem_euclid(period)
-                }
-                None => reference[axis],
-            }),
-            None => reference,
-        };
+        let seed = domain_seed(chart, self.periods, reference);
         let Some(raw) = chart.invert(eval, point, Some(seed), self.alpha)? else {
             return Err(MeasureFailure::unavailable(
                 UnavailableReason::BoundaryInversionFailed,
@@ -321,7 +335,9 @@ impl<'ir> Piece<'ir> {
                 "a boundary point does not invert onto the surface",
             ));
         };
-        Ok(if chart.singular_at(point, self.alpha) {
+        Ok(if let Some(u) = self.held_u(t) {
+            ([u, raw[1]], true)
+        } else if chart.singular_at(point, self.alpha) {
             ([reference[0], raw[1]], true)
         } else {
             (nearest(self.periods, raw, reference), false)
@@ -414,7 +430,11 @@ impl<'ir> Piece<'ir> {
     /// Parameters inside the piece where its curve's smoothness may break.
     pub(crate) fn breaks(&self) -> Vec<f64> {
         match &self.source {
-            Source::Curve(curve) => curve.breaks(),
+            Source::Curve(curve) => {
+                let mut breaks = curve.breaks();
+                breaks.extend(self.held.iter().flatten().map(|(entry, _)| *entry));
+                breaks
+            }
             Source::Pcurve { span, .. } => span.breaks(),
             Source::Segment { .. } => Vec::new(),
         }
@@ -597,6 +617,92 @@ fn unwrap(
             .map(|&(t, raw, _)| (t, [tail[0], raw[1]])),
     );
     Ok((reference, smooth))
+}
+
+/// `uv` taken into `chart`'s domain along its periodic directions.
+fn domain_seed(chart: &Chart<'_>, periods: [Option<f64>; 2], uv: [f64; 2]) -> [f64; 2] {
+    match chart.domain() {
+        Some(domain) => std::array::from_fn(|axis| match periods[axis] {
+            Some(period) => domain[axis][0] + (uv[axis] - domain[axis][0]).rem_euclid(period),
+            None => uv[axis],
+        }),
+        None => uv,
+    }
+}
+
+/// The entry parameter and lifted `u` for each end of an inverted piece
+/// whose reference samples there lie within `alpha` of a singular point.
+/// The piece and its reference samples keep that `u` from the entry to the
+/// end, so the junction at the end starts from the `u` that the piece's
+/// integrals reach.
+fn held_ends(
+    eval: &Eval<'_, '_>,
+    chart: &Chart<'_>,
+    curve: &CurveChart<'_>,
+    reference: &mut Reference,
+    alpha: f64,
+) -> Measure<[Option<(f64, f64)>; 2]> {
+    let inside = |t: f64| -> Measure<bool> { Ok(chart.singular_at(curve.point(eval, t)?, alpha)) };
+    let mut flags = Vec::with_capacity(reference.len());
+    for (t, _) in reference.iter() {
+        flags.push(inside(*t)?);
+    }
+    let count = reference.len();
+    let leading = flags.iter().take_while(|flag| **flag).count();
+    if leading == count {
+        return Ok([None, None]);
+    }
+    let trailing = flags.iter().rev().take_while(|flag| **flag).count();
+    let periods = chart.periods();
+    let mut held = [None, None];
+    let ends = [
+        (leading > 0).then(|| (leading - 1, leading, 0..leading)),
+        (trailing > 0).then(|| {
+            (
+                count - trailing,
+                count - trailing - 1,
+                count - trailing..count,
+            )
+        }),
+    ];
+    for (side, end) in ends.into_iter().enumerate() {
+        let Some((singular_index, regular_index, run)) = end else {
+            continue;
+        };
+        let (Some(&(mut low, _)), Some(&(mut high, anchor))) =
+            (reference.get(singular_index), reference.get(regular_index))
+        else {
+            continue;
+        };
+        for _ in 0..MAX_SINGULAR_ENTRY_STEPS {
+            eval.charge(1)?;
+            let middle = low.midpoint(high);
+            if inside(middle)? {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        let point = curve.point(eval, high)?;
+        let seed = domain_seed(chart, periods, anchor);
+        let Some(raw) = chart.invert(eval, point, Some(seed), alpha)? else {
+            return Err(MeasureFailure::unavailable(
+                UnavailableReason::BoundaryInversionFailed,
+                None,
+                "a boundary point does not invert onto the surface",
+            ));
+        };
+        let u = nearest(periods, raw, anchor)[0];
+        for index in run {
+            if let Some((_, uv)) = reference.get_mut(index) {
+                uv[0] = u;
+            }
+        }
+        if let Some(slot) = held.get_mut(side) {
+            *slot = Some((high, u));
+        }
+    }
+    Ok(held)
 }
 
 /// Whether the curve passes within `alpha` of a singular point of `chart`
