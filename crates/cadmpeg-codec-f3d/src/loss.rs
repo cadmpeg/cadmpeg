@@ -467,6 +467,8 @@ pub(crate) enum F3dLossCode {
     FeatureBaseFeatureNullFlagAssumed,
     /// A Base Feature suffix result-body frame with more than one body reads its body, repeated, and result entries as three consecutive runs.
     FeatureBaseFeatureSuffixRunOrderAssumed,
+    /// A compact Fillet flag run or set frame stores nonzero bytes in its padding positions, which are read as padding.
+    FeatureFilletPaddingAssumed,
     HoleStandardSizingAssumed,
     /// A clearance Hole's specification takes fixed values for the fields it does not store.
     HoleClearanceFieldsAssumed,
@@ -1333,6 +1335,7 @@ impl F3dLossCode {
         Self::HoleTaperTappedBoreCylindrical,
         Self::FeatureBaseFeatureNullFlagAssumed,
         Self::FeatureBaseFeatureSuffixRunOrderAssumed,
+        Self::FeatureFilletPaddingAssumed,
         Self::HoleStandardSizingAssumed,
         Self::HoleClearanceFieldsAssumed,
         Self::HoleCarrierAxisAssumed,
@@ -2149,6 +2152,7 @@ impl F3dLossCode {
             Self::FeatureBaseFeatureSuffixRunOrderAssumed => {
                 "feature.base-feature-suffix-run-order-assumed"
             }
+            Self::FeatureFilletPaddingAssumed => "feature.fillet-padding-assumed",
             Self::HoleStandardSizingAssumed => "feature.hole-standard-sizing-assumed",
             Self::HoleClearanceFieldsAssumed => "feature.hole-clearance-fields-assumed",
             Self::HoleCarrierAxisAssumed => "feature.hole-carrier-axis-assumed",
@@ -2908,6 +2912,7 @@ impl F3dLossCode {
             | Self::HoleTaperTappedBoreCylindrical
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
+            | Self::FeatureFilletPaddingAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -3497,6 +3502,7 @@ impl F3dLossCode {
             | Self::HoleTaperTappedBoreCylindrical
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
+            | Self::FeatureFilletPaddingAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -4196,6 +4202,7 @@ mod tests {
                 "feature.hole-taper-tapped-bore-cylindrical",
                 "feature.base-feature-null-flag-assumed",
                 "feature.base-feature-suffix-run-order-assumed",
+                "feature.fillet-padding-assumed",
                 "feature.hole-standard-sizing-assumed",
                 "feature.hole-clearance-fields-assumed",
                 "feature.hole-carrier-axis-assumed",

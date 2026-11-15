@@ -2732,7 +2732,7 @@ name = "radius_owner_padding"
 offset = 70
 type = "bytes[4]"
 source = "spec"
-anchor = "`+70: four padding bytes`"
+anchor = "`+70: four bytes`"
 
 [[record.field]]
 name = "set_ordinal"
@@ -2753,7 +2753,7 @@ name = "tangency_weight_owner_padding"
 offset = 89
 type = "bytes[4]"
 source = "spec"
-anchor = "`+89: four padding bytes`"
+anchor = "`+89: four bytes`"
 
 [[record]]
 name = "thicken_scope_prologue"

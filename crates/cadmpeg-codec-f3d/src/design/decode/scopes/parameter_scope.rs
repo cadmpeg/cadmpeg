@@ -35,7 +35,7 @@ use super::direct_face::move_transform_references_loss;
 use super::draft::exact_draft_operation_with_owners;
 use super::emboss::exact_emboss_construction;
 use super::extrude::{exact_extrude_prologue, exact_typed_extrude_prologue};
-use super::fillet_set::fillet_set_list;
+use super::fillet_set::fillet_set_list_with_padding;
 use super::fixed_parameters::exact_fixed_chamfer_parameters;
 use super::fixed_parameters::exact_fixed_extrude_parameters;
 use super::fixed_parameters::exact_fixed_fillet_parameters;
@@ -586,7 +586,22 @@ pub(crate) fn decode_parameter_scopes(
                     parameters,
                     parameter_owners,
                 );
-                let sets = fillet_set_list(bytes, &records, &scope, parameters, parameter_owners);
+                let sets = fillet_set_list_with_padding(
+                    bytes,
+                    &records,
+                    &scope,
+                    parameters,
+                    parameter_owners,
+                )
+                .map(|(sets, padding_holds_bytes)| {
+                    if padding_holds_bytes {
+                        losses.push(crate::loss::F3dLossCode::FeatureFilletPaddingAssumed.note(format!(
+                            "Fillet {} stores nonzero bytes in the padding of its compact flag run or set frames; they are read as padding (DR-390).",
+                            scope.id
+                        )));
+                    }
+                    sets
+                });
                 if let scope::DesignScopePayloadMut::Fillet(slot) = scope.payload_mut() {
                     *slot = crate::records::feature::fillet_set::DesignFilletScope::admit(
                         construction,

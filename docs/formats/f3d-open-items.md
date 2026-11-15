@@ -1277,7 +1277,7 @@ The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are t
 
 **Question.** Do the flag bytes of the chordal and compact fillet set forms encode tangent chain, do those forms store curvature continuity, and what do the set marker byte, the `00 01` tail of the current flag run, and the compact flag-run form encode?
 
-**Known.** `f3d.md` §3.1 "A parameter-owned `Fillet` scope names its fillet sets in a prefix" gives their positions and admitted values. The decoder stores the flag of every set form as the set's `tangent_chain`, reads curvature continuity in the constant form only, and stores `rolling_ball_corner = true` for the compact flag run, whose first byte is `01`. The decoder admits the compact run `01 01`; two public compact frames store `01 00` in its place.
+**Known.** `f3d.md` §3.1 "A parameter-owned `Fillet` scope names its fillet sets in a prefix" gives their positions and admitted values. The decoder stores the flag of every set form as the set's `tangent_chain`, reads curvature continuity in the constant form only, and stores `rolling_ball_corner = true` for the compact flag run, whose first byte is `01`. The decoder admits the compact run `01 01`; two public compact frames store `01 00` in its place. Public compact frames store zero bytes, 16-byte-aligned addresses, UTF-16 text fragments, or unrelated f32 values in the nine bytes after the compact run's `01 01` and in the four bytes at compact set offsets `+70` and `+89`. The decoder reads these bytes as padding and reports `feature.fillet-padding-assumed` when one of them is nonzero.
 
 **Need.** Chordal and compact Fillet saves with tangent chain off, with curvature continuity, and with setback corners.
 

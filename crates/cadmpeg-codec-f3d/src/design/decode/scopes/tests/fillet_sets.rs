@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::fillet_set::{
-    decoded_group_keys, fillet_set_conflict_loss, fillet_set_list, retain_consistent_fillet_sets,
+    decoded_group_keys, fillet_set_conflict_loss, fillet_set_list, fillet_set_list_with_padding,
+    retain_consistent_fillet_sets,
 };
 use crate::records::feature::fillet_set::{DesignFilletSetLaw, DesignFilletSetListForm};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
@@ -242,10 +243,24 @@ const COMPACT_RUN_AT: usize = 44;
 fn decode_bytes(
     bytes: &[u8],
     scope: &DesignParameterScope,
-) -> Option<crate::records::feature::fillet_set::DesignFilletSetList> {
-    let (law_parameter, law_owner) = owned(LAW_OWNER, "Radius");
+) -> Option<(
+    crate::records::feature::fillet_set::DesignFilletSetList,
+    bool,
+)> {
+    decode_bytes_as(bytes, scope, "Radius")
+}
+
+fn decode_bytes_as(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    law_kind: &str,
+) -> Option<(
+    crate::records::feature::fillet_set::DesignFilletSetList,
+    bool,
+)> {
+    let (law_parameter, law_owner) = owned(LAW_OWNER, law_kind);
     let (tangency_parameter, tangency_owner) = owned(TANGENCY_OWNER, "TangencyWeight");
-    fillet_set_list(
+    fillet_set_list_with_padding(
         bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(bytes),
         scope,
@@ -268,17 +283,30 @@ fn compact_padding_bytes_hold_any_value() {
         [1, 1],
         "fixture places the compact run"
     );
+    assert!(!decode_bytes(&bytes, &scope).unwrap().1);
     let set_start =
         crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
     bytes[COMPACT_RUN_AT + 2..COMPACT_RUN_AT + 11]
         .copy_from_slice(&[0, 0x10, 0x77, 0x9f, 0xce, 0xb1, 0x02, 0, 0]);
     bytes[set_start + 70..set_start + 74].copy_from_slice(&[0x30, 0, 0x30, 0]);
     bytes[set_start + 89..set_start + 93].copy_from_slice(&[0x11, 0xe4, 0x4a, 0xc0]);
-    let list = decode_bytes(&bytes, &scope).expect("padding bytes carry no data");
+    let (list, padding_holds_bytes) =
+        decode_bytes(&bytes, &scope).expect("compact padding bytes hold any value");
     assert_eq!(list.form, DesignFilletSetListForm::Compact);
     assert_eq!(list.sets[0].group_record_index, GROUP);
+    assert!(padding_holds_bytes);
+    for at in [COMPACT_RUN_AT + 4, set_start + 71, set_start + 90] {
+        let mut single = stream(&fixture).0;
+        single[at] = 0x30;
+        assert_eq!(
+            decode_bytes(&single, &scope).map(|(_, flag)| flag),
+            Some(true),
+            "byte {at}"
+        );
+    }
 
     for (at, value) in [
+        (COMPACT_RUN_AT, 0),
         (COMPACT_RUN_AT + 1, 0),
         (set_start + 38, 1),
         (set_start + 69, 1),
@@ -302,6 +330,22 @@ fn constant_form_bytes_after_its_owners_stay_zero() {
         let mut broken = bytes.clone();
         broken[at] = 0x30;
         assert!(decode_bytes(&broken, &scope).is_none(), "byte {at}");
+    }
+    let chordal = Fixture {
+        set_form: Form::Chordal,
+        ..Fixture::default()
+    };
+    let (bytes, scope) = stream(&chordal);
+    let set_start =
+        crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
+    assert!(decode_bytes_as(&bytes, &scope, "ChordLen").is_some());
+    for at in [set_start + 70, set_start + 89] {
+        let mut broken = bytes.clone();
+        broken[at] = 0x30;
+        assert!(
+            decode_bytes_as(&broken, &scope, "ChordLen").is_none(),
+            "byte {at}"
+        );
     }
 }
 

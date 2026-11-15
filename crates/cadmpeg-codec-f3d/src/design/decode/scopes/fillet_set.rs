@@ -38,6 +38,19 @@ pub(super) fn fillet_set_list(
     parameters: &[DesignParameter],
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignFilletSetList> {
+    fillet_set_list_with_padding(bytes, records, scope, parameters, parameter_owners)
+        .map(|(list, _)| list)
+}
+
+/// The fillet set list of `scope` and whether a compact padding byte of its
+/// flag run or of a set frame is nonzero.
+pub(super) fn fillet_set_list_with_padding(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    parameters: &[DesignParameter],
+    parameter_owners: &[DesignParameterOwner],
+) -> Option<(DesignFilletSetList, bool)> {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Fillet) {
         return None;
     }
@@ -60,6 +73,7 @@ pub(super) fn fillet_set_list(
     }
     cursor += 4;
     let rolling_ball = *frame.get(cursor)?;
+    let mut padding_holds_bytes = false;
     let form = if matches!(rolling_ball, 0 | 1)
         && frame.get(cursor + 1..cursor + 1 + CURRENT_FLAG_RUN_TAIL.len())? == CURRENT_FLAG_RUN_TAIL
     {
@@ -69,6 +83,10 @@ pub(super) fn fillet_set_list(
         .get(cursor..cursor + COMPACT_FLAG_RUN_LEN)?
         .starts_with(&COMPACT_FLAG_RUN_HEAD)
     {
+        padding_holds_bytes = frame
+            .get(cursor + COMPACT_FLAG_RUN_HEAD.len()..cursor + COMPACT_FLAG_RUN_LEN)?
+            .iter()
+            .any(|byte| *byte != 0);
         cursor += COMPACT_FLAG_RUN_LEN;
         DesignFilletSetListForm::Compact
     } else {
@@ -104,17 +122,37 @@ pub(super) fn fillet_set_list(
         if set.group_record_index != group_record_index {
             return None;
         }
+        padding_holds_bytes |= set_padding_holds_bytes(bytes, &set);
         sets.push(set);
         ordinals.push(ordinal);
     }
     if !ordinals_are_a_permutation(&ordinals) {
         return None;
     }
-    Some(DesignFilletSetList {
-        form,
-        rolling_ball_corner: rolling_ball == 1,
-        sets,
-    })
+    Some((
+        DesignFilletSetList {
+            form,
+            rolling_ball_corner: rolling_ball == 1,
+            sets,
+        },
+        padding_holds_bytes,
+    ))
+}
+
+/// Whether a padding field of the form of `set` holds a nonzero byte.
+fn set_padding_holds_bytes(bytes: &[u8], set: &DesignFilletSet) -> bool {
+    let Ok(start) = usize::try_from(set.byte_offset) else {
+        return false;
+    };
+    SET_FORMS
+        .iter()
+        .filter(|form| u64::try_from(form.len).ok() == Some(set.frame_length))
+        .flat_map(|form| form.padding)
+        .any(|at| {
+            bytes
+                .get(start + at..start + at + PADDING_LEN)
+                .is_some_and(|field| field.iter().any(|byte| *byte != 0))
+        })
 }
 
 /// `count` consecutive marked references from `cursor`, each distinct.
