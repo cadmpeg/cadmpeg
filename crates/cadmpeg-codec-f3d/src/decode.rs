@@ -2058,6 +2058,22 @@ fn report_parameter_trailer_flags(
     }
 }
 
+fn report_parameter_owner_trailer_flags(
+    report: &mut DecodeBody,
+    flagged: &[crate::design::decode::parameters::StreamParameterCount],
+) {
+    for owners in flagged {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterOwnerTrailerFlagUninterpreted,
+            format_args!(
+                "{} decoded parameter owner(s) in {} set the final byte of the compact trailer before the companion reference; the flag is not interpreted.",
+                owners.count, owners.stream
+            ),
+        );
+    }
+}
+
 fn report_parameter_null_owners(
     report: &mut DecodeBody,
     null_owners: &[crate::design::decode::parameters::StreamParameterCount],
@@ -3185,6 +3201,10 @@ impl<'a> F3dDecodeSession<'a> {
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
         report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
         report_parameter_null_owners(&mut self.report, &prereqs.design_parameter_null_owners);
+        report_parameter_owner_trailer_flags(
+            &mut self.report,
+            &prereqs.design_parameter_owner_trailer_flags,
+        );
         report_unparsed_parameter_owners(
             &mut self.report,
             prereqs.design_parameter_owner_unparsed.len(),

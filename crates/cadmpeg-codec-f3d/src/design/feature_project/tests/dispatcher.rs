@@ -774,6 +774,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         let value = Some(
             DesignSketchProfileOperand::try_new(
                 crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+                    sketch_absent: false,
                     scope_reference_ordinal: 1,
                     record_index: 101,
                     byte_offset: 0,

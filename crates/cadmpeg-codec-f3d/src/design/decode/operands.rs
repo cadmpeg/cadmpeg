@@ -1792,6 +1792,28 @@ pub(crate) fn bind_sketch_profiles(
             };
             profiles.push(profile);
         }
+        let is_extrude = design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude);
+        if profiles.iter().any(|profile| profile.sketch_absent) {
+            if is_extrude {
+                let scope_record_index = scope.record_index;
+                if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
+                    scope.payload_mut()
+                {
+                    let absent = profiles
+                        .iter()
+                        .filter(|profile| profile.sketch_absent)
+                        .count();
+                    losses.push(crate::loss::F3dLossCode::FeatureExtrudeProfileSketchAbsent.note(
+                        format!("{absent} Sketch-profile operand(s) of Extrude scope record {scope_record_index} name a Sketch that the Design stream does not register; the profile stays native."),
+                    ));
+                    slot.get_or_insert_with(Default::default)
+                        .extrude_native_profiles = Some(profiles);
+                    continue;
+                }
+            } else {
+                profiles.retain(|profile| !profile.sketch_absent);
+            }
+        }
         if profiles.len() > 1 {
             if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
                 scope.payload_mut()
@@ -5497,7 +5519,7 @@ pub(in crate::design) fn parse_sketch_profile(
         lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let tail_length = paired_at.checked_sub(after_entity_suffix)?;
     if View::u32_le_at(bytes, after_paired_tag)? != header.record_index
-        || !matches!(tail_length, 83 | 89 | 93 | 94)
+        || !matches!(tail_length, 82 | 83 | 89 | 93 | 94)
     {
         return None;
     }
@@ -5519,6 +5541,27 @@ pub(in crate::design) fn parse_sketch_profile(
         }
     }
     let mut compact_tail_flags = None;
+    if tail_length == 82 {
+        // The 82-byte tail is the 83-byte tail with the nested-one reference
+        // one byte earlier: two flag bytes that are zero or one precede it.
+        let tail = after_entity_suffix;
+        if View::u32_le_at(bytes, tail)? != 1
+            || !matches!(View::u32_le_at(bytes, tail + 4)?, 0 | 1)
+            || bytes.get(tail + 8..tail + 16)? != [0; 8]
+            || View::u32_le_at(bytes, tail + 16)? != 0x41
+            || marked_record_reference(bytes, tail + 46) != header.record_index.checked_add(2)
+            || !bytes
+                .get(tail + 57..tail + 59)?
+                .iter()
+                .all(|&flag| flag <= 1)
+            || marked_record_reference(bytes, tail + 59) != header.record_index.checked_add(1)
+            || bytes.get(tail + 70) != Some(&0)
+            || marked_record_reference(bytes, tail + 71).is_none()
+        {
+            return None;
+        }
+        compact_tail_flags = Some([bytes[tail + 57] != 0, bytes[tail + 58] != 0]);
+    }
     if matches!(tail_length, 89 | 93) {
         let tail = after_entity_suffix;
         let (nested_two_at, nested_one_at, scope_at) = if tail_length == 89 {
@@ -5554,15 +5597,39 @@ pub(in crate::design) fn parse_sketch_profile(
             && entity.in_sketch_module()
             && entity.entity_id.suffix() == entity_suffix
     });
-    let entity = matches.next()?;
-    if matches.next().is_some() {
-        return None;
-    }
+    let (entity_id_text, sketch_absent) = match matches.next() {
+        Some(entity) => {
+            if matches.next().is_some() {
+                return None;
+            }
+            (entity.entity_id.as_str().to_owned(), false)
+        }
+        None => {
+            // No Sketch entity carries the suffix. The profile keeps the
+            // stream's one Sketch entity prefix with the stored suffix.
+            let mut prefixes = entities
+                .iter()
+                .filter(|entity| native_stream(&entity.id) == Some(stream))
+                .filter(|entity| entity.in_sketch_module())
+                .map(|entity| {
+                    entity
+                        .entity_id
+                        .as_str()
+                        .rsplit_once('_')
+                        .map(|(prefix, _)| prefix)
+                });
+            let prefix = prefixes.next()??;
+            if prefixes.any(|other| other != Some(prefix)) {
+                return None;
+            }
+            (format!("{prefix}_{entity_suffix}"), true)
+        }
+    };
     let region_selection =
         parse_sketch_profile_region_selection(bytes, header.record_index, paired_at);
-    let entity_id_text = entity.entity_id.as_str().to_owned();
     DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+            sketch_absent,
             scope_reference_ordinal,
             record_index: header.record_index,
             byte_offset: header.byte_offset,
