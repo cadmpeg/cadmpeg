@@ -101,6 +101,9 @@ pub(crate) struct DesignChamferSet {
     pub(crate) entry_count: u32,
     /// Edge-set tangent-chain flag.
     pub(crate) tangent_chain: bool,
+    /// Whether the two faces of each edge exchange their setback roles.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) flipped: bool,
 }
 
 /// Parameter owners of one chamfer set's dimensional specification.

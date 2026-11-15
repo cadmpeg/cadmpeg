@@ -2707,15 +2707,15 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-341. Chamfer distance reference face
 
-**Question.** Which stored field assigns the first distance of a two-distance chamfer, or the distance of a distance-angle chamfer, to an input support face?
+**Question.** Which face takes the first distance of a two-distance chamfer, or the distance of a distance-angle chamfer, on each edge that a tangent chain adds to the selection, and on an edge whose support face an earlier operation split?
 
-**Known.** Chamfer sets reference their edge groups and dimensional owners independently. One scope can combine equal-distance, two-distance, and distance-angle sets. Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false.
+**Known.** `f3d.md` §3.1 gives the flip byte of the two-distance and distance-angle set forms and the face it selects on a treated edge: the face whose coedge runs in the direction of the edge in the state before the feature, or the other face. Two-distance sets of 1 mm and 3 mm on one straight box edge, and distance-angle sets of 1 mm and 20 degrees on one closed circular edge between a plane and a cylinder, have this assignment with flip byte `0` and the exchanged assignment with flip byte `1`. Each of these sets has one selected edge and a tangent-chain byte of `1` that adds no edge. Chamfer sets reference their edge groups and dimensional owners independently. One scope can combine equal-distance, two-distance, and distance-angle sets. Edge recipes retain ordered sides and prefix-reference ordinals. In the three single-edge recipes, the first prefix reference of a two-reference recipe names the face that takes the distance, and the second prefix reference of a four-reference recipe names it. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup` and the flip byte into `flip_direction`.
 
-**Need.** A rule that binds each selected input edge to its distance reference face, with both face widths checked against the stored dimensional specification. The rule must cover reversed recipe-reference order, propagated edge chains, and support faces split by earlier operations.
+**Need.** Saves of a two-distance chamfer on a tangent chain of several edges whose coedge directions differ along the chain, and on an edge of a face that an earlier operation split, each with both flip states. A neutral reference-face binding for each selected edge.
 
 **Conflict.** None.
 
-**Note.** Projection through explicit set references keeps owner-slot order with forward direction and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
+**Note.** Projection through explicit set references keeps owner-slot order and reports `feature.chamfer-reference-face-assumed`. `flip_direction` is set when a two-distance or distance-angle set of the feature stores flip byte `1`.
 
 ### DR-342. Chamfer recipes with conflicting transition selections
 

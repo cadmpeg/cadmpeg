@@ -632,6 +632,33 @@ fn mixed_chamfer_set_flags_and_corners_keep_metadata_and_specific_losses() {
 }
 
 #[test]
+fn chamfer_set_flip_bytes_set_the_feature_flip_state() {
+    let (parameters, owners) = mixed_parameters();
+    let groups = mixed_groups();
+    for (two_distances, distance_angle) in
+        [(false, false), (true, true), (true, false), (false, true)]
+    {
+        let mut scope = mixed_scope();
+        if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
+            let sets = payload.sets.as_mut().unwrap();
+            sets.sets[1].flipped = two_distances;
+            sets.sets[2].flipped = distance_angle;
+        }
+        let projected = project_scope(&scope, &parameters, &owners, &groups);
+        let FeatureDefinition::Operation(FeatureOperation::Chamfer { flip_direction, .. }) =
+            projected.features[0].evaluation.definition()
+        else {
+            panic!("chamfer");
+        };
+        assert_eq!(*flip_direction, two_distances || distance_angle);
+        assert_eq!(
+            loss_count(&projected, ChamferReferenceFaceAssumed),
+            2 + usize::from(two_distances != distance_angle)
+        );
+    }
+}
+
+#[test]
 fn mixed_chamfer_fixed_scalar_fallback_preserves_the_referenced_dimensions() {
     let (mut parameters, mut owners) = mixed_parameters();
     parameters.drain(1..3);

@@ -117,6 +117,7 @@ impl Projection<'_, '_> {
             )));
             }
             let mut groups = Vec::new();
+            let mut asymmetric_flips = Vec::new();
             for (set, specification) in sets.sets.iter().zip(specifications) {
                 if set.tangent_chain {
                     losses.push(F3dLossCode::ChamferTangentChainAssumed.note(format!(
@@ -143,9 +144,10 @@ impl Projection<'_, '_> {
                     && !matches!(set.spec, DesignChamferSetSpec::EqualDistance { .. })
                 {
                     losses.push(F3dLossCode::ChamferReferenceFaceAssumed.note(format!(
-                    "Chamfer set {} of {} applies its owner-slot order with forward direction; the input reference-face assignment is assumed (DR-341).",
+                    "Chamfer set {} of {} applies its owner-slot order with its stored flip byte; the neutral selection names no reference face for each edge (DR-341).",
                     set.record_index, scope.id
                 )));
+                    asymmetric_flips.push(set.flipped);
                     if matches!(set.spec, DesignChamferSetSpec::DistanceAngle { .. }) {
                         losses.push(F3dLossCode::ChamferAngleReferenceAssumed.note(format!(
                         "Chamfer set {} of {} reads the stored radian angle as the neutral angle from the distance reference face (DR-343).",
@@ -166,9 +168,16 @@ impl Projection<'_, '_> {
                 groups.push(ChamferGroup { edges, spec });
             }
             if let Ok(groups) = groups.try_into() {
+                let flip_direction = asymmetric_flips.contains(&true);
+                if flip_direction && asymmetric_flips.contains(&false) {
+                    losses.push(F3dLossCode::ChamferReferenceFaceAssumed.note(format!(
+                    "Chamfer {} stores flip byte 1 on some of its sets and 0 on others; the neutral feature has one flip state and takes the flipped one.",
+                    scope.id
+                )));
+                }
                 return Ok(FeatureDefinition::Operation(FeatureOperation::Chamfer {
                     groups,
-                    flip_direction: false,
+                    flip_direction,
                 }));
             }
         }

@@ -810,6 +810,8 @@ pub(crate) mod chamfer_set_two_distances {
     pub(crate) const LEN: usize = 93;
     /// Offset of `flag` (`u8`). Spec §3.1.
     pub(crate) const FLAG: usize = 21;
+    /// Offset of `flip` (`u8`). Spec §3.1.
+    pub(crate) const FLIP: usize = 22;
     /// Offset of `first_distance_owner_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const FIRST_DISTANCE_OWNER_REFERENCE: usize = 24;
     /// Offset of `second_distance_owner_reference` (`bytes[11]`). Spec §3.1.
@@ -838,6 +840,8 @@ pub(crate) mod chamfer_set_distance_angle {
     pub(crate) const LEN: usize = 93;
     /// Offset of `flag` (`u8`). Spec §3.1.
     pub(crate) const FLAG: usize = 21;
+    /// Offset of `flip` (`u8`). Spec §3.1.
+    pub(crate) const FLIP: usize = 22;
     /// Offset of `angle_owner_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const ANGLE_OWNER_REFERENCE: usize = 23;
     /// Offset of `distance_owner_reference` (`bytes[11]`). Spec §3.1.

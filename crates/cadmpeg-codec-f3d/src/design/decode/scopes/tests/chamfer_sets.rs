@@ -288,7 +288,7 @@ fn each_form_rejects_a_nonzero_unnamed_byte_and_a_second_frame() {
         let set_start =
             crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
         let mut mutated = bytes.clone();
-        mutated[set_start + 22] = 1;
+        mutated[set_start + 12] = 1;
         assert!(decode_bytes(&mutated, &scope).is_none());
         let mut third = bytes.clone();
         third.extend(header(b"268", SET));
@@ -333,6 +333,7 @@ fn crossed_sets(crossed: bool) -> (DesignParameterScope, [DesignParameterOwner; 
         auxiliary_record_index: AUXILIARY,
         entry_count: 1,
         tangent_chain: true,
+        flipped: false,
     };
     if let crate::records::feature::scope::DesignScopePayloadMut::Chamfer(slot) =
         scope.payload_mut()
@@ -406,6 +407,28 @@ fn corner_type_and_tangent_chain_read_from_their_bytes() {
         let list = decode_bytes(&bytes, &scope).unwrap();
         assert_eq!(list.corner_type, corner_type);
         assert!(!list.sets[0].tangent_chain);
+    }
+}
+
+#[test]
+fn the_flip_byte_reads_in_the_two_distance_and_distance_angle_forms() {
+    for form in [Form::TwoDistances, Form::DistanceAngle] {
+        let (bytes, scope) = stream(form, false);
+        let set_start =
+            crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
+        assert!(!decode_bytes(&bytes, &scope).unwrap().sets[0].flipped);
+        let mut flipped = bytes.clone();
+        flipped[set_start + 22] = 1;
+        assert!(decode_bytes(&flipped, &scope).unwrap().sets[0].flipped);
+        flipped[set_start + 22] = 2;
+        assert!(decode_bytes(&flipped, &scope).is_none());
+    }
+    for (form, compact) in [(Form::Equal, false), (Form::CompactEqual, true)] {
+        let (mut bytes, scope) = stream(form, compact);
+        let set_start =
+            crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
+        bytes[set_start + 22] = 1;
+        assert!(decode_bytes(&bytes, &scope).is_none());
     }
 }
 

@@ -2111,9 +2111,16 @@ source = "spec"
 anchor = "`+21: u8 flag`"
 
 [[record.field]]
-name = "zero_run_2_at_22"
+name = "flip"
 offset = 22
-type = "bytes[2]"
+type = "u8"
+source = "spec"
+anchor = "`+22: u8 flip`"
+
+[[record.field]]
+name = "zero_run_1_at_23"
+offset = 23
+type = "bytes[1]"
 source = "spec"
 anchor = "Every byte that the form does not name is zero"
 
@@ -2226,11 +2233,11 @@ source = "spec"
 anchor = "`+21: u8 flag`"
 
 [[record.field]]
-name = "zero_run_1_at_22"
+name = "flip"
 offset = 22
-type = "bytes[1]"
+type = "u8"
 source = "spec"
-anchor = "Every byte that the form does not name is zero"
+anchor = "`+22: u8 flip`"
 
 [[record.field]]
 name = "angle_owner_reference"
