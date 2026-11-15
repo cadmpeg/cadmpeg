@@ -1568,6 +1568,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 })
                             },
                         )
+                    } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Form {
+                        form_cages::unresolved(scope, &parameters)?
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::BaseFeature
                     {
@@ -1635,7 +1637,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: if matches!(
                     &definition,
-                    FeatureDefinition::Operation(FeatureOperation::Native { .. } | FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. })
+                    FeatureDefinition::Operation(FeatureOperation::Native { .. } | FeatureOperation::Form(_) | FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. })
                 ) || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CurveDrivenPartial { .. }))
                     || matches!(family, Some(DesignFeatureFamily::Hole))
                     || matches!(family, Some(DesignFeatureFamily::Emboss))

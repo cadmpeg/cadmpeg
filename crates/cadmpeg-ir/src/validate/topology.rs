@@ -3276,12 +3276,14 @@ fn check_feature_references(
                     );
                 }
             }
-            FeatureOperation::Form { cages } => {
+            FeatureOperation::Form(construction) => {
                 check_ids(
                     findings,
                     feature.id.as_str(),
                     "Form control cage",
-                    cages.iter().map(super::super::ids::SubdId::as_str),
+                    construction
+                        .referenced_cages()
+                        .map(super::super::ids::SubdId::as_str),
                     |identity| ids.subds(identity, crate::index::StandardIndex).is_some(),
                 );
             }

@@ -1412,7 +1412,7 @@ pub(crate) fn append_design_losses(
                         || !state.dependencies.contains(source)
                 }
                 FeatureOperation::ImportedGeometry { path, .. } => path.trim().is_empty(),
-                FeatureOperation::Form { cages } => cages.is_empty(),
+                FeatureOperation::Form(construction) => !construction.membership_is_complete() || construction.committed_cages().next().is_none(),
                 FeatureOperation::PointGeometry { .. }
                 | FeatureOperation::LineSegment { .. }
                 | FeatureOperation::CircularArc { .. }

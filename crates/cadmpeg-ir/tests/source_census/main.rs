@@ -76,6 +76,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "wire",
     ),
     (
+        "crates/cadmpeg-ir/src/features/form.rs",
+        "FormConstruction",
+        "wire",
+    ),
+    (
         "crates/cadmpeg-ir/src/features/holes.rs",
         "HoleShape",
         "wire",
