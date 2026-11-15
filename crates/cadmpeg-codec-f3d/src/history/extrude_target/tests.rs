@@ -180,26 +180,7 @@ fn run_configured(
     terminal_cap: Option<f64>,
     configure: impl FnOnce(&mut Feature, &mut DesignFaceOperand, &mut AsmHistoricalTopology),
 ) -> (FaceSelection, Vec<i64>, Vec<LossNote>) {
-    run_spanning(ambiguous, cap, terminal_cap, false, configure)
-}
-
-/// With `spanning`, the result state follows the preceding state through one
-/// intermediate state, so no transition joins the pair.
-fn run_spanning(
-    ambiguous: bool,
-    cap: f64,
-    terminal_cap: Option<f64>,
-    spanning: bool,
-    configure: impl FnOnce(&mut Feature, &mut DesignFaceOperand, &mut AsmHistoricalTopology),
-) -> (FaceSelection, Vec<i64>, Vec<LossNote>) {
-    let (mut feature, sketch, mut scope, group, mut operand) = fixture();
-    if spanning {
-        scope
-            .try_edit(|draft| {
-                draft.previous_history_state_id = Some(6);
-            })
-            .unwrap();
-    }
+    let (mut feature, sketch, scope, group, mut operand) = fixture();
     feature.evaluation.edit(|definition, _| {
         let FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided { side },
@@ -236,15 +217,7 @@ fn run_spanning(
         0,
         None,
         false,
-        if spanning {
-            vec![
-                state(22, after),
-                state(10, before.clone()),
-                state(6, before),
-            ]
-        } else {
-            vec![state(22, after), state(6, before)]
-        },
+        vec![state(22, after), state(6, before)],
     );
     let losses = bind(
         std::slice::from_mut(&mut feature),
@@ -610,37 +583,41 @@ fn a_retained_selection_behind_the_start_does_not_pass_the_stored_cap_fallback()
 }
 
 #[test]
-fn a_spanning_selection_behind_the_start_stays_native() {
-    let (face, slots, losses) = run_spanning(false, -1.5, None, true, |_, operand, _| {
-        operand.recipe_references[0].candidate_faces = vec![crate::ids::brep_face_id(3484)];
-    });
-    assert!(matches!(face, FaceSelection::Native(_)));
-    assert!(slots.is_empty());
-    assert_eq!(losses.len(), 1);
-}
-
-#[test]
-fn a_spanning_selection_ahead_of_the_start_is_kept() {
-    let (face, slots, losses) = run_spanning(false, 18.5, None, true, |feature, operand, _| {
-        feature.evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Extrude {
-                extent: ExtrudeExtent::OneSided { side },
-                ..
-            }) = definition
-            else {
-                panic!("Extrude")
-            };
-            let LinearTermination::ToFace { face, .. } = &mut side.termination else {
-                panic!("face termination")
-            };
-            *face = FaceSelection::Resolved {
-                faces: vec![crate::ids::brep_face_id(3484)],
-                native: "f3d:test:group#1448".into(),
-            };
-        });
-        operand.recipe_references[0].candidate_faces = vec![crate::ids::brep_face_id(3484)];
-    });
-    assert_eq!(selection_slots(&face), Some(vec![3484]));
-    assert_eq!(slots, Vec::<i64>::new());
-    assert!(losses.is_empty());
+fn a_planar_face_is_behind_the_start_when_its_offset_plane_precedes_it_along_the_sweep() {
+    let mut topology = AsmHistoricalTopology::default();
+    add_plane(&mut topology, 3465, 0.0);
+    let start = Point3::new(0.0, 0.0, 7.5);
+    let sweep = Vector3::new(0.0, 0.0, 1.0);
+    assert!(slot_behind_start(
+        3465,
+        start,
+        sweep,
+        &topology,
+        -1.5,
+        LINEAR_TOLERANCE
+    ));
+    assert!(!slot_behind_start(
+        3465,
+        start,
+        sweep,
+        &topology,
+        8.0,
+        LINEAR_TOLERANCE
+    ));
+    assert!(!slot_behind_start(
+        3465,
+        start,
+        sweep,
+        &topology,
+        7.5,
+        LINEAR_TOLERANCE
+    ));
+    assert!(!slot_behind_start(
+        3999,
+        start,
+        sweep,
+        &topology,
+        -1.5,
+        LINEAR_TOLERANCE
+    ));
 }
