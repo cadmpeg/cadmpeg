@@ -245,13 +245,25 @@ impl<'a> Cursor<'a> {
         run.declared = Some(declared);
         let complete = bounded_len(u64::from(declared), 1, self.0.remaining());
         let count = complete.unwrap_or(self.0.remaining());
+        let mut end = self.0.position() - self.0.start();
+        let mut attempts = 0;
+        while attempts < count {
+            attempts += 1;
+            if take_reference(self.0.window(), &mut end).is_none() {
+                break;
+            }
+        }
+        ctx.charge_entities(
+            cadmpeg_core::decode::u64_from_index(attempts),
+            "F3D Separate reference slots",
+        )?;
         let empty = Slot {
             offset: self.0.position(),
             raw: &[],
             value: SlotValue::Unread(MeshOperationFraming("Separate unread slot")),
         };
-        run.slots = ctx.alloc_filled(count, empty, "F3D Separate reference slots")?;
-        for ordinal in 0..count {
+        run.slots = ctx.alloc_filled(attempts, empty, "F3D Separate reference slots")?;
+        for ordinal in 0..attempts {
             let (slot, framed) = self.slot(records, role);
             run.slots[ordinal] = slot;
             if !framed {

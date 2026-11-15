@@ -113,23 +113,8 @@ fn fixture(
     (stream, meta)
 }
 
-fn project(stream: &[u8], metadata: Option<&[u8]>, scope_count: usize) -> (Feature, Vec<String>) {
-    project_with(stream, metadata, scope_count, |_| {})
-}
-
-fn project_with(
-    stream: &[u8],
-    metadata: Option<&[u8]>,
-    scope_count: usize,
-    configure: impl FnOnce(&mut Feature),
-) -> (Feature, Vec<String>) {
-    let scope_id = format!("f3d:{ENTRY}:design-parameter-scope#0");
-    let scope = DesignParameterScope::empty(
-        &scope_id,
-        DesignFeatureKind::try_from("MeshSeparate".to_owned()).unwrap(),
-        88,
-    );
-    let mut feature = Feature {
+fn unbound_feature(scope_id: &str) -> Feature {
+    Feature {
         product_definition: None,
         id: cadmpeg_ir::features::FeatureId::mint("test:model:feature#separate").unwrap(),
         ordinal: 7,
@@ -157,8 +142,27 @@ fn project_with(
                 .try_into()
                 .unwrap(),
         ),
-        native_ref: Some(scope_id),
-    };
+        native_ref: Some(scope_id.to_owned()),
+    }
+}
+
+fn project(stream: &[u8], metadata: Option<&[u8]>, scope_count: usize) -> (Feature, Vec<String>) {
+    project_with(stream, metadata, scope_count, |_| {})
+}
+
+fn project_with(
+    stream: &[u8],
+    metadata: Option<&[u8]>,
+    scope_count: usize,
+    configure: impl FnOnce(&mut Feature),
+) -> (Feature, Vec<String>) {
+    let scope_id = format!("f3d:{ENTRY}:design-parameter-scope#0");
+    let scope = DesignParameterScope::empty(
+        &scope_id,
+        DesignFeatureKind::try_from("MeshSeparate".to_owned()).unwrap(),
+        88,
+    );
+    let mut feature = unbound_feature(&scope_id);
     configure(&mut feature);
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -530,22 +534,202 @@ fn separate_identifier_text_obeys_retained_budget() {
         role: None,
         framing: None,
     };
-    for (budget, refused) in [(160, true), (320, false)] {
+    for (budget, refused) in [(200, true), (320, false)] {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = budget;
         let result = crate::test_support::with_decode_policy(&policy, |ctx| {
             let mut notes = Notes {
+                ctx,
                 source: "synthetic",
+                existing: &BTreeMap::new(),
                 properties: Vec::new(),
+                keys: HashSet::new(),
                 losses: Vec::new(),
             };
-            details(ctx, &mut notes, "member", &source)?;
+            details(&mut notes, "member", &source)?;
             assert!(notes
                 .properties
                 .iter()
-                .any(|(key, value)| key == "member:identifier:0" && value == &"一".repeat(32)));
+                .any(|(key, value)| key.as_str() == "member:identifier:0"
+                    && value == &"一".repeat(32)));
             Ok(())
         });
-        assert_eq!(matches!(result, Err(CodecError::ResourceLimit(_))), refused);
+        match result {
+            Err(CodecError::ResourceLimit(limit)) if refused => {
+                assert_eq!(limit.operation, "F3D Separate property value");
+            }
+            Ok(()) if !refused => (),
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
+}
+
+#[test]
+fn separate_staging_admits_exact_bytes_and_preserves_collisions() {
+    let mut existing = BTreeMap::new();
+    existing.insert(NonBlankString::new("key").unwrap(), "original".to_owned());
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1_000;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let mut notes = Notes {
+            ctx,
+            source: "synthetic",
+            existing: &existing,
+            properties: Vec::new(),
+            keys: HashSet::new(),
+            losses: Vec::new(),
+        };
+        notes
+            .property(format_args!("key"), format_args!("first"))
+            .unwrap();
+        notes
+            .property(format_args!("key"), format_args!("second"))
+            .unwrap();
+        assert_eq!(notes.properties[0].0.as_str(), "key:mesh-separate:0");
+        assert_eq!(notes.properties[0].1, "first");
+        assert_eq!(notes.properties[1].0.as_str(), "key:mesh-separate:1");
+        assert_eq!(notes.properties[1].1, "second");
+    });
+    for (budget, succeeds) in [(10, false), (11, true)] {
+        policy.limits.max_retained_bytes = budget;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let existing = BTreeMap::new();
+            let mut notes = Notes {
+                ctx,
+                source: "synthetic",
+                existing: &existing,
+                properties: Vec::new(),
+                keys: HashSet::new(),
+                losses: Vec::new(),
+            };
+            let result = raw(&mut notes, "raw", &[0xab, 0xcd, 0xef, 0x01]);
+            assert_eq!(result.is_ok(), succeeds);
+            if succeeds {
+                assert_eq!(notes.properties[0].1, "abcdef01");
+            } else {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(_))));
+                assert!(notes.properties.is_empty());
+            }
+        });
+    }
+}
+
+#[test]
+fn separate_budget_refusal_does_not_mutate_feature_or_losses() {
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    let archive = zip.finish().unwrap().into_inner();
+    for (budget, operation) in [
+        (1, "F3D Separate property key"),
+        (28, "F3D Separate loss message"),
+    ] {
+        let mut feature = unbound_feature("synthetic-scope");
+        let original = feature.clone();
+        let mut losses = Vec::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = budget;
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let result = crate::test_support::with_decode_policy(&policy, |ctx| {
+                bind_features(
+                    ctx,
+                    scan,
+                    std::slice::from_mut(&mut feature),
+                    &[],
+                    &mut losses,
+                )
+            });
+            assert!(
+                matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == operation)
+            );
+        });
+        assert_eq!(feature, original);
+        assert!(losses.is_empty());
+    }
+}
+
+#[test]
+fn separate_parameter_text_is_admitted_before_copy() {
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    let archive = zip.finish().unwrap().into_inner();
+    for name_is_long in [false, true] {
+        let mut feature = unbound_feature("synthetic-scope");
+        let name = if name_is_long {
+            "n".repeat(256)
+        } else {
+            "n".to_owned()
+        };
+        let value = if name_is_long {
+            "v".to_owned()
+        } else {
+            "v".repeat(256)
+        };
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "MeshSeparate".into(),
+                parameters: [(NonBlankString::new(name).unwrap(), value)].into(),
+            }));
+        let original = feature.clone();
+        let mut losses = Vec::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 64;
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let result = crate::test_support::with_decode_policy(&policy, |ctx| {
+                bind_features(
+                    ctx,
+                    scan,
+                    std::slice::from_mut(&mut feature),
+                    &[],
+                    &mut losses,
+                )
+            });
+            assert!(matches!(result, Err(CodecError::ResourceLimit(_))));
+        });
+        assert_eq!(feature, original);
+        assert!(losses.is_empty());
+    }
+}
+
+#[test]
+fn separate_raw_scope_refusal_leaves_feature_unchanged() {
+    let (stream, meta) = fixture(0, [0, 1], 2, |_| {});
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(ENTRY, stored).unwrap();
+    zip.write_all(&stream).unwrap();
+    zip.start_file(ENTRY.replace("BulkStream.dat", "MetaStream.dat"), stored)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let scope_id = format!("f3d:{ENTRY}:design-parameter-scope#0");
+    let scope = DesignParameterScope::empty(
+        &scope_id,
+        DesignFeatureKind::try_from("MeshSeparate".to_owned()).unwrap(),
+        88,
+    );
+    let mut feature = unbound_feature(&scope_id);
+    let original = feature.clone();
+    let mut losses = Vec::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 100;
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let result = crate::test_support::with_decode_policy(&policy, |ctx| {
+            bind_features(
+                ctx,
+                scan,
+                std::slice::from_mut(&mut feature),
+                &[scope],
+                &mut losses,
+            )
+        });
+        assert!(
+            matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == "F3D Separate property value")
+        );
+    });
+    assert_eq!(feature, original);
+    assert!(losses.is_empty());
 }

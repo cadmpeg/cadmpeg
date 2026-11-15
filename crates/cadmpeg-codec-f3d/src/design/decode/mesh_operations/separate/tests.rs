@@ -312,6 +312,7 @@ fn separate_malformed_first_slot_keeps_partial_result_without_retained_slot_char
         MeshOperationRecords::index(View::over_retained(&bytes), std::sync::Arc::new(meta));
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
+    policy.limits.max_entities = 1;
     let parsed = crate::test_support::with_decode_policy(&policy, |ctx| {
         read_scope(ctx, &records, View::over_retained(&bytes))
     })
@@ -322,5 +323,23 @@ fn separate_malformed_first_slot_keeps_partial_result_without_retained_slot_char
         parsed.outputs.slots[0].value,
         SlotValue::Invalid(_)
     ));
+    assert_eq!(parsed.outputs.slots[0].raw, &bytes[25..]);
     assert_eq!(parsed.outputs.unread, Some((0, 25, 10_000)));
+}
+
+#[test]
+fn separate_actual_slots_obey_entity_budget() {
+    let mut bytes = vec![0; 21];
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 0]);
+    let metadata = crate::test_support::streams_test::design_metastream_with_records(&[], &[]);
+    let meta = crate::metastream::parse(&metadata, "synthetic metadata").unwrap();
+    let records =
+        MeshOperationRecords::index(View::over_retained(&bytes), std::sync::Arc::new(meta));
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 1;
+    let result = crate::test_support::with_decode_policy(&policy, |ctx| {
+        read_scope(ctx, &records, View::over_retained(&bytes))
+    });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(_))));
 }
