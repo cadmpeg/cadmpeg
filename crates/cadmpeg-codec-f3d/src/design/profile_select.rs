@@ -1315,6 +1315,7 @@ fn historical_face_profile_selection(
     let Some(stream) = groups.first().and_then(|group| native_stream(&group.id)) else {
         return Ok(None);
     };
+    let carriers = face_profile_sets::FacePlanes::of(topology);
     let mut selected_faces = Vec::new();
     for group in groups {
         if native_stream(&group.id) != Some(stream) {
@@ -1374,6 +1375,11 @@ fn historical_face_profile_selection(
             return Ok(None);
         };
         if candidates.next().is_some() {
+            return Ok(None);
+        }
+        // A profile face is planar; a face on a curved carrier shows that
+        // the member identity named another entity.
+        if carriers.is_curved(face) {
             return Ok(None);
         }
         if !selected_faces.contains(&face) {
