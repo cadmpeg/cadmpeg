@@ -140,14 +140,6 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             cadmpeg_core::nonblank_literal!("schema"),
             exchange.joined_schema_identifiers(),
         );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("data_sections"),
-            exchange.data().len().to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("entity_instances"),
-            exchange.records().len().to_string(),
-        );
         if let DecodeMode::Decode(packaging) = mode {
             packaging.add_source_attributes(&mut attributes);
         }
@@ -162,6 +154,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         } else {
             cadmpeg_ir::report::decode::DecodeTransfer::full(false)
         });
+        body.coverage
+            .record(crate::coverage::DATA_SECTIONS, exchange.data().len());
+        body.coverage
+            .record(crate::coverage::ENTITY_INSTANCES, exchange.records().len());
         for entry in exchange.references() {
             body.notes.push(format!(
                 "external reference {} -> {}",
@@ -693,22 +689,11 @@ fn decode_exchange_mode(
             source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
         }
     }
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_structural"),
-        accounting.structural.to_string(),
-    );
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_typed"),
-        accounting.typed.to_string(),
-    );
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_named_opaque"),
-        accounting.opaque.to_string(),
-    );
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_unclassified"),
-        accounting.unclassified.to_string(),
-    );
+    let coverage = &mut session.body.coverage;
+    coverage.record(crate::coverage::BYTES_STRUCTURAL, accounting.structural);
+    coverage.record(crate::coverage::BYTES_TYPED, accounting.typed);
+    coverage.record(crate::coverage::BYTES_NAMED_OPAQUE, accounting.opaque);
+    coverage.record(crate::coverage::BYTES_UNCLASSIFIED, accounting.unclassified);
     if accounting.unclassified > 0 {
         session
             .body

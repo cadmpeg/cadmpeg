@@ -5537,21 +5537,9 @@ fn source_attributes_and_tolerances(
             attributes.insert("asset_folder".to_owned(), copy);
         }
     }
-    attributes.insert("zip_entry_count".to_owned(), scan.entries.len().to_string());
     {
         let copy = primary_model_brep.name.clone();
         attributes.insert("active_brep".to_owned(), copy);
-    }
-    {
-        let copy = primary_model_brep.sha256.as_str().to_owned();
-        attributes.insert("active_brep_sha256".to_owned(), copy);
-    }
-    if let Some(off) = primary_model_brep
-        .kernel
-        .as_ref()
-        .and_then(crate::container::KernelFraming::solved_record_limit)
-    {
-        attributes.insert("solved_record_len".to_owned(), off.to_string());
     }
     if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
         attributes.insert("modeling_length_unit".to_owned(), unit);
@@ -5760,7 +5748,6 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
             attributes.insert("asset_folder".to_owned(), copy);
         }
     }
-    attributes.insert("zip_entry_count".to_owned(), scan.entries.len().to_string());
     if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
         attributes.insert("modeling_length_unit".to_owned(), unit);
     }
@@ -5769,17 +5756,6 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
         {
             let copy = brep.name.clone();
             attributes.insert("active_brep".to_owned(), copy);
-        }
-        {
-            let copy = brep.sha256.as_str().to_owned();
-            attributes.insert("active_brep_sha256".to_owned(), copy);
-        }
-        if let Some(off) = brep
-            .kernel
-            .as_ref()
-            .and_then(crate::container::KernelFraming::solved_record_limit)
-        {
-            attributes.insert("solved_record_len".to_owned(), off.to_string());
         }
         if let Some(h) = brep
             .kernel

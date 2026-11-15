@@ -122,8 +122,8 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
         );
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert_eq!(
-            recovered.ir().source.as_ref().unwrap().attributes["bytes_unclassified"],
-            "0"
+            cadmpeg_test_support::wire::coverage_count(recovered.report(), "bytes_unclassified"),
+            0
         );
         assert!(recovered
             .report()
@@ -337,8 +337,8 @@ fn unusable_presentation_literals_preserve_shape_and_exact_record() {
             .values()
             .any(|record_source| record_source.data() == Some(record.as_bytes())));
         assert_eq!(
-            recovered.ir().source.as_ref().unwrap().attributes["bytes_unclassified"],
-            "0"
+            cadmpeg_test_support::wire::coverage_count(recovered.report(), "bytes_unclassified"),
+            0
         );
     }
 }

@@ -86,11 +86,18 @@ fn decode_surfaces_preview_and_solidworks_xml_metadata() {
         .as_ref()
         .expect("source metadata")
         .attributes;
-    assert_eq!(attributes["png_preview_count"], "1");
     assert_eq!(attributes["png_preview_0_width"], "640");
     assert_eq!(attributes["png_preview_0_height"], "480");
     assert_eq!(attributes["png_preview_0_color_type"], "6");
-    assert_eq!(attributes["bmp_thumbnail_count"], "1");
+    for key in [
+        "png_preview_count",
+        "bmp_thumbnail_count",
+        "bmp_thumbnail_0_image_size",
+        "block_count",
+        "compound_stream_count",
+    ] {
+        assert!(!attributes.keys().any(|name| name.as_str() == key), "{key}");
+    }
     assert_eq!(attributes["bmp_thumbnail_0_width"], "320");
     assert_eq!(attributes["bmp_thumbnail_0_height"], "-200");
     assert_eq!(attributes["bmp_thumbnail_0_compression"], "1");

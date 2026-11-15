@@ -4229,40 +4229,6 @@ fn source_meta(
             display.triangles.to_string(),
         );
     }
-    for (name, count) in [
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201296"),
-            display.extended_forms[0],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201a96"),
-            display.extended_forms[1],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201b96"),
-            display.extended_forms[2],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201e96"),
-            display.extended_forms[3],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_opaque_extended_tables"),
-            display.opaque_extended_tables,
-        ),
-    ] {
-        if count != 0 {
-            attributes.insert(name, count.to_string());
-        }
-    }
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("block_count"),
-        scan.blocks.len().to_string(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("compound_stream_count"),
-        scan.compound_streams.len().to_string(),
-    );
     if let Some(site) = container::select_active_parasolid_site(scan) {
         attributes.insert(
             cadmpeg_core::nonblank_literal!("active_parasolid_block"),
@@ -4327,11 +4293,9 @@ fn add_preview_metadata(
                 png_index += 1;
             }
             container::PayloadFamily::BmpThumbnail => {
-                let (Some(width), Some(height), Some(image_size)) = (
-                    View::i32_le_at(payload, 8),
-                    View::i32_le_at(payload, 12),
-                    View::u32_le_at(payload, 24),
-                ) else {
+                let (Some(width), Some(height)) =
+                    (View::i32_le_at(payload, 8), View::i32_le_at(payload, 12))
+                else {
                     continue;
                 };
                 let (Some(planes), Some(bits_per_pixel), Some(compression)) = (
@@ -4349,20 +4313,11 @@ fn add_preview_metadata(
                 attributes.insert(key("planes"), planes.to_string());
                 attributes.insert(key("bit_count"), bits_per_pixel.to_string());
                 attributes.insert(key("compression"), compression.to_string());
-                attributes.insert(key("image_size"), image_size.to_string());
                 bmp_index += 1;
             }
             _ => {}
         }
     }
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("png_preview_count"),
-        png_index.to_string(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("bmp_thumbnail_count"),
-        bmp_index.to_string(),
-    );
 }
 
 fn add_solidworks_xml_metadata(
@@ -4645,10 +4600,6 @@ fn build_metadata_ir(
     attributes.insert(
         cadmpeg_core::nonblank_literal!("outer_version"),
         format!("0x{:08x}", scan.version),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("block_count"),
-        scan.blocks.len().to_string(),
     );
     add_solidworks_xml_metadata(scan, &mut attributes)?;
 

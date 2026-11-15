@@ -91,7 +91,7 @@ fn decode_asm_binary(
         Some(brep)
     };
     let mut attributes = BTreeMap::new();
-    header_attributes(&header.metadata, Family::Asm, &mut attributes);
+    source_header_attributes(&header.metadata, Family::Asm, &mut attributes);
     let evidence = StreamEvidence::Binary {
         family: Family::Asm,
         header,
@@ -174,7 +174,7 @@ fn decode_acis_binary(
         Some(brep)
     };
     let mut attributes = BTreeMap::new();
-    header_attributes(&header.metadata, Family::Acis, &mut attributes);
+    source_header_attributes(&header.metadata, Family::Acis, &mut attributes);
     // Every band frames and decodes the same way. Classification states
     // whether the grammar applied is the one the framed stream declares; it
     // gates nothing. Build the admitted evidence only after framing succeeds.
@@ -238,7 +238,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         };
     let header = text_header.as_kernel_header();
     let mut attributes = BTreeMap::new();
-    header_attributes(&header, branch.into(), &mut attributes);
+    source_header_attributes(&header, branch.into(), &mut attributes);
     if let sat::TextUnits::Declared(scale) = text_header.units() {
         attributes.insert("scale".to_owned(), scale.get().to_string());
     }
@@ -633,6 +633,17 @@ fn unmapped_support_chart_losses(ir: &CadIr) -> Vec<cadmpeg_ir::report::loss::Lo
         }
     }
     losses
+}
+
+/// The kernel header facts a decoded document keeps; the declared entity
+/// count is a count of source records.
+fn source_header_attributes(
+    header: &KernelHeader,
+    family: Family,
+    attributes: &mut BTreeMap<String, String>,
+) {
+    header_attributes(header, family, attributes);
+    attributes.remove("kernel_entity_count");
 }
 
 #[cfg(test)]

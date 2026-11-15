@@ -1087,8 +1087,6 @@ fn design_property_edit_round_trip(ir: &CadIr) -> Result<bool, Box<dyn std::erro
 
 fn semantic_fingerprint(mut ir: CadIr) -> Result<String, Box<dyn std::error::Error>> {
     if let Some(source) = &mut ir.source {
-        source.attributes.remove("physical_archive_bytes");
-        source.attributes.remove("physical_ledger_spans");
         source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
     }
     if let Some(namespace) = ir.native.0.get_mut("fcstd") {

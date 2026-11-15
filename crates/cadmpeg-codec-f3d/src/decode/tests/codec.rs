@@ -831,14 +831,6 @@ fn primary_brep_metadata_skips_invalid_and_empty_candidates() {
         zip.start_file(contributing_name, stored).unwrap();
         zip.write_all(&synthetic_geometry_smbh()).unwrap();
         let bytes = zip.finish().unwrap().into_inner();
-        let expected_digest = with_scan(&bytes, |scan| {
-            scan.breps
-                .iter()
-                .find(|facts| facts.name == contributing_name)
-                .unwrap()
-                .sha256
-                .to_string()
-        });
         let result = F3dCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
@@ -848,7 +840,9 @@ fn primary_brep_metadata_skips_invalid_and_empty_candidates() {
             attributes.get("active_brep").map(String::as_str),
             Some(contributing_name)
         );
-        assert_eq!(attributes.get("active_brep_sha256"), Some(&expected_digest));
+        assert_eq!(attributes.get("active_brep_sha256"), None);
+        assert_eq!(attributes.get("solved_record_len"), None);
+        assert_eq!(attributes.get("zip_entry_count"), None);
         assert!(
             (result.ir().tolerances.linear.get() - EXPECTED_HEADER_LINEAR_TOLERANCE).abs()
                 <= EPS_HEADER_LINEAR_TOLERANCE
