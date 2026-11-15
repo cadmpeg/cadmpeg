@@ -2314,6 +2314,55 @@ class GenericParameterProofTests(unittest.TestCase):
         self.assertEqual(status, 1, output)
         self.assertIn("the use of elsewhere::Wrapper in Use resolves to no one declaration", output)
 
+    WRAPPER = '''
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+        pub enum Wrapper<T = u8> { A(T) }
+    '''
+
+    def test_a_use_under_a_renamed_import_instantiates_the_parameter(self) -> None:
+        for rename, payload in (
+            ("pub use Wrapper as Closed;", "Closed<Open>"),
+            ("mod api { pub use crate::Wrapper as Closed; }", "api::Closed<Open>"),
+            ("pub use Wrapper as Middle; pub use Middle as Closed;", "Closed<Open>"),
+        ):
+            status, output = self.run_census({"lib.rs": self.WRAPPER + self.OPEN + rename + f'''
+                #[derive(Deserialize)]
+                #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+                pub enum Doc {{ Face({payload}) }}
+            '''})
+            self.assertEqual(status, 1, f"{rename}: {output}")
+            self.assertIn(
+                "Wrapper::A: payload T: generic parameter T instantiated as Open", output
+            )
+
+    def test_a_macro_that_can_declare_its_input_leaves_the_parameter_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.WRAPPER + self.OPEN + '''
+            macro_rules! host {
+                ($t:ty) => {
+                    #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                    pub struct Host { pub value: $t }
+                };
+            }
+            host!(Wrapper<Open>);
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn(
+            "Wrapper::A: payload T: the macro call at", output
+        )
+        self.assertIn("spells Wrapper<..>, and the census does not expand it", output)
+
+    def test_a_macro_writing_only_functions_states_no_instantiation(self) -> None:
+        status, output = self.run_census({"lib.rs": self.WRAPPER + '''
+            macro_rules! reader {
+                ($name:ident, $t:ty) => {
+                    fn $name() -> Option<$t> { None }
+                };
+            }
+            reader!(read_wrapper, Wrapper<u16>);
+        '''})
+        self.assertEqual(status, 0, output)
+
     def test_generic_parameters_reads_names_bounds_and_defaults(self) -> None:
         item = census.Item(
             Path("crates/ir/src/lib.rs"), 1, "enum", "Reader",
@@ -2550,6 +2599,68 @@ class AssociatedTypeProofTests(unittest.TestCase):
         self.assertEqual(status, 1, output)
         self.assertIn("impl Space for $name at", output)
         self.assertIn("type Entity = $entity", output)
+
+    IMPLEMENT = '''
+        macro_rules! implement {
+            ($t:ident, $n:ident) => { impl $t for $n { type Entity = OpenId; } };
+        }
+        pub struct Extra;
+    '''
+
+    def test_a_wrapper_macro_naming_the_trait_leaves_its_impls_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.SPACE + self.OPERAND + self.OPEN_ID + self.IMPLEMENT + '''
+            macro_rules! expand {
+                ($t:ident, $n:ident) => { implement!($t, $n); };
+            }
+            expand!(Space, Extra);
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Operand::Entity: payload S::Entity: the macro call at", output)
+        self.assertIn("names Space and the census does not expand it", output)
+
+    def test_a_wrapper_macro_body_naming_the_trait_leaves_its_impls_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.SPACE + self.OPERAND + self.OPEN_ID + self.IMPLEMENT + '''
+            macro_rules! expand {
+                ($n:ident) => { implement!(Space, $n); };
+            }
+            expand!(Extra);
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("the macro_rules! expand at", output)
+        self.assertIn("names Space outside an impl header the census reads", output)
+
+    def test_a_renamed_macro_naming_the_trait_leaves_its_impls_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.SPACE + self.OPERAND + self.OPEN_ID + self.IMPLEMENT + '''
+            use implement as expand;
+            expand!(Space, Extra);
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Operand::Entity: payload S::Entity: the macro call at", output)
+        self.assertIn("names Space and the census does not expand it", output)
+
+    def test_an_attribute_naming_the_trait_leaves_its_impls_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.SPACE + self.OPERAND + '''
+            #[external::implement(Space)]
+            pub struct Extra;
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Operand::Entity: payload S::Entity: the attribute at", output)
+        self.assertIn("names Space and the census does not expand it", output)
+
+    def test_an_impl_through_a_renamed_trait_is_read(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            mod geom {
+                pub trait Space { type Entity; }
+                pub struct Planar;
+                impl Space for Planar { type Entity = u8; }
+            }
+            use geom::Space as Plane;
+            pub struct Decoy;
+            impl Plane for Decoy { type Entity = OpenId; }
+        ''' + self.OPEN_ID + self.OPERAND.replace("<S: Space>", "<S: geom::Space>")})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Operand::Entity: payload S::Entity: impl Space for Decoy", output)
+        self.assertIn("type Entity = OpenId: payload reader OpenId lacks", output)
 
     def test_bounds_are_read_from_the_header_and_the_where_clause(self) -> None:
         item = census.Item(
@@ -2823,6 +2934,51 @@ class FailClosedResolutionTests(unittest.TestCase):
         status, output = self.run_tree(files)
         self.assertEqual(status, 1, output)
         self.assertIn("the macro call at crates/codec/src/lib.rs:2 names Space", output)
+
+    FOREIGN_IMPLEMENT = '''
+        #[derive(Deserialize)]
+        pub struct OpenId { pub value: u8 }
+        macro_rules! implement {
+            ($t:ident, $n:ident) => { impl $t for $n { type Entity = OpenId; } };
+        }
+        pub struct Extra;
+    '''
+
+    def test_a_foreign_wrapper_macro_naming_the_trait_leaves_it_unread(self) -> None:
+        files = dict(self.WIRE, **{"examples/demo.rs": self.FOREIGN_IMPLEMENT + '''
+            macro_rules! expand {
+                ($t:ident, $n:ident) => { implement!($t, $n); };
+            }
+            expand!(Space, Extra);
+        '''})
+        status, output = self.run_tree(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn(
+            "Operand::Entity: payload S::Entity: the macro call at examples/demo.rs:"
+            "12 names Space outside the wire crates",
+            output,
+        )
+
+    def test_a_renamed_foreign_macro_naming_the_trait_leaves_it_unread(self) -> None:
+        files = dict(self.WIRE, **{"examples/demo.rs": self.FOREIGN_IMPLEMENT + '''
+            use implement as expand;
+            expand!(Space, Extra);
+        '''})
+        status, output = self.run_tree(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn("the macro call at examples/demo.rs:10 names Space outside the wire crates", output)
+
+    def test_a_foreign_impl_through_a_renamed_trait_is_outside_the_wire_crates(self) -> None:
+        files = dict(self.WIRE, **{"crates/codec/src/lib.rs": '''
+            use cadmpeg_ir::Space as Plane;
+            pub struct Codec;
+            impl Plane for Codec { type Entity = CodecId; }
+        '''})
+        status, output = self.run_tree(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn(
+            "impl Plane for Codec at crates/codec/src/lib.rs:4 is outside the wire crates", output
+        )
 
     def test_build_output_and_hidden_directories_hold_no_impl(self) -> None:
         impl = "pub struct Demo; impl Space for Demo { type Entity = DemoId; }"

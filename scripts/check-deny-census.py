@@ -1360,7 +1360,7 @@ def generic_parameters(item):
     return parameters
 
 
-def generic_arguments(declaration, position, items, resolve, values=()):
+def generic_arguments(declaration, position, items, resolve, values=(), names=None):
     """Return every argument a workspace declaration states at ``position``.
 
     Declarations are read, and each ``(value, impl)`` of ``values``: the type
@@ -1368,7 +1368,9 @@ def generic_arguments(declaration, position, items, resolve, values=()):
     signature forwards its caller's parameter and instantiates no reader, so
     it is not a source of arguments here; a use that supplies fewer arguments
     than ``position`` leaves the parameter on its default and contributes
-    nothing. A use is spelled ``Name<..>`` or ``Name::<..>``.
+    nothing. A use is spelled ``Name<..>`` or ``Name::<..>``, where ``Name``
+    is the declaration's name or one of ``names``, the names a ``use``
+    renames it to.
 
     A use is an argument for ``declaration`` only when ``resolve`` reads its
     spelled path, from the declaration that states it, as ``declaration``
@@ -1376,7 +1378,9 @@ def generic_arguments(declaration, position, items, resolve, values=()):
     second list holds every use whose path resolves to no one declaration,
     which leaves its argument unread.
     """
-    use = re.compile(rf"\b{re.escape(declaration.name)}\s*(?:::\s*)?<")
+    names = {declaration.name} | set(names or ())
+    alternatives = "|".join(re.escape(name) for name in sorted(names))
+    use = re.compile(rf"\b(?P<name>{alternatives})\s*(?:::\s*)?<")
     arguments = []
     unresolved = []
     sources = [(item.body, item, True) for item in items]
@@ -1393,7 +1397,7 @@ def generic_arguments(declaration, position, items, resolve, values=()):
             end = generic_end(code, match.end() - 1)
             if end is None:
                 continue
-            spelled = spelled_path(code, match.start(), declaration.name)
+            spelled = spelled_path(code, match.start(), match.group("name"))
             target = resolve(spelled, item)
             if target is None:
                 unresolved.append((spelled, item))
@@ -1732,20 +1736,194 @@ def implementing_macros(path):
     return macros
 
 
-def macro_call_naming(path, macros, name):
-    """The line of a call in ``path`` to one of ``macros`` that names ``name``."""
-    if not macros:
-        return None
+class MacroTree:
+    """One token tree a macro reads: a ``macro_rules!`` body, the input of a
+    macro call, or an attribute, which a derive or attribute macro reads."""
+
+    def __init__(self, path, kind, name, line, start, end):
+        self.path = path
+        self.kind = kind
+        self.name = name
+        self.line = line
+        # Offsets of the tree's delimiters in the file's production code.
+        self.start = start
+        self.end = end
+
+    def describe(self):
+        where = f"{self.path.as_posix()}:{self.line}"
+        if self.kind == "definition":
+            return f"the macro_rules! {self.name} at {where}"
+        if self.kind == "call":
+            return f"the macro call at {where}"
+        return f"the attribute at {where}"
+
+
+MACRO_DEFINITION = re.compile(r"\bmacro_rules\s*!\s*([A-Za-z_]\w*)\s*([({\[])")
+MACRO_CALL = re.compile(r"(?<![\w$])(\$?[A-Za-z_]\w*)\s*!\s*([({\[])")
+ATTRIBUTE_OPEN = re.compile(r"#\s*!?\s*\[")
+# Keywords that can stand before a `!` that negates a parenthesized operand.
+NEGATING_KEYWORDS = {
+    "if", "while", "match", "return", "in", "else", "let", "mut", "ref",
+    "move", "as", "break", "yield", "where", "for", "loop", "unsafe",
+}
+CLOSING = {"(": ")", "{": "}", "[": "]"}
+
+
+@SOURCE_POLICY.cached_analysis
+def macro_token_trees(path):
+    """Every token tree of one file's production code that a macro reads.
+
+    A tree that does not close runs to the end of the file, so its tokens
+    are still read.
+    """
     source = read_source(path)
     code, _ = SOURCE_POLICY.production_source(source)
-    alternatives = "|".join(re.escape(macro) for macro in sorted(macros))
-    for call in re.finditer(rf"\b(?:{alternatives})\s*!\s*([({{\[])", code):
-        left = call.group(1)
-        right = {"(": ")", "{": "}", "[": "]"}[left]
-        end = delimited_end(code, call.end() - 1, left, right)
-        arguments = code[call.end():end]
-        if re.search(rf"(?<![\w$]){re.escape(name)}\b", arguments):
-            return source.count("\n", 0, call.start()) + 1
+    trees = []
+
+    def add(kind, name, at, opening, left, right):
+        end = delimited_end(code, opening, left, right)
+        trees.append(MacroTree(
+            path, kind, name, source.count("\n", 0, at) + 1,
+            opening, len(code) if end is None else end,
+        ))
+
+    for match in MACRO_DEFINITION.finditer(code):
+        left = match.group(2)
+        add("definition", match.group(1), match.start(), match.end() - 1, left, CLOSING[left])
+    for match in MACRO_CALL.finditer(code):
+        name = match.group(1)
+        if name == "macro_rules" or name in NEGATING_KEYWORDS:
+            continue
+        left = match.group(2)
+        add("call", name, match.start(), match.end() - 1, left, CLOSING[left])
+    for match in ATTRIBUTE_OPEN.finditer(code):
+        add("attribute", None, match.start(), match.end() - 1, "[", "]")
+    return trees
+
+
+# Standard macros that expand to an expression and declare no item of their own.
+EXPRESSION_MACROS = {
+    "assert", "assert_eq", "assert_ne", "cfg", "column", "compile_error",
+    "concat", "dbg", "debug_assert", "debug_assert_eq", "debug_assert_ne",
+    "env", "eprint", "eprintln", "file", "format", "format_args", "line",
+    "matches", "module_path", "option_env", "panic", "print", "println",
+    "stringify", "todo", "unimplemented", "unreachable", "vec", "write",
+    "writeln",
+}
+DECLARING_KEYWORD = re.compile(r"(?<![\w$])(?:struct|enum|union|type)\b")
+
+
+def declaring_macro(name, definitions, seen=frozenset()):
+    """Whether a call to the macro ``name`` can write a type declaration.
+
+    ``definitions`` maps a macro name to every ``macro_rules!`` tree of that
+    name. A macro the census has no definition of, other than a standard
+    expression macro, can write anything; one whose body spells a type
+    declaration, or calls a macro that can, writes one.
+    """
+    if name not in definitions:
+        return name not in EXPRESSION_MACROS
+    for tree in definitions[name]:
+        code, _ = SOURCE_POLICY.production_source(read_source(tree.path))
+        if DECLARING_KEYWORD.search(code, tree.start, tree.end):
+            return True
+        for nested in macro_token_trees(tree.path):
+            if nested.kind != "call" or not tree.start < nested.start < tree.end:
+                continue
+            if nested.name.startswith("$"):
+                return True
+            if nested.name not in seen | {name} and declaring_macro(
+                nested.name, definitions, seen | {name}
+            ):
+                return True
+    return False
+
+
+def name_pattern(names):
+    """Match any of ``names`` as a whole identifier."""
+    alternatives = "|".join(re.escape(name) for name in sorted(names))
+    return re.compile(rf"(?<![\w$])(?:{alternatives})\b")
+
+
+@SOURCE_POLICY.cached_analysis
+def use_renames(path):
+    """Each ``original as alias`` a ``use`` declaration of one file states."""
+    code, _ = SOURCE_POLICY.production_source(read_source(path))
+    renames = []
+    for match in re.finditer(r"\buse\b", code):
+        end = code.find(";", match.end())
+        tree = code[match.end():len(code) if end < 0 else end]
+        for rename in re.finditer(r"(?<![\w$])([A-Za-z_]\w*)\s+as\s+([A-Za-z_]\w*)\b", tree):
+            if rename.group(2) != "_":
+                renames.append((rename.group(1), rename.group(2)))
+    return renames
+
+
+def renamed_names(name, paths):
+    """``name`` and every name a ``use`` in ``paths`` renames it to, transitively.
+
+    A rename of another declaration of the same name is included too: each
+    use the extra name finds is still resolved, so it widens what is read and
+    never proves anything.
+    """
+    names = {name}
+    read = set()
+    while True:
+        pattern = name_pattern(names)
+        pending = [
+            path for path in paths
+            if path not in read and pattern.search(read_source(path))
+        ]
+        if not pending:
+            return names
+        for path in pending:
+            read.add(path)
+            for original, alias in use_renames(path):
+                if original in names:
+                    names.add(alias)
+
+
+def impl_header_names(path, offset, names):
+    """Whether ``offset`` is the trait path of an impl header the census reads.
+
+    That is a block whose trait's last segment is one of ``names``, with
+    ``offset`` between its ``impl`` and its ``for``.
+    """
+    code, _ = SOURCE_POLICY.production_source(read_source(path))
+    for start, brace, _, trait, _ in trait_impl_blocks(path):
+        if (
+            start < offset < brace
+            and trait.rsplit("::", 1)[-1] in names
+            and not re.search(r"\bfor\b", code[start:offset])
+        ):
+            return True
+    return False
+
+
+def macro_tree_naming(path, names, wire):
+    """The first macro token tree of ``path`` that names one of ``names``.
+
+    Returns ``(tree, name)`` or ``None``. A ``macro_rules!`` body in a wire
+    crate may spell a literal ``impl Trait for $name`` header, which the
+    census reads as an impl; every other spelling of a name in a token tree
+    can expand to an impl the census does not read: a call can pass the name
+    to a macro that implements it (renamed, wrapped by another macro, or from
+    another crate), and a body can pass it on to another macro.
+    """
+    source = read_source(path)
+    if not name_pattern(names).search(source):
+        return None
+    code, _ = SOURCE_POLICY.production_source(source)
+    pattern = name_pattern(names)
+    for tree in macro_token_trees(path):
+        for mention in pattern.finditer(code, tree.start, tree.end):
+            if (
+                wire
+                and tree.kind == "definition"
+                and impl_header_names(path, mention.start(), names)
+            ):
+                continue
+            return tree, mention.group()
     return None
 
 
@@ -3112,20 +3290,81 @@ def main():
         return resolve_item(declarations, path, owner, [], reexports)
 
     unread_traits = {}
+    foreign_sources = []
+    renamed = {}
+
+    def workspace_sources():
+        """The wire sources, then every other workspace source."""
+        if not foreign_sources:
+            foreign_sources.append(list(trait_impl_source_files()))
+        return paths + foreign_sources[0]
+
+    def names_of(name, wire_only=False):
+        """``name`` and each name a ``use`` renames it to: anywhere, or in
+        the wire crates when ``wire_only``."""
+        key = (name, wire_only)
+        if key not in renamed:
+            renamed[key] = renamed_names(name, paths if wire_only else workspace_sources())
+        return renamed[key]
+
+    macro_definitions = {}
+
+    def macro_instantiation(names):
+        """The first wire macro token tree that can declare ``Name<..>``.
+
+        Returns ``(tree, name)`` for one of ``names``, or ``None``. The census
+        reads arguments from declarations, and a macro writes declarations it
+        does not read. A tree spelling ``Name<..>`` is one such source when
+        its own tokens spell a type declaration or a call there reaches a
+        macro that can write one; a macro that writes only functions and
+        impls of other traits states no argument a reader reaches.
+        """
+        if not macro_definitions:
+            for path in paths:
+                for tree in macro_token_trees(path):
+                    if tree.kind == "definition":
+                        macro_definitions.setdefault(tree.name, []).append(tree)
+        named = name_pattern(names)
+        generic = re.compile(rf"{named.pattern}\s*(?:::\s*)?<")
+        for path in paths:
+            source = read_source(path)
+            if not named.search(source):
+                continue
+            code, _ = SOURCE_POLICY.production_source(source)
+            for tree in macro_token_trees(path):
+                spelled = generic.search(code, tree.start, tree.end)
+                if spelled is None:
+                    continue
+                declares = (
+                    tree.kind == "attribute"
+                    or DECLARING_KEYWORD.search(code, tree.start, tree.end)
+                    or declaring_macro(tree.name, macro_definitions)
+                )
+                if declares:
+                    return tree, named.match(code, spelled.start()).group()
+        return None
 
     def unread_trait(trait):
         """Why the census cannot read every impl of ``trait``, or ``None``.
 
-        An impl outside the wire crates names a type the declaration index
-        does not hold, and a call naming the trait to a macro that spells
-        ``impl`` may expand to an impl no source states.
+        The trait is named by its own name and by every name a ``use``
+        renames it to. An impl outside the wire crates names a type the
+        declaration index does not hold. A macro token tree that names the
+        trait can expand to an impl no source states, and the census expands
+        no macro call: a call naming it, an attribute naming it, and a
+        ``macro_rules!`` body naming it anywhere but a literal impl header
+        the census reads each leave its impls unread.
         """
         identity = (trait.path, trait.start)
         if identity in unread_traits:
             return unread_traits[identity]
+        names = names_of(trait.name)
+        pattern = name_pattern(names)
         reason = None
-        sources = list(trait_impl_source_files())
-        foreign = [path for path in sources if trait.name in read_source(path)]
+        foreign = [
+            path for path in workspace_sources()[len(paths):]
+            if pattern.search(read_source(path))
+        ]
         for path in foreign:
             try:
                 blocks = trait_impl_blocks(path)
@@ -3137,7 +3376,7 @@ def main():
                 break
             outside = next(
                 (block for block in blocks
-                 if block[3].rsplit("::", 1)[-1] == trait.name),
+                 if block[3].rsplit("::", 1)[-1] in names),
                 None,
             )
             if outside is not None:
@@ -3148,19 +3387,27 @@ def main():
                     "wire crates, so its associated types are unread"
                 )
                 break
-        macros = set(implementing)
-        for path in () if reason else sources:
-            if "macro_rules" in read_source(path):
-                macros.update(implementing_macros(path))
-        for path in () if reason else paths + foreign:
-            line = macro_call_naming(path, macros, trait.name)
-            if line is not None:
+            found = macro_tree_naming(path, names, wire=False)
+            if found is not None:
+                tree, name = found
                 reason = (
-                    f"the macro call at {path.as_posix()}:{line} names "
-                    f"{trait.name} and its macro spells impl, so an impl it "
-                    "expands is unread"
+                    f"{tree.describe()} names {name} outside the wire crates, "
+                    "so an impl it expands is unread"
                 )
                 break
+        for path in () if reason else paths:
+            found = macro_tree_naming(path, names, wire=True)
+            if found is None:
+                continue
+            tree, name = found
+            if tree.kind == "definition":
+                why = f"names {name} outside an impl header the census reads"
+            elif tree.kind == "call" and tree.name in implementing:
+                why = f"names {name} and its macro spells impl"
+            else:
+                why = f"names {name} and the census does not expand it"
+            reason = f"{tree.describe()} {why}, so an impl it expands is unread"
+            break
         unread_traits[identity] = reason
         return reason
 
@@ -3209,7 +3456,12 @@ def main():
         if unread is not None:
             return False, unread
         impls = []
-        for implementation in trait_impls.get(trait.name, ()):
+        written = [
+            implementation
+            for name in sorted(names_of(trait.name))
+            for implementation in trait_impls.get(name, ())
+        ]
+        for implementation in written:
             resolved = declaration_for(implementation.trait, implementation.context, traits)
             if resolved is None:
                 return False, (
@@ -3259,16 +3511,27 @@ def main():
                 continue
             visited.add(identity)
             candidates = [] if fallback is None else [(fallback, current)]
+            # Arguments are read from wire declarations, which name a wire
+            # crate's renames only.
+            names = names_of(current.name, wire_only=True)
             arguments, unresolved = generic_arguments(
                 current, at, order,
                 lambda spelled, source: declaration_for(spelled, source, index),
                 impl_values,
+                names,
             )
             if unresolved:
                 spelled, source = unresolved[0]
                 return False, (
                     f"{route}the use of {spelled} in {source.name} resolves to "
                     f"no one declaration, so its argument for {name} is unread"
+                )
+            spelled = macro_instantiation(names)
+            if spelled is not None:
+                tree, written = spelled
+                return False, (
+                    f"{route}{tree.describe()} spells {written}<..>, and the "
+                    f"census does not expand it, so its argument for {name} is unread"
                 )
             candidates.extend(arguments)
             if not candidates:

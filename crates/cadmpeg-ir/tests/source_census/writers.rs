@@ -334,7 +334,7 @@ fn index_declarations(
                 };
                 let optional = index
                     .declarations
-                    .is_optional(relative, scope, generics, &field.ty);
+                    .is_optional(&declared, generics, &field.ty);
                 let spelling = match optional {
                     Ok(optional) => write_spelling(field, optional),
                     Err(reason) => {

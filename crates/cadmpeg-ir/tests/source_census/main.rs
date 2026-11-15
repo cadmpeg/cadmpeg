@@ -709,13 +709,18 @@ fn declared_optional_fields(
     declarations: &Declarations,
     found: &mut Vec<String>,
 ) {
+    let owner = Declaration {
+        path: relative.to_owned(),
+        scope: scope.to_owned(),
+        name: name.to_owned(),
+    };
     let record = |fields: &syn::Fields, generics: &syn::Generics, found: &mut Vec<String>| {
         for field in fields {
             let field_name = field
                 .ident
                 .as_ref()
                 .map_or_else(|| "<tuple field>".to_owned(), syn::Ident::to_string);
-            match declarations.is_optional(relative, scope, generics, &field.ty) {
+            match declarations.is_optional(&owner, generics, &field.ty) {
                 Ok(true) => found.push(field_name),
                 Ok(false) => {}
                 Err(reason) => found.push(format!("{field_name} ({reason})")),
@@ -1139,10 +1144,7 @@ fn record_unguarded_fields(
             .as_ref()
             .map_or_else(|| "<tuple field>".to_owned(), syn::Ident::to_string);
         let at = format!("{relative}:{} {}.{name}", span.start().line, reader.name);
-        match index
-            .declarations
-            .is_optional(relative, &reader.scope, generics, &field.ty)
-        {
+        match index.declarations.is_optional(reader, generics, &field.ty) {
             Ok(true) => {}
             Ok(false) => continue,
             Err(reason) => {

@@ -20,8 +20,14 @@ impl Fixture {
             std::fs::remove_dir_all(&root).expect("clear a stale fixture");
         }
         let mut files = files.to_vec();
-        files.push(("crates/cadmpeg-core/src/lib.rs", ""));
-        files.push(("crates/cadmpeg-asm/src/lib.rs", ""));
+        for root in [
+            "crates/cadmpeg-core/src/lib.rs",
+            "crates/cadmpeg-asm/src/lib.rs",
+        ] {
+            if !files.iter().any(|(path, _)| *path == root) {
+                files.push((root, ""));
+            }
+        }
         for (path, text) in files {
             let file = root.join(path);
             std::fs::create_dir_all(file.parent().expect("a fixture file has a parent"))
@@ -465,4 +471,208 @@ fn a_same_named_trait_in_another_module_is_another_trait() {
         );
     let offenders = fixture.offenders();
     assert!(offenders.is_empty(), "{offenders:#?}");
+}
+
+fn lib(name: &str, source: &str) -> Fixture {
+    Fixture::new(name, &[("crates/cadmpeg-ir/src/lib.rs", source)])
+}
+
+#[test]
+fn a_field_typed_by_a_bare_parameter_holds_what_fills_it() {
+    for source in [
+        "#[derive(Serialize, Deserialize)] pub struct Slot<T = Option<u16>> { pub value: T }",
+        "#[derive(Serialize, Deserialize)] pub struct Slot<T> { pub value: T }
+         #[derive(Serialize, Deserialize)] pub struct Host { pub nested: Slot<Option<u16>> }",
+        "#[derive(Serialize, Deserialize)] pub struct Slot<T> { pub value: T }
+         #[derive(Serialize, Deserialize)] pub struct Host { pub nested: Slot::<Option<u16>> }",
+        "#[derive(Serialize, Deserialize)] pub struct Slot<T> { pub value: T }
+         #[derive(Serialize, Deserialize)] pub struct Host<U> { pub nested: Slot<U> }
+         #[derive(Serialize, Deserialize)] pub struct Doc { pub host: Host<Option<u16>> }",
+    ] {
+        assert_one_offender(
+            &lib("bare-parameter", source),
+            "Slot.value states no deserialize_with",
+        );
+    }
+    let source = "pub type Id<T> = T;
+        #[derive(Serialize, Deserialize)] pub struct Host<T> { pub point: Id<T> }
+        #[derive(Serialize, Deserialize)] pub struct Doc { pub host: Host<Option<u16>> }";
+    assert_one_offender(
+        &lib("bare-through-alias", source),
+        "Host.point states no deserialize_with",
+    );
+    let plain = "#[derive(Serialize, Deserialize)] pub struct Slot<T> { pub value: T }
+        #[derive(Serialize, Deserialize)] pub struct Host { pub nested: Slot<u16> }";
+    let offenders = lib("bare-parameter-plain", plain).offenders();
+    assert!(offenders.is_empty(), "{offenders:#?}");
+}
+
+#[test]
+fn a_bare_parameter_the_census_cannot_enumerate_is_an_offender() {
+    for (source, reason) in [
+        (
+            "#[derive(Serialize, Deserialize)] pub struct Slot<T> { pub value: T }",
+            "cadmpeg_ir::Slot has no default and no instantiation in the wire crates for its parameter T",
+        ),
+        (
+            "#[derive(Serialize, Deserialize)] pub struct Slot<T = u8> { pub value: T }
+             #[derive(Serialize, Deserialize)] pub struct Host { pub nested: elsewhere::Slot<u8> }",
+            "the use of elsewhere::Slot at crates/cadmpeg-ir/src/lib.rs:2 resolves to no one declaration",
+        ),
+        (
+            "#[derive(Serialize, Deserialize)] pub struct Slot<T = u8> { pub value: T }
+             macro_rules! host { ($t:ty) => { #[derive(Serialize, Deserialize)] pub struct Host { pub nested: $t } }; }
+             host!(Slot<Option<u16>>);",
+            "the call to host! at crates/cadmpeg-ir/src/lib.rs:3 spells Slot<..>, and the census does not expand it",
+        ),
+        (
+            "#[derive(Serialize, Deserialize)] pub struct Slot<T = u8> { pub value: T }
+             pub trait Space { type Point; }
+             impl<U> Space for Vec<U> { type Point = Slot<U>; }",
+            "the impl at crates/cadmpeg-ir/src/lib.rs fills U with what fills its self type, which the census does not read",
+        ),
+    ] {
+        let offenders = lib("bare-parameter-unread", source).offenders();
+        assert!(
+            offenders.iter().any(|offender| offender.contains("Slot.value") && offender.contains(reason)),
+            "{reason}: {offenders:#?}"
+        );
+    }
+}
+
+#[test]
+fn a_use_under_a_renamed_import_or_in_another_wire_crate_fills_the_parameter() {
+    let renamed = "#[derive(Serialize, Deserialize)] pub struct Slot<T = u8> { pub value: T }
+        pub use Slot as Cell;
+        #[derive(Serialize, Deserialize)] pub struct Host { pub nested: Cell<Option<u16>> }";
+    assert_one_offender(
+        &lib("bare-renamed-use", renamed),
+        "Slot.value states no deserialize_with",
+    );
+    let fixture = Fixture::new(
+        "bare-across-crates",
+        &[
+            (
+                "crates/cadmpeg-ir/src/lib.rs",
+                "#[derive(Serialize, Deserialize)] pub struct Slot<T = u8> { pub value: T }",
+            ),
+            (
+                "crates/cadmpeg-asm/src/lib.rs",
+                "use cadmpeg_ir::Slot;
+                 #[derive(Serialize, Deserialize)] pub struct Host { pub nested: Slot<Option<u16>> }",
+            ),
+        ],
+    );
+    assert_one_offender(&fixture, "Slot.value states no deserialize_with");
+}
+
+#[test]
+fn an_impl_parameter_holds_what_fills_the_self_type() {
+    let source = "#[derive(Serialize, Deserialize)] pub struct Slot<T = u8> { pub value: T }
+        pub trait Space { type Point; }
+        pub struct Holder<U>(U);
+        impl<U> Space for Holder<U> { type Point = Slot<U>; }
+        pub type Filled = Holder<Option<u16>>;";
+    assert_one_offender(
+        &lib("impl-parameter-filled", source),
+        "Slot.value states no deserialize_with",
+    );
+}
+
+const FOREIGN_IMPLEMENT: &str = "macro_rules! implement { ($t:path, $n:ident) => { impl $t for $n { type Point = Option<u8>; } }; }
+pub struct Codec;
+";
+
+fn foreign(name: &str, codec: &str) -> Fixture {
+    Fixture::new(
+        name,
+        &[
+            ("crates/cadmpeg-ir/src/lib.rs", "mod space;"),
+            (
+                "crates/cadmpeg-ir/src/space.rs",
+                &SPACE.replace("PLANAR", "u16"),
+            ),
+            (
+                "crates/codec/src/lib.rs",
+                &format!("{FOREIGN_IMPLEMENT}{codec}"),
+            ),
+        ],
+    )
+}
+
+#[test]
+fn a_foreign_wrapper_macro_naming_the_trait_leaves_the_type_unread() {
+    let fixture = foreign(
+        "foreign-wrapper",
+        "macro_rules! expand { ($t:path, $n:ident) => { implement!($t, $n); }; }
+fn go() { expand!(cadmpeg_ir::space::Space, Codec); }",
+    );
+    assert_one_offender(
+        &fixture,
+        "the call to expand! at crates/codec/src/lib.rs:4, which names Space, is outside the wire crates",
+    );
+}
+
+#[test]
+fn a_renamed_macro_naming_the_trait_leaves_the_type_unread() {
+    let fixture = foreign(
+        "foreign-renamed-macro",
+        "use implement as expand;
+fn go() { expand!(cadmpeg_ir::space::Space, Codec); }",
+    );
+    assert_one_offender(
+        &fixture,
+        "the call to expand! at crates/codec/src/lib.rs:4, which names Space, is outside the wire crates",
+    );
+    let wire = SPACE.replace("PLANAR", "u16")
+        + "macro_rules! implement { ($t:ident, $n:ident) => { impl $t for $n { type Point = Option<u8>; } }; }
+           use implement as expand;
+           pub struct Extra;
+           expand!(Space, Extra);";
+    assert_one_offender(
+        &space("wire-renamed-macro", &wire),
+        "names Space, and the census does not expand it, so an impl it expands is unread",
+    );
+}
+
+#[test]
+fn a_wire_wrapper_macro_naming_the_trait_leaves_its_impls_unread() {
+    let source = SPACE.replace("PLANAR", "u16")
+        + "macro_rules! implement { ($t:ident, $n:ident) => { impl $t for $n { type Point = Option<u8>; } }; }
+           macro_rules! expand { ($t:ident, $n:ident) => { implement!($t, $n); }; }
+           pub struct Extra;
+           expand!(Space, Extra);";
+    assert_one_offender(
+        &space("wire-wrapper-macro", &source),
+        "the call to expand! at crates/cadmpeg-ir/src/space.rs:",
+    );
+}
+
+#[test]
+fn an_impl_through_a_renamed_trait_is_read() {
+    let source = SPACE.replace("PLANAR", "u16")
+        + "use Space as Plane; pub struct Decoy; impl Plane for Decoy { type Point = Option<u8>; }";
+    assert_one_offender(
+        &space("renamed-trait-impl", &source),
+        "Entity.point states no deserialize_with",
+    );
+    let fixture = foreign(
+        "foreign-renamed-trait",
+        "use cadmpeg_ir::space::Space as Plane;
+impl Plane for Codec { type Point = u8; }",
+    );
+    assert_one_offender(
+        &fixture,
+        "an impl of Plane at crates/codec/src/lib.rs:4 is outside the wire crates",
+    );
+}
+
+#[test]
+fn an_impl_the_item_walk_does_not_reach_is_unread() {
+    let source = SPACE.replace("PLANAR", "u16")
+        + "pub struct Hidden; const _: () = { impl Space for Hidden { type Point = Option<u8>; } };";
+    assert_one_offender(
+        &space("impl-in-a-block", &source),
+        "sits where the census reads no impl, so its types are unread",
+    );
 }

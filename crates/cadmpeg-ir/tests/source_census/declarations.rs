@@ -10,7 +10,9 @@
 //! A field typed `P::Name` for a type parameter `P` holds whatever the impl
 //! filling `P` states for `Name`. Every impl of the bound trait in the wire
 //! crates is read; a bound, trait or impl the census cannot read is an error,
-//! never a field taken to hold no `Option`.
+//! never a field taken to hold no `Option`. A field typed by a bare type
+//! parameter holds whatever fills it: the default and every argument a wire
+//! declaration states for it.
 
 use std::cell::{OnceCell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -20,7 +22,10 @@ use std::path::{Path, PathBuf};
 use syn::spanned::Spanned;
 
 use crate::reader_routes::DeclarationResolver;
-use crate::{collect_rust_sources, flatten_tokens, is_option_type, is_test_module, is_test_path};
+use crate::{collect_rust_sources, is_option_type, is_test_module, is_test_path};
+use tokens::{declaring_macro, FileTokens, MacroTree, TreeKind};
+
+mod tokens;
 
 /// The source roots of the three wire crates.
 const WIRE_ROOTS: [&str; 3] = [
@@ -104,6 +109,8 @@ struct TraitImpl {
     path: String,
     scope: Vec<String>,
     line: usize,
+    /// The line of its `impl` keyword.
+    impl_line: usize,
     trait_path: syn::Path,
     self_type: String,
     /// The impl's own type parameters.
@@ -131,6 +138,34 @@ impl TraitImpl {
     }
 }
 
+/// Where a wire declaration writes a type with generic arguments: the fields
+/// and parameter defaults of a struct or enum, the type an alias names, and
+/// the types a trait impl states.
+struct UseSite {
+    path: String,
+    scope: Vec<String>,
+    /// The struct, enum or alias that writes it; `None` for an impl.
+    owner: Option<Declaration>,
+    generics: syn::Generics,
+    /// For an impl, its own type parameters and its self type: what fills a
+    /// parameter is what fills the self type's argument that names it.
+    impl_parameters: Option<Vec<String>>,
+    self_type: Option<syn::Type>,
+}
+
+/// One type written with generic arguments, as `Name<..>` or `Name::<..>`.
+struct GenericUse {
+    /// The index of its [`UseSite`].
+    site: usize,
+    line: usize,
+    /// The path's last segment.
+    name: String,
+    /// The path without its arguments.
+    path: syn::Path,
+    /// Its type arguments, in order.
+    arguments: Vec<syn::Type>,
+}
+
 /// The declarations of the wire crates, their traits, and every trait impl.
 ///
 /// Each index is read from the source on first use.
@@ -138,9 +173,11 @@ pub(crate) struct Declarations {
     root: PathBuf,
     resolver: OnceCell<DeclarationResolver>,
     traits: OnceCell<TraitIndex>,
-    /// Per trait name, an impl of a trait of that name outside the wire
-    /// crates.
+    /// Per trait name, why an impl of it outside the wire crates is unread.
     foreign: RefCell<BTreeMap<String, Option<String>>>,
+    /// Each parameter position whose instantiations are being read, so a
+    /// declaration that instantiates itself states no new type.
+    enumerating: RefCell<BTreeSet<(Declaration, usize)>>,
 }
 
 /// The traits and trait impls of the wire crates.
@@ -149,15 +186,10 @@ struct TraitIndex {
     traits: BTreeMap<Declaration, BTreeMap<String, AssociatedDeclaration>>,
     impls: Vec<TraitImpl>,
     aliases: BTreeMap<Declaration, Alias>,
-    /// Each `macro_rules!` body or item macro call that spells `impl`, as its
-    /// location and tokens: an impl it expands to is not parsed here.
-    macros: Vec<(String, usize, Vec<String>)>,
-    /// The names of the `macro_rules!` definitions whose body spells `impl`.
-    implementing: BTreeSet<String>,
-    /// Each item macro call, as its location, the macro's name and its
-    /// tokens: a call to an implementing macro can name the trait it
-    /// implements.
-    calls: Vec<(String, usize, String, Vec<String>)>,
+    sites: Vec<UseSite>,
+    uses: Vec<GenericUse>,
+    /// What each wire source states in tokens, by repository-relative path.
+    tokens: Vec<(String, FileTokens)>,
 }
 
 impl Declarations {
@@ -167,6 +199,7 @@ impl Declarations {
             resolver: OnceCell::new(),
             traits: OnceCell::new(),
             foreign: RefCell::new(BTreeMap::new()),
+            enumerating: RefCell::new(BTreeSet::new()),
         }
     }
 
@@ -198,14 +231,133 @@ impl TraitIndex {
                     .map_err(|error| format!("{relative} does not parse: {error}"))
                     .expect("every source file in the wire crates parses");
                 index.collect(&parsed.items, &relative, &module_scope(&relative));
+                let found = tokens::scan(&text, &test_module_lines(&parsed.items))
+                    .expect("every source file in the wire crates parses, so it lexes");
+                index.tokens.push((relative, found));
             }
         }
         index
     }
 
+    /// Records each type with generic arguments that `ty` writes, at any
+    /// depth, as written at `site`.
+    fn record_uses(&mut self, ty: &syn::Type, site: usize) {
+        match ty {
+            syn::Type::Path(typed) => {
+                if let Some(qself) = &typed.qself {
+                    self.record_uses(&qself.ty, site);
+                }
+                for segment in &typed.path.segments {
+                    let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+                        continue;
+                    };
+                    for argument in &arguments.args {
+                        match argument {
+                            syn::GenericArgument::Type(inner) => self.record_uses(inner, site),
+                            syn::GenericArgument::AssocType(bound) => {
+                                self.record_uses(&bound.ty, site);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                let Some(last) = typed.path.segments.last() else {
+                    return;
+                };
+                let syn::PathArguments::AngleBracketed(arguments) = &last.arguments else {
+                    return;
+                };
+                if typed.qself.is_some() {
+                    return;
+                }
+                let mut path = typed.path.clone();
+                if let Some(segment) = path.segments.last_mut() {
+                    segment.arguments = syn::PathArguments::None;
+                }
+                self.uses.push(GenericUse {
+                    site,
+                    line: last.ident.span().start().line,
+                    name: last.ident.to_string(),
+                    path,
+                    arguments: arguments
+                        .args
+                        .iter()
+                        .filter_map(|argument| match argument {
+                            syn::GenericArgument::Type(inner) => Some(inner.clone()),
+                            _ => None,
+                        })
+                        .collect(),
+                });
+            }
+            syn::Type::Reference(inner) => self.record_uses(&inner.elem, site),
+            syn::Type::Array(inner) => self.record_uses(&inner.elem, site),
+            syn::Type::Slice(inner) => self.record_uses(&inner.elem, site),
+            syn::Type::Paren(inner) => self.record_uses(&inner.elem, site),
+            syn::Type::Group(inner) => self.record_uses(&inner.elem, site),
+            syn::Type::Ptr(inner) => self.record_uses(&inner.elem, site),
+            syn::Type::Tuple(tuple) => {
+                for inner in &tuple.elems {
+                    self.record_uses(inner, site);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Records the uses a struct, enum or alias writes in its fields, its
+    /// parameter defaults and `types`.
+    fn record_declaration_uses<'a>(
+        &mut self,
+        owner: Declaration,
+        generics: &syn::Generics,
+        types: impl IntoIterator<Item = &'a syn::Type>,
+    ) {
+        let site = self.sites.len();
+        self.sites.push(UseSite {
+            path: owner.path.clone(),
+            scope: owner.scope.clone(),
+            owner: Some(owner),
+            generics: generics.clone(),
+            impl_parameters: None,
+            self_type: None,
+        });
+        for parameter in generics.type_params() {
+            if let Some((_, default)) = &parameter.default {
+                self.record_uses(default, site);
+            }
+        }
+        for ty in types {
+            self.record_uses(ty, site);
+        }
+    }
+
     fn collect(&mut self, items: &[syn::Item], relative: &str, scope: &[String]) {
+        let declaration = |name: &syn::Ident| Declaration {
+            path: relative.to_owned(),
+            scope: scope.to_owned(),
+            name: name.to_string(),
+        };
         for item in items {
             match item {
+                syn::Item::Struct(declared) => {
+                    let fields = declared.fields.iter().map(|field| &field.ty);
+                    self.record_declaration_uses(
+                        declaration(&declared.ident),
+                        &declared.generics,
+                        fields,
+                    );
+                }
+                syn::Item::Enum(declared) => {
+                    let fields = declared
+                        .variants
+                        .iter()
+                        .flat_map(|variant| variant.fields.iter().map(|field| &field.ty));
+                    self.record_declaration_uses(
+                        declaration(&declared.ident),
+                        &declared.generics,
+                        fields,
+                    );
+                }
                 syn::Item::Trait(declaration) => {
                     let mut types = BTreeMap::new();
                     for member in &declaration.items {
@@ -234,6 +386,11 @@ impl TraitIndex {
                     self.collect_impl(implementation, relative, scope);
                 }
                 syn::Item::Type(alias) => {
+                    self.record_declaration_uses(
+                        declaration(&alias.ident),
+                        &alias.generics,
+                        [alias.ty.as_ref()],
+                    );
                     self.aliases.insert(
                         Declaration {
                             path: relative.to_owned(),
@@ -247,11 +404,7 @@ impl TraitIndex {
                     );
                 }
                 syn::Item::Fn(function) => {
-                    let (nested, calls) = function_body_items(function);
-                    self.collect(&nested, relative, scope);
-                    for invocation in calls {
-                        self.record_call(&invocation.mac, relative);
-                    }
+                    self.collect(&function_body_items(function), relative, scope);
                 }
                 syn::Item::Mod(module) => {
                     if is_test_module(module) {
@@ -263,51 +416,26 @@ impl TraitIndex {
                         self.collect(nested, relative, &nested_scope);
                     }
                 }
-                syn::Item::Macro(invocation) => match &invocation.ident {
-                    Some(defined) => self.record_definition(&invocation.mac, defined, relative),
-                    None => self.record_call(&invocation.mac, relative),
-                },
                 _ => {}
             }
         }
     }
 
-    /// Records a `macro_rules!` definition named `defined`.
-    fn record_definition(&mut self, mac: &syn::Macro, defined: &syn::Ident, relative: &str) {
-        let mut tokens = Vec::new();
-        flatten_tokens(&mac.tokens, &mut tokens);
-        if tokens.iter().any(|token| token == "impl") {
-            self.implementing.insert(defined.to_string());
-            self.macros
-                .push((relative.to_owned(), mac.path.span().start().line, tokens));
-        }
+    /// Every `macro_rules!` tree of the wire crates.
+    fn definitions(&self) -> Vec<&MacroTree> {
+        self.tokens
+            .iter()
+            .flat_map(|(_, found)| &found.trees)
+            .filter(|tree| tree.kind == TreeKind::Definition)
+            .collect()
     }
 
-    /// Records a macro call, or a `macro_rules!` definition parsed as a
-    /// statement, whose first token is the macro's name.
-    fn record_call(&mut self, mac: &syn::Macro, relative: &str) {
-        let mut tokens = Vec::new();
-        flatten_tokens(&mac.tokens, &mut tokens);
-        let line = mac.path.span().start().line;
-        let spells_impl = tokens.iter().any(|token| token == "impl");
-        let Some(called) = mac.path.segments.last() else {
-            return;
-        };
-        if called.ident == "macro_rules" {
-            if let (true, Some(defined)) = (spells_impl, tokens.first()) {
-                self.implementing.insert(defined.clone());
-            }
-        } else {
-            self.calls.push((
-                relative.to_owned(),
-                line,
-                called.ident.to_string(),
-                tokens.clone(),
-            ));
-        }
-        if spells_impl {
-            self.macros.push((relative.to_owned(), line, tokens));
-        }
+    /// `name` and every name a wire-crate `use` renames it to, transitively.
+    fn renamed(&self, name: &str) -> Vec<String> {
+        renamed(
+            name,
+            self.tokens.iter().flat_map(|(_, found)| &found.renames),
+        )
     }
 
     fn collect_impl(&mut self, implementation: &syn::ItemImpl, relative: &str, scope: &[String]) {
@@ -327,11 +455,29 @@ impl TraitIndex {
                 _ => None,
             })
             .collect();
+        let site = self.sites.len();
+        self.sites.push(UseSite {
+            path: relative.to_owned(),
+            scope: scope.to_owned(),
+            owner: None,
+            generics: syn::Generics::default(),
+            impl_parameters: Some(parameters.clone()),
+            self_type: Some((*implementation.self_ty).clone()),
+        });
+        // A `Deserialize` impl reads the type it is written for.
+        if trait_path
+            .segments
+            .last()
+            .is_some_and(|segment| segment.ident == "Deserialize")
+        {
+            self.record_uses(&implementation.self_ty, site);
+        }
         let mut types: BTreeMap<String, Vec<Result<syn::Type, String>>> = BTreeMap::new();
         for member in &implementation.items {
             let syn::ImplItem::Type(associated) = member else {
                 continue;
             };
+            self.record_uses(&associated.ty, site);
             let stated = if associated.generics.params.is_empty() {
                 Ok(associated.ty.clone())
             } else {
@@ -349,6 +495,7 @@ impl TraitIndex {
             path: relative.to_owned(),
             scope: scope.to_owned(),
             line: implementation.self_ty.span().start().line,
+            impl_line: implementation.impl_token.span.start().line,
             trait_path: trait_path.clone(),
             self_type: type_name(&implementation.self_ty),
             parameters,
@@ -357,19 +504,55 @@ impl TraitIndex {
     }
 }
 
-/// The items a function body declares, and the macros it calls in
-/// statement position, where a call can expand to an impl.
-fn function_body_items(function: &syn::ItemFn) -> (Vec<syn::Item>, Vec<syn::StmtMacro>) {
-    let mut items = Vec::new();
-    let mut calls = Vec::new();
-    for statement in &function.block.stmts {
-        match statement {
-            syn::Stmt::Item(item) => items.push(item.clone()),
-            syn::Stmt::Macro(call) => calls.push(call.clone()),
-            _ => {}
+/// The items a function body declares in statement position.
+fn function_body_items(function: &syn::ItemFn) -> Vec<syn::Item> {
+    function
+        .block
+        .stmts
+        .iter()
+        .filter_map(|statement| match statement {
+            syn::Stmt::Item(item) => Some(item.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The inclusive line ranges of the test modules among `items`, at any depth.
+fn test_module_lines(items: &[syn::Item]) -> Vec<(usize, usize)> {
+    let mut lines = Vec::new();
+    for item in items {
+        let syn::Item::Mod(module) = item else {
+            continue;
+        };
+        let first = module.mod_token.span.start().line;
+        match &module.content {
+            Some((brace, _)) if is_test_module(module) => {
+                lines.push((first, brace.span.close().end().line));
+            }
+            Some((_, nested)) => lines.extend(test_module_lines(nested)),
+            None => {}
         }
     }
-    (items, calls)
+    lines
+}
+
+/// `name` and every name one of `renames` gives it, transitively. A rename
+/// of another declaration of the same name is included: each use the extra
+/// name finds is still resolved, so it widens what is read and proves nothing.
+fn renamed<'a>(name: &str, renames: impl Iterator<Item = &'a (String, String)>) -> Vec<String> {
+    let renames: Vec<&(String, String)> = renames.collect();
+    let mut names = vec![name.to_owned()];
+    loop {
+        let before = names.len();
+        for (original, alias) in &renames {
+            if names.contains(original) && !names.contains(alias) {
+                names.push(alias.clone());
+            }
+        }
+        if names.len() == before {
+            return names;
+        }
+    }
 }
 
 impl Declarations {
@@ -399,28 +582,30 @@ impl Declarations {
             .ok_or_else(|| format!("{spelled}, named from {from}, resolves to no one declaration"))
     }
 
-    /// Whether a field of type `ty`, declared with `generics` in module
-    /// `scope` of `file`, holds an `Option`.
+    /// Whether a field of type `ty` of `owner`, declared with `generics`,
+    /// holds an `Option`.
     ///
     /// A field spelled `Option<..>` does. A field spelled `P::Name` or
     /// `<P as Trait>::Name` for a type parameter `P` of `generics` holds the
     /// type each impl of the one bound trait that declares `Name` states, so
-    /// it holds an `Option` when any impl's does. A field spelled by a type
-    /// alias holds what the alias names, read where the alias is declared;
-    /// an alias that names one of its own parameters holds the argument the
-    /// field states for it.
+    /// it holds an `Option` when any impl's does. A field spelled by a bare
+    /// type parameter holds an `Option` when its default or any argument a
+    /// wire declaration states for it does. A field spelled by a type alias
+    /// holds what the alias names, read where the alias is declared; an alias
+    /// that names one of its own parameters holds the argument the field
+    /// states for it.
     pub(crate) fn is_optional(
         &self,
-        file: &str,
-        scope: &[String],
+        owner: &Declaration,
         generics: &syn::Generics,
         ty: &syn::Type,
     ) -> Result<bool, String> {
         let site = Site {
-            file,
-            scope,
+            file: &owner.path,
+            scope: &owner.scope,
             generics,
             impl_parameters: None,
+            owner: Some(owner),
         };
         self.holds_option(&site, ty, 0)
     }
@@ -455,10 +640,213 @@ impl Declarations {
                 ));
             }
         }
+        if let Some(parameter) = bare_parameter(ty, site.generics) {
+            return self.parameter_holds_option(site, parameter, depth);
+        }
         if let Some((parameter, named_trait, name)) = associated_type(ty, site.generics) {
             return self.associated_holds_option(site, &parameter, named_trait, &name, depth);
         }
         self.alias_holds_option(site, ty, depth)
+    }
+
+    /// Whether the type parameter `parameter` of `site`'s declaration can be
+    /// filled with an `Option`: by its default, or by an argument a wire
+    /// declaration states for it, read where that declaration writes it.
+    ///
+    /// A `Deserialize` impl's self type is a use too. A use whose path
+    /// resolves to no one declaration, and a macro token tree that can
+    /// declare a use, leave the parameter unread, as does a field's own
+    /// parameter with no default and no use. A use that forwards the
+    /// parameter back to a position being read states no new type.
+    fn parameter_holds_option(
+        &self,
+        site: &Site<'_>,
+        parameter: &syn::Ident,
+        depth: usize,
+    ) -> Result<bool, String> {
+        let Some(owner) = site.owner else {
+            return Err(format!(
+                "the type {parameter} is a parameter whose instantiations the census does not read"
+            ));
+        };
+        let parameters: Vec<&syn::TypeParam> = site.generics.type_params().collect();
+        let Some(position) = parameters
+            .iter()
+            .position(|declared| declared.ident == *parameter)
+        else {
+            return Err(format!("{parameter} is no type parameter of {owner}"));
+        };
+        let key = (owner.clone(), position);
+        let forwarding = !self.enumerating.borrow().is_empty();
+        if !self.enumerating.borrow_mut().insert(key.clone()) {
+            return Ok(false);
+        }
+        let read = self.instantiations_hold_option(
+            site,
+            owner,
+            parameters[position],
+            position,
+            forwarding,
+            depth,
+        );
+        self.enumerating.borrow_mut().remove(&key);
+        read
+    }
+
+    /// Whether the default or an argument of `owner`'s parameter at
+    /// `position` holds an `Option`. When `forwarding`, another declaration's
+    /// parameter is filled with this one, so a parameter nothing fills
+    /// states nothing that reaches it.
+    fn instantiations_hold_option(
+        &self,
+        site: &Site<'_>,
+        owner: &Declaration,
+        parameter: &syn::TypeParam,
+        position: usize,
+        forwarding: bool,
+        depth: usize,
+    ) -> Result<bool, String> {
+        let index = self.trait_index();
+        let names = index.renamed(&owner.name);
+        let label = &parameter.ident;
+        let definitions = index.definitions();
+        for (relative, found) in &index.tokens {
+            for tree in &found.trees {
+                let Some(name) = tree.instantiates(&names) else {
+                    continue;
+                };
+                if tree.kind == TreeKind::Attribute
+                    || tree.spells_declaration()
+                    || declaring_macro(&tree.name, &definitions, &mut Vec::new())
+                {
+                    return Err(format!(
+                        "{} spells {name}<..>, and the census does not expand it, so its argument for {label} is unread",
+                        tree.describe(relative)
+                    ));
+                }
+            }
+        }
+        let mut stated = false;
+        let mut optional = false;
+        if let Some((_, default)) = &parameter.default {
+            stated = true;
+            optional |= self.holds_option(site, default, depth + 1)?;
+        }
+        for usage in index
+            .uses
+            .iter()
+            .filter(|usage| names.contains(&usage.name))
+        {
+            let written = &index.sites[usage.site];
+            let resolved = self
+                .resolver()
+                .resolve_across_crates(&written.path, &written.scope, &usage.path)
+                .map(|(path, scope, name)| Declaration { path, scope, name });
+            let Some(resolved) = resolved else {
+                return Err(format!(
+                    "the use of {} at {}:{} resolves to no one declaration, so its argument for {label} is unread",
+                    path_text(&usage.path),
+                    written.path,
+                    usage.line
+                ));
+            };
+            if resolved != *owner {
+                continue;
+            }
+            let Some(argument) = usage.arguments.get(position) else {
+                continue;
+            };
+            stated = true;
+            if let Some(forwarded) = impl_parameter(argument, written) {
+                optional |= self.impl_parameter_holds_option(written, forwarded, depth + 1)?;
+                continue;
+            }
+            let use_site = Site {
+                file: &written.path,
+                scope: &written.scope,
+                generics: &written.generics,
+                impl_parameters: written.impl_parameters.as_deref(),
+                owner: written.owner.as_ref(),
+            };
+            optional |= self.holds_option(&use_site, argument, depth + 1)?;
+        }
+        if !stated && !forwarding {
+            return Err(format!(
+                "{owner} has no default and no instantiation in the wire crates for its parameter {label}"
+            ));
+        }
+        Ok(optional)
+    }
+
+    /// Whether the impl parameter `parameter` of the impl `written` can be
+    /// filled with an `Option`: whether the self type's argument it names
+    /// can be. A parameter the self type does not name bare, and a self type
+    /// that is no wire declaration, are unread.
+    fn impl_parameter_holds_option(
+        &self,
+        written: &UseSite,
+        parameter: &syn::Ident,
+        depth: usize,
+    ) -> Result<bool, String> {
+        let unread = || {
+            Err(format!(
+                "the impl at {} fills {parameter} with what fills its self type, which the census does not read",
+                written.path
+            ))
+        };
+        let mut self_type = written.self_type.as_ref();
+        while let Some(syn::Type::Reference(borrowed)) = self_type {
+            self_type = Some(&borrowed.elem);
+        }
+        let Some(syn::Type::Path(typed)) = self_type else {
+            return unread();
+        };
+        let Some(syn::PathArguments::AngleBracketed(arguments)) =
+            typed.path.segments.last().map(|segment| &segment.arguments)
+        else {
+            return unread();
+        };
+        let Some(position) = arguments
+            .args
+            .iter()
+            .filter(|argument| matches!(argument, syn::GenericArgument::Type(_)))
+            .position(|argument| {
+                matches!(argument, syn::GenericArgument::Type(syn::Type::Path(named))
+                    if named.qself.is_none() && named.path.is_ident(parameter))
+            })
+        else {
+            return unread();
+        };
+        let mut path = typed.path.clone();
+        if let Some(segment) = path.segments.last_mut() {
+            segment.arguments = syn::PathArguments::None;
+        }
+        let Some(declared) = self
+            .resolver()
+            .resolve_across_crates(&written.path, &written.scope, &path)
+            .map(|(path, scope, name)| Declaration { path, scope, name })
+        else {
+            return unread();
+        };
+        let index = self.trait_index();
+        let Some(declaration) = index
+            .sites
+            .iter()
+            .find(|site| site.owner.as_ref() == Some(&declared))
+        else {
+            return unread();
+        };
+        let Some(filled) = declaration.generics.type_params().nth(position) else {
+            return unread();
+        };
+        let site = Site {
+            file: &declared.path,
+            scope: &declared.scope,
+            generics: &declaration.generics,
+            impl_parameters: None,
+            owner: Some(&declared),
+        };
+        self.parameter_holds_option(&site, &filled.ident, depth)
     }
 
     /// Whether the alias `ty` names, if it names one, holds an `Option`.
@@ -499,6 +887,7 @@ impl Declarations {
             scope: &declaration.scope,
             generics: &alias.generics,
             impl_parameters: None,
+            owner: Some(&declaration),
         };
         let parameters: Vec<&syn::TypeParam> = alias.generics.type_params().collect();
         let names: Vec<&syn::Ident> = parameters.iter().map(|declared| &declared.ident).collect();
@@ -613,23 +1002,9 @@ impl Declarations {
                 "{location} is outside the wire crates, so its {name} is unread"
             ));
         }
-        if let Some((path, line, _)) = index
-            .macros
-            .iter()
-            .find(|(_, _, tokens)| tokens.contains(&trait_declaration.name))
-        {
-            return Err(format!(
-                "the macro at {path}:{line} spells impl and {}, so an impl it expands is unread",
-                trait_declaration.name
-            ));
-        }
-        if let Some((path, line, called, _)) = index.calls.iter().find(|(_, _, called, tokens)| {
-            index.implementing.contains(called) && tokens.contains(&trait_declaration.name)
-        }) {
-            return Err(format!(
-                "the call to {called}! at {path}:{line} names {} and the macro spells impl, so an impl it expands is unread",
-                trait_declaration.name
-            ));
+        let names = index.renamed(&trait_declaration.name);
+        if let Some(reason) = index.unread_impls(&names) {
+            return Err(reason);
         }
         let mut optional = false;
         let mut found = false;
@@ -640,7 +1015,7 @@ impl Declarations {
                 .trait_path
                 .segments
                 .last()
-                .is_none_or(|segment| segment.ident != trait_declaration.name)
+                .is_none_or(|segment| !names.contains(&segment.ident.to_string()))
             {
                 continue;
             }
@@ -670,6 +1045,7 @@ impl Declarations {
                 scope: &implementation.scope,
                 generics: &no_generics,
                 impl_parameters: Some(&implementation.parameters),
+                owner: None,
             };
             for value in stated {
                 match value
@@ -692,67 +1068,104 @@ impl Declarations {
         Ok(optional)
     }
 
-    /// An impl of a trait named `name` anywhere in the workspace outside the
-    /// wire crates' sources, or a call there naming `name` to a macro that
-    /// spells `impl`.
+    /// Why an impl of the trait named `name` outside the wire crates' sources
+    /// is unread, or `None`.
     ///
     /// Only an impl in a wire crate's `src` is read; one in another crate,
     /// in `examples/`, in `benches/` or in a build script states a type the
-    /// census does not read.
+    /// census does not read. The trait is named by `name` and by every name a
+    /// `use` there or in the wire crates renames it to. An impl of it, a
+    /// macro token tree that names it, and a source that names it and does
+    /// not parse each leave it unread.
     fn foreign_impl(&self, name: &str) -> Option<String> {
         if let Some(found) = self.foreign.borrow().get(name) {
             return found.clone();
         }
-        let mut implementing = self.trait_index().implementing.clone();
-        let mut calls = Vec::new();
+        let index = self.trait_index();
+        let definitions = index.definitions();
+        let mut names = index.renamed(name);
+        let mut scanned: BTreeMap<String, FileTokens> = BTreeMap::new();
         let mut found = None;
-        for file in workspace_sources(&self.root) {
-            let relative = relative_path(&self.root, &file);
+        let foreign: Vec<(String, PathBuf)> = workspace_sources(&self.root)
+            .into_iter()
+            .map(|file| (relative_path(&self.root, &file), file))
             // The leading separator makes a test tree at the workspace root
             // one too.
-            if is_test_path(&format!("/{relative}"))
-                || WIRE_ROOTS
-                    .iter()
-                    .any(|root| relative.starts_with(&format!("{root}/")))
-            {
-                continue;
-            }
-            let text = std::fs::read_to_string(&file).expect("read source");
-            let names = text.contains(name);
-            if !names && !text.contains("macro_rules") {
-                continue;
-            }
-            let Ok(parsed) = syn::parse_file(&text) else {
-                if names {
-                    found = Some(format!(
-                        "{relative}, which names {name} and does not parse,"
-                    ));
-                    break;
+            .filter(|(relative, _)| {
+                !is_test_path(&format!("/{relative}"))
+                    && !WIRE_ROOTS
+                        .iter()
+                        .any(|root| relative.starts_with(&format!("{root}/")))
+            })
+            .collect();
+        'renames: loop {
+            for (relative, file) in &foreign {
+                if scanned.contains_key(relative) {
+                    continue;
                 }
-                continue;
-            };
-            let mut scan = ForeignScan::default();
-            scan.items(&parsed.items, name);
-            if let Some(line) = scan.impl_line {
-                found = Some(format!("an impl of {name} at {relative}:{line}"));
-                break;
+                let text = std::fs::read_to_string(file).expect("read source");
+                let Some(named) = names.iter().find(|named| text.contains(named.as_str())) else {
+                    continue;
+                };
+                let tokens = syn::parse_file(&text)
+                    .ok()
+                    .and_then(|parsed| tokens::scan(&text, &test_module_lines(&parsed.items)));
+                let Some(tokens) = tokens else {
+                    found = Some(format!(
+                        "{relative}, which names {named} and does not parse,"
+                    ));
+                    break 'renames;
+                };
+                let before = names.len();
+                scanned.insert(relative.clone(), tokens);
+                names = renamed(
+                    name,
+                    index
+                        .tokens
+                        .iter()
+                        .map(|(_, wire)| wire)
+                        .chain(scanned.values())
+                        .flat_map(|scan| &scan.renames),
+                );
+                if names.len() != before {
+                    continue 'renames;
+                }
             }
-            implementing.extend(scan.implementing);
-            calls.extend(
-                scan.calls
-                    .into_iter()
-                    .map(|(line, called)| (relative.clone(), line, called)),
-            );
+            break;
         }
         if found.is_none() {
-            found = calls
-                .into_iter()
-                .find(|(_, _, called)| implementing.contains(called))
-                .map(|(relative, line, called)| {
+            found = scanned.iter().find_map(|(relative, tokens)| {
+                if let Some((named, line)) = tokens
+                    .impl_headers
+                    .iter()
+                    .find(|(named, _)| names.contains(named))
+                {
+                    return Some(format!("an impl of {named} at {relative}:{line}"));
+                }
+                let tree = tokens
+                    .trees
+                    .iter()
+                    .find(|tree| tree.names(&names).is_some())?;
+                let named = tree.names(&names)?;
+                let implementing = tree.kind == TreeKind::Call
+                    && definitions
+                        .iter()
+                        .copied()
+                        .chain(scanned.values().flat_map(|scan| &scan.trees))
+                        .any(|defined| {
+                            defined.kind == TreeKind::Definition
+                                && defined.name == tree.name
+                                && defined.tokens.iter().any(|token| token == "impl")
+                        });
+                Some(if implementing {
                     format!(
-                        "the call to {called}! at {relative}:{line}, which names {name} and whose macro spells impl,"
+                        "{}, which names {named} and whose macro spells impl,",
+                        tree.describe(relative)
                     )
-                });
+                } else {
+                    format!("{}, which names {named},", tree.describe(relative))
+                })
+            });
         }
         self.foreign
             .borrow_mut()
@@ -773,79 +1186,98 @@ struct Site<'a> {
     /// For a type an impl states, the impl's own parameters: what fills them
     /// is not read.
     impl_parameters: Option<&'a [String]>,
+    /// The struct, enum or alias whose `generics` these are, whose uses state
+    /// what fills them.
+    owner: Option<&'a Declaration>,
 }
 
-/// What a source outside the wire crates states about one trait name.
-#[derive(Default)]
-struct ForeignScan {
-    /// The first impl of a trait of that name.
-    impl_line: Option<usize>,
-    /// The names of the `macro_rules!` definitions whose body spells `impl`.
-    implementing: BTreeSet<String>,
-    /// Each macro call whose tokens name the trait, as its line and macro.
-    calls: Vec<(usize, String)>,
-}
-
-impl ForeignScan {
-    fn items(&mut self, items: &[syn::Item], name: &str) {
-        for item in items {
-            match item {
-                syn::Item::Impl(implementation) => {
-                    let named = implementation.trait_.as_ref().is_some_and(|(path, _)| {
-                        path.segments
-                            .last()
-                            .is_some_and(|segment| segment.ident == name)
-                    });
-                    if named && self.impl_line.is_none() {
-                        self.impl_line = Some(implementation.self_ty.span().start().line);
+impl TraitIndex {
+    /// Why a wire-crate impl of a trait named by one of `names` is not one
+    /// the census reads, or `None`.
+    ///
+    /// The census expands no macro. A token tree naming the trait can expand
+    /// to an impl no parsed item states: a `macro_rules!` body, a call (to a
+    /// renamed macro, to one that calls another, or to one from another
+    /// crate), and an attribute a derive or attribute macro reads. An impl
+    /// header the item walk does not reach, such as one in a block, is unread
+    /// too.
+    fn unread_impls(&self, names: &[String]) -> Option<String> {
+        let definitions = self.definitions();
+        for (relative, found) in &self.tokens {
+            for tree in &found.trees {
+                let Some(named) = tree.names(names) else {
+                    continue;
+                };
+                let spells_impl =
+                    |tree: &MacroTree| tree.tokens.iter().any(|token| token == "impl");
+                let why = match tree.kind {
+                    TreeKind::Definition if spells_impl(tree) => format!(
+                        "the macro at {relative}:{} spells impl and {named}",
+                        tree.line
+                    ),
+                    TreeKind::Call
+                        if definitions
+                            .iter()
+                            .any(|defined| defined.name == tree.name && spells_impl(defined)) =>
+                    {
+                        format!(
+                            "{} names {named} and the macro spells impl",
+                            tree.describe(relative)
+                        )
                     }
+                    _ => format!(
+                        "{} names {named}, and the census does not expand it",
+                        tree.describe(relative)
+                    ),
+                };
+                return Some(format!("{why}, so an impl it expands is unread"));
+            }
+            for (named, line) in found
+                .impl_headers
+                .iter()
+                .filter(|(named, _)| names.contains(named))
+            {
+                let read = self.impls.iter().any(|implementation| {
+                    implementation.path == *relative && implementation.impl_line == *line
+                });
+                if !read {
+                    return Some(format!(
+                        "the impl of {named} at {relative}:{line} sits where the census reads no impl, so its types are unread"
+                    ));
                 }
-                syn::Item::Mod(module) if !is_test_module(module) => {
-                    if let Some((_, nested)) = &module.content {
-                        self.items(nested, name);
-                    }
-                }
-                syn::Item::Fn(function) => {
-                    let (nested, calls) = function_body_items(function);
-                    self.items(&nested, name);
-                    for call in calls {
-                        self.macro_use(&call.mac, None, name);
-                    }
-                }
-                syn::Item::Macro(invocation) => {
-                    self.macro_use(&invocation.mac, invocation.ident.as_ref(), name);
-                }
-                _ => {}
             }
         }
+        None
     }
+}
 
-    /// Records a `macro_rules!` definition that spells `impl`, or a call
-    /// whose tokens name `name`.
-    fn macro_use(&mut self, mac: &syn::Macro, defined: Option<&syn::Ident>, name: &str) {
-        let mut tokens = Vec::new();
-        flatten_tokens(&mac.tokens, &mut tokens);
-        let Some(called) = mac.path.segments.last() else {
-            return;
-        };
-        let defined = match defined {
-            Some(defined) => Some(defined.to_string()),
-            None if called.ident == "macro_rules" => tokens.first().cloned(),
-            None => None,
-        };
-        match defined {
-            Some(defined) => {
-                if tokens.iter().any(|token| token == "impl") {
-                    self.implementing.insert(defined);
-                }
-            }
-            None => {
-                if tokens.iter().any(|token| token == name) {
-                    self.calls
-                        .push((mac.path.span().start().line, called.ident.to_string()));
-                }
-            }
+/// The impl parameter of `written` that `ty` names bare.
+fn impl_parameter<'a>(ty: &'a syn::Type, written: &UseSite) -> Option<&'a syn::Ident> {
+    let syn::Type::Path(typed) = ty else {
+        return None;
+    };
+    let ident = typed.path.get_ident().filter(|_| typed.qself.is_none())?;
+    written
+        .impl_parameters
+        .as_ref()?
+        .contains(&ident.to_string())
+        .then_some(ident)
+}
+
+/// The type parameter of `generics` that `ty` names bare, through borrows.
+fn bare_parameter<'a>(ty: &syn::Type, generics: &'a syn::Generics) -> Option<&'a syn::Ident> {
+    match ty {
+        syn::Type::Reference(borrowed) => bare_parameter(&borrowed.elem, generics),
+        syn::Type::Paren(inner) => bare_parameter(&inner.elem, generics),
+        syn::Type::Group(inner) => bare_parameter(&inner.elem, generics),
+        syn::Type::Path(typed) if typed.qself.is_none() => {
+            let ident = typed.path.get_ident()?;
+            generics
+                .type_params()
+                .map(|declared| &declared.ident)
+                .find(|declared| *declared == ident)
         }
+        _ => None,
     }
 }
 

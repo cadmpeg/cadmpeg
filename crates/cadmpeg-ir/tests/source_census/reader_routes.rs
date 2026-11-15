@@ -1302,6 +1302,70 @@ impl DeclarationResolver {
             | resolve::ResolvedPath::Unknown => None,
         }
     }
+
+    /// As [`Self::resolve`], and a path into another wire crate, spelled
+    /// from that crate's name or through an explicit `use` of a path that
+    /// is, is read from that crate's root.
+    pub(super) fn resolve_across_crates(
+        &self,
+        file: &str,
+        scope: &[String],
+        path: &syn::Path,
+    ) -> Option<(String, Vec<String>, String)> {
+        self.resolve(file, scope, path)
+            .or_else(|| self.resolve_in_wire_crate(file, scope, path, 0))
+    }
+
+    fn resolve_in_wire_crate(
+        &self,
+        file: &str,
+        scope: &[String],
+        path: &syn::Path,
+        depth: usize,
+    ) -> Option<(String, Vec<String>, String)> {
+        let segments: Vec<String> = path
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect();
+        let (first, rest) = segments.split_first()?;
+        if let Some(root) = wire_crate_root(first) {
+            let rest: syn::Path = syn::parse_str(&format!("crate::{}", rest.join("::"))).ok()?;
+            return self.resolve(&root, &[], &rest);
+        }
+        if depth > 8 || path.leading_colon.is_some() {
+            return None;
+        }
+        let [binding] = self
+            .index
+            .imports
+            .iter()
+            .filter(|import| {
+                import.path == file
+                    && import.scope == scope
+                    && !import.glob
+                    && import.alias == *first
+            })
+            .collect::<Vec<_>>()[..]
+        else {
+            return None;
+        };
+        let target: Vec<String> = binding
+            .target
+            .segments
+            .iter()
+            .chain(rest)
+            .cloned()
+            .collect();
+        let target: syn::Path = syn::parse_str(&target.join("::")).ok()?;
+        self.resolve_in_wire_crate(file, scope, &target, depth + 1)
+    }
+}
+
+/// The root source of the wire crate an extern crate name names.
+fn wire_crate_root(name: &str) -> Option<String> {
+    matches!(name, "cadmpeg_ir" | "cadmpeg_core" | "cadmpeg_asm")
+        .then(|| format!("crates/{}/src/lib.rs", name.replace('_', "-")))
 }
 
 fn path_is_named(path: &syn::Path, name: &str) -> bool {
