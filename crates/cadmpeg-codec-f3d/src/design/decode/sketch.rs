@@ -4955,10 +4955,14 @@ fn decode_compact_planar_line(
     decode_line_components(&values, Vector3::new(0.0, 0.0, 1.0), record_at)
 }
 
+/// Largest z noise of a planar vector, in units of `f64::EPSILON` times the
+/// vector's own largest planar coordinate (floored at 1 cm).
+const PLANAR_Z_NOISE_ULPS: f64 = 1024.0;
+
 /// Whether `z` is zero for a planar vector `(x, y, z)` stored in centimetres:
-/// exactly zero, or at most `f64::EPSILON * max(|x|, |y|, 1 cm)`.
+/// exactly zero, or at most `PLANAR_Z_NOISE_ULPS * f64::EPSILON * max(|x|, |y|, 1 cm)`.
 pub(in crate::design) fn planar_z_is_zero(x: f64, y: f64, z: f64) -> bool {
-    z == 0.0 || z.abs() <= f64::EPSILON * x.abs().max(y.abs()).max(1.0)
+    z == 0.0 || z.abs() <= PLANAR_Z_NOISE_ULPS * f64::EPSILON * x.abs().max(y.abs()).max(1.0)
 }
 
 /// Raw z components of a compact planar line at `payload` offset 133 when
