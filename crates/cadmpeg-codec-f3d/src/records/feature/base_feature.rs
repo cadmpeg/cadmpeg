@@ -181,7 +181,7 @@ pub(crate) enum DesignBaseFeatureConstruction {
         bodies: Vec<DesignBaseFeatureEntry<u64>>,
         /// Six-byte source fields of the repeated body-suffix run, parallel to
         /// `bodies`.
-        repeated_fields: Vec<[u8; 6]>,
+        repeated_fields: Vec<NativeBytes<[u8; 6]>>,
         /// Result records with their source fields, parallel to `bodies`.
         results: Vec<DesignBaseFeatureEntry<u32>>,
         /// Shared metadata record.
@@ -437,7 +437,7 @@ impl Serialize for DesignBaseFeatureConstruction {
                 body_entity_suffix_offsets: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
                 body_entity_fields:
                     SliceColumn<'a, DesignBaseFeatureEntry<u64>, NativeBytes<[u8; 6]>>,
-                repeated_suffix_fields: SliceColumn<'a, [u8; 6], NativeBytes<[u8; 6]>>,
+                repeated_suffix_fields: SliceColumn<'a, NativeBytes<[u8; 6]>, NativeBytes<[u8; 6]>>,
                 metadata_record: u32,
                 metadata_record_offset: u64,
                 metadata_field: NativeBytes<&'a [u8]>,
@@ -626,7 +626,7 @@ impl Serialize for DesignBaseFeatureConstruction {
                 body_entity_suffixes: SliceColumn::new(bodies, |row| row.value),
                 body_entity_suffix_offsets: SliceColumn::new(bodies, |row| row.offset),
                 body_entity_fields: SliceColumn::new(bodies, |row| row.field.into()),
-                repeated_suffix_fields: SliceColumn::new(repeated_fields, |field| (*field).into()),
+                repeated_suffix_fields: SliceColumn::new(repeated_fields, |field| *field),
                 metadata_record: *metadata_record,
                 metadata_record_offset: *metadata_record_offset,
                 metadata_field: metadata_field.into(),
@@ -1256,16 +1256,23 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                 {
                     return Err("suffix result-body columns must be nonempty and parallel".into());
                 }
+                if body_entity_suffixes
+                    .iter()
+                    .any(|suffix| *suffix == 0 || u32::try_from(*suffix).is_err())
+                    || metadata_field.len() != 6
+                {
+                    return Err(
+                        "suffix result-body frames repeat nonzero u32 body suffixes and store a six-byte metadata field"
+                            .into(),
+                    );
+                }
                 Self::SuffixResultBodies {
                     bodies: entry_rows(
                         body_entity_suffixes,
                         body_entity_suffix_offsets,
                         body_entity_fields,
                     )?,
-                    repeated_fields: repeated_suffix_fields
-                        .into_iter()
-                        .map(NativeBytes::into_inner)
-                        .collect(),
+                    repeated_fields: repeated_suffix_fields,
                     results: result_records
                         .into_iter()
                         .zip(result_record_offsets)
@@ -1508,10 +1515,7 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                 body_entity_suffixes: bodies.iter().map(|row| row.value).collect(),
                 body_entity_suffix_offsets: bodies.iter().map(|row| row.offset).collect(),
                 body_entity_fields: bodies.iter().map(|row| row.field.into()).collect(),
-                repeated_suffix_fields: repeated_fields
-                    .into_iter()
-                    .map(NativeBytes::from)
-                    .collect(),
+                repeated_suffix_fields: repeated_fields,
                 metadata_record,
                 metadata_record_offset,
                 metadata_field,

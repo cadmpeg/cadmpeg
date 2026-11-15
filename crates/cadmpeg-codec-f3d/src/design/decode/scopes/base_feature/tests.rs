@@ -1069,13 +1069,32 @@ fn a_suffix_result_body_frame_reads_its_body_and_result_runs() {
 
 #[test]
 fn a_suffix_result_body_frame_refuses_a_broken_run() {
-    let (bytes, scope) = suffix_frame(&[218], &[300], 1);
-    assert!(exact_base_feature_construction(&bytes, &scope)
-        .unwrap()
-        .is_none());
+    for (entities, repeated) in [(&[218][..], &[300][..]), (&[0][..], &[0][..])] {
+        let (bytes, scope) = suffix_frame(entities, repeated, 1);
+        assert!(
+            exact_base_feature_construction(&bytes, &scope)
+                .unwrap()
+                .is_none(),
+            "{entities:?} repeated as {repeated:?}"
+        );
+    }
 
     let (bytes, scope) = suffix_frame(&[218], &[218], 1);
-    for (offset, value) in [(48, 2), (49, 1), (20, 2), (100, 1)] {
+    for (offset, value) in [
+        (20, 2),
+        (24, 0),
+        (33, 1),
+        (48, 2),
+        (49, 1),
+        (50, 2),
+        (54, 0),
+        (65, 1),
+        (66, 0),
+        (71, 1),
+        (81, 2),
+        (85, 0),
+        (100, 1),
+    ] {
         let mut broken = bytes.clone();
         broken[offset] = value;
         assert!(
@@ -1085,6 +1104,43 @@ fn a_suffix_result_body_frame_refuses_a_broken_run() {
             "byte {offset} = {value}"
         );
     }
+}
+
+#[test]
+fn a_one_body_suffix_frame_reads_at_its_layout_record_offsets() {
+    use crate::layout::base_feature_suffix_result_body as layout;
+    let (bytes, scope) = suffix_frame(&[218], &[218], 1);
+    let Some(DesignBaseFeatureConstruction::SuffixResultBodies {
+        bodies,
+        results,
+        metadata_record_offset,
+        null_reference_flag_offset,
+        ..
+    }) = exact_base_feature_construction(&bytes, &scope).unwrap()
+    else {
+        panic!("one-body suffix result-body frame decodes");
+    };
+    assert_eq!(
+        (
+            bodies[0].offset,
+            null_reference_flag_offset,
+            metadata_record_offset,
+            results[0].offset
+        ),
+        (
+            u64_from_index(layout::BODY_ENTITY_SUFFIX),
+            Some(u64_from_index(layout::NULL_REFERENCE_FLAG)),
+            u64_from_index(layout::METADATA_RECORD),
+            u64_from_index(layout::RESULT_RECORD)
+        )
+    );
+    assert_eq!(
+        bytes[layout::REPEATED_BODY_ENTITY_SUFFIX..layout::REPEATED_BODY_ENTITY_SUFFIX + 4],
+        218u32.to_le_bytes()
+    );
+    assert!(bytes[layout::ZERO_TAIL..layout::LEN]
+        .iter()
+        .all(|byte| *byte == 0));
 }
 
 #[test]

@@ -1715,6 +1715,16 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Note.** DR-483 tracks a marked null reference whose byte after the flag byte is `1`. Unbound result references remain a native body selection of a neutral Base Feature and report `feature.stored-bodies-unbound`.
 
+### DR-646. Entry order of a multi-body suffix result-body frame
+
+**Question.** How does a `Base Feature` suffix result-body frame with more than one body order its body, repeated, and result entries?
+
+**Known.** `f3d.md` §3.1 "A `Base Feature` scope records a result-body snapshot" gives the one-body suffix result-body form. The ordinary form stores each entry kind as one consecutive run. The decoder reads a frame with u32 `N` greater than `1` at offset 20 and its kind at offset `169 + 37N` as `N` body entries, the marked null reference, u32 `N`, `N` repeated entries, one zero byte, the metadata record, u32 `N`, and `N` result entries, and reports `feature.base-feature-suffix-run-order-assumed`.
+
+**Need.** A controlled save whose Base Feature copies two bodies from a referenced design.
+
+**Conflict.** None.
+
 ### DR-251. Compact null-owner parameters: owner and trailer byte 3
 
 **Question.** Does the null owner of a compact null-owner dimension parameter mean that the parameter has no owner or that the frame does not store it, and what does byte 3 of the five-byte compact expression trailer state when it is `1`?

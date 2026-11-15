@@ -83,9 +83,19 @@ fn a_suffix_result_body_wire_reads_as_its_own_form() {
     assert_eq!(value.body_reference_records().count(), 0);
     assert_eq!(value.null_reference_flag_offset(), Some(48));
 
-    let mut unparallel = construction_wires().remove(5);
-    unparallel["result_records"] = json!([229, 230]);
-    assert!(serde_json::from_value::<DesignBaseFeatureConstruction>(unparallel).is_err());
+    for (field, refused) in [
+        ("result_records", json!([229, 230])),
+        ("body_entity_suffixes", json!([0])),
+        ("body_entity_suffixes", json!([1_099_511_627_776_u64])),
+        ("metadata_field", json!("")),
+    ] {
+        let mut wire = construction_wires().remove(5);
+        wire[field] = refused.clone();
+        assert!(
+            serde_json::from_value::<DesignBaseFeatureConstruction>(wire).is_err(),
+            "{field} = {refused}"
+        );
+    }
 }
 
 #[test]

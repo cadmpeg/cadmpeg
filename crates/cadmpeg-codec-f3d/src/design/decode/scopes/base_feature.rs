@@ -677,6 +677,7 @@ use crate::layout::base_feature_legacy_zero_body as legacy_zero_body;
 use crate::layout::base_feature_null_reference_count as null_count;
 use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
+use crate::layout::base_feature_suffix_result_body as suffix_layout;
 use crate::layout::base_feature_typed_reference_zero_body as typed_zero_body;
 use crate::layout::base_feature_wide_shifted_zero_body as shifted_zero_body;
 use crate::layout::base_feature_wide_zero_body as wide_zero_body;
@@ -1685,17 +1686,14 @@ fn exact_suffix_result_bodies(
     start: usize,
 ) -> Option<DesignBaseFeatureConstruction> {
     if scope.kind() != scope::DesignFeatureKind::BaseFeature
-        || bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)?
+        || bytes.get(start + suffix_layout::ZERO_RUN_8..start + suffix_layout::BODY_COUNT_MARKER)?
             != [0; 8]
-        || bytes.get(start + result_body::BODY_COUNT_MARKER) != Some(&1)
+        || bytes.get(start + suffix_layout::BODY_COUNT_MARKER) != Some(&1)
     {
         return None;
     }
-    let body_count = usize::try_from(View::u32_le_at(
-        bytes,
-        start + result_body::COMBINED_BODY_REFERENCE_COUNT,
-    )?)
-    .ok()?;
+    let body_count =
+        usize::try_from(View::u32_le_at(bytes, start + suffix_layout::BODY_COUNT)?).ok()?;
     let kind_offset =
         usize::try_from(scope.kind_offset().checked_sub(scope.byte_offset())?).ok()?;
     if body_count == 0
@@ -1705,7 +1703,7 @@ fn exact_suffix_result_bodies(
     {
         return None;
     }
-    let mut cursor = start + result_body::LEN;
+    let mut cursor = start + suffix_layout::BODY_MARKER;
     let mut bodies = Vec::new();
     for _ in 0..body_count {
         bodies.push(read_base_feature_entry_at(bytes, &mut cursor)?);
@@ -1723,7 +1721,8 @@ fn exact_suffix_result_bodies(
     cursor += null_count::LEN;
     let mut repeated_fields = Vec::new();
     for body in &bodies {
-        if bytes.get(cursor + compact_entry::BODY_MARKER) != Some(&1)
+        if body.value == 0
+            || bytes.get(cursor + compact_entry::BODY_MARKER) != Some(&1)
             || u64::from(View::u32_le_at(
                 bytes,
                 cursor + compact_entry::BODY_ENTITY_SUFFIX,
@@ -1731,12 +1730,11 @@ fn exact_suffix_result_bodies(
         {
             return None;
         }
-        repeated_fields.push(
-            bytes
-                .get(cursor + compact_entry::BODY_FIELD..cursor + compact_entry::LEN)?
-                .try_into()
-                .ok()?,
-        );
+        let field: [u8; 6] = bytes
+            .get(cursor + compact_entry::BODY_FIELD..cursor + compact_entry::LEN)?
+            .try_into()
+            .ok()?;
+        repeated_fields.push(field.into());
         cursor += compact_entry::LEN;
     }
     if bytes.get(cursor) != Some(&0) || bytes.get(cursor + 1) != Some(&1) {

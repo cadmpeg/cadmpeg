@@ -70,10 +70,17 @@ fn project(
 fn null_flag_losses(
     projection: &crate::design::feature_project::ProjectedParameterDesign,
 ) -> usize {
+    losses_of(projection, F3dLossCode::FeatureBaseFeatureNullFlagAssumed)
+}
+
+fn losses_of(
+    projection: &crate::design::feature_project::ProjectedParameterDesign,
+    code: F3dLossCode,
+) -> usize {
     projection
         .projection_losses
         .iter()
-        .filter(|loss| loss.code == F3dLossCode::FeatureBaseFeatureNullFlagAssumed.kind())
+        .filter(|loss| loss.code == code.kind())
         .count()
 }
 
@@ -87,7 +94,7 @@ fn a_flagged_suffix_result_body_frame_projects_its_bodies_with_the_loss() {
                 offset: 25,
                 field: [0; 6],
             }],
-            repeated_fields: vec![[0; 6]],
+            repeated_fields: vec![[0; 6].into()],
             results: vec![DesignBaseFeatureEntry {
                 value: 229,
                 offset: 86,
@@ -105,6 +112,48 @@ fn a_flagged_suffix_result_body_frame_projects_its_bodies_with_the_loss() {
         FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
     ));
     assert_eq!(null_flag_losses(&projection), 1);
+    assert_eq!(
+        losses_of(
+            &projection,
+            F3dLossCode::FeatureBaseFeatureSuffixRunOrderAssumed
+        ),
+        0
+    );
+}
+
+#[test]
+fn a_two_body_suffix_result_body_frame_reports_its_run_order() {
+    let body = |value, offset| DesignBaseFeatureEntry::<u64> {
+        value,
+        offset,
+        field: [0; 6],
+    };
+    let result = |value, offset| DesignBaseFeatureEntry::<u32> {
+        value,
+        offset,
+        field: [0; 6],
+    };
+    let mut scope = base_feature(None);
+    if let DesignScopePayloadMut::BaseFeature(slot) = scope.payload_mut() {
+        *slot = Some(DesignBaseFeatureConstruction::SuffixResultBodies {
+            bodies: vec![body(218, 25), body(219, 40)],
+            repeated_fields: vec![[0; 6].into(); 2],
+            results: vec![result(229, 112), result(230, 123)],
+            metadata_record: 215,
+            metadata_record_offset: 93,
+            metadata_field: vec![0; 6].into(),
+            null_reference_flag_offset: None,
+        });
+    }
+    let projection = project(scope);
+    assert_eq!(
+        losses_of(
+            &projection,
+            F3dLossCode::FeatureBaseFeatureSuffixRunOrderAssumed
+        ),
+        1
+    );
+    assert_eq!(null_flag_losses(&projection), 0);
 }
 
 #[test]
