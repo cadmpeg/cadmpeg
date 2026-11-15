@@ -251,10 +251,13 @@ pub(super) fn exact_move_face_operation(
     let transform_at = start.checked_add(transform_marker)?;
     let transform = marked_record_reference(bytes, transform_at)?;
     let mut typed = None;
+    let mut typed_3 = None;
     let mut unregistered = None;
     let mut typed_ambiguous = false;
+    let mut typed_3_ambiguous = false;
     let mut unregistered_ambiguous = false;
     let mut conflicting_registration = None;
+    let mut unread_registration = None;
     for (frame_start, paired) in records.frames(transform) {
         let Some((tag, after_tag)) =
             lp_ascii_filtered_view(bytes, frame_start, 3..=3, u8::is_ascii_digit)
@@ -269,27 +272,61 @@ pub(super) fn exact_move_face_operation(
         };
         let registration = class_types.get(&tag);
         if let Some(row) = registration.filter(|row| {
-            row.version != RIGID_TRANSFORM_TYPE_VERSION
-                || !row
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(RIGID_TRANSFORM_TYPE_GUID)
+            !matches!(
+                row.version,
+                RIGID_TRANSFORM_TYPE_VERSION | RIGID_TRANSFORM_TYPE_VERSION_3
+            ) || !row
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(RIGID_TRANSFORM_TYPE_GUID)
         }) {
             conflicting_registration = Some((tag, *row));
             continue;
         }
         let Some(next) = move_transform_at(bytes, frame_start, paired, transform) else {
+            if let Some(row) =
+                registration.filter(|row| row.version == RIGID_TRANSFORM_TYPE_VERSION_3)
+            {
+                unread_registration = Some((tag, *row));
+            }
             continue;
         };
-        if registration.is_some() {
-            typed_ambiguous |= typed.replace(next).is_some();
-        } else {
-            unregistered_ambiguous |= unregistered.replace(next).is_some();
+        match registration.map(|row| row.version) {
+            Some(RIGID_TRANSFORM_TYPE_VERSION_3) => {
+                let breaks =
+                    rigid_transform_rule_breaks(bytes, frame_start, paired, next.form, class_types);
+                let rank = usize::from(!breaks.is_empty());
+                match &typed_3 {
+                    Some((held, _, _)) if *held < rank => {}
+                    Some((held, _, _)) if *held == rank => typed_3_ambiguous = true,
+                    _ => {
+                        typed_3 = Some((rank, next, breaks));
+                        typed_3_ambiguous = false;
+                    }
+                }
+            }
+            Some(_) => {
+                let breaks =
+                    rigid_transform_rule_breaks(bytes, frame_start, paired, next.form, class_types);
+                typed_ambiguous |= typed.replace((next, breaks)).is_some();
+            }
+            None => unregistered_ambiguous |= unregistered.replace(next).is_some(),
         }
     }
-    let mut operation = if let Some(operation) = typed {
-        if typed_ambiguous {
-            return None;
+    let typed = match (typed, typed_3) {
+        (Some(_), _) if typed_ambiguous => return None,
+        (Some(chosen), _) => Some(chosen),
+        (None, Some(_)) if typed_3_ambiguous => return None,
+        (None, Some((_, operation, breaks))) => Some((operation, breaks)),
+        (None, None) => None,
+    };
+    let mut operation = if let Some((operation, breaks)) = typed {
+        if !breaks.is_empty() {
+            losses.push(crate::loss::F3dLossCode::FeatureMoveTransformAssumed.note(format!(
+                "MoveFace scope {} keeps the rigid matrix of its marked transform record {transform}, which has {} (DR-306).",
+                scope.id,
+                breaks.join(" and ")
+            )));
         }
         operation
     } else {
@@ -300,6 +337,11 @@ pub(super) fn exact_move_face_operation(
             if let Some((tag, row)) = conflicting_registration {
                 losses.push(crate::loss::F3dLossCode::FeatureMoveFaceTypeConflict.note(format!(
                     "MoveFace scope {} retains transform record {transform} natively after conflicting class registration {tag}: {} version {} (DR-401).",
+                    scope.id, row.type_guid.as_str(), row.version
+                )));
+            } else if let Some((tag, row)) = unread_registration {
+                losses.push(crate::loss::F3dLossCode::FeatureMoveFaceTypeConflict.note(format!(
+                    "MoveFace scope {} retains transform record {transform} natively: its frame with class registration {tag}, {} version {}, has no readable rigid-transform grammar (DR-401).",
                     scope.id, row.type_guid.as_str(), row.version
                 )));
             }
