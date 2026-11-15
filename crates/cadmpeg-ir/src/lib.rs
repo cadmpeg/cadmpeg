@@ -48,6 +48,7 @@ pub mod compare;
 pub mod container;
 
 pub mod declared_measures;
+pub mod design;
 pub mod diff;
 pub mod document;
 pub mod draft;

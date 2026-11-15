@@ -1,0 +1,170 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Reading CADIR design values under the nesting ceilings of
+//! [`ResourceLimits`].
+//!
+//! Canonical expression text, a `TopoName`, a `Picked`, and a construction's
+//! nested constructions nest below the JSON depth limit. Reading CADIR
+//! enforces a ceiling of `ResourceLimits` for each of them and refuses a
+//! document past one with [`CodecError::ResourceLimit`].
+//!
+//! [`from_str`] states the ceilings for one read. A read outside it uses the
+//! ceilings of [`ResourceLimits::default`].
+
+use std::cell::Cell;
+
+use cadmpeg_core::decode::{ResourceDimension, ResourceFailure, ResourceLimit, ResourceLimits};
+use cadmpeg_core::CodecError;
+use serde::de::DeserializeOwned;
+
+/// A nested structure whose depth a ceiling of [`ResourceLimits`] bounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ceiling {
+    /// The nesting of canonical expression text,
+    /// [`ResourceLimits::max_expression_depth`].
+    Expression,
+    /// The nesting of a `TopoName`, [`ResourceLimits::max_name_depth`].
+    Name,
+    /// The nesting of a `Picked` inside a pick's domain or rule,
+    /// [`ResourceLimits::max_pick_depth`].
+    Pick,
+    /// The nesting of a construction's nested constructions,
+    /// [`ResourceLimits::max_construction_depth`].
+    Construction,
+}
+
+impl Ceiling {
+    const ALL: [Self; 4] = [Self::Expression, Self::Name, Self::Pick, Self::Construction];
+
+    /// The ceiling's value in `limits`.
+    #[must_use]
+    pub const fn of(self, limits: &ResourceLimits) -> u64 {
+        match self {
+            Self::Expression => limits.max_expression_depth,
+            Self::Name => limits.max_name_depth,
+            Self::Pick => limits.max_pick_depth,
+            Self::Construction => limits.max_construction_depth,
+        }
+    }
+
+    const fn operation(self) -> &'static str {
+        match self {
+            Self::Expression => "CADIR expression text nesting",
+            Self::Name => "CADIR TopoName nesting",
+            Self::Pick => "CADIR Picked nesting",
+            Self::Construction => "CADIR construction nesting",
+        }
+    }
+
+    const fn slot(self) -> usize {
+        match self {
+            Self::Expression => 0,
+            Self::Name => 1,
+            Self::Pick => 2,
+            Self::Construction => 3,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Session {
+    limits: Option<ResourceLimits>,
+    depths: [u64; Ceiling::ALL.len()],
+    refusal: Option<ResourceLimit>,
+}
+
+impl Session {
+    const IDLE: Self = Self {
+        limits: None,
+        depths: [0; Ceiling::ALL.len()],
+        refusal: None,
+    };
+}
+
+thread_local! {
+    static SESSION: Cell<Session> = const { Cell::new(Session::IDLE) };
+}
+
+/// Reads a design value from JSON text under the nesting ceilings of
+/// `limits`.
+///
+/// # Errors
+///
+/// Returns [`CodecError::ResourceLimit`] for a value nested past a ceiling,
+/// and [`CodecError::Malformed`] for text that is not the value's wire form.
+pub fn from_str<T: DeserializeOwned>(text: &str, limits: &ResourceLimits) -> Result<T, CodecError> {
+    let outer = SESSION.replace(Session {
+        limits: Some(*limits),
+        ..Session::IDLE
+    });
+    let restore = Restore(outer);
+    let read = serde_json::from_str::<T>(text);
+    let refusal = SESSION.get().refusal;
+    drop(restore);
+    read.map_err(|error| match refusal {
+        Some(limit) => CodecError::ResourceLimit(limit),
+        None => CodecError::malformed(error),
+    })
+}
+
+struct Restore(Session);
+
+impl Drop for Restore {
+    fn drop(&mut self) {
+        SESSION.set(self.0);
+    }
+}
+
+/// One level of a nested structure, held until the guard is dropped.
+pub(super) struct Depth(Ceiling);
+
+impl Drop for Depth {
+    fn drop(&mut self) {
+        let mut session = SESSION.get();
+        let slot = &mut session.depths[self.0.slot()];
+        *slot = slot.checked_sub(1).unwrap_or_default();
+        SESSION.set(session);
+    }
+}
+
+/// Enters one level of `ceiling`, or refuses the level past its value.
+pub(super) fn enter(ceiling: Ceiling) -> Result<Depth, ResourceLimit> {
+    let mut session = SESSION.get();
+    let limit = ceiling.of(&session.limits.unwrap_or_default());
+    let used = session.depths[ceiling.slot()];
+    let Some(next) = used.checked_add(1).filter(|next| *next <= limit) else {
+        let refusal = ResourceLimit {
+            dimension: ResourceDimension::RecursionDepth,
+            reason: ResourceFailure::BudgetExceeded,
+            limit,
+            used,
+            additional: 1,
+            operation: ceiling.operation(),
+        };
+        session.refusal.get_or_insert(refusal);
+        SESSION.set(session);
+        return Err(refusal);
+    };
+    session.depths[ceiling.slot()] = next;
+    SESSION.set(session);
+    Ok(Depth(ceiling))
+}
+
+/// Enters one level of `ceiling` inside a deserializer.
+pub(super) fn enter_de<E: serde::de::Error>(ceiling: Ceiling) -> Result<Depth, E> {
+    enter(ceiling).map_err(|limit| refusal(&limit))
+}
+
+/// Records a refusal that a deserializer reports, and states it as `E`.
+pub(super) fn refuse<E: serde::de::Error>(limit: ResourceLimit) -> E {
+    let mut session = SESSION.get();
+    session.refusal.get_or_insert(limit);
+    SESSION.set(session);
+    refusal(&limit)
+}
+
+fn refusal<E: serde::de::Error>(limit: &ResourceLimit) -> E {
+    E::custom(format_args!(
+        "{} exceeds the ceiling of {}",
+        limit.operation, limit.limit
+    ))
+}
