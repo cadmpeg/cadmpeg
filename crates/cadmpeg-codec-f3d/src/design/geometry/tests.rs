@@ -1686,9 +1686,7 @@ fn arrangement_focus_keeps_only_curves_with_connected_boxes() {
     assert_eq!(far.profiles.len(), 1);
 
     // A focus in both groups keeps the whole arrangement.
-    let focus = std::collections::HashSet::from([
-        entities[0].id().clone(),
-        entities[3].id().clone(),
-    ]);
+    let focus =
+        std::collections::HashSet::from([entities[0].id().clone(), entities[3].id().clone()]);
     assert!(super::arrangement_focus(&sketch, &entities, &focus, 1.0e-7).is_none());
 }

@@ -690,9 +690,7 @@ pub(super) fn arrangement_region_containing_points(
 
 /// A box that holds the whole of `entity`, or `None` when the curve has no
 /// bounded box this reading knows: a reference line or a bounded ellipse.
-fn arrangement_focus_bounds(
-    entity: &cadmpeg_ir::sketches::SketchEntity,
-) -> Option<[Point2; 2]> {
+fn arrangement_focus_bounds(entity: &cadmpeg_ir::sketches::SketchEntity) -> Option<[Point2; 2]> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     match entity.geometry.definition() {
@@ -700,9 +698,7 @@ fn arrangement_focus_bounds(
             let point = position.get();
             Some([point, point])
         }
-        SketchGeometryDefinition::Line { start, end } => {
-            polyline_bounds(&[start.get(), end.get()])
-        }
+        SketchGeometryDefinition::Line { start, end } => polyline_bounds(&[start.get(), end.get()]),
         SketchGeometryDefinition::Circle { center, radius }
         | SketchGeometryDefinition::Arc { center, radius, .. } => {
             let (center, radius) = (center.get(), radius.get());
@@ -758,7 +754,7 @@ fn arrangement_focus(
     // Units: the profile loops, then the curves in no loop.
     let mut units = Vec::<(Vec<&SketchEntityId>, [Point2; 2], bool)>::new();
     let mut in_loop = HashSet::new();
-    for profile in sketch.profiles.iter() {
+    for profile in &sketch.profiles {
         let mut ids = Vec::new();
         let mut hull = None;
         for use_ in profile {
