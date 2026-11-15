@@ -963,6 +963,110 @@ fn sketch_profile_region_selection_derives_companion_after_header_shaped_member(
 
 mod counted_frames;
 
+/// A loop of curves `ids` followed by its exterior byte.
+fn region_loop(bytes: &mut Vec<u8>, ids: &[u32], exterior: u8) {
+    bytes.extend_from_slice(&u32::try_from(ids.len()).unwrap().to_le_bytes());
+    for id in ids {
+        region_member(bytes, *id, [0, 1, 1]);
+    }
+    bytes.push(exterior);
+}
+
+/// A selection of two regions. The first is the union of two atomic
+/// regions split by curve 12; the second is one atomic region.
+fn atomic_region_frame(atomic_count: u32) -> (Vec<u8>, usize) {
+    let profile_record_index = 100;
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"266", profile_record_index);
+    indexed_header(&mut bytes, *b"263", profile_record_index + 1);
+    indexed_header(&mut bytes, *b"259", profile_record_index + 2);
+    indexed_header(&mut bytes, *b"327", profile_record_index + 3);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.push(1);
+    bytes.extend_from_slice(&profile_record_index.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    region_loop(&mut bytes, &[10, 11], 1);
+    bytes.extend_from_slice(&atomic_count.to_le_bytes());
+    let atomic_at = bytes.len();
+    for ids in [[10, 12], [11, 12]] {
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        region_loop(&mut bytes, &ids, 1);
+    }
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    region_loop(&mut bytes, &[20], 1);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    indexed_header(&mut bytes, *b"261", profile_record_index + 3);
+    (bytes, atomic_at)
+}
+
+fn ring_ids(
+    rings: &[&crate::records::topology::sketch_profile::DesignSketchProfileRegion],
+) -> Vec<Vec<u32>> {
+    rings
+        .iter()
+        .map(|ring| {
+            ring.members
+                .iter()
+                .map(|member| member.curve_primary_id.get())
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn sketch_profile_region_selection_reads_the_atomic_regions_of_each_region() {
+    let (bytes, atomic_at) = atomic_region_frame(2);
+    let selection =
+        parse_sketch_profile_region_selection(&bytes, 100, 0).expect("profile-region selection");
+    assert_eq!(
+        selection
+            .regions
+            .iter()
+            .map(|region| region.region_ordinal)
+            .collect::<Vec<_>>(),
+        [0, 1]
+    );
+    assert_eq!(
+        selection
+            .atomic_regions
+            .iter()
+            .map(|atomic| (atomic.region_ordinal, atomic.loop_count_offset))
+            .collect::<Vec<_>>(),
+        [
+            (0, u64_from_index(atomic_at)),
+            (0, u64_from_index(atomic_at + 4 + 4 + 80 + 1))
+        ]
+    );
+    assert_eq!(
+        ring_ids(&selection.resolution_regions().expect("member rings")),
+        [vec![10, 12], vec![11, 12], vec![20]]
+    );
+}
+
+#[test]
+fn sketch_profile_region_selection_refuses_a_short_atomic_region_run() {
+    let (bytes, _) = atomic_region_frame(3);
+    assert_eq!(parse_sketch_profile_region_selection(&bytes, 100, 0), None);
+    let (mut bytes, atomic_at) = atomic_region_frame(2);
+    bytes[atomic_at + 4 + 4 + 80] = 2;
+    assert_eq!(parse_sketch_profile_region_selection(&bytes, 100, 0), None);
+}
+
+#[test]
+fn atomic_regions_that_omit_a_region_curve_select_no_member_rings() {
+    let (bytes, atomic_at) = atomic_region_frame(2);
+    let mut omitted = bytes;
+    // Curve 11 of the first region becomes curve 13 in its second atomic
+    // region, whose loop count follows the first atomic region's 89 bytes.
+    let member = atomic_at + 89 + 4 + 4;
+    omitted[member + 4..member + 8].copy_from_slice(&13u32.to_le_bytes());
+    let selection =
+        parse_sketch_profile_region_selection(&omitted, 100, 0).expect("profile-region selection");
+    assert!(selection.resolution_regions().is_none());
+}
+
 #[test]
 fn sketch_profile_region_selection_retains_partial_curve_incidence_words() {
     let (mut bytes, selection_at, _, _) = region_selection_frame();

@@ -10137,9 +10137,9 @@ anchor = "two opaque bytes at offsets 30 and 31"
 name = "sketch_profile_region_selection_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "The `N+3` selection starts with its eleven-byte indexed header, ten zero bytes, a marked reference to `N`, six zero bytes, u32 `1`, and a nonzero u32 region count."
+anchor = "The `N+3` selection starts with its eleven-byte indexed header, ten zero bytes, a marked reference to `N`, six zero bytes, and a nonzero u32 region count."
 size = 40
-note = "Offsets are relative to the N+3 selection header. The ordered variable-length region run starts at offset 40."
+note = "Offsets are relative to the N+3 selection header. The first selected region's loop count is at offset 36, and its ordered variable-length loop run starts at offset 40."
 
 [[record.field]]
 name = "indexed_header"
@@ -10177,18 +10177,18 @@ source = "spec"
 anchor = "six zero bytes"
 
 [[record.field]]
-name = "format_version"
+name = "region_count"
 offset = 32
 type = "u32"
 source = "spec"
-anchor = "u32 `1`"
+anchor = "a nonzero u32 region count"
 
 [[record.field]]
-name = "region_count"
+name = "loop_count"
 offset = 36
 type = "u32"
 source = "spec"
-anchor = "a nonzero u32 region count"
+anchor = "Each selected region starts with a nonzero u32 loop count."
 
 [[record]]
 name = "sketch_profile_region_member"
