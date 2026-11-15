@@ -139,9 +139,10 @@ pub(crate) fn fill(
         };
         let wanted = wants.entry(history_index).or_default();
         for slot in slots {
-            match wanted.iter_mut().find(|want| {
-                want.state == state && want.slot == slot && want.consumer.is_none()
-            }) {
+            match wanted
+                .iter_mut()
+                .find(|want| want.state == state && want.slot == slot && want.consumer.is_none())
+            {
                 Some(want) => want.consumer = Some(feature),
                 None => wanted.push(Want {
                     origin: feature,
@@ -198,8 +199,7 @@ fn scope_history(
             (matches.next().is_none() && holds(history)).then_some(index)
         }
         None => {
-            let (history, _, _) =
-                super::unique_history_state_pair(histories, current, previous)?;
+            let (history, _, _) = super::unique_history_state_pair(histories, current, previous)?;
             let index = histories
                 .iter()
                 .position(|candidate| std::ptr::eq(candidate, history))?;
@@ -226,8 +226,14 @@ fn unbound_base_slots(
     }
     let native = feature.native_ref.as_deref()?;
     let scope = scopes.iter().find(|scope| scope.id == native)?;
-    let (current, previous) = (scope.history_state_id()?, scope.previous_history_state_id()?);
-    let stored = scope.base_feature_construction()?.body_entity_suffixes().len();
+    let (current, previous) = (
+        scope.history_state_id()?,
+        scope.previous_history_state_id()?,
+    );
+    let stored = scope
+        .base_feature_construction()?
+        .body_entity_suffixes()
+        .len();
     let index = scope_history(native, (current, previous), histories, bindings)?;
     let state = histories[index]
         .states()
