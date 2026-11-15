@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::collections::HashSet;
 
-use crate::history::{recipe_face_replaces_selection, selection_has_unchanged_face};
+use super::{recipe_face_replaces_selection, selection_has_unchanged_face};
 
 #[test]
 fn a_recipe_without_a_closed_edge_node_replaces_any_selection() {
