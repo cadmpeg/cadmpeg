@@ -70,7 +70,7 @@ impl<T: Ord, O: MemberOrder> Members<T, O> {
     pub fn new(mut items: Vec<T>) -> Result<Self, &'static str> {
         let mut keys: Vec<&T> = items.iter().collect();
         keys.sort();
-        if keys.windows(2).any(|pair| pair[0] == pair[1]) {
+        if keys.windows(2).any(|pair| pair[0].cmp(pair[1]).is_eq()) {
             return Err("a member list states a member twice");
         }
         if O::SORTED {

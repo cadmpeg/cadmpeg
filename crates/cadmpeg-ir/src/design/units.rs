@@ -233,11 +233,12 @@ macro_rules! checked_quantity {
         pub struct $name(f64);
 
         impl $name {
-            /// Admits a value within the quantity's domain.
+            /// Admits a value within the quantity's domain. A number has one
+            /// zero: −0 is admitted as 0.
             #[must_use]
             pub const fn new($value: f64) -> Option<Self> {
                 if $value.is_finite() && $condition {
-                    Some(Self($value))
+                    Some(Self($value + 0.0))
                 } else {
                     None
                 }

@@ -767,7 +767,10 @@ pub(super) fn scalar_dimensions() -> Vec<ScalarDimension> {
         ScalarDimension::Length(l(1.0)),
         ScalarDimension::Angle(Dimension::Negated(id("parameter", 1))),
         ScalarDimension::Ratio(r(0.5)),
-        ScalarDimension::Uv { u: r(0.1), v: r(0.9) },
+        ScalarDimension::Uv {
+            u: r(0.1),
+            v: r(0.9),
+        },
         ScalarDimension::Position {
             x: l(1.0),
             y: l(2.0),
