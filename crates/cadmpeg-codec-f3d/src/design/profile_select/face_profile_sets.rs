@@ -213,6 +213,43 @@ pub(crate) fn bind_extrude_face_profile_sets_with(
     Ok(losses)
 }
 
+/// Keep the face profile that the transition's own end caps infer when a later
+/// route bound other faces to the same Extrude. The end caps prove their faces
+/// against the transition; the later route has no such proof for a closed-edge
+/// recipe profile.
+pub(crate) fn keep_cap_inferred_profiles(
+    features: &mut [cadmpeg_ir::features::Feature],
+    cap_inferred: &[cadmpeg_ir::features::Feature],
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
+
+    let by_id: HashMap<_, _> = cap_inferred
+        .iter()
+        .map(|feature| (&feature.id, feature))
+        .collect();
+    for feature in features {
+        let Some(reference) = by_id.get(&feature.id) else {
+            continue;
+        };
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: inferred @ ProfileRef::Planar(PlanarProfileRef::HistoricalFaces { .. }),
+            ..
+        }) = reference.evaluation.definition()
+        else {
+            continue;
+        };
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
+                definition
+            {
+                if profile != inferred {
+                    *profile = inferred.clone();
+                }
+            }
+        });
+    }
+}
+
 fn bind_one(
     definition: &mut cadmpeg_ir::features::FeatureDefinition,
     scope: &DesignParameterScope,

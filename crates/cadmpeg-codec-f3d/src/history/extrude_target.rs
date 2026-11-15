@@ -110,20 +110,23 @@ pub(crate) fn bind(
             if spanning {
                 // The result state follows several transitions, so the stored
                 // caps do not apply; only the side of the face is checked.
-                if behind_start {
+                if behind_start || operand.has_closed_edge_node() {
                     *face = FaceSelection::Native(native);
                     operand.resolved_face_slots.clear();
                     operand.resolved_active_face = None;
                     losses.push(crate::loss::F3dLossCode::FeatureExtrudeTargetDisputed.note(format!(
-                        "Extrude termination {} retains its native recipe because its selected face lies behind the start of the sweep.", operand.id
+                        "Extrude termination {} retains its native recipe because its selected face lies behind the start of the sweep or comes from a closed-edge recipe that no stored cap proves.", operand.id
                     )));
                 }
                 return;
             }
-            if referenced.is_empty() && !behind_start {
+            // A closed-edge recipe face needs the stored-cap proof below.
+            let unproven = operand.has_closed_edge_node();
+            if referenced.is_empty() && !behind_start && !unproven {
                 return;
             }
             if !behind_start
+                && !unproven
                 && selection_slots(face).is_some_and(|slots| {
                     !slots.is_empty() && slots.iter().all(|slot| referenced.contains(slot))
                 })
