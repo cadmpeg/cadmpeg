@@ -11,12 +11,12 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::shared::{CornerTransition, Helix, SpineLimits, TextContent, ToolDisposition};
+use super::shared::{CornerTransition, Helix, Law, SpineLimits, TextContent, ToolDisposition};
 use crate::design::construction::{kinds, Construction};
 use crate::design::dimension::Dimension;
 use crate::design::options::{
-    Boolean, BooleanOp, Law, NativeOptions, PathRef, ProfileRef, ProjectionDirection,
-    SectionCondition, SheetOutput, SolidOutput,
+    Boolean, BooleanOp, NativeOptions, PathRef, ProfileRef, ProjectionDirection, SectionCondition,
+    SheetOutput, SolidOutput,
 };
 use crate::design::selection::{Continuity, OrderedSelection, SetSelection};
 use crate::design::topology::Topology;

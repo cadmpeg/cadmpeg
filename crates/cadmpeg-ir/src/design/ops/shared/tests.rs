@@ -543,6 +543,27 @@ pub(in crate::design::ops) fn path_roll_control_samples() -> Vec<PathRollControl
     ]
 }
 
+pub(in crate::design::ops) fn radial_dimension_positive_length_samples(
+) -> Vec<RadialDimension<PositiveLength>> {
+    vec![
+        RadialDimension::Radius(lit(positive(2.0))),
+        RadialDimension::Diameter(lit(positive(2.0))),
+    ]
+}
+
+pub(in crate::design::ops) fn law_length_samples() -> Vec<Law<Length>> {
+    vec![
+        Law::Constant(lit(length(-1.5))),
+        Law::Linear {
+            start: lit(length(-1.5)),
+            end: lit(length(-1.5)),
+        },
+        Law::Curve(selection(2)),
+        Law::Expression(expression()),
+        Law::Native(text("codec:native")),
+    ]
+}
+
 pub(in crate::design::ops) fn bounds_length_samples() -> Vec<Bounds<Length>> {
     vec![
         Bounds::<Length> {
@@ -566,6 +587,74 @@ pub(in crate::design::ops) fn bounds_angle_samples() -> Vec<Bounds<Angle>> {
             min: None,
             max: None,
         },
+    ]
+}
+
+pub(in crate::design::ops) fn law_fraction_samples() -> Vec<Law<Fraction>> {
+    vec![
+        Law::Constant(lit(fraction(0.25))),
+        Law::Linear {
+            start: lit(fraction(0.25)),
+            end: lit(fraction(0.25)),
+        },
+        Law::Curve(selection(2)),
+        Law::Expression(expression()),
+        Law::Native(text("codec:native")),
+    ]
+}
+
+pub(in crate::design::ops) fn law_angle_samples() -> Vec<Law<Angle>> {
+    vec![
+        Law::Constant(bound(1)),
+        Law::Linear {
+            start: bound(1),
+            end: bound(1),
+        },
+        Law::Curve(selection(2)),
+        Law::Expression(expression()),
+        Law::Native(text("codec:native")),
+    ]
+}
+
+pub(in crate::design::ops) fn span_length_samples() -> Vec<Span<Length>> {
+    vec![
+        Span::Between {
+            start: Box::new(limit_length_samples().remove(0)),
+            end: Box::new(limit_length_samples().remove(0)),
+        },
+        Span::Symmetric {
+            amount: lit(length(-1.5)),
+            measure: Some(SymmetricMeasure::PerSide),
+        },
+        Span::Symmetric {
+            amount: lit(length(-1.5)),
+            measure: None,
+        },
+    ]
+}
+
+pub(in crate::design::ops) fn limit_length_samples() -> Vec<Limit<Length>> {
+    vec![
+        Limit::AtOrigin,
+        Limit::Amount(lit(length(-1.5))),
+        Limit::ThroughAll,
+        Limit::Next,
+        Limit::Last,
+        Limit::ToGeometry {
+            target: selection(1),
+            offset: Some(LimitOffset::Translated(lit(length(0.5)))),
+            extend: Some(lit(true)),
+            far: Some(lit(true)),
+        },
+        Limit::ToGeometry {
+            target: selection(1),
+            offset: None,
+            extend: None,
+            far: None,
+        },
+        Limit::ToPlane(plane()),
+        Limit::ToPoint(point_construction()),
+        Limit::Native(text("codec:native")),
     ]
 }
 
@@ -604,8 +693,17 @@ fn every_shared_type_round_trips() {
     report.check("PathPosition", path_position_samples());
     report.check("PathAxisControl", path_axis_control_samples());
     report.check("PathRollControl", path_roll_control_samples());
+    report.check(
+        "RadialDimension<PositiveLength>",
+        radial_dimension_positive_length_samples(),
+    );
+    report.check("Law<Length>", law_length_samples());
     report.check("Bounds<Length>", bounds_length_samples());
     report.check("Bounds<Angle>", bounds_angle_samples());
+    report.check("Law<Fraction>", law_fraction_samples());
+    report.check("Law<Angle>", law_angle_samples());
+    report.check("Span<Length>", span_length_samples());
+    report.check("Limit<Length>", limit_length_samples());
     assert!(report.failures.is_empty(), "{:#?}", report.failures);
 }
 
@@ -708,7 +806,13 @@ mod schema {
         generates::<PathPosition>();
         generates::<PathAxisControl>();
         generates::<PathRollControl>();
+        generates::<RadialDimension<PositiveLength>>();
+        generates::<Law<Length>>();
         generates::<Bounds<Length>>();
         generates::<Bounds<Angle>>();
+        generates::<Law<Fraction>>();
+        generates::<Law<Angle>>();
+        generates::<Span<Length>>();
+        generates::<Limit<Length>>();
     }
 }

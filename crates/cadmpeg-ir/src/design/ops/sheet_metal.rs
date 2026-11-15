@@ -10,12 +10,12 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::shared::{Joint, PairElement};
+use super::shared::{Joint, PairElement, Span};
 use crate::design::construction::{kinds, Construction};
 use crate::design::dimension::Dimension;
 use crate::design::expr::Expression;
 use crate::design::ids::SheetMetalRuleId;
-use crate::design::options::{NativeOptions, ProfileRef, Span, Thickness};
+use crate::design::options::{NativeOptions, ProfileRef, Thickness};
 use crate::design::selection::{DefinitionRef, OrderedSelection, SetSelection};
 use crate::ids::ProductDefinitionId;
 use crate::scalar::{
