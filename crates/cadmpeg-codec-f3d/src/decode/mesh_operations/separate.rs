@@ -161,6 +161,7 @@ fn raw(notes: &mut Notes<'_, '_>, key: impl fmt::Display, bytes: &[u8]) -> Resul
 }
 
 fn slot(notes: &mut Notes<'_, '_>, key: &str, value: Slot<'_>) -> Result<(), CodecError> {
+    let source_id = notes.source;
     notes.property(
         format_args!("{key}:offset"),
         format_args!("{}", value.offset),
@@ -207,7 +208,7 @@ fn slot(notes: &mut Notes<'_, '_>, key: &str, value: Slot<'_>) -> Result<(), Cod
             F3dLossCode::FeatureMeshSeparateReferenceUnresolved,
             format_args!(
                 "Mesh separation {} retains {key} at {} with unresolved {error}.",
-                notes.source, value.offset
+                source_id, value.offset
             ),
         )?;
     }
@@ -245,6 +246,7 @@ fn settings(
     parsed: &SeparateScope<'_>,
     notes: &mut Notes<'_, '_>,
 ) -> Result<MeshSeparation, CodecError> {
+    let source_id = notes.source;
     let mut separation = MeshSeparation::default();
     if let Some(selector) = parsed.selector {
         notes.property(
@@ -267,7 +269,7 @@ fn settings(
             code,
             format_args!(
                 "Mesh separation {} provisionally reads selector {selector} as method {:?}.",
-                notes.source, separation.method
+                source_id, separation.method
             ),
         )?;
         let group_loss = match selector {
@@ -282,7 +284,7 @@ fn settings(
             _ => None,
         };
         if let Some(code) = group_loss {
-            notes.loss(code, format_args!("Mesh separation {} provisionally reads selector {selector} as group scope {:?}; selected group identities remain unresolved.", notes.source, separation.groups))?;
+            notes.loss(code, format_args!("Mesh separation {} provisionally reads selector {selector} as group scope {:?}; selected group identities remain unresolved.", source_id, separation.groups))?;
         }
     }
     let mut lane = View::over_retained(parsed.lane);
@@ -306,7 +308,7 @@ fn settings(
                 format_args!("mesh-separate-lane-word:{ordinal}"),
                 format_args!("{}", value),
             )?;
-            notes.loss(carrier, format_args!("Mesh separation {} provisionally assigns raw lane word {ordinal} to this independent body control.", notes.source))?;
+            notes.loss(carrier, format_args!("Mesh separation {} provisionally assigns raw lane word {ordinal} to this independent body control.", source_id))?;
             *target = match value {
                 0 => Some(false),
                 1 => Some(true),
@@ -317,7 +319,7 @@ fn settings(
             } else {
                 F3dLossCode::FeatureMeshSeparateSelectorUnruled
             };
-            notes.loss(code, format_args!("Mesh separation {} provisionally reads lane word {ordinal} value {value} with 0=false and 1=true; neutral value is {target:?}.", notes.source))?;
+            notes.loss(code, format_args!("Mesh separation {} provisionally reads lane word {ordinal} value {value} with 0=false and 1=true; neutral value is {target:?}.", source_id))?;
         }
     }
     Ok(separation)
@@ -328,6 +330,7 @@ fn details(
     key: &str,
     value: &SourceDetails<'_>,
 ) -> Result<(), CodecError> {
+    let source_id = notes.source;
     raw(notes, format!("{key}:raw"), value.frame.window())?;
     run(notes, &format!("{key}:members"), &value.run)?;
     for (ordinal, reference) in value.references.iter().enumerate() {
@@ -348,7 +351,7 @@ fn details(
                 format_args!("{text}"),
             )?;
         } else {
-            notes.loss(F3dLossCode::FeatureMeshSeparateSourceFieldsUninterpreted, format_args!("Mesh separation {} retains invalid UTF-16 identifier {key}:{ordinal} as bytes.", notes.source))?;
+            notes.loss(F3dLossCode::FeatureMeshSeparateSourceFieldsUninterpreted, format_args!("Mesh separation {} retains invalid UTF-16 identifier {key}:{ordinal} as bytes.", source_id))?;
         }
     }
     if let Some(role) = value.role {
@@ -360,7 +363,7 @@ fn details(
             F3dLossCode::FeatureMeshSeparateSourceFieldsUninterpreted,
             format_args!(
                 "Mesh separation {} retains the readable {key} fields before {error}.",
-                notes.source
+                source_id
             ),
         )?;
     }
@@ -373,6 +376,7 @@ fn project_source(
     parsed: &SeparateScope<'_>,
     notes: &mut Notes<'_, '_>,
 ) -> Result<Option<NativeSelections>, CodecError> {
+    let source_id = notes.source;
     let Some(group) = parsed.source.and_then(Slot::admitted) else {
         return Ok(None);
     };
@@ -396,7 +400,7 @@ fn project_source(
                 .iter()
                 .any(|slot| slot.target() == Some(member))
         {
-            notes.loss(F3dLossCode::FeatureMeshSeparateReferenceMismatch, format_args!("Mesh separation {} retains common-table member {member} outside its source-group member run.", notes.source))?;
+            notes.loss(F3dLossCode::FeatureMeshSeparateReferenceMismatch, format_args!("Mesh separation {} retains common-table member {member} outside its source-group member run.", source_id))?;
         }
     }
     for (ordinal, member) in source.members.iter().enumerate() {
@@ -409,7 +413,7 @@ fn project_source(
             None => (),
         }
     }
-    notes.loss(F3dLossCode::FeatureMeshSeparateSourceFieldsUninterpreted, format_args!("Mesh separation {} retains group and member auxiliary references, native identifiers, words and roles in source properties.", notes.source))?;
+    notes.loss(F3dLossCode::FeatureMeshSeparateSourceFieldsUninterpreted, format_args!("Mesh separation {} retains group and member auxiliary references, native identifiers, words and roles in source properties.", source_id))?;
     if let Some(error) = source.membership.framing {
         notes.property(
             format_args!("mesh-separate-membership-framing"),
@@ -425,7 +429,7 @@ fn project_source(
         .collect::<Vec<_>>();
     match NativeSelections::try_from(values) {
         Ok(members) => {
-            notes.loss(F3dLossCode::FeatureMeshSeparateSourceMembershipAssumed, format_args!("Mesh separation {} provisionally interprets its complete ordered member body references as input-local mesh membership.", notes.source))?;
+            notes.loss(F3dLossCode::FeatureMeshSeparateSourceMembershipAssumed, format_args!("Mesh separation {} provisionally interprets its complete ordered member body references as input-local mesh membership.", source_id))?;
             Ok(Some(members))
         }
         Err(error) => {
@@ -642,13 +646,18 @@ pub(in crate::decode) fn bind_features(
                 feature: feature.id.clone(),
             }
         };
+        let Notes {
+            properties,
+            losses: mut staged_losses,
+            ..
+        } = notes;
         losses
-            .try_reserve(notes.losses.len())
-            .map_err(|_| allocation_error(ctx, notes.losses.len()))?;
-        for (key, value) in notes.properties {
+            .try_reserve(staged_losses.len())
+            .map_err(|_| allocation_error(ctx, staged_losses.len()))?;
+        for (key, value) in properties {
             feature.source_properties.insert(key, value);
         }
-        losses.append(&mut notes.losses);
+        losses.append(&mut staged_losses);
         let mut definition = feature.evaluation.definition().clone();
         let operation = match &mut definition {
             FeatureDefinition::Operation(operation)
