@@ -3116,7 +3116,8 @@ fn check_feature_references(
                         | FeatureOperation::MeshGenerateFaceGroups { .. }
                         | FeatureOperation::MeshCombineFaceGroups { .. }
                         | FeatureOperation::MeshModify {
-                            modification: crate::features::mesh::MeshModification::PlaneCut { .. },
+                            modification: crate::features::mesh::MeshModification::Separate { .. }
+                                | crate::features::mesh::MeshModification::PlaneCut { .. },
                             ..
                         }
                 ) {

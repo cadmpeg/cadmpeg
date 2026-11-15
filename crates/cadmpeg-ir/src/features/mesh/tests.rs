@@ -5,6 +5,88 @@ use super::{
 use crate::features::FeatureOperation;
 
 #[test]
+fn separation_wire_keeps_independent_controls_and_selected_category() {
+    use super::{MeshSeparation, MeshSeparationGroups};
+    assert_eq!(
+        serde_json::to_value(MeshSeparation::default()).unwrap(),
+        serde_json::json!({})
+    );
+    for separation in [
+        serde_json::json!({}),
+        serde_json::json!({"method":"shells", "multiple_bodies":true, "keep_body":false}),
+        serde_json::json!({"groups":{"kind":"all"}, "keep_body":true}),
+        serde_json::json!({"method":"face_groups", "groups":{"kind":"selected"}}),
+        serde_json::json!({"groups":{"kind":"selected", "members":["beta", "alpha"]}, "multiple_bodies":false}),
+    ] {
+        let wire = serde_json::json!({"definition":"mesh_modify", "source":{"feature":"test:model:feature#separate"}, "modification":{"kind":"separate", "separation":separation}});
+        let decoded: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+    }
+    let selected: MeshSeparation =
+        serde_json::from_value(serde_json::json!({"groups":{"kind":"selected"}})).unwrap();
+    assert_eq!(
+        selected.groups,
+        Some(MeshSeparationGroups::Selected { members: None })
+    );
+    for invalid in [
+        serde_json::json!({"method":null}),
+        serde_json::json!({"groups":null}),
+        serde_json::json!({"multiple_bodies":null}),
+        serde_json::json!({"keep_body":null}),
+        serde_json::json!({"method":"other"}),
+        serde_json::json!({"unknown":true}),
+        serde_json::json!({"groups":{"kind":"all", "members":["alpha"]}}),
+        serde_json::json!({"groups":{"kind":"selected", "members":null}}),
+        serde_json::json!({"groups":{"kind":"selected", "members":[]}}),
+        serde_json::json!({"groups":{"kind":"selected", "members":["alpha", "alpha"]}}),
+        serde_json::json!({"groups":{"kind":"selected", "members":[""]}}),
+        serde_json::json!({"groups":{"kind":"selected", "extra":1}}),
+        serde_json::json!({"keep_body":1}),
+    ] {
+        assert!(serde_json::from_value::<MeshSeparation>(invalid).is_err());
+    }
+}
+
+#[test]
+fn separation_rewrite_traverses_owned_group_selectors_and_source_identity() {
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
+    let scope = "f3d:Design/BulkStream.dat:design-parameter-scope#57";
+    let renamed = "f3d:child/Design/BulkStream.dat:design-parameter-scope#57";
+    let replacements = std::collections::BTreeMap::from([(scope.to_owned(), renamed.to_owned())]);
+    let wire = serde_json::json!({"definition":"mesh_modify", "source":{"feature":"test:model:feature#separate"}, "modification":{"kind":"separate", "separation":{"groups":{"kind":"selected", "members":[scope, format!("{scope}/alpha"), "beta"]}, "keep_body":false}}});
+    let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+    crate::test_support::with_service_decode_context(|ctx| {
+        let text = TextReplacements::build(replacements.iter())?;
+        let mut map = IdentityMap::new(|id: &str| Ok(id.replace("test:", "test:child/")))
+            .with_text_replacements(&text);
+        let rewritten = operation.rewrite_identities(ctx, &mut map)?;
+        let mut expected = wire.clone();
+        expected["source"]["feature"] = "test:child/model:feature#separate".into();
+        expected["modification"]["separation"]["groups"]["members"][0] = renamed.into();
+        assert_eq!(serde_json::to_value(rewritten).unwrap(), expected);
+        map.finish()
+    })
+    .unwrap();
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn separation_schema_matches_optional_nonnull_settings() {
+    use super::{MeshSeparation, MeshSeparationGroups};
+    let schema = serde_json::to_value(schemars::schema_for!(MeshSeparation)).unwrap();
+    assert_eq!(schema["additionalProperties"], false);
+    for name in ["method", "groups", "multiple_bodies", "keep_body"] {
+        assert!(!schema["required"]
+            .as_array()
+            .is_some_and(|required| required.contains(&serde_json::json!(name))));
+        assert!(!schema["properties"][name].to_string().contains("\"null\""));
+    }
+    assert_eq!(schema["properties"]["keep_body"]["type"], "boolean");
+    let groups = serde_json::to_value(schemars::schema_for!(MeshSeparationGroups)).unwrap();
+    assert!(!groups.to_string().contains("\"null\""));
+}
+
+#[test]
 fn face_group_operations_round_trip_partial_settings_and_rewrite_sources() {
     use crate::features::FeatureOperation;
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
