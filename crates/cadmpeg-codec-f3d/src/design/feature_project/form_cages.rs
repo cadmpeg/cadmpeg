@@ -620,7 +620,7 @@ fn merge_memberships(left: FormMembership, right: FormMembership) -> FormMembers
         },
     ) = (&left, &right)
     {
-        if left_members == right_members {
+        if left_members == right_members && !membership_has_duplicate_members(&left) {
             let stronger = |a, b| {
                 if a == FormKnownOrder::Source || b == FormKnownOrder::Source {
                     FormKnownOrder::Source
@@ -764,7 +764,8 @@ fn compatible_with_complete(complete: &FormMembership, other: &FormMembership) -
             previous = Some(position);
             valid
         });
-    !membership_has_duplicate_members(other)
+    !membership_has_duplicate_members(complete)
+        && !membership_has_duplicate_members(other)
         && count.is_none_or(|count| usize::try_from(count).ok() == Some(members.len()))
         && relative_order
         && claims.iter().all(|claim| {
