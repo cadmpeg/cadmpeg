@@ -264,6 +264,19 @@ fn typed_reference_box_projects_frame_and_agrees_with_corner_extents() {
         ]
     );
     assert!(losses.is_empty());
+    // Inferred-axis bytes above one are not flag values; the stored frame stays exact.
+    let mut stray = support.clone();
+    stray.fields.inferred_x_axis.value = 23;
+    stray.fields.inferred_z_axis.value = 96;
+    let Some(FeatureDefinition::Operation(FeatureOperation::Block {
+        placement: Some(stray_placement),
+        ..
+    })) = project_solid_primitive(&scope, &[stray], &mut losses)
+    else {
+        panic!("box with non-flag inferred-axis bytes");
+    };
+    assert_eq!(stray_placement.rows(), placement.rows());
+    assert!(losses.is_empty());
     assert!(project_solid_primitive(&scope, &[], &mut losses).is_some());
     assert_eq!(losses.len(), 1);
     assert_eq!(
