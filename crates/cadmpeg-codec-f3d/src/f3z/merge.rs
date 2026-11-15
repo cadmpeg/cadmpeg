@@ -1818,6 +1818,10 @@ impl MemberDefinition {
     }
 }
 
+/// Identity suffix of the definition that groups a Design stream's
+/// fallback-owned bodies.
+const STORED_FRAME_GROUP_SUFFIX: &str = ":product-definition#stored-frame";
+
 fn define_member(
     ctx: &DecodeContext<'_>,
     model: &mut Model,
@@ -1825,6 +1829,14 @@ fn define_member(
 ) -> Result<cadmpeg_ir::ids::ProductDefinitionId, CodecError> {
     use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 
+    // A member without occurrences has no placement for a Design stream's
+    // stored-frame group, so its bodies belong to the member definition that
+    // the inserting occurrence instances.
+    if model.occurrences.is_empty() {
+        model
+            .product_definitions
+            .retain(|definition| !definition.id.as_str().ends_with(STORED_FRAME_GROUP_SUFFIX));
+    }
     let owned = model
         .product_definitions
         .iter()
@@ -2439,6 +2451,35 @@ mod tests {
             model.product_definitions[0].bodies,
             [model.bodies[0].id.clone()]
         );
+    }
+
+    #[test]
+    fn member_without_occurrences_moves_stored_frame_bodies_into_its_definition() {
+        let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
+        let body = model.bodies[0].id.clone();
+        model.product_definitions.clear();
+        model
+            .product_definitions
+            .push(cadmpeg_ir::products::ProductDefinition {
+                id: cadmpeg_ir::ids::ProductDefinitionId::mint(
+                    "f3d:stream:product-definition#stored-frame",
+                )
+                .unwrap(),
+                kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+                source_name: None,
+                label: None,
+                description: None,
+                part_number: None,
+                bom_properties: std::collections::BTreeMap::new(),
+                bodies: vec![body.clone()],
+                sketches: Vec::new(),
+                native_ref: None,
+            });
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let id = define_member(&ctx, &mut model, "member").unwrap();
+        assert_eq!(model.product_definitions.len(), 1);
+        assert_eq!(model.product_definitions[0].id, id);
+        assert_eq!(model.product_definitions[0].bodies, [body]);
     }
 
     #[test]

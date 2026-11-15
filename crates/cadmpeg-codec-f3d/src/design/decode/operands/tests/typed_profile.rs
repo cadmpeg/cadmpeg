@@ -225,6 +225,38 @@ fn typed_profile_selection_rejects_a_chain_without_the_scope_record_or_exact_end
     assert!(parse(&bytes).is_none());
 }
 
+fn typed_reference_of(out: &mut Vec<u8>, target: u32, guid: &str) {
+    out.push(1);
+    out.extend_from_slice(&u64::from(target).to_le_bytes());
+    out.extend_from_slice(&36u32.to_le_bytes());
+    out.extend_from_slice(guid.as_bytes());
+    out.extend_from_slice(&[0, 0]);
+}
+
+#[test]
+fn typed_profile_selection_lists_the_sketch_containers_its_scope_record_names() {
+    const CONTAINER: &str = "44A64366-4BD3-4B24-881A-F94C206E8F2D";
+    // The chain names record 77. That record references the Sketch containers
+    // 75 and 80, record 60 of another type, and container 75 a second time.
+    let mut bytes = chain(false);
+    header(&mut bytes, b"383", 77);
+    bytes.extend_from_slice(&[0; 14]);
+    typed_reference_of(&mut bytes, 75, CONTAINER);
+    typed_reference_of(&mut bytes, 60, TYPE);
+    bytes.extend_from_slice(&[0; 4]);
+    typed_reference_of(&mut bytes, 80, CONTAINER);
+    typed_reference_of(&mut bytes, 75, CONTAINER);
+    header(&mut bytes, b"262", 77);
+    let selection = parse(&bytes).expect("typed profile selection");
+    assert_eq!(selection.sketch_scope_record_index, 77);
+    assert_eq!(selection.scope_sketch_containers, [75, 80]);
+    // A chain target with no record in the stream names no container.
+    assert!(parse(&chain(false))
+        .expect("typed profile selection")
+        .scope_sketch_containers
+        .is_empty());
+}
+
 fn region_chain() -> Vec<u8> {
     let mut bytes = chain(false);
     let identity = bytes
