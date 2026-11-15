@@ -332,6 +332,27 @@ pub(crate) enum F3dLossCode {
     FeatureMeshConversionEnvelopeAssumed,
     FeatureMeshConversionSourceUnresolved,
     FeatureMeshConversionOutputUnresolved,
+    FeatureMeshSeparateScopeUnparsed,
+    FeatureMeshSeparateTailPartial,
+    FeatureMeshSeparateReferenceUnresolved,
+    FeatureMeshSeparateReferenceMismatch,
+    FeatureMeshSeparateSelectorUnruled,
+    FeatureMeshSeparateShellsMethodAssumed,
+    FeatureMeshSeparateFaceGroupsMethodAssumed,
+    FeatureMeshSeparateAllGroupsAssumed,
+    FeatureMeshSeparateSelectedGroupsAssumed,
+    FeatureMeshSeparateMultipleBodiesCarrierAssumed,
+    FeatureMeshSeparateMultipleBodiesPolarityAssumed,
+    FeatureMeshSeparateKeepBodyCarrierAssumed,
+    FeatureMeshSeparateKeepBodyPolarityAssumed,
+    FeatureMeshSeparatePrefixAssumed,
+    FeatureMeshSeparateOutputRoleAssumed,
+    FeatureMeshSeparateOutputUnresolved,
+    FeatureMeshSeparateSourceMembershipAssumed,
+    FeatureMeshSeparateSourceUnresolved,
+    FeatureMeshSeparateSourceFieldsUninterpreted,
+    FeatureMeshSeparateReferenceRolesAssumed,
+    FeatureMeshSeparateMembershipUnresolved,
     /// A historical Thread selection has no complete proof of its live faces.
     ThreadLiveFaceUnproven,
     /// A stored-body operation has an empty proven body set.
@@ -1196,6 +1217,27 @@ impl F3dLossCode {
         Self::FeatureMeshConversionEnvelopeAssumed,
         Self::FeatureMeshConversionSourceUnresolved,
         Self::FeatureMeshConversionOutputUnresolved,
+        Self::FeatureMeshSeparateScopeUnparsed,
+        Self::FeatureMeshSeparateTailPartial,
+        Self::FeatureMeshSeparateReferenceUnresolved,
+        Self::FeatureMeshSeparateReferenceMismatch,
+        Self::FeatureMeshSeparateSelectorUnruled,
+        Self::FeatureMeshSeparateShellsMethodAssumed,
+        Self::FeatureMeshSeparateFaceGroupsMethodAssumed,
+        Self::FeatureMeshSeparateAllGroupsAssumed,
+        Self::FeatureMeshSeparateSelectedGroupsAssumed,
+        Self::FeatureMeshSeparateMultipleBodiesCarrierAssumed,
+        Self::FeatureMeshSeparateMultipleBodiesPolarityAssumed,
+        Self::FeatureMeshSeparateKeepBodyCarrierAssumed,
+        Self::FeatureMeshSeparateKeepBodyPolarityAssumed,
+        Self::FeatureMeshSeparatePrefixAssumed,
+        Self::FeatureMeshSeparateOutputRoleAssumed,
+        Self::FeatureMeshSeparateOutputUnresolved,
+        Self::FeatureMeshSeparateSourceMembershipAssumed,
+        Self::FeatureMeshSeparateSourceUnresolved,
+        Self::FeatureMeshSeparateSourceFieldsUninterpreted,
+        Self::FeatureMeshSeparateReferenceRolesAssumed,
+        Self::FeatureMeshSeparateMembershipUnresolved,
         Self::ThreadLiveFaceUnproven,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
@@ -2002,6 +2044,55 @@ impl F3dLossCode {
                 "feature.mesh-conversion-output-unresolved"
             }
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
+            Self::FeatureMeshSeparateScopeUnparsed => "feature.mesh-separate-scope-unparsed",
+            Self::FeatureMeshSeparateTailPartial => "feature.mesh-separate-tail-partial",
+            Self::FeatureMeshSeparateReferenceUnresolved => {
+                "feature.mesh-separate-reference-unresolved"
+            }
+            Self::FeatureMeshSeparateReferenceMismatch => {
+                "feature.mesh-separate-reference-mismatch"
+            }
+            Self::FeatureMeshSeparateSelectorUnruled => "feature.mesh-separate-selector-unruled",
+            Self::FeatureMeshSeparateShellsMethodAssumed => {
+                "feature.mesh-separate-shells-method-assumed"
+            }
+            Self::FeatureMeshSeparateFaceGroupsMethodAssumed => {
+                "feature.mesh-separate-face-groups-method-assumed"
+            }
+            Self::FeatureMeshSeparateAllGroupsAssumed => "feature.mesh-separate-all-groups-assumed",
+            Self::FeatureMeshSeparateSelectedGroupsAssumed => {
+                "feature.mesh-separate-selected-groups-assumed"
+            }
+            Self::FeatureMeshSeparateMultipleBodiesCarrierAssumed => {
+                "feature.mesh-separate-multiple-bodies-carrier-assumed"
+            }
+            Self::FeatureMeshSeparateMultipleBodiesPolarityAssumed => {
+                "feature.mesh-separate-multiple-bodies-polarity-assumed"
+            }
+            Self::FeatureMeshSeparateKeepBodyCarrierAssumed => {
+                "feature.mesh-separate-keep-body-carrier-assumed"
+            }
+            Self::FeatureMeshSeparateKeepBodyPolarityAssumed => {
+                "feature.mesh-separate-keep-body-polarity-assumed"
+            }
+            Self::FeatureMeshSeparatePrefixAssumed => "feature.mesh-separate-prefix-assumed",
+            Self::FeatureMeshSeparateOutputRoleAssumed => {
+                "feature.mesh-separate-output-role-assumed"
+            }
+            Self::FeatureMeshSeparateOutputUnresolved => "feature.mesh-separate-output-unresolved",
+            Self::FeatureMeshSeparateSourceMembershipAssumed => {
+                "feature.mesh-separate-source-membership-assumed"
+            }
+            Self::FeatureMeshSeparateSourceUnresolved => "feature.mesh-separate-source-unresolved",
+            Self::FeatureMeshSeparateSourceFieldsUninterpreted => {
+                "feature.mesh-separate-source-fields-uninterpreted"
+            }
+            Self::FeatureMeshSeparateReferenceRolesAssumed => {
+                "feature.mesh-separate-reference-roles-assumed"
+            }
+            Self::FeatureMeshSeparateMembershipUnresolved => {
+                "feature.mesh-separate-membership-unresolved"
+            }
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
             Self::FeatureShellAuxiliaryReferencesNative => {
@@ -2741,6 +2832,27 @@ impl F3dLossCode {
             | Self::FeatureMeshConversionEnvelopeAssumed
             | Self::FeatureMeshConversionSourceUnresolved
             | Self::FeatureMeshConversionOutputUnresolved
+            | Self::FeatureMeshSeparateScopeUnparsed
+            | Self::FeatureMeshSeparateTailPartial
+            | Self::FeatureMeshSeparateReferenceUnresolved
+            | Self::FeatureMeshSeparateReferenceMismatch
+            | Self::FeatureMeshSeparateSelectorUnruled
+            | Self::FeatureMeshSeparateShellsMethodAssumed
+            | Self::FeatureMeshSeparateFaceGroupsMethodAssumed
+            | Self::FeatureMeshSeparateAllGroupsAssumed
+            | Self::FeatureMeshSeparateSelectedGroupsAssumed
+            | Self::FeatureMeshSeparateMultipleBodiesCarrierAssumed
+            | Self::FeatureMeshSeparateMultipleBodiesPolarityAssumed
+            | Self::FeatureMeshSeparateKeepBodyCarrierAssumed
+            | Self::FeatureMeshSeparateKeepBodyPolarityAssumed
+            | Self::FeatureMeshSeparatePrefixAssumed
+            | Self::FeatureMeshSeparateOutputRoleAssumed
+            | Self::FeatureMeshSeparateOutputUnresolved
+            | Self::FeatureMeshSeparateSourceMembershipAssumed
+            | Self::FeatureMeshSeparateSourceUnresolved
+            | Self::FeatureMeshSeparateSourceFieldsUninterpreted
+            | Self::FeatureMeshSeparateReferenceRolesAssumed
+            | Self::FeatureMeshSeparateMembershipUnresolved
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
@@ -3289,6 +3401,27 @@ impl F3dLossCode {
             | Self::FeatureMeshConversionEnvelopeAssumed
             | Self::FeatureMeshConversionSourceUnresolved
             | Self::FeatureMeshConversionOutputUnresolved
+            | Self::FeatureMeshSeparateScopeUnparsed
+            | Self::FeatureMeshSeparateTailPartial
+            | Self::FeatureMeshSeparateReferenceUnresolved
+            | Self::FeatureMeshSeparateReferenceMismatch
+            | Self::FeatureMeshSeparateSelectorUnruled
+            | Self::FeatureMeshSeparateShellsMethodAssumed
+            | Self::FeatureMeshSeparateFaceGroupsMethodAssumed
+            | Self::FeatureMeshSeparateAllGroupsAssumed
+            | Self::FeatureMeshSeparateSelectedGroupsAssumed
+            | Self::FeatureMeshSeparateMultipleBodiesCarrierAssumed
+            | Self::FeatureMeshSeparateMultipleBodiesPolarityAssumed
+            | Self::FeatureMeshSeparateKeepBodyCarrierAssumed
+            | Self::FeatureMeshSeparateKeepBodyPolarityAssumed
+            | Self::FeatureMeshSeparatePrefixAssumed
+            | Self::FeatureMeshSeparateOutputRoleAssumed
+            | Self::FeatureMeshSeparateOutputUnresolved
+            | Self::FeatureMeshSeparateSourceMembershipAssumed
+            | Self::FeatureMeshSeparateSourceUnresolved
+            | Self::FeatureMeshSeparateSourceFieldsUninterpreted
+            | Self::FeatureMeshSeparateReferenceRolesAssumed
+            | Self::FeatureMeshSeparateMembershipUnresolved
             | Self::ThreadLiveFaceUnproven
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound
@@ -3897,6 +4030,27 @@ mod tests {
                 "feature.mesh-conversion-envelope-assumed",
                 "feature.mesh-conversion-source-unresolved",
                 "feature.mesh-conversion-output-unresolved",
+                "feature.mesh-separate-scope-unparsed",
+                "feature.mesh-separate-tail-partial",
+                "feature.mesh-separate-reference-unresolved",
+                "feature.mesh-separate-reference-mismatch",
+                "feature.mesh-separate-selector-unruled",
+                "feature.mesh-separate-shells-method-assumed",
+                "feature.mesh-separate-face-groups-method-assumed",
+                "feature.mesh-separate-all-groups-assumed",
+                "feature.mesh-separate-selected-groups-assumed",
+                "feature.mesh-separate-multiple-bodies-carrier-assumed",
+                "feature.mesh-separate-multiple-bodies-polarity-assumed",
+                "feature.mesh-separate-keep-body-carrier-assumed",
+                "feature.mesh-separate-keep-body-polarity-assumed",
+                "feature.mesh-separate-prefix-assumed",
+                "feature.mesh-separate-output-role-assumed",
+                "feature.mesh-separate-output-unresolved",
+                "feature.mesh-separate-source-membership-assumed",
+                "feature.mesh-separate-source-unresolved",
+                "feature.mesh-separate-source-fields-uninterpreted",
+                "feature.mesh-separate-reference-roles-assumed",
+                "feature.mesh-separate-membership-unresolved",
                 "feature.thread-live-face-unproven",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",

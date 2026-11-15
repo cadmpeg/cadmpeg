@@ -1101,6 +1101,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &mut losses,
     )?;
+    super::mesh_operations::separate::bind_features(
+        ctx,
+        scan,
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &mut losses,
+    )?;
     super::mesh_operations::plane_cut::bind_features(
         ctx,
         scan,
