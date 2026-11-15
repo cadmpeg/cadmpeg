@@ -109,7 +109,7 @@ pub enum StationAt {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Along {
     /// The whole chain of the set.
-    Chain,
+    Chain {},
     /// One edge, in the edge's own direction.
     Edge(OrderedSelection),
 }
@@ -237,7 +237,7 @@ pub struct FaceSide {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RoundSide {
     /// The source computes the side from the center faces.
-    Automatic,
+    Automatic {},
     /// The selected faces.
     Faces(SetSelection),
 }
@@ -972,7 +972,7 @@ pub struct OffsetSet {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OffsetResult {
     /// Changes the faces in place.
-    Move,
+    Move {},
     /// Makes a new body with its output: a sheet, or a solid where the copy
     /// closes.
     Copy(SheetOutput),

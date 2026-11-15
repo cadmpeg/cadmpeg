@@ -246,13 +246,13 @@ fn interpolations() -> Vec<Interpolation> {
 }
 
 fn alongs() -> Vec<Along> {
-    vec![Along::Chain, Along::Edge(selection(1))]
+    vec![Along::Chain {}, Along::Edge(selection(1))]
 }
 
 fn station_ats() -> Vec<StationAt> {
     vec![
         StationAt::Parameter {
-            along: Along::Chain,
+            along: Along::Chain {},
             fraction: literal(fraction(0.5)),
         },
         StationAt::Parameter {
@@ -363,7 +363,7 @@ fn face_sides() -> Vec<FaceSide> {
 }
 
 fn round_sides() -> Vec<RoundSide> {
-    vec![RoundSide::Automatic, RoundSide::Faces(selection(4))]
+    vec![RoundSide::Automatic {}, RoundSide::Faces(selection(4))]
 }
 
 fn fillet_sets() -> Vec<FilletSet> {
@@ -399,7 +399,7 @@ fn fillet_sets() -> Vec<FilletSet> {
             trim: None,
         },
         FilletSet::FullRound {
-            first: RoundSide::Automatic,
+            first: RoundSide::Automatic {},
             center: selection(5),
             second: RoundSide::Faces(selection(6)),
         },
@@ -717,7 +717,7 @@ fn offset_sets() -> Vec<OffsetSet> {
 
 fn offset_results() -> Vec<OffsetResult> {
     vec![
-        OffsetResult::Move,
+        OffsetResult::Move {},
         OffsetResult::Copy(SheetOutput {
             solid: Some(Solidify::IfClosed),
             boolean: None,
@@ -737,7 +737,7 @@ fn offsets() -> Vec<Offset> {
         },
         Offset {
             sets: Vec::new(),
-            result: OffsetResult::Move,
+            result: OffsetResult::Move {},
             join: None,
             face_meeting: None,
             native_options: NativeOptions::new(),
@@ -1305,6 +1305,9 @@ fn every_variant_is_sampled() {
 fn an_omitted_optional_field_refuses_null_and_unknown_fields_are_refused() {
     refuses::<HoleShape>(r#"{"kind": "bore", "diameter": null}"#);
     refuses::<HoleShape>(r#"{"kind": "bore", "extra": 1}"#);
+    refuses::<RoundSide>(r#"{"kind": "automatic", "extra": 1}"#);
+    refuses::<Along>(r#"{"kind": "chain", "extra": 1}"#);
+    refuses::<OffsetResult>(r#"{"kind": "move", "extra": 1}"#);
     let bore = read::from_str::<HoleShape>(r#"{"kind": "bore"}"#, &ResourceLimits::desktop());
     assert_eq!(bore.unwrap(), HoleShape::Bore(bores().remove(1)));
 }
@@ -1329,9 +1332,9 @@ fn hole_centers_are_a_sorted_set_that_refuses_null_and_repeats() {
 fn the_tag_forms_of_the_family() {
     assert_eq!(
         to_value(&FilletSet::FullRound {
-            first: RoundSide::Automatic,
+            first: RoundSide::Automatic {},
             center: unread(),
-            second: RoundSide::Automatic,
+            second: RoundSide::Automatic {},
         }),
         json!({
             "kind": "full_round",
