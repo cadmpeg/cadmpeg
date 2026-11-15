@@ -1,11 +1,14 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "fragment": false,
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
       "bodies": [
         {
@@ -158,107 +161,125 @@
           "sense": "reversed"
         }
       ],
+      "colliders": [],
       "configurations": [],
       "curves": [
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 8.127016653792584
-            },
-            "kind": "circle",
-            "radius": 7.0,
-            "ref_direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 8.127016653792584
+              },
+              "kind": "circle",
+              "radius": 7.0,
+              "ref_direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BinaryCarrier"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 7.0,
-              "y": -1.7145055188062944e-15,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 7.0,
+                "y": -1.7145055188062944e-15,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BinaryCarrier"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 7.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 7.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BinaryCarrier"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": -2.4492935982947064e-16,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 12.0
-            },
-            "kind": "circle",
-            "radius": 8.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": -2.4492935982947064e-16,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": -2.4492935982947064e-16,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 12.0
+              },
+              "kind": "circle",
+              "radius": 8.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": -2.4492935982947064e-16,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BinaryCarrier"
           }
         }
       ],
+      "declared_measures": [],
       "drawings": [],
       "edges": [
         {
@@ -325,7 +346,7 @@
         {
           "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%40location1%3A1"
             ]
@@ -338,7 +359,7 @@
         {
           "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%40location1%3A1"
             ]
@@ -351,7 +372,7 @@
         {
           "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%40location1%3A1"
             ]
@@ -362,11 +383,18 @@
           "tolerance": 1e-7
         }
       ],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [
         {
           "definition": {
-            "definition": "stored_geometry"
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
           },
+          "dependencies": [],
           "id": "fcstd:design:feature#BinaryCarrier",
           "name": "BinaryCarrier",
           "native_ref": "fcstd:native:object#BinaryCarrier",
@@ -374,13 +402,14 @@
           "outputs": [
             "fcstd:model:body#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:17%40location1"
           ],
+          "source_content": [],
           "source_properties": {
             "Visibility": "true"
           },
-          "source_tag": "Part::Feature",
-          "suppressed": null
+          "source_tag": "Part::Feature"
         }
       ],
+      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -390,7 +419,8 @@
               "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%40location1%3A1%3A3",
               "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%40location1",
           "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%40location1%3A1"
@@ -400,7 +430,8 @@
             "coedges": [
               "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%40location1%3A1%3A1"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%40location1",
           "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%40location1%3A1"
@@ -413,12 +444,14 @@
               "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%40location1%3A1%3A3",
               "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%40location1",
           "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%40location1%3A1"
         }
       ],
+      "mass_properties": [],
       "occurrences": [],
       "parameters": [],
       "pcurves": [
@@ -442,7 +475,7 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -465,7 +498,7 @@
                 7.853981633974483
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -488,7 +521,7 @@
                 7.853981633974483
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -511,7 +544,7 @@
                 8.12701665379223
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -534,7 +567,7 @@
                 8.12701665379223
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -557,7 +590,7 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -585,7 +618,7 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -608,7 +641,7 @@
                 7.853981633974483
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -631,11 +664,14 @@
                 7.853981633974483
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         }
       ],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
+      "point_clouds": [],
       "points": [
         {
           "id": "fcstd:model:point#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1%40location1",
@@ -646,6 +682,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BinaryCarrier"
           }
         },
@@ -658,6 +695,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BinaryCarrier"
           }
         },
@@ -670,6 +708,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BinaryCarrier"
           }
         }
@@ -688,6 +727,7 @@
           ]
         }
       ],
+      "rigid_bodies": [],
       "semantic_annotations": [],
       "shells": [
         {
@@ -712,6 +752,8 @@
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
@@ -719,78 +761,90 @@
       "surfaces": [
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "cylinder",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "radius": 7.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "cylinder",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "radius": 7.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BinaryCarrier"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 12.0
-            },
-            "kind": "sphere",
-            "radius": 8.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 12.0
+              },
+              "kind": "sphere",
+              "radius": 8.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BinaryCarrier"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BinaryCarrier"
           }
         }
@@ -863,7 +917,7 @@
           "physical_ledger": "5850b98598e9e77ec7781c9a65097a0b0d9730109a2894346a828b6581efa43d",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "26a7b4002d1dac5554f2834b51bda3515de3b68ce0cf2703a1bc97623a285064",
-          "shape_payloads": "1262fed60df3c2da2a2c606dc18b05b569810f6c74a2133d523379ddb3bf4488",
+          "shape_payloads": "dfa87ecd37e5ee758f706fdf6e424b4955cb30d7c369a5f62aae8494c9082ab8",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
         }
       },
@@ -947,11 +1001,12 @@
         "program_version": "1.1R20260414 (Git shallow)"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "file_version": "1",
               "program_version": "1.1R20260414 (Git shallow)",
@@ -959,7 +1014,8 @@
             },
             "dialect": "fcstd:schema-4"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -967,16 +1023,21 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "file_version": "1",
             "program_version": "1.1R20260414 (Git shallow)",
@@ -984,7 +1045,8 @@
           },
           "dialect": "fcstd:schema-4"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [],
     "notes": [
@@ -998,10 +1060,17 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "retained_records": {}
   }
 }

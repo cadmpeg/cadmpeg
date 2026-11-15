@@ -255,7 +255,6 @@ pub struct SourceObjectAssociation {
     )]
     pub layer: Option<String>,
     /// Native instance identifiers from outermost to innermost.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instance_path: Vec<String>,
 }
 
@@ -720,12 +719,12 @@ mod tests {
 
     #[test]
     fn source_object_identity_is_nonempty_and_preserves_wire() {
-        let wire = serde_json::json!({"format": "step", "object_id": "#42"});
+        let wire = serde_json::json!({"format": "step", "object_id": "#42", "instance_path": []});
         let value: SourceObjectAssociation =
             serde_json::from_value(wire.clone()).expect("nonempty identity");
         assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
         let error = serde_json::from_value::<SourceObjectAssociation>(
-            serde_json::json!({"format": "step", "object_id": ""}),
+            serde_json::json!({"format": "step", "object_id": "", "instance_path": []}),
         )
         .expect_err("empty identity");
         assert!(error.to_string().contains("object_id"));
@@ -735,7 +734,7 @@ mod tests {
     fn source_geometry_role_preserves_ownership_and_requires_omission_for_absence() {
         for role in ["independent", "support"] {
             let wire = serde_json::json!({
-                "format": "iges", "object_id": "D1", "geometry_role": role
+                "format": "iges", "object_id": "D1", "instance_path": [], "geometry_role": role
             });
             let value: SourceObjectAssociation =
                 serde_json::from_value(wire.clone()).expect("source ownership");
@@ -743,7 +742,7 @@ mod tests {
         }
         for role in [serde_json::Value::Null, serde_json::json!("unknown")] {
             let error = serde_json::from_value::<SourceObjectAssociation>(serde_json::json!({
-                "format": "iges", "object_id": "D1", "geometry_role": role
+                "format": "iges", "object_id": "D1", "instance_path": [], "geometry_role": role
             }))
             .expect_err("invalid ownership");
             assert!(error.to_string().contains("geometry_role"));

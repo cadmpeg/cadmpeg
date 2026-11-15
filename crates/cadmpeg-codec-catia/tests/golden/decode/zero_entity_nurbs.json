@@ -1,25 +1,37 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "fragment": false,
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
       "bodies": [],
       "coedges": [],
+      "colliders": [],
       "configurations": [],
       "curves": [],
+      "declared_measures": [],
       "drawings": [],
       "edges": [],
       "faces": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [],
+      "history_bodies": [],
       "loops": [],
+      "mass_properties": [],
       "occurrences": [],
       "parameters": [],
       "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
+      "point_clouds": [],
       "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
@@ -27,11 +39,14 @@
       "procedural_surfaces": [],
       "product_definitions": [],
       "regions": [],
+      "rigid_bodies": [],
       "semantic_annotations": [],
       "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
@@ -39,301 +54,305 @@
       "surfaces": [
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 1.0,
-                    "y": 0.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 2.0,
-                    "y": 0.0,
-                    "z": 2.0
-                  },
-                  {
-                    "x": 3.0,
-                    "y": 0.0,
-                    "z": 3.0
-                  },
-                  {
-                    "x": 4.0,
-                    "y": 0.0,
-                    "z": 4.0
-                  },
-                  {
-                    "x": 5.0,
-                    "y": 0.0,
-                    "z": 5.0
-                  },
-                  {
-                    "x": 6.0,
-                    "y": 0.0,
-                    "z": 6.0
-                  }
-                ],
-                [
-                  {
-                    "x": 7.0,
-                    "y": 1.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 8.0,
-                    "y": 1.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 9.0,
-                    "y": 1.0,
-                    "z": 2.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": 1.0,
-                    "z": 3.0
-                  },
-                  {
-                    "x": 11.0,
-                    "y": 1.0,
-                    "z": 4.0
-                  },
-                  {
-                    "x": 12.0,
-                    "y": 1.0,
-                    "z": 5.0
-                  },
-                  {
-                    "x": 13.0,
-                    "y": 1.0,
-                    "z": 6.0
-                  }
-                ],
-                [
-                  {
-                    "x": 14.0,
-                    "y": 2.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 15.0,
-                    "y": 2.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 16.0,
-                    "y": 2.0,
-                    "z": 2.0
-                  },
-                  {
-                    "x": 17.0,
-                    "y": 2.0,
-                    "z": 3.0
-                  },
-                  {
-                    "x": 18.0,
-                    "y": 2.0,
-                    "z": 4.0
-                  },
-                  {
-                    "x": 19.0,
-                    "y": 2.0,
-                    "z": 5.0
-                  },
-                  {
-                    "x": 20.0,
-                    "y": 2.0,
-                    "z": 6.0
-                  }
-                ],
-                [
-                  {
-                    "x": 21.0,
-                    "y": 3.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 22.0,
-                    "y": 3.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 23.0,
-                    "y": 3.0,
-                    "z": 2.0
-                  },
-                  {
-                    "x": 24.0,
-                    "y": 3.0,
-                    "z": 3.0
-                  },
-                  {
-                    "x": 25.0,
-                    "y": 3.0,
-                    "z": 4.0
-                  },
-                  {
-                    "x": 26.0,
-                    "y": 3.0,
-                    "z": 5.0
-                  },
-                  {
-                    "x": 27.0,
-                    "y": 3.0,
-                    "z": 6.0
-                  }
-                ],
-                [
-                  {
-                    "x": 28.0,
-                    "y": 4.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 29.0,
-                    "y": 4.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 30.0,
-                    "y": 4.0,
-                    "z": 2.0
-                  },
-                  {
-                    "x": 31.0,
-                    "y": 4.0,
-                    "z": 3.0
-                  },
-                  {
-                    "x": 32.0,
-                    "y": 4.0,
-                    "z": 4.0
-                  },
-                  {
-                    "x": 33.0,
-                    "y": 4.0,
-                    "z": 5.0
-                  },
-                  {
-                    "x": 34.0,
-                    "y": 4.0,
-                    "z": 6.0
-                  }
-                ],
-                [
-                  {
-                    "x": 35.0,
-                    "y": 5.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 36.0,
-                    "y": 5.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 37.0,
-                    "y": 5.0,
-                    "z": 2.0
-                  },
-                  {
-                    "x": 38.0,
-                    "y": 5.0,
-                    "z": 3.0
-                  },
-                  {
-                    "x": 39.0,
-                    "y": 5.0,
-                    "z": 4.0
-                  },
-                  {
-                    "x": 40.0,
-                    "y": 5.0,
-                    "z": 5.0
-                  },
-                  {
-                    "x": 41.0,
-                    "y": 5.0,
-                    "z": 6.0
-                  }
-                ],
-                [
-                  {
-                    "x": 42.0,
-                    "y": 6.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 43.0,
-                    "y": 6.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 44.0,
-                    "y": 6.0,
-                    "z": 2.0
-                  },
-                  {
-                    "x": 45.0,
-                    "y": 6.0,
-                    "z": 3.0
-                  },
-                  {
-                    "x": 46.0,
-                    "y": 6.0,
-                    "z": 4.0
-                  },
-                  {
-                    "x": 47.0,
-                    "y": 6.0,
-                    "z": 5.0
-                  },
-                  {
-                    "x": 48.0,
-                    "y": 6.0,
-                    "z": 6.0
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 1.0,
+                      "y": 0.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 2.0,
+                      "y": 0.0,
+                      "z": 2.0
+                    },
+                    {
+                      "x": 3.0,
+                      "y": 0.0,
+                      "z": 3.0
+                    },
+                    {
+                      "x": 4.0,
+                      "y": 0.0,
+                      "z": 4.0
+                    },
+                    {
+                      "x": 5.0,
+                      "y": 0.0,
+                      "z": 5.0
+                    },
+                    {
+                      "x": 6.0,
+                      "y": 0.0,
+                      "z": 6.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 7.0,
+                      "y": 1.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 8.0,
+                      "y": 1.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 9.0,
+                      "y": 1.0,
+                      "z": 2.0
+                    },
+                    {
+                      "x": 10.0,
+                      "y": 1.0,
+                      "z": 3.0
+                    },
+                    {
+                      "x": 11.0,
+                      "y": 1.0,
+                      "z": 4.0
+                    },
+                    {
+                      "x": 12.0,
+                      "y": 1.0,
+                      "z": 5.0
+                    },
+                    {
+                      "x": 13.0,
+                      "y": 1.0,
+                      "z": 6.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 14.0,
+                      "y": 2.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 15.0,
+                      "y": 2.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 16.0,
+                      "y": 2.0,
+                      "z": 2.0
+                    },
+                    {
+                      "x": 17.0,
+                      "y": 2.0,
+                      "z": 3.0
+                    },
+                    {
+                      "x": 18.0,
+                      "y": 2.0,
+                      "z": 4.0
+                    },
+                    {
+                      "x": 19.0,
+                      "y": 2.0,
+                      "z": 5.0
+                    },
+                    {
+                      "x": 20.0,
+                      "y": 2.0,
+                      "z": 6.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 21.0,
+                      "y": 3.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 22.0,
+                      "y": 3.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 23.0,
+                      "y": 3.0,
+                      "z": 2.0
+                    },
+                    {
+                      "x": 24.0,
+                      "y": 3.0,
+                      "z": 3.0
+                    },
+                    {
+                      "x": 25.0,
+                      "y": 3.0,
+                      "z": 4.0
+                    },
+                    {
+                      "x": 26.0,
+                      "y": 3.0,
+                      "z": 5.0
+                    },
+                    {
+                      "x": 27.0,
+                      "y": 3.0,
+                      "z": 6.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 28.0,
+                      "y": 4.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 29.0,
+                      "y": 4.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 30.0,
+                      "y": 4.0,
+                      "z": 2.0
+                    },
+                    {
+                      "x": 31.0,
+                      "y": 4.0,
+                      "z": 3.0
+                    },
+                    {
+                      "x": 32.0,
+                      "y": 4.0,
+                      "z": 4.0
+                    },
+                    {
+                      "x": 33.0,
+                      "y": 4.0,
+                      "z": 5.0
+                    },
+                    {
+                      "x": 34.0,
+                      "y": 4.0,
+                      "z": 6.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 35.0,
+                      "y": 5.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 36.0,
+                      "y": 5.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 37.0,
+                      "y": 5.0,
+                      "z": 2.0
+                    },
+                    {
+                      "x": 38.0,
+                      "y": 5.0,
+                      "z": 3.0
+                    },
+                    {
+                      "x": 39.0,
+                      "y": 5.0,
+                      "z": 4.0
+                    },
+                    {
+                      "x": 40.0,
+                      "y": 5.0,
+                      "z": 5.0
+                    },
+                    {
+                      "x": 41.0,
+                      "y": 5.0,
+                      "z": 6.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 42.0,
+                      "y": 6.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 43.0,
+                      "y": 6.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 44.0,
+                      "y": 6.0,
+                      "z": 2.0
+                    },
+                    {
+                      "x": 45.0,
+                      "y": 6.0,
+                      "z": 3.0
+                    },
+                    {
+                      "x": 46.0,
+                      "y": 6.0,
+                      "z": 4.0
+                    },
+                    {
+                      "x": 47.0,
+                      "y": 6.0,
+                      "z": 5.0
+                    },
+                    {
+                      "x": 48.0,
+                      "y": 6.0,
+                      "z": 6.0
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 3,
-            "u_knots": [
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              0.25,
-              0.5,
-              0.75,
-              1.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "u_periodic": false,
-            "v_degree": 3,
-            "v_knots": [
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              0.25,
-              0.5,
-              0.75,
-              1.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 3,
+              "u_knots": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.25,
+                0.5,
+                0.75,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "u_periodic": false,
+              "v_degree": 3,
+              "v_knots": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.25,
+                0.5,
+                0.75,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "v_periodic": false
+            }
           },
           "id": "catia:zero-entity:surf#0"
         }
@@ -425,14 +444,17 @@
         "preview_count": "0"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {},
             "dialect": "catia:zero-entity"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -440,7 +462,10 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
@@ -780,23 +805,28 @@
       "unresolved_unreferenced_relation_expression_count": 0
     },
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
+          "declared": {},
           "dialect": "catia:zero-entity"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "topology.zero-entity-not-transferred",
-          "kind": "topology_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "topology.zero-entity-not-transferred",
+            "kind": "topology_not_transferred",
+            "namespace": "catia",
+            "strict_floor": "warning"
+          }
         },
         "message": "Zero-entity loop members bind their face-local support occurrences, but the complete allocation graph or its required geometry is unavailable and body/shell ownership remains unresolved; no neutral topology was transferred.",
         "severity": "blocking"
@@ -810,7 +840,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -821,7 +854,7 @@
           "fields": {
             "links": "derived"
           },
-          "scope": "entity"
+          "kind": "entity"
         }
       },
       "provenance": {
@@ -841,7 +874,7 @@
       "catia:payload:unknown#zero-entity": {
         "bytes": {
           "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDNMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADQPwAAAAAAAOA/AAAAAAAA6D8AAAAAAADwPxAEAAAAEAEAAAAQAQAAABABAAAAEAQAAAAQAQAAABABAAAABAAAAAAAAAAAAAAAAAAA0D8AAAAAAADgPwAAAAAAAOg/AAAAAAAA8D8QBAAAABABAAAAEAEAAAAQAQAAABAEAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAACEAAAAAAAAAAAAAAAAAAAAhAAAAAAAAAEEAAAAAAAAAAAAAAAAAAABBAAAAAAAAAFEAAAAAAAAAAAAAAAAAAABRAAAAAAAAAGEAAAAAAAAAAAAAAAAAAABhAAAAAAAAAHEAAAAAAAADwPwAAAAAAAAAAAAAAAAAAIEAAAAAAAADwPwAAAAAAAPA/AAAAAAAAIkAAAAAAAADwPwAAAAAAAABAAAAAAAAAJEAAAAAAAADwPwAAAAAAAAhAAAAAAAAAJkAAAAAAAADwPwAAAAAAABBAAAAAAAAAKEAAAAAAAADwPwAAAAAAABRAAAAAAAAAKkAAAAAAAADwPwAAAAAAABhAAAAAAAAALEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAALkAAAAAAAAAAQAAAAAAAAPA/AAAAAAAAMEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAMUAAAAAAAAAAQAAAAAAAAAhAAAAAAAAAMkAAAAAAAAAAQAAAAAAAABBAAAAAAAAAM0AAAAAAAAAAQAAAAAAAABRAAAAAAAAANEAAAAAAAAAAQAAAAAAAABhAAAAAAAAANUAAAAAAAAAIQAAAAAAAAAAAAAAAAAAANkAAAAAAAAAIQAAAAAAAAPA/AAAAAAAAN0AAAAAAAAAIQAAAAAAAAABAAAAAAAAAOEAAAAAAAAAIQAAAAAAAAAhAAAAAAAAAOUAAAAAAAAAIQAAAAAAAABBAAAAAAAAAOkAAAAAAAAAIQAAAAAAAABRAAAAAAAAAO0AAAAAAAAAIQAAAAAAAABhAAAAAAAAAPEAAAAAAAAAQQAAAAAAAAAAAAAAAAAAAPUAAAAAAAAAQQAAAAAAAAPA/AAAAAAAAPkAAAAAAAAAQQAAAAAAAAABAAAAAAAAAP0AAAAAAAAAQQAAAAAAAAAhAAAAAAAAAQEAAAAAAAAAQQAAAAAAAABBAAAAAAACAQEAAAAAAAAAQQAAAAAAAABRAAAAAAAAAQUAAAAAAAAAQQAAAAAAAABhAAAAAAACAQUAAAAAAAAAUQAAAAAAAAAAAAAAAAAAAQkAAAAAAAAAUQAAAAAAAAPA/AAAAAACAQkAAAAAAAAAUQAAAAAAAAABAAAAAAAAAQ0AAAAAAAAAUQAAAAAAAAAhAAAAAAACAQ0AAAAAAAAAUQAAAAAAAABBAAAAAAAAAREAAAAAAAAAUQAAAAAAAABRAAAAAAACAREAAAAAAAAAUQAAAAAAAABhAAAAAAAAARUAAAAAAAAAYQAAAAAAAAAAAAAAAAACARUAAAAAAAAAYQAAAAAAAAPA/AAAAAAAARkAAAAAAAAAYQAAAAAAAAABAAAAAAACARkAAAAAAAAAYQAAAAAAAAAhAAAAAAAAAR0AAAAAAAAAYQAAAAAAAABBAAAAAAACAR0AAAAAAAAAYQAAAAAAAABRAAAAAAAAASEAAAAAAAAAYQAAAAAAAABhA",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
         "stream": "catia:CATPart"

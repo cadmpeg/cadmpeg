@@ -347,7 +347,7 @@ fn malformed_rest_lanes_keep_limits() {
             );
             assert_eq!(projection.joints.len(), 1);
             let joint = serde_json::to_value(&projection.joints[0]).unwrap();
-            let limits = &joint["operands"]["kind"][limits_key];
+            let limits = &joint["operands"]["value"]["kind"][limits_key];
             assert_eq!(limits["minimum"], -1.5 * scale);
             assert_eq!(limits["maximum"], 1.5 * scale);
             assert_eq!(

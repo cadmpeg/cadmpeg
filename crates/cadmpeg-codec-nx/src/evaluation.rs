@@ -262,7 +262,13 @@ fn feature_boundary(feature: &cadmpeg_ir::features::Feature) -> FeatureBoundary 
         name: feature.name.clone(),
         family: serde_json::to_value(feature.evaluation.definition())
             .ok()
-            .and_then(|definition| definition.get("definition")?.as_str().map(str::to_string)),
+            .and_then(|definition| {
+                let family = match definition.get("kind")?.as_str()? {
+                    "operation" => definition.get("value")?.get("kind")?.as_str()?,
+                    family => family,
+                };
+                Some(family.to_owned())
+            }),
         ordinal: feature.ordinal,
     }
 }

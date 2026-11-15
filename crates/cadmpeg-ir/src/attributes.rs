@@ -11,7 +11,7 @@ use crate::scalar::FiniteReal;
 /// An entity which owns a source attribute.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum AttributeTarget {
     /// Attribute is owned by the document as a whole, not a specific entity.

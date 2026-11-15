@@ -202,7 +202,7 @@ fn curveless_faces_keep_their_source_vertices_as_points() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|loss| loss["code"]["code"] == "topology.region-vertices-recovered"));
+            .any(|loss| loss["code"]["value"]["code"] == "topology.region-vertices-recovered"));
         Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
@@ -260,13 +260,13 @@ fn pcurves_recover_edges_even_when_the_face_cannot_be_written() {
         assert_eq!(
             losses
                 .iter()
-                .filter(|loss| loss["code"]["code"] == "topology.edge-no-3d-curve")
+                .filter(|loss| loss["code"]["value"]["code"] == "topology.edge-no-3d-curve")
                 .count(),
             2
         );
         assert!(losses
             .iter()
-            .any(|loss| loss["code"]["code"] == "topology.region-edges-recovered"));
+            .any(|loss| loss["code"]["value"]["code"] == "topology.region-edges-recovered"));
         let text = fs::read_to_string(output).unwrap();
         assert!(text.contains("EDGE_BASED_WIREFRAME_MODEL("));
         assert!(text.contains("EDGE_CURVE("));
@@ -319,7 +319,7 @@ fn step_conversion_leaves_collapsed_curveless_edges_out_without_a_loss() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|loss| loss["code"]["code"].as_str().unwrap())
+            .map(|loss| loss["code"]["value"]["code"].as_str().unwrap())
             .collect();
         for code in [
             "topology.edge-no-3d-curve",
@@ -430,7 +430,7 @@ fn reject_lossy_judges_the_design_history_a_geometry_decode_skips() {
             "parametric/design record(s) were not represented in STEP",
         ));
     let report: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
-    assert_eq!(report["decode_report"]["transfer"]["transfer"], "full");
+    assert_eq!(report["decode_report"]["transfer"]["kind"], "full");
 }
 
 #[cfg(all(feature = "step", any(feature = "fcstd", feature = "f3d")))]
