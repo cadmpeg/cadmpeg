@@ -119,7 +119,7 @@ fn settings(parsed: &SeparateScope<'_>, notes: &mut Notes<'_>) -> MeshSeparation
                 separation.method = Some(MeshSeparationMethod::Shells);
                 Some(F3dLossCode::FeatureMeshSeparateShellsMethodAssumed)
             }
-            1 | 2 => {
+            0x0001_0000 | 0x0002_0000 => {
                 separation.method = Some(MeshSeparationMethod::FaceGroups);
                 Some(F3dLossCode::FeatureMeshSeparateFaceGroupsMethodAssumed)
             }
@@ -131,11 +131,11 @@ fn settings(parsed: &SeparateScope<'_>, notes: &mut Notes<'_>) -> MeshSeparation
             notes.source, separation.method
         )));
         let group_loss = match selector {
-            1 => {
+            0x0001_0000 => {
                 separation.groups = Some(MeshSeparationGroups::All {});
                 Some(F3dLossCode::FeatureMeshSeparateAllGroupsAssumed)
             }
-            2 => {
+            0x0002_0000 => {
                 separation.groups = Some(MeshSeparationGroups::Selected { members: None });
                 Some(F3dLossCode::FeatureMeshSeparateSelectedGroupsAssumed)
             }

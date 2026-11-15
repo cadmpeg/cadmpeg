@@ -2143,11 +2143,11 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which Separate selector values identify shell and face-group partitioning?
 
-**Known.** Shell-correlated scopes store selector 0. A face-group-correlated scope stores 1. The decoder provisionally reads 0 as Shells and 1 or 2 as FaceGroups, preserving the raw selector.
+**Known.** Shell-correlated scopes store selector 0. A face-group-correlated scope stores 65536. The decoder provisionally reads 0 as Shells and 65536 or 131072 as FaceGroups, preserving the raw selector.
 
 **Need.** Matched saves that change each method alone and distinguish method encoding from selection state.
 
-**Conflict.** Labels and body counts also vary between these scopes. Selector 2 is an extrapolation from the dialog choices.
+**Conflict.** Labels and body counts also vary between these scopes. The 131072 reading extrapolates the dialog choices. Separate control bytes before a narrower method field also fit the raw words.
 
 **Note.** The readings report `feature.mesh-separate-shells-method-assumed` and `feature.mesh-separate-face-groups-method-assumed`. Other values report `feature.mesh-separate-selector-unruled`.
 
@@ -2155,11 +2155,11 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which Separate fields select all groups or an ordered subset of groups?
 
-**Known.** The decoder provisionally reads selector 1 as All and 2 as Selected with unknown members. Source member body references and UTF-16 identifiers remain independent native facts.
+**Known.** The decoder provisionally reads selector 65536 as All and 131072 as Selected with unknown members. Source member body references and UTF-16 identifiers remain independent native facts.
 
 **Need.** Matched All and Selected saves with known, independently varied group identities and historical triangle assignments.
 
-**Conflict.** An independent scope field or member-tail selection could carry the selection category. The unseen selector-2 reading follows UI choice order.
+**Conflict.** An independent scope field or member-tail selection could carry the selection category. The unseen 131072 reading follows UI choice order while retaining the observed high-word spacing.
 
 **Note.** The readings report `feature.mesh-separate-all-groups-assumed` and `feature.mesh-separate-selected-groups-assumed`. DR-504 tracks general member-tail selection semantics.
 

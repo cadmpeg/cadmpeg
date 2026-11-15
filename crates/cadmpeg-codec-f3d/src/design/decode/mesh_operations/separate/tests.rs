@@ -157,8 +157,14 @@ fn separate_unread_and_invalid_envelopes_stop_the_dependent_tail() {
         let parsed = read(&bytes);
         assert_eq!(parsed.outputs.slots[0].target(), Some(41));
         assert_eq!(parsed.outputs.slots[1].offset, 36);
-        assert!(matches!(parsed.outputs.slots[1].value, SlotValue::Unread(_)) == (marker == 1));
-        assert!(matches!(parsed.outputs.slots[1].value, SlotValue::Invalid(_)) == (marker == 9));
+        assert_eq!(
+            matches!(parsed.outputs.slots[1].value, SlotValue::Unread(_)),
+            marker == 1
+        );
+        assert_eq!(
+            matches!(parsed.outputs.slots[1].value, SlotValue::Invalid(_)),
+            marker == 9
+        );
         assert_eq!(parsed.outputs.unread, Some((1, 36, 1)));
         assert_eq!(parsed.selector, None);
     }
@@ -230,7 +236,7 @@ fn separate_admission_checks_identity_registration_bounds_and_pairing() {
                 meta.types[0].type_guid = "abcdefab-cdef-abcd-efab-cdefabcdefab"
                     .to_owned()
                     .try_into()
-                    .unwrap()
+                    .unwrap();
             }
             4 => meta.types[0].entities = ReferenceRun::unlocated(vec![88, 88]),
             5 => meta.records.push(meta.records[0]),

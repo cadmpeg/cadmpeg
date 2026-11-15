@@ -288,7 +288,7 @@ fn separate_projects_ordered_sources_outputs_and_auxiliary_facts() {
 
 #[test]
 fn separate_methods_scope_and_each_boolean_project_independently() {
-    for selector in [0, 1, 2, 93] {
+    for selector in [0, 1, 2, 0x0001_0000, 0x0002_0000, 93] {
         for words in [[0, 0], [1, 1], [0, 1], [1, 0], [7, 1], [1, 9]] {
             let (stream, meta) = fixture(selector, words, 2, |_| {});
             let (feature, codes) = project(&stream, Some(&meta), 1);
@@ -297,15 +297,15 @@ fn separate_methods_scope_and_each_boolean_project_independently() {
                 settings.method,
                 match selector {
                     0 => Some(MeshSeparationMethod::Shells),
-                    1 | 2 => Some(MeshSeparationMethod::FaceGroups),
+                    0x0001_0000 | 0x0002_0000 => Some(MeshSeparationMethod::FaceGroups),
                     _ => None,
                 }
             );
             assert_eq!(
                 settings.groups,
                 match selector {
-                    1 => Some(MeshSeparationGroups::All {}),
-                    2 => Some(MeshSeparationGroups::Selected { members: None }),
+                    0x0001_0000 => Some(MeshSeparationGroups::All {}),
+                    0x0002_0000 => Some(MeshSeparationGroups::Selected { members: None }),
                     _ => None,
                 }
             );
@@ -321,13 +321,13 @@ fn separate_methods_scope_and_each_boolean_project_independently() {
                     word.to_string()
                 );
             }
-            if selector == 2 {
+            if selector == 0x0002_0000 {
                 assert!(codes.contains(&"feature.mesh-separate-selected-groups-assumed".to_owned()));
             }
-            if selector == 1 {
+            if selector == 0x0001_0000 {
                 assert!(codes.contains(&"feature.mesh-separate-all-groups-assumed".to_owned()));
             }
-            if selector == 93 || words.iter().any(|word| *word > 1) {
+            if matches!(selector, 1 | 2 | 93) || words.iter().any(|word| *word > 1) {
                 assert!(codes.contains(&"feature.mesh-separate-selector-unruled".to_owned()));
             }
         }
@@ -336,7 +336,7 @@ fn separate_methods_scope_and_each_boolean_project_independently() {
 
 #[test]
 fn separate_partial_controls_scope_failures_and_repetition_mismatches_survive() {
-    let (stream, meta) = fixture(1, [1, 0], 2, |scope| scope.truncate(56));
+    let (stream, meta) = fixture(0x0001_0000, [1, 0], 2, |scope| scope.truncate(56));
     let (feature, codes) = project(&stream, Some(&meta), 1);
     assert_eq!(separation(&feature).1.multiple_bodies, Some(true));
     assert_eq!(separation(&feature).1.keep_body, None);
