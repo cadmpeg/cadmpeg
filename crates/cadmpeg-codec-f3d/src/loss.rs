@@ -658,7 +658,14 @@ pub(crate) enum F3dLossCode {
     /// support-face selection.
     FeatureSurfaceOffsetGroupOrdinalsAssumed,
     FeatureFormCageOrderAssumed,
-    FeatureFormEmptyCagesAssumed,
+    FeatureFormSourceUnavailable,
+    FeatureFormDefinitionUnavailable,
+    FeatureFormMembershipUnresolved,
+    FeatureFormLegacySerializerMembershipAssumed,
+    FeatureFormLegacySerializerOrderAssumed,
+    FeatureFormCageBindingAmbiguous,
+    FeatureFormBodyReferencesPartialAssumed,
+    FeatureFormBodyRegistrationUnsupported,
     /// A legacy Scale form is selected by the frame length of its English
     /// spelling; its payload length matches no form.
     FeatureScaleFrameLengthFormAssumed,
@@ -1426,7 +1433,14 @@ impl F3dLossCode {
         Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureSurfaceOffsetGroupOrdinalsAssumed,
         Self::FeatureFormCageOrderAssumed,
-        Self::FeatureFormEmptyCagesAssumed,
+        Self::FeatureFormSourceUnavailable,
+        Self::FeatureFormDefinitionUnavailable,
+        Self::FeatureFormMembershipUnresolved,
+        Self::FeatureFormLegacySerializerMembershipAssumed,
+        Self::FeatureFormLegacySerializerOrderAssumed,
+        Self::FeatureFormCageBindingAmbiguous,
+        Self::FeatureFormBodyReferencesPartialAssumed,
+        Self::FeatureFormBodyRegistrationUnsupported,
         Self::FeatureScaleFrameLengthFormAssumed,
         Self::FeatureScaleMatrixWordAssumed,
         Self::FeatureScaleUnlistedGroupsAssumed,
@@ -2246,7 +2260,22 @@ impl F3dLossCode {
                 "feature.surface-offset-group-ordinals-assumed"
             }
             Self::FeatureFormCageOrderAssumed => "feature.form-cage-order-assumed",
-            Self::FeatureFormEmptyCagesAssumed => "feature.form-empty-cages-assumed",
+            Self::FeatureFormSourceUnavailable => "feature.form-source-unavailable",
+            Self::FeatureFormDefinitionUnavailable => "feature.form-definition-unavailable",
+            Self::FeatureFormMembershipUnresolved => "feature.form-membership-unresolved",
+            Self::FeatureFormLegacySerializerMembershipAssumed => {
+                "feature.form-legacy-serializer-membership-assumed"
+            }
+            Self::FeatureFormLegacySerializerOrderAssumed => {
+                "feature.form-legacy-serializer-order-assumed"
+            }
+            Self::FeatureFormCageBindingAmbiguous => "feature.form-cage-binding-ambiguous",
+            Self::FeatureFormBodyReferencesPartialAssumed => {
+                "feature.form-body-references-partial-assumed"
+            }
+            Self::FeatureFormBodyRegistrationUnsupported => {
+                "feature.form-body-registration-unsupported"
+            }
             Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
             Self::FeatureScaleMatrixWordAssumed => "feature.scale-matrix-word-assumed",
             Self::FeatureScaleUnlistedGroupsAssumed => "feature.scale-unlisted-groups-assumed",
@@ -2977,7 +3006,14 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
             | Self::FeatureFormCageOrderAssumed
-            | Self::FeatureFormEmptyCagesAssumed
+            | Self::FeatureFormSourceUnavailable
+            | Self::FeatureFormDefinitionUnavailable
+            | Self::FeatureFormMembershipUnresolved
+            | Self::FeatureFormLegacySerializerMembershipAssumed
+            | Self::FeatureFormLegacySerializerOrderAssumed
+            | Self::FeatureFormCageBindingAmbiguous
+            | Self::FeatureFormBodyReferencesPartialAssumed
+            | Self::FeatureFormBodyRegistrationUnsupported
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureScaleMatrixWordAssumed
             | Self::FeatureScaleUnlistedGroupsAssumed
@@ -3553,7 +3589,14 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
             | Self::FeatureFormCageOrderAssumed
-            | Self::FeatureFormEmptyCagesAssumed
+            | Self::FeatureFormSourceUnavailable
+            | Self::FeatureFormDefinitionUnavailable
+            | Self::FeatureFormMembershipUnresolved
+            | Self::FeatureFormLegacySerializerMembershipAssumed
+            | Self::FeatureFormLegacySerializerOrderAssumed
+            | Self::FeatureFormCageBindingAmbiguous
+            | Self::FeatureFormBodyReferencesPartialAssumed
+            | Self::FeatureFormBodyRegistrationUnsupported
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureScaleMatrixWordAssumed
             | Self::FeatureScaleUnlistedGroupsAssumed
@@ -4247,7 +4290,14 @@ mod tests {
                 "feature.face-selection-active-substituted",
                 "feature.surface-offset-group-ordinals-assumed",
                 "feature.form-cage-order-assumed",
-                "feature.form-empty-cages-assumed",
+                "feature.form-source-unavailable",
+                "feature.form-definition-unavailable",
+                "feature.form-membership-unresolved",
+                "feature.form-legacy-serializer-membership-assumed",
+                "feature.form-legacy-serializer-order-assumed",
+                "feature.form-cage-binding-ambiguous",
+                "feature.form-body-references-partial-assumed",
+                "feature.form-body-registration-unsupported",
                 "feature.scale-frame-length-form-assumed",
                 "feature.scale-matrix-word-assumed",
                 "feature.scale-unlisted-groups-assumed",
