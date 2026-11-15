@@ -95,7 +95,7 @@ pub use diff::{
     NonEmptyFields, SourceDiff,
 };
 pub use document::{
-    ArenaClass, ArenaName, CadIr, CensusKey, DesignBelowFullDepth, SourceMeta, IR_VERSION,
+    ArenaHome, ArenaName, CadIr, CensusKey, ScopeViolation, SourceMeta, IR_VERSION,
 };
 pub use draft::ModelDraft;
 pub use features::{

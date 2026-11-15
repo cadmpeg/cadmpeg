@@ -1,8 +1,12 @@
 {
   "ir": {
-    "fragment": false,
     "ir_version": "11",
-    "decode_depth": "full",
+    "fragment": false,
+    "scope": {
+      "model": true,
+      "design": true,
+      "process": true
+    },
     "source": {
       "identity": {
         "kind": "classified",
@@ -54,7 +58,7 @@
       "linear": 9.999999999999999e-6,
       "angular": 1e-10
     },
-    "model": {
+    "geometry": {
       "bodies": [
         {
           "id": "f3d:brep:entity#1",
@@ -789,7 +793,9 @@
           }
         }
       ],
-      "procedural_curves": [],
+      "procedural_curves": []
+    },
+    "model": {
       "assets": [],
       "features": [],
       "feature_input_topologies": [],
@@ -827,6 +833,8 @@
       "point_clouds": [],
       "history_bodies": []
     },
+    "design": {},
+    "process": {},
     "native": {
       "f3d": {
         "act_component_links": [],

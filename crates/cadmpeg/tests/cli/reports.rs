@@ -437,8 +437,8 @@ fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
     // findings under `.check_report.findings` in the written report.
     let dir = tempdir().unwrap();
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let absent = format!("{}-absent", ir.model.faces[0].surface);
-    ir.model.faces[0].surface = absent.try_into().expect("valid identity");
+    let absent = format!("{}-absent", ir.geometry.faces[0].surface);
+    ir.geometry.faces[0].surface = absent.try_into().expect("valid identity");
     let input = fixture(dir.path(), "broken.cadir.json", &ir);
     let report = dir.path().join("report.json");
 

@@ -300,7 +300,7 @@ fn surface_faces(ir: &CadIr, id: u32) -> SurfaceFaces {
         return SurfaceFaces::Unresolved;
     };
     let faces_on = |predicate: &dyn Fn(&SurfaceId) -> bool| -> Vec<FaceId> {
-        ir.model
+        ir.geometry
             .faces
             .iter()
             .filter(|face| predicate(&face.surface))
@@ -309,7 +309,12 @@ fn surface_faces(ir: &CadIr, id: u32) -> SurfaceFaces {
     };
     let faces = faces_on(&|surface| *surface == visible);
     if !faces.is_empty() {
-        if ir.model.surfaces.iter().any(|surface| surface.id == datum) {
+        if ir
+            .geometry
+            .surfaces
+            .iter()
+            .any(|surface| surface.id == datum)
+        {
             return SurfaceFaces::Ambiguous(faces);
         }
         return SurfaceFaces::Faces(faces);
@@ -337,7 +342,7 @@ fn ambiguous_link_note(link: &str, id: u32, outcome: &str) -> LossNote {
 
 fn cylinder<'a>(ir: &'a CadIr, id: &SurfaceId) -> Option<&'a CylinderSurface> {
     match &ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| &surface.id == id)?
@@ -367,14 +372,14 @@ fn edge_faces(ir: &CadIr, id: u32) -> Option<BTreeSet<FaceId>> {
     let edge =
         crate::identity::compose_checked::<EdgeId>(&crate::identity::VISIBGEOM_EDGE, id).ok()?;
     let loops: BTreeSet<_> = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .filter(|coedge| coedge.edge == edge)
         .map(|coedge| &coedge.owner_loop)
         .collect();
     let faces: BTreeSet<_> = ir
-        .model
+        .geometry
         .loops
         .iter()
         .filter(|item| loops.contains(&item.id))

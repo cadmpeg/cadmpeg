@@ -287,11 +287,11 @@ fn decode_preserves_native_entities_and_graph() {
         native.arenas()["entities"][0].id(),
         "iges:entity:directory#1"
     );
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position().get().x, 1.0);
-    assert_eq!(result.ir().model.points[0].position().get().y, 2.0);
-    assert_eq!(result.ir().model.points[0].position().get().z, 3.0);
-    assert_eq!(result.ir().model.vertices.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
+    assert_eq!(result.ir().geometry.points[0].position().get().x, 1.0);
+    assert_eq!(result.ir().geometry.points[0].position().get().y, 2.0);
+    assert_eq!(result.ir().geometry.points[0].position().get().z, 3.0);
+    assert_eq!(result.ir().geometry.vertices.len(), 1);
     assert!(result.report().geometry_transferred());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message == "IGES entity type 116 form 0 retained without neutral projection"

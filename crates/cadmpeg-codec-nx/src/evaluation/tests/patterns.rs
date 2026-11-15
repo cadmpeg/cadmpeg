@@ -25,13 +25,13 @@ use cadmpeg_ir::features::FeatureOperation;
 #[test]
 fn body_pattern_adds_one_copy_per_non_original_occurrence() {
     let mut ir = complete_block_ir();
-    let seed = ir.model.bodies[0].id.clone();
+    let seed = ir.geometry.bodies[0].id.clone();
     let first_copy =
         BodyId::mint("test:model:entity#copy-1".to_string()).expect("identity grammar");
     let second_copy =
         BodyId::mint("test:model:entity#copy-2".to_string()).expect("identity grammar");
-    ir.model.bodies.push(model_body(first_copy.as_str()));
-    ir.model.bodies.push(model_body(second_copy.as_str()));
+    ir.geometry.bodies.push(model_body(first_copy.as_str()));
+    ir.geometry.bodies.push(model_body(second_copy.as_str()));
     let mut pattern = body_neutral_feature(
         "pattern",
         1,
@@ -103,7 +103,7 @@ fn output_free_unresolved_pattern_is_body_census_neutral() {
 #[test]
 fn body_pattern_requires_exact_copy_cardinality_and_new_identities() {
     let mut ir = complete_block_ir();
-    let seed = ir.model.bodies[0].id.clone();
+    let seed = ir.geometry.bodies[0].id.clone();
     ir.model.features.push(body_preserving_feature(
         "pattern",
         1,
@@ -144,7 +144,7 @@ fn body_pattern_requires_exact_copy_cardinality_and_new_identities() {
 fn feature_seed_pattern_remains_an_explicit_body_effect_boundary() {
     let mut ir = complete_block_ir();
     let seed = ir.model.features[0].id.clone();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut pattern = body_preserving_feature(
         "pattern",
         1,
@@ -183,7 +183,7 @@ fn feature_seed_pattern_remains_an_explicit_body_effect_boundary() {
 #[test]
 fn zero_occurrence_body_pattern_refuses_lineage() {
     let ir = complete_block_ir();
-    let seed = ir.model.bodies[0].id.clone();
+    let seed = ir.geometry.bodies[0].id.clone();
     let mut feature = ir.model.features[0].clone();
     feature
         .evaluation

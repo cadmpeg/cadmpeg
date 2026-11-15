@@ -59,7 +59,7 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
     let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
     let point_id = "test:model:point#earlier";
     let mut first = CadIr::empty();
-    first.model.points.push(sourced_point(point_id));
+    first.geometry.points.push(sourced_point(point_id));
     session
         .try_admit_append(
             first,
@@ -79,7 +79,7 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
         } else {
             "test:model:vertex#rejected"
         };
-        candidate.model.vertices.push(crate::topology::Vertex {
+        candidate.geometry.vertices.push(crate::topology::Vertex {
             id: id.try_into().unwrap(),
             point: target.try_into().unwrap(),
             tolerance: None,
@@ -95,19 +95,19 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
             format!("test:model:region#{suffix}").try_into().unwrap();
         let body_id: crate::ids::BodyId = format!("test:model:body#{suffix}").try_into().unwrap();
         candidate
-            .model
+            .geometry
             .shells
             .push(crate::topology::Shell::with_free_vertex(
                 shell_id.clone(),
                 region_id.clone(),
                 id.try_into().unwrap(),
             ));
-        candidate.model.regions.push(crate::topology::Region {
+        candidate.geometry.regions.push(crate::topology::Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: vec![shell_id],
         });
-        candidate.model.bodies.push(crate::topology::Body {
+        candidate.geometry.bodies.push(crate::topology::Body {
             id: body_id,
             kind: crate::topology::BodyKind::General,
             regions: vec![region_id],

@@ -866,7 +866,7 @@ pub(super) fn transfer_section_entities(
             let Some(id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
                 continue;
             };
-            if ir.model.curves.iter().any(|existing| existing.id == id) {
+            if ir.geometry.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
             annotate(
@@ -912,7 +912,7 @@ pub(super) fn transfer_section_entities(
             let Some(id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
                 continue;
             };
-            if ir.model.curves.iter().any(|existing| existing.id == id) {
+            if ir.geometry.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
             annotate(
@@ -958,7 +958,7 @@ pub(super) fn transfer_section_entities(
             let Some(id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
                 continue;
             };
-            if ir.model.curves.iter().any(|existing| existing.id == id) {
+            if ir.geometry.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
             annotate(
@@ -985,7 +985,7 @@ pub(super) fn transfer_section_entities(
             )?;
         }
         for (internal_id, external_id, section_geometry, offset, id) in saved_section_geometries {
-            if ir.model.curves.iter().any(|existing| existing.id == id) {
+            if ir.geometry.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
             let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry) else {

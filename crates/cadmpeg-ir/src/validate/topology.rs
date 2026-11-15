@@ -182,18 +182,18 @@ pub(super) fn check_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
 
 pub(super) fn check_topology_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
     for (id, tolerance) in ir
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|entity| (entity.id.as_str(), entity.tolerance))
         .chain(
-            ir.model
+            ir.geometry
                 .edges
                 .iter()
                 .map(|entity| (entity.id.as_str(), entity.tolerance)),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .faces
                 .iter()
                 .map(|entity| (entity.id.as_str(), entity.tolerance)),
@@ -217,7 +217,7 @@ pub(super) fn check_references(
     ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    for b in &ir.model.bodies {
+    for b in &ir.geometry.bodies {
         for l in &b.regions {
             if ids
                 .regions(l.as_str(), crate::index::StandardIndex)
@@ -227,7 +227,7 @@ pub(super) fn check_references(
             }
         }
     }
-    for l in &ir.model.regions {
+    for l in &ir.geometry.regions {
         if ids
             .bodies(l.body.as_str(), crate::index::StandardIndex)
             .is_none()
@@ -243,7 +243,7 @@ pub(super) fn check_references(
             }
         }
     }
-    for s in &ir.model.shells {
+    for s in &ir.geometry.shells {
         if ids
             .regions(s.region.as_str(), crate::index::StandardIndex)
             .is_none()
@@ -269,7 +269,7 @@ pub(super) fn check_references(
             }
         }
     }
-    for f in &ir.model.faces {
+    for f in &ir.geometry.faces {
         if ids
             .shells(f.shell.as_str(), crate::index::StandardIndex)
             .is_none()
@@ -291,7 +291,7 @@ pub(super) fn check_references(
             }
         }
     }
-    for lp in &ir.model.loops {
+    for lp in &ir.geometry.loops {
         if ids
             .faces(lp.face.as_str(), crate::index::StandardIndex)
             .is_none()
@@ -365,7 +365,7 @@ pub(super) fn check_references(
             }
         }
     }
-    for ce in &ir.model.coedges {
+    for ce in &ir.geometry.coedges {
         if ids
             .loops(ce.owner_loop.as_str(), crate::index::StandardIndex)
             .is_none()
@@ -411,7 +411,7 @@ pub(super) fn check_references(
             }
         }
     }
-    for e in &ir.model.edges {
+    for e in &ir.geometry.edges {
         if let Some(c) = e.curve() {
             if ids
                 .curves(c.as_str(), crate::index::StandardIndex)
@@ -433,7 +433,7 @@ pub(super) fn check_references(
             ref_error(findings, e.id.as_str(), "vertex(end)", e.end.as_str());
         }
     }
-    for v in &ir.model.vertices {
+    for v in &ir.geometry.vertices {
         if ids
             .points(v.point.as_str(), crate::index::StandardIndex)
             .is_none()
@@ -571,7 +571,7 @@ pub(super) fn check_references(
             _ => {}
         }
     }
-    for s in &ir.model.surfaces {
+    for s in &ir.geometry.surfaces {
         match &s.geometry {
             SurfaceGeometry::Procedural { construction, .. } => {
                 if ids
@@ -594,7 +594,7 @@ pub(super) fn check_references(
             SurfaceGeometry::Solved(_) => {}
         }
     }
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         match &curve.geometry {
             CurveGeometry::Procedural { construction, .. } => {
                 if ids
@@ -635,7 +635,7 @@ pub(super) fn check_references(
         }
     }
     composite::check(ctx, ir, findings)?;
-    for procedural in &ir.model.procedural_surfaces {
+    for procedural in &ir.geometry.procedural_surfaces {
         match procedural.definition() {
             ProceduralSurfaceDefinition::Exact(..) => {}
             ProceduralSurfaceDefinition::Compound(definition_payload) => {
@@ -1570,7 +1570,7 @@ pub(super) fn check_references(
             }
         }
     }
-    for procedural in &ir.model.procedural_curves {
+    for procedural in &ir.geometry.procedural_curves {
         match procedural.definition() {
             ProceduralCurveDefinition::Exact { .. } | ProceduralCurveDefinition::Helix(_) => {}
             ProceduralCurveDefinition::Law {
