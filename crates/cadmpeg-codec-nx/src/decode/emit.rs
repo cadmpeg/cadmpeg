@@ -1883,6 +1883,7 @@ mod tests {
                 om_section_cache: std::sync::OnceLock::new(),
             },
             streams: Vec::new(),
+            untyped: std::cell::RefCell::default(),
         }
     }
 

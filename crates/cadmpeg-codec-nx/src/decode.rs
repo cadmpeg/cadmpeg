@@ -16,9 +16,12 @@ use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::{AnnotationBuilder, Exactness};
+use cadmpeg_ir::{AnnotationBuilder, ArenaClass, Exactness};
+use std::cell::RefCell;
+use std::collections::BTreeSet;
 
 use crate::container::{self, Container, EntryContent};
 use crate::loss::NxLossCode;
@@ -48,9 +51,23 @@ pub(crate) struct Scan<'a> {
     pub(crate) container: Container<'a>,
     /// Located and inflated Parasolid or preview streams.
     pub(crate) streams: Vec<Stream>,
+    /// Records kept without decoding, with the arena classes their bytes can
+    /// hold, noted where each is retained.
+    pub(crate) untyped: RefCell<Vec<(UnknownId, BTreeSet<ArenaClass>)>>,
 }
 
 impl Scan<'_> {
+    /// Notes that the record `id` is retained without decoding.
+    pub(crate) fn note_untyped(
+        &self,
+        id: &UnknownId,
+        classes: impl IntoIterator<Item = ArenaClass>,
+    ) {
+        self.untyped
+            .borrow_mut()
+            .push((id.clone(), classes.into_iter().collect()));
+    }
+
     /// Count streams with the requested classification.
     pub(super) fn count(&self, kind: StreamKind) -> usize {
         self.streams.iter().filter(|s| s.kind() == kind).count()
@@ -75,7 +92,11 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         let streams = parasolid::extract_legacy_streams(ctx, part)?;
         (container, streams)
     };
-    Ok(Scan { container, streams })
+    Ok(Scan {
+        container,
+        streams,
+        untyped: RefCell::default(),
+    })
 }
 
 /// Decode an NX `.prt` into IR and a loss report.
@@ -88,16 +109,36 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let decode_digest = Sha256Digest::digest(root.window());
     let scan = scan(ctx, root)?;
-    let (classification, notes) = crate::scan_notes::summarize(&scan)?;
+    let mut decoded = decode_scan(ctx, &scan, decode_digest)?;
+    // A record an attachment rolled back is not retained, and its note goes
+    // with it.
+    for (id, classes) in scan.untyped.take() {
+        if decoded
+            .source_fidelity
+            .retained_record(id.as_str())
+            .is_some()
+        {
+            decoded.source_fidelity.mark_untyped(id.as_str(), classes)?;
+        }
+    }
+    Ok(decoded)
+}
+
+fn decode_scan(
+    ctx: &DecodeContext<'_>,
+    scan: &Scan<'_>,
+    decode_digest: Sha256Digest,
+) -> Result<Decoded, CodecError> {
+    let (classification, notes) = crate::scan_notes::summarize(scan)?;
     let (dialects, dialect_losses) = classification.into_report_parts();
 
     let mut admitted_entities = 0_u64;
     if ctx.container_only() {
-        let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, &scan, &dialects)?;
-        let mut body = build_container_body(&scan, dialect_losses, notes);
+        let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, scan, &dialects)?;
+        let mut body = build_container_body(scan, dialect_losses, notes);
         body.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         body.losses.extend(native_losses);
-        report_untransferred_streams(&scan, &mut body, TypedNative::ContainerOnly);
+        report_untransferred_streams(scan, &mut body, TypedNative::ContainerOnly);
         return decoded(
             ctx,
             decode_digest,
@@ -111,7 +152,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
 
     if let Some((ir, body, annotations, unknowns)) = try_decode_geometry(
         ctx,
-        &scan,
+        scan,
         &dialects,
         &dialect_losses,
         &notes,
@@ -128,10 +169,10 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         );
     }
 
-    let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, &scan, &dialects)?;
-    let mut body = build_container_body(&scan, dialect_losses, notes);
+    let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, scan, &dialects)?;
+    let mut body = build_container_body(scan, dialect_losses, notes);
     body.losses.extend(native_losses);
-    report_untransferred_streams(&scan, &mut body, TypedNative::Available);
+    report_untransferred_streams(scan, &mut body, TypedNative::Available);
     decoded(
         ctx,
         decode_digest,
@@ -292,6 +333,7 @@ fn build_metadata_ir(
                 Some(stream.kind().label()),
             );
             annotations.exactness(unknown.id().as_str(), Exactness::Derived);
+            scan.note_untyped(unknown.id(), [ArenaClass::Model]);
             unknowns.push(unknown);
         }
     }

@@ -36,7 +36,7 @@ use cadmpeg_ir::{
     },
     scalar::{Angle, FiniteReal, Length},
 };
-use cadmpeg_ir::{AnnotationBuilder, Exactness};
+use cadmpeg_ir::{AnnotationBuilder, ArenaClass, Exactness};
 
 mod assembly_occurrences;
 pub(super) mod body_selection;
@@ -169,6 +169,7 @@ fn attach_container_payloads(
             cadmpeg_core::decode::u64_from_index(bytes.len()),
             "retain NX opaque container payload",
         )?;
+        scan.note_untyped(&id, [ArenaClass::Model, ArenaClass::Design]);
         push_native_unknown(
             ctx,
             unknowns,
@@ -189,6 +190,23 @@ fn attach_indexed_om_unknowns(
     let object_sections = scan.container.indexed_om_sections();
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        // A section's records decode into typed records, except a control
+        // block with no admitted complete grammar; a container-only decode
+        // decodes none of them.
+        let unclassified_control = section
+            .as_offset_only()
+            .is_some_and(|(control, _, records)| {
+                crate::om::offset_store_control_form(
+                    control.bytes,
+                    records.first().map(|record| record.bytes),
+                )
+                .is_none()
+            });
+        let note_untyped = |id: &UnknownId, is_control: bool| {
+            if ctx.container_only() || (unclassified_control && is_control) {
+                scan.note_untyped(id, [ArenaClass::Model, ArenaClass::Design]);
+            }
+        };
         match &section.store {
             crate::om::IndexedStore::Fixed { records } => {
                 for (record_index, record) in records.iter().enumerate() {
@@ -203,6 +221,7 @@ fn attach_indexed_om_unknowns(
                         cadmpeg_core::decode::u64_from_index(record.bytes.len()),
                         "retain NX indexed object-model record",
                     )?;
+                    note_untyped(&id, false);
                     push_native_unknown(
                         ctx,
                         unknowns,
@@ -227,6 +246,7 @@ fn attach_indexed_om_unknowns(
                         cadmpeg_core::decode::u64_from_index(record.bytes.len()),
                         "retain NX indexed object-model record",
                     )?;
+                    note_untyped(&id, record_index == 0);
                     push_native_unknown(
                         ctx,
                         unknowns,

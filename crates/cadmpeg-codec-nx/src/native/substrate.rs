@@ -345,6 +345,7 @@ mod tests {
                     ),
                 },
             }],
+            untyped: std::cell::RefCell::default(),
         };
 
         let topology = topology_streams(&scan).expect("test topology streams");
@@ -389,6 +390,7 @@ mod tests {
                 om_section_cache: std::sync::OnceLock::new(),
             },
             streams: vec![stream(0), stream(1)],
+            untyped: std::cell::RefCell::default(),
         };
 
         let parsed = ParsedStreams::parse(&scan).expect("test parsed streams");

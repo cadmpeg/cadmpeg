@@ -80,6 +80,7 @@ fn bounded_indexed_section_search_reports_a_scan_loss() {
     let scan = super::super::Scan {
         container,
         streams: Vec::new(),
+        untyped: std::cell::RefCell::default(),
     };
     let mut body = cadmpeg_ir::codec::DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),

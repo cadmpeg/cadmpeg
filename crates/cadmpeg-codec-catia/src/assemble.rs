@@ -21,9 +21,10 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::ArenaClass;
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::SourceObjectAssociation;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::container::ContainerScan;
 use crate::loss::{identity_statement, CatiaLossCode};
@@ -748,10 +749,19 @@ pub(crate) fn build_geometry_report(
     }
 }
 
+/// The returned classes are the ones the retained payload holds undecoded.
 pub(crate) fn build_metadata_fallback(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        CadIr,
+        cadmpeg_ir::Annotations,
+        Vec<UnknownRecord>,
+        BTreeSet<ArenaClass>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     let ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
@@ -759,17 +769,20 @@ pub(crate) fn build_metadata_fallback(
     // Preserve the reconstructed BREP stream, or the whole file when the scan
     // recovered no stream, as an unknown passthrough so no source byte is
     // dropped. A container-only decode transfers no model, so this record is
-    // the only place the payload survives.
-    let (bytes, stream, key) = match scan.brep.as_ref() {
+    // the only place the payload survives. The BREP stream holds model
+    // content; the whole file holds model and design content.
+    let (bytes, stream, key, untyped) = match scan.brep.as_ref() {
         Some(brep) => (
             brep.as_slice(),
             "MainDataStream+SurfacicReps",
             cadmpeg_ir::identity_key!("brep-stream"),
+            BTreeSet::from([ArenaClass::Model]),
         ),
         None => (
             scan.data.as_ref(),
             "CATPart",
             cadmpeg_ir::identity_key!("container"),
+            BTreeSet::from([ArenaClass::Model, ArenaClass::Design]),
         ),
     };
     let id = UnknownId::compose(
@@ -791,7 +804,7 @@ pub(crate) fn build_metadata_fallback(
         Exactness::Unknown,
     )?;
     unknowns.push(UnknownRecord::retained(id, 0, bytes, Vec::new()));
-    Ok((ir, annotations.build(), unknowns))
+    Ok((ir, annotations.build(), unknowns, untyped))
 }
 
 /// Preserve the native payload for every partial decode.  Typed entities are

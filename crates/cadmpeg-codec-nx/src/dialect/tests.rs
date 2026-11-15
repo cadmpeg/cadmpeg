@@ -55,6 +55,7 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
     let scan = crate::decode::Scan {
         container: { crate::container::scan_bytes(bytes.clone()) }.unwrap(),
         streams: extract_streams(&bytes),
+        untyped: std::cell::RefCell::default(),
     };
     let (layers, losses) = classify_layers(&scan).into_report_parts();
     let kernel = layers
@@ -90,6 +91,7 @@ fn a_named_sldprt_parasolid_schema_remains_unverified_under_nx() {
     let scan = crate::decode::Scan {
         container: { crate::container::scan_bytes(bytes) }.unwrap(),
         streams,
+        untyped: std::cell::RefCell::default(),
     };
     let (layers, losses) = classify_layers(&scan).into_report_parts();
     let kernel = layers
@@ -116,6 +118,7 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
     let scan = crate::decode::Scan {
         container: { crate::container::scan_bytes(bytes) }.unwrap(),
         streams,
+        untyped: std::cell::RefCell::default(),
     };
 
     let summary = crate::inspect::summarize(&scan).expect("test container summary");
