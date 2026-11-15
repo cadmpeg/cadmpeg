@@ -44,6 +44,46 @@ fn source_fidelity_retains_the_source_image_within_the_retained_limit() {
 }
 
 #[test]
+fn the_source_image_is_untyped_model_content_while_it_holds_undecoded_geometry() {
+    for (depth, untyped) in [
+        (cadmpeg_core::decode::DecodeDepth::Full, vec![]),
+        (
+            cadmpeg_core::decode::DecodeDepth::Container,
+            vec![cadmpeg_ir::ArenaClass::Model],
+        ),
+    ] {
+        let result = cadmpeg_test_support::EditableDecodeResult::from(
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(point_file()),
+                    &DecodeOptions {
+                        depth,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .unwrap(),
+        );
+        let image = result
+            .source_fidelity()
+            .retained_record(crate::SOURCE_IMAGE_ID)
+            .unwrap();
+        assert_eq!(
+            image.untyped().iter().copied().collect::<Vec<_>>(),
+            untyped,
+            "{depth:?}"
+        );
+        assert_eq!(
+            result
+                .source_fidelity()
+                .unrepresented()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            untyped
+        );
+    }
+}
+
+#[test]
 fn decode_reports_a_transformation_chain_over_its_projection_limit() {
     let decoded = IgesCodec
         .decode(

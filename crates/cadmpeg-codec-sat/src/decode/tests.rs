@@ -759,6 +759,12 @@ point $-1 -1 $-1 10 0 0 #\nEnd-of-ACIS-data\n";
             .data(),
         Some(b"tvertex $-1 -1 $-1 $7 $10 0 #".as_slice())
     );
+    assert!(result
+        .source_fidelity()
+        .retained_record("sat:brep:tvertex#8")
+        .unwrap()
+        .untyped()
+        .is_empty());
 }
 
 #[test]
@@ -781,6 +787,12 @@ fn attachment_headers_keep_record_offsets_and_source_bytes() {
         .data()
         .unwrap();
     assert!(retained.starts_with(prefix));
+    assert!(result
+        .source_fidelity()
+        .retained_record("sat:source:header#0")
+        .unwrap()
+        .untyped()
+        .is_empty());
 }
 
 #[test]
@@ -802,6 +814,17 @@ fn empty_leading_record_name_uses_its_table_index_and_keeps_the_source() {
             .unwrap()
             .data(),
         Some(b"-opaque $-1 #".as_slice())
+    );
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:brep:untyped-record#6")
+            .unwrap()
+            .untyped()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        [cadmpeg_ir::ArenaClass::Model]
     );
 }
 
@@ -828,6 +851,14 @@ fn acis_base_extensions_do_not_shift_shared_entity_fields() {
             .unwrap()
             .data(),
         Some(source.as_bytes())
+    );
+    assert_eq!(
+        result
+            .source_fidelity()
+            .unrepresented()
+            .into_iter()
+            .collect::<Vec<_>>(),
+        [cadmpeg_ir::ArenaClass::Model]
     );
 }
 

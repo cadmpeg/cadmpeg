@@ -128,6 +128,51 @@ fn opaque_reference_does_not_transfer_a_coordinate() {
 }
 
 #[test]
+fn records_kept_without_decoding_are_marked_untyped_model_content() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));#2=UNKNOWN_ITEM(#1);ENDSEC;END-ISO-10303-21;";
+    let decoded = EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("bounded opaque reference"),
+    );
+    let fidelity = decoded.source_fidelity();
+    assert_eq!(
+        fidelity.decode_digest,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(source)
+    );
+    for id in ["step:data:cartesian_point#1", "step:data:unknown_item#2"] {
+        let record = fidelity.retained_record(id).expect("retained source");
+        assert_eq!(
+            record.untyped().iter().copied().collect::<Vec<_>>(),
+            [cadmpeg_ir::ArenaClass::Model]
+        );
+    }
+    assert_eq!(
+        fidelity.unrepresented().into_iter().collect::<Vec<_>>(),
+        [cadmpeg_ir::ArenaClass::Model]
+    );
+}
+
+#[test]
+fn only_records_kept_without_decoding_carry_an_untyped_mark() {
+    let source = include_str!("../writer/tests/data/periodic_two_rims.p21");
+    let decoded = EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
+    assert!(!decoded.ir().model.faces.is_empty());
+    let untyped = decoded
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .filter(|(_, record)| !record.untyped().is_empty())
+        .map(|(id, _)| id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(untyped, ["step:data:application_protocol_definition#41"]);
+}
+
+#[test]
 fn byte_accounting_reports_an_unrecognized_suffix() {
     let input = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
     let (mut exchange, _) =

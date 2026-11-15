@@ -14,7 +14,7 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{Identity, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
+use cadmpeg_ir::{ArenaClass, SourceFidelity, SourceObjectAssociation};
 
 use crate::dialect::StepDialect;
 use crate::ids;
@@ -612,6 +612,7 @@ fn decode_exchange_mode(
         let omitted_spans = exchange.omitted_spans().to_vec();
         let signature_spans = exchange.release_source_graph();
         let mut opaque = Vec::new();
+        let mut untyped_ids = Vec::new();
         for (span, omitted) in header_spans
             .iter()
             .map(|span| (span, false))
@@ -631,7 +632,9 @@ fn decode_exchange_mode(
             } else {
                 ids::header(span.start)
             };
-
+            if omitted {
+                untyped_ids.push(id.clone());
+            }
             opaque.push(UnknownRecord::retained(
                 id,
                 u64_from_index(span.start),
@@ -640,6 +643,7 @@ fn decode_exchange_mode(
             ));
         }
         for source in opaque_sources {
+            untyped_ids.push(source.unknown_id.clone());
             let bytes = retained_source_copy(
                 session.ctx,
                 &input[source.span.clone()],
@@ -685,6 +689,9 @@ fn decode_exchange_mode(
             opaque,
             session.ctx,
         )?;
+        for id in untyped_ids {
+            source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
+        }
     }
     session.source_attributes.insert(
         cadmpeg_core::nonblank_literal!("bytes_structural"),

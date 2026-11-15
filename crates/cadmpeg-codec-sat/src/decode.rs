@@ -14,6 +14,7 @@ use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::ArenaClass;
 use std::collections::BTreeMap;
 
 use crate::detect::{classify, header_attributes, StreamKind};
@@ -374,11 +375,18 @@ fn retain_source<'a>(
     extents: impl IntoIterator<Item = (&'a str, std::ops::Range<usize>)>,
 ) -> Result<(), CodecError> {
     let mut retained = Vec::new();
+    let mut untyped = Vec::new();
     for (id, span) in extents {
         ctx.retain_bytes(
             cadmpeg_core::decode::u64_from_index(span.len()),
             "SAT recovered source bytes",
         )?;
+        if !matches!(
+            id,
+            "sat:source:header#0" | "sat:source:concatenated-streams#0"
+        ) {
+            untyped.push(id);
+        }
         retained.push(cadmpeg_ir::UnknownRecord::retained(
             cadmpeg_ir::ids::UnknownId::mint(id.to_owned()).map_err(CodecError::malformed)?,
             cadmpeg_core::decode::u64_from_index(span.start),
@@ -391,7 +399,13 @@ fn retain_source<'a>(
     }
     result
         .source_fidelity
-        .attach_native_unknown_records(&mut result.ir, FORMAT, retained, ctx)
+        .attach_native_unknown_records(&mut result.ir, FORMAT, retained, ctx)?;
+    for id in untyped {
+        result
+            .source_fidelity
+            .mark_untyped(id, [ArenaClass::Model])?;
+    }
+    Ok(())
 }
 
 /// Refusal for bytes whose SAT discriminant matched but whose stream did not
@@ -575,9 +589,20 @@ fn build_result(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
+    let untyped = unknowns
+        .iter()
+        .filter(|record| {
+            let id = record.id().as_str();
+            !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
+        })
+        .map(|record| record.id().clone())
+        .collect::<Vec<_>>();
     let mut source_fidelity =
         cadmpeg_ir::SourceFidelity::with_annotations(annotations.build(), decode_digest);
     source_fidelity.attach_native_unknown_records(&mut ir, FORMAT, unknowns, ctx)?;
+    for id in untyped {
+        source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
+    }
     Ok(Decoded {
         ir,
         body,
