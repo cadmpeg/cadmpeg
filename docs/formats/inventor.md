@@ -1082,12 +1082,12 @@ One flange control form has the following values and reference relations. Direct
 | Attachment second direction | Parallel to the consumed sketch V axis, `normal × U`; antiparallel to V when the first direction is antiparallel to U. Neither sign changes the thickness side |
 | Attachment thickness | Same reference as plate slot 3 |
 | Attachment extension | Absent, or state 10 with repeated thickness, radius, attachment, relief width, minimum remnant, and option references |
-| Relief control | Boolean true |
+| Relief control | Boolean |
 | Relief form | Same enumeration type and value as the document-style bend-relief form |
 | Relief width, minimum remnant | Same references as the attachment operands |
 | Relief width, depth | Positive lengths |
 | Relief minimum remnant, seam gap | Nonnegative lengths |
-| Transition control | Boolean true |
+| Transition control | Boolean |
 | Transition form | Same enumeration type and value as the document-style transition form |
 | Transition radius | Nonnegative length |
 | Corner control, option | Boolean |

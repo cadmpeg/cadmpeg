@@ -294,7 +294,7 @@ pub(crate) fn plate<'a>(
     };
     let style_relief = property(style.bend_relief_form).and_then(enumeration);
     require(
-        property(*control).and_then(boolean) == Some(true)
+        property(*control).and_then(boolean).is_some()
             && same(*width, *relief_width)
             && same(*relief_remnant, *minimum_remnant)
             && property(*form).and_then(enumeration).is_some()
@@ -326,7 +326,7 @@ pub(crate) fn plate<'a>(
     };
     let style_transition = property(style.transition_form).and_then(enumeration);
     require(
-        property(*control).and_then(boolean) == Some(true)
+        property(*control).and_then(boolean).is_some()
             && property(*form).and_then(enumeration).is_some()
             && property(*form).and_then(enumeration) == style_transition,
         PlateRefusal::Transition,
