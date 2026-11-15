@@ -46,19 +46,19 @@ const STRINGS: [&str; 8] = ["zz", "A1", "B2", "AAAA", "0", "a", "image/png", "zz
 
 /// A document and the instance path of one value in it.
 #[derive(Clone)]
-pub(crate) struct Sample {
-    pub(crate) document: Value,
-    pub(crate) path: Vec<Step>,
+pub(super) struct Sample {
+    pub(super) document: Value,
+    pub(super) path: Vec<Step>,
 }
 
 impl Sample {
-    pub(crate) fn value(&self) -> Option<&Value> {
+    pub(super) fn value(&self) -> Option<&Value> {
         value_at(&self.document, &self.path)
     }
 }
 
 /// The accepted values known for each location.
-pub(crate) type Known = BTreeMap<String, Vec<Value>>;
+pub(super) type Known = BTreeMap<String, Vec<Value>>;
 
 /// One choice point of a built value.
 #[derive(Clone)]
@@ -90,7 +90,9 @@ impl Builder<'_, '_> {
                 alternatives,
             });
         }
-        chosen.min(alternatives.saturating_sub(1))
+        alternatives
+            .checked_sub(1)
+            .map_or(0, |last| chosen.min(last))
     }
 
     /// A value of the node at `location`: a known value, or one built from
@@ -490,14 +492,14 @@ struct Goal<'g> {
 }
 
 /// The search for a document that reaches one target.
-pub(crate) struct Search<'s, 'a> {
-    pub(crate) schema: &'s Schema<'a>,
-    pub(crate) known: &'s Known,
-    pub(crate) read: Read<'s>,
+pub(super) struct Search<'s, 'a> {
+    pub(super) schema: &'s Schema<'a>,
+    pub(super) known: &'s Known,
+    pub(super) read: Read<'s>,
     /// The reads the search may spend.
-    pub(crate) budget: usize,
+    pub(super) budget: usize,
     /// The documents read.
-    pub(crate) reads: usize,
+    pub(super) reads: usize,
 }
 
 /// The search state: the choices kept so far and where their read failed.
@@ -525,7 +527,7 @@ struct Progress {
 impl Search<'_, '_> {
     /// A document the readers accept that reaches the end of `route` from the
     /// value of `from` at `base`, or `None` when the budget runs out.
-    pub(crate) fn reach(&mut self, base: &Sample, from: &str, route: &[Edge]) -> Option<Value> {
+    pub(super) fn reach(&mut self, base: &Sample, from: &str, route: &[Edge]) -> Option<Value> {
         let goal = Goal {
             base,
             existing: base.value()?,
@@ -810,7 +812,9 @@ fn write_value(value: &Value, path: &mut Vec<Step>, text: &mut String, spans: &m
 /// `column` counts from 1 on the one line of a compact text, and names the
 /// last byte read.
 fn failing_path(spans: &[Span], column: usize) -> Vec<Step> {
-    let at = column.saturating_sub(1);
+    let Some(at) = column.checked_sub(1) else {
+        return Vec::new();
+    };
     spans
         .iter()
         .filter(|span| span.start <= at && at < span.end)
@@ -820,7 +824,7 @@ fn failing_path(spans: &[Span], column: usize) -> Vec<Step> {
 }
 
 /// `path` as a JSON pointer.
-pub(crate) fn pointer(path: &[Step]) -> String {
+pub(super) fn pointer(path: &[Step]) -> String {
     let mut text = String::new();
     for step in path {
         text.push('/');
@@ -832,7 +836,7 @@ pub(crate) fn pointer(path: &[Step]) -> String {
     text
 }
 
-pub(crate) fn value_at<'v>(value: &'v Value, path: &[Step]) -> Option<&'v Value> {
+pub(super) fn value_at<'v>(value: &'v Value, path: &[Step]) -> Option<&'v Value> {
     let mut node = value;
     for step in path {
         node = match (step, node) {
@@ -844,7 +848,7 @@ pub(crate) fn value_at<'v>(value: &'v Value, path: &[Step]) -> Option<&'v Value>
     Some(node)
 }
 
-pub(crate) fn value_at_mut<'v>(value: &'v mut Value, path: &[Step]) -> Option<&'v mut Value> {
+pub(super) fn value_at_mut<'v>(value: &'v mut Value, path: &[Step]) -> Option<&'v mut Value> {
     let mut node = value;
     for step in path {
         node = match (step, node) {

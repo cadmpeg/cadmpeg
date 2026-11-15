@@ -20,11 +20,11 @@ const CONSTRAINT_KEYWORDS: [&str; 5] = ["not", "if", "then", "else", "allOf"];
 
 /// Called with each target a walk reaches, the instance path that reaches
 /// it, and the members of that value the target does not own.
-pub(crate) type Visit<'v> = dyn FnMut(&str, &[Step], &[String]) + 'v;
+pub(super) type Visit<'v> = dyn FnMut(&str, &[Step], &[String]) + 'v;
 
 /// One step from a schema location to a child location.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Edge {
+pub(super) enum Edge {
     /// An object member.
     Property(String),
     /// Every element of an array.
@@ -41,7 +41,7 @@ pub(crate) enum Edge {
 
 /// How an object schema treats the keys it does not list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Shape {
+pub(super) enum Shape {
     /// The object states its key set: every other key is undeclared.
     Struct,
     /// The keys are data, under `patternProperties` or an
@@ -54,14 +54,14 @@ pub(crate) enum Shape {
 }
 
 /// The JSON Schema of a document.
-pub(crate) struct Schema<'a> {
+pub(super) struct Schema<'a> {
     root: &'a Value,
     patterns: RefCell<HashMap<String, Option<Regex>>>,
     inhabited: BTreeMap<String, bool>,
 }
 
 impl<'a> Schema<'a> {
-    pub(crate) fn new(root: &'a Value) -> Self {
+    pub(super) fn new(root: &'a Value) -> Self {
         let mut schema = Self {
             root,
             patterns: RefCell::new(HashMap::new()),
@@ -104,14 +104,14 @@ impl<'a> Schema<'a> {
     ///
     /// Panics when `location` names no node: every location this module
     /// hands out names one.
-    pub(crate) fn node(&self, location: &str) -> &'a Value {
+    pub(super) fn node(&self, location: &str) -> &'a Value {
         self.root
             .pointer(location)
             .unwrap_or_else(|| panic!("schema location {location} names no node"))
     }
 
     /// The definitions reachable from the root through `$ref`.
-    pub(crate) fn reachable_definitions(&self) -> BTreeSet<String> {
+    pub(super) fn reachable_definitions(&self) -> BTreeSet<String> {
         let mut reached = BTreeSet::new();
         let mut pending = Vec::new();
         let mut top = self.root.clone();
@@ -128,7 +128,7 @@ impl<'a> Schema<'a> {
     }
 
     /// Whether some value satisfies the node.
-    pub(crate) fn inhabited(&self, location: &str) -> bool {
+    pub(super) fn inhabited(&self, location: &str) -> bool {
         self.node_inhabited(self.node(location))
     }
 
@@ -179,17 +179,17 @@ impl<'a> Schema<'a> {
 
     /// Whether `location` is a coverage target: a definition or a struct
     /// position.
-    pub(crate) fn is_target(&self, location: &str) -> bool {
+    pub(super) fn is_target(&self, location: &str) -> bool {
         is_definition(location) || self.is_position(location)
     }
 
     /// Whether `location` is a struct position.
-    pub(crate) fn is_position(&self, location: &str) -> bool {
+    pub(super) fn is_position(&self, location: &str) -> bool {
         !under_constraint(location) && shape(self.node(location)) == Shape::Struct
     }
 
     /// Whether the node admits `null`.
-    pub(crate) fn nullable(&self, node: &Value) -> bool {
+    pub(super) fn nullable(&self, node: &Value) -> bool {
         if types(node).contains(&"null") {
             return true;
         }
@@ -205,7 +205,7 @@ impl<'a> Schema<'a> {
 
     /// Every struct position, and every reachable definition, split by
     /// whether a value can reach it.
-    pub(crate) fn targets(&self) -> (BTreeSet<String>, BTreeSet<String>) {
+    pub(super) fn targets(&self) -> (BTreeSet<String>, BTreeSet<String>) {
         let mut inhabited = BTreeSet::new();
         let mut uninhabited = BTreeSet::new();
         let mut seen = BTreeSet::new();
@@ -230,7 +230,7 @@ impl<'a> Schema<'a> {
 
     /// The structural children of `location`, without the constraint
     /// keywords.
-    pub(crate) fn children(&self, location: &str) -> Vec<(Edge, String)> {
+    pub(super) fn children(&self, location: &str) -> Vec<(Edge, String)> {
         let node = self.node(location);
         let mut found = Vec::new();
         if let Some(name) = reference(node) {
@@ -291,7 +291,7 @@ impl<'a> Schema<'a> {
 
     /// Every route from `location` to the next targets below it, each with
     /// the target it reaches.
-    pub(crate) fn routes(&self, location: &str) -> Vec<(Vec<Edge>, String)> {
+    pub(super) fn routes(&self, location: &str) -> Vec<(Vec<Edge>, String)> {
         let mut found = Vec::new();
         let mut route = Vec::new();
         self.collect_routes(location, &mut route, &mut found, true);
@@ -320,7 +320,7 @@ impl<'a> Schema<'a> {
     /// instance path that reaches it, and the members of that value the
     /// target does not own: those an enclosing node states beside the `$ref`
     /// that names the target, such as the tag of an internally tagged variant.
-    pub(crate) fn walk(
+    pub(super) fn walk(
         &self,
         location: &str,
         value: &Value,
@@ -385,7 +385,7 @@ impl<'a> Schema<'a> {
     }
 
     /// The location of the member `key` of an object value of `node`.
-    pub(crate) fn member_location(
+    pub(super) fn member_location(
         &self,
         location: &str,
         node: &Value,
@@ -410,7 +410,7 @@ impl<'a> Schema<'a> {
     }
 
     /// The branch of `node`'s `keyword` list that `value` satisfies.
-    pub(crate) fn branch_of(&self, node: &Value, keyword: &str, value: &Value) -> Option<usize> {
+    pub(super) fn branch_of(&self, node: &Value, keyword: &str, value: &Value) -> Option<usize> {
         let branches = node.get(keyword)?.as_array()?;
         let candidates = branches
             .iter()
@@ -455,7 +455,7 @@ impl<'a> Schema<'a> {
     }
 
     /// Whether `value` satisfies `node`, for the keywords `schemars` writes.
-    pub(crate) fn matches(&self, node: &Value, value: &Value) -> bool {
+    pub(super) fn matches(&self, node: &Value, value: &Value) -> bool {
         let Some(fields) = node.as_object() else {
             return node != &Value::Bool(false);
         };
@@ -606,7 +606,7 @@ impl<'a> Schema<'a> {
     /// The `regex` crate has no look-around; `(?![\s\S])`, the one form the
     /// schema writes, asserts the end of the text and is read as `\z`. A
     /// pattern the crate still cannot compile matches every text.
-    pub(crate) fn pattern_matches(&self, pattern: &str, text: &str) -> bool {
+    pub(super) fn pattern_matches(&self, pattern: &str, text: &str) -> bool {
         let mut cache = self.patterns.borrow_mut();
         let compiled = cache
             .entry(pattern.to_owned())
@@ -616,7 +616,7 @@ impl<'a> Schema<'a> {
 }
 
 /// How the object schema at `node` treats keys it does not list.
-pub(crate) fn shape(node: &Value) -> Shape {
+pub(super) fn shape(node: &Value) -> Shape {
     let is_object = types(node).contains(&"object")
         || (node.get("type").is_none() && node.get("properties").is_some());
     if !is_object {
@@ -634,7 +634,7 @@ pub(crate) fn shape(node: &Value) -> Shape {
 
 /// Every member of the object schema `node` with whether a value may
 /// leave it out: whether it is absent from `required`.
-pub(crate) fn properties(node: &Value) -> Vec<(&str, &Value, bool)> {
+pub(super) fn properties(node: &Value) -> Vec<(&str, &Value, bool)> {
     let required = required(node);
     node.get("properties")
         .and_then(Value::as_object)
@@ -645,7 +645,7 @@ pub(crate) fn properties(node: &Value) -> Vec<(&str, &Value, bool)> {
 }
 
 /// The members a value of `node` always states.
-pub(crate) fn stated_properties(node: &Value) -> impl Iterator<Item = (&str, &Value)> {
+pub(super) fn stated_properties(node: &Value) -> impl Iterator<Item = (&str, &Value)> {
     properties(node)
         .into_iter()
         .filter(|(_, _, option)| !option)
@@ -653,12 +653,12 @@ pub(crate) fn stated_properties(node: &Value) -> impl Iterator<Item = (&str, &Va
 }
 
 /// The location of definition `name`.
-pub(crate) fn definition(name: &str) -> String {
+pub(super) fn definition(name: &str) -> String {
     format!("/$defs/{}", escape(name))
 }
 
 /// Whether `location` is the location of a definition.
-pub(crate) fn is_definition(location: &str) -> bool {
+pub(super) fn is_definition(location: &str) -> bool {
     location
         .strip_prefix("/$defs/")
         .is_some_and(|rest| !rest.contains('/'))
@@ -673,7 +673,7 @@ fn under_constraint(location: &str) -> bool {
 }
 
 /// The definition a node's `$ref` names.
-pub(crate) fn reference(node: &Value) -> Option<&str> {
+pub(super) fn reference(node: &Value) -> Option<&str> {
     node.get("$ref")?.as_str()?.strip_prefix("#/$defs/")
 }
 
@@ -705,7 +705,7 @@ fn admits_everything(node: &Value) -> bool {
 }
 
 /// The JSON types `node` names.
-pub(crate) fn types(node: &Value) -> Vec<&str> {
+pub(super) fn types(node: &Value) -> Vec<&str> {
     match node.get("type") {
         Some(Value::String(kind)) => vec![kind.as_str()],
         Some(Value::Array(kinds)) => kinds.iter().filter_map(Value::as_str).collect(),
@@ -741,7 +741,7 @@ fn number_matches(node: &Value, number: &serde_json::Number) -> bool {
         && bound("exclusiveMaximum").is_none_or(|most| value < most)
 }
 
-pub(crate) fn required(node: &Value) -> BTreeSet<&str> {
+pub(super) fn required(node: &Value) -> BTreeSet<&str> {
     node.get("required")
         .and_then(Value::as_array)
         .into_iter()
@@ -750,7 +750,7 @@ pub(crate) fn required(node: &Value) -> BTreeSet<&str> {
         .collect()
 }
 
-pub(crate) fn min_items(node: &Value) -> usize {
+pub(super) fn min_items(node: &Value) -> usize {
     node.get("minItems")
         .and_then(Value::as_u64)
         .and_then(|least| usize::try_from(least).ok())
@@ -758,14 +758,14 @@ pub(crate) fn min_items(node: &Value) -> usize {
 }
 
 /// `key` escaped as one JSON pointer segment.
-pub(crate) fn escape(key: &str) -> String {
+pub(super) fn escape(key: &str) -> String {
     key.replace('~', "~0").replace('/', "~1")
 }
 
 /// The order a parser finishes the values at `left` and `right` in: a value
 /// finishes after every value inside it, and siblings finish in document
 /// order.
-pub(crate) fn finish_order(left: &[Step], right: &[Step]) -> Ordering {
+pub(super) fn finish_order(left: &[Step], right: &[Step]) -> Ordering {
     for (left_step, right_step) in left.iter().zip(right) {
         let order = match (left_step, right_step) {
             (Step::Key(left), Step::Key(right)) => left.cmp(right),
