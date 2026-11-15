@@ -1012,6 +1012,22 @@ fn compact_scalar_parameter_owner_can_carry_a_two_byte_variant_slot() {
 }
 
 #[test]
+fn compact_scalar_parameter_owner_can_set_the_final_trailer_byte() {
+    let plain = parse_parameter_owner(&compact_parameter_owner_frame()).expect("owner");
+    assert!(!plain.trailer_flag);
+    let mut frame = compact_parameter_owner_frame();
+    frame[78..80].copy_from_slice(&[0, 1]);
+    let parsed = parse_parameter_owner(&frame).expect("flagged compact scalar owner");
+    assert!(parsed.trailer_flag);
+    assert_eq!(parsed.variant, None);
+    assert_eq!(parsed.frame_length, 103);
+    assert_eq!(parsed.parameter_record_index, 6654);
+    assert_eq!(parsed.companion_record_index, 6655);
+    frame[78..80].copy_from_slice(&[0, 2]);
+    assert!(parse_parameter_owner(&frame).is_none());
+}
+
+#[test]
 fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
     let mut prefix = vec![0; 58];
     prefix[0..4].copy_from_slice(&3u32.to_le_bytes());

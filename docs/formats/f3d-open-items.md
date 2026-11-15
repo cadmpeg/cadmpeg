@@ -114,13 +114,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The decoder checks that the u32 is nonzero, that the 93-byte tail repeats it, and that the final marked reference is present.
 
-### DR-106. Hole tap types above 2
+### DR-106. Hole tap-type words above 3
 
-**Question.** Which hole settings do Hole tap-type values other than `0`, `1`, and `2` encode?
+**Question.** Which hole settings do Hole tap-type words other than `0`, `1`, `2`, and `3` encode?
 
-**Known.** `f3d.md` §3.1 "A `Hole` scope starts after its indexed header with eight zero bytes" gives the settled tap-type values. The decoder retains any other value in the extent's `leading_word` and the `hole:extent_leading_word` source property, and reports `feature.hole-extent-leading-word-assumed` for the reading that the stored scalar geometry remains independent of it. The value `1867538229` seen in one System76 chassis Hole has the bytes `35 5F 50 6F`, which read as ASCII text, so the extent block of that Hole can begin at another offset.
+**Known.** `f3d.md` §3.1 "A `Hole` scope starts after its indexed header with eight zero bytes" gives the settled tap-type values. Two System76 chassis Holes store the tap-type words `35 5F 50 6F` and `6F 6E 2F 78`, which read as ASCII text. The other bytes of their extent blocks have the layout of standard flag `0`, and the B-rep bore of each has the stored `HoleDiameter`. The decoder retains any other value in the extent's `leading_word` and the `hole:extent_leading_word` source property, and reports `feature.hole-extent-leading-word-assumed` for the reading that the stored scalar geometry remains independent of it.
 
-**Need.** A controlled taper-tapped Hole, and the setting that writes the word value seen in one System76 chassis Hole.
+**Need.** The Fusion version or operation that writes a text word in the tap-type position.
 
 **Conflict.** None.
 
@@ -537,11 +537,20 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What does selection kind `16` select in a rectangular-pattern direction record, what do its origin and displacement mean, and what record does the marked reference at offset 138 name?
 
-**Known.** `f3d.md` §3.1 "A rectangular-pattern direction record has a 220-byte, 221-byte, or 195-byte form" gives the frame, the U-then-V order, and the direction as the normalized displacement. Kind `8` selects a linear edge, with the edge start point and the edge vector. A kind-`16` record stores a unit displacement and an origin on the selected entity. The reference at offset 138 names a record outside the scope reference table.
+**Known.** `f3d.md` §3.1 "A rectangular-pattern direction record has a 220-byte, 221-byte, 195-byte, or 196-byte form" gives the frame, the U-then-V order, and the direction as the normalized displacement. Kind `8` selects a linear edge, with the edge start point and the edge vector. A kind-`16` record stores a unit displacement and an origin on the selected entity. The reference at offset 138 names a record outside the scope reference table.
 
 **Need.** A writer must emit the selection kind, the origin, and the reference at offset 138 for a direction that does not come from a linear edge, and a reader must know whether a kind-`16` origin is a point of a planar face, an axis, or another entity.
 
 **Note.** In `Parametric_extrusion_generator.f3d`, R-Pattern 3 scope `4709` has kind-`16` direction record `4736` at Design byte `135573`. Its displacement is `(0, 0, 1)`, its U distance is `-1.5` cm, and payload record `4716` supplies V displacement `(1, 0, 0)` at byte `133177`. Both counts are two and the V distance is `1.5` cm. The decoder transfers the two directions and their 15 mm spacings. The auxiliary reference names record `7609`.
+
+
+### DR-641. Record named by the counted head of a rectangular-pattern distribution block
+
+**Question.** What record does the marked reference in the counted head of a rectangular-pattern distribution block name, and what selects the counted head over the twelve-zero-byte head?
+
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the counted head layout. The distance type, entry count, entries, instance count, generated-instance references and suffix follow at the same relative offsets in both forms.
+
+**Need.** A writer must emit the counted head and its reference for a pattern that uses it, and a reader must know whether the reference changes the pattern's seed, direction or distribution.
 
 ### DR-97. Freedom entry second value `0`
 
@@ -868,7 +877,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Known.** `f3d.md` §3.1 "An attributed local component occurrence carries a counted attribute run and an occurrence key." gives the frame. The two bytes are `00 00` in most frames and `01 00` in one. The reference names a different record in each frame, in increasing order.
 
-**Need.** The two bytes can be a grounding or visibility state of the occurrence. A controlled attributed occurrence must identify the marked source reference when its target has no type registration.
+**Need.** The two bytes can be a grounding state of the occurrence. A controlled attributed occurrence must identify the marked source reference when its target has no type registration.
 
 **Conflict.** None.
 
@@ -990,7 +999,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** None.
 
-### DR-622. Legacy sole-scope serializer membership and order
+### DR-645. Legacy sole-scope serializer membership and order
 
 **Question.** Which native relations establish complete cage membership and order in the sole-scope legacy Form envelope?
 
@@ -1022,6 +1031,14 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** A producer-generated radial TSM must retain a deleted domain slot at `p` and map a live element with raw slot `q > p`. The raw-slot prediction is `q`; the compact-index prediction after one deletion is `q-1`. Saving must preserve the deleted slot to separate these predictions. A controlled radial export with a nondefault sweep must establish the sweep-to-angle rule.
 
+### SM-02. Unfold controls, rule factor and Refold association
+
+**Question.** Which authored controls establish the Unfold selection slots, all-bends flag, settings-reference layout, rule neutral-axis factor and Refold source association?
+
+**Known.** The Unfold prefix contains a control byte and four ordered references. Both construction groups use role `0x10`. The projection reads the first group as bend faces, the fourth as the stationary face, and control zero/one as selected/all bends. `feature.unfold-selection-slots-assumed` and `feature.unfold-all-bends-flag-assumed` identify these readings. A settings primary can contain present input references before the rule. A unique registered rule target inside the bounded settings frame, whose closing local owner reference names this Unfold, supplies the rule link with `feature.unfold-settings-rule-reference-assumed` when the mask-and-slots form is unresolved. The unique material-trailer scalar of the owning settings rule supplies the neutral-axis factor with `feature.unfold-material-scalar-factor-assumed`. The unique preceding typed Unfold in the same ordered GroupMode supplies the Refold source with `feature.refold-group-source-assumed`. A resolved source must be emitted earlier in the same stream. Missing or ambiguous source links, rule factors, prefixes, selections and control values retain neutral partial constructions with their specific unresolved or native-selection losses.
+
+**Need.** Controlled edits of each selection, the all-bends setting, settings input presence and the rule factor, plus a group containing several Unfold operations, must establish these associations.
+
 ### SM-01. Bend line association and stationary role
 
 **Question.** How does a Bend scope associate each angular owner with a selected sketch line and its stationary region?
@@ -1052,7 +1069,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** The layout slot name does not establish the control's physical role.
+**Note.** `feature.edge-flange-stored-radius-inside-assumed` records the reading of this control as an inside radius when an explicit scoped radius is absent. An explicit `BendRadius` value takes precedence and admits zero.
 
 ### DR-117. Current mixed face and distance extent payload
 
@@ -1294,13 +1311,13 @@ The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are t
 
 **Question.** Which Hole parameters remain active when the extent controls, parameter associations, or entry-treatment dimensions leave the complete construction unresolved, and which standard sizing controls define a neutral clearance or thread specification?
 
-**Known.** Extent control `1` can coexist with a `HoleDepth` owner and an absent saved-depth property. The parameter owners retain the diameter, tip, treatment and reference-distance expressions and evaluated values. The sizing block retains four ordered names for standard, fit, size and fastener, followed by the entry-type word for simple, counterbore or countersink form.
+**Known.** Extent control `1` can coexist with a `HoleDepth` owner and an absent saved-depth property. The parameter owners retain the diameter, tip, treatment and reference-distance expressions and evaluated values. The sizing block retains four ordered names for standard, fit, size and fastener, followed by the entry-type word for simple, counterbore or countersink form. The standard, size and fit names of a clearance hole fill its neutral clearance specification; that specification's modeled, cosmetic, hand and depth fields take fixed values and report `feature.hole-clearance-fields-assumed`.
 
 **Need.** Controlled non-distance Holes that vary the stored depth independently of the target, partial and competing treatment parameter sets, and standard sizing controls that establish modeled, cosmetic, handedness and depth settings.
 
 **Conflict.** None.
 
-**Note.** The decoder retains independently admitted dimensions, parameter expressions and extent metadata on a neutral Hole. A readable entry-type word selects the active form; unmatched treatment parameters remain attached. An unresolved extent, entry-type or parameter association reports `feature.hole-parameters-independent-assumed`; an incomplete or conflicting shape reports `feature.hole-shape-partial-assumed`. Native sizing names remain source properties and report `feature.hole-standard-sizing-assumed`.
+**Note.** The decoder retains independently admitted dimensions, parameter expressions and extent metadata on a neutral Hole. A readable entry-type word selects the active form; unmatched treatment parameters remain attached. An unresolved extent, entry-type or parameter association reports `feature.hole-parameters-independent-assumed`; an incomplete or conflicting shape reports `feature.hole-shape-partial-assumed`. The four sizing names remain source properties. A sizing block that gives no clearance specification reports `feature.hole-standard-sizing-assumed`.
 
 ### DR-471. Hole drilling direction with an unavailable control
 
@@ -1686,17 +1703,17 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Note.** One public frame states `91.675 mm`, its two points are 91.675 mm apart, and its first following owner is a 5.175 mm parameter that a second frame also selects.
 
-### DR-241. Byte 29 of a 262-byte zero-body Base Feature frame
+### DR-241. Flag byte of the Base Feature marked null reference
 
-**Question.** What does byte 29 state in a 262-byte `Base Feature` frame whose layout otherwise matches the 262-byte zero-body form?
+**Question.** What does the flag byte of the marked null reference in a `Base Feature` result-body envelope state?
 
-**Known.** Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 as zero. One public frame stores `1` at offset 29 and zero in the rest of that run. Its current and preceding history states are equal. The decoder retains it as an unbound stored-body scope. Two controlled one-body `Base Feature` saves from the current Fusion release store `1` in the matching byte: a 331-byte class-260/258 frame whose body is built in place, and a 316-byte class-368/258 frame whose body is a copy of a body in a referenced design. In each frame the run `u8 1`, eight zero bytes, this byte, and `u8 0` precedes a u32 body count `1`; the byte is at offset 63 in the first frame and at offset 48 in the second. Neither frame length is a form in `f3d.md` §3.1.
+**Known.** `f3d.md` §3.1 "A `Base Feature` scope records a result-body snapshot" gives the marked null reference of the ordinary form. Ordinary frames written by earlier releases store `0`. A public 318-byte class-348/257 ordinary frame stores `1` and repeats its passive reference. Six controlled one-body 331-byte ordinary frames from the current Fusion release, whose body is built in place, store `1` and repeat their body entity suffix. The decoder reads the result runs of a flagged ordinary frame as the ordinary result set and reports `feature.base-feature-null-flag-assumed`. Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 of the 262-byte wide zero-body form as zero; offsets 20 through 30 there have the layout of a marked null reference. One public 262-byte wide zero-body frame stores `1` at offset 29, and its current and preceding history states are equal; two other public frames of this form store `0`. A controlled 275-byte wide zero-body frame that holds a mesh body stores `1` at offset 29. A controlled 316-byte class-368/258 frame, whose body is a copy of a body in a referenced design, stores u32 `N` at offset 20 in place of `2N`, one run of `N` body-suffix entries, a marked null reference with flag `1` at offset 39, u32 `N`, and a repeated run of body suffixes; its kind starts at offset `169 + 37N`. The decoder keeps the wide zero-body frames with flag `1` and the 316-byte frame as unbound stored-body scopes.
 
 **Need.** Saves of one design that differ only in this byte, for example across Fusion releases or design options.
 
 **Conflict.** None.
 
-**Note.** Two other public frames of this form store zero at offset 29. Unbound result references remain a native body selection of a neutral Base Feature and report `feature.stored-bodies-unbound`.
+**Note.** DR-483 tracks a marked null reference whose byte after the flag byte is `1`. Unbound result references remain a native body selection of a neutral Base Feature and report `feature.stored-bodies-unbound`.
 
 ### DR-251. Compact null-owner parameters: owner and trailer byte 3
 
@@ -2024,7 +2041,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.mesh-operation-source-unresolved`. An unreadable scope or source group reports `feature.mesh-operation-scope-unparsed`. A partially decoded geometry tail reports `feature.mesh-operation-tail-partial` and retains the preceding controls and references.
+**Note.** The decoder reports `feature.mesh-operation-source-unresolved` and `feature.mesh-plane-cut-source-unresolved` for historical geometry. Plane-cut admission, framing, plane components and selection membership report `feature.mesh-plane-cut-scope-unparsed`, `feature.mesh-plane-cut-tail-partial`, `feature.mesh-plane-cut-plane-partial` and `feature.mesh-plane-cut-selection-unresolved`. Unruled controls and retained construction fields report `feature.mesh-plane-cut-selector-unruled` and `feature.mesh-plane-cut-fields-uninterpreted`. An unreadable scope or source group reports `feature.mesh-operation-scope-unparsed`. A partially decoded geometry tail reports `feature.mesh-operation-tail-partial` and retains the preceding controls and references.
 
 ### DR-474. Mesh operation selector values and fixed fields
 
@@ -2060,7 +2077,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.mesh-body-selection-assumed` for the body-selection reading.
+**Note.** The decoder reports `feature.mesh-body-selection-assumed` for the body-selection reading and `feature.mesh-plane-cut-membership-assumed` for plane-cut source membership.
 
 ### DR-505. Mesh shell construction controls
 
@@ -2109,6 +2126,210 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 **Conflict.** None.
 
 **Note.** The decoder reports `feature.mesh-conversion-source-unresolved` and `feature.mesh-conversion-output-unresolved`. DR-504 tracks input member-tail selections.
+
+### MC-04. Mesh combination selector three
+
+**Question.** Which result structure does mesh combination selector `3` create?
+
+**Known.** The selector follows the mesh scope prefix. The decoder projects selector `3` as a compound with target members followed by tool members.
+
+**Need.** Controlled saves that distinguish preserved interior structures, ordered compound members, and the resulting mesh-body identity.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-combine-merge-assumed`.
+
+### MC-05. Mesh combination retention and destination
+
+**Question.** Which fields select tool retention and the result component of a mesh combination?
+
+**Known.** The version-2 prefix contains an additional control word. Both versions contain a control byte. Boolean projection assumes consumed tools and the target component. Compound projection retains the controls with unresolved retention and destination.
+
+**Need.** Controlled saves that change Keep Tools and New Component independently, with both scope versions.
+
+**Conflict.** None.
+
+**Note.** Boolean projection reports `feature.mesh-combine-keep-tools-assumed-false` and `feature.mesh-combine-destination-assumed-target-component`. Compound projection reports `feature.mesh-combine-keep-tools-unresolved` and `feature.mesh-combine-destination-unresolved`.
+
+### MS-01. Mesh separation method selector
+
+**Question.** Which Separate selector values identify shell and face-group partitioning?
+
+**Known.** Shell-correlated scopes store selector 0. A face-group-correlated scope stores 65536. The decoder provisionally reads 0 as Shells and 65536 or 131072 as FaceGroups, preserving the raw selector.
+
+**Need.** Matched saves that change each method alone and distinguish method encoding from selection state.
+
+**Conflict.** Labels and body counts also vary between these scopes. The 131072 reading extrapolates the dialog choices. Separate control bytes before a narrower method field also fit the raw words.
+
+**Note.** The readings report `feature.mesh-separate-shells-method-assumed` and `feature.mesh-separate-face-groups-method-assumed`. Other values report `feature.mesh-separate-selector-unruled`.
+
+### MS-02. Mesh separation face-group scope
+
+**Question.** Which Separate fields select all groups or an ordered subset of groups?
+
+**Known.** The decoder provisionally reads selector 65536 as All and 131072 as Selected with unknown members. Source member body references and UTF-16 identifiers remain independent native facts.
+
+**Need.** Matched All and Selected saves with known, independently varied group identities and historical triangle assignments.
+
+**Conflict.** An independent scope field or member-tail selection could carry the selection category. The unseen 131072 reading follows UI choice order while retaining the observed high-word spacing.
+
+**Note.** The readings report `feature.mesh-separate-all-groups-assumed` and `feature.mesh-separate-selected-groups-assumed`. DR-504 tracks general member-tail selection semantics.
+
+### MS-03. Mesh separation Multiple Bodies carrier and polarity
+
+**Question.** Which bytes encode Multiple Bodies, and which value enables it?
+
+**Known.** The eight-byte lane retains zeros in the inspected scopes. The decoder provisionally reads its first little-endian u32 as Multiple Bodies, with 0=false and 1=true, including inactive stored values. A different word leaves this control unknown and preserves the word.
+
+**Need.** Matched face-group saves that vary Multiple Bodies alone, including the inactive Shells state.
+
+**Conflict.** Reserved or count words, narrower flags, reversed word order or polarity, and different controls fit the same lane.
+
+**Note.** The readings report `feature.mesh-separate-multiple-bodies-carrier-assumed` and `feature.mesh-separate-multiple-bodies-polarity-assumed` independently. Unsupported values report `feature.mesh-separate-selector-unruled`.
+
+### MS-04. Mesh separation Keep Body carrier and polarity
+
+**Question.** Which bytes encode Keep Body, and which value enables it?
+
+**Known.** The decoder provisionally reads the lane's second little-endian u32 as Keep Body, with 0=false and 1=true. Its raw bytes and an inactive stored value survive independently of Multiple Bodies and the method.
+
+**Need.** Matched saves that vary Keep Body alone across the separation methods and Multiple Bodies states.
+
+**Conflict.** Reserved or count words, narrower flags, reversed word order or polarity, and different controls fit the zero-filled lane.
+
+**Note.** The readings report `feature.mesh-separate-keep-body-carrier-assumed` and `feature.mesh-separate-keep-body-polarity-assumed` independently. Unsupported values report `feature.mesh-separate-selector-unruled`.
+
+### MS-05. Flagged Separate prefix applicability
+
+**Question.** Does Separate flag 1 insert the common mesh-family u32 prefix word?
+
+**Known.** Separate scopes establish flag 0 framing. The decoder provisionally admits flag 1 through the mesh-family insertion rule and retains the word.
+
+**Need.** A Separate save with flag 1 and checked scope, count and tail bounds.
+
+**Conflict.** A Separate-specific flag meaning could move the later fields differently.
+
+**Note.** This extrapolation reports `feature.mesh-separate-prefix-assumed`. DR-372 tracks the inserted word's meaning.
+
+### MS-06. Separate reference roles and neutral identities
+
+**Question.** Which native references identify produced bodies, whole-mesh inputs and common-table associations?
+
+**Known.** Counted body records reference the Separate scope; source-group members reference different mesh bodies. The common table repeats the source group and a member. The decoder provisionally reads output and input roles, retains every slot position and raw envelope, and preserves both references on a disagreement.
+
+**Need.** Controlled source and result membership changes with independent body-identity and history joins.
+
+**Conflict.** Stored reference runs can describe cached or intermediate states. Native record identities and counts alone do not establish neutral result ownership.
+
+**Note.** The readings report `feature.mesh-separate-output-role-assumed`, `feature.mesh-separate-source-membership-assumed` and `feature.mesh-separate-reference-roles-assumed`. Unresolved output ownership reports `feature.mesh-separate-output-unresolved`. Reference failures and repetition disagreements report `feature.mesh-separate-reference-unresolved` and `feature.mesh-separate-reference-mismatch`. Incomplete or invalid native source membership reports `feature.mesh-separate-membership-unresolved` independently of historical geometry binding.
+
+### MS-07. Separate group and member auxiliary fields
+
+**Question.** What do the Separate auxiliary references, group role, two native identifiers and member words encode?
+
+**Known.** The group carries an auxiliary reference and a u64 role. A member carries an auxiliary reference, a word, two UTF-16 identifiers and two further words. The final word varies independently between inspected source members. The decoder retains these fields and bounded raw records.
+
+**Need.** Matched saves changing whole-mesh selection, selected groups, controls and serialization generation independently.
+
+**Conflict.** State, selection detail and serialization generation can each explain the varying word. Body references and these identifiers do not yet establish selected face-group names.
+
+**Note.** The decoder reports `feature.mesh-separate-source-fields-uninterpreted`. DR-504 tracks selection-tail semantics across mesh operations.
+
+### MS-08. Separate historical source geometry
+
+**Question.** How do Separate source-member bodies bind to historical tessellations and face-group assignments?
+
+**Known.** Complete admissible native membership yields an ordered input-local selection under MS-06. Selected scope can retain unknown members. Face-group definitions remain incomplete until their historical assignments and identities are bound. Shell definitions require actual tessellation selections and known Keep Body; stored group controls are inactive.
+
+**Need.** A history-aware join from source member records to geometry states and triangle-group identities.
+
+**Conflict.** Current displayed geometry can differ from the operation's input state.
+
+**Note.** The decoder reports `feature.mesh-separate-source-unresolved`. Unavailable scope admission reports `feature.mesh-separate-scope-unparsed`; truncated dependent framing reports `feature.mesh-separate-tail-partial` while readable fields survive.
+
+### MC-06. Legacy mesh combination Boolean selectors
+
+**Question.** Which operations do version-1 mesh combination selectors `0`, `1`, and `2` select?
+
+**Known.** Both scope versions store an operation selector. The decoder applies the version-2 Boolean selector mapping to these version-1 values.
+
+**Need.** Version-1 saves with independently selected join, cut, and intersection operations.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-combine-legacy-boolean-assumed`.
+
+### MC-07. Plane-cut matrix orientation
+
+**Question.** Which matrix convention maps the plane-cut component run to its origin and normal?
+
+**Known.** The scope stores a counted run of sixteen f64 components. The decoder reads row-major translation and the third linear column as the plane normal.
+
+**Need.** Controlled saves with independent translations and rotations around each axis.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-plane-cut-matrix-orientation-assumed`.
+
+### MC-08. Plane-cut translation units
+
+**Question.** Which length unit applies to plane-cut matrix translations?
+
+**Known.** The decoder converts the translation column from centimetres to canonical millimetres.
+
+**Need.** Controlled saves with known translations and different display units.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-plane-cut-units-assumed`.
+
+### MC-09. Plane-cut coordinate space
+
+**Question.** Which coordinate space contains the plane-cut matrix?
+
+**Known.** The decoder interprets the origin and normal in model coordinates.
+
+**Need.** Controlled cuts in translated and rotated nested components.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-plane-cut-model-space-assumed`.
+
+### MC-10. Plane-cut retained side
+
+**Question.** Which control selects the retained half-space of a trim?
+
+**Known.** The scope stores one control byte after the fill selector. The decoder reads zero as the positive retained side and one as the negative retained side.
+
+**Need.** Controlled trims that change Flip while keeping the plane and fill fixed.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-plane-cut-retained-side-assumed`.
+
+### MC-11. Plane-cut face splitting selector
+
+**Question.** Which cut selector splits faces while retaining one mesh body?
+
+**Known.** Selectors zero and one select Trim and Split Body. The decoder reads selector two as Split Faces.
+
+**Need.** A controlled Split Faces save with its cut selector isolated.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-plane-cut-split-faces-assumed`.
+
+### MC-12. Plane-cut uniform fill selector
+
+**Question.** Which fill selector creates uniform closing faces?
+
+**Known.** Fill selectors zero and one select No Fill and Minimal. The decoder reads selector two as Uniform. Fill applies to Trim and Split Body.
+
+**Need.** Controlled saves that select each fill type while keeping the mesh, cut plane and cut type fixed.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.mesh-plane-cut-uniform-fill-assumed`.
 
 ### DR-373. Mesh body and collection-owner payload fields
 
@@ -2165,6 +2386,16 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 **Known.** `f3d.md` §3.1 gives the path-pattern settings record. The f64 at offset 94 is 3.0 on four line paths whose adjacent spacing is 3 cm and whose start point is at path parameter 0. It is −1.92699 on a circular-arc path of radius 5 cm with a 2 cm spacing and its start point at path parameter π/4. The f64 at offset 124 is 0.5 on that arc path and zero on the line paths. The decoder reads neither value.
 
 **Need.** Saves that vary the spacing and the start point on one path, with the two values compared against the instance positions.
+
+**Conflict.** None.
+
+### DR-644. Atomic regions with holes
+
+**Question.** How does a nested profile-region selection store an atomic region that has a hole?
+
+**Known.** `f3d.md` §3.1 gives the atomic-region list of a selected region. Every observed atomic region has one loop. A selected region with a hole and zero atomic regions stores its outer loop with exterior byte `1` and the hole loop with exterior byte `0`.
+
+**Need.** A save that selects two adjacent regions, one of which has a hole.
 
 **Conflict.** None.
 
@@ -2240,7 +2471,27 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** None.
 
-### DR-625. Counted Shell prefix byte and partial envelopes
+### DR-600. SurfaceUntrim retained groups and prefix variants
+
+**Question.** How do stored manual-loop groups affect a nonmanual loop choice, which selection does an incomplete group definition denote, and what does a nonnull trailing identifier select?
+
+**Known.** `f3d.md` §3.1 "A `SurfaceUntrim` scope removes trim loops" defines the loop choices and the ordered face and loop-group references. A nonmanual choice can retain loop-group references. The primary prefix closes at the ordered-reference count.
+
+**Need.** Saves that change the loop choice while retaining selected loops, complete definitions for each referenced group, a save with the unpadded closed prefix, and a save with a nonnull trailing identifier.
+
+**Note.** `feature.surface-untrim-stored-loop-groups-assumed` reads stored groups alongside a nonmanual choice as inactive selections. `feature.surface-untrim-loop-groups-aggregated-assumed` represents multiple manual groups by their scope expression. `feature.surface-untrim-group-selection-assumed` retains a scope expression for missing, ambiguous or inconsistent groups. `feature.surface-untrim-padding-assumed` admits uniquely closed unpadded runs. `feature.surface-untrim-frame-assumed` projects the operation with unresolved settings when its prefix has no closed reading. `feature.surface-untrim-trailing-identity-assumed` retains a nonnull identifier as auxiliary metadata while applying the decoded loop and extension settings.
+
+### DR-601. SurfaceUntrim signed extension and missing scalar definitions
+
+**Question.** Does a negative evaluated extension contract the exterior boundary, and which scalar definition applies when a referenced owner is incomplete or duplicated?
+
+**Known.** The extension reference names a numeric owner of local ordinal zero in the same scope. Its evaluated scalar is finite and expressed in centimetres. Extension applies when an exterior boundary is removed.
+
+**Need.** A save with negative extension and its resulting boundary, and complete owner definitions for ambiguous extension references.
+
+**Note.** `feature.surface-untrim-negative-extension-assumed` retains a negative scalar as signed neutral extension. `feature.surface-untrim-extension-unresolved` preserves the parsed frame when its scalar owner does not resolve uniquely. `feature.surface-untrim-extension-unrepresentable` retains the native value when its millimetre conversion overflows.
+
+### DR-622. Counted Shell prefix byte and partial envelopes
 
 **Question.** Which option does the counted Shell prefix byte select, and which fields preserve the wall-slot direction when that byte is nonzero or the envelope tail is incomplete?
 
@@ -2252,7 +2503,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** Partial Shell projection reports `feature.shell-counted-control-assumed` for reading the byte as a separate prefix field, `feature.shell-slot-direction-assumed` for the nonzero form's inside-first reading and `feature.shell-envelope-assumed` when a unique partial prefix supplies wall data. Unresolved values and selections remain in `shell:source` with their references and byte locations.
 
-### DR-626. Simultaneous Shell face and body groups
+### DR-623. Simultaneous Shell face and body groups
 
 **Question.** How do the removed-face group and the target-body group jointly select a Shell operation when its prefix names both groups?
 
@@ -2528,7 +2779,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** Extrude 3 retains its native selection group. Existing `SketchRegions` with explicit boundary uses can represent the rectangular annulus after its selected boundaries and traversal directions are established.
+**Note.** Extrude 3 retains its native selection group. Existing `SketchRegions` with explicit boundary uses can represent the rectangular annulus after its selected boundaries and traversal directions are established. The nested profile-region selection in `f3d.md` §3.1 stores the same structure: each selected region is followed by its atomic regions, the arrangement faces that together make it. In saves that select one, two adjacent, and two separate regions of a rectangle split by a line, every atomic region of a split selected region is listed, and a selected region that is one face lists zero atomic regions. The compact loop group can follow the same rule.
 
 ### DR-358. Compact complete-loop region identity across sketch arrangements
 
@@ -2805,7 +3056,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** What does the terminal byte of the marked null field mean when it is `1` before the repeated-reference count in a Base Feature envelope?
 
-**Known.** Mini AfterSherpa Orbiter V2 Test v2 has Base Feature scope record `213` at Design offset `107014`, class pair `329/264`, frame length `318`, and history transition `365` to `404`. Its first two marked fifteen-byte entries name `219` and `225`. Both targets have Body presentation-owner type `D3937028-C20C-4E65-B010-94AD418A5C20`. The eleven-byte field after those entries starts with `1`, has nine zero bytes, and ends with `1`. A u32 count `1` follows, then a marked reference to `219`, shared metadata record `217`, and result record `227`. The ordinary result-body reader requires ten zero bytes after the first marker and stops at the final byte. The history transition binds body `f3d:brep:entity#1` and supplies the resolved Base Feature result set.
+**Known.** Mini AfterSherpa Orbiter V2 Test v2 has Base Feature scope record `213` at Design offset `107014`, class pair `329/264`, frame length `318`, and history transition `365` to `404`. Its first two marked fifteen-byte entries name `219` and `225`. Both targets have Body presentation-owner type `D3937028-C20C-4E65-B010-94AD418A5C20`. The eleven-byte field after those entries starts with `1`, has nine zero bytes, and ends with `1`. A u32 count `1` follows, then a marked reference to `219`, shared metadata record `217`, and result record `227`. The ordinary result-body reader requires a zero byte after the flag byte and stops at the final byte. The history transition binds body `f3d:brep:entity#1` and supplies the resolved Base Feature result set.
 
 **Need.** A rule for the terminal marker and the roles of the two initial reference runs. Compare a controlled capture, paste, and body-to-component operation with equal geometry, including their referenced Body records and preceding ASM state. Confirm the role rule in a second independent design before selecting a source or construction operation.
 
@@ -2934,3 +3185,67 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** Treating every object-prelude closing matrix as a solved-body local placement gives the two incorrect mating placements above.
 
 **Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve.
+
+### SM-03. ContourFlange travel, thickness side and rule entries
+
+**Question.** Which controls select ContourFlange sidedness, thickness orientation, body or component result, and the rule's bend-radius entry?
+
+**Known.** The registered ContourFlange prefix carries a vector before the AlongDistance owner, an operation word, an unassigned control before the source carrier and an inline thickness copy. Signed distances and the linked rule's first expression/value, material scalar and explicit material-trailer thickness decode independently. The projection reads the vector as travel direction, a single distance as one-sided travel, the documented SideOne default as the left side of the ordered profile, operation word four as an independent body, the first rule value as inside bend radius and the material scalar as neutral-axis factor. Each reading carries its named `feature.contour-*` assumption loss. The explicit BendRadius parameter takes precedence over the rule entry. A missing rule uses the inline thickness copy with a separate assumption loss. A bounded unique rule reference before the exact settings owner tail is loss-coded when the versioned optional-slot grammar does not match. Missing definitions use a matching scoped owner's cached database-centimetre scalar with a named loss. When both owner and definition frames are absent, a unique registered parameter-owner reference following the vector supplies the AlongDistance role through a separate assumption loss. Missing carrier or settings links preserve independently decoded travel. Source-region selections retain the complete native profile program.
+
+**Need.** Controlled saves must vary extent, thickness side, result choice, radius expression and material factor independently, with the stored controls and resulting topology compared.
+
+**Note.** The API's SideOne default and per-side symmetric distance are described in [ContourFlange orientation](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_ContourFlangeInput_orientation.htm) and [Sheet Metal Features](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/SheetMetalFeatures_UM.htm). [Sheet Metal Rules](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/SheetMetalRules_UM.htm) distinguishes thickness, bend radius and neutral-axis factor.
+
+### DR-562. Occurrence of a cross-component Combine tool body
+
+**Question.** Which occurrence of its component supplies the body that a cross-component `Combine` tool names?
+
+**Known.** The browser node of a tool names the body entity suffix and the creating scope. The history-only body-map pair of that suffix names the BREP blob and body selector. The operand-list body-selection record stores an occurrence list before the body-node list.
+
+**Need.** A design that places one component more than once and combines the body of one placement, with the occurrence-list entries of the tool decoded against the component instance records.
+
+**Conflict.** None.
+
+**Note.** A generated tool identifies its generating feature and body-map pair only.
+
+### DR-563. Derived Base Feature creators of Combine tools
+
+**Question.** Which timeline feature regenerates a `Combine` tool body whose creating scope is a `Derived Base Feature` scope?
+
+**Known.** The `Derived Base Feature` scope is not a timeline item. Its record references the tool body entity. The `DerivedInstance` scope of the derived component references a class-407 record, and that record references a component-instance record listed under `ComponentInstancesRoot` and the `DerivedInstance` scope. No record found references both the `Derived Base Feature` scope and the `DerivedInstance` scope or its class-407 record.
+
+**Need.** A stored reference that joins the `Derived Base Feature` scope or its body to a timeline feature.
+
+**Conflict.** None.
+
+**Note.** The tool stays native and reports `feature.combine-tool-body-unbound`. Proven tools of the same `Combine` still add their generating features as dependencies.
+
+### DR-564. Reference-framed EdgeFlange width and boundary programs
+
+**Question.** How do wrapper members and boundary programs select the flange width law across reference-framed operation variants?
+
+**Known.** The operation prologue and closing group run have equal edge counts. Their wrapper and main-group slots pair by ordinal. A five-member wrapper carries a main-group reference, two boundary-group references and two owners named `EdgeOffset_1` and `EdgeOffset_2`. The signed owners retain zero and negative lengths. The boundary references retain independent source programs.
+
+**Need.** Controlled saves that vary each boundary object and each signed offset independently, and compare full-edge and offset modes while preserving the main-edge order.
+
+**Note.** `feature.edge-flange-signed-offsets-assumed` records the wrapper-linked offset association. `feature.edge-flange-full-width-assumed` records full-edge width for reference-framed wrappers without a decoded offset pair. `feature.edge-flange-boundary-reference-native` retains decoded boundary programs. `feature.edge-flange-boundary-scope-reference-assumed` retains the owning scope when a boundary definition is unresolved. A missing construction stays neutral with independent fields and `feature.edge-flange-reference-envelope-unresolved`.
+
+### DR-565. Independent EdgeFlange parameter recovery
+
+**Question.** Which saved parameter value is authoritative when an EdgeFlange owner or definition is unresolved?
+
+**Known.** The operation names height and angle owners. A parameter definition can retain its owner backlink, and a parameter owner stores an independent finite cached scalar. Length values use database centimetres and angular values use radians. The display-unit token is stored separately.
+
+**Need.** Controlled saves with a changed definition, changed owner cache or unresolved display-unit token while the other parameter fields remain fixed.
+
+**Note.** `feature.edge-flange-parameter-owner-backlink-assumed` permits a unique definition backlink when its owner frame is absent. `feature.edge-flange-cached-parameter-assumed` permits a cached scalar when its definition is absent. `feature.edge-flange-parameter-unit-assumed` permits the database unit convention when the display-unit token is unresolved. A missing value reports `feature.edge-flange-parameter-unresolved` and preserves other inputs.
+
+### DR-566. Unresolved EdgeFlange height targets
+
+**Question.** Which neutral construction does a retained to-object height selection identify when its source target is unresolved?
+
+**Known.** A to-object height carries a target group, target selection and signed offset owner. Each input has an independent source identity. A local WorkPlane or WorkPoint target has its own construction scope.
+
+**Need.** Controlled to-object flanges whose selected construction remains external or unresolved while the signed offset is retained.
+
+**Note.** `feature.edge-flange-height-target-native` retains the decoded target selection program. `feature.edge-flange-height-target-scope-assumed` retains the owning scope program when that target selection is unresolved. The target and signed offset remain independent neutral construction inputs.

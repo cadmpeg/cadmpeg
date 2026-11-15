@@ -7,6 +7,7 @@
 )]
 
 mod align;
+mod base_feature;
 pub(super) mod body_selection;
 mod coil;
 mod direct_face;
@@ -40,6 +41,7 @@ mod spatial_profiles;
 mod split;
 mod surface;
 mod surface_patch;
+mod surface_untrim;
 mod sweep;
 mod symmetric_extrude;
 mod thread_extent;

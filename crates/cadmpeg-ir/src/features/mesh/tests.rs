@@ -5,6 +5,88 @@ use super::{
 use crate::features::FeatureOperation;
 
 #[test]
+fn separation_wire_keeps_independent_controls_and_selected_category() {
+    use super::{MeshSeparation, MeshSeparationGroups};
+    assert_eq!(
+        serde_json::to_value(MeshSeparation::default()).unwrap(),
+        serde_json::json!({})
+    );
+    for separation in [
+        serde_json::json!({}),
+        serde_json::json!({"method":"shells", "multiple_bodies":true, "keep_body":false}),
+        serde_json::json!({"groups":{"kind":"all"}, "keep_body":true}),
+        serde_json::json!({"method":"face_groups", "groups":{"kind":"selected"}}),
+        serde_json::json!({"groups":{"kind":"selected", "members":["beta", "alpha"]}, "multiple_bodies":false}),
+    ] {
+        let wire = serde_json::json!({"definition":"mesh_modify", "source":{"feature":"test:model:feature#separate"}, "modification":{"kind":"separate", "separation":separation}});
+        let decoded: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+    }
+    let selected: MeshSeparation =
+        serde_json::from_value(serde_json::json!({"groups":{"kind":"selected"}})).unwrap();
+    assert_eq!(
+        selected.groups,
+        Some(MeshSeparationGroups::Selected { members: None })
+    );
+    for invalid in [
+        serde_json::json!({"method":null}),
+        serde_json::json!({"groups":null}),
+        serde_json::json!({"multiple_bodies":null}),
+        serde_json::json!({"keep_body":null}),
+        serde_json::json!({"method":"other"}),
+        serde_json::json!({"unknown":true}),
+        serde_json::json!({"groups":{"kind":"all", "members":["alpha"]}}),
+        serde_json::json!({"groups":{"kind":"selected", "members":null}}),
+        serde_json::json!({"groups":{"kind":"selected", "members":[]}}),
+        serde_json::json!({"groups":{"kind":"selected", "members":["alpha", "alpha"]}}),
+        serde_json::json!({"groups":{"kind":"selected", "members":[""]}}),
+        serde_json::json!({"groups":{"kind":"selected", "extra":1}}),
+        serde_json::json!({"keep_body":1}),
+    ] {
+        assert!(serde_json::from_value::<MeshSeparation>(invalid).is_err());
+    }
+}
+
+#[test]
+fn separation_rewrite_traverses_owned_group_selectors_and_source_identity() {
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
+    let scope = "f3d:Design/BulkStream.dat:design-parameter-scope#57";
+    let renamed = "f3d:child/Design/BulkStream.dat:design-parameter-scope#57";
+    let replacements = std::collections::BTreeMap::from([(scope.to_owned(), renamed.to_owned())]);
+    let wire = serde_json::json!({"definition":"mesh_modify", "source":{"feature":"test:model:feature#separate"}, "modification":{"kind":"separate", "separation":{"groups":{"kind":"selected", "members":[scope, format!("{scope}/alpha"), "beta"]}, "keep_body":false}}});
+    let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+    crate::test_support::with_service_decode_context(|ctx| {
+        let text = TextReplacements::build(replacements.iter())?;
+        let mut map = IdentityMap::new(|id: &str| Ok(id.replace("test:", "test:child/")))
+            .with_text_replacements(&text);
+        let rewritten = operation.rewrite_identities(ctx, &mut map)?;
+        let mut expected = wire.clone();
+        expected["source"]["feature"] = "test:child/model:feature#separate".into();
+        expected["modification"]["separation"]["groups"]["members"][0] = renamed.into();
+        assert_eq!(serde_json::to_value(rewritten).unwrap(), expected);
+        map.finish()
+    })
+    .unwrap();
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn separation_schema_matches_optional_nonnull_settings() {
+    use super::{MeshSeparation, MeshSeparationGroups};
+    let schema = serde_json::to_value(schemars::schema_for!(MeshSeparation)).unwrap();
+    assert_eq!(schema["additionalProperties"], false);
+    for name in ["method", "groups", "multiple_bodies", "keep_body"] {
+        assert!(!schema["required"]
+            .as_array()
+            .is_some_and(|required| required.contains(&serde_json::json!(name))));
+        assert!(!schema["properties"][name].to_string().contains("\"null\""));
+    }
+    assert_eq!(schema["properties"]["keep_body"]["type"], "boolean");
+    let groups = serde_json::to_value(schemars::schema_for!(MeshSeparationGroups)).unwrap();
+    assert!(!groups.to_string().contains("\"null\""));
+}
+
+#[test]
 fn face_group_operations_round_trip_partial_settings_and_rewrite_sources() {
     use crate::features::FeatureOperation;
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
@@ -469,4 +551,95 @@ fn conversion_schema_exposes_sources_on_the_tagged_operation() {
         .contains(&serde_json::json!("sources")));
     assert!(conversion["properties"]["method"].is_object());
     assert_eq!(conversion["additionalProperties"], false);
+}
+
+#[test]
+fn plane_cut_round_trips_independent_components_and_rewrites_sources() {
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+    for cut in [
+        serde_json::json!({}),
+        serde_json::json!({"origin":{"x":2.0,"y":3.0,"z":5.0}}),
+        serde_json::json!({"normal":{"x":0.0,"y":0.0,"z":2.0},"mode":"split_faces"}),
+        serde_json::json!({"mode":"trim","fill":"no_fill","retained_side":"negative"}),
+        serde_json::json!({"mode":"split_bodies","fill":"uniform","retained_side":"positive"}),
+    ] {
+        for source in [
+            serde_json::json!({"feature":"test:model:feature#cut"}),
+            serde_json::json!(["test:mesh:tessellation#source"]),
+            serde_json::json!({"native":"scope","members":["9","7"]}),
+        ] {
+            let wire = serde_json::json!({"definition":"mesh_modify","source":source,"modification":{"kind":"plane_cut","cut":cut}});
+            let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
+            crate::test_support::with_service_decode_context(|ctx| {
+                let mut identities =
+                    IdentityMap::new(|source: &str| Ok(source.replace("test:", "test:child/")));
+                let cloned = operation.rewrite_identities(ctx, &mut identities)?;
+                let cloned = serde_json::to_value(cloned).unwrap();
+                assert_eq!(cloned["modification"], wire["modification"]);
+                assert_eq!(
+                    cloned["source"],
+                    if source.get("feature").is_some() {
+                        serde_json::json!({"feature":"test:child/model:feature#cut"})
+                    } else if source.is_array() {
+                        serde_json::json!(["test:child/mesh:tessellation#source"])
+                    } else {
+                        source.clone()
+                    }
+                );
+                Ok(())
+            })
+            .unwrap();
+        }
+    }
+    assert_eq!(
+        serde_json::to_value(super::MeshPlaneCut::default()).unwrap(),
+        serde_json::json!({})
+    );
+}
+
+#[test]
+fn plane_cut_rejects_null_unknown_keys_and_invalid_checked_geometry() {
+    for key in ["origin", "normal", "mode", "fill", "retained_side"] {
+        let mut wire = serde_json::json!({});
+        wire[key] = serde_json::Value::Null;
+        let error = serde_json::from_value::<super::MeshPlaneCut>(wire).unwrap_err();
+        assert!(error.to_string().contains(key));
+    }
+    for wire in [
+        serde_json::json!({"normal":{"x":0,"y":0,"z":0}}),
+        serde_json::json!({"normal":{"x":1e308,"y":0,"z":0}}),
+        serde_json::json!({"mode":"other"}),
+        serde_json::json!({"fill":"other"}),
+        serde_json::json!({"retained_side":"other"}),
+        serde_json::json!({"u_axis":{"x":1,"y":0,"z":0}}),
+    ] {
+        assert!(serde_json::from_value::<super::MeshPlaneCut>(wire).is_err());
+    }
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn plane_cut_schema_matches_omitted_optional_values_and_control_vocabulary() {
+    let schema = serde_json::to_value(schemars::schema_for!(super::MeshPlaneCut)).unwrap();
+    for key in ["origin", "normal", "mode", "fill", "retained_side"] {
+        assert!(schema["properties"][key].is_object());
+        assert!(!schema["properties"][key].to_string().contains("null"));
+        assert!(!schema["required"]
+            .as_array()
+            .is_some_and(|required| required.contains(&serde_json::json!(key))));
+    }
+    assert_eq!(schema["additionalProperties"], false);
+    for value in [
+        "trim",
+        "split_bodies",
+        "split_faces",
+        "no_fill",
+        "minimal",
+        "uniform",
+        "positive",
+        "negative",
+    ] {
+        assert!(schema.to_string().contains(value));
+    }
 }

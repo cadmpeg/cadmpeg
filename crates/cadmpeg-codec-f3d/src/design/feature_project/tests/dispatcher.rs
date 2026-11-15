@@ -774,6 +774,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         let value = Some(
             DesignSketchProfileOperand::try_new(
                 crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+                    sketch_absent: false,
                     scope_reference_ordinal: 1,
                     record_index: 101,
                     byte_offset: 0,
@@ -933,6 +934,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         base_feature.payload_mut()
     {
         *slot = Some(DesignBaseFeatureConstruction::ResultBodies {
+            null_reference_flag_offset: None,
+            repeats_body_suffixes: false,
             bodies: crate::records::feature::base_feature::DesignBaseFeatureResults::WithoutRepeatedFields(vec![
                 crate::records::feature::base_feature::DesignBaseFeatureResultBody {
                     entity: crate::records::feature::base_feature::DesignBaseFeatureEntry {

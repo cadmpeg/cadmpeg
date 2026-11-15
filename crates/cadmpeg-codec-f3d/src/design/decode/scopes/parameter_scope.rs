@@ -55,6 +55,7 @@ use super::surfaces::exact_ruled_surface_operation;
 use super::surfaces::exact_surface_extend_operation;
 use super::surfaces::exact_surface_offset_operation;
 use super::surfaces::exact_surface_stitch_operation;
+use super::surfaces::exact_surface_untrim_operation;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
 use super::work_geometry::exact_joint_origin_frame;
@@ -550,6 +551,13 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction =
+                    exact_surface_untrim_operation(ctx, bytes, &records, &scope, &mut losses)?;
+                if let scope::DesignScopePayloadMut::SurfaceUntrim(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction =
                     exact_surface_offset_operation(bytes, &records, &scope, recipes, &mut losses)?;
                 if let scope::DesignScopePayloadMut::SurfaceOffset(slot) = scope.payload_mut() {
                     *slot = construction;
@@ -804,6 +812,27 @@ pub(crate) fn decode_parameter_scopes(
 
             out.push(scope);
         }
+        super::edge_flange::bind(
+            ctx,
+            bytes,
+            &records,
+            &stream_types,
+            &mut out[stream_scope_start..],
+        )?;
+        super::contour::bind(
+            bytes,
+            &records,
+            &stream_types,
+            sources,
+            &mut out[stream_scope_start..],
+        );
+        super::fold::bind(
+            ctx,
+            bytes,
+            &records,
+            &stream_types,
+            &mut out[stream_scope_start..],
+        )?;
         bind_joint_origin_frames_from_assemblies(bytes, &mut out[stream_scope_start..]);
         bind_axial_assembly_operand_targets(bytes, &records, &mut out[stream_scope_start..])?;
     }
@@ -2039,7 +2068,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             {
                 let construction = Some(operation);
                 if let scope::DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
-                    *slot = construction;
+                    *slot = construction.into();
                 }
             }
         }

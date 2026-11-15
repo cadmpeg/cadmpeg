@@ -587,6 +587,11 @@ fn loft_path_is_resolved(path: &cadmpeg_ir::features::PathRef) -> bool {
     }
 }
 
+fn feature_is_incomplete(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.source_tag.as_deref() == Some(mesh_operations::combine::SOURCE_KIND)
+        || feature_definition_is_incomplete(feature.evaluation.definition())
+}
+
 fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind};
 
@@ -598,6 +603,35 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             FeatureOperation::ReferenceImage { .. } | FeatureOperation::DatumPrincipalPlane { .. },
         ) => false,
         FeatureDefinition::Operation(FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. }) => true,
+        FeatureDefinition::Operation(FeatureOperation::MeshModify {
+            source,
+            modification: cadmpeg_ir::features::mesh::MeshModification::Separate { separation },
+        }) | FeatureDefinition::PostProcess {
+            operation: FeatureOperation::MeshModify {
+                source,
+                modification: cadmpeg_ir::features::mesh::MeshModification::Separate { separation },
+            },
+            ..
+        } => {
+            !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
+                || separation.method != Some(cadmpeg_ir::features::mesh::MeshSeparationMethod::Shells)
+                || separation.keep_body.is_none()
+        }
+        FeatureDefinition::Operation(FeatureOperation::MeshModify {
+            source,
+            modification: cadmpeg_ir::features::mesh::MeshModification::PlaneCut { cut },
+        }) => {
+            use cadmpeg_ir::features::mesh::{MeshPlaneCutMode, MeshSelection};
+            !matches!(source, MeshSelection::Tessellations(_))
+                || cut.origin.is_none()
+                || cut.normal.is_none()
+                || match cut.mode {
+                    Some(MeshPlaneCutMode::Trim) => cut.fill.is_none() || cut.retained_side.is_none(),
+                    Some(MeshPlaneCutMode::SplitBodies) => cut.fill.is_none(),
+                    Some(MeshPlaneCutMode::SplitFaces) => false,
+                    None => true,
+                }
+        }
         FeatureDefinition::Operation(
             FeatureOperation::MeshImport {
                 tessellations: source,
@@ -639,6 +673,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || modeled.is_none()
                 || extent.is_none()
         }
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalUnfold { construction }) => {
+            construction.stationary.as_ref().is_none_or(|face| !face_selection_is_resolved(face))
+                || construction.all_bends.is_none()
+                || (construction.all_bends != Some(true) && construction.bends.as_ref().is_none_or(|face| !face_selection_is_resolved(face)))
+                || construction.neutral_factor.is_none()
+        }
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalRefold { construction }) => construction.unfold.is_none(),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBendLines { construction }) => {
             construction.bends.is_empty()
                 || construction.bends.iter().any(|bend| {
@@ -897,6 +938,15 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || thickness.is_none()
                 || (outward.is_none() && *mode != Some(cadmpeg_ir::features::ShellMode::BothSides))
         }
+        FeatureDefinition::Operation(FeatureOperation::UntrimSurface { faces, loops, extension }) => {
+            !face_selection_is_resolved(faces)
+                || extension.is_none()
+                || match loops {
+                    cadmpeg_ir::features::surfaces::UntrimLoops::Unresolved {} => true,
+                    cadmpeg_ir::features::surfaces::UntrimLoops::Selected { edges } => !edge_selection_is_resolved(edges),
+                    _ => false,
+                }
+        }
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
             thickness,
@@ -992,19 +1042,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile, ..
         }) => !planar_profile_ref_is_resolved(profile),
-        FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
-            edges,
-            height,
-            ..
-        }) => {
-            !edge_selection_is_resolved(edges)
-                || matches!(
-                    height,
-                    cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject {
-                        target: cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_),
-                        ..
-                    }
-                )
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(construction)) => {
+            !construction.has_all_inputs()
+                || construction.edges.as_ref().is_none_or(|edges| !edge_selection_is_resolved(edges))
+                || matches!(&construction.height, Some(cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject(target)) if matches!(target.target, Some(cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_))))
+                || matches!(construction.width, Some(cadmpeg_ir::features::SheetMetalFlangeWidth::TwoOffsetsPerEdge { .. }))
         }
         FeatureDefinition::Operation(FeatureOperation::SheetMetalHem {
             edges,
@@ -1139,7 +1181,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
 fn incomplete_feature_families(ir: &CadIr) -> std::collections::BTreeMap<&str, usize> {
     let mut families = std::collections::BTreeMap::new();
     for feature in &ir.model.features {
-        if !feature_definition_is_incomplete(feature.evaluation.definition()) {
+        if !feature_is_incomplete(feature) {
             continue;
         }
         let family = feature.source_tag.as_deref().unwrap_or_else(|| {
@@ -1647,9 +1689,7 @@ fn design_projection_gaps(
         | BodySelection::Local { .. } => 0,
     };
     for feature in &ir.model.features {
-        gaps.incomplete_features += usize::from(feature_definition_is_incomplete(
-            feature.evaluation.definition(),
-        ));
+        gaps.incomplete_features += usize::from(feature_is_incomplete(feature));
         gaps.native_reference_images += usize::from(matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1876,6 +1916,14 @@ fn design_projection_gaps(
                 | FeatureOperation::UnstitchFaces { faces }
                 | FeatureOperation::OffsetSurface { faces, .. },
             ) => face_selection(faces),
+            FeatureDefinition::Operation(FeatureOperation::UntrimSurface {
+                faces, loops, ..
+            }) => {
+                face_selection(faces);
+                if let cadmpeg_ir::features::surfaces::UntrimLoops::Selected { edges } = loops {
+                    edge_selection(edges);
+                }
+            }
             FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) => {
                 let targets = operands.targets();
                 let replacements = operands.replacements();
@@ -1888,10 +1936,16 @@ fn design_projection_gaps(
             }) => {
                 gaps.profile_selections += usize::from(!planar_profile_ref_is_resolved(profile));
             }
-            FeatureDefinition::Operation(
-                FeatureOperation::SheetMetalEdgeFlange { edges, .. }
-                | FeatureOperation::SheetMetalHem { edges, .. },
-            ) => edge_selection(edges),
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(construction)) => {
+                if let Some(edges) = &construction.edges {
+                    edge_selection(edges);
+                } else {
+                    edge_selection(&EdgeSelection::Unresolved);
+                }
+            }
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalHem { edges, .. }) => {
+                edge_selection(edges);
+            }
             FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, .. }) => {
                 face_selection(faces);
             }
@@ -2013,6 +2067,22 @@ fn report_parameter_trailer_flags(
             format_args!(
                 "{} decoded parameter(s) in {} set byte 3 of the compact expression trailer; the flag is not interpreted, and their driven and favorite flags are assumed false.",
                 parameters.count, parameters.stream
+            ),
+        );
+    }
+}
+
+fn report_parameter_owner_trailer_flags(
+    report: &mut DecodeBody,
+    flagged: &[crate::design::decode::parameters::StreamParameterCount],
+) {
+    for owners in flagged {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterOwnerTrailerFlagUninterpreted,
+            format_args!(
+                "{} decoded parameter owner(s) in {} set the final byte of the compact trailer before the companion reference; the flag is not interpreted.",
+                owners.count, owners.stream
             ),
         );
     }
@@ -3145,6 +3215,10 @@ impl<'a> F3dDecodeSession<'a> {
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
         report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
         report_parameter_null_owners(&mut self.report, &prereqs.design_parameter_null_owners);
+        report_parameter_owner_trailer_flags(
+            &mut self.report,
+            &prereqs.design_parameter_owner_trailer_flags,
+        );
         report_unparsed_parameter_owners(
             &mut self.report,
             prereqs.design_parameter_owner_unparsed.len(),
@@ -3480,6 +3554,14 @@ impl<'a> F3dDecodeSession<'a> {
         }
         self.ir.model.product_definitions.extend(local.definitions);
         self.ir.model.occurrences.extend(local.occurrences);
+        crate::design::decode::hidden_occurrences::apply_hidden_occurrences(
+            &mut self.ir.model.occurrences,
+            &prereqs.design_component_occurrences,
+            prereqs
+                .xref_table()
+                .map_or(&[], |table| table.references.as_slice()),
+            &prereqs.design_hidden_occurrences,
+        );
         self.report.losses.extend(local.losses);
         let mut component_inserts = crate::design::components::ComponentInserts::decide(
             &prereqs.design_parameter_scopes,

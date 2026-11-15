@@ -3773,13 +3773,19 @@ fn resolved_selection_member_point(
     else {
         return None;
     };
-    let entity_id = persistent_id.map_or_else(
-        || crate::ids::neutral_sketch_record_id(&sketch.id, *record_index),
-        |persistent_id| crate::ids::neutral_sketch_point_id(&sketch.id, persistent_id),
-    );
+    let record_id = crate::ids::neutral_sketch_record_id(&sketch.id, *record_index);
+    let tag_id = persistent_id
+        .map(|persistent_id| crate::ids::neutral_sketch_point_id(&sketch.id, persistent_id));
+    // A point that repeats the tag of an earlier point of its Sketch has only
+    // the record-index key.
     let SketchGeometryDefinition::Point { position } = entities
         .iter()
-        .find(|entity| entity.id() == &entity_id && entity.sketch == sketch.id)?
+        .find(|entity| entity.id() == &record_id && entity.sketch == sketch.id)
+        .or_else(|| {
+            entities
+                .iter()
+                .find(|entity| Some(entity.id()) == tag_id.as_ref() && entity.sketch == sketch.id)
+        })?
         .geometry
         .definition()
     else {
@@ -4308,6 +4314,7 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                                 source,
                                 resolution.sketch_entities,
                                 &rings,
+                                &std::collections::HashSet::new(),
                                 scoped.linear_tolerance,
                                 scoped.profile_work,
                                 scoped.ctx,
@@ -4471,6 +4478,46 @@ fn resolve_profile_curve_path(
     cadmpeg_ir::features::PathRef::sketch_curves(sketch, curves).ok()
 }
 
+/// The Sketch placements that a typed profile selection names through the
+/// record its chain record references.
+///
+/// A placement whose Sketch scope is that record carries the selection. When
+/// no placement in the stream carries it, the record is not a Sketch scope of
+/// any sketch. The selection then names the one scope-less placement whose
+/// Sketch container the record references through a typed local reference and
+/// whose entity suffix equals the owner text of every member selection.
+fn selection_placements<'a>(
+    placements: &'a [DesignSketchPlacement],
+    stream: &str,
+    sketch_scope: u32,
+    selections: &[&crate::records::topology::entity_selection::DesignProfileCurveSelection],
+) -> Vec<&'a DesignSketchPlacement> {
+    let in_stream =
+        |placement: &&DesignSketchPlacement| native_stream(&placement.id) == Some(stream);
+    let scoped: Vec<_> = placements
+        .iter()
+        .filter(in_stream)
+        .filter(|placement| placement.scope_record_index == Some(sketch_scope))
+        .collect();
+    if !scoped.is_empty() || selections.is_empty() {
+        return scoped;
+    }
+    placements
+        .iter()
+        .filter(in_stream)
+        .filter(|placement| placement.scope_record_index.is_none())
+        .filter(|placement| {
+            let Ok(suffix) = u32::try_from(placement.entity_id.suffix()) else {
+                return false;
+            };
+            selections.iter().all(|selection| {
+                selection.owner_text.parse::<u32>() == Ok(suffix)
+                    && selection.scope_sketch_containers.contains(&suffix)
+            })
+        })
+        .collect()
+}
+
 fn profile_curve_selection_curves(
     group: &DesignConstructionOperandGroup,
     stream: &str,
@@ -4523,10 +4570,8 @@ fn profile_curve_selection_curves(
         selections.push(selection);
     }
     let sketch_scope = available!(sketch_scope);
-    let mut matching_placements = resolution.placements.iter().filter(|placement| {
-        native_stream(&placement.id) == Some(stream)
-            && placement.scope_record_index == Some(sketch_scope)
-    });
+    let mut matching_placements =
+        selection_placements(resolution.placements, stream, sketch_scope, &selections).into_iter();
     let placement = available!(matching_placements.next());
     if matching_placements.next().is_some()
         || owner_text != Some(placement.entity_id.suffix().to_string().as_str())
@@ -4843,7 +4888,7 @@ fn resolved_sketch_profile_regions(
         return None;
     };
     let mut resolved = Vec::new();
-    for region in &selection.regions {
+    for region in selection.resolution_regions()? {
         let first_member = region.members.first()?;
         let first = sketch_profile_member_entity(
             stream,
@@ -4941,14 +4986,17 @@ pub(in crate::design) fn planar_selection_agrees_with_region_operand(
     let Some(selection) = operand.region_selection.as_ref() else {
         return false;
     };
-    if selection.regions.is_empty() || selection.has_extended_incidence() {
+    let Some(regions) = selection.resolution_regions() else {
+        return false;
+    };
+    if regions.is_empty() || selection.has_extended_incidence() {
         return false;
     }
     let Ok(owner_reference) = u32::try_from(operand.entity_id.suffix()) else {
         return false;
     };
-    let mut explicit_regions = Vec::with_capacity(selection.regions.len());
-    for region in &selection.regions {
+    let mut explicit_regions = Vec::with_capacity(regions.len());
+    for region in regions {
         if region.members.is_empty() {
             return false;
         }
@@ -5099,7 +5147,7 @@ fn resolved_spatial_sketch_profile_regions(
         return None;
     };
     let mut resolved = Vec::new();
-    for region in &selection.regions {
+    for region in selection.resolution_regions()? {
         let first_member = region.members.first()?;
         let first = spatial_profile_member_entity(
             stream,
@@ -5204,7 +5252,13 @@ fn native_revolve_profile(
             && match (profile, curve_selection) {
                 (Some(profile), _) => placement.entity_id == profile.entity_id,
                 (None, Some(selection)) => {
-                    placement.scope_record_index == Some(selection.sketch_scope_record_index)
+                    selection_placements(
+                        resolution.placements,
+                        native_stream(&group.id).unwrap_or_default(),
+                        selection.sketch_scope_record_index,
+                        &[selection],
+                    )
+                    .contains(placement)
                         && selection.owner_text.parse::<u64>().ok()
                             == Some(placement.entity_id.suffix())
                 }

@@ -5,6 +5,14 @@ use crate::records::feature::scope::DesignFeatureKind;
 
 const FAMILIES: &[(&str, DesignFeatureKind)] = &[
     (
+        "EC187027-FF97-48A3-8031-F923807E630B",
+        DesignFeatureKind::Unfold,
+    ),
+    (
+        "483D584F-29AA-46DA-ABA2-F139B0ED8100",
+        DesignFeatureKind::Refold,
+    ),
+    (
         "1CF7B9E3-5DB6-4F9D-A131-6DE7535BFF52",
         DesignFeatureKind::Bend,
     ),
@@ -215,6 +223,10 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
     (
         "FF1741AE-E78B-4A5F-8418-751899E12F66",
         DesignFeatureKind::SurfaceTrim,
+    ),
+    (
+        "4082E43B-D693-40D7-B44B-26800C9148DB",
+        DesignFeatureKind::SurfaceUntrim,
     ),
     (
         "FCBB1707-4450-46B3-9E65-0F61682EA8CA",
