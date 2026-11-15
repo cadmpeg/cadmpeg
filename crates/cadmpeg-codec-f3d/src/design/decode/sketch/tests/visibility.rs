@@ -564,3 +564,39 @@ fn unrecognised_container_header_is_a_loss_not_a_decode_failure() {
     );
     assert!(losses[0].message.contains("201"));
 }
+
+#[test]
+fn good_container_survives_a_neighbour_with_an_unrecognised_header() {
+    let (good, mut metadata) = visibility_stream();
+    let mut bad = good.clone();
+    bad[15] = 1;
+    let good_at = bad.len();
+    let mut bytes = bad;
+    bytes.extend_from_slice(&good);
+    metadata.types[0].entities = crate::records::identity::ReferenceRun::located(
+        [ENTITY_SUFFIX + 1, ENTITY_SUFFIX]
+            .into_iter()
+            .map(|value| crate::records::identity::Located { value, offset: 0 })
+            .collect(),
+    );
+    metadata.records = vec![
+        crate::metastream::RecordIndexEntry {
+            entity_id: ENTITY_SUFFIX + 1,
+            bulk_offset: 0,
+        },
+        crate::metastream::RecordIndexEntry {
+            entity_id: ENTITY_SUFFIX,
+            bulk_offset: cadmpeg_core::decode::u64_from_index(good_at),
+        },
+    ];
+    let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
+    assert_eq!(visibilities.len(), 1);
+    assert_eq!(visibilities[0].0, ENTITY_SUFFIX);
+    assert!(visibilities[0].1.visible);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SketchContainerHeaderUnrecognized.kind()
+    );
+    assert!(losses[0].message.contains("202"));
+}
