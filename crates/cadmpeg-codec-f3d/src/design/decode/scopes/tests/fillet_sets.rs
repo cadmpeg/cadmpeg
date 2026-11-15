@@ -236,6 +236,75 @@ fn compact_set_follows_prologue_and_compact_flag_run() {
     assert_eq!(list.sets[0].group_record_index, GROUP);
 }
 
+/// Compact flag-run start in a prologue-one prefix of one set.
+const COMPACT_RUN_AT: usize = 44;
+
+fn decode_bytes(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<crate::records::feature::fillet_set::DesignFilletSetList> {
+    let (law_parameter, law_owner) = owned(LAW_OWNER, "Radius");
+    let (tangency_parameter, tangency_owner) = owned(TANGENCY_OWNER, "TangencyWeight");
+    fillet_set_list(
+        bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+        scope,
+        &[law_parameter, tangency_parameter],
+        &[law_owner, tangency_owner],
+    )
+}
+
+#[test]
+fn compact_padding_bytes_hold_any_value() {
+    let fixture = Fixture {
+        prologue_one: true,
+        compact_run: true,
+        set_form: Form::Compact,
+        ..Fixture::default()
+    };
+    let (mut bytes, scope) = stream(&fixture);
+    assert_eq!(
+        bytes[COMPACT_RUN_AT..COMPACT_RUN_AT + 2],
+        [1, 1],
+        "fixture places the compact run"
+    );
+    let set_start =
+        crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
+    bytes[COMPACT_RUN_AT + 2..COMPACT_RUN_AT + 11]
+        .copy_from_slice(&[0, 0x10, 0x77, 0x9f, 0xce, 0xb1, 0x02, 0, 0]);
+    bytes[set_start + 70..set_start + 74].copy_from_slice(&[0x30, 0, 0x30, 0]);
+    bytes[set_start + 89..set_start + 93].copy_from_slice(&[0x11, 0xe4, 0x4a, 0xc0]);
+    let list = decode_bytes(&bytes, &scope).expect("padding bytes carry no data");
+    assert_eq!(list.form, DesignFilletSetListForm::Compact);
+    assert_eq!(list.sets[0].group_record_index, GROUP);
+
+    for (at, value) in [
+        (COMPACT_RUN_AT + 1, 0),
+        (set_start + 38, 1),
+        (set_start + 69, 1),
+        (set_start + 88, 1),
+    ] {
+        let mut broken = bytes.clone();
+        broken[at] = value;
+        assert!(
+            decode_bytes(&broken, &scope).is_none(),
+            "byte {at} = {value}"
+        );
+    }
+}
+
+#[test]
+fn constant_form_bytes_after_its_owners_stay_zero() {
+    let (bytes, scope) = stream(&Fixture::default());
+    let set_start =
+        crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
+    for at in [set_start + 74, set_start + 93] {
+        let mut broken = bytes.clone();
+        broken[at] = 0x30;
+        assert!(decode_bytes(&broken, &scope).is_none(), "byte {at}");
+    }
+}
+
 #[test]
 fn law_owner_of_another_source_kind_rejects_the_set() {
     assert!(decode(&Fixture::default(), "ChordLen").is_none());

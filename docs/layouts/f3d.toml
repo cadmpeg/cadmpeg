@@ -2728,11 +2728,11 @@ source = "spec"
 anchor = "`+59: Radius owner reference`"
 
 [[record.field]]
-name = "zero_run_4_at_70"
+name = "radius_owner_padding"
 offset = 70
 type = "bytes[4]"
 source = "spec"
-anchor = "Every byte that the form does not name is zero"
+anchor = "`+70: four padding bytes`"
 
 [[record.field]]
 name = "set_ordinal"
@@ -2749,11 +2749,11 @@ source = "spec"
 anchor = "`+78: TangencyWeight owner reference`"
 
 [[record.field]]
-name = "zero_run_4_at_89"
+name = "tangency_weight_owner_padding"
 offset = 89
 type = "bytes[4]"
 source = "spec"
-anchor = "Every byte that the form does not name is zero"
+anchor = "`+89: four padding bytes`"
 
 [[record]]
 name = "thicken_scope_prologue"

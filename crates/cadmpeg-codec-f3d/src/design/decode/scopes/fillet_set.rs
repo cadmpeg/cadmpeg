@@ -25,7 +25,9 @@ const INDEXED_HEADER_LEN: usize = 11;
 const REFERENCE_LEN: usize = 11;
 const ENTITY_GUID_CODE_UNITS: u32 = 36;
 const CURRENT_FLAG_RUN_TAIL: [u8; 11] = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-const COMPACT_FLAG_RUN: [u8; 11] = [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+const COMPACT_FLAG_RUN_HEAD: [u8; 2] = [1, 1];
+const COMPACT_FLAG_RUN_LEN: usize = 11;
+const PADDING_LEN: usize = 4;
 
 /// The fillet set list of `scope`, admitted when the prefix, every set frame,
 /// and every owner reference match their forms.
@@ -63,8 +65,11 @@ pub(super) fn fillet_set_list(
     {
         cursor += 1 + CURRENT_FLAG_RUN_TAIL.len();
         DesignFilletSetListForm::Current
-    } else if frame.get(cursor..cursor + COMPACT_FLAG_RUN.len())? == COMPACT_FLAG_RUN {
-        cursor += COMPACT_FLAG_RUN.len();
+    } else if frame
+        .get(cursor..cursor + COMPACT_FLAG_RUN_LEN)?
+        .starts_with(&COMPACT_FLAG_RUN_HEAD)
+    {
+        cursor += COMPACT_FLAG_RUN_LEN;
         DesignFilletSetListForm::Compact
     } else {
         return None;
@@ -156,6 +161,7 @@ struct SetForm {
     law: (usize, LawRole),
     ordinal: usize,
     tangency_weight: usize,
+    padding: &'static [usize],
 }
 
 const SET_FORMS: [SetForm; 3] = [
@@ -168,6 +174,7 @@ const SET_FORMS: [SetForm; 3] = [
         law: (constant::RADIUS_OWNER_REFERENCE, LawRole::Radius),
         ordinal: constant::SET_ORDINAL,
         tangency_weight: constant::TANGENCY_WEIGHT_OWNER_REFERENCE,
+        padding: &[],
     },
     SetForm {
         len: chordal::LEN,
@@ -178,6 +185,7 @@ const SET_FORMS: [SetForm; 3] = [
         law: (chordal::CHORD_LENGTH_OWNER_REFERENCE, LawRole::ChordLength),
         ordinal: chordal::SET_ORDINAL,
         tangency_weight: chordal::TANGENCY_WEIGHT_OWNER_REFERENCE,
+        padding: &[],
     },
     SetForm {
         len: compact::LEN,
@@ -188,6 +196,10 @@ const SET_FORMS: [SetForm; 3] = [
         law: (compact::RADIUS_OWNER_REFERENCE, LawRole::Radius),
         ordinal: compact::SET_ORDINAL,
         tangency_weight: compact::TANGENCY_WEIGHT_OWNER_REFERENCE,
+        padding: &[
+            compact::RADIUS_OWNER_PADDING,
+            compact::TANGENCY_WEIGHT_OWNER_PADDING,
+        ],
     },
 ];
 
@@ -212,6 +224,10 @@ impl SetForm {
                 || fields
                     .iter()
                     .any(|(start, width)| (*start..start + width).contains(&at))
+                || self
+                    .padding
+                    .iter()
+                    .any(|start| (*start..start + PADDING_LEN).contains(&at))
         })
     }
 }
