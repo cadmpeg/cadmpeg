@@ -1,21 +1,30 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "fragment": false,
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
       "bodies": [],
       "coedges": [],
+      "colliders": [],
       "configurations": [],
       "curves": [],
+      "declared_measures": [],
       "drawings": [],
       "edges": [],
       "faces": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [],
+      "history_bodies": [],
       "loops": [],
+      "mass_properties": [],
       "occurrences": [
         {
           "id": "pvz:model:occurrence#0",
@@ -26,7 +35,7 @@
           },
           "prototype": {
             "definition": "pvz:model:definition#0",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -65,7 +74,7 @@
           },
           "prototype": {
             "definition": "pvz:model:definition#1",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -104,7 +113,7 @@
           },
           "prototype": {
             "definition": "pvz:model:definition#1",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             2.0,
@@ -143,7 +152,7 @@
           },
           "prototype": {
             "definition": "pvz:model:definition#2",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -174,7 +183,10 @@
       ],
       "parameters": [],
       "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
+      "point_clouds": [],
       "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
@@ -182,36 +194,46 @@
       "procedural_surfaces": [],
       "product_definitions": [
         {
+          "bodies": [],
           "bom_properties": {
             "PART_NUMBER": "TOP-001"
           },
           "id": "pvz:model:definition#0",
           "kind": "part",
           "native_ref": "definition 0",
+          "sketches": [],
           "source_name": "TOP.ASM"
         },
         {
+          "bodies": [],
+          "bom_properties": {},
           "id": "pvz:model:definition#1",
           "kind": "part",
           "native_ref": "definition 1",
+          "sketches": [],
           "source_name": "BRACKET.PRT"
         },
         {
+          "bodies": [],
           "bom_properties": {
             "MATERIAL": "STEEL"
           },
           "id": "pvz:model:definition#2",
           "kind": "part",
           "native_ref": "definition 2",
+          "sketches": [],
           "source_name": "PLATE.PRT"
         }
       ],
       "regions": [],
+      "rigid_bodies": [],
       "semantic_annotations": [],
       "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
@@ -228,17 +250,19 @@
         "structure_member": "model.pvs"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "pvs_signature": "PV-PVS0304"
             },
             "dialect": "pvz:pvs-0304"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -246,40 +270,50 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "pvs_signature": "PV-PVS0304"
           },
           "dialect": "pvz:pvs-0304"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "structure.bounds-not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "pvz",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "structure.bounds-not-transferred",
+            "kind": "metadata_not_transferred",
+            "namespace": "pvz"
+          }
         },
         "message": "2 geometry elements carry bounds; the model has no definition bounds field, so the bounds were not transferred (PVZ-27)",
         "severity": "info"
       },
       {
         "code": {
-          "code": "geometry.member-missing",
-          "kind": "asset_not_transferred",
-          "namespace": "pvz",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.member-missing",
+            "kind": "asset_not_transferred",
+            "namespace": "pvz"
+          }
         },
         "message": "geometry elements name 2 members that the package does not hold: \"bracket.ol\", \"plate.ol\"",
         "severity": "warning"
@@ -288,10 +322,17 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "retained_records": {}
   }
 }

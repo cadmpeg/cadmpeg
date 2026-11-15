@@ -29,9 +29,7 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
     );
 }
 
-/// The dialect fields are part of the wire format: a report that named nothing
-/// says so with `null`, rather than by omitting the key.
-/// Reports written before the fields existed still read back.
+/// A report that names no dialect states its format inside its identity.
 #[test]
 fn unclassified_reports_serialize_empty_dialect_keys() {
     let decode = DecodeReport::unclassified(
@@ -44,8 +42,7 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
     );
     let rendered = serde_json::to_string(&decode).unwrap();
     assert!(
-        rendered
-            .contains("\"identity\":{\"classification\":\"unclassified\",\"format\":\"rhino\"}"),
+        rendered.contains("\"identity\":{\"kind\":\"unclassified\",\"format\":\"rhino\"}"),
         "{rendered}"
     );
     assert_eq!(
@@ -65,7 +62,10 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
         Vec::new(),
     );
     let rendered = serde_json::to_string(&export).unwrap();
-    assert!(rendered.contains("\"payload\":\"cadir\""), "{rendered}");
+    assert!(
+        rendered.contains("\"identity\":{\"kind\":\"cadir\"}"),
+        "{rendered}"
+    );
     assert!(!rendered.contains("\"target\""), "{rendered}");
     assert_eq!(
         serde_json::from_str::<ExportReport>(&rendered).unwrap(),

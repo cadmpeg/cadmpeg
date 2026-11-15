@@ -1,11 +1,14 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "fragment": false,
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
       "bodies": [
         {
@@ -70,6 +73,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:0",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:0",
           "owner_loop": "usd:stage:loop#/World/Box:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:11",
           "sense": "forward"
         },
@@ -77,6 +81,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:1",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:1",
           "owner_loop": "usd:stage:loop#/World/Box:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:23",
           "sense": "forward"
         },
@@ -84,6 +89,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:9",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:10",
           "owner_loop": "usd:stage:loop#/World/Box:loop:2",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:20",
           "sense": "reversed"
         },
@@ -91,6 +97,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:0",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:11",
           "owner_loop": "usd:stage:loop#/World/Box:loop:2",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:0",
           "sense": "reversed"
         },
@@ -98,6 +105,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:2",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:12",
           "owner_loop": "usd:stage:loop#/World/Box:loop:3",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:2",
           "sense": "forward"
         },
@@ -105,6 +113,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:10",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:13",
           "owner_loop": "usd:stage:loop#/World/Box:loop:3",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:22",
           "sense": "forward"
         },
@@ -112,6 +121,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:5",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:14",
           "owner_loop": "usd:stage:loop#/World/Box:loop:3",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:5",
           "sense": "reversed"
         },
@@ -119,6 +129,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:11",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:15",
           "owner_loop": "usd:stage:loop#/World/Box:loop:3",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:17",
           "sense": "reversed"
         },
@@ -126,6 +137,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:3",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:16",
           "owner_loop": "usd:stage:loop#/World/Box:loop:4",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:3",
           "sense": "forward"
         },
@@ -133,6 +145,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:11",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:17",
           "owner_loop": "usd:stage:loop#/World/Box:loop:4",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:15",
           "sense": "forward"
         },
@@ -140,6 +153,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:4",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:18",
           "owner_loop": "usd:stage:loop#/World/Box:loop:4",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:4",
           "sense": "reversed"
         },
@@ -147,6 +161,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:8",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:19",
           "owner_loop": "usd:stage:loop#/World/Box:loop:4",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:8",
           "sense": "reversed"
         },
@@ -154,6 +169,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:2",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:2",
           "owner_loop": "usd:stage:loop#/World/Box:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:12",
           "sense": "reversed"
         },
@@ -161,6 +177,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:9",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:20",
           "owner_loop": "usd:stage:loop#/World/Box:loop:5",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:10",
           "sense": "forward"
         },
@@ -168,6 +185,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:6",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:21",
           "owner_loop": "usd:stage:loop#/World/Box:loop:5",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:6",
           "sense": "forward"
         },
@@ -175,6 +193,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:10",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:22",
           "owner_loop": "usd:stage:loop#/World/Box:loop:5",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:13",
           "sense": "reversed"
         },
@@ -182,6 +201,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:1",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:23",
           "owner_loop": "usd:stage:loop#/World/Box:loop:5",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:1",
           "sense": "reversed"
         },
@@ -189,6 +209,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:3",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:3",
           "owner_loop": "usd:stage:loop#/World/Box:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:16",
           "sense": "reversed"
         },
@@ -196,6 +217,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:4",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:4",
           "owner_loop": "usd:stage:loop#/World/Box:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:18",
           "sense": "forward"
         },
@@ -203,6 +225,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:5",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:5",
           "owner_loop": "usd:stage:loop#/World/Box:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:14",
           "sense": "forward"
         },
@@ -210,6 +233,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:6",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:6",
           "owner_loop": "usd:stage:loop#/World/Box:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:21",
           "sense": "reversed"
         },
@@ -217,6 +241,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:7",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:7",
           "owner_loop": "usd:stage:loop#/World/Box:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:9",
           "sense": "reversed"
         },
@@ -224,6 +249,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:8",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:8",
           "owner_loop": "usd:stage:loop#/World/Box:loop:2",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:19",
           "sense": "forward"
         },
@@ -231,6 +257,7 @@
           "edge": "usd:stage:edge#/World/Box:edge:7",
           "id": "usd:stage:coedge#/World/Box:orientedEdge:9",
           "owner_loop": "usd:stage:loop#/World/Box:loop:2",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Box:orientedEdge:7",
           "sense": "forward"
         },
@@ -238,6 +265,7 @@
           "edge": "usd:stage:edge#/World/Can:edge:0",
           "id": "usd:stage:coedge#/World/Can:orientedEdge:0",
           "owner_loop": "usd:stage:loop#/World/Can:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Can:orientedEdge:1",
           "sense": "reversed"
         },
@@ -245,6 +273,7 @@
           "edge": "usd:stage:edge#/World/Can:edge:0",
           "id": "usd:stage:coedge#/World/Can:orientedEdge:1",
           "owner_loop": "usd:stage:loop#/World/Can:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Can:orientedEdge:0",
           "sense": "forward"
         },
@@ -252,6 +281,7 @@
           "edge": "usd:stage:edge#/World/Can:edge:2",
           "id": "usd:stage:coedge#/World/Can:orientedEdge:2",
           "owner_loop": "usd:stage:loop#/World/Can:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Can:orientedEdge:4",
           "sense": "forward"
         },
@@ -259,6 +289,7 @@
           "edge": "usd:stage:edge#/World/Can:edge:1",
           "id": "usd:stage:coedge#/World/Can:orientedEdge:3",
           "owner_loop": "usd:stage:loop#/World/Can:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Can:orientedEdge:5",
           "sense": "reversed"
         },
@@ -266,6 +297,7 @@
           "edge": "usd:stage:edge#/World/Can:edge:2",
           "id": "usd:stage:coedge#/World/Can:orientedEdge:4",
           "owner_loop": "usd:stage:loop#/World/Can:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Can:orientedEdge:2",
           "sense": "reversed"
         },
@@ -273,6 +305,7 @@
           "edge": "usd:stage:edge#/World/Can:edge:1",
           "id": "usd:stage:coedge#/World/Can:orientedEdge:5",
           "owner_loop": "usd:stage:loop#/World/Can:loop:2",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Can:orientedEdge:3",
           "sense": "forward"
         },
@@ -280,6 +313,7 @@
           "edge": "usd:stage:edge#/World/Frustum:edge:0",
           "id": "usd:stage:coedge#/World/Frustum:orientedEdge:0",
           "owner_loop": "usd:stage:loop#/World/Frustum:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Frustum:orientedEdge:1",
           "sense": "reversed"
         },
@@ -287,6 +321,7 @@
           "edge": "usd:stage:edge#/World/Frustum:edge:0",
           "id": "usd:stage:coedge#/World/Frustum:orientedEdge:1",
           "owner_loop": "usd:stage:loop#/World/Frustum:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Frustum:orientedEdge:0",
           "sense": "forward"
         },
@@ -294,6 +329,7 @@
           "edge": "usd:stage:edge#/World/Frustum:edge:2",
           "id": "usd:stage:coedge#/World/Frustum:orientedEdge:2",
           "owner_loop": "usd:stage:loop#/World/Frustum:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Frustum:orientedEdge:4",
           "sense": "forward"
         },
@@ -301,6 +337,7 @@
           "edge": "usd:stage:edge#/World/Frustum:edge:1",
           "id": "usd:stage:coedge#/World/Frustum:orientedEdge:3",
           "owner_loop": "usd:stage:loop#/World/Frustum:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Frustum:orientedEdge:5",
           "sense": "reversed"
         },
@@ -308,6 +345,7 @@
           "edge": "usd:stage:edge#/World/Frustum:edge:2",
           "id": "usd:stage:coedge#/World/Frustum:orientedEdge:4",
           "owner_loop": "usd:stage:loop#/World/Frustum:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Frustum:orientedEdge:2",
           "sense": "reversed"
         },
@@ -315,6 +353,7 @@
           "edge": "usd:stage:edge#/World/Frustum:edge:1",
           "id": "usd:stage:coedge#/World/Frustum:orientedEdge:5",
           "owner_loop": "usd:stage:loop#/World/Frustum:loop:2",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Frustum:orientedEdge:3",
           "sense": "forward"
         },
@@ -322,6 +361,7 @@
           "edge": "usd:stage:edge#/World/Funnel:edge:0",
           "id": "usd:stage:coedge#/World/Funnel:orientedEdge:0",
           "owner_loop": "usd:stage:loop#/World/Funnel:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Funnel:orientedEdge:2",
           "sense": "reversed"
         },
@@ -329,6 +369,7 @@
           "edge": "usd:stage:edge#/World/Funnel:edge:1",
           "id": "usd:stage:coedge#/World/Funnel:orientedEdge:1",
           "owner_loop": "usd:stage:loop#/World/Funnel:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Funnel:orientedEdge:3",
           "sense": "reversed"
         },
@@ -336,6 +377,7 @@
           "edge": "usd:stage:edge#/World/Funnel:edge:0",
           "id": "usd:stage:coedge#/World/Funnel:orientedEdge:2",
           "owner_loop": "usd:stage:loop#/World/Funnel:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Funnel:orientedEdge:0",
           "sense": "forward"
         },
@@ -343,6 +385,7 @@
           "edge": "usd:stage:edge#/World/Funnel:edge:1",
           "id": "usd:stage:coedge#/World/Funnel:orientedEdge:3",
           "owner_loop": "usd:stage:loop#/World/Funnel:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Funnel:orientedEdge:1",
           "sense": "forward"
         },
@@ -350,6 +393,7 @@
           "edge": "usd:stage:edge#/World/Pill:edge:2",
           "id": "usd:stage:coedge#/World/Pill:orientedEdge:0",
           "owner_loop": "usd:stage:loop#/World/Pill:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Pill:orientedEdge:2",
           "sense": "forward"
         },
@@ -357,6 +401,7 @@
           "edge": "usd:stage:edge#/World/Pill:edge:0",
           "id": "usd:stage:coedge#/World/Pill:orientedEdge:1",
           "owner_loop": "usd:stage:loop#/World/Pill:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Pill:orientedEdge:3",
           "sense": "reversed"
         },
@@ -364,6 +409,7 @@
           "edge": "usd:stage:edge#/World/Pill:edge:2",
           "id": "usd:stage:coedge#/World/Pill:orientedEdge:2",
           "owner_loop": "usd:stage:loop#/World/Pill:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Pill:orientedEdge:0",
           "sense": "reversed"
         },
@@ -371,6 +417,7 @@
           "edge": "usd:stage:edge#/World/Pill:edge:0",
           "id": "usd:stage:coedge#/World/Pill:orientedEdge:3",
           "owner_loop": "usd:stage:loop#/World/Pill:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Pill:orientedEdge:1",
           "sense": "forward"
         },
@@ -378,6 +425,7 @@
           "edge": "usd:stage:edge#/World/Pill:edge:3",
           "id": "usd:stage:coedge#/World/Pill:orientedEdge:4",
           "owner_loop": "usd:stage:loop#/World/Pill:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Pill:orientedEdge:6",
           "sense": "forward"
         },
@@ -385,6 +433,7 @@
           "edge": "usd:stage:edge#/World/Pill:edge:1",
           "id": "usd:stage:coedge#/World/Pill:orientedEdge:5",
           "owner_loop": "usd:stage:loop#/World/Pill:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Pill:orientedEdge:8",
           "sense": "reversed"
         },
@@ -392,6 +441,7 @@
           "edge": "usd:stage:edge#/World/Pill:edge:3",
           "id": "usd:stage:coedge#/World/Pill:orientedEdge:6",
           "owner_loop": "usd:stage:loop#/World/Pill:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Pill:orientedEdge:4",
           "sense": "reversed"
         },
@@ -399,6 +449,7 @@
           "edge": "usd:stage:edge#/World/Pill:edge:4",
           "id": "usd:stage:coedge#/World/Pill:orientedEdge:7",
           "owner_loop": "usd:stage:loop#/World/Pill:loop:2",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Pill:orientedEdge:9",
           "sense": "reversed"
         },
@@ -406,6 +457,7 @@
           "edge": "usd:stage:edge#/World/Pill:edge:1",
           "id": "usd:stage:coedge#/World/Pill:orientedEdge:8",
           "owner_loop": "usd:stage:loop#/World/Pill:loop:2",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Pill:orientedEdge:5",
           "sense": "forward"
         },
@@ -413,6 +465,7 @@
           "edge": "usd:stage:edge#/World/Pill:edge:4",
           "id": "usd:stage:coedge#/World/Pill:orientedEdge:9",
           "owner_loop": "usd:stage:loop#/World/Pill:loop:2",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Pill:orientedEdge:7",
           "sense": "forward"
         },
@@ -420,6 +473,7 @@
           "edge": "usd:stage:edge#/World/Sheet:edge:0",
           "id": "usd:stage:coedge#/World/Sheet:orientedEdge:0",
           "owner_loop": "usd:stage:loop#/World/Sheet:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Sheet:orientedEdge:0",
           "sense": "forward"
         },
@@ -427,6 +481,7 @@
           "edge": "usd:stage:edge#/World/Sheet:edge:1",
           "id": "usd:stage:coedge#/World/Sheet:orientedEdge:1",
           "owner_loop": "usd:stage:loop#/World/Sheet:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Sheet:orientedEdge:1",
           "sense": "forward"
         },
@@ -434,6 +489,7 @@
           "edge": "usd:stage:edge#/World/Sheet:edge:2",
           "id": "usd:stage:coedge#/World/Sheet:orientedEdge:2",
           "owner_loop": "usd:stage:loop#/World/Sheet:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Sheet:orientedEdge:2",
           "sense": "forward"
         },
@@ -441,531 +497,621 @@
           "edge": "usd:stage:edge#/World/Sheet:edge:3",
           "id": "usd:stage:coedge#/World/Sheet:orientedEdge:3",
           "owner_loop": "usd:stage:loop#/World/Sheet:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/World/Sheet:orientedEdge:3",
           "sense": "reversed"
         }
       ],
+      "colliders": [],
       "configurations": [],
       "curves": [
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -15.0,
-              "y": -15.0,
-              "z": -15.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -15.0,
+                "y": -15.0,
+                "z": -15.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Box:curve3d-analytic:0"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -15.0,
-              "y": -15.0,
-              "z": 15.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -15.0,
+                "y": -15.0,
+                "z": 15.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Box:curve3d-analytic:1"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -15.0,
-              "y": 15.0,
-              "z": 15.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -15.0,
+                "y": 15.0,
+                "z": 15.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Box:curve3d-analytic:10"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -15.0,
-              "y": 15.0,
-              "z": -15.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -15.0,
+                "y": 15.0,
+                "z": -15.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Box:curve3d-analytic:11"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -15.0,
-              "y": 15.0,
-              "z": -15.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -15.0,
+                "y": 15.0,
+                "z": -15.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Box:curve3d-analytic:2"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -15.0,
-              "y": -15.0,
-              "z": -15.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -15.0,
+                "y": -15.0,
+                "z": -15.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Box:curve3d-analytic:3"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 15.0,
-              "y": -15.0,
-              "z": -15.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 15.0,
+                "y": -15.0,
+                "z": -15.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Box:curve3d-analytic:4"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 15.0,
-              "y": 15.0,
-              "z": -15.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 15.0,
+                "y": 15.0,
+                "z": -15.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Box:curve3d-analytic:5"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 15.0,
-              "y": -15.0,
-              "z": 15.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 15.0,
+                "y": -15.0,
+                "z": 15.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Box:curve3d-analytic:6"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 15.0,
-              "y": -15.0,
-              "z": -15.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 15.0,
+                "y": -15.0,
+                "z": -15.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Box:curve3d-analytic:7"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -15.0,
-              "y": -15.0,
-              "z": -15.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -15.0,
+                "y": -15.0,
+                "z": -15.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Box:curve3d-analytic:8"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -15.0,
-              "y": -15.0,
-              "z": 15.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -15.0,
+                "y": -15.0,
+                "z": 15.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Box:curve3d-analytic:9"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "center": {
-              "x": -20.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 10.0,
-            "ref_direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "center": {
+                "x": -20.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Can:curve3d-analytic:0"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "center": {
-              "x": 20.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 10.0,
-            "ref_direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "center": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Can:curve3d-analytic:1"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -20.0,
-              "y": 10.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -20.0,
+                "y": 10.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Can:curve3d-analytic:2"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -15.0
-            },
-            "kind": "circle",
-            "radius": 20.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -15.0
+              },
+              "kind": "circle",
+              "radius": 20.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Frustum:curve3d-analytic:0"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 15.0
-            },
-            "kind": "circle",
-            "radius": 10.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 15.0
+              },
+              "kind": "circle",
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Frustum:curve3d-analytic:1"
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.316227766016838,
-              "y": 0.0,
-              "z": 0.9486832980505139
-            },
-            "kind": "line",
-            "origin": {
-              "x": 20.0,
-              "y": 0.0,
-              "z": -15.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.316227766016838,
+                "y": 0.0,
+                "z": 0.9486832980505139
+              },
+              "kind": "line",
+              "origin": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": -15.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Frustum:curve3d-analytic:2"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": -15.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 20.0,
-            "ref_direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": -15.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 20.0,
+              "ref_direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Funnel:curve3d-analytic:0"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.8320502943378437,
-              "z": -0.5547001962252291
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": -15.0,
-              "z": 20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.8320502943378437,
+                "z": -0.5547001962252291
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": -15.0,
+                "z": 20.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Funnel:curve3d-analytic:1"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -10.0
-            },
-            "kind": "circle",
-            "radius": 10.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -10.0
+              },
+              "kind": "circle",
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Pill:curve3d-analytic:0"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 10.0
-            },
-            "kind": "circle",
-            "radius": 10.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              },
+              "kind": "circle",
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Pill:curve3d-analytic:1"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -10.0
-            },
-            "kind": "circle",
-            "radius": 10.0,
-            "ref_direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -10.0
+              },
+              "kind": "circle",
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Pill:curve3d-analytic:2"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 0.0,
-              "z": -10.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": -10.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Pill:curve3d-analytic:3"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 10.0
-            },
-            "kind": "circle",
-            "radius": 10.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              },
+              "kind": "circle",
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Pill:curve3d-analytic:4"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -0.0,
-              "y": 25.0,
-              "z": -20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -0.0,
+                "y": 25.0,
+                "z": -20.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Sheet:curve3d-analytic:0"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 25.0,
-              "z": 20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 25.0,
+                "z": 20.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Sheet:curve3d-analytic:1"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": -25.0,
-              "z": 20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": -25.0,
+                "z": 20.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Sheet:curve3d-analytic:2"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -0.0,
-              "y": 25.0,
-              "z": -20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -0.0,
+                "y": 25.0,
+                "z": -20.0
+              }
             }
           },
           "id": "usd:stage:curve#/World/Sheet:curve3d-analytic:3"
         }
       ],
+      "declared_measures": [],
       "drawings": [],
       "edges": [
         {
@@ -1321,7 +1467,7 @@
         {
           "id": "usd:stage:face#/World/Ball:face:0",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": []
           },
           "sense": "forward",
@@ -1331,8 +1477,8 @@
         {
           "id": "usd:stage:face#/World/Box:face:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Box:loop:0"
           },
           "sense": "forward",
@@ -1342,8 +1488,8 @@
         {
           "id": "usd:stage:face#/World/Box:face:1",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Box:loop:1"
           },
           "sense": "forward",
@@ -1353,8 +1499,8 @@
         {
           "id": "usd:stage:face#/World/Box:face:2",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Box:loop:2"
           },
           "sense": "forward",
@@ -1364,8 +1510,8 @@
         {
           "id": "usd:stage:face#/World/Box:face:3",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Box:loop:3"
           },
           "sense": "forward",
@@ -1375,8 +1521,8 @@
         {
           "id": "usd:stage:face#/World/Box:face:4",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Box:loop:4"
           },
           "sense": "forward",
@@ -1386,8 +1532,8 @@
         {
           "id": "usd:stage:face#/World/Box:face:5",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Box:loop:5"
           },
           "sense": "forward",
@@ -1397,8 +1543,8 @@
         {
           "id": "usd:stage:face#/World/Can:face:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Can:loop:0"
           },
           "sense": "forward",
@@ -1408,8 +1554,8 @@
         {
           "id": "usd:stage:face#/World/Can:face:1",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Can:loop:1"
           },
           "sense": "forward",
@@ -1419,8 +1565,8 @@
         {
           "id": "usd:stage:face#/World/Can:face:2",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Can:loop:2"
           },
           "sense": "forward",
@@ -1430,8 +1576,8 @@
         {
           "id": "usd:stage:face#/World/Frustum:face:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Frustum:loop:0"
           },
           "sense": "forward",
@@ -1441,8 +1587,8 @@
         {
           "id": "usd:stage:face#/World/Frustum:face:1",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Frustum:loop:1"
           },
           "sense": "forward",
@@ -1452,8 +1598,8 @@
         {
           "id": "usd:stage:face#/World/Frustum:face:2",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Frustum:loop:2"
           },
           "sense": "forward",
@@ -1463,8 +1609,8 @@
         {
           "id": "usd:stage:face#/World/Funnel:face:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Funnel:loop:0"
           },
           "sense": "forward",
@@ -1474,8 +1620,8 @@
         {
           "id": "usd:stage:face#/World/Funnel:face:1",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Funnel:loop:1"
           },
           "sense": "forward",
@@ -1485,8 +1631,8 @@
         {
           "id": "usd:stage:face#/World/Pill:face:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Pill:loop:0"
           },
           "sense": "forward",
@@ -1496,8 +1642,8 @@
         {
           "id": "usd:stage:face#/World/Pill:face:1",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Pill:loop:1"
           },
           "sense": "forward",
@@ -1507,8 +1653,8 @@
         {
           "id": "usd:stage:face#/World/Pill:face:2",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Pill:loop:2"
           },
           "sense": "forward",
@@ -1518,8 +1664,8 @@
         {
           "id": "usd:stage:face#/World/Sheet:face:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/Sheet:loop:0"
           },
           "sense": "forward",
@@ -1527,7 +1673,10 @@
           "surface": "usd:stage:surface#/World/Sheet:surface-analytic:0"
         }
       ],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [],
+      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -1537,7 +1686,8 @@
               "usd:stage:coedge#/World/Box:orientedEdge:2",
               "usd:stage:coedge#/World/Box:orientedEdge:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Box:face:0",
           "id": "usd:stage:loop#/World/Box:loop:0"
@@ -1550,7 +1700,8 @@
               "usd:stage:coedge#/World/Box:orientedEdge:6",
               "usd:stage:coedge#/World/Box:orientedEdge:7"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Box:face:1",
           "id": "usd:stage:loop#/World/Box:loop:1"
@@ -1563,7 +1714,8 @@
               "usd:stage:coedge#/World/Box:orientedEdge:10",
               "usd:stage:coedge#/World/Box:orientedEdge:11"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Box:face:2",
           "id": "usd:stage:loop#/World/Box:loop:2"
@@ -1576,7 +1728,8 @@
               "usd:stage:coedge#/World/Box:orientedEdge:14",
               "usd:stage:coedge#/World/Box:orientedEdge:15"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Box:face:3",
           "id": "usd:stage:loop#/World/Box:loop:3"
@@ -1589,7 +1742,8 @@
               "usd:stage:coedge#/World/Box:orientedEdge:18",
               "usd:stage:coedge#/World/Box:orientedEdge:19"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Box:face:4",
           "id": "usd:stage:loop#/World/Box:loop:4"
@@ -1602,7 +1756,8 @@
               "usd:stage:coedge#/World/Box:orientedEdge:22",
               "usd:stage:coedge#/World/Box:orientedEdge:23"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Box:face:5",
           "id": "usd:stage:loop#/World/Box:loop:5"
@@ -1612,7 +1767,8 @@
             "coedges": [
               "usd:stage:coedge#/World/Can:orientedEdge:0"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Can:face:0",
           "id": "usd:stage:loop#/World/Can:loop:0"
@@ -1625,7 +1781,8 @@
               "usd:stage:coedge#/World/Can:orientedEdge:3",
               "usd:stage:coedge#/World/Can:orientedEdge:4"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Can:face:1",
           "id": "usd:stage:loop#/World/Can:loop:1"
@@ -1635,7 +1792,8 @@
             "coedges": [
               "usd:stage:coedge#/World/Can:orientedEdge:5"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Can:face:2",
           "id": "usd:stage:loop#/World/Can:loop:2"
@@ -1645,7 +1803,8 @@
             "coedges": [
               "usd:stage:coedge#/World/Frustum:orientedEdge:0"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Frustum:face:0",
           "id": "usd:stage:loop#/World/Frustum:loop:0"
@@ -1658,7 +1817,8 @@
               "usd:stage:coedge#/World/Frustum:orientedEdge:3",
               "usd:stage:coedge#/World/Frustum:orientedEdge:4"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Frustum:face:1",
           "id": "usd:stage:loop#/World/Frustum:loop:1"
@@ -1668,7 +1828,8 @@
             "coedges": [
               "usd:stage:coedge#/World/Frustum:orientedEdge:5"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Frustum:face:2",
           "id": "usd:stage:loop#/World/Frustum:loop:2"
@@ -1678,7 +1839,8 @@
             "coedges": [
               "usd:stage:coedge#/World/Funnel:orientedEdge:0"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Funnel:face:0",
           "id": "usd:stage:loop#/World/Funnel:loop:0"
@@ -1690,7 +1852,8 @@
               "usd:stage:coedge#/World/Funnel:orientedEdge:2",
               "usd:stage:coedge#/World/Funnel:orientedEdge:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Funnel:face:1",
           "id": "usd:stage:loop#/World/Funnel:loop:1"
@@ -1702,7 +1865,8 @@
               "usd:stage:coedge#/World/Pill:orientedEdge:1",
               "usd:stage:coedge#/World/Pill:orientedEdge:2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Pill:face:0",
           "id": "usd:stage:loop#/World/Pill:loop:0"
@@ -1715,7 +1879,8 @@
               "usd:stage:coedge#/World/Pill:orientedEdge:5",
               "usd:stage:coedge#/World/Pill:orientedEdge:6"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Pill:face:1",
           "id": "usd:stage:loop#/World/Pill:loop:1"
@@ -1727,7 +1892,8 @@
               "usd:stage:coedge#/World/Pill:orientedEdge:8",
               "usd:stage:coedge#/World/Pill:orientedEdge:9"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Pill:face:2",
           "id": "usd:stage:loop#/World/Pill:loop:2"
@@ -1740,12 +1906,14 @@
               "usd:stage:coedge#/World/Sheet:orientedEdge:2",
               "usd:stage:coedge#/World/Sheet:orientedEdge:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/Sheet:face:0",
           "id": "usd:stage:loop#/World/Sheet:loop:0"
         }
       ],
+      "mass_properties": [],
       "occurrences": [
         {
           "id": "usd:stage:occurrence#/World",
@@ -1757,7 +1925,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/World",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -1796,7 +1964,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/World/Ball",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -1835,7 +2003,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/World/Box",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -1874,7 +2042,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/World/Can",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -1913,7 +2081,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/World/Frustum",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -1952,7 +2120,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/World/Funnel",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -1991,7 +2159,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/World/Pill",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -2030,7 +2198,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/World/Sheet",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -2061,7 +2229,10 @@
       ],
       "parameters": [],
       "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
+      "point_clouds": [],
       "points": [
         {
           "id": "usd:stage:point#/World/Box:vertex:0",
@@ -2246,72 +2417,89 @@
       "procedural_surfaces": [],
       "product_definitions": [
         {
+          "bodies": [],
+          "bom_properties": {},
           "id": "usd:stage:definition#/World",
           "kind": "group",
           "native_ref": "/World",
+          "sketches": [],
           "source_name": "World"
         },
         {
           "bodies": [
             "usd:stage:body#/World/Ball"
           ],
+          "bom_properties": {},
           "id": "usd:stage:definition#/World/Ball",
           "kind": "group",
           "native_ref": "/World/Ball",
+          "sketches": [],
           "source_name": "Ball"
         },
         {
           "bodies": [
             "usd:stage:body#/World/Box"
           ],
+          "bom_properties": {},
           "id": "usd:stage:definition#/World/Box",
           "kind": "group",
           "native_ref": "/World/Box",
+          "sketches": [],
           "source_name": "Box"
         },
         {
           "bodies": [
             "usd:stage:body#/World/Can"
           ],
+          "bom_properties": {},
           "id": "usd:stage:definition#/World/Can",
           "kind": "group",
           "native_ref": "/World/Can",
+          "sketches": [],
           "source_name": "Can"
         },
         {
           "bodies": [
             "usd:stage:body#/World/Frustum"
           ],
+          "bom_properties": {},
           "id": "usd:stage:definition#/World/Frustum",
           "kind": "group",
           "native_ref": "/World/Frustum",
+          "sketches": [],
           "source_name": "Frustum"
         },
         {
           "bodies": [
             "usd:stage:body#/World/Funnel"
           ],
+          "bom_properties": {},
           "id": "usd:stage:definition#/World/Funnel",
           "kind": "group",
           "native_ref": "/World/Funnel",
+          "sketches": [],
           "source_name": "Funnel"
         },
         {
           "bodies": [
             "usd:stage:body#/World/Pill"
           ],
+          "bom_properties": {},
           "id": "usd:stage:definition#/World/Pill",
           "kind": "group",
           "native_ref": "/World/Pill",
+          "sketches": [],
           "source_name": "Pill"
         },
         {
           "bodies": [
             "usd:stage:body#/World/Sheet"
           ],
+          "bom_properties": {},
           "id": "usd:stage:definition#/World/Sheet",
           "kind": "group",
           "native_ref": "/World/Sheet",
+          "sketches": [],
           "source_name": "Sheet"
         }
       ],
@@ -2366,6 +2554,7 @@
           ]
         }
       ],
+      "rigid_bodies": [],
       "semantic_annotations": [],
       "shells": [
         {
@@ -2490,6 +2679,8 @@
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
@@ -2497,410 +2688,467 @@
       "surfaces": [
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "sphere",
-            "radius": 20.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "sphere",
+              "radius": 20.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Ball:surface-analytic:0"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": -15.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": -15.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Box:surface-analytic:0"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 15.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 15.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Box:surface-analytic:1"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": -15.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": -15.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Box:surface-analytic:2"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 15.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 15.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Box:surface-analytic:3"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -15.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -15.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Box:surface-analytic:4"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 15.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 15.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Box:surface-analytic:5"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": -20.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": -20.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Can:surface-analytic:0"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "cylinder",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "radius": 10.0,
-            "ref_direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "cylinder",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Can:surface-analytic:1"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 20.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Can:surface-analytic:2"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -15.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -15.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Frustum:surface-analytic:0"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "half_angle": 0.3217505543966422,
-            "kind": "cone",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -15.0
-            },
-            "radius": 20.0,
-            "ratio": 1.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "half_angle": 0.3217505543966422,
+              "kind": "cone",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -15.0
+              },
+              "radius": 20.0,
+              "ratio": 1.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Frustum:surface-analytic:1"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 15.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 15.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Frustum:surface-analytic:2"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": -15.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": -15.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Funnel:surface-analytic:0"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "half_angle": 0.5880026035475675,
-            "kind": "cone",
-            "origin": {
-              "x": 0.0,
-              "y": -15.0,
-              "z": 0.0
-            },
-            "radius": 20.0,
-            "ratio": 1.0,
-            "ref_direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "half_angle": 0.5880026035475675,
+              "kind": "cone",
+              "origin": {
+                "x": 0.0,
+                "y": -15.0,
+                "z": 0.0
+              },
+              "radius": 20.0,
+              "ratio": 1.0,
+              "ref_direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Funnel:surface-analytic:1"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -10.0
-            },
-            "kind": "sphere",
-            "radius": 10.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -10.0
+              },
+              "kind": "sphere",
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Pill:surface-analytic:0"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "cylinder",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "radius": 10.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "cylinder",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Pill:surface-analytic:1"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 10.0
-            },
-            "kind": "sphere",
-            "radius": 10.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              },
+              "kind": "sphere",
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Pill:surface-analytic:2"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "usd:stage:surface#/World/Sheet:surface-analytic:0"
@@ -3006,17 +3254,19 @@
         "up_axis": "Z"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "header": "#usda 1.0"
             },
             "dialect": "usd:usda-1.0"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -3024,31 +3274,44 @@
       "linear": 9.999999999999999e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "header": "#usda 1.0"
           },
           "dialect": "usd:usda-1.0"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [],
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "retained_records": {}
   }
 }

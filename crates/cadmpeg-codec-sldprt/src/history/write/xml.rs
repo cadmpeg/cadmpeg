@@ -48,7 +48,7 @@ pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
         FeatureDefinition::Operation(
             FeatureOperation::BaseFeature { .. }
             | FeatureOperation::InsertBodies { .. }
-            | FeatureOperation::Form { .. }
+            | FeatureOperation::Form(_)
             | FeatureOperation::Coil { .. }
             | FeatureOperation::Sphere { .. }
             | FeatureOperation::Torus { .. }

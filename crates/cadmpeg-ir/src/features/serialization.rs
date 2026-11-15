@@ -60,7 +60,7 @@ impl Serialize for FeatureEquationCurve {
 impl Serialize for SketchFeatureBinding {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
-        #[serde(tag = "space", rename_all = "snake_case")]
+        #[serde(tag = "kind", rename_all = "snake_case")]
         enum Wire<'a> {
             Unresolved {},
             Planar {

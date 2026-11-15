@@ -2,11 +2,14 @@
   "decode": {
     "ir": {
       "decode_depth": "full",
-      "ir_version": "10",
+      "fragment": false,
+      "ir_version": "11",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
+        "articulations": [],
         "assembly_joints": [],
+        "assets": [],
         "attributes": [],
         "bodies": [
           {
@@ -18,34 +21,46 @@
           }
         ],
         "coedges": [],
+        "colliders": [],
         "configurations": [],
         "curves": [
           {
             "geometry": {
-              "direction": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "kind": "line",
-              "origin": {
-                "x": 10.0,
-                "y": 20.0,
-                "z": 30.0
+              "kind": "solved",
+              "value": {
+                "direction": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "kind": "line",
+                "origin": {
+                  "x": 10.0,
+                  "y": 20.0,
+                  "z": 30.0
+                }
               }
             },
             "id": "nx:s0:crv#0"
           }
         ],
+        "declared_measures": [],
         "drawings": [],
         "edges": [],
         "faces": [],
+        "feature_input_topologies": [],
+        "feature_result_topologies": [],
         "features": [],
+        "history_bodies": [],
         "loops": [],
+        "mass_properties": [],
         "occurrences": [],
         "parameters": [],
         "pcurves": [],
+        "physical_materials": [],
+        "physics_scenes": [],
         "pmi": [],
+        "point_clouds": [],
         "points": [
           {
             "id": "nx:s0:pt#0",
@@ -70,6 +85,7 @@
             ]
           }
         ],
+        "rigid_bodies": [],
         "semantic_annotations": [],
         "shells": [
           {
@@ -86,6 +102,8 @@
         "sketch_constraints": [],
         "sketch_entities": [],
         "sketches": [],
+        "solver_settings": [],
+        "spatial_sketch_constraints": [],
         "spatial_sketch_entities": [],
         "spatial_sketches": [],
         "spreadsheets": [],
@@ -93,43 +111,49 @@
         "surfaces": [
           {
             "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 76.2,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
+              "kind": "solved",
+              "value": {
+                "kind": "plane",
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "origin": {
+                  "x": 76.2,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "u_axis": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
               }
             },
             "id": "nx:s0:surf#0"
           },
           {
             "geometry": {
-              "axis": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "kind": "cylinder",
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "radius": 4.05,
-              "ref_direction": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
+              "kind": "solved",
+              "value": {
+                "axis": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "kind": "cylinder",
+                "origin": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "radius": 4.05,
+                "ref_direction": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
               }
             },
             "id": "nx:s0:surf#1"
@@ -216,11 +240,12 @@
           "plain_streams": "0"
         },
         "identity": {
-          "classification": "classified",
           "dialects": {
             "extra": [
               {
-                "admission": "residual",
+                "admission": {
+                  "kind": "residual"
+                },
                 "declared": {
                   "carrier": "stream@209",
                   "schema": "SCH_TEST_1_9999"
@@ -229,13 +254,16 @@
               }
             ],
             "primary": {
-              "admission": "admitted",
+              "admission": {
+                "kind": "admitted"
+              },
               "declared": {
                 "splmsstr_version": "6"
               },
               "dialect": "nx:splmsstr"
             }
-          }
+          },
+          "kind": "classified"
         }
       },
       "tolerances": {
@@ -243,16 +271,21 @@
         "linear": 1e-6
       },
       "units": {
-        "length": "millimeter"
+        "angle": "radian",
+        "length": "millimeter",
+        "mass": "kilogram",
+        "time": "second"
       }
     },
     "report": {
+      "coverage": {},
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [
             {
-              "admission": "residual",
+              "admission": {
+                "kind": "residual"
+              },
               "declared": {
                 "carrier": "stream@209",
                 "schema": "SCH_TEST_1_9999"
@@ -261,43 +294,52 @@
             }
           ],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "splmsstr_version": "6"
             },
             "dialect": "nx:splmsstr"
           }
-        }
+        },
+        "kind": "classified"
       },
       "losses": [
         {
           "code": {
-            "code": "carrier.analytic-census",
-            "kind": "carrier_summary",
-            "namespace": "nx",
-            "scope": "namespaced"
+            "kind": "namespaced",
+            "value": {
+              "code": "carrier.analytic-census",
+              "kind": "carrier_summary",
+              "namespace": "nx"
+            }
           },
           "message": "Decoded 1 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 2 analytic surface carrier(s) (1 plane, 1 cylinder, 0 cone, 0 sphere, 0 torus), and 1 analytic curve carrier(s) (1 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
           "severity": "info"
         },
         {
           "code": {
-            "code": "topology.graph-not-reconstructed",
-            "kind": "topology_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "topology.graph-not-reconstructed",
+              "kind": "topology_not_transferred",
+              "namespace": "nx",
+              "strict_floor": "warning"
+            }
           },
           "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Graph construction used the primary input bytes. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
         },
         {
           "code": {
-            "code": "source.kernel-dialect-unverified",
-            "kind": "source_dialect_unverified",
-            "namespace": "nx",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "source.kernel-dialect-unverified",
+              "kind": "source_dialect_unverified",
+              "namespace": "nx",
+              "strict_floor": "warning"
+            }
           },
           "message": "The Parasolid stream at stream@209 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
@@ -310,7 +352,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "kind": "full"
+      },
+      "transfer_ledger": {
+        "entries": []
       }
     },
     "source_fidelity": {
@@ -321,47 +366,51 @@
             "fields": {
               "links": "derived"
             },
-            "scope": "entity"
+            "kind": "entity"
           },
           "nx:derived:point-body#0": {
             "entity": "inferred",
-            "scope": "entity"
+            "fields": {},
+            "kind": "entity"
           },
           "nx:derived:point-region#0": {
             "entity": "inferred",
-            "scope": "entity"
+            "fields": {},
+            "kind": "entity"
           },
           "nx:derived:point-shell#0": {
             "entity": "inferred",
-            "scope": "entity"
+            "fields": {},
+            "kind": "entity"
           },
           "nx:derived:point-vertex#0": {
             "entity": "inferred",
-            "scope": "entity"
+            "fields": {},
+            "kind": "entity"
           },
           "nx:s0:crv#0": {
             "fields": {
               "geometry": "derived"
             },
-            "scope": "fields"
+            "kind": "fields"
           },
           "nx:s0:pt#0": {
             "fields": {
               "position": "derived"
             },
-            "scope": "fields"
+            "kind": "fields"
           },
           "nx:s0:surf#0": {
             "fields": {
               "geometry": "derived"
             },
-            "scope": "fields"
+            "kind": "fields"
           },
           "nx:s0:surf#1": {
             "fields": {
               "geometry": "derived"
             },
-            "scope": "fields"
+            "kind": "fields"
           }
         },
         "provenance": {
@@ -416,7 +465,7 @@
         "nx:container:parasolid#0": {
           "bytes": {
             "data": "UFMAAAA/OiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AAAAD1NDSF9URVNUXzFfOTk5OQAAHQACAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAwAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAQAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAUAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 209,
           "stream": "nx:container"
@@ -432,11 +481,11 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compression": "none",
+        "kind": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
         "size": {
-          "form": "exact",
+          "kind": "exact",
           "size": 355
         }
       },
@@ -462,18 +511,19 @@
           "records.vertex": "0",
           "schema": "SCH_TEST_1_9999"
         },
-        "compression": "zlib",
         "expanded": 386,
+        "kind": "zlib",
         "name": "parasolid#0",
         "role": "parasolid-stream"
       }
     ],
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [
           {
-            "admission": "residual",
+            "admission": {
+              "kind": "residual"
+            },
             "declared": {
               "carrier": "stream@209",
               "schema": "SCH_TEST_1_9999"
@@ -482,22 +532,27 @@
           }
         ],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "splmsstr_version": "6"
           },
           "dialect": "nx:splmsstr"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "source.kernel-dialect-unverified",
-          "kind": "source_dialect_unverified",
-          "namespace": "nx",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "source.kernel-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx",
+            "strict_floor": "warning"
+          }
         },
         "message": "The Parasolid stream at stream@209 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
         "severity": "warning"

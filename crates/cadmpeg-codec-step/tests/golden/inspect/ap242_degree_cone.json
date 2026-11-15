@@ -3,11 +3,11 @@
   "entries": [
     {
       "attributes": {},
-      "compression": "none",
+      "kind": "none",
       "name": "HEADER",
       "role": "metadata",
       "size": {
-        "form": "unreported"
+        "kind": "unreported"
       }
     },
     {
@@ -15,28 +15,31 @@
         "entity_count": "11",
         "unknown_entities": ""
       },
-      "compression": "none",
+      "kind": "none",
       "name": "DATA[0]",
       "role": "entity-records",
       "size": {
-        "form": "unreported"
+        "kind": "unreported"
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
           "implementation_level": "2;1"
         },
         "dialect": "step:ap242"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF; dialect step:ap242"
   ]

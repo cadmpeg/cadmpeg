@@ -1,179 +1,192 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "fragment": false,
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [
         {
+          "drives": [],
           "id": "fcstd:model:joint#GroundBracket:constraint",
           "native_ref": "fcstd:native:joint#GroundBracket",
           "operands": {
-            "arity": "grounded",
-            "connector": {
-              "detached": false,
-              "frame": [
-                [
-                  1.0,
-                  0.0,
-                  0.0,
-                  10.0
-                ],
-                [
-                  0.0,
-                  1.0,
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  0.0,
-                  1.0,
-                  0.0
-                ]
-              ],
-              "operand": {
-                "container": {
-                  "container": "occurrence",
-                  "occurrence": "fcstd:model:occurrence#BracketOccurrence:instance"
-                },
-                "object": "fcstd:native:object#BracketOccurrence"
-              }
-            }
-          },
-          "suppressed": false
-        },
-        {
-          "id": "fcstd:model:joint#RevoluteJoint:constraint",
-          "native_ref": "fcstd:native:joint#RevoluteJoint",
-          "operands": {
-            "arity": "pair",
-            "connectors": [
-              {
-                "detached": true,
-                "frame": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    20.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    6.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    3.0
-                  ]
-                ],
-                "operand": {
-                  "container": {
-                    "container": "occurrence",
-                    "occurrence": "fcstd:model:occurrence#BracketOccurrence:instance"
-                  },
-                  "object": "fcstd:native:object#BracketOccurrence",
-                  "subelements": [
-                    "Face1",
-                    "Edge1"
-                  ]
-                }
-              },
-              {
+            "kind": "grounded",
+            "value": {
+              "connector": {
                 "detached": false,
                 "frame": [
                   [
                     1.0,
                     0.0,
                     0.0,
-                    20.0
+                    10.0
                   ],
                   [
                     0.0,
                     1.0,
                     0.0,
-                    6.0
+                    0.0
                   ],
                   [
                     0.0,
                     0.0,
                     1.0,
-                    3.0
+                    0.0
                   ]
                 ],
                 "operand": {
                   "container": {
-                    "container": "occurrence",
-                    "occurrence": "fcstd:model:occurrence#PinOccurrence:instance"
+                    "kind": "occurrence",
+                    "occurrence": "fcstd:model:occurrence#BracketOccurrence:instance",
+                    "occurrence_path": []
                   },
-                  "object": "fcstd:native:object#PinOccurrence",
-                  "subelements": [
-                    "Face2",
-                    "Edge3"
-                  ]
+                  "object": "fcstd:native:object#BracketOccurrence",
+                  "subelements": []
                 }
               }
-            ],
-            "kind": {
-              "angle": 0.20943951023931956,
-              "angular_limits": {
-                "bounds": "range",
-                "maximum": 0.9599310885968813,
-                "minimum": -0.6108652381980153
-              },
-              "kind": "revolute"
-            },
-            "offset_frames": [
-              [
-                [
-                  1.0,
-                  0.0,
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  1.0,
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  0.0,
-                  1.0,
-                  0.5
-                ]
+            }
+          },
+          "suppressed": false
+        },
+        {
+          "drives": [],
+          "id": "fcstd:model:joint#RevoluteJoint:constraint",
+          "native_ref": "fcstd:native:joint#RevoluteJoint",
+          "operands": {
+            "kind": "pair",
+            "value": {
+              "connectors": [
+                {
+                  "detached": true,
+                  "frame": [
+                    [
+                      1.0,
+                      0.0,
+                      0.0,
+                      20.0
+                    ],
+                    [
+                      0.0,
+                      1.0,
+                      0.0,
+                      6.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      1.0,
+                      3.0
+                    ]
+                  ],
+                  "operand": {
+                    "container": {
+                      "kind": "occurrence",
+                      "occurrence": "fcstd:model:occurrence#BracketOccurrence:instance",
+                      "occurrence_path": []
+                    },
+                    "object": "fcstd:native:object#BracketOccurrence",
+                    "subelements": [
+                      "Face1",
+                      "Edge1"
+                    ]
+                  }
+                },
+                {
+                  "detached": false,
+                  "frame": [
+                    [
+                      1.0,
+                      0.0,
+                      0.0,
+                      20.0
+                    ],
+                    [
+                      0.0,
+                      1.0,
+                      0.0,
+                      6.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      1.0,
+                      3.0
+                    ]
+                  ],
+                  "operand": {
+                    "container": {
+                      "kind": "occurrence",
+                      "occurrence": "fcstd:model:occurrence#PinOccurrence:instance",
+                      "occurrence_path": []
+                    },
+                    "object": "fcstd:native:object#PinOccurrence",
+                    "subelements": [
+                      "Face2",
+                      "Edge3"
+                    ]
+                  }
+                }
               ],
-              [
+              "kind": {
+                "angle": 0.20943951023931956,
+                "angular_limits": {
+                  "kind": "range",
+                  "maximum": 0.9599310885968813,
+                  "minimum": -0.6108652381980153
+                },
+                "kind": "revolute"
+              },
+              "offset_frames": [
                 [
-                  1.0,
-                  0.0,
-                  0.0,
-                  0.0
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.5
+                  ]
                 ],
                 [
-                  0.0,
-                  1.0,
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  0.0,
-                  1.0,
-                  -0.5
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    -0.5
+                  ]
                 ]
               ]
-            ]
+            }
           },
           "suppressed": false
         }
       ],
+      "assets": [],
       "attributes": [],
       "bodies": [
         {
@@ -673,321 +686,383 @@
           "sense": "forward"
         }
       ],
+      "colliders": [],
       "configurations": [],
       "curves": [
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 6.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 6.0
+              }
             }
           },
           "id": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:10",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 12.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 12.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 12.0,
-              "z": 6.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 12.0,
+                "z": 6.0
+              }
             }
           },
           "id": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 6.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 6.0
+              }
             }
           },
           "id": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 12.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 12.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 20.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 20.0,
-              "y": 0.0,
-              "z": 6.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 6.0
+              }
             }
           },
           "id": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 20.0,
-              "y": 12.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 20.0,
+                "y": 12.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:7",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 20.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:8",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:9",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 20.0
-            },
-            "kind": "circle",
-            "radius": 3.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 20.0
+              },
+              "kind": "circle",
+              "radius": 3.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#PinPrototype"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 3.0,
-              "y": -7.3e-16,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 3.0,
+                "y": -7.3e-16,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#PinPrototype"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 3.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 3.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#PinPrototype"
           }
         }
       ],
+      "declared_measures": [],
       "drawings": [],
       "edges": [
         {
@@ -1190,7 +1265,7 @@
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%40location1%3A1"
             ]
@@ -1203,7 +1278,7 @@
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%40location1%3A1"
             ]
@@ -1216,7 +1291,7 @@
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%40location1%3A1"
             ]
@@ -1229,7 +1304,7 @@
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%40location1%3A1"
             ]
@@ -1242,7 +1317,7 @@
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%40location1%3A1"
             ]
@@ -1255,7 +1330,7 @@
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%40location1%3A1"
             ]
@@ -1268,7 +1343,7 @@
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:11%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%40location1%3A1"
             ]
@@ -1281,7 +1356,7 @@
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:7%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%40location1%3A1"
             ]
@@ -1294,7 +1369,7 @@
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:9%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%40location1%3A1"
             ]
@@ -1305,11 +1380,18 @@
           "tolerance": 1e-7
         }
       ],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [
         {
           "definition": {
-            "definition": "stored_geometry"
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
           },
+          "dependencies": [],
           "id": "fcstd:design:feature#BracketPrototype",
           "name": "BracketPrototype",
           "native_ref": "fcstd:native:object#BracketPrototype",
@@ -1317,16 +1399,21 @@
           "outputs": [
             "fcstd:model:body#BracketPrototype:Shape:BracketPrototype.Shape.brp:34%40location1"
           ],
+          "source_content": [],
           "source_properties": {
             "Visibility": "true"
           },
-          "source_tag": "Part::Feature",
-          "suppressed": null
+          "source_tag": "Part::Feature"
         },
         {
           "definition": {
-            "definition": "stored_geometry"
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
           },
+          "dependencies": [],
           "id": "fcstd:design:feature#PinPrototype",
           "name": "PinPrototype",
           "native_ref": "fcstd:native:object#PinPrototype",
@@ -1334,13 +1421,14 @@
           "outputs": [
             "fcstd:model:body#PinPrototype:Shape:PinPrototype.Shape.brp:13%40location1"
           ],
+          "source_content": [],
           "source_properties": {
             "Visibility": "true"
           },
-          "source_tag": "Part::Feature",
-          "suppressed": null
+          "source_tag": "Part::Feature"
         }
       ],
+      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -1350,7 +1438,8 @@
               "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%40location1%3A1%3A3",
               "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%40location1",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%40location1%3A1"
@@ -1363,7 +1452,8 @@
               "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%40location1%3A1%3A3",
               "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%40location1",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%40location1%3A1"
@@ -1376,7 +1466,8 @@
               "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%40location1%3A1%3A3",
               "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%40location1",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%40location1%3A1"
@@ -1389,7 +1480,8 @@
               "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%40location1%3A1%3A3",
               "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%40location1",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%40location1%3A1"
@@ -1402,7 +1494,8 @@
               "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%40location1%3A1%3A3",
               "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%40location1",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%40location1%3A1"
@@ -1415,7 +1508,8 @@
               "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%40location1%3A1%3A3",
               "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%40location1",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%40location1%3A1"
@@ -1425,7 +1519,8 @@
             "coedges": [
               "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:11%40location1%3A1%3A1"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:11%40location1",
           "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%40location1%3A1"
@@ -1438,7 +1533,8 @@
               "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%40location1%3A1%3A3",
               "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:7%40location1",
           "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%40location1%3A1"
@@ -1448,12 +1544,14 @@
             "coedges": [
               "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:9%40location1%3A1%3A1"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:9%40location1",
           "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%40location1%3A1"
         }
       ],
+      "mass_properties": [],
       "occurrences": [
         {
           "id": "fcstd:model:occurrence#Assembly:container",
@@ -1465,7 +1563,7 @@
           },
           "prototype": {
             "definition": "fcstd:model:product_definition#Assembly:definition",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -1505,7 +1603,7 @@
                 "kind": "copy_on_change",
                 "state": {
                   "policy": {
-                    "policy": "disabled"
+                    "kind": "disabled"
                   },
                   "touched": false
                 }
@@ -1541,7 +1639,7 @@
           },
           "prototype": {
             "definition": "fcstd:model:product_definition#BracketPrototype:definition",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -1579,7 +1677,7 @@
           },
           "prototype": {
             "definition": "fcstd:model:product_definition#BracketPrototype:definition",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -1619,7 +1717,7 @@
                 "kind": "copy_on_change",
                 "state": {
                   "policy": {
-                    "policy": "disabled"
+                    "kind": "disabled"
                   },
                   "touched": false
                 }
@@ -1655,11 +1753,11 @@
           },
           "prototype": {
             "document": {
-              "path": "external_component.FCStd",
-              "resolution": "path"
+              "kind": "path",
+              "path": "external_component.FCStd"
             },
-            "object": "ExternalPrototype",
-            "scope": "external"
+            "kind": "external",
+            "object": "ExternalPrototype"
           },
           "scale": [
             1.0,
@@ -1699,7 +1797,7 @@
                 "kind": "copy_on_change",
                 "state": {
                   "policy": {
-                    "policy": "disabled"
+                    "kind": "disabled"
                   },
                   "touched": false
                 }
@@ -1735,7 +1833,7 @@
           },
           "prototype": {
             "definition": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -1774,7 +1872,7 @@
           },
           "prototype": {
             "definition": "fcstd:model:product_definition#OccurrenceGroup:definition",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -1818,7 +1916,7 @@
                 "kind": "copy_on_change",
                 "state": {
                   "policy": {
-                    "policy": "disabled"
+                    "kind": "disabled"
                   },
                   "touched": false
                 }
@@ -1854,7 +1952,7 @@
           },
           "prototype": {
             "definition": "fcstd:model:product_definition#PinPrototype:definition",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -1898,7 +1996,7 @@
                 "kind": "copy_on_change",
                 "state": {
                   "policy": {
-                    "policy": "disabled"
+                    "kind": "disabled"
                   },
                   "touched": false
                 }
@@ -1934,7 +2032,7 @@
           },
           "prototype": {
             "definition": "fcstd:model:product_definition#PinPrototype:definition",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -1978,7 +2076,7 @@
                 "kind": "copy_on_change",
                 "state": {
                   "policy": {
-                    "policy": "disabled"
+                    "kind": "disabled"
                   },
                   "touched": false
                 }
@@ -2014,7 +2112,7 @@
           },
           "prototype": {
             "definition": "fcstd:model:product_definition#PinPrototype:definition",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -2054,7 +2152,7 @@
                 "kind": "copy_on_change",
                 "state": {
                   "policy": {
-                    "policy": "disabled"
+                    "kind": "disabled"
                   },
                   "touched": false
                 }
@@ -2090,7 +2188,7 @@
           },
           "prototype": {
             "definition": "fcstd:model:product_definition#PinPrototype:definition",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -2128,7 +2226,7 @@
           },
           "prototype": {
             "definition": "fcstd:model:product_definition#PinPrototype:definition",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -2166,7 +2264,7 @@
           },
           "prototype": {
             "definition": "fcstd:model:product_definition#PrototypeGroup:definition",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -2217,7 +2315,7 @@
                 6.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2240,7 +2338,7 @@
                 6.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2263,7 +2361,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2286,7 +2384,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2309,7 +2407,7 @@
                 6.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2332,7 +2430,7 @@
                 6.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2355,7 +2453,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2378,7 +2476,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2401,7 +2499,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2424,7 +2522,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2447,7 +2545,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2470,7 +2568,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2493,7 +2591,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2516,7 +2614,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2539,7 +2637,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2562,7 +2660,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2585,7 +2683,7 @@
                 6.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2608,7 +2706,7 @@
                 6.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2631,7 +2729,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2654,7 +2752,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2677,7 +2775,7 @@
                 6.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2700,7 +2798,7 @@
                 6.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2723,7 +2821,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2746,7 +2844,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2769,7 +2867,7 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2797,7 +2895,7 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2820,7 +2918,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2843,7 +2941,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2866,7 +2964,7 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2894,11 +2992,14 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         }
       ],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
+      "point_clouds": [],
       "points": [
         {
           "id": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:1%40location1",
@@ -2909,6 +3010,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
@@ -2921,6 +3023,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
@@ -2933,6 +3036,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
@@ -2945,6 +3049,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
@@ -2957,6 +3062,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
@@ -2969,6 +3075,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
@@ -2981,6 +3088,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
@@ -2993,6 +3101,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
@@ -3005,6 +3114,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#PinPrototype"
           }
         },
@@ -3017,6 +3127,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#PinPrototype"
           }
         }
@@ -3027,6 +3138,7 @@
       "procedural_surfaces": [],
       "product_definitions": [
         {
+          "bodies": [],
           "bom_properties": {
             "Label2": ""
           },
@@ -3034,9 +3146,11 @@
           "kind": "part",
           "label": "CC0 linkage assembly",
           "native_ref": "fcstd:native:object#Assembly",
+          "sketches": [],
           "source_name": "Assembly"
         },
         {
+          "bodies": [],
           "bom_properties": {
             "Label2": ""
           },
@@ -3044,6 +3158,7 @@
           "kind": "object",
           "label": "BracketOccurrence",
           "native_ref": "fcstd:native:object#BracketOccurrence",
+          "sketches": [],
           "source_name": "BracketOccurrence"
         },
         {
@@ -3058,9 +3173,11 @@
           "label": "Bracket",
           "native_ref": "fcstd:native:object#BracketPrototype",
           "part_number": "CC0-BRACKET-01",
+          "sketches": [],
           "source_name": "BracketPrototype"
         },
         {
+          "bodies": [],
           "bom_properties": {
             "Label2": ""
           },
@@ -3068,9 +3185,11 @@
           "kind": "object",
           "label": "ExternalOccurrence",
           "native_ref": "fcstd:native:object#ExternalOccurrence",
+          "sketches": [],
           "source_name": "ExternalOccurrence"
         },
         {
+          "bodies": [],
           "bom_properties": {
             "Label2": ""
           },
@@ -3078,9 +3197,11 @@
           "kind": "object",
           "label": "NestedBracketOccurrence",
           "native_ref": "fcstd:native:object#NestedBracketOccurrence",
+          "sketches": [],
           "source_name": "NestedBracketOccurrence"
         },
         {
+          "bodies": [],
           "bom_properties": {
             "Label2": ""
           },
@@ -3088,9 +3209,11 @@
           "kind": "link_group",
           "label": "Nested, array, and external occurrences",
           "native_ref": "fcstd:native:object#OccurrenceGroup",
+          "sketches": [],
           "source_name": "OccurrenceGroup"
         },
         {
+          "bodies": [],
           "bom_properties": {
             "Label2": ""
           },
@@ -3098,9 +3221,11 @@
           "kind": "object",
           "label": "PinArray",
           "native_ref": "fcstd:native:object#PinArray",
+          "sketches": [],
           "source_name": "PinArray"
         },
         {
+          "bodies": [],
           "bom_properties": {
             "Label2": ""
           },
@@ -3108,9 +3233,11 @@
           "kind": "object",
           "label": "PinArray_i0",
           "native_ref": "fcstd:native:object#PinArray_i0",
+          "sketches": [],
           "source_name": "PinArray_i0"
         },
         {
+          "bodies": [],
           "bom_properties": {
             "Label2": ""
           },
@@ -3118,9 +3245,11 @@
           "kind": "object",
           "label": "PinArray_i1",
           "native_ref": "fcstd:native:object#PinArray_i1",
+          "sketches": [],
           "source_name": "PinArray_i1"
         },
         {
+          "bodies": [],
           "bom_properties": {
             "Label2": ""
           },
@@ -3128,6 +3257,7 @@
           "kind": "object",
           "label": "PinArray_i2",
           "native_ref": "fcstd:native:object#PinArray_i2",
+          "sketches": [],
           "source_name": "PinArray_i2"
         },
         {
@@ -3142,9 +3272,11 @@
           "label": "Pin",
           "native_ref": "fcstd:native:object#PinPrototype",
           "part_number": "CC0-PIN-01",
+          "sketches": [],
           "source_name": "PinPrototype"
         },
         {
+          "bodies": [],
           "bom_properties": {
             "Label2": ""
           },
@@ -3152,6 +3284,7 @@
           "kind": "group",
           "label": "Reusable prototypes",
           "native_ref": "fcstd:native:object#PrototypeGroup",
+          "sketches": [],
           "source_name": "PrototypeGroup"
         }
       ],
@@ -3171,6 +3304,7 @@
           ]
         }
       ],
+      "rigid_bodies": [],
       "semantic_annotations": [],
       "shells": [
         {
@@ -3225,6 +3359,8 @@
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
@@ -3232,227 +3368,263 @@
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 6.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 6.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 12.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 12.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "origin": {
-              "x": 20.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "origin": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#BracketPrototype"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "cylinder",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "radius": 3.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "cylinder",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "radius": 3.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#PinPrototype"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 20.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 20.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#PinPrototype"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#PinPrototype"
           }
         }
@@ -3559,7 +3731,7 @@
           "objects": "7f5516ab6aeacf480daa637f2a55385da027fe4286895c9f780e01ad728d46cf",
           "physical_ledger": "ec48754bb38cce1eae0fadb0feb642edf9e3fb3c64d0ddea81268bd121cced2f",
           "properties": "4520c3c7fa85a5a4ec1f4a3c443a9b3e870efad00e37b36831420c0c2eed3787",
-          "shape_payloads": "8424ca604da8f344245b9dbc196fe7fe3db65cff0a2b91447545a4ff7ea086c7",
+          "shape_payloads": "84f930b165e43ac83c51039b52805eb6163b5b4d91003930e63e012157ebf48e",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
         }
       },
@@ -4631,21 +4803,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -4661,21 +4833,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -4690,21 +4862,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -4720,21 +4892,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -4749,21 +4921,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -1.0000000000000002,
-                  -2.220446049250313e-16,
+                  2.220446049250313e-16,
+                  -0.9999999999999999,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
-                  -1.0000000000000002,
+                  -0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
+                  0.9999999999999999,
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
                   0.0
                 ],
                 [
@@ -4779,21 +4951,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -1.0000000000000002,
-                  -2.220446049250313e-16,
+                  2.220446049250313e-16,
+                  -0.9999999999999999,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
-                  -1.0000000000000002,
+                  -0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
+                  0.9999999999999999,
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
                   0.0
                 ],
                 [
@@ -5487,11 +5659,12 @@
         "program_version": "1.1R20260414 (Git shallow)"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "file_version": "1",
               "program_version": "1.1R20260414 (Git shallow)",
@@ -5499,7 +5672,8 @@
             },
             "dialect": "fcstd:schema-4"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -5507,16 +5681,21 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "file_version": "1",
             "program_version": "1.1R20260414 (Git shallow)",
@@ -5524,7 +5703,8 @@
           },
           "dialect": "fcstd:schema-4"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [],
     "notes": [
@@ -5538,10 +5718,17 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "retained_records": {}
   }
 }

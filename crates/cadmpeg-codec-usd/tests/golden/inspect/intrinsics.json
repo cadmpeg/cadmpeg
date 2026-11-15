@@ -9,28 +9,31 @@
         "property_specs": "16",
         "upAxis": "Z"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "layer",
       "role": "document",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 765
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "header": "#usda 1.0"
         },
         "dialect": "usd:usda-1.0"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "prim types: Capsule 1, Cone 1, Cube 1, Cylinder 1, Cylinder_1 1, Plane 1, Sphere 1, Xform 1"
   ]

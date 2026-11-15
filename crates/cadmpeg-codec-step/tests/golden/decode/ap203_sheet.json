@@ -1,11 +1,14 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "fragment": false,
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
       "bodies": [
         {
@@ -21,6 +24,7 @@
           "edge": "step:data:edge#19",
           "id": "step:data:coedge#22-face-29",
           "owner_loop": "step:data:loop#25-face-29",
+          "pcurves": [],
           "radial_next": "step:data:coedge#22-face-29",
           "sense": "forward"
         },
@@ -28,6 +32,7 @@
           "edge": "step:data:edge#20",
           "id": "step:data:coedge#23-face-29",
           "owner_loop": "step:data:loop#25-face-29",
+          "pcurves": [],
           "radial_next": "step:data:coedge#23-face-29",
           "sense": "forward"
         },
@@ -35,114 +40,137 @@
           "edge": "step:data:edge#21",
           "id": "step:data:coedge#24-face-29",
           "owner_loop": "step:data:loop#25-face-29",
+          "pcurves": [],
           "radial_next": "step:data:coedge#24-face-29",
           "sense": "forward"
         }
       ],
+      "colliders": [],
       "configurations": [],
       "curves": [
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "step:data:curve#16",
           "source_object": {
             "format": "step",
             "geometry_role": "support",
+            "instance_path": [],
             "object_id": "#16"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.7071067811865475,
-              "y": 0.7071067811865475,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.7071067811865475,
+                "y": 0.7071067811865475,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "step:data:curve#17",
           "source_object": {
             "format": "step",
             "geometry_role": "support",
+            "instance_path": [],
             "object_id": "#17"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 10.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 0.0
+              }
             }
           },
           "id": "step:data:curve#18",
           "source_object": {
             "format": "step",
             "geometry_role": "support",
+            "instance_path": [],
             "object_id": "#18"
           }
         },
         {
           "geometry": {
-            "kind": "composite",
-            "segments": [
-              {
-                "curve": "step:data:curve#36",
-                "same_sense": true,
-                "transition": "cont_same_gradient"
-              }
-            ],
-            "self_intersect": false
+            "kind": "solved",
+            "value": {
+              "kind": "composite",
+              "segments": [
+                {
+                  "curve": "step:data:curve#36",
+                  "same_sense": true,
+                  "transition": "cont_same_gradient"
+                }
+              ],
+              "self_intersect": false
+            }
           },
           "id": "step:data:curve#34",
           "source_object": {
             "format": "step",
             "geometry_role": "support",
+            "instance_path": [],
             "object_id": "#34"
           }
         },
         {
           "geometry": {
-            "kind": "composite",
-            "segments": [
-              {
-                "curve": "step:data:curve#16",
-                "same_sense": true,
-                "transition": "continuous"
-              }
-            ],
-            "self_intersect": false
+            "kind": "solved",
+            "value": {
+              "kind": "composite",
+              "segments": [
+                {
+                  "curve": "step:data:curve#16",
+                  "same_sense": true,
+                  "transition": "continuous"
+                }
+              ],
+              "self_intersect": false
+            }
           },
           "id": "step:data:curve#36",
           "source_object": {
             "format": "step",
             "geometry_role": "support",
+            "instance_path": [],
             "object_id": "#36"
           }
         }
       ],
+      "declared_measures": [],
       "drawings": [],
       "edges": [
         {
@@ -182,8 +210,8 @@
         {
           "id": "step:data:face#29",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "step:data:loop#25-face-29"
           },
           "sense": "forward",
@@ -191,7 +219,10 @@
           "surface": "step:data:surface#37"
         }
       ],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [],
+      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -200,16 +231,21 @@
               "step:data:coedge#23-face-29",
               "step:data:coedge#24-face-29"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "step:data:face#29",
           "id": "step:data:loop#25-face-29"
         }
       ],
+      "mass_properties": [],
       "occurrences": [],
       "parameters": [],
       "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
+      "point_clouds": [],
       "points": [
         {
           "id": "step:data:point#3",
@@ -221,6 +257,7 @@
           "source_object": {
             "format": "step",
             "geometry_role": "support",
+            "instance_path": [],
             "object_id": "#3"
           }
         },
@@ -234,6 +271,7 @@
           "source_object": {
             "format": "step",
             "geometry_role": "support",
+            "instance_path": [],
             "object_id": "#4"
           }
         },
@@ -247,6 +285,7 @@
           "source_object": {
             "format": "step",
             "geometry_role": "support",
+            "instance_path": [],
             "object_id": "#5"
           }
         }
@@ -260,6 +299,7 @@
             "boundaries": [
               "step:data:curve#34"
             ],
+            "boundary_pcurves": [],
             "implicit_outer": false,
             "kind": "curve_bounded",
             "support": "step:data:surface#28"
@@ -278,6 +318,7 @@
           ]
         }
       ],
+      "rigid_bodies": [],
       "semantic_annotations": [],
       "shells": [
         {
@@ -294,6 +335,8 @@
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
@@ -301,53 +344,61 @@
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "step:data:surface#28",
           "source_object": {
             "format": "step",
             "geometry_role": "support",
+            "instance_path": [],
             "object_id": "#28"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "step:data:surface#37",
           "source_object": {
             "format": "step",
             "geometry_role": "support",
+            "instance_path": [],
             "object_id": "#37"
           }
         }
@@ -381,18 +432,20 @@
         "schema": "CONFIG_CONTROL_DESIGN"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "file_schema_identifier": "CONFIG_CONTROL_DESIGN",
               "implementation_level": "2;1"
             },
             "dialect": "step:ap203-e1"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -400,32 +453,40 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "file_schema_identifier": "CONFIG_CONTROL_DESIGN",
             "implementation_level": "2;1"
           },
           "dialect": "step:ap203-e1"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "geometry.document-angle-unit-unresolved",
-          "kind": "geometry_not_transferred",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.document-angle-unit-unresolved",
+            "kind": "geometry_not_transferred",
+            "namespace": "step",
+            "strict_floor": "warning"
+          }
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
@@ -436,10 +497,17 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "retained_records": {}
   }
 }

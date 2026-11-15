@@ -2043,7 +2043,7 @@ mod tests {
             references.iter().map(|reference| {
                 serde_json::from_value::<cadmpeg_ir::products::Occurrence>(serde_json::json!({
                     "id": crate::ids::neutral_xref_occurrence_id(reference.ordinal, 0),
-                    "prototype": {"scope":"unresolved"}, "parent": {"kind":"root"},
+                    "prototype": {"kind":"unresolved"}, "parent": {"kind":"root"},
                     "ordinal": reference.ordinal, "transform": cadmpeg_ir::transform::Transform::identity(),
                     "scale": [1.0, 1.0, 1.0], "native_ref": reference.id
                 })).unwrap()
@@ -2620,9 +2620,9 @@ mod tests {
     fn joint_placed_identity_occurrences_count_each_inserted_design_once() {
         let occurrence = |id: &str, scope: &str| -> cadmpeg_ir::products::Occurrence {
             let prototype = if scope == "external" {
-                serde_json::json!({"scope": "external", "document": {"resolution": "path", "path": format!("{id}.f3d")}})
+                serde_json::json!({"kind": "external", "document": {"kind": "path", "path": format!("{id}.f3d")}})
             } else {
-                serde_json::json!({"scope": "local", "definition": "f3d:model:product_definition#1"})
+                serde_json::json!({"kind": "local", "definition": "f3d:model:product_definition#1"})
             };
             serde_json::from_value(serde_json::json!({
                 "id": format!("f3d:model:occurrence#{id}"),
@@ -2643,16 +2643,17 @@ mod tests {
             serde_json::from_value(value).unwrap()
         };
         let external = container(serde_json::json!({
-            "container": "external",
-            "external_document": {"resolution": "document_id", "document_id": "7b14bb25-3d8a-422c-9b0c-0805a6ef037c"},
+            "kind": "external",
+            "external_document": {"kind": "document_id", "document_id": "7b14bb25-3d8a-422c-9b0c-0805a6ef037c"},
         }));
         let named = container(serde_json::json!({
-            "container": "occurrence",
+            "kind": "occurrence",
             "occurrence": "f3d:model:occurrence#xref-1-0",
+            "occurrence_path": [],
         }));
         let missing = container(serde_json::json!({
-            "container": "external",
-            "external_document": {"resolution": "missing"},
+            "kind": "external",
+            "external_document": {"kind": "missing"},
         }));
         assert_eq!(
             super::joint_placed_identity_occurrences(&occurrences, [&missing, &missing]),
@@ -2802,14 +2803,16 @@ mod tests {
             )
         };
         let kind = |projection: &super::AssemblyJointProjection| {
-            serde_json::to_value(&projection.joints[0]).unwrap()["operands"]["kind"].clone()
+            serde_json::to_value(&projection.joints[0]).unwrap()["operands"]["value"]["kind"]
+                .clone()
         };
 
         let rigid = project(&[]);
         assert_eq!(kind(&rigid)["kind"], "fixed");
         // Connector frames stay in their operand's own space, in millimetres.
-        let connectors =
-            serde_json::to_value(&rigid.joints[0]).unwrap()["operands"]["connectors"].clone();
+        let connectors = serde_json::to_value(&rigid.joints[0]).unwrap()["operands"]["value"]
+            ["connectors"]
+            .clone();
         assert_eq!(connectors[0]["frame"][2][3], 0.0);
         assert_eq!(connectors[1]["frame"][2][3], 10.0);
 
@@ -2858,8 +2861,8 @@ mod tests {
         // Rotation about local y turns each connector frame so y becomes z.
         let turned = project(&[motion(&[1], [0, 0])]);
         assert_eq!(kind(&turned)["kind"], "revolute");
-        let frame = serde_json::to_value(&turned.joints[0]).unwrap()["operands"]["connectors"][0]
-            ["frame"]
+        let frame = serde_json::to_value(&turned.joints[0]).unwrap()["operands"]["value"]
+            ["connectors"][0]["frame"]
             .clone();
         assert_eq!(frame[1][2], 1.0);
         assert_eq!(frame[2][1], -1.0);

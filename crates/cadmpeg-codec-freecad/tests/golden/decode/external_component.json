@@ -1,11 +1,14 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "fragment": false,
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
       "bodies": [
         {
@@ -114,81 +117,95 @@
           "sense": "forward"
         }
       ],
+      "colliders": [],
       "configurations": [],
       "curves": [
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 4.0
-            },
-            "kind": "circle",
-            "radius": 5.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 4.0
+              },
+              "kind": "circle",
+              "radius": 5.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ExternalPrototype"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 5.0,
-              "y": -1.22e-15,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 5.0,
+                "y": -1.22e-15,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ExternalPrototype"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 5.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 5.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ExternalPrototype"
           }
         }
       ],
+      "declared_measures": [],
       "drawings": [],
       "edges": [
         {
@@ -235,7 +252,7 @@
         {
           "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%40location1%3A1"
             ]
@@ -248,7 +265,7 @@
         {
           "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1"
             ]
@@ -261,7 +278,7 @@
         {
           "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1%3A1"
             ]
@@ -272,11 +289,18 @@
           "tolerance": 1e-7
         }
       ],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [
         {
           "definition": {
-            "definition": "stored_geometry"
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
           },
+          "dependencies": [],
           "id": "fcstd:design:feature#ExternalPrototype",
           "name": "ExternalPrototype",
           "native_ref": "fcstd:native:object#ExternalPrototype",
@@ -284,20 +308,22 @@
           "outputs": [
             "fcstd:model:body#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13%40location1"
           ],
+          "source_content": [],
           "source_properties": {
             "Visibility": "true"
           },
-          "source_tag": "Part::Feature",
-          "suppressed": null
+          "source_tag": "Part::Feature"
         }
       ],
+      "history_bodies": [],
       "loops": [
         {
           "boundary": {
             "coedges": [
               "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%40location1%3A1%3A1"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%40location1",
           "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%40location1%3A1"
@@ -310,7 +336,8 @@
               "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A3",
               "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1",
           "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1"
@@ -320,12 +347,14 @@
             "coedges": [
               "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1%3A1%3A1"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1",
           "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1%3A1"
         }
       ],
+      "mass_properties": [],
       "occurrences": [],
       "parameters": [],
       "pcurves": [
@@ -349,7 +378,7 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -377,7 +406,7 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -400,7 +429,7 @@
                 4.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -423,7 +452,7 @@
                 4.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -446,7 +475,7 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -474,11 +503,14 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         }
       ],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
+      "point_clouds": [],
       "points": [
         {
           "id": "fcstd:model:point#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1%40location1",
@@ -489,6 +521,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ExternalPrototype"
           }
         },
@@ -501,6 +534,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ExternalPrototype"
           }
         }
@@ -519,6 +553,7 @@
           ]
         }
       ],
+      "rigid_bodies": [],
       "semantic_annotations": [],
       "shells": [
         {
@@ -543,6 +578,8 @@
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
@@ -550,77 +587,89 @@
       "surfaces": [
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "cylinder",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "radius": 5.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "cylinder",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "radius": 5.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ExternalPrototype"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 4.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 4.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ExternalPrototype"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ExternalPrototype"
           }
         }
@@ -688,7 +737,7 @@
           "physical_ledger": "e82c8086103d256b5e43cc100529d2747ca760f8b20b506370d2b7e134885630",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "7d986dad9b65c637fee4eb71c6d3b25a5e6f557b8367d3186657da35a9c762fc",
-          "shape_payloads": "46841be02adcab0a0ce346701134f00c0c2d838a6386e38f444bc7086fc2d0ab",
+          "shape_payloads": "a748edad0e5b2054fc32b5c5e002ca7d3753c0cf8329fb9c06b97e27280f48ef",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
         }
       },
@@ -772,11 +821,12 @@
         "program_version": "1.1R20260414 (Git shallow)"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "file_version": "1",
               "program_version": "1.1R20260414 (Git shallow)",
@@ -784,7 +834,8 @@
             },
             "dialect": "fcstd:schema-4"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -792,16 +843,21 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "file_version": "1",
             "program_version": "1.1R20260414 (Git shallow)",
@@ -809,7 +865,8 @@
           },
           "dialect": "fcstd:schema-4"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [],
     "notes": [
@@ -823,10 +880,17 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "retained_records": {}
   }
 }

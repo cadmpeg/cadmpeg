@@ -164,11 +164,6 @@ pub use validate::{validate_neutral, validate_neutral_with_source_fidelity};
 
 pub mod unknown;
 
-/// Serde default for a flag whose absent form is `true`.
-const fn default_true() -> bool {
-    true
-}
-
 /// Generate the JSON Schema for the current [`CadIr`] representation.
 ///
 /// Requires the `schema` feature.

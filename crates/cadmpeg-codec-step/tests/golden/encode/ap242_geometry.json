@@ -59,37 +59,43 @@
         }
       },
       "identity": {
-        "payload": "native",
+        "kind": "native",
         "target": "step:ap242-e3"
       },
       "losses": [
         {
           "code": {
-            "code": "native.passthrough-record-omitted",
-            "kind": "passthrough_record_omitted",
-            "namespace": "step",
-            "scope": "namespaced"
+            "kind": "namespaced",
+            "value": {
+              "code": "native.passthrough-record-omitted",
+              "kind": "passthrough_record_omitted",
+              "namespace": "step"
+            }
           },
           "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
           "severity": "info"
         },
         {
           "code": {
-            "code": "appearance.reduced-to-base-color",
-            "kind": "appearance_reduced",
-            "namespace": "step",
-            "scope": "namespaced"
+            "kind": "namespaced",
+            "value": {
+              "code": "appearance.reduced-to-base-color",
+              "kind": "appearance_reduced",
+              "namespace": "step"
+            }
           },
           "message": "1 appearance asset(s) were reduced to STYLED_ITEM base colors; unsupported schemas, textures, and shader properties were not written to STEP",
           "severity": "info"
         },
         {
           "code": {
-            "code": "target.source-dialect-displaced",
-            "kind": "source_dialect_displaced",
-            "namespace": "step",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "target.source-dialect-displaced",
+              "kind": "source_dialect_displaced",
+              "namespace": "step",
+              "strict_floor": "warning"
+            }
           },
           "message": "source dialect step:ap242 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
           "severity": "warning"
@@ -98,9 +104,9 @@
       "notes": [],
       "write_path": {
         "fidelity": {
-          "status": "not_provided"
+          "kind": "not_provided"
         },
-        "path": "synthesized"
+        "kind": "synthesized"
       }
     }
   },
@@ -164,37 +170,43 @@
         }
       },
       "identity": {
-        "payload": "native",
+        "kind": "native",
         "target": "step:ap214"
       },
       "losses": [
         {
           "code": {
-            "code": "native.passthrough-record-omitted",
-            "kind": "passthrough_record_omitted",
-            "namespace": "step",
-            "scope": "namespaced"
+            "kind": "namespaced",
+            "value": {
+              "code": "native.passthrough-record-omitted",
+              "kind": "passthrough_record_omitted",
+              "namespace": "step"
+            }
           },
           "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
           "severity": "info"
         },
         {
           "code": {
-            "code": "appearance.reduced-to-base-color",
-            "kind": "appearance_reduced",
-            "namespace": "step",
-            "scope": "namespaced"
+            "kind": "namespaced",
+            "value": {
+              "code": "appearance.reduced-to-base-color",
+              "kind": "appearance_reduced",
+              "namespace": "step"
+            }
           },
           "message": "1 appearance asset(s) were reduced to STYLED_ITEM base colors; unsupported schemas, textures, and shader properties were not written to STEP",
           "severity": "info"
         },
         {
           "code": {
-            "code": "target.source-dialect-displaced",
-            "kind": "source_dialect_displaced",
-            "namespace": "step",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "target.source-dialect-displaced",
+              "kind": "source_dialect_displaced",
+              "namespace": "step",
+              "strict_floor": "warning"
+            }
           },
           "message": "source dialect step:ap242 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
           "severity": "warning"
@@ -203,9 +215,9 @@
       "notes": [],
       "write_path": {
         "fidelity": {
-          "status": "not_provided"
+          "kind": "not_provided"
         },
-        "path": "synthesized"
+        "kind": "synthesized"
       }
     }
   },

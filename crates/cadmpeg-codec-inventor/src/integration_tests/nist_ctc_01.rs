@@ -55,7 +55,7 @@ fn target_radius(model: &Value, target: &PmiTarget) -> Option<f64> {
         }
         _ => return None,
     };
-    geometry["radius"].as_f64()
+    geometry["value"]["radius"].as_f64()
 }
 
 #[test]
