@@ -880,9 +880,11 @@ const MEASURED_FIXTURE_FLOOR: usize = 60;
 /// Fixtures with no point for the mutation lane to move.
 const FIXTURES_WITHOUT_POINTS: [&str; 1] = ["container_metadata_only"];
 
-/// Serializes the neutral model plus unit and tolerance declarations.
+/// Serializes the neutral geometry and model plus unit and tolerance
+/// declarations.
 fn neutral_document(ir: &CadIr) -> String {
     snapshot_text(&serde_json::json!({
+        "geometry": serde_json::to_value(&ir.geometry).expect("serialize geometry"),
         "model": serde_json::to_value(&ir.model).expect("serialize model"),
         "units": { "length": "millimeter" },
         "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),

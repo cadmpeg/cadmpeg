@@ -59,8 +59,11 @@ pub struct ContentScope {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct ContentScopeWire {
+    /// Model arenas are meaningful, including when empty.
     model: bool,
+    /// Design arenas are meaningful, including when empty.
     design: bool,
+    /// Process arenas are meaningful, including when empty.
     process: bool,
 }
 

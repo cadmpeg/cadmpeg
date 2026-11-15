@@ -13,7 +13,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::document::{CadIr, Model, SourceMeta, Topology};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
@@ -1505,6 +1505,10 @@ fn decode_container<'a>(
                 .filter(|(_, count)| *count != 0),
         )
         .collect();
+    if ctx.container_only() {
+        ir.geometry = Topology::default();
+        ir.model = Model::default();
+    }
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,

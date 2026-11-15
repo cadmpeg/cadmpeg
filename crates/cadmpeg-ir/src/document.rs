@@ -193,6 +193,15 @@ pub enum ArenaHome {
 }
 
 impl ArenaHome {
+    /// Every home, in wire order.
+    pub const ALL: [Self; 4] = [Self::Geometry, Self::Model, Self::Design, Self::Process];
+
+    /// The home whose JSON key is `key`.
+    #[must_use]
+    pub fn parse(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|home| home.as_str() == key)
+    }
+
     /// The document's JSON key for this home.
     #[must_use]
     pub const fn as_str(self) -> &'static str {

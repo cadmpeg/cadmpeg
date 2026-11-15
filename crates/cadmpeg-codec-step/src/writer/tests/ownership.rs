@@ -19,6 +19,7 @@ fn support_ownership_survives_the_absence_of_projected_topology() {
         cadmpeg_ir::SourceGeometryRole::Independent,
     ] {
         let mut ir = edgeless_doc();
+        ir.geometry = Default::default();
         ir.model = Default::default();
         let mut surface = edgeless_doc().geometry.surfaces.remove(0);
         surface.source_object = Some(cadmpeg_ir::SourceObjectAssociation {

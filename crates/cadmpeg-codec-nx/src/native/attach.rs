@@ -881,6 +881,9 @@ fn attach_jpeg_preview_assets(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
+    if ctx.container_only() {
+        return Ok(());
+    }
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for (ordinal, entry) in scan
         .container

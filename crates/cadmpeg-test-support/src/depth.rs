@@ -76,7 +76,7 @@ pub fn assert_geometry_agrees_with_full<N: AsRef<str>>(
             decode(codec, bytes, DecodeDepth::Geometry),
         ) {
             (Ok(full), Ok(geometry)) => {
-                if geometry.ir().scope().depth() == DecodeDepth::Geometry {
+                if geometry.report().depth() == DecodeDepth::Geometry {
                     summary.cut += 1;
                 }
                 failures.extend(
@@ -107,6 +107,42 @@ pub fn assert_geometry_agrees_with_full<N: AsRef<str>>(
         failures.join("\n")
     );
     summary
+}
+
+/// Decodes `bytes` at each depth and asserts that the document records the
+/// scope that depth requests and serializes an empty process home.
+///
+/// # Panics
+///
+/// Panics when a decode refuses, records another scope, or holds a process
+/// record.
+pub fn assert_each_depth_records_its_scope(codec: &dyn Codec, bytes: &[u8]) {
+    let mut failures = Vec::new();
+    for depth in [
+        DecodeDepth::Container,
+        DecodeDepth::Geometry,
+        DecodeDepth::Design,
+        DecodeDepth::Full,
+    ] {
+        match decode(codec, bytes, depth) {
+            Ok(result) => {
+                if result.ir().scope() != depth.scope() {
+                    failures.push(format!(
+                        "a {depth} decode recorded {:?}",
+                        result.ir().scope()
+                    ));
+                }
+                let process = serde_json::to_value(result.ir())
+                    .expect("serialize decoded document")["process"]
+                    .clone();
+                if process != serde_json::json!({}) {
+                    failures.push(format!("a {depth} decode holds process records: {process}"));
+                }
+            }
+            Err(error) => failures.push(format!("a {depth} decode refused: {error}")),
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 fn decode(

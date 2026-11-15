@@ -37,6 +37,21 @@ use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
 
+fn strip_names(topology: &mut cadmpeg_ir::document::Topology) {
+    topology.bodies.iter_mut().for_each(|body| body.name = None);
+    topology.faces.iter_mut().for_each(|face| face.name = None);
+}
+
+fn unnamed_cube() -> cadmpeg_ir::CadIr {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    strip_names(&mut ir.geometry);
+    ir.geometry
+        .edges
+        .iter_mut()
+        .for_each(|edge| edge.set_param_range(None));
+    ir
+}
+
 #[test]
 fn geometry_edit_replaces_each_generated_configuration_partition() {
     use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
@@ -52,14 +67,7 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
         .0;
     ir.source = None;
     ir.native = cadmpeg_ir::Native::default();
-    ir.geometry
-        .bodies
-        .iter_mut()
-        .for_each(|body| body.name = None);
-    ir.geometry
-        .faces
-        .iter_mut()
-        .for_each(|face| face.name = None);
+    strip_names(&mut ir.geometry);
     let body = ir.geometry.bodies[0].id.clone();
     ir.model.configurations = (0..2)
         .map(|index| DesignConfiguration {
@@ -159,16 +167,7 @@ fn encoder_writes_authored_with_retained_native_envelope_datum_features() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.geometry.bodies[0].name = None;
-    ir.geometry
-        .faces
-        .iter_mut()
-        .for_each(|face| face.name = None);
-    ir.geometry
-        .edges
-        .iter_mut()
-        .for_each(|edge| edge.set_param_range(None));
+    let mut ir = unnamed_cube();
     let definitions = [
         FeatureDefinition::Operation(FeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
@@ -235,16 +234,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
     use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
     use std::collections::BTreeMap;
 
-    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.geometry.bodies[0].name = None;
-    ir.geometry
-        .faces
-        .iter_mut()
-        .for_each(|face| face.name = None);
-    ir.geometry
-        .edges
-        .iter_mut()
-        .for_each(|edge| edge.set_param_range(None));
+    let mut ir = unnamed_cube();
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("sldprt:model:configuration#generated:z")
             .expect("identity grammar"),
@@ -434,14 +424,7 @@ fn encoder_partitions_authored_with_retained_native_envelope_bodies_by_configura
         .0;
     ir.source = None;
     ir.native = cadmpeg_ir::Native::default();
-    ir.geometry
-        .bodies
-        .iter_mut()
-        .for_each(|body| body.name = None);
-    ir.geometry
-        .faces
-        .iter_mut()
-        .for_each(|face| face.name = None);
+    strip_names(&mut ir.geometry);
     let body_ids = ir
         .geometry
         .bodies
@@ -799,16 +782,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_parameters() {
     };
     use std::collections::BTreeMap;
 
-    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.geometry.bodies[0].name = None;
-    ir.geometry
-        .faces
-        .iter_mut()
-        .for_each(|face| face.name = None);
-    ir.geometry
-        .edges
-        .iter_mut()
-        .for_each(|edge| edge.set_param_range(None));
+    let mut ir = unnamed_cube();
     let feature_id =
         FeatureId::mint("sldprt:model:feature#generated:equation").expect("identity grammar");
     ir.model.features.push(Feature {
@@ -882,16 +856,7 @@ fn encoder_bakes_rigid_body_transform() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::transform::Transform;
 
-    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.geometry.bodies[0].name = None;
-    ir.geometry
-        .faces
-        .iter_mut()
-        .for_each(|face| face.name = None);
-    ir.geometry
-        .edges
-        .iter_mut()
-        .for_each(|edge| edge.set_param_range(None));
+    let mut ir = unnamed_cube();
     let original_point = ir.geometry.points[0].position().get();
     let original_normal = ir
         .geometry

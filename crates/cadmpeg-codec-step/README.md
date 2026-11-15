@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for loss in &result.report().losses {
         eprintln!("{:?}: {}", loss.severity, loss.message);
     }
-    println!("{} bodies", result.ir().model.bodies.len());
+    println!("{} bodies", result.ir().geometry.bodies.len());
     Ok(())
 }
 ```

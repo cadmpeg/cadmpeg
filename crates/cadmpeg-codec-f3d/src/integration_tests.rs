@@ -337,7 +337,7 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
 /// A geometry request stops a standalone geometry document before design
 /// intent. A document with no body source classifies itself by what design
 /// intent projects, and an F3Z archive merges its members into one document,
-/// so both decode in full. Each agrees with its full decode.
+/// so both decode their design. Each agrees with its full decode.
 #[test]
 fn geometry_depth_cuts_only_documents_that_agree_without_design_intent() {
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
@@ -369,19 +369,27 @@ fn geometry_depth_cuts_only_documents_that_agree_without_design_intent() {
                 },
             )
             .expect("geometry-depth decode");
-            (*name, result.ir().scope().depth())
+            (*name, result.report().depth())
         })
         .collect::<Vec<_>>();
     assert_eq!(
         delivered,
         [
             ("standalone", cadmpeg_core::decode::DecodeDepth::Geometry),
-            ("no body source", cadmpeg_core::decode::DecodeDepth::Full),
-            ("archive", cadmpeg_core::decode::DecodeDepth::Full),
+            ("no body source", cadmpeg_core::decode::DecodeDepth::Design),
+            ("archive", cadmpeg_core::decode::DecodeDepth::Design),
         ]
     );
     let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&F3dCodec, &inputs);
     assert_eq!(summary.cut, 1, "{summary:?}");
+}
+
+#[test]
+fn each_depth_records_the_scope_it_requests() {
+    cadmpeg_test_support::depth::assert_each_depth_records_its_scope(
+        &F3dCodec,
+        &f3d_with_smbh(&synthetic_geometry_smbh()),
+    );
 }
 
 #[test]

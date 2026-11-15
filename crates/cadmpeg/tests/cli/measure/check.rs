@@ -63,7 +63,7 @@ fn dumped(path: &Path) -> Value {
 
 #[cfg(any(feature = "fcstd", feature = "iges"))]
 fn by_id<'a>(document: &'a Value, arena: &str) -> BTreeMap<&'a str, &'a Value> {
-    document["model"][arena]
+    document["geometry"][arena]
         .as_array()
         .map(Vec::as_slice)
         .unwrap_or_default()

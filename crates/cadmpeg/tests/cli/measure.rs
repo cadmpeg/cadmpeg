@@ -228,7 +228,7 @@ fn measures_plate_with_hole() {
     assert!((length(inner) - hole).abs() <= TEST_ABSOLUTE_FLOOR * scale);
     assert_eq!(row["orientation"]["consistent"], true);
     assert_eq!(row["status"], "measured");
-    assert_eq!(report["measure"]["input"]["decode_depth"], "full");
+    assert_eq!(report["measure"]["input"]["decode_depth"], "geometry");
     assert_eq!(report["measure"]["input"]["origin"], "decoded");
 
     let text = measure_text(&[plate.to_str().unwrap(), "--face", "face#69"]);
@@ -241,7 +241,7 @@ fn measures_plate_with_hole() {
 fn measures_full_cylinder_side_face() {
     let solid = fixture("measure_cylinder_solid.p21");
     let report = measure_json(&[solid.to_str().unwrap(), "--face", "face#46"]);
-    assert_eq!(report["measure"]["input"]["decode_depth"], "full");
+    assert_eq!(report["measure"]["input"]["decode_depth"], "geometry");
     let row = face(&report, "step:data:face#46");
     let parameters = &row["carrier"]["parameters"];
     let scale = 30.0;

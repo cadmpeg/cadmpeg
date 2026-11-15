@@ -26,7 +26,7 @@ const SIDECAR: &str = r#"{
 
 const BREP_DOC: &str = r#"{
   "ir_version": "10",
-  "model": {
+  "geometry": {
     "bodies": [{"id": "body#1", "regions": ["region#1"]}],
     "regions": [{"id": "region#1", "shells": ["shell#1"]}],
     "shells": [{"id": "shell#1", "faces": ["face#1", "face#2"]}],

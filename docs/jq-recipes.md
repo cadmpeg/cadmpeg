@@ -33,13 +33,13 @@ cadmpeg query graph doc.json model.features ID \
 Walk BREP children (`body.regions` → `region.shells` → `shell.faces`):
 
 ```sh
-cadmpeg query graph doc.json model.bodies BODY_ID --hops 3
+cadmpeg query graph doc.json geometry.bodies BODY_ID --hops 3
 ```
 
 Incoming references to one record:
 
 ```sh
-cadmpeg query graph doc.json model.faces FACE_ID --reverse --hops 1
+cadmpeg query graph doc.json geometry.faces FACE_ID --reverse --hops 1
 ```
 
 jq remains for predicates (`select(.kind == "extrude")`) and
@@ -49,7 +49,7 @@ fallback.
 ## Ground rules
 
 - Most CADIR fields are optional and serialize as absent, not as `[]` or
-  `{}`. Guard every access: `.model.faces[]?`, `(.outputs // [])`,
+  `{}`. Guard every access: `.geometry.faces[]?`, `(.outputs // [])`,
   `(.name // "")`. An unguarded access fails loudly on the first record
   that omits the field — or worse, `select` chains return nothing and
   look like a real "no matches".
@@ -79,8 +79,8 @@ jq -f face-surfaces.jq doc.json
 ```jq
 # face-surfaces.jq — face id, surface id, surface kind
 . as $doc
-| INDEX($doc.model.surfaces[]?; .id) as $surface
-| $doc.model.faces[]?
+| INDEX($doc.geometry.surfaces[]?; .id) as $surface
+| $doc.geometry.faces[]?
 | [.id, .surface, ($surface[.surface].geometry.type // "absent")]
 | @tsv
 ```
@@ -94,7 +94,7 @@ Count faces per shell without a quadratic scan:
 
 ```jq
 . as $doc
-| ($doc.model.faces // [])
+| ($doc.geometry.faces // [])
 | group_by(.shell)
 | map({shell: .[0].shell, faces: length})
 | .[] | [.shell, .faces] | @tsv
@@ -110,8 +110,8 @@ hop:
 
 ```jq
 . as $doc
-| INDEX($doc.model.faces[]?; .id) as $face
-| INDEX($doc.model.surfaces[]?; .id) as $surface
+| INDEX($doc.geometry.faces[]?; .id) as $face
+| INDEX($doc.geometry.surfaces[]?; .id) as $surface
 | $doc.model.features[]?
 | . as $f
 | ($f.outputs // [])[]

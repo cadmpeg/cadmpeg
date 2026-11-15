@@ -70,6 +70,7 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "validated-value",
     ),
     ("crates/cadmpeg-ir/src/document.rs", "Model", "wire"),
+    ("crates/cadmpeg-ir/src/document.rs", "Topology", "wire"),
     (
         "crates/cadmpeg-ir/src/features/edge_treatments.rs",
         "FullRoundFilletGroup",

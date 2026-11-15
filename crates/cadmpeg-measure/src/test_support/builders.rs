@@ -1118,25 +1118,29 @@ pub(crate) fn renamed(ir: &CadIr, from: &str, to: &str) -> CadIr {
     copy
 }
 
-/// The model arenas of `a` and `b` in one document; `b`'s IDs must not
+/// The neutral arenas of `a` and `b` in one document; `b`'s IDs must not
 /// collide with `a`'s.
 pub(crate) fn merged(a: &CadIr, b: &CadIr) -> CadIr {
     let mut first: serde_json::Value =
         serde_json::from_str(&a.to_canonical_json().expect("json")).expect("value");
     let second: serde_json::Value =
         serde_json::from_str(&b.to_canonical_json().expect("json")).expect("value");
-    let (Some(model), Some(other)) = (first["model"].as_object_mut(), second["model"].as_object())
-    else {
-        panic!("documents have models");
-    };
-    for (arena, records) in other {
-        if let (Some(target), Some(records)) = (
-            model
-                .get_mut(arena)
-                .and_then(serde_json::Value::as_array_mut),
-            records.as_array(),
-        ) {
-            target.extend(records.iter().cloned());
+    for home in cadmpeg_ir::ArenaHome::ALL {
+        let (Some(arenas), Some(other)) = (
+            first[home.as_str()].as_object_mut(),
+            second[home.as_str()].as_object(),
+        ) else {
+            panic!("documents have every neutral home");
+        };
+        for (arena, records) in other {
+            if let (Some(target), Some(records)) = (
+                arenas
+                    .get_mut(arena)
+                    .and_then(serde_json::Value::as_array_mut),
+                records.as_array(),
+            ) {
+                target.extend(records.iter().cloned());
+            }
         }
     }
     let mut document = CadIr::from_json(&first.to_string()).expect("merged document");

@@ -181,7 +181,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
 }
 
 #[test]
-fn design_records_project_only_at_full_depth() {
+fn design_records_project_from_design_depth() {
     let source = primary_envelope_fixture_with_design(
         &acis_sphere_kernel_stream(21_800),
         &crate::design::ratio_parameter_records(),
@@ -198,6 +198,7 @@ fn design_records_project_only_at_full_depth() {
             .expect("synthetic design envelope decodes")
     };
     let full = decode(DecodeDepth::Full);
+    let design = decode(DecodeDepth::Design);
     let geometry = decode(DecodeDepth::Geometry);
     let container = decode(DecodeDepth::Container);
 
@@ -207,6 +208,10 @@ fn design_records_project_only_at_full_depth() {
     };
     assert_eq!(parameter.name, "ratio");
     assert_eq!(full.ir().geometry.faces.len(), 1);
+
+    assert_eq!(design.report().depth(), DecodeDepth::Design);
+    assert_eq!(design.ir().scope(), DecodeDepth::Design.scope());
+    assert_eq!(design.ir().model.parameters, full.ir().model.parameters);
 
     // A geometry request stops before design projection: the same geometry,
     // no design records.
@@ -233,9 +238,14 @@ fn design_records_project_only_at_full_depth() {
         "the native record survives the container decode"
     );
     assert_eq!(
-        outside_design(container.ir()),
-        outside_design(full.ir()),
-        "the container decode keeps every non-design arena"
+        container.ir().geometry,
+        cadmpeg_ir::document::Topology::default(),
+        "a container decode holds no geometry record"
+    );
+    assert_eq!(
+        container.ir().model,
+        cadmpeg_ir::document::Model::default(),
+        "a container decode holds no model record"
     );
 
     let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
@@ -243,20 +253,6 @@ fn design_records_project_only_at_full_depth() {
         &[("design", source.clone())],
     );
     assert_eq!(summary.cut, 1, "{summary:?}");
-}
-
-/// The geometry and model as JSON without the model's design arenas.
-fn outside_design(ir: &cadmpeg_ir::CadIr) -> serde_json::Value {
-    let mut model = serde_json::to_value(&ir.model).expect("serialize model");
-    let serde_json::Value::Object(arenas) = &mut model else {
-        panic!("a model serializes as a JSON object");
-    };
-    for arena in cadmpeg_ir::ArenaName::ALL {
-        if arena.class() == ArenaClass::Design {
-            arenas.remove(arena.as_str());
-        }
-    }
-    serde_json::json!({ "geometry": &ir.geometry, "model": model })
 }
 
 #[test]

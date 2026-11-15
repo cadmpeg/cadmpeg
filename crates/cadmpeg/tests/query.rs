@@ -43,7 +43,8 @@ const CHECK_REPORT: &str = r#"{
 
 const CADIR_DOC: &str = r#"{
   "ir_version": "10",
-  "model": {"faces": [{"id": "f1"}, {"id": "f2"}], "edges": []},
+  "geometry": {"faces": [{"id": "f1"}, {"id": "f2"}], "edges": []},
+  "model": {"features": []},
   "native": {"fcstd": {"objects": [1, 2, 3]}}
 }"#;
 
@@ -456,8 +457,9 @@ fn counts_works_on_all_three_kinds_with_teaching_on_the_sidecar() {
         .success()
         .stdout(
             "namespace\tarena\tentries\n\
-             model\tedges\t0\n\
-             model\tfaces\t2\n\
+             geometry\tedges\t0\n\
+             geometry\tfaces\t2\n\
+             model\tfeatures\t0\n\
              native.fcstd\tobjects\t3\n",
         );
 
@@ -468,8 +470,8 @@ fn counts_works_on_all_three_kinds_with_teaching_on_the_sidecar() {
         .success()
         .stdout(
             "namespace\tarena\tentries\n\
-             model\tedges\t12\n\
-             model\tfaces\t2\n",
+             geometry\tedges\t12\n\
+             geometry\tfaces\t2\n",
         );
 
     let sidecar = write(dir.path(), "model.fidelity.json", SIDECAR);

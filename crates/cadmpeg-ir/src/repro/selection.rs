@@ -254,8 +254,11 @@ pub fn select(
         }
     }
     let mut value = serde_json::to_value(&selected).map_err(CodecError::malformed)?;
-    if let Some(model) = value["model"].as_object_mut() {
-        for (arena, rows) in model {
+    for home in crate::document::ArenaHome::ALL {
+        let Some(arenas) = value[home.as_str()].as_object_mut() else {
+            continue;
+        };
+        for (arena, rows) in arenas {
             if let Some(rows) = rows.as_array_mut() {
                 for row in rows {
                     if let Some(object) = row.as_object_mut() {

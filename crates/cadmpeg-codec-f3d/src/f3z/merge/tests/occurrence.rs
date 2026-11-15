@@ -124,6 +124,23 @@ fn member_definition_preserves_the_body_transform_inside_each_placement() {
     );
 }
 
+fn merged_member(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    member: cadmpeg_ir::CadIr,
+) -> cadmpeg_ir::CadIr {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut scope = OccurrenceScope {
+        native_text: &TextReplacements::default(),
+        ctx,
+        occurrence: "member",
+    };
+    ir.geometry
+        .extend_rewritten(member.geometry, &mut scope)
+        .unwrap();
+    ir.model.extend_rewritten(member.model, &mut scope).unwrap();
+    ir
+}
+
 #[test]
 fn saved_edge_loss_counts_final_archive_ownership_once() {
     use crate::loss::F3dLossCode;
@@ -165,16 +182,7 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
         if owned_after_composition {
             crate::f3z::merge::define_member(&ctx, &mut member, "member").unwrap();
         }
-        let mut ir = cadmpeg_ir::CadIr::empty();
-        let mut scope = OccurrenceScope {
-            native_text: &TextReplacements::default(),
-            ctx: &ctx,
-            occurrence: "member",
-        };
-        ir.geometry
-            .extend_rewritten(member.geometry, &mut scope)
-            .unwrap();
-        ir.model.extend_rewritten(member.model, &mut scope).unwrap();
+        let mut ir = merged_member(&ctx, member);
         crate::f3z::merge::MergeSession {
             ctx: &ctx,
             scan: &scan,
@@ -1444,18 +1452,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             JointOperand::root("object", keys.clone()),
             external.clone(),
         ));
-        let mut ir = cadmpeg_ir::CadIr::empty();
-        let mut scope = OccurrenceScope {
-            native_text: &TextReplacements::default(),
-            ctx: &ctx,
-            occurrence: "member",
-        };
-        ir.geometry
-            .extend_rewritten(component.geometry, &mut scope)
-            .unwrap();
-        ir.model
-            .extend_rewritten(component.model, &mut scope)
-            .unwrap();
+        let mut ir = merged_member(&ctx, component);
         let member = MemberDefinition {
             definition: ir.model.product_definitions[0].id.clone(),
             scope: "member".into(),
