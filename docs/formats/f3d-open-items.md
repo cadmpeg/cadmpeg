@@ -877,7 +877,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Known.** `f3d.md` §3.1 "An attributed local component occurrence carries a counted attribute run and an occurrence key." gives the frame. The two bytes are `00 00` in most frames and `01 00` in one. The reference names a different record in each frame, in increasing order.
 
-**Need.** The two bytes can be a grounding or visibility state of the occurrence. A controlled attributed occurrence must identify the marked source reference when its target has no type registration.
+**Need.** The two bytes can be a grounding state of the occurrence. A controlled attributed occurrence must identify the marked source reference when its target has no type registration.
 
 **Conflict.** None.
 

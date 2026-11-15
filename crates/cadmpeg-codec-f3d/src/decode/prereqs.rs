@@ -64,6 +64,9 @@ pub(super) struct ProductPrereqs {
     pub(super) design_work_plane_inferred_axes: std::collections::HashMap<String, (u64, [u8; 2])>,
     /// Freedoms and limits of the joints whose motion records carry them.
     pub(super) design_joint_motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
+    /// Occurrences that hidden-occurrence records name.
+    pub(super) design_hidden_occurrences:
+        Vec<crate::design::decode::hidden_occurrences::DesignHiddenOccurrence>,
     /// Authored feature order, which tells top-level `Component Insert`
     /// scopes from internal operands. A decode failure that does not refuse
     /// the document stays here; design intent then does not run.
@@ -127,6 +130,7 @@ impl ProductPrereqs {
             design_parameter_scope_losses: _,
             design_work_plane_inferred_axes: _,
             design_joint_motions,
+            design_hidden_occurrences: _,
             design_feature_timelines,
             design_feature_timeline_losses: _,
             design_component_naming_spaces,
@@ -255,6 +259,16 @@ pub(super) fn decode(
         }
         other => other,
     };
+    let design_hidden_occurrences =
+        crate::design::decode::hidden_occurrences::decode_hidden_occurrences(
+            scan,
+            &design_types,
+            &design_component_occurrences,
+            xref.as_ref()
+                .ok()
+                .and_then(Option::as_ref)
+                .map_or(&[], |table| table.references.as_slice()),
+        )?;
     Ok(ProductPrereqs {
         construction_recipes,
         design_material_assignments,
@@ -278,6 +292,7 @@ pub(super) fn decode(
         design_parameter_scope_losses,
         design_work_plane_inferred_axes,
         design_joint_motions,
+        design_hidden_occurrences,
         design_feature_timelines,
         design_feature_timeline_losses,
         design_component_naming_spaces,
