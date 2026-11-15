@@ -166,9 +166,11 @@ pub(crate) fn bind(
                         ))
                     }).collect()
                 };
+                let retained_ahead = not_behind(&retained);
+                let preceding_ahead = not_behind(&preceding);
                 start.and_then(|start| cap_match(&referenced, Some(start), &caps))
-                    .or_else(|| cap_match(&not_behind(&retained), None, retained_caps))
-                    .or_else(|| cap_match(&not_behind(&preceding), None, retained_caps))
+                    .or_else(|| cap_match(&retained_ahead, None, retained_caps))
+                    .or_else(|| cap_match(&preceding_ahead, None, retained_caps))
             });
             if let Some(slot) = selected {
                 if let Some(selection) = crate::design::face_resolve::historical_face_selection_with_native(
